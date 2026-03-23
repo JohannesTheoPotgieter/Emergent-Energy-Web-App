@@ -10,6 +10,7 @@ import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } fr
 import { storage } from "./storage";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
 import { requirePermission } from "./permission-middleware";
+import { notifyHandoverSubmitted, notifyHandoverAccepted, notifyHandoverRejected } from "./services/notification-service";
 
 const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
 const PD_PM_HANDOVER_GATE_ID = "PD_PM_HANDOVER";
@@ -708,6 +709,18 @@ export function registerHandoverRoutes(app: Express) {
         projectName: project.projectName,
         changesJson: { submittedBy: user?.name || "Unknown", readinessStatus: handover.handover_readiness_status || null },
       });
+      // Notify PM reviewers
+      try {
+        const pmUsers = await db.select({ id: users.id }).from(users)
+          .where(sql`${users.companyRole} IN ('PROJECT_MANAGER_SITE', 'PROGRAM_MANAGER', 'COO_ADMIN', 'CEO_ADMIN')`);
+        const pmUserIds = pmUsers.map(u => u.id);
+        if (pmUserIds.length > 0) {
+          await notifyHandoverSubmitted(projectId, project.projectName, pmUserIds);
+        }
+      } catch (notifyErr) {
+        console.warn("[handover] notification send failed (non-blocking):", notifyErr);
+      }
+
       res.json({ success: true, status: "SUBMITTED_FOR_PM_REVIEW" });
     } catch (err: any) {
       console.error("[handover] submit error:", err);
@@ -760,6 +773,20 @@ export function registerHandoverRoutes(app: Express) {
         projectName: project?.projectName,
         changesJson: { acceptedBy: user?.name, fromPhase: project?.phase || null, toPhase: "PM Active" },
       });
+      // Notify PD team about acceptance
+      try {
+        const pdOwnerName = handover.pd_owner;
+        if (pdOwnerName) {
+          const pdOwnerUsers = await db.select({ id: users.id }).from(users)
+            .where(sql`${users.name} = ${pdOwnerName}`);
+          if (pdOwnerUsers.length > 0) {
+            await notifyHandoverAccepted(projectId, project?.projectName || "Unknown", pdOwnerUsers.map(u => u.id));
+          }
+        }
+      } catch (notifyErr) {
+        console.warn("[handover] acceptance notification failed (non-blocking):", notifyErr);
+      }
+
       res.json({ success: true, status: "ACCEPTED" });
     } catch (err: any) {
       console.error("[handover] accept error:", err);
@@ -804,7 +831,19 @@ export function registerHandoverRoutes(app: Express) {
         changesJson: { rejectedBy: user?.name || "Unknown", reason },
       });
 
-      // Notifications feature removed - PD rejection notification is now a no-op
+      // Notify PD team about rejection
+      try {
+        const pdOwnerName = handover.pd_owner;
+        if (pdOwnerName) {
+          const pdOwnerUsers = await db.select({ id: users.id }).from(users)
+            .where(sql`${users.name} = ${pdOwnerName}`);
+          if (pdOwnerUsers.length > 0) {
+            await notifyHandoverRejected(projectId, project?.projectName || "Unknown", reason, pdOwnerUsers.map(u => u.id));
+          }
+        }
+      } catch (notifyErr) {
+        console.warn("[handover] rejection notification failed (non-blocking):", notifyErr);
+      }
 
       res.json({ success: true, status: "REJECTED" });
     } catch (err: any) {
