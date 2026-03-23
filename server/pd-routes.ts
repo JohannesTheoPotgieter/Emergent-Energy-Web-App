@@ -13,17 +13,7 @@ function requireAuth(req: Request, res: Response, next: () => void) {
   next();
 }
 
-function isPdRole(role: string): boolean {
-  return ["PROJECT_DEVELOPER", "KEY_ACCOUNTS_MANAGER", "COO_ADMIN", "CEO_ADMIN", "CCO", "admin"].includes(role);
-}
-
-function canCreatePdTicket(role: string): boolean {
-  return ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "admin"].includes(role);
-}
-
-function canViewAllTickets(role: string): boolean {
-  return ["COO_ADMIN", "CEO_ADMIN", "CCO", "admin"].includes(role);
-}
+import { isPdRole, canCreatePdTicket, canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 
 export function registerPdRoutes(app: Express) {
 
@@ -201,10 +191,7 @@ export function registerPdRoutes(app: Express) {
       } else if (role === "PROJECT_DEVELOPER") {
         result = enriched.filter(r => r.ticket.createdBy === user?.id || r.ticket.projectDeveloperUserId === user?.id);
       } else if (role === "ENGINEER") {
-        const engineeringRequestTypes = new Set([
-          "Feasibility Study", "Design Review", "IFC Planning",
-          "Grid Application", "Battery Assessment", "Site Assessment", "Full EPC",
-        ]);
+        const engineeringRequestTypes = new Set(ENGINEERING_REQUEST_TYPES as readonly string[]);
         // Engineers see tickets where they are assigned to spawned work items or the ticket is engineering-related
         const engineerWorkItemTicketIds = await db
           .select({ pdTicketId: workItems.pdTicketId })
