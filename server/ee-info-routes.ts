@@ -433,7 +433,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.get("/api/ee-info/assets/:filename", async (req, res) => {
+  app.get("/api/ee-info/assets/:filename", requireAuth, async (req, res) => {
     try {
       const { filename } = req.params;
       const assetPath = path.join(ASSETS_DIR, filename);
