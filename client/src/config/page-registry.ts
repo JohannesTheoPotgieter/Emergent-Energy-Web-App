@@ -70,6 +70,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pdTickets", path: "/pd/tickets", label: "PD Tickets", iconKey: "ClipboardList", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_tickets", showInSidebar: true, routeComponentKey: "PdTicketsPage" },
   { id: "pdTicketCreate", path: "/pd/tickets/create", label: "Create PD Ticket", routeComponentKey: "PdTicketCreatePage" },
   { id: "pdTicketDetail", path: "/pd/tickets/:id", label: "PD Ticket Detail", routeComponentKey: "PdTicketDetailPage" },
+  { id: "pdReports", path: "/pd/reports", label: "PD Reports", iconKey: "BarChart3", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdReportsPage" },
   { id: "teamsChats", path: "/teams/chats", label: "Teams Chat", iconKey: "MessageSquare", navGroup: "FEEDBACK", permissionEntity: "teams_chat", showInSidebar: true, routeComponentKey: "TeamsChatsPage" },
   { id: "collaboration", path: "/collaboration", label: "Collaboration Hub", permissionEntity: "collaboration_hub", routeComponentKey: "CollaborationPage" },
   { id: "collabEmail", path: "/collaboration/email", label: "Collaboration Email", permissionEntity: "collaboration_hub", routeComponentKey: "CollabEmailPage" },
