@@ -23,6 +23,7 @@ export const PD_CREATE_ROLES = [
 
 /** Roles that can see all tickets (not filtered by assignment) */
 export const PD_VIEW_ALL_ROLES = [
+  "PROJECT_DEVELOPER",
   "COO_ADMIN",
   "CEO_ADMIN",
   "CCO",
