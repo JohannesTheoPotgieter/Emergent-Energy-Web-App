@@ -267,7 +267,7 @@ export default function PrioritiesPage() {
       const res = await fetch("/api/priorities", {
         headers: { Authorization: `Bearer ${token()}` },
       });
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error(`Failed to load priorities (${res.status})`);
       return res.json();
     },
   });
