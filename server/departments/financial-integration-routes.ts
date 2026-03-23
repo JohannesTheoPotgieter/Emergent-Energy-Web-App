@@ -263,9 +263,6 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
         const payload = typeof existing.editPayload === "string" ? JSON.parse(existing.editPayload) : existing.editPayload;
         const overrides = payload.overrides;
         if (Array.isArray(overrides)) {
-          const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: existing.requestedByUserId }));
-          await storage.upsertManyExpenditureOverrides(overridesWithUser);
-
           const fieldToColumnMap: Record<string, string> = {
             expenseInvoicedDate: "expenseInvoicedDate",
             expensePaymentDate: "expensePaymentDate",

@@ -2723,31 +2723,45 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       });
     }
 
-    const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
     const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
     const baselineRowsByProject = new Map<string, Map<number, any>>();
+    const saved: any[] = [];
 
     for (const projectName of projectNames) {
-      const [rawInflows, existingOverrides] = await Promise.all([
-        storage.getProgramInflowsByProject(projectName),
-        Promise.resolve([]),
-      ]);
-      const currentRows = rawInflows;
+      const rawInflows = await storage.getProgramInflowsByProject(projectName);
       baselineRowsByProject.set(
         projectName,
-        new Map(currentRows.map((row: any) => [row.rowNumber, row])),
+        new Map(rawInflows.map((row: any) => [row.rowNumber, row])),
       );
     }
 
-    const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
+    // Apply overrides directly to the base table (normalized_revenue_lines)
+    for (const pn of projectNames) {
+      const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+      const inflows = baselineRowsByProject.get(pn)!;
 
+      const rowGroups = new Map<number, Record<string, any>>();
+      for (const ov of projectOverrides) {
+        const inflow = inflows.get(ov.rowNumber);
+        if (!inflow) continue;
+        if (!rowGroups.has(inflow.id)) rowGroups.set(inflow.id, {});
+        const fields = rowGroups.get(inflow.id)!;
+        const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+        fields[ov.fieldName] = effectiveValue;
+      }
+
+      for (const [inflowId, fields] of rowGroups.entries()) {
+        if (Object.keys(fields).length > 0) {
+          const result = await storage.updateProgramInflowFields(inflowId, fields);
+          if (result) saved.push(result);
+        }
+      }
+    }
+
+    // Sync inBank status on updated rows
     try {
       for (const projectName of projectNames) {
-        const [rawInflows, latestOverrides] = await Promise.all([
-          storage.getProgramInflowsByProject(projectName),
-          Promise.resolve([]),
-        ]);
-        const appliedRows = rawInflows;
+        const appliedRows = await storage.getProgramInflowsByProject(projectName);
         for (const r of appliedRows) {
           const milestoneNo = r.milestoneNo;
           if (!milestoneNo || !/^\d+$/.test(String(milestoneNo).trim())) continue;
@@ -2822,7 +2836,7 @@ router.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requi
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deleteRevenueTrackingOverridesByProject(projectName);
+    // Override tables collapsed into base tables — no separate overrides to delete
     res.json({ message: `Revenue tracking overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete revenue tracking overrides", message: "Failed to delete revenue tracking overrides" });
@@ -3595,10 +3609,7 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       });
     }
 
-    // Admin/approver: apply overrides directly
-    const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-    await storage.upsertManyExpenditureOverrides(overridesWithUser);
-
+    // Admin/approver: apply overrides directly to base table
     const fieldToColumnMap: Record<string, string> = {
       expenseInvoicedDate: "expenseInvoicedDate",
       expensePaymentDate: "expensePaymentDate",
@@ -3672,7 +3683,7 @@ router.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdm
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deleteExpenditureOverridesByProject(projectName);
+    // Override tables collapsed into base tables — no separate overrides to delete
     res.json({ message: `Expenditure overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete expenditure overrides", message: "Failed to delete expenditure overrides" });
