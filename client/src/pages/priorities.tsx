@@ -1,12 +1,12 @@
 import { useState, useMemo } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Flag, Plus, Target, Shield, TrendingUp, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { Flag, Plus, AlertTriangle, Clock } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 
 const token = () => localStorage.getItem("auth_token") || "";
