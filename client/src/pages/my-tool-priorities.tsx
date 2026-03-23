@@ -76,6 +76,14 @@ interface CompanyPriority {
   links: PriorityLink[];
   createdAt: string;
   updatedAt: string;
+  // Strategic layer fields
+  accountableExecId: number | null;
+  ownerUserId: number | null;
+  targetStartDate: string | null;
+  targetOutcome: string | null;
+  sortOrder: number;
+  manualHealth: string | null;
+  manualProgress: number | null;
 }
 
 const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
@@ -164,6 +172,7 @@ export default function MyToolPrioritiesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
     },
     onError: (err: any) => {
       toast({ title: "Update failed", description: err.message, variant: "destructive" });
@@ -245,6 +254,7 @@ export default function MyToolPrioritiesPage() {
     mutationFn: (id: number) => apiRequest("DELETE", `/api/mytool/company-priorities/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       toast({ title: "Priority Removed" });
     },
   });
@@ -323,6 +333,7 @@ export default function MyToolPrioritiesPage() {
     });
     setExistingLinks(prev => prev.filter(l => l.id !== linkId));
     queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
   };
 
   const addPendingProjectLink = () => {
@@ -392,6 +403,7 @@ export default function MyToolPrioritiesPage() {
         toast({ title: "Priority Created" });
       }
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       closeDialog();
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
