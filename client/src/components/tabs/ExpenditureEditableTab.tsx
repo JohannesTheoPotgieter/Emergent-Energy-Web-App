@@ -951,7 +951,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     rowId: number; field: string; value: string | null; fontColor: string | null; fontColorField: string; rowNumber: number;
   }) => {
     const editedColor = edits.get(rowId)?.[fontColorField];
-    const currentColor = editedColor !== undefined ? editedColor : (fontColor || "black");
+    const currentColor = editedColor !== undefined ? editedColor : (fontColor || "red");
     const isRed = currentColor === "red";
     const audit = getFieldAudit(rowNumber, field);
     const showOverride = hasOverride(rowNumber, field) || !!audit;

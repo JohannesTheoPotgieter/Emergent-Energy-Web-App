@@ -3966,8 +3966,10 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         cosStatus = 'Planned';
       }
 
-      const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
-      const paymentDateBlack = hasPayDate && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
+      const effectivePaymentDate = link?.dateOverride || linkedTask?.dueDate || exp.expensePaymentDate || exp.forecastPaymentDate || null;
+      const hasPayDate = !!(effectivePaymentDate && String(effectivePaymentDate).trim());
+      const isFutureDate = hasPayDate && new Date(effectivePaymentDate!) > new Date();
+      const paymentDateBlack = hasPayDate && !isFutureDate && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
 
       let paymentStatus: string;
       if (paymentDateBlack && hasInvoice) {
@@ -3977,8 +3979,6 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       } else {
         paymentStatus = 'Planned';
       }
-
-      const effectivePaymentDate = link?.dateOverride || linkedTask?.dueDate || exp.expensePaymentDate || exp.forecastPaymentDate || null;
       let plannedMonth: string | null = null;
       if (effectivePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(effectivePaymentDate)) {
         const d = new Date(effectivePaymentDate);
@@ -4071,6 +4071,7 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         hasDateOverride: !!link?.dateOverride,
         dateOverrideReason: link?.dateOverrideReason || null,
         cosOverride: cosOverride ? { reason: cosOverride.reason, overriddenBy: cosOverride.overriddenBy, originalStatus: cosOverride.originalStatus, overrideStatus: cosOverride.overrideStatus } : null,
+        paymentDateFontColor: isFutureDate ? "red" : (exp.paymentDateFontColor || null),
         trust: {
           sourceSheet: "Expenditure Breakdown",
           sourceRow: exp.rowNumber,
