@@ -9,9 +9,10 @@
  */
 
 import { db } from "./db";
-import { pdTickets } from "@shared/schema/projects";
+import { pdTickets, clients, projectInfo } from "@shared/schema/projects";
 import { users } from "@shared/schema/users";
-import { sql, asc } from "drizzle-orm";
+import { sql, asc, eq, ilike, count } from "drizzle-orm";
+import bcrypt from "bcryptjs";
 
 // ─── helpers ──────────────────────────────────────────────────────
 
@@ -45,12 +46,15 @@ function parsePeopleName(raw: string): string {
 
 interface SourceRecord {
   projectSiteName: string;
+  clientName: string;
   dueDate: string;
   requestType: string;
   priority: string;
   status: string;
   numberOfReworks: number;
   projectDeveloper: string;
+  designerRole: "ENGINEER" | "PROJECT_DEVELOPER";
+  developerRole: "PROJECT_DEVELOPER" | "ENGINEER";
   designer: string;
   sizeKwp: string | null;
   province: string;
@@ -73,13 +77,16 @@ interface SourceRecord {
 const SOURCE_DATA: SourceRecord[] = [
   {
     projectSiteName: "Trident Steel BESS consumption analysis",
+    clientName: "Trident Steel",
     dueDate: "2026-03-12",
     requestType: "Data Analysis Request",
     priority: "Medium",
     status: "In Progress",
     numberOfReworks: 0,
     projectDeveloper: "",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Tanaka Zimuto",
+    designerRole: "ENGINEER",
     sizeKwp: null,
     province: "",
     gpsCoordinates: "",
@@ -99,13 +106,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "National Ships Chandler",
+    clientName: "National Ships Chandler",
     dueDate: "2026-03-17",
     requestType: "Meter installation",
     priority: "Medium",
     status: "Draft",
     numberOfReworks: 0,
     projectDeveloper: "Gordon Upton",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Tanaka Zimuto",
+    designerRole: "ENGINEER",
     sizeKwp: null,
     province: "Eastern Cape",
     gpsCoordinates: "",
@@ -125,13 +135,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "NatShips",
+    clientName: "National Ships Chandler",
     dueDate: "2026-03-19",
     requestType: "Meter installation",
     priority: "Critical",
     status: "In Progress",
     numberOfReworks: 0,
     projectDeveloper: "Gordon Upton",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Tanaka Zimuto",
+    designerRole: "ENGINEER",
     sizeKwp: null,
     province: "Eastern Cape",
     gpsCoordinates: "",
@@ -151,13 +164,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "Mayo Macs Paddock Site Visit",
+    clientName: "Mayo Macs",
     dueDate: "2026-03-20",
     requestType: "Site visit Report",
     priority: "High",
     status: "Draft",
     numberOfReworks: 2,
     projectDeveloper: "Megan Moore",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Roedolph Venter",
+    designerRole: "ENGINEER",
     sizeKwp: "480",
     province: "KZN",
     gpsCoordinates: "N2 Main Harding Rd, Paddock Plains, KZN",
@@ -177,13 +193,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "WERDA",
+    clientName: "WERDA",
     dueDate: "2026-03-20",
     requestType: "Meter installation",
     priority: "Medium",
     status: "Draft",
     numberOfReworks: 0,
     projectDeveloper: "Cole Bisset",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Tanaka Zimuto",
+    designerRole: "ENGINEER",
     sizeKwp: "250",
     province: "Western Cape",
     gpsCoordinates: "-33.99066364589065, 20.181539820747506",
@@ -203,13 +222,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "Sandown/Atlantic Corner",
+    clientName: "Sandown/Atlantic Corner",
     dueDate: "2026-03-23",
     requestType: "CP - PVSOL",
     priority: "High",
     status: "Draft",
     numberOfReworks: 0,
     projectDeveloper: "Cole Bisset",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Tanaka Zimuto",
+    designerRole: "ENGINEER",
     sizeKwp: "500",
     province: "Western Cape",
     gpsCoordinates: "",
@@ -229,13 +251,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "Constantia Glen",
+    clientName: "Constantia Glen",
     dueDate: "2026-03-24",
     requestType: "Site visit Report",
     priority: "Medium",
     status: "Draft",
     numberOfReworks: 0,
     projectDeveloper: "Cole Bisset",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Paul Dreyer",
+    designerRole: "ENGINEER",
     sizeKwp: "100",
     province: "Western Cape",
     gpsCoordinates: "-34.0147, 18.4146",
@@ -255,13 +280,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "Altix Holdings Medical Centre & Garage",
+    clientName: "Altix Holdings",
     dueDate: "2026-03-24",
     requestType: "First Assessment - PowerPoint Template",
     priority: "Medium",
     status: "Draft",
     numberOfReworks: 0,
     projectDeveloper: "Kirsten Marwick",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Mary Boakye",
+    designerRole: "ENGINEER",
     sizeKwp: null, // TBC
     province: "KZN",
     gpsCoordinates: "-29.7287, 31.0689",
@@ -281,13 +309,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "Somerset Square",
+    clientName: "Somerset Square",
     dueDate: "2026-03-25",
     requestType: "Site visit Report",
     priority: "Critical",
     status: "Draft",
     numberOfReworks: 0,
     projectDeveloper: "Megan Moore",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Paul Dreyer",
+    designerRole: "ENGINEER",
     sizeKwp: "150",
     province: "Western Cape",
     gpsCoordinates: "-33.91287875756561, 18.41624193907976",
@@ -307,13 +338,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "Commercial Centre",
+    clientName: "Commercial Centre",
     dueDate: "2026-03-26",
     requestType: "First Assessment - PowerPoint Template",
     priority: "Medium",
     status: "Draft",
     numberOfReworks: 0,
     projectDeveloper: "Gordon Upton",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Tanaka Zimuto",
+    designerRole: "ENGINEER",
     sizeKwp: "100",
     province: "Eastern Cape",
     gpsCoordinates: "",
@@ -333,13 +367,16 @@ const SOURCE_DATA: SourceRecord[] = [
   },
   {
     projectSiteName: "Steelcorp - Moore St & Lamp Road",
+    clientName: "Steelcorp",
     dueDate: "2026-03-27",
     requestType: "Sizing Rational Request",
     priority: "High",
     status: "Draft",
     numberOfReworks: 0,
     projectDeveloper: "Kirsten Marwick",
+    developerRole: "PROJECT_DEVELOPER",
     designer: "Tanaka Zimuto",
+    designerRole: "ENGINEER",
     sizeKwp: null, // TBC
     province: "Gauteng",
     gpsCoordinates: "",
@@ -377,29 +414,117 @@ export async function runPdTicketSeed() {
 
   console.log("[PD-Seed] No PD tickets found, starting import…");
 
-  // ── Step 1: resolve all unique user names ──
-  const uniqueNames = new Set<string>();
+  // ── Step 1: resolve or create all unique users ──
+  const userEntries: { name: string; role: string }[] = [];
   for (const r of SOURCE_DATA) {
-    if (r.projectDeveloper) uniqueNames.add(parsePeopleName(r.projectDeveloper));
-    if (r.designer) uniqueNames.add(parsePeopleName(r.designer));
+    if (r.projectDeveloper) userEntries.push({ name: parsePeopleName(r.projectDeveloper), role: r.developerRole });
+    if (r.designer) userEntries.push({ name: parsePeopleName(r.designer), role: r.designerRole });
+  }
+  const uniqueUserMap = new Map<string, string>();
+  for (const entry of userEntries) {
+    if (entry.name) uniqueUserMap.set(entry.name, entry.role);
   }
 
   const nameToId: Record<string, number | null> = {};
-  const unresolvedNames: string[] = [];
-  for (const name of uniqueNames) {
-    const id = await resolveUser(name);
+  for (const [name, role] of uniqueUserMap) {
+    let id = await resolveUser(name);
+    if (id === null) {
+      // Create the user
+      const username = name.toLowerCase().replace(/\s+/g, ".");
+      const email = `${username}@emergent-energy.co.za`;
+      const hashedPassword = await bcrypt.hash("emergent2026", 10);
+      try {
+        const [created] = await db.insert(users).values({
+          username,
+          name,
+          email,
+          password: hashedPassword,
+          role,
+        }).returning();
+        id = created.id;
+        console.log(`[PD-Seed] Created user "${name}" (${role}) with id ${id}`);
+      } catch (err: any) {
+        // Username might already exist with different name — try to resolve again
+        const [existing] = await db.select().from(users).where(eq(users.username, username));
+        if (existing) {
+          id = existing.id;
+          console.log(`[PD-Seed] Found existing user by username "${username}" with id ${id}`);
+        } else {
+          console.warn(`[PD-Seed] Could not create user "${name}": ${err.message}`);
+        }
+      }
+    }
     nameToId[name] = id;
-    if (id === null) unresolvedNames.push(name);
   }
 
-  if (unresolvedNames.length > 0) {
-    console.warn(`[PD-Seed] WARNING: Could not resolve users: ${unresolvedNames.join(", ")}`);
-    console.warn("[PD-Seed] These records will have NULL user references. Continuing import…");
-  } else {
-    console.log(`[PD-Seed] All ${uniqueNames.size} users resolved successfully`);
+  const resolvedCount = Object.values(nameToId).filter(v => v !== null).length;
+  console.log(`[PD-Seed] ${resolvedCount}/${uniqueUserMap.size} users resolved/created`);
+
+  // ── Step 2: create or find clients ──
+  const uniqueClientNames = new Set<string>();
+  for (const r of SOURCE_DATA) {
+    if (r.clientName) uniqueClientNames.add(r.clientName);
   }
 
-  // ── Insert seed records (transaction-wrapped) ──
+  const clientNameToId: Record<string, number | null> = {};
+  for (const clientName of uniqueClientNames) {
+    const existing = await db.select().from(clients).where(ilike(clients.name, clientName)).limit(1);
+    if (existing.length > 0) {
+      clientNameToId[clientName] = existing[0].id;
+      console.log(`[PD-Seed] Found existing client "${clientName}" with id ${existing[0].id}`);
+    } else {
+      // Generate client ID
+      const [countResult] = await db.select({ cnt: count() }).from(clients);
+      const nextNum = ((countResult?.cnt || 0) as number) + 1;
+      const clientCode = `EE-C${String(nextNum).padStart(4, "0")}`;
+
+      try {
+        const [created] = await db.insert(clients).values({
+          clientId: clientCode,
+          name: clientName,
+        }).returning();
+        clientNameToId[clientName] = created.id;
+        console.log(`[PD-Seed] Created client "${clientName}" (${clientCode}) with id ${created.id}`);
+      } catch (err: any) {
+        console.warn(`[PD-Seed] Could not create client "${clientName}": ${err.message}`);
+        clientNameToId[clientName] = null;
+      }
+    }
+  }
+
+  // ── Step 3: create or find projects ──
+  const projectNameToId: Record<string, number | null> = {};
+  for (const r of SOURCE_DATA) {
+    const projName = r.projectSiteName;
+    if (projectNameToId[projName] !== undefined) continue;
+
+    const existing = await db.select().from(projectInfo).where(ilike(projectInfo.projectName, projName)).limit(1);
+    if (existing.length > 0) {
+      projectNameToId[projName] = existing[0].id;
+      console.log(`[PD-Seed] Found existing project "${projName}" with id ${existing[0].id}`);
+    } else {
+      const devName = parsePeopleName(r.projectDeveloper);
+      const devUserId = devName ? nameToId[devName] ?? null : null;
+      const cId = r.clientName ? clientNameToId[r.clientName] ?? null : null;
+
+      try {
+        const [created] = await db.insert(projectInfo).values({
+          projectName: projName,
+          sizeKwp: r.sizeKwp || null,
+          pd: devName || null,
+          pdUserId: devUserId,
+          clientId: cId,
+        }).returning();
+        projectNameToId[projName] = created.id;
+        console.log(`[PD-Seed] Created project "${projName}" with id ${created.id}`);
+      } catch (err: any) {
+        console.warn(`[PD-Seed] Could not create project "${projName}": ${err.message}`);
+        projectNameToId[projName] = null;
+      }
+    }
+  }
+
+  // ── Step 4: Insert seed records (transaction-wrapped) ──
   await db.transaction(async (tx) => {
     let inserted = 0;
     for (const r of SOURCE_DATA) {
@@ -408,7 +533,9 @@ export async function runPdTicketSeed() {
 
       await tx.insert(pdTickets).values({
         projectSiteName: r.projectSiteName,
-        clientNameSnapshot: r.projectSiteName,
+        clientId: r.clientName ? clientNameToId[r.clientName] ?? null : null,
+        clientNameSnapshot: r.clientName || r.projectSiteName,
+        projectId: projectNameToId[r.projectSiteName] ?? null,
         dueDate: r.dueDate,
         requestType: r.requestType,
         priority: r.priority,
