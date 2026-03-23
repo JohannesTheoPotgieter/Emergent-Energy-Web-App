@@ -1467,7 +1467,7 @@ export default function ProjectsSummary() {
     }
     if (priorityFilter !== "all" && priorityProjectIds) {
       const idSet = new Set(priorityProjectIds);
-      result = result.filter((p) => idSet.has(p.project_info_id));
+      result = result.filter((p) => p.project_info_id != null && idSet.has(p.project_info_id));
     }
     return result;
   }, [currentProjects, searchTerm, pmFilter, phaseFilter, priorityFilter, priorityProjectIds]);

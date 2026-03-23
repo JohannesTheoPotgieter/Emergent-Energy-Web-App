@@ -32,7 +32,6 @@ export const TOP_SECTIONS: TopSection[] = [
     match: (pathname) => startsWithAny(pathname, ["/priorities"]),
     secondary: [
       { label: "All Priorities", path: "/priorities" },
-      { label: "Manage", path: "/company-priorities" },
     ],
   },
   {
