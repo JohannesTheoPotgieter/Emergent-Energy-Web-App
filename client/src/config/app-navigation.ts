@@ -27,6 +27,14 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
+    label: "Priorities",
+    path: "/priorities",
+    match: (pathname) => startsWithAny(pathname, ["/priorities"]),
+    secondary: [
+      { label: "All Priorities", path: "/priorities" },
+    ],
+  },
+  {
     label: "Project Lifecycle",
     path: "/project-lifecycle",
     match: (pathname) => startsWithAny(pathname, ["/project-lifecycle", "/lifecycle-board", "/project", "/clients"]),
@@ -158,6 +166,18 @@ export type BreadcrumbItem = { label: string; path?: string };
 
 export function getBreadcrumbs(pathname: string, activeSection: TopSection): BreadcrumbItem[] {
   if (pathname === "/") return [];
+
+  // Priority detail breadcrumb
+  const priorityDetailMatch = pathname.match(/^\/priorities\/(\d+)/);
+  if (priorityDetailMatch) return [
+    { label: "Priorities", path: "/priorities" },
+    { label: `Priority #${priorityDetailMatch[1]}` },
+  ];
+
+  // Priority list breadcrumb
+  if (pathname === "/priorities") return [
+    { label: "Priorities" },
+  ];
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
   if (projectMatch) return [

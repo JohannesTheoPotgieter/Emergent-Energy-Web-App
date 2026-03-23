@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
+import { NotificationBell } from "@/components/NotificationBell";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { useTheme } from "@/hooks/use-theme";
 
@@ -266,6 +267,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : null}
+
+          <NotificationBell />
 
           <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
             <DropdownMenuTrigger asChild>

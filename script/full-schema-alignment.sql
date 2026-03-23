@@ -7093,4 +7093,11 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='writeback_mappings' AND column_name='updated_at') THEN
     ALTER TABLE "writeback_mappings" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
+  -- GAP 4b: Add hours tracking columns to work_items
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='planned_hours') THEN
+    ALTER TABLE "work_items" ADD COLUMN "planned_hours" REAL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='actual_hours') THEN
+    ALTER TABLE "work_items" ADD COLUMN "actual_hours" REAL DEFAULT 0;
+  END IF;
 END $$;

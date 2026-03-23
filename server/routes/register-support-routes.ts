@@ -35,6 +35,9 @@ export async function registerSupportRoutes(app: Express) {
   const { registerCommissioningRoutes } = await import("../commissioning-routes");
   registerCommissioningRoutes(app);
 
+  const { registerNotificationRoutes } = await import("../notification-routes");
+  registerNotificationRoutes(app);
+
   const { registerInvoiceCaptureRoutes } = await import("../invoice-capture-routes");
   registerInvoiceCaptureRoutes(app);
 
