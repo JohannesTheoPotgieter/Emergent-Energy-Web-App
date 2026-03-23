@@ -41,7 +41,7 @@ export function isTaskDueSoon(task: TaskLike): boolean {
 }
 
 export function canReassignTask(task: TaskLike, role = ""): boolean {
-  const isPrivileged = ["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
+  const isPrivileged = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
   const isAssigneeContext = task._trackingRole === "assignee" || task._trackingRole === "both";
   switch (task._source) {
     case "personal":

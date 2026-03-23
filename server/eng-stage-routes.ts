@@ -57,8 +57,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required", message: "Authentication required" });
 }
 
-const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
-const ENGINEER_ROLES = ["ENGINEER", "COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER"];
+const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+const ENGINEER_ROLES = ["ENGINEER", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
 const QA_ROLE = "QUALITY_MANAGER";
 
 function getUser(req: Request): { id: number; name: string; role: string } {

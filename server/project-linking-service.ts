@@ -17,7 +17,7 @@ import {
   qcTemplatePhase,
 } from "@shared/schema";
 
-const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 const MANAGER_ROLES = [...ADMIN_ROLES, "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 type OperationalTaskRow = typeof workItems.$inferSelect;
 type QualityItemRow = typeof qcItemInstance.$inferSelect;

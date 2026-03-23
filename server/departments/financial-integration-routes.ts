@@ -8,7 +8,7 @@ import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
 
 const router = Router();
 
-const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
+const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 const FINANCIAL_EDITOR_ROLES = [...FINANCIAL_APPROVER_ROLES, "PROJECT_MANAGER_SITE"];
 
 function isApproverRole(role: string | undefined): boolean {

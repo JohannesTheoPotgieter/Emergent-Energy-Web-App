@@ -30,7 +30,6 @@ export type ProjectScope =
  * Everyone else is scoped to their assigned projects.
  */
 export const FULL_OVERSIGHT_ROLES: readonly string[] = [
-  "admin",
   "COO_ADMIN",
   "CEO_ADMIN",
   "CCO",

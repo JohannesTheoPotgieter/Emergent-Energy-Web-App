@@ -1103,7 +1103,7 @@ router.get("/api/mytool/unclassified-tasks", requireAuth, requireAdmin, async (r
 
 // ─── Microsoft Account Mapping ───
 
-const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
 router.get("/api/admin/users/microsoft-mapping", requireAuth, async (req, res) => {
   try {

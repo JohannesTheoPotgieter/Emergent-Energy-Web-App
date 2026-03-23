@@ -292,7 +292,7 @@ export default function PrioritiesPage() {
     });
   }, [priorities, levelFilter, healthFilter, categoryFilter]);
 
-  const isAdmin = user?.role && ["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(user.role);
+  const isAdmin = user?.role && ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(user.role);
 
   return (
     <PageShell>

@@ -31,7 +31,7 @@ const DEFAULT_THRESHOLD_BY_COMPLETION: Record<string, number> = {
   handover_gate_complete: 90,
 };
 
-const EVIDENCE_OVERRIDE_ROLES = ["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+const EVIDENCE_OVERRIDE_ROLES = ["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"];
 
 export function isEvidenceOverrideAuthorized(role?: string): boolean {
   return !!role && EVIDENCE_OVERRIDE_ROLES.includes(role);

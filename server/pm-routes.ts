@@ -22,7 +22,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "Authentication required" });
 }
 
-const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"];
 
 function requirePmRole(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user;
@@ -36,7 +36,7 @@ function getUser(req: Request): { userId: number; name: string; role: string } {
   return (req as any).user;
 }
 
-const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
 function resolveTargetPmUserId(req: Request): number {
   const user = getUser(req);
