@@ -15,8 +15,6 @@
  *   Budget COS (monthly)       → fye_budgets (budgetType="cos") [editable by finance]
  *   Actual Revenue (monthly)   → COS-ratio allocation: (lineItemCOS / projectTotalCOS) * projectTotalRevenue, keyed by expenseInvoicedDate [matches Revenue Tracker]
  *   Actual COS (monthly)       → program_expense.expenseActualTotal, keyed by expenseInvoicedDate [read-only import]
- *   Captured Revenue           → finance_revenue_monthly (value, summed per monthEndDate) [read-only import]
- *   Captured COS               → finance_cos_monthly (value, summed per monthEndDate) [read-only import]
  *   Forecast Revenue           → fye_budgets for future months (budget as forecast proxy)
  *   GP                         → Revenue - COS (derived)
  *
@@ -60,8 +58,6 @@ import {
   projectEditableFields,
   programInflows,
   programExpense,
-  financeRevenueMonthly,
-  financeCosMonthly,
   fyeBudgets,
   forecastPipeline,
   lostDeals,
@@ -375,31 +371,6 @@ router.get(
       // 4. Actual COS using expenseActualTotal only (standardized)
       const actualCosByMonth = buildCosByMonth(allExpenses as any, monthKeys);
 
-      // 5. Captured data from finance_revenue_monthly / finance_cos_monthly
-      const capturedRevRows = await db.select({
-        monthEndDate: financeRevenueMonthly.monthEndDate,
-        value: financeRevenueMonthly.value,
-      }).from(financeRevenueMonthly);
-      const capturedRevByMonth: Record<string, number> = {};
-      for (const r of capturedRevRows) {
-        const mk = extractMonthKey(r.monthEndDate);
-        if (mk && monthKeys.includes(mk)) {
-          capturedRevByMonth[mk] = (capturedRevByMonth[mk] || 0) + safeNum(r.value);
-        }
-      }
-
-      const capturedCosRows = await db.select({
-        monthEndDate: financeCosMonthly.monthEndDate,
-        value: financeCosMonthly.value,
-      }).from(financeCosMonthly);
-      const capturedCosByMonth: Record<string, number> = {};
-      for (const r of capturedCosRows) {
-        const mk = extractMonthKey(r.monthEndDate);
-        if (mk && monthKeys.includes(mk)) {
-          capturedCosByMonth[mk] = (capturedCosByMonth[mk] || 0) + safeNum(r.value);
-        }
-      }
-
       // Determine current month key for actual vs forecast split
       const now = new Date();
       const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -435,10 +406,6 @@ router.get(
         const actualRev = isPastOrCurrent ? (actualRevByMonth[mk] || 0) : null;
         const actualCos = isPastOrCurrent ? (actualCosByMonth[mk] || 0) : null;
 
-        // Captured data
-        const capturedRev = capturedRevByMonth[mk] || null;
-        const capturedCos = capturedCosByMonth[mk] || null;
-
         // Actual + Forecast blending:
         //   Past/current months → actual values
         //   Next 3 months → forecast from planned data
@@ -463,22 +430,16 @@ router.get(
             budget: budgetRev,
             actualForecast: actualForecastRev,
             actual: actualRev,
-            captured: capturedRev !== null ? capturedRev : (isPastOrCurrent ? 0 : null),
           },
           cos: {
             budget: budgetCos,
             actualForecast: actualForecastCos,
             actual: actualCos,
-            captured: capturedCos !== null ? capturedCos : (isPastOrCurrent ? 0 : null),
           },
           gp: {
             budget: budgetRev - budgetCos,
             actualForecast: actualForecastRev - actualForecastCos,
             actual: actualRev !== null && actualCos !== null ? actualRev - actualCos : null,
-            captured:
-              capturedRev !== null && capturedCos !== null
-                ? capturedRev - capturedCos
-                : isPastOrCurrent ? 0 : null,
           },
         };
       });
@@ -1059,16 +1020,6 @@ async function collectSnapshotData(fye: number) {
   const actualRevByMonth = buildCosRatioRevenue(allInflows, allExpenses as any, monthKeys);
   const actualCosByMonth = buildCosByMonth(allExpenses as any, monthKeys);
 
-  // Captured
-  const capturedRevByMonth: Record<string, number> = {};
-  const capturedCosByMonth: Record<string, number> = {};
-  try {
-    const cRev = await db.select({ monthEndDate: financeRevenueMonthly.monthEndDate, value: financeRevenueMonthly.value }).from(financeRevenueMonthly);
-    for (const r of cRev) { const mk = extractMonthKey(r.monthEndDate); if (mk && monthKeys.includes(mk)) capturedRevByMonth[mk] = (capturedRevByMonth[mk] || 0) + safeNum(r.value); }
-    const cCos = await db.select({ monthEndDate: financeCosMonthly.monthEndDate, value: financeCosMonthly.value }).from(financeCosMonthly);
-    for (const r of cCos) { const mk = extractMonthKey(r.monthEndDate); if (mk && monthKeys.includes(mk)) capturedCosByMonth[mk] = (capturedCosByMonth[mk] || 0) + safeNum(r.value); }
-  } catch {}
-
   // Build 3-month forecast from planned/scheduled expense data (same as dashboard)
   const forecastWindow = getNext3MonthKeys(currentMk);
   const forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[] = [];
@@ -1093,8 +1044,6 @@ async function collectSnapshotData(fye: number) {
     const isForecast = forecastWindow.includes(mk);
     const aRev = isPast ? (actualRevByMonth[mk] || 0) : null;
     const aCos = isPast ? (actualCosByMonth[mk] || 0) : null;
-    const cRev = capturedRevByMonth[mk] || null;
-    const cCos = capturedCosByMonth[mk] || null;
     // Actual + Forecast blending: past=actual, next 3 months=forecast, beyond=0
     let afRev: number, afCos: number;
     if (isPast) {
@@ -1109,9 +1058,9 @@ async function collectSnapshotData(fye: number) {
     }
     return {
       monthKey: mk, label: monthKeyToLabel(mk),
-      revenue: { budget: bRev, actualForecast: afRev, actual: aRev, captured: cRev !== null ? cRev : (isPast ? 0 : null) },
-      cos: { budget: bCos, actualForecast: afCos, actual: aCos, captured: cCos !== null ? cCos : (isPast ? 0 : null) },
-      gp: { budget: bRev - bCos, actualForecast: afRev - afCos, actual: aRev !== null && aCos !== null ? aRev - aCos : null, captured: cRev !== null && cCos !== null ? cRev - cCos : (isPast ? 0 : null) },
+      revenue: { budget: bRev, actualForecast: afRev, actual: aRev },
+      cos: { budget: bCos, actualForecast: afCos, actual: aCos },
+      gp: { budget: bRev - bCos, actualForecast: afRev - afCos, actual: aRev !== null && aCos !== null ? aRev - aCos : null },
     };
   });
 
@@ -1326,8 +1275,8 @@ router.get(
         { title: "COS Tracking", key: "cos" },
         { title: "GP Tracking", key: "gp" },
       ];
-      const rowTypes = ["budget", "actualForecast", "actual", "captured"];
-      const rowLabels: Record<string, string> = { budget: "Budget", actualForecast: "Actual + Forecast", actual: "Actual", captured: "Captured Data" };
+      const rowTypes = ["budget", "actualForecast", "actual"];
+      const rowLabels: Record<string, string> = { budget: "Budget", actualForecast: "Actual + Forecast", actual: "Actual" };
 
       for (const sec of sections) {
         dashSheet.addRow([]);
