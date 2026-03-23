@@ -1031,6 +1031,11 @@ export const projectPdPmHandover = pgTable("project_pd_pm_handover", {
   rejectedBy: text("rejected_by"),
   rejectedAt: timestamp("rejected_at"),
   rejectionReason: text("rejection_reason"),
+  feasibilityStatus: text("feasibility_status"),
+  feasibilityNotes: text("feasibility_notes"),
+  dependencySummary: text("dependency_summary"),
+  handoverReadinessStatus: text("handover_readiness_status"),
+  handoverReadinessNotes: text("handover_readiness_notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

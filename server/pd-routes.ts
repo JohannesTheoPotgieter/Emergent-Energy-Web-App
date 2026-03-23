@@ -169,9 +169,23 @@ export function registerPdRoutes(app: Express) {
         .orderBy(desc(pdTickets.createdAt));
 
       const ticketIds = rows.map(r => r.ticket.id);
-      // PD ticket task counts: pdTicketId was on operational_tasks which is being dropped.
-      // Work items don't carry pdTicketId; returning empty counts until PD-ticket linkage is re-modelled.
       let taskCounts: Record<number, { total: number; completed: number }> = {};
+      if (ticketIds.length > 0) {
+        const taskCountRows = await db
+          .select({
+            pdTicketId: workItems.pdTicketId,
+            total: sql<number>`count(*)::int`,
+            completed: sql<number>`count(*) FILTER (WHERE ${workItems.status} IN ('Completed', 'DONE', 'Done'))::int`,
+          })
+          .from(workItems)
+          .where(sql`${workItems.pdTicketId} IS NOT NULL AND ${workItems.deletedAt} IS NULL`)
+          .groupBy(workItems.pdTicketId);
+        for (const row of taskCountRows) {
+          if (row.pdTicketId) {
+            taskCounts[row.pdTicketId] = { total: row.total, completed: row.completed };
+          }
+        }
+      }
 
       const enriched = rows.map(r => ({
         ...r,
@@ -187,9 +201,25 @@ export function registerPdRoutes(app: Express) {
       } else if (role === "PROJECT_DEVELOPER") {
         result = enriched.filter(r => r.ticket.createdBy === user?.id || r.ticket.projectDeveloperUserId === user?.id);
       } else if (role === "ENGINEER") {
-        // PD ticket → task linkage via pdTicketId no longer available (operational_tasks dropped).
-        // Engineers see no PD tickets until linkage is re-modelled on work_items.
-        result = [];
+        const engineeringRequestTypes = new Set([
+          "Feasibility Study", "Design Review", "IFC Planning",
+          "Grid Application", "Battery Assessment", "Site Assessment", "Full EPC",
+        ]);
+        // Engineers see tickets where they are assigned to spawned work items or the ticket is engineering-related
+        const engineerWorkItemTicketIds = await db
+          .select({ pdTicketId: workItems.pdTicketId })
+          .from(workItems)
+          .where(and(
+            eq(workItems.ownerUserId, user?.id),
+            sql`${workItems.pdTicketId} IS NOT NULL`,
+            sql`${workItems.deletedAt} IS NULL`,
+          ));
+        const assignedTicketIds = new Set(engineerWorkItemTicketIds.map(r => r.pdTicketId));
+        result = enriched.filter(r =>
+          assignedTicketIds.has(r.ticket.id) ||
+          r.ticket.designerUserId === user?.id ||
+          engineeringRequestTypes.has(r.ticket.requestType)
+        );
       } else {
         result = enriched;
       }
@@ -220,9 +250,23 @@ export function registerPdRoutes(app: Express) {
 
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
 
-      // PD ticket → task linkage via pdTicketId no longer available (operational_tasks dropped).
-      // Returning empty task list until PD-ticket linkage is re-modelled on work_items.
-      const tasks: any[] = [];
+      const tasks = await db
+        .select({
+          id: workItems.id,
+          title: workItems.title,
+          status: workItems.status,
+          priority: workItems.priority,
+          endDate: workItems.endDate,
+          percentComplete: workItems.percentComplete,
+          ownerUserId: workItems.ownerUserId,
+          ownerName: workItems.ownerName,
+          holdReason: workItems.holdReason,
+          blockedType: workItems.blockedType,
+          updatedAt: workItems.updatedAt,
+        })
+        .from(workItems)
+        .where(and(eq(workItems.pdTicketId, id), sql`${workItems.deletedAt} IS NULL`))
+        .orderBy(asc(workItems.sortOrder));
 
       const taskIds = tasks.map(t => t.id);
       let recentActivity: any[] = [];
@@ -484,6 +528,7 @@ async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: strin
       priority: tmpl.priority === "High" ? "High" : "Medium",
       endDate: ticket.dueDate || null,
       sortOrder: i,
+      pdTicketId: ticket.id,
       createdBy: user?.id || null,
     }).returning();
 
