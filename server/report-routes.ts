@@ -1,7 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectInfo, projectExecutionState, type ProjectInfo, smartImportRuns, normalizedCostLines, normalizedRevenueLines, workItems, manualEditFlags } from "@shared/schema";
-import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import ExcelJS from "exceljs";
 import { requirePermission } from "./permission-middleware";
@@ -351,7 +351,7 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
       const projectFilter = req.query.projectName as string | undefined;
       const categoryFilter = req.query.costCategory as string | undefined;
 
-      let costLines = await db.select().from(normalizedCostLines);
+      let costLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       if (projectFilter) {
         costLines = costLines.filter(c => c.projectName?.toLowerCase().includes(projectFilter.toLowerCase()));

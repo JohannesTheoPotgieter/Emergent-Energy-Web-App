@@ -344,11 +344,11 @@ export function registerLifecycleRoutes(app: Express) {
       const allPlanTasks = rawPlanTasks;
 
       const trackerProjectNames = new Set<string>();
-      const expenseNames = await db.selectDistinct({ projectName: normalizedCostLines.projectName }).from(normalizedCostLines);
+      const expenseNames = await db.selectDistinct({ projectName: normalizedCostLines.projectName }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
       for (const e of expenseNames) {
         if (e.projectName) trackerProjectNames.add(normalizeName(e.projectName));
       }
-      const inflowNames = await db.selectDistinct({ projectName: normalizedRevenueLines.projectName }).from(normalizedRevenueLines);
+      const inflowNames = await db.selectDistinct({ projectName: normalizedRevenueLines.projectName }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
       for (const i of inflowNames) {
         if (i.projectName) trackerProjectNames.add(normalizeName(i.projectName));
       }
@@ -363,7 +363,7 @@ export function registerLifecycleRoutes(app: Express) {
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
-      }).from(normalizedRevenueLines);
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       const allCostLines = await db.select({
         projectId: normalizedCostLines.projectId,
@@ -373,7 +373,7 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
         poNumber: normalizedCostLines.poNumber,
         paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
-      }).from(normalizedCostLines);
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       // Canonical reporting preference: aggregate finance by projectId first,
       // then use normalized projectName only as compatibility fallback.
@@ -726,7 +726,7 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceDate: normalizedRevenueLines.invoiceDate,
         expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
         sourceRow: normalizedRevenueLines.sourceRow,
-      }).from(normalizedRevenueLines);
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       const costLines = await db.select({
         projectId: normalizedCostLines.projectId,
@@ -740,7 +740,7 @@ export function registerLifecycleRoutes(app: Express) {
         approvedDate: normalizedCostLines.approvedDate,
         cosRealised: normalizedCostLines.cosRealised,
         sourceRow: normalizedCostLines.sourceRow,
-      }).from(normalizedCostLines);
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
       // inBank and COS status overrides are applied directly to base rows.

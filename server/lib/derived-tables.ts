@@ -1,4 +1,5 @@
 import { db } from "../db";
+import { isNull } from "drizzle-orm";
 import {
   projectInfo,
   normalizedCostLines,
@@ -16,8 +17,8 @@ function safeNum(v: unknown): number {
 
 export async function rebuildDerivedTables(): Promise<void> {
   const projects = await db.select().from(projectInfo);
-  const allCosts = await db.select().from(normalizedCostLines);
-  const allRevenue = await db.select().from(normalizedRevenueLines);
+  const allCosts = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+  const allRevenue = await db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
   await db.delete(derivedProjectKpis);
   await db.delete(derivedPortfolioKpis);

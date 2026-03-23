@@ -1,4 +1,4 @@
-import { inArray, isNull, sql } from "drizzle-orm";
+import { and, inArray, isNull, sql } from "drizzle-orm";
 import { normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
 import { db, getDbMode } from "../db";
 
@@ -59,8 +59,8 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
 
   if (getDbMode() === "sqlite") {
     const [revenueRows, costRows] = await Promise.all([
-      db.select().from(normalizedRevenueLines).where(inArray(normalizedRevenueLines.projectId, projectIds)),
-      db.select().from(normalizedCostLines).where(inArray(normalizedCostLines.projectId, projectIds)),
+      db.select().from(normalizedRevenueLines).where(and(inArray(normalizedRevenueLines.projectId, projectIds), isNull(normalizedRevenueLines.effectiveTo))),
+      db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectId, projectIds), isNull(normalizedCostLines.effectiveTo))),
     ]);
 
     for (const row of revenueRows) {
@@ -98,6 +98,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       COALESCE(SUM(CASE WHEN paid_date IS NULL AND in_bank_date IS NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS outstanding_revenue
     FROM normalized_revenue_lines
     WHERE project_id = ANY(${sql`ARRAY[${sql.join(projectIds.map((id) => sql`${id}`), sql`,`)}]::int[]`})
+      AND effective_to IS NULL
     GROUP BY project_id
   `);
 
@@ -109,6 +110,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       COALESCE(SUM(CASE WHEN paid_date IS NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS outstanding_cost
     FROM normalized_cost_lines
     WHERE project_id = ANY(${sql`ARRAY[${sql.join(projectIds.map((id) => sql`${id}`), sql`,`)}]::int[]`})
+      AND effective_to IS NULL
     GROUP BY project_id
   `);
 
