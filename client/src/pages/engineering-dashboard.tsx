@@ -57,6 +57,7 @@ import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { engFetch, engPatch, engPost } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
+import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 
 interface StandupTask {
   id: number;
@@ -533,10 +534,6 @@ function StandupTaskDrawer({
     [activity, activityLimit]
   );
 
-  const { data: teamMembers = [] } = useQuery<{ id: number; name: string }[]>({
-    queryKey: ["team-members"],
-    queryFn: () => engFetch("/api/eng/team-members"),
-  });
 
   const addComment = async () => {
     if (!commentText.trim()) return;
@@ -610,17 +607,20 @@ function StandupTaskDrawer({
             </div>
             <div>
               <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Assignee</label>
-              <SearchableSelect
-                value={task.assignees?.[0] || "__unassigned"}
-                onValueChange={(val) => handleFieldUpdate({ assignees: val === "__unassigned" ? [] : [val] })}
-                triggerClassName="h-8 text-xs mt-1"
-                placeholder="Unassigned"
-                options={[
-                  { value: "__unassigned", label: "Unassigned" },
-                  ...teamMembers.map((m: any) => ({ value: m.name, label: m.name })),
-                ]}
-                data-testid="drawer-assignee-select"
-              />
+              <div className="mt-1" data-testid="drawer-assignee-select">
+                <UserAssignmentPicker
+                  taskId={task.id}
+                  taskSource="engineering_task"
+                  resolvedUsers={task.resolvedAssignees || null}
+                  textNames={task.assignees || null}
+                  mode="single"
+                  size="xs"
+                  invalidateKeys={["eng-standup-all-tasks", "eng-standup"]}
+                  onSuccess={() => {
+                    queryClient.invalidateQueries({ queryKey: ["standup-task-activity", task.id] });
+                  }}
+                />
+              </div>
             </div>
           </div>
 
@@ -856,6 +856,16 @@ function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdat
               {daysFromNow(task.dueDate)}
             </span>
           )}
+
+          <UserAssignmentPicker
+            taskId={task.id}
+            taskSource="engineering_task"
+            resolvedUsers={task.resolvedAssignees || null}
+            textNames={task.assignees || null}
+            mode="single"
+            size="xs"
+            invalidateKeys={["eng-standup-all-tasks", "eng-standup"]}
+          />
 
           <Button
             variant="ghost"
