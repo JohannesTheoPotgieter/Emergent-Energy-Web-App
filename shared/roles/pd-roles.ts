@@ -21,7 +21,7 @@ export const PD_CREATE_ROLES = [
   "admin",
 ] as const;
 
-/** Roles that can see all tickets (not filtered by assignment) */
+/** Roles that can see all tickets (not filtered by assignment) — used as fallback when no pdVisibilityConfig exists */
 export const PD_VIEW_ALL_ROLES = [
   "COO_ADMIN",
   "CEO_ADMIN",
