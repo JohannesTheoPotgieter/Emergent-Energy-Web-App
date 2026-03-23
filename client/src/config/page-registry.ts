@@ -141,3 +141,40 @@ export function getPermissionEntityForPath(pathname: string): PermissionEntity |
   const match = sorted.find((page) => pathname === page.path || pathname.startsWith(`${page.path}/`));
   return match?.permissionEntity;
 }
+
+/**
+ * Maps well-known top-level navigation paths to their APP_SECTION key.
+ * Uses the navGroup field from PAGE_REGISTRY entries.
+ *
+ * This is the bridge between the navigation path and the section toggles
+ * configured on each role in Admin → Roles & Permissions → Navigation.
+ */
+const NAV_GROUP_TO_SECTION: Record<string, string> = {
+  MY_WORK: "COCKPIT",
+  EXCO: "COCKPIT",
+  PROJECTS: "PROJECTS",
+  PROJECT_DEVELOPMENT: "PROJECT_DEVELOPMENT",
+  PROJECT_MANAGEMENT: "PROJECT_MANAGEMENT",
+  ENGINEERING: "ENGINEERING",
+  QUALITY: "GOVERNANCE",
+  FINANCE: "MONEY",
+  KNOWLEDGE: "INFORMATION",
+  FEEDBACK: "INFORMATION",
+  PORTFOLIO: "PROJECT_MANAGEMENT",
+  SYSTEM: "ADMIN",
+  // REPORTS is deliberately unmapped — controlled by entity permissions only,
+  // so removing PROJECT_MANAGEMENT from a role doesn't hide reports.
+};
+
+export function getAppSectionForPath(pathname: string): string | undefined {
+  if (pathname === "/" || pathname === "/my-work" || pathname.startsWith("/my-work/")) {
+    return "COCKPIT";
+  }
+  const sorted = [...PAGE_REGISTRY]
+    .filter((page) => !!page.navGroup && !page.path.includes(":"))
+    .sort((a, b) => b.path.length - a.path.length);
+
+  const match = sorted.find((page) => pathname === page.path || pathname.startsWith(`${page.path}/`));
+  if (!match?.navGroup) return undefined;
+  return NAV_GROUP_TO_SECTION[match.navGroup];
+}

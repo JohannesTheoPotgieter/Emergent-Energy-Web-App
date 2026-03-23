@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions, type PermissionAction, type PermissionEntity } from "@shared/schema";
-import { getPermissionEntityForPath } from "@/config/page-registry";
+import { getPermissionEntityForPath, getAppSectionForPath } from "@/config/page-registry";
 import { useAuth } from "./use-auth";
 
 interface PermissionsResponse {
   entityPermissions?: Record<string, Record<string, boolean>> | null;
   userOverrides?: Record<string, boolean> | null;
+  sections?: string[] | null;
 }
 
 export function useAccessMatrix() {
@@ -27,6 +28,12 @@ export function useAccessMatrix() {
     enabled: !!effectiveRole,
     staleTime: 60_000,
   });
+
+  // Build a set of allowed sections from the role's section toggles
+  const allowedSections = useMemo(() => {
+    const s = permissions?.sections;
+    return s && s.length > 0 ? new Set(s) : null;
+  }, [permissions?.sections]);
 
   const canAccessEntityAction = useMemo(() => {
     return (entity: PermissionEntity, action: PermissionAction) => {
@@ -54,11 +61,23 @@ export function useAccessMatrix() {
   const canViewPath = useMemo(() => {
     return (path: string) => {
       if (path === "/") return true;
+
+      // Section-level gate: if the role's allowed sections don't include
+      // the section this path belongs to, deny access immediately.
+      // This is what makes the Admin → Roles & Permissions → Navigation
+      // toggles actually control top-level nav visibility.
+      if (allowedSections) {
+        const section = getAppSectionForPath(path);
+        if (section && !allowedSections.has(section)) {
+          return false;
+        }
+      }
+
       const entity = getPermissionEntityForPath(path);
       if (!entity) return true;
       return canAccessEntityAction(entity, "view");
     };
-  }, [canAccessEntityAction]);
+  }, [canAccessEntityAction, allowedSections]);
 
   return {
     effectiveRole,
