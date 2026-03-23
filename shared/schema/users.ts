@@ -227,7 +227,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'financials',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
@@ -236,7 +236,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'cos',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
@@ -245,7 +245,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'cashflow',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
@@ -254,7 +254,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'revenue_tracker',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
@@ -263,7 +263,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'gp_tracker',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO'],
@@ -281,9 +281,9 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'engineering',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -299,9 +299,9 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'eng_tasks',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
@@ -1215,6 +1215,87 @@ export const pdVisibilityConfig = pgTable("pd_visibility_config", {
 export type PdVisibilityConfig = typeof pdVisibilityConfig.$inferSelect;
 export type InsertPdVisibilityConfig = typeof pdVisibilityConfig.$inferInsert;
 
+// ===================== WORKSTREAM VISIBILITY CONFIG =====================
+
+/**
+ * General-purpose workstream visibility rules that control which workstreams
+ * (ENG, PD, PM, QUALITY, FINANCE, GOVERNANCE, PERSONAL) each role/user can see
+ * across the task management system.
+ *
+ * Resolution priority:
+ *   1. User-level override (userId set) — highest priority
+ *   2. Role-level config (role set, userId null)
+ *   3. WORKSTREAM_VISIBILITY_DEFAULTS constant — fallback
+ *
+ * `workstreams`: which workstream categories the role/user can see in task views.
+ * `ticketTypes`: which PD ticket categories to show (migrated from pdVisibilityConfig).
+ * `scope`: "all" — see every matching item, "own" — only own/assigned items.
+ * `sections`: which app navigation sections are allowed (informational, enforcement via rolePermissions).
+ */
+export const workstreamVisibilityConfig = pgTable("workstream_visibility_config", {
+  id: serial("id").primaryKey(),
+  role: text("role"),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  workstreams: text("workstreams").array().notNull().default(["ENG", "PD", "PM", "QUALITY", "FINANCE", "GOVERNANCE", "PERSONAL"]),
+  ticketTypes: text("ticket_types").array().notNull().default(["pd", "engineering"]),
+  scope: text("scope").notNull().default("all"),
+  sections: text("sections").array().notNull().default([]),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  updatedBy: integer("updated_by").references(() => users.id),
+});
+export type WorkstreamVisibilityConfig = typeof workstreamVisibilityConfig.$inferSelect;
+export type InsertWorkstreamVisibilityConfig = typeof workstreamVisibilityConfig.$inferInsert;
+
+/** Department clusters for role grouping */
+export type DepartmentCluster = 'ADMIN' | 'LEADERSHIP' | 'ENGINEERING' | 'PROJECT_DEVELOPMENT' | 'PROJECT_MANAGEMENT' | 'FINANCE';
+
+/** Maps each company role to its department cluster */
+export const ROLE_DEPARTMENT_MAP: Record<string, DepartmentCluster> = {
+  COO_ADMIN: 'ADMIN',
+  CEO_ADMIN: 'ADMIN',
+  CCO: 'LEADERSHIP',
+  PROGRAM_MANAGER: 'LEADERSHIP',
+  ENGINEER: 'ENGINEERING',
+  ENGINEERING_MANAGER: 'ENGINEERING',
+  QUALITY_MANAGER: 'ENGINEERING',
+  CONSTRUCTION_MANAGER: 'PROJECT_MANAGEMENT',
+  PROJECT_DEVELOPER: 'PROJECT_DEVELOPMENT',
+  KEY_ACCOUNTS_MANAGER: 'PROJECT_DEVELOPMENT',
+  PROJECT_MANAGER_SITE: 'PROJECT_MANAGEMENT',
+  CFO: 'FINANCE',
+  PROGRAM_FINANCE_MANAGER: 'FINANCE',
+  ACCOUNTANT: 'FINANCE',
+};
+
+/** Default workstream visibility per role — used when no DB config exists */
+export const WORKSTREAM_VISIBILITY_DEFAULTS: Record<string, { workstreams: string[]; ticketTypes: string[]; scope: string; sections: string[] }> = {
+  // ADMIN — full access
+  COO_ADMIN:  { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_DEVELOPMENT', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION', 'ADMIN'] },
+  CEO_ADMIN:  { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_DEVELOPMENT', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION', 'ADMIN'] },
+
+  // LEADERSHIP — full read
+  CCO:              { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_DEVELOPMENT', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
+  PROGRAM_MANAGER:  { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
+
+  // ENGINEERING
+  ENGINEERING_MANAGER: { workstreams: ['ENG', 'QUALITY', 'GOVERNANCE'], ticketTypes: ['engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
+  ENGINEER:            { workstreams: ['ENG'], ticketTypes: ['engineering'], scope: 'own', sections: ['COCKPIT', 'COLLABORATION', 'ENGINEERING', 'INFORMATION'] },
+  QUALITY_MANAGER:     { workstreams: ['QUALITY', 'GOVERNANCE'], ticketTypes: ['engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'GOVERNANCE', 'INFORMATION'] },
+
+  // PROJECT DEVELOPMENT
+  PROJECT_DEVELOPER:    { workstreams: ['PD'], ticketTypes: ['pd'], scope: 'own', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'PROJECT_DEVELOPMENT', 'GOVERNANCE', 'INFORMATION'] },
+  KEY_ACCOUNTS_MANAGER: { workstreams: ['PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'INFORMATION'] },
+
+  // PROJECT MANAGEMENT — CONSTRUCTION_MANAGER now PM + QUALITY focused
+  CONSTRUCTION_MANAGER: { workstreams: ['PM', 'QUALITY'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECT_MANAGEMENT', 'GOVERNANCE', 'INFORMATION'] },
+  PROJECT_MANAGER_SITE: { workstreams: ['PM', 'PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE'] },
+
+  // FINANCE
+  CFO:                     { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'GOVERNANCE', 'INFORMATION'] },
+  PROGRAM_FINANCE_MANAGER: { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
+  ACCOUNTANT:              { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'INFORMATION'] },
+};
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
@@ -1222,12 +1303,12 @@ export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Project finance, cost tracking", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management", sections: ["COCKPIT", "COLLABORATION", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management — PM and quality focused", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "PROJECT_MANAGEMENT", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Site project manager — view-only access to assigned projects, dates, financials, quality, engineering", sections: ["COLLABORATION", "PROJECTS", "MONEY", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
-  { role: "PROJECT_DEVELOPER", label: "Project Developer", description: "Project developer — manages project development, cost proposals, and client relations", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROJECT_DEVELOPER", label: "Project Developer", description: "Project developer — manages project development, cost proposals, and client relations", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "PROJECT_DEVELOPMENT", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "ENGINEER", label: "Engineer", description: "Engineering team member — engineering tasks, deliverables, stage checklists", sections: ["COCKPIT", "COLLABORATION", "ENGINEERING", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "ACCOUNTANT", label: "Accountant", description: "Finance team — cashflow, COS tracking, invoice management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
 ];

@@ -10,7 +10,6 @@ export const PD_ROLES = [
   "COO_ADMIN",
   "CEO_ADMIN",
   "CCO",
-  "admin",
 ] as const;
 
 /** Roles that can create PD tickets */
@@ -18,7 +17,6 @@ export const PD_CREATE_ROLES = [
   "PROJECT_DEVELOPER",
   "COO_ADMIN",
   "CEO_ADMIN",
-  "admin",
 ] as const;
 
 /** Roles that can see all tickets (not filtered by assignment) — used as fallback when no pdVisibilityConfig exists */
@@ -26,7 +24,6 @@ export const PD_VIEW_ALL_ROLES = [
   "COO_ADMIN",
   "CEO_ADMIN",
   "CCO",
-  "admin",
 ] as const;
 
 /** Roles that can review, accept, or reject handovers */
@@ -35,14 +32,12 @@ export const PM_REVIEW_ROLES = [
   "PROGRAM_MANAGER",
   "COO_ADMIN",
   "CEO_ADMIN",
-  "admin",
 ] as const;
 
 /** Admin roles with full access */
 export const ADMIN_ROLES = [
   "COO_ADMIN",
   "CEO_ADMIN",
-  "admin",
 ] as const;
 
 /** Engineering request types that engineers should see */

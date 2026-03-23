@@ -1,10 +1,11 @@
 // @ts-nocheck
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
-import { clients, pdTickets, workItems, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig } from "@shared/schema";
+import { clients, pdTickets, workItems, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig } from "@shared/schema";
 import { eq, ilike, sql, and, desc, asc, or, count, isNull } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
+import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middleware";
 
 function requireAuth(req: Request, res: Response, next: () => void) {
   if (!req.isAuthenticated || !req.isAuthenticated()) {
@@ -17,24 +18,38 @@ import { isPdRole, canCreatePdTicket, canViewAllTickets, ENGINEERING_REQUEST_TYP
 
 /**
  * Resolve the effective PD visibility config for a user.
- * Priority: user-level override > role-level config > hardcoded defaults.
+ * Now delegates to the unified workstream visibility system, falling back
+ * to the legacy pdVisibilityConfig table for backward compatibility.
  */
 async function getEffectiveVisibilityConfig(userId: number | undefined, role: string) {
-  // 1. Check for a user-level override
+  // Try the new workstream visibility config first
+  try {
+    if (userId) {
+      const [userConfig] = await db.select().from(workstreamVisibilityConfig)
+        .where(eq(workstreamVisibilityConfig.userId, userId));
+      if (userConfig) return userConfig;
+    }
+    if (role) {
+      const [roleConfig] = await db.select().from(workstreamVisibilityConfig)
+        .where(and(eq(workstreamVisibilityConfig.role, role), isNull(workstreamVisibilityConfig.userId)));
+      if (roleConfig) return roleConfig;
+    }
+  } catch {
+    // New table may not exist yet — fall back to legacy table
+  }
+
+  // Fall back to legacy pdVisibilityConfig
   if (userId) {
     const [userConfig] = await db.select().from(pdVisibilityConfig)
       .where(eq(pdVisibilityConfig.userId, userId));
     if (userConfig) return userConfig;
   }
-
-  // 2. Check for a role-level config
   if (role) {
     const [roleConfig] = await db.select().from(pdVisibilityConfig)
       .where(and(eq(pdVisibilityConfig.role, role), isNull(pdVisibilityConfig.userId)));
     if (roleConfig) return roleConfig;
   }
 
-  // 3. Return null — caller uses hardcoded defaults
   return null;
 }
 

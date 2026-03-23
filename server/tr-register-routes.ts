@@ -37,14 +37,14 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 function requireManager(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as AppUser)?.role || "";
-  const allowed = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "admin"];
+  const allowed = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
   if (allowed.includes(role)) return next();
   res.status(403).json({ error: "forbidden", message: "Manager access required" });
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as AppUser)?.role || "";
-  const allowed = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+  const allowed = ["COO_ADMIN", "CEO_ADMIN"];
   if (allowed.includes(role)) return next();
   res.status(403).json({ error: "forbidden", message: "Admin access required" });
 }

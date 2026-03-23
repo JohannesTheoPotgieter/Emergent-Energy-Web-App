@@ -440,7 +440,7 @@ export default function LifecycleBoardPage() {
 
   const role = localStorage.getItem("company_role") || "";
   const isExec = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
-  const canOverrideStageGate = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER", "admin"].includes(role);
+  const canOverrideStageGate = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
 
   function getGateAuthHeaders(): HeadersInit {
     const token = localStorage.getItem("auth_token");
