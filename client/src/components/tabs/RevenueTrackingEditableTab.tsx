@@ -120,7 +120,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
   });
 
   const overridesQuery = useQuery<any[]>({
-    queryKey: [`/api/revenue-tracking/overrides?projectName=${projectName}`],
+    queryKey: ["/api/revenue-tracking/overrides", projectName],
     queryFn: async () => {
       const token = localStorage.getItem('auth_token');
       const headers: Record<string, string> = {};
@@ -160,7 +160,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: [`/api/revenue-tracking/overrides?projectName=${projectName}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/revenue-tracking/overrides", projectName] });
       invalidateDashboardQueries(queryClient);
       setEdits(new Map());
       setNewRows([]);
@@ -196,7 +196,7 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
-      queryClient.invalidateQueries({ queryKey: [`/api/revenue-tracking/overrides?projectName=${projectName}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/revenue-tracking/overrides", projectName] });
       invalidateDashboardQueries(queryClient);
       setEdits(new Map());
       setNewRows([]);

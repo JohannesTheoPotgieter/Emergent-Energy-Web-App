@@ -281,7 +281,6 @@ export function ProjectCommandHeader({
     },
     onSuccess: () => {
       toast({ title: "Health status updated" });
-      queryClient.invalidateQueries({ queryKey: ["projects-summary"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
       setRagDialogOpen(false);
       setRagComment("");
@@ -349,7 +348,7 @@ export function ProjectCommandHeader({
                           const newPd = val === "__unassigned" ? "" : val;
                           if (projectInfoId) {
                             engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pd: newPd })
-                              .then(() => { queryClient.invalidateQueries({ queryKey: ["projects-summary"] }); queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] }); });
+                              .then(() => { queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] }); });
                           }
                         }}
                         triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"
@@ -377,7 +376,7 @@ export function ProjectCommandHeader({
                           const matched = pmAssignableUsers.find((u) => u.name === newPm);
                           if (projectInfoId) {
                             engFetchPatch(`/api/lifecycle-board/projects/${projectInfoId}`, { pm: newPm, pmUserId: matched?.id ?? null })
-                              .then(() => { queryClient.invalidateQueries({ queryKey: ["projects-summary"] }); queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] }); });
+                              .then(() => { queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] }); });
                           }
                         }}
                         triggerClassName="h-6 text-[11px] w-auto min-w-[90px] border-[var(--cmd-border)] bg-transparent text-[var(--cmd-text-secondary)] border-dashed"

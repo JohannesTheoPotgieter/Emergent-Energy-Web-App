@@ -88,6 +88,45 @@ export const getQueryFn: <T>(options: {
     });
   };
 
+/**
+ * Query function with an explicit URL, decoupled from the query key.
+ * Use when the query key should differ from the fetch URL
+ * (e.g. structured keys with params as separate array elements).
+ */
+export function fetchQueryFn<T>(url: string, options: { on401: UnauthorizedBehavior } = { on401: "throw" }): QueryFunction<T> {
+  return async () => {
+    return runAsyncAction(async ({ signal, correlationId }) => {
+      const headers: Record<string, string> = {
+        "X-Correlation-ID": correlationId,
+      };
+      const token = localStorage.getItem('auth_token');
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          signal,
+          credentials: "include",
+          headers,
+        });
+      } catch {
+        throw networkError();
+      }
+
+      if (options.on401 === "returnNull" && res.status === 401) {
+        return null;
+      }
+
+      await throwIfResNotOk(res);
+      return await res.json();
+    }, {
+      action: `queryFn:GET:${url}`,
+    });
+  };
+}
+
 export function invalidateDashboardQueries(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["/api/program-dashboard"] });
   qc.invalidateQueries({ queryKey: ["/api/dashboard/high-priority"] });
@@ -100,7 +139,6 @@ export function invalidateDashboardQueries(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: ["/api/upcoming-financials"] });
   qc.invalidateQueries({ queryKey: ["dashboard"] });
   qc.invalidateQueries({ queryKey: ["overview"] });
-  qc.invalidateQueries({ queryKey: ["projects-summary"] });
   qc.invalidateQueries({ queryKey: ["/api/revenue-tracker"] });
   qc.invalidateQueries({ queryKey: ["gp-tracker-portfolio"] });
   qc.invalidateQueries({ predicate: (query) => {

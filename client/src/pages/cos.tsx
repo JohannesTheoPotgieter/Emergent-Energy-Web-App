@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { apiRequest, getQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
+import { apiRequest, getQueryFn, fetchQueryFn, invalidateDashboardQueries } from "@/lib/queryClient";
 import {
   Bar,
   XAxis,
@@ -140,8 +140,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
   const queryClient = useQueryClient();
 
   const { data, isLoading } = useQuery<MonthDetail>({
-    queryKey: [`/api/cos-tracker/month-detail?monthKey=${monthKey}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/cos-tracker/month-detail", monthKey],
+    queryFn: fetchQueryFn(`/api/cos-tracker/month-detail?monthKey=${monthKey}`),
   });
 
   const toggleRealisedMutation = useMutation({
@@ -149,7 +149,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
       await apiRequest("PATCH", `/api/cos-tracker/toggle-realised/${id}`, { realised });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/cos-tracker/month-detail?monthKey=${monthKey}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker/month-detail", monthKey] });
       queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
       invalidateDashboardQueries(queryClient);
     },

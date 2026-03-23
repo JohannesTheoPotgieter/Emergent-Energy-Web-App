@@ -2418,8 +2418,8 @@ export async function registerRoutes(
       });
 
       let finalResult = projectsSummary;
-      // RLS enforcement: scoped users only see owned/assigned projects
-      if (!isFullOversight) {
+      // RLS enforcement: scoped users see all projects but can be narrowed with scope=owned
+      if (!isFullOversight && scopeParam === "owned") {
         finalResult = projectsSummary.filter((p: any) => p._user_scope === "owned" || p._user_scope === "assigned");
       } else if (scopeParam === "owned") {
         // Full oversight users can optionally narrow to their own projects
@@ -7849,28 +7849,61 @@ export async function registerRoutes(
       const userId = req.user?.id;
       const userRole = req.user?.role;
 
-      // All cost corrections require approval before being applied
+      // Admin users apply overrides directly (this legacy route requires requireAdmin)
       const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      const hasHighExpense = overrides.some((o: any) => o.fieldName === "expenseActualTotal" && Number(o.overrideValue) > 50000);
-      const hasBudgetChange = overrides.some((o: any) => o.fieldName === "budgetTotal");
-      const editSummary = `Expenditure override: ${overrides.length} field(s). Category: ${effectiveCategory}. Comment: ${effectiveComment}${hasHighExpense ? " [HIGH EXPENSE]" : ""}${hasBudgetChange ? " [BUDGET CHANGE]" : ""} [Submitted by ${userRole || "unknown"}]`;
+      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
+      await storage.upsertManyExpenditureOverrides(overridesWithUser);
 
-      const [saved] = await db.insert(financialEditRequests).values({
-        projectName: projectNames[0] || "Unknown",
-        requestedByUserId: userId!,
-        editType: "expenditure_override",
-        editTarget: "expenditure_tracking",
-        editPayload: JSON.stringify({ overrides, overrideCategory: effectiveCategory, overrideComment: effectiveComment }),
-        editSummary,
-        isCriticalPath: false,
-        affectsRevenue: false,
-        affectsExpenditure: true,
-        affectsQuality: false,
-        status: "pending",
-      }).returning();
+      const fieldToColumnMap: Record<string, string> = {
+        expenseInvoicedDate: "expenseInvoicedDate",
+        expensePaymentDate: "expensePaymentDate",
+        expensePoNumber: "expensePoNumber",
+        expenseInvoiceNumber: "expenseInvoiceNumber",
+        expenseLineItem: "expenseLineItem",
+        expenseActualTotal: "expenseActualTotal",
+        budgetTotal: "budgetTotal",
+        forecastPaymentDate: "forecastPaymentDate",
+        expenseQty: "expenseQty",
+        expenseRateUnit: "expenseRateUnit",
+        budgetQty: "budgetQty",
+        budgetRateUnit: "budgetRateUnit",
+        invoiceDateFontColor: "invoiceDateFontColor",
+        paymentDateFontColor: "paymentDateFontColor",
+        supplierName: "supplierName",
+      };
 
-      logAuditFromReq(req, { entityType: "expenditure_override", action: "submit_for_approval", changesJson: { description: `${overrides.length} expenditure override(s) submitted for approval`, count: overrides.length, projectNames, requestId: saved.id } });
-      res.json({ message: "Your cost correction has been submitted for approval", status: "pending_approval", requestId: saved.id });
+      for (const pn of projectNames) {
+        const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+        const expenses = await storage.getProgramExpensesByProject(pn as string);
+        const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
+
+        const rowGroups = new Map<number, Record<string, any>>();
+        for (const ov of projectOverrides) {
+          const colName = fieldToColumnMap[ov.fieldName];
+          if (!colName) continue;
+          const expense = rowMap.get(ov.rowNumber);
+          if (!expense) continue;
+          if (!rowGroups.has(expense.id)) rowGroups.set(expense.id, {});
+          const fields = rowGroups.get(expense.id)!;
+          const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+          fields[colName] = effectiveValue;
+          if (ov.fieldName === 'expenseInvoicedDate' && !effectiveValue) {
+            fields.invoiceDateConfirmed = false;
+          }
+          if (ov.fieldName === 'expensePaymentDate' && !effectiveValue) {
+            fields.paymentDateConfirmed = false;
+          }
+        }
+
+        for (const [expenseId, fields] of rowGroups.entries()) {
+          if (Object.keys(fields).length > 0) {
+            await storage.updateProgramExpenseFields(expenseId, fields);
+          }
+        }
+      }
+
+      logAuditFromReq(req, { entityType: "expenditure_override", action: "direct_apply", changesJson: { description: `${overrides.length} expenditure override(s) applied directly by admin`, count: overrides.length, projectNames } });
+      res.json({ message: "Expenditure overrides applied successfully", count: overrides.length });
     } catch (error) {
       console.error("Failed to submit expenditure overrides for approval:", error);
       res.status(500).json({ error: "Failed to save overrides", message: error instanceof Error ? error.message : "Failed to save overrides" });
@@ -13618,7 +13651,7 @@ export async function registerRoutes(
 
   // ==================== MY TOOL - TASKS ====================
 
-  app.get("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/tasks", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
 
@@ -13644,7 +13677,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/tasks", requireAuth, async (req, res) => {
     const userId = (req.user as any).id;
     const rawRequestId = req.header("x-idempotency-key") || req.body?.clientRequestId;
     const requestId = typeof rawRequestId === "string" ? rawRequestId.trim() : "";
@@ -13720,7 +13753,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
@@ -13810,7 +13843,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteMytoolTask(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "mytool_task", action: "delete", entityId: req.params.id, changesJson: { description: "MyTool task deleted" } });
@@ -13820,7 +13853,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/mytool/tasks/:id/dependencies", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const taskId = Number(req.params.id);
       const deps = await db.select().from(mytoolTaskDependencies).where(or(eq(mytoolTaskDependencies.predecessorTaskId, taskId), eq(mytoolTaskDependencies.successorTaskId, taskId)));
@@ -13830,7 +13863,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const successorTaskId = Number(req.params.id);
       const predecessorTaskId = Number(req.body.predecessorTaskId);
@@ -13851,7 +13884,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, async (req, res) => {
     try {
       const dependencyId = Number(req.params.dependencyId);
       const [dep] = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
