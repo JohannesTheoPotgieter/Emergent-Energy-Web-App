@@ -4098,9 +4098,9 @@ export async function registerRoutes(
         getAllPMWorkItemsAsProjectPlan(),
         db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`).catch(() => ({ rows: [] })),
         db.execute(sql`SELECT id, name FROM users`),
-        db.select().from(cashflowPoints),
-        db.select().from(financeRevenueMonthly),
-        db.select().from(financeCosMonthly),
+        db.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)),
+        db.select().from(financeRevenueMonthly).where(isNull(financeRevenueMonthly.effectiveTo)),
+        db.select().from(financeCosMonthly).where(isNull(financeCosMonthly.effectiveTo)),
         Promise.resolve([]),
         Promise.resolve([]),
       ]);

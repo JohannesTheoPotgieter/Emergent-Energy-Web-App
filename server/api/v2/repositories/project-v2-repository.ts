@@ -203,7 +203,7 @@ export async function getProjectFinanceSummary(projectId: number) {
     db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedCostLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedCostLines.status} in ('APPROVED','PAID') then cast(${normalizedCostLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
     db.select({ planned: sql<number>`coalesce(sum(cast(${normalizedRevenueLines.amountExVat} as numeric)),0)`, actual: sql<number>`coalesce(sum(case when ${normalizedRevenueLines.status} in ('INVOICED','PAID','IN_BANK','REALISED') then cast(${normalizedRevenueLines.amountExVat} as numeric) else 0 end),0)` }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo))),
     db.select({ budgetTotal: sql<number>`coalesce(sum(cast(${normalizedCostLines.budgetTotal} as numeric)),0)` }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
-    db.select().from(projectRevenueSummary).where(eq(projectRevenueSummary.projectId, projectId)).limit(1),
+    db.select().from(projectRevenueSummary).where(and(eq(projectRevenueSummary.projectId, projectId), isNull(projectRevenueSummary.effectiveTo))).limit(1),
   ]);
   return {
     cost: cos[0] ?? { planned: 0, actual: 0 },
