@@ -798,7 +798,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
       const existingRevenue = projectId
         ? await db.select({ milestoneName: normalizedRevenueLines.milestoneName, amountExVat: normalizedRevenueLines.amountExVat, invoiceNumber: normalizedRevenueLines.invoiceNumber })
             .from(normalizedRevenueLines)
-            .where(eq(normalizedRevenueLines.projectId, projectId))
+            .where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo)))
         : [];
       const existingMap = new Map<string, typeof existingRevenue[number]>(existingRevenue.map(r => [`${r.milestoneName}::${r.amountExVat || ""}`, r]));
       let added = 0, modified = 0, unchanged = 0;
@@ -832,7 +832,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
       const existingCost = projectId
         ? await db.select({ description: normalizedCostLines.description, amountExVat: normalizedCostLines.amountExVat, invoiceNumber: normalizedCostLines.invoiceNumber })
             .from(normalizedCostLines)
-            .where(eq(normalizedCostLines.projectId, projectId))
+            .where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
         : [];
       const existingMap = new Map(existingCost.map(c => [`${c.description}::${c.amountExVat || ""}::${c.invoiceNumber || ""}`, c]));
       let added = 0, modified = 0, unchanged = 0;
@@ -1373,7 +1373,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
     if (!acknowledgeManualEdits && !preserveManualEdits && !hasConflictResolutions && run.projectId) {
       const existingCostLines = await db.select().from(normalizedCostLines)
-        .where(eq(normalizedCostLines.projectId, run.projectId));
+        .where(and(eq(normalizedCostLines.projectId, run.projectId), isNull(normalizedCostLines.effectiveTo)));
 
       const manuallyModifiedRows = existingCostLines.filter(row =>
         row.cosRealised === true ||
@@ -2119,8 +2119,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
           if (manualEditsToPreserve.size > 0) {
             const insertedRows = projectId
-              ? await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(eq(normalizedCostLines.projectId, projectId))
-              : await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
+              ? await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
+              : await tx.select({ id: normalizedCostLines.id, sourceRow: normalizedCostLines.sourceRow }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
 
             for (const inserted of insertedRows) {
               if (inserted.sourceRow == null) continue;
@@ -2715,7 +2715,7 @@ router.get("/api/smart-import/normalized/:projectName/revenue", requireAuth, asy
     const records = await db
       .select()
       .from(normalizedRevenueLines)
-      .where(eq(normalizedRevenueLines.importRunId, latestRun.id));
+      .where(and(eq(normalizedRevenueLines.importRunId, latestRun.id), isNull(normalizedRevenueLines.effectiveTo)));
 
     res.json(records);
   } catch (err: any) {
@@ -2740,7 +2740,7 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
     const records = await db
       .select()
       .from(normalizedCostLines)
-      .where(eq(normalizedCostLines.importRunId, latestRun.id));
+      .where(and(eq(normalizedCostLines.importRunId, latestRun.id), isNull(normalizedCostLines.effectiveTo)));
 
     res.json(records);
   } catch (err: any) {

@@ -10,7 +10,7 @@ import {
   smartImportRuns,
   normalizedCostLines,
 } from "@shared/schema";
-import { eq, and, desc, sql, isNotNull, asc } from "drizzle-orm";
+import { eq, and, desc, sql, isNotNull, isNull, asc } from "drizzle-orm";
 import { classifyCostLines, generateRuleFromInvoice, normalizeInvoiceNumber } from "./lib/import/invoice-classifier";
 import { requirePermission } from "./permission-middleware";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
@@ -52,7 +52,7 @@ async function buildCounterpartyUsageIndex() {
     status: normalizedCostLines.status,
   })
     .from(normalizedCostLines)
-    .where(isNotNull(normalizedCostLines.counterpartyId));
+    .where(and(isNotNull(normalizedCostLines.counterpartyId), isNull(normalizedCostLines.effectiveTo)));
 
   const usage = new Map<number, {
     usageCount: number;
@@ -518,7 +518,7 @@ router.post("/api/procurement-analysis/classify", requireAuth, requirePermission
   try {
     const userId = getUserId(req);
 
-    const allLines = await db.select().from(normalizedCostLines);
+    const allLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
     const eligibleLines = allLines.filter(line => {
       const amt = parseFloat(line.amountExVat || "0") || 0;
@@ -663,7 +663,7 @@ router.post("/api/procurement-analysis/classify", requireAuth, requirePermission
 
 router.get("/api/procurement-analysis/pattern-stats", requireAuth, async (_req: Request, res: Response) => {
   try {
-    const allLines = await db.select().from(normalizedCostLines);
+    const allLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
     const eligible = allLines.filter(line => {
       const amt = parseFloat(line.amountExVat || "0") || 0;
@@ -734,7 +734,7 @@ router.post("/api/procurement-analysis/reset-tags", requireAuth, requirePermissi
       return res.status(400).json({ error: "Must send confirm: true to execute this destructive action" });
     }
 
-    const taggedBefore = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines).where(sql`pattern_rule_id IS NOT NULL`);
+    const taggedBefore = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines).where(sql`pattern_rule_id IS NOT NULL AND effective_to IS NULL`);
     const matchesBefore = await db.select({ count: sql<number>`count(*)` }).from(invoicePatternMatches);
 
     await db.transaction(async (tx: any) => {
