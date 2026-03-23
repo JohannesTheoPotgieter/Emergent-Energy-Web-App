@@ -12,7 +12,7 @@ import {
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory, projectExecutionState,
   projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
-  workItems, workItemAssignments,
+  workItems, workItemAssignments, notifications,
   msObjects,
   phaseTemplate as phaseTemplateTbl,
   uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication, appSettings,
@@ -138,11 +138,28 @@ function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
-// Notifications feature removed – keep function signature as no-op so callers don't break
-async function createNotification(_recipientUserId: number, _eventType: string, _title: string, _body: string | null, _opts: {
-  projectName?: string; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
+/** Insert an in-app notification row. Silently no-ops on error so callers are never blocked. */
+async function createNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
+  projectName?: string; projectId?: number; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
 } = {}) {
-  return null;
+  try {
+    const [row] = await db.insert(notifications).values({
+      recipientUserId,
+      eventType,
+      title,
+      body,
+      projectName: opts.projectName ?? null,
+      projectId: opts.projectId ?? null,
+      linkedTaskId: opts.linkedTaskId ?? null,
+      linkedDeliverableId: opts.linkedDeliverableId ?? null,
+      linkedWarningId: opts.linkedWarningId ?? null,
+      linkedPlanItemId: opts.linkedPlanItemId ?? null,
+    }).returning();
+    return row;
+  } catch (err) {
+    console.error("[Notifications] Failed to create notification:", err);
+    return null;
+  }
 }
 
 /**
@@ -1553,6 +1570,15 @@ export function registerEngineeringRoutes(app: Express) {
         actionType: "comment_added",
         newValue: body.trim(),
       });
+
+      // Notify task owner about new comment
+      const [commentTask] = await db.select({ ownerUserId: workItems.ownerUserId, title: workItems.title, projectName: workItems.subProjectName })
+        .from(workItems).where(eq(workItems.id, taskId));
+      if (commentTask?.ownerUserId && commentTask.ownerUserId !== getUser(req).id) {
+        createNotification(commentTask.ownerUserId, "task.comment_added", `New comment on: ${commentTask.title}`,
+          `${getUser(req).name || "Someone"} commented on "${commentTask.title}"`,
+          { linkedTaskId: taskId, projectName: commentTask.projectName ?? undefined });
+      }
 
       res.json(comment);
     } catch (err: any) {
