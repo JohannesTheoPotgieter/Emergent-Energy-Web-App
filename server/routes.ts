@@ -782,21 +782,38 @@ export async function registerRoutes(
         return pctNorm >= 100;
       });
       const planCompletionPct = planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0;
-      const scheduleRag = computeScheduleRag(overduePlanTasks.length);
+      // Include overdue engineering tasks in schedule health
+      const overdueEngTasks = (engTasksRes.tasks || []).filter((t: any) => {
+        const due = t.endDate || t.dueDate;
+        return due && String(due).substring(0, 10) < today && String(t.status).toUpperCase() !== "COMPLETE";
+      });
+      const scheduleRag = computeScheduleRag(overduePlanTasks.length + overdueEngTasks.length);
 
       // Cost RAG
       const totalExpenses = expenses.reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
       const costRatio = budgetTotal > 0 ? totalExpenses / budgetTotal : 0;
       const costRag = computeCostRag(costRatio);
 
-      // Quality RAG
+      // Quality RAG — combines QC checklist gates with engineering stage gates
       const qualityPhases = qualitySummaryRes.phases || [];
-      const qualityGatesTotal = qualityPhases.length;
-      const qualityGatesPassed = qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
+      const qcGatesTotal = qualityPhases.length;
+      const qcGatesPassed = qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
       const qualityTotalItems = qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
       const qualityApprovedItems = qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
-      const qualityProgressPct = qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0;
-      const qualityRag = computeQualityRag(qualitySummaryRes.hasChecklist, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
+
+      // Engineering stages as quality gates
+      const engStagesForQuality = engStagesRes.stages || [];
+      const engGatesTotal = engStagesForQuality.length;
+      const engGatesPassed = engStagesForQuality.filter((s: any) => String(s.status).toLowerCase() === "complete").length;
+
+      // Combined quality gates
+      const qualityGatesTotal = qcGatesTotal + engGatesTotal;
+      const qualityGatesPassed = qcGatesPassed + engGatesPassed;
+      const hasQualityData = qualitySummaryRes.hasChecklist || engGatesTotal > 0;
+      const combinedTotalItems = qualityTotalItems + engGatesTotal;
+      const combinedApprovedItems = qualityApprovedItems + engGatesPassed;
+      const qualityProgressPct = combinedTotalItems > 0 ? (combinedApprovedItems / combinedTotalItems) * 100 : 0;
+      const qualityRag = computeQualityRag(hasQualityData, qualityGatesPassed, qualityGatesTotal, combinedApprovedItems);
 
       // Revenue realised %
       const totalPaidInflows = inflows
@@ -828,20 +845,17 @@ export async function registerRoutes(
       const engCompletedTasks = engStageCompletedTasks + engBoardCompleted;
       const engProgressPct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
 
-      // Alerts
-      const overdueEngineeringCount = engBoardTasks.filter((t: any) => (t.endDate || t.dueDate) && (t.endDate || t.dueDate) < today && String(t.status).toUpperCase() !== "COMPLETE").length;
-
       res.json({
-        schedule: { rag: scheduleRag, overdueTasks: overduePlanTasks.length, completionPct: Math.round(planCompletionPct * 10) / 10 },
+        schedule: { rag: scheduleRag, overdueTasks: overduePlanTasks.length, overdueEngTasks: overdueEngTasks.length, completionPct: Math.round(planCompletionPct * 10) / 10 },
         cost: { rag: costRag, ratio: Math.round(costRatio * 1000) / 1000, totalExpenses, budgetTotal },
-        quality: { rag: qualityRag, gatesTotal: qualityGatesTotal, gatesPassed: qualityGatesPassed, totalItems: qualityTotalItems, approvedItems: qualityApprovedItems, progressPct: Math.round(qualityProgressPct * 10) / 10 },
+        quality: { rag: qualityRag, gatesTotal: qualityGatesTotal, gatesPassed: qualityGatesPassed, qcGatesTotal, qcGatesPassed, engGatesTotal, engGatesPassed, totalItems: combinedTotalItems, approvedItems: combinedApprovedItems, progressPct: Math.round(qualityProgressPct * 10) / 10 },
         revenue: { contractValue, realisedPct: Math.round(revenueRealisedPct * 10) / 10, totalPaidInflows },
         cos: { realisedPct: Math.round(cosRealisedPct * 10) / 10, totalRealised: totalRealisedCos },
         engineering: { progressPct: Math.round(engProgressPct * 10) / 10, totalTasks: engTotalTasks, completedTasks: engCompletedTasks },
         overall: { rag: overallRag },
         alerts: {
           overduePlanTasks: overduePlanTasks.length,
-          overdueEngineeringTasks: overdueEngineeringCount,
+          overdueEngineeringTasks: overdueEngTasks.length,
           pendingQualityApprovals: Math.max(qualityTotalItems - qualityApprovedItems, 0),
         },
       });
