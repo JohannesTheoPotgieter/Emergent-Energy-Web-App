@@ -10,6 +10,10 @@ import ReportHeader from "@/components/reports/ReportHeader";
 import KPITileGrid from "@/components/reports/KPITileGrid";
 import RAGBadge from "@/components/reports/RAGBadge";
 import type { KPITile } from "@/components/reports/KPITileGrid";
+import RevenueTrendChart from "@/components/reports/charts/RevenueTrendChart";
+import CashflowTrendChart from "@/components/reports/charts/CashflowTrendChart";
+import RAGDistributionChart from "@/components/reports/charts/RAGDistributionChart";
+import TaskCompletionChart from "@/components/reports/charts/TaskCompletionChart";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -178,6 +182,12 @@ export default function PmMonthlyReport() {
 function FinancialTab({ data }: { data: any }) {
   return (
     <>
+      {/* Revenue Trend Chart */}
+      <RevenueTrendChart data={data.revenueTrend || []} />
+
+      {/* Cashflow Trend Chart */}
+      <CashflowTrendChart data={data.cashflowTrend || []} />
+
       {/* Gross Profit Summary */}
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">Gross Profit Summary</CardTitle></CardHeader>
@@ -261,7 +271,10 @@ function ProjectStatusTab({ data, reportId, month }: { data: any[]; reportId?: n
   const [, navigate] = useLocation();
 
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div className="space-y-4">
+      <RAGDistributionChart data={data} />
+
+      <div className="border rounded-lg overflow-hidden">
       <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full text-xs">
           <thead className="bg-muted sticky top-0">
@@ -301,6 +314,7 @@ function ProjectStatusTab({ data, reportId, month }: { data: any[]; reportId?: n
         </table>
       </div>
     </div>
+    </div>
   );
 }
 
@@ -327,6 +341,8 @@ function TasksTab({ data }: { data: any }) {
           <p className="text-2xl font-bold">{metrics.totalActiveTasks ?? 0}</p>
         </CardContent></Card>
       </div>
+
+      <TaskCompletionChart data={data.perProject || []} />
 
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-sm">Per-Project Task Breakdown</CardTitle></CardHeader>
