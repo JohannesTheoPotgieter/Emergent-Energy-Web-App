@@ -63,8 +63,18 @@ export default function PmMonthlyReport() {
     queryKey: ["/api/reports/pm/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/pm/monthly?month=${month}`, { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error("Failed to load report");
-      return res.json();
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = "Failed to load report";
+        try { msg = JSON.parse(text).error || msg; } catch { /* response was not JSON */ }
+        throw new Error(msg);
+      }
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error("Server returned an invalid response. The report API may not be available.");
+      }
     },
   });
 
