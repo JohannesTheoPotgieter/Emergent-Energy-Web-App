@@ -44,14 +44,28 @@ export function classifyAsyncFailure(error: unknown): AsyncFailureType {
 
 function defaultTelemetry(event: AsyncActionTelemetryEvent) {
   if (event.status === "start") {
-    console.info("[async-action] start", event);
+    if (import.meta.env.DEV) {
+      console.info("[async-action] start", event.action, event.correlationId);
+    }
     return;
   }
   if (event.status === "success") {
-    console.info("[async-action] complete", event);
+    if (import.meta.env.DEV) {
+      console.info("[async-action] complete", event.action, `${event.durationMs}ms`);
+    }
     return;
   }
-  console.error("[async-action] failure", event);
+  // Structured error logging — always serialize fully for debugging
+  console.error(
+    `[async-action] ${event.status}`,
+    JSON.stringify({
+      action: event.action,
+      correlationId: event.correlationId,
+      failureType: event.failureType,
+      errorMessage: event.errorMessage,
+      durationMs: event.durationMs,
+    }),
+  );
 }
 
 function withCorrelation(error: ApiError, correlationId: string): ApiError {
@@ -116,7 +130,11 @@ export async function runAsyncAction<T>(
       completedAt: completedAtDate.toISOString(),
       durationMs: completedAtDate.getTime() - startedAtDate.getTime(),
       failureType: classifyAsyncFailure(normalizedError),
-      errorMessage: normalizedError instanceof Error ? normalizedError.message : "Unknown async action failure",
+      errorMessage: normalizedError instanceof Error
+        ? normalizedError.message
+        : typeof normalizedError === "string"
+          ? normalizedError
+          : JSON.stringify(normalizedError) || "Unknown async action failure",
     });
 
     throw normalizedError;
