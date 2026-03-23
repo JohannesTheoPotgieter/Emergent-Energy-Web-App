@@ -8284,8 +8284,10 @@ export async function registerRoutes(
           cosStatus = 'Planned';
         }
 
-        const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
-        const paymentDateBlack = hasPayDate && isDateConfirmedCheck(exp.paymentDateConfirmed, exp.paymentDateFontColor);
+        const effectivePaymentDate = link?.dateOverride || linkedTask?.dueDate || exp.expensePaymentDate || exp.forecastPaymentDate || null;
+        const hasPayDate = !!(effectivePaymentDate && String(effectivePaymentDate).trim());
+        const isFutureDate = hasPayDate && new Date(effectivePaymentDate!) > new Date();
+        const paymentDateBlack = hasPayDate && !isFutureDate && isDateConfirmedCheck(exp.paymentDateConfirmed, exp.paymentDateFontColor);
 
         let paymentStatus: string;
         if (paymentDateBlack && hasInvoice) {
@@ -8295,8 +8297,6 @@ export async function registerRoutes(
         } else {
           paymentStatus = 'Planned';
         }
-
-        const effectivePaymentDate = link?.dateOverride || linkedTask?.dueDate || exp.expensePaymentDate || exp.forecastPaymentDate || null;
         let plannedMonth: string | null = null;
         if (effectivePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(effectivePaymentDate)) {
           const d = new Date(effectivePaymentDate);
@@ -8316,6 +8316,7 @@ export async function registerRoutes(
           hasDateOverride: !!link?.dateOverride,
           dateOverrideReason: link?.dateOverrideReason || null,
           cosOverride: cosOverride ? { reason: cosOverride.reason, overriddenBy: cosOverride.overriddenBy, originalStatus: cosOverride.originalStatus, overrideStatus: cosOverride.overrideStatus } : null,
+          paymentDateFontColor: isFutureDate ? "red" : (exp.paymentDateFontColor || null),
         };
       });
 
