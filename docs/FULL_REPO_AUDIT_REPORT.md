@@ -521,7 +521,8 @@ Schema files in `shared/schema/` organized by domain:
 | 4 | Dashboard materialized metrics | [CONFIRMED] | `dashboard_program_metrics` and `dashboard_project_metrics` tables for pre-computed metrics. Refreshable via API. |
 | 5 | Execution dashboard with sub-views | [CONFIRMED] | Overview, Program, Construction, Finance sub-pages in `client/src/pages/execution-dashboard/`. |
 | 6 | Manual RAG override possible | [CONFIRMED] | RAG can be overridden with reason via `projectRagAudit`. |
-| 7 | No RAG consistency validation | [GAP] | No automated check that RAG status "Green" is consistent with underlying KPIs (e.g., schedule overdue, over budget). |
+| 7 | **Amber-RAG projects excluded from at-risk count** | [BUG] | `server/services/dashboard-metrics.ts:338-339` — `refreshProgramMetrics()` checks for `"AT RISK"` which never matches. Actual RAG values are "Red"/"Amber"/"Green" (uppercased to "RED"/"AMBER"). Only Red counted, Amber silently excluded from `projectsAtRisk`. |
+| 7a | No RAG consistency validation | [GAP] | No automated check that RAG status "Green" is consistent with underlying KPIs (e.g., schedule overdue, over budget). |
 | 8 | No trend history | [GAP] | `projectRagAudit` stores transitions but no frontend visualization of RAG trend over time. |
 | 9 | No comparison view | [GAP] | Cannot compare two projects or two time periods side-by-side on dashboard. |
 | 10 | No exportable dashboard report | [GAP] | Dashboard data cannot be exported as PDF or Excel from the execution board. |
@@ -540,7 +541,7 @@ Schema files in `shared/schema/` organized by domain:
 | 6 | No SSO for all users | [GAP] | Microsoft OAuth exists for admin users but not enforced as SSO for all users. Local password auth is primary. |
 | 7 | No invite-by-email | [GAP] | No user invitation workflow. Users must be created by admin directly. |
 | 8 | No password reset flow | [GAP] | No "forgot password" endpoint or email-based reset mechanism. |
-| 9 | No session timeout configuration | [GAP] | Session expiry is not configurable per user/role. No idle timeout enforcement. |
+| 9 | Session maxAge is 30 days with no idle timeout | [GAP] | `server/bootstrap/session.ts:66` — 30-day sessions with no inactivity timeout. For a financial app, this is a security concern. |
 | 10 | No comprehensive user activity audit | [GAP] | `auditEvents` captures some actions but no dedicated user activity log showing all pages visited, features used, etc. |
 | 11 | Shared role passwords | [DEBT] | `roleCredentials` table stores role-level passwords. Multiple users sharing one credential is a security anti-pattern. |
 
@@ -572,7 +573,9 @@ Schema files in `shared/schema/` organized by domain:
 | 4 | Report history | [CONFIRMED] | History pages with access to previous months' reports. |
 | 5 | Programme reports | [CONFIRMED] | `client/src/pages/programme-reports.tsx` for portfolio-level reporting. |
 | 6 | PDF and Excel export | [CONFIRMED] | Both PDFKit and ExcelJS used for report export. |
-| 7 | No scheduled report generation | [GAP] | Reports must be manually triggered. No cron/scheduler to auto-generate monthly reports. |
+| 7 | Monthly report auto-generation exists | [CONFIRMED] | `server/services/monthly-report-scheduler.ts` auto-generates draft snapshots on 1st of each month via setInterval. |
+| 7a | No ad-hoc scheduled report delivery | [GAP] | Auto-generated reports stored in DB but not emailed to stakeholders. No distribution mechanism. |
+| 7b | Operational overview "PDF" is actually HTML | [BUG] | `server/report-routes.ts:195` sets Content-Type to `text/html` despite route being named `/pdf`. User must print-to-PDF from browser. |
 | 8 | No custom date range reports | [GAP] | Reports are month-based. Cannot generate a report for an arbitrary date range. |
 | 9 | No board-pack summary | [GAP] | No single-page executive summary suitable for board meetings. |
 | 10 | No email distribution of reports | [GAP] | Generated reports must be downloaded manually. No email distribution list. |
