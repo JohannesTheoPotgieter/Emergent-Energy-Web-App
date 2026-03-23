@@ -13,11 +13,12 @@ import { generateEngineeringReportData } from "./engineering-monthly-report-serv
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 let lastCheckedDate = "";
+let isRunning = false;
 
 function getPreviousMonth(): string {
   const now = new Date();
   let year = now.getFullYear();
-  let month = now.getMonth(); // 0-indexed, so this is already "previous month" from 1-indexed perspective
+  let month = now.getMonth(); // 0-indexed (Jan=0), so value IS previous month in 1-indexed
   if (month === 0) {
     month = 12;
     year--;
@@ -44,13 +45,22 @@ async function generateMonthlyReport(reportType: "pm" | "engineering", month: st
     ? await generatePmReportData(month)
     : await generateEngineeringReportData(month);
 
-  await db.insert(monthlyReportSnapshots).values({
-    reportType,
-    reportMonth: month,
-    status: "draft",
-    data,
-    generatedAt: new Date(),
-  });
+  try {
+    await db.insert(monthlyReportSnapshots).values({
+      reportType,
+      reportMonth: month,
+      status: "draft",
+      data,
+      generatedAt: new Date(),
+    });
+  } catch (err: any) {
+    // Handle unique constraint violation (race condition — another instance already created it)
+    if (err.message?.includes("unique") || err.message?.includes("duplicate") || err.code === "23505") {
+      console.log(`[Monthly Report Scheduler] ${reportType} report for ${month} was created by another instance, skipping`);
+      return false;
+    }
+    throw err;
+  }
 
   console.log(`[Monthly Report Scheduler] Auto-generated ${reportType} draft report for ${month}`);
   return true;
@@ -63,6 +73,8 @@ export function startMonthlyReportScheduler(): void {
 
   // Check every hour if it's the 1st of the month
   schedulerInterval = setInterval(async () => {
+    if (isRunning) return;
+
     const today = new Date().toISOString().slice(0, 10);
 
     // Only run once per day
@@ -71,6 +83,7 @@ export function startMonthlyReportScheduler(): void {
     if (!isFirstOfMonth()) return;
 
     lastCheckedDate = today;
+    isRunning = true;
     const previousMonth = getPreviousMonth();
 
     console.log(`[Monthly Report Scheduler] 1st of month detected. Generating reports for ${previousMonth}...`);
@@ -86,6 +99,8 @@ export function startMonthlyReportScheduler(): void {
     } catch (err: any) {
       console.error(`[Monthly Report Scheduler] Failed to generate Engineering report for ${previousMonth}:`, err.message);
     }
+
+    isRunning = false;
   }, 60 * 60 * 1000); // Check every hour
 }
 

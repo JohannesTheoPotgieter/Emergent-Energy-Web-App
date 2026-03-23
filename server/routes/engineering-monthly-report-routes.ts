@@ -2,29 +2,15 @@
  * Engineering Monthly Report API Routes
  */
 
-import type { Express, Request, Response, NextFunction } from "express";
+import type { Express } from "express";
 import { db } from "../db";
 import { monthlyReportSnapshots, users } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { verifyToken } from "../jwt";
 import { requirePermission } from "../permission-middleware";
 import { generateEngineeringReportData } from "../services/engineering-monthly-report-service";
 import { generateReportPdf } from "../services/monthly-report-pdf-service";
 import { generateReportExcel } from "../services/monthly-report-excel-service";
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      req.user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role } as any;
-      return next();
-    }
-  }
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
+import { requireAuth, validateMonth, computeKpiDeltas } from "./monthly-report-shared";
 
 const REPORT_TYPE = "engineering";
 
@@ -47,16 +33,23 @@ async function getOrCreateSnapshot(month: string) {
   return inserted;
 }
 
+async function resolveUserNames(userIds: Set<number>): Promise<Map<number, string>> {
+  const names = new Map<number, string>();
+  if (userIds.size > 0) {
+    const rows = await db.select({ id: users.id, name: users.name }).from(users);
+    for (const u of rows) names.set(u.id, u.name);
+  }
+  return names;
+}
+
 export function registerEngineeringMonthlyReportRoutes(app: Express) {
   // GET monthly report
   app.get("/api/reports/engineering/monthly", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
-      const month = req.query.month as string;
-      if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-        return res.status(400).json({ error: "month query parameter required (YYYY-MM)" });
-      }
+      const monthCheck = validateMonth(req.query.month as string);
+      if (!monthCheck.valid) return res.status(400).json({ error: monthCheck.error });
 
-      const snapshot = await getOrCreateSnapshot(month);
+      const snapshot = await getOrCreateSnapshot(req.query.month as string);
 
       let reviewedByName = null;
       let publishedByName = null;
@@ -110,12 +103,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         if (s.reviewedBy) allUserIds.add(s.reviewedBy);
         if (s.publishedBy) allUserIds.add(s.publishedBy);
       }
-
-      const userNames = new Map<number, string>();
-      if (allUserIds.size > 0) {
-        const userRows = await db.select({ id: users.id, name: users.name }).from(users);
-        for (const u of userRows) userNames.set(u.id, u.name);
-      }
+      const userNames = await resolveUserNames(allUserIds);
 
       const history = snapshots.map(s => ({
         ...s,
@@ -134,11 +122,13 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   app.post("/api/reports/engineering/monthly/:id/review", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "User ID required" });
+
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status !== "draft") return res.status(409).json({ error: "Report must be in draft status to review" });
 
-      const userId = (req as any).user?.id;
       await db.update(monthlyReportSnapshots).set({
         status: "reviewed",
         reviewedBy: userId,
@@ -148,20 +138,23 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       res.json({ success: true, status: "reviewed" });
     } catch (err: any) {
-      console.error("[Engineering Monthly Report] Error:", err.message);
+      console.error("[Engineering Monthly Report] Review error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
 
-  // POST publish
+  // POST publish (requires publish permission; enforces segregation of duties)
   app.post("/api/reports/engineering/monthly/:id/publish", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "User ID required" });
+
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status !== "reviewed") return res.status(409).json({ error: "Report must be in reviewed status to publish" });
+      if (snapshot.reviewedBy === userId) return res.status(403).json({ error: "Publisher must be different from reviewer (segregation of duties)" });
 
-      const userId = (req as any).user?.id;
       await db.update(monthlyReportSnapshots).set({
         status: "published",
         publishedBy: userId,
@@ -171,7 +164,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       res.json({ success: true, status: "published" });
     } catch (err: any) {
-      console.error("[Engineering Monthly Report] Error:", err.message);
+      console.error("[Engineering Monthly Report] Publish error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -194,7 +187,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       res.json({ success: true, status: "draft" });
     } catch (err: any) {
-      console.error("[Engineering Monthly Report] Error:", err.message);
+      console.error("[Engineering Monthly Report] Revert error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -224,7 +217,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         regeneratedAt: updated.regeneratedAt,
       });
     } catch (err: any) {
-      console.error("[Engineering Monthly Report] Error:", err.message);
+      console.error("[Engineering Monthly Report] Regenerate error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -241,7 +234,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       res.setHeader("Content-Disposition", `attachment; filename="Engineering_Monthly_Report_${snapshot.reportMonth}.pdf"`);
       res.send(pdfBuffer);
     } catch (err: any) {
-      console.error("[Engineering Monthly Report] Error:", err.message);
+      console.error("[Engineering Monthly Report] PDF export error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -255,17 +248,21 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       await generateReportExcel(REPORT_TYPE, snapshot.data as any, snapshot.reportMonth, res);
     } catch (err: any) {
-      console.error("[Engineering Monthly Report] Error:", err.message);
-      res.status(500).json({ error: err.message });
+      console.error("[Engineering Monthly Report] Excel export error:", err.message);
+      if (!res.headersSent) res.status(500).json({ error: err.message });
     }
   });
 
-  // GET comparison
+  // GET comparison (with server-side deltas)
   app.get("/api/reports/engineering/monthly/compare", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
+      const checkA = validateMonth(req.query.monthA as string);
+      const checkB = validateMonth(req.query.monthB as string);
+      if (!checkA.valid) return res.status(400).json({ error: `monthA: ${checkA.error}` });
+      if (!checkB.valid) return res.status(400).json({ error: `monthB: ${checkB.error}` });
+
       const monthA = req.query.monthA as string;
       const monthB = req.query.monthB as string;
-      if (!monthA || !monthB) return res.status(400).json({ error: "monthA and monthB required" });
 
       const [snapshotA] = await db.select().from(monthlyReportSnapshots)
         .where(and(eq(monthlyReportSnapshots.reportType, REPORT_TYPE), eq(monthlyReportSnapshots.reportMonth, monthA)))
@@ -274,15 +271,19 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         .where(and(eq(monthlyReportSnapshots.reportType, REPORT_TYPE), eq(monthlyReportSnapshots.reportMonth, monthB)))
         .limit(1);
 
-      if (!snapshotA) return res.status(404).json({ error: `No report available for ${monthA}` });
-      if (!snapshotB) return res.status(404).json({ error: `No report available for ${monthB}` });
+      if (!snapshotA) return res.status(404).json({ error: `No report available for ${monthA}. Generate it first.` });
+      if (!snapshotB) return res.status(404).json({ error: `No report available for ${monthB}. Generate it first.` });
+
+      const kpisA = (snapshotA.data as any)?.kpis || {};
+      const kpisB = (snapshotB.data as any)?.kpis || {};
 
       res.json({
         monthA: { month: monthA, status: snapshotA.status, data: snapshotA.data },
         monthB: { month: monthB, status: snapshotB.status, data: snapshotB.data },
+        deltas: computeKpiDeltas(kpisA, kpisB),
       });
     } catch (err: any) {
-      console.error("[Engineering Monthly Report] Error:", err.message);
+      console.error("[Engineering Monthly Report] Compare error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
@@ -307,7 +308,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       res.json(projectData);
     } catch (err: any) {
-      console.error("[Engineering Monthly Report] Error:", err.message);
+      console.error("[Engineering Monthly Report] Project drill-down error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });

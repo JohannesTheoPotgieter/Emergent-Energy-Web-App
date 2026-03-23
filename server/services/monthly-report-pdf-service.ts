@@ -173,6 +173,145 @@ export async function generateReportPdf(reportType: string, data: any, month: st
           tableY += 16;
         }
       }
+      // Task Summary
+      if (data.tasks?.perProject?.length > 0) {
+        doc.addPage();
+        doc.fillColor(EE_GREEN).fontSize(16).text("Task Summary", 40, 40);
+        doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
+
+        // Programme metrics
+        const tm = data.tasks?.programmeMetrics || {};
+        let metY = 75;
+        doc.fillColor("#333").fontSize(9);
+        doc.text(`Completed This Month: ${tm.tasksCompletedThisMonth ?? 0}    Overdue: ${tm.overdueTasks ?? 0}    Milestones: ${tm.milestonesAchieved ?? 0}    Active: ${tm.totalActiveTasks ?? 0}`, 40, metY);
+        metY += 20;
+
+        const headers = ["Project", "Total", "Done", "In Prog", "Overdue", "Done %"];
+        const colWidths = [200, 60, 60, 60, 60, 60];
+        let tableY = metY + 5;
+
+        let hx = 40;
+        doc.rect(40, tableY, doc.page.width - 80, 18).fill(EE_GREEN);
+        headers.forEach((h, i) => {
+          doc.fillColor(WHITE).fontSize(8).text(h, hx + 4, tableY + 4, { width: colWidths[i] - 8 });
+          hx += colWidths[i];
+        });
+        tableY += 18;
+
+        const taskRows = (data.tasks.perProject || []).slice(0, 35);
+        for (let ri = 0; ri < taskRows.length; ri++) {
+          if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
+          const r = taskRows[ri];
+          if (ri % 2 === 0) doc.rect(40, tableY, doc.page.width - 80, 16).fill(LIGHT_GREY);
+          let rx = 40;
+          const vals = [r.projectName || "", String(r.totalTasks), String(r.completed), String(r.inProgress), String(r.overdue), formatPct(r.completionPct || 0)];
+          vals.forEach((v, i) => {
+            doc.fillColor("#333").fontSize(7).text(v, rx + 4, tableY + 3, { width: colWidths[i] - 8 });
+            rx += colWidths[i];
+          });
+          tableY += 16;
+        }
+      }
+
+      // RAID Summary
+      if (data.raidItems?.items?.length > 0) {
+        doc.addPage();
+        doc.fillColor(EE_GREEN).fontSize(16).text("RAID Summary — Open Items", 40, 40);
+        doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
+
+        const headers = ["Project", "Type", "Title", "Priority", "Owner", "Due"];
+        const colWidths = [120, 60, 150, 60, 80, 70];
+        let tableY = 75;
+
+        let hx = 40;
+        doc.rect(40, tableY, doc.page.width - 80, 18).fill(EE_GREEN);
+        headers.forEach((h, i) => {
+          doc.fillColor(WHITE).fontSize(8).text(h, hx + 4, tableY + 4, { width: colWidths[i] - 8 });
+          hx += colWidths[i];
+        });
+        tableY += 18;
+
+        const raidRows = (data.raidItems.items || []).slice(0, 40);
+        for (let ri = 0; ri < raidRows.length; ri++) {
+          if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
+          const r = raidRows[ri];
+          if (ri % 2 === 0) doc.rect(40, tableY, doc.page.width - 80, 16).fill(LIGHT_GREY);
+          let rx = 40;
+          const vals = [r.projectName?.substring(0, 20) || "", r.type || "", r.title?.substring(0, 25) || "", r.priority || "", r.ownerName || "—", r.dueDate || "—"];
+          vals.forEach((v, i) => {
+            doc.fillColor("#333").fontSize(7).text(v, rx + 4, tableY + 3, { width: colWidths[i] - 8 });
+            rx += colWidths[i];
+          });
+          tableY += 16;
+        }
+      }
+
+      // Quality Summary
+      if (data.quality?.qcProgress?.length > 0) {
+        doc.addPage();
+        doc.fillColor(EE_GREEN).fontSize(16).text("Quality — QC Progress", 40, 40);
+        doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
+
+        const headers = ["Project", "Status", "Applicable", "Approved", "Progress %", "Warnings"];
+        const colWidths = [180, 70, 70, 70, 70, 60];
+        let tableY = 75;
+
+        let hx = 40;
+        doc.rect(40, tableY, doc.page.width - 80, 18).fill(EE_GREEN);
+        headers.forEach((h, i) => {
+          doc.fillColor(WHITE).fontSize(8).text(h, hx + 4, tableY + 4, { width: colWidths[i] - 8 });
+          hx += colWidths[i];
+        });
+        tableY += 18;
+
+        const qcRows = (data.quality.qcProgress || []).slice(0, 35);
+        for (let ri = 0; ri < qcRows.length; ri++) {
+          if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
+          const r = qcRows[ri];
+          if (ri % 2 === 0) doc.rect(40, tableY, doc.page.width - 80, 16).fill(LIGHT_GREY);
+          let rx = 40;
+          const vals = [r.projectName?.substring(0, 30) || "", r.checklistStatus || "", String(r.itemsApplicable || 0), String(r.itemsApproved || 0), formatPct(r.progressPct || 0), String(r.openWarnings || 0)];
+          vals.forEach((v, i) => {
+            doc.fillColor("#333").fontSize(7).text(v, rx + 4, tableY + 3, { width: colWidths[i] - 8 });
+            rx += colWidths[i];
+          });
+          tableY += 16;
+        }
+      }
+
+      // Procurement Summary
+      if (data.procurement?.length > 0) {
+        doc.addPage();
+        doc.fillColor(EE_GREEN).fontSize(16).text("Procurement Summary", 40, 40);
+        doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
+
+        const headers = ["Project", "Item", "Category", "Cost", "Supplier", "Status"];
+        const colWidths = [120, 130, 70, 80, 100, 60];
+        let tableY = 75;
+
+        let hx = 40;
+        doc.rect(40, tableY, doc.page.width - 80, 18).fill(EE_GREEN);
+        headers.forEach((h, i) => {
+          doc.fillColor(WHITE).fontSize(8).text(h, hx + 4, tableY + 4, { width: colWidths[i] - 8 });
+          hx += colWidths[i];
+        });
+        tableY += 18;
+
+        const procRows = (data.procurement || []).slice(0, 35);
+        for (let ri = 0; ri < procRows.length; ri++) {
+          if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
+          const r = procRows[ri];
+          if (ri % 2 === 0) doc.rect(40, tableY, doc.page.width - 80, 16).fill(LIGHT_GREY);
+          let rx = 40;
+          const cost = r.actualCost || r.expectedCost || 0;
+          const vals = [r.projectName?.substring(0, 20) || "", r.title?.substring(0, 22) || "", r.category || "", formatCurrency(Number(cost)), r.supplierName?.substring(0, 16) || "—", r.status || ""];
+          vals.forEach((v, i) => {
+            doc.fillColor("#333").fontSize(7).text(v, rx + 4, tableY + 3, { width: colWidths[i] - 8 });
+            rx += colWidths[i];
+          });
+          tableY += 16;
+        }
+      }
     } else {
       // Engineering: Task Completion
       if (data.tasks?.perProject?.length > 0) {
@@ -232,6 +371,73 @@ export async function generateReportPdf(reportType: string, data: any, month: st
           if (ri % 2 === 0) doc.rect(40, tableY, doc.page.width - 80, 16).fill(LIGHT_GREY);
           let rx = 40;
           const vals = [r.projectName?.substring(0, 25) || "", r.title?.substring(0, 25) || "", r.type || "", r.status || "", r.ownerName || "—"];
+          vals.forEach((v, i) => {
+            doc.fillColor("#333").fontSize(7).text(v, rx + 4, tableY + 3, { width: colWidths[i] - 8 });
+            rx += colWidths[i];
+          });
+          tableY += 16;
+        }
+      }
+    }
+
+      // Engineering: Stage Gate Progress
+      if (data.stageGates?.length > 0) {
+        doc.addPage();
+        doc.fillColor(EE_GREEN).fontSize(16).text("Stage Gate Progress", 40, 40);
+        doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
+
+        const headers = ["Project", "Stage", "Status", "Started", "Completed"];
+        const colWidths = [150, 140, 80, 80, 80];
+        let tableY = 75;
+
+        let hx = 40;
+        doc.rect(40, tableY, doc.page.width - 80, 18).fill(EE_GREEN);
+        headers.forEach((h, i) => {
+          doc.fillColor(WHITE).fontSize(8).text(h, hx + 4, tableY + 4, { width: colWidths[i] - 8 });
+          hx += colWidths[i];
+        });
+        tableY += 18;
+
+        const stageRows = (data.stageGates || []).slice(0, 40);
+        for (let ri = 0; ri < stageRows.length; ri++) {
+          if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
+          const r = stageRows[ri];
+          if (ri % 2 === 0) doc.rect(40, tableY, doc.page.width - 80, 16).fill(LIGHT_GREY);
+          let rx = 40;
+          const vals = [r.projectName?.substring(0, 25) || "", r.stageName || "", r.status || "", r.startedAt ? new Date(r.startedAt).toLocaleDateString("en-ZA") : "—", r.completedAt ? new Date(r.completedAt).toLocaleDateString("en-ZA") : "—"];
+          vals.forEach((v, i) => {
+            doc.fillColor("#333").fontSize(7).text(v, rx + 4, tableY + 3, { width: colWidths[i] - 8 });
+            rx += colWidths[i];
+          });
+          tableY += 16;
+        }
+      }
+
+      // Engineering: Resource Workload
+      if (data.resources?.length > 0) {
+        doc.addPage();
+        doc.fillColor(EE_GREEN).fontSize(16).text("Resource Workload", 40, 40);
+        doc.moveTo(40, 62).lineTo(doc.page.width - 40, 62).strokeColor(EE_GREEN).stroke();
+
+        const headers = ["Engineer", "Assigned", "Done This Month", "Overdue", "Projects"];
+        const colWidths = [180, 80, 100, 80, 80];
+        let tableY = 75;
+
+        let hx = 40;
+        doc.rect(40, tableY, doc.page.width - 80, 18).fill(EE_GREEN);
+        headers.forEach((h, i) => {
+          doc.fillColor(WHITE).fontSize(8).text(h, hx + 4, tableY + 4, { width: colWidths[i] - 8 });
+          hx += colWidths[i];
+        });
+        tableY += 18;
+
+        const resRows = (data.resources || []).slice(0, 30);
+        for (let ri = 0; ri < resRows.length; ri++) {
+          if (tableY > doc.page.height - 60) { doc.addPage(); tableY = 40; }
+          const r = resRows[ri];
+          if (ri % 2 === 0) doc.rect(40, tableY, doc.page.width - 80, 16).fill(LIGHT_GREY);
+          let rx = 40;
+          const vals = [r.resource || "", String(r.assignedTasks), String(r.completedThisMonth), String(r.overdue), String(r.projectCount)];
           vals.forEach((v, i) => {
             doc.fillColor("#333").fontSize(7).text(v, rx + 4, tableY + 3, { width: colWidths[i] - 8 });
             rx += colWidths[i];

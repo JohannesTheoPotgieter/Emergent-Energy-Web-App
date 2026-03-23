@@ -98,6 +98,7 @@ function generatePmExcel(workbook: ExcelJS.Workbook, data: any, monthLabel: stri
     { header: "Budget Total", key: "budgetTotal", width: 18 },
     { header: "Actual Cost", key: "actualCost", width: 18 },
     { header: "COS Realised", key: "cosRealised", width: 18 },
+    { header: "Committed", key: "committed", width: 18 },
     { header: "Paid", key: "paid", width: 18 },
     { header: "Variance", key: "variance", width: 18 },
     { header: "Costs This Month", key: "costsThisMonth", width: 18 },

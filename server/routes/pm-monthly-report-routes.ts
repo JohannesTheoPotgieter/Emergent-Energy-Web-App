@@ -2,41 +2,25 @@
  * PM Monthly Report API Routes
  */
 
-import type { Express, Request, Response, NextFunction } from "express";
+import type { Express } from "express";
 import { db } from "../db";
 import { monthlyReportSnapshots, users } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
-import { verifyToken } from "../jwt";
 import { requirePermission } from "../permission-middleware";
 import { generatePmReportData } from "../services/pm-monthly-report-service";
 import { generateReportPdf } from "../services/monthly-report-pdf-service";
 import { generateReportExcel } from "../services/monthly-report-excel-service";
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      req.user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role } as any;
-      return next();
-    }
-  }
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
+import { requireAuth, validateMonth, computeKpiDeltas } from "./monthly-report-shared";
 
 const REPORT_TYPE = "pm";
 
 async function getOrCreateSnapshot(month: string) {
-  // Check existing
   const [existing] = await db.select().from(monthlyReportSnapshots)
     .where(and(eq(monthlyReportSnapshots.reportType, REPORT_TYPE), eq(monthlyReportSnapshots.reportMonth, month)))
     .limit(1);
 
   if (existing) return existing;
 
-  // Generate fresh data and store as draft
   const data = await generatePmReportData(month);
   const [inserted] = await db.insert(monthlyReportSnapshots).values({
     reportType: REPORT_TYPE,
@@ -49,18 +33,24 @@ async function getOrCreateSnapshot(month: string) {
   return inserted;
 }
 
+async function resolveUserNames(userIds: Set<number>): Promise<Map<number, string>> {
+  const names = new Map<number, string>();
+  if (userIds.size > 0) {
+    const rows = await db.select({ id: users.id, name: users.name }).from(users);
+    for (const u of rows) names.set(u.id, u.name);
+  }
+  return names;
+}
+
 export function registerPmMonthlyReportRoutes(app: Express) {
   // GET monthly report (generate or retrieve)
   app.get("/api/reports/pm/monthly", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
-      const month = req.query.month as string;
-      if (!month || !/^\d{4}-\d{2}$/.test(month)) {
-        return res.status(400).json({ error: "month query parameter required (YYYY-MM)" });
-      }
+      const monthCheck = validateMonth(req.query.month as string);
+      if (!monthCheck.valid) return res.status(400).json({ error: monthCheck.error });
 
-      const snapshot = await getOrCreateSnapshot(month);
+      const snapshot = await getOrCreateSnapshot(req.query.month as string);
 
-      // Resolve user names for reviewed_by and published_by
       let reviewedByName = null;
       let publishedByName = null;
       if (snapshot.reviewedBy) {
@@ -108,18 +98,12 @@ export function registerPmMonthlyReportRoutes(app: Express) {
         .where(eq(monthlyReportSnapshots.reportType, REPORT_TYPE))
         .orderBy(desc(monthlyReportSnapshots.reportMonth));
 
-      // Resolve user names
       const allUserIds = new Set<number>();
       for (const s of snapshots) {
         if (s.reviewedBy) allUserIds.add(s.reviewedBy);
         if (s.publishedBy) allUserIds.add(s.publishedBy);
       }
-
-      const userNames = new Map<number, string>();
-      if (allUserIds.size > 0) {
-        const userRows = await db.select({ id: users.id, name: users.name }).from(users);
-        for (const u of userRows) userNames.set(u.id, u.name);
-      }
+      const userNames = await resolveUserNames(allUserIds);
 
       const history = snapshots.map(s => ({
         ...s,
@@ -138,11 +122,13 @@ export function registerPmMonthlyReportRoutes(app: Express) {
   app.post("/api/reports/pm/monthly/:id/review", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "User ID required" });
+
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status !== "draft") return res.status(409).json({ error: "Report must be in draft status to review" });
 
-      const userId = (req as any).user?.id;
       await db.update(monthlyReportSnapshots).set({
         status: "reviewed",
         reviewedBy: userId,
@@ -157,15 +143,18 @@ export function registerPmMonthlyReportRoutes(app: Express) {
     }
   });
 
-  // POST publish
+  // POST publish (requires publish permission; enforces segregation of duties)
   app.post("/api/reports/pm/monthly/:id/publish", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "User ID required" });
+
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status !== "reviewed") return res.status(409).json({ error: "Report must be in reviewed status to publish" });
+      if (snapshot.reviewedBy === userId) return res.status(403).json({ error: "Publisher must be different from reviewer (segregation of duties)" });
 
-      const userId = (req as any).user?.id;
       await db.update(monthlyReportSnapshots).set({
         status: "published",
         publishedBy: userId,
@@ -260,16 +249,20 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       await generateReportExcel(REPORT_TYPE, snapshot.data as any, snapshot.reportMonth, res);
     } catch (err: any) {
       console.error("[PM Monthly Report] Excel export error:", err.message);
-      res.status(500).json({ error: err.message });
+      if (!res.headersSent) res.status(500).json({ error: err.message });
     }
   });
 
-  // GET comparison
+  // GET comparison (with server-side computed deltas)
   app.get("/api/reports/pm/monthly/compare", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
+      const checkA = validateMonth(req.query.monthA as string);
+      const checkB = validateMonth(req.query.monthB as string);
+      if (!checkA.valid) return res.status(400).json({ error: `monthA: ${checkA.error}` });
+      if (!checkB.valid) return res.status(400).json({ error: `monthB: ${checkB.error}` });
+
       const monthA = req.query.monthA as string;
       const monthB = req.query.monthB as string;
-      if (!monthA || !monthB) return res.status(400).json({ error: "monthA and monthB query parameters required" });
 
       const [snapshotA] = await db.select().from(monthlyReportSnapshots)
         .where(and(eq(monthlyReportSnapshots.reportType, REPORT_TYPE), eq(monthlyReportSnapshots.reportMonth, monthA)))
@@ -278,12 +271,16 @@ export function registerPmMonthlyReportRoutes(app: Express) {
         .where(and(eq(monthlyReportSnapshots.reportType, REPORT_TYPE), eq(monthlyReportSnapshots.reportMonth, monthB)))
         .limit(1);
 
-      if (!snapshotA) return res.status(404).json({ error: `No report available for ${monthA}` });
-      if (!snapshotB) return res.status(404).json({ error: `No report available for ${monthB}` });
+      if (!snapshotA) return res.status(404).json({ error: `No report available for ${monthA}. Generate it first.` });
+      if (!snapshotB) return res.status(404).json({ error: `No report available for ${monthB}. Generate it first.` });
+
+      const kpisA = (snapshotA.data as any)?.kpis || {};
+      const kpisB = (snapshotB.data as any)?.kpis || {};
 
       res.json({
         monthA: { month: monthA, status: snapshotA.status, data: snapshotA.data },
         monthB: { month: monthB, status: snapshotB.status, data: snapshotB.data },
+        deltas: computeKpiDeltas(kpisA, kpisB),
       });
     } catch (err: any) {
       console.error("[PM Monthly Report] Compare error:", err.message);
@@ -302,7 +299,6 @@ export function registerPmMonthlyReportRoutes(app: Express) {
 
       const data = snapshot.data as any;
 
-      // Filter all sections to this project
       const projectData = {
         projectStatus: data.projectStatus?.find((p: any) => p.projectId === projectId) || null,
         financials: {

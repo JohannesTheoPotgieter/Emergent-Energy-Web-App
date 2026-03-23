@@ -16,6 +16,7 @@ export default function PmMonthlyReportHistory() {
     queryKey: ["/api/reports/pm/monthly/history"],
     queryFn: async () => {
       const res = await fetch("/api/reports/pm/monthly/history", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to load report history");
       return res.json();
     },
   });
