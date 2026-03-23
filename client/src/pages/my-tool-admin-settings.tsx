@@ -155,6 +155,7 @@ export default function MyToolAdminSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       setShowAddForm(false);
       setAddForm({ ...emptyPriorityForm });
       toast({ title: "Priority created", description: "New company priority has been added." });
@@ -170,6 +171,7 @@ export default function MyToolAdminSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       setEditingId(null);
       toast({ title: "Priority updated", description: "Company priority has been updated." });
     },
@@ -184,6 +186,7 @@ export default function MyToolAdminSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       toast({ title: "Priority closed", description: "Priority has been marked as closed." });
     },
   });
@@ -194,6 +197,7 @@ export default function MyToolAdminSettingsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       toast({ title: "Priority deleted", description: "Company priority has been removed." });
     },
     onError: () => {

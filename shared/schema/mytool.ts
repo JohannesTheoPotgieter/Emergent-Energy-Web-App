@@ -168,6 +168,14 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   dueDate: text("due_date"),
   linkedTaskId: integer("linked_task_id"),
   linkedTaskType: text("linked_task_type"),
+  // Strategic layer columns
+  accountableExecId: integer("accountable_exec_id").references(() => users.id),
+  ownerUserId: integer("owner_user_id").references(() => users.id),
+  targetStartDate: text("target_start_date"),
+  targetOutcome: text("target_outcome"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  manualHealth: text("manual_health"),
+  manualProgress: integer("manual_progress"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -190,6 +198,21 @@ export const priorityLinks = pgTable("priority_links", {
 export const insertPriorityLinkSchema = createInsertSchema(priorityLinks).omit({ id: true, createdAt: true } as any);
 export type InsertPriorityLink = z.infer<typeof insertPriorityLinkSchema>;
 export type PriorityLink = typeof priorityLinks.$inferSelect;
+
+// Priority-Project junction table for strategic alignment
+export const priorityProjects = pgTable("priority_projects", {
+  id: serial("id").primaryKey(),
+  priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  linkedBy: integer("linked_by").references(() => users.id, { onDelete: "set null" }),
+  linkedAt: timestamp("linked_at").notNull().defaultNow(),
+}, (table) => ({
+  uniquePriorityProject: unique("priority_projects_unique").on(table.priorityId, table.projectId),
+}));
+
+export const insertPriorityProjectSchema = createInsertSchema(priorityProjects).omit({ id: true, linkedAt: true } as any);
+export type InsertPriorityProject = z.infer<typeof insertPriorityProjectSchema>;
+export type PriorityProject = typeof priorityProjects.$inferSelect;
 
 export const mytoolUserPreferences = pgTable("mytool_user_preferences", {
   ownerUserId: integer("owner_user_id").primaryKey().references(() => users.id),

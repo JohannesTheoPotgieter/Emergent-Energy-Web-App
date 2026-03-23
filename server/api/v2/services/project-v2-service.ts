@@ -4,7 +4,7 @@ import { db } from "../../../db";
 import { dashboardProjectMetrics, dashboardProgramMetrics } from "@shared/schema";
 import { refreshAllMetrics, refreshProjectMetricsAsync } from "../../../services/dashboard-metrics";
 
-export async function listProjectsService(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
+export async function listProjectsService(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null; priorityId?: number }) {
   const { rows, total } = await repo.listProjects(params);
   return { rows, meta: paginationMeta(params.page, params.pageSize, total) };
 }
