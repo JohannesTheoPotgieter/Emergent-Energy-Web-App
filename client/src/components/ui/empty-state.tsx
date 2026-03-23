@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { FolderOpen } from "lucide-react";
 
 /**
@@ -9,17 +10,22 @@ import { FolderOpen } from "lucide-react";
  * Usage:
  *   <EmptyState title="No projects match current filters" />
  *   <EmptyState icon={<Inbox />} title="Nothing here yet" description="Items will appear when data is imported." />
+ *   <EmptyState title="No priorities yet" actionLabel="Create Priority" onAction={() => {}} />
  */
 export function EmptyState({
   icon,
   title,
   description,
+  actionLabel,
+  onAction,
   children,
   className,
 }: {
   icon?: React.ReactNode;
   title: string;
   description?: string;
+  actionLabel?: string;
+  onAction?: () => void;
   children?: React.ReactNode;
   className?: string;
 }) {
@@ -31,6 +37,11 @@ export function EmptyState({
       <p className="text-sm text-muted-foreground">{title}</p>
       {description && (
         <p className="text-xs text-muted-foreground/60 mt-1">{description}</p>
+      )}
+      {actionLabel && onAction && (
+        <div className="mt-3">
+          <Button size="sm" onClick={onAction}>{actionLabel}</Button>
+        </div>
       )}
       {children && <div className="mt-3">{children}</div>}
     </div>
