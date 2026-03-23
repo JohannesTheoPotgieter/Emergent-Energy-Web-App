@@ -105,6 +105,16 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
+    label: "Reports",
+    path: "/reports/pm/monthly",
+    match: (pathname) => startsWithAny(pathname, ["/reports"]),
+    secondary: [
+      { label: "PM Monthly Report", path: "/reports/pm/monthly" },
+      { label: "Engineering Monthly Report", path: "/reports/engineering/monthly" },
+      { label: "Programme Reports", path: "/reports/programme" },
+    ],
+  },
+  {
     label: "Admin",
     path: "/admin/control-center",
     match: (pathname) => startsWithAny(pathname, ["/admin", "/settings"]),
