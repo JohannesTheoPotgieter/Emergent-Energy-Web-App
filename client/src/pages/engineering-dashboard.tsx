@@ -211,6 +211,17 @@ function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
+        {task.trackingRag && (
+          <span
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              task.trackingRag.toLowerCase() === "red" ? "bg-red-500" :
+              task.trackingRag.toLowerCase() === "amber" ? "bg-amber-500" :
+              task.trackingRag.toLowerCase() === "green" ? "bg-emerald-500" :
+              "bg-gray-300"
+            }`}
+            title={`RAG: ${task.trackingRag}`}
+          />
+        )}
         {task.dueDate && (
           <span className={`text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ${
             isOverdue ? "text-red-700 bg-red-100 font-bold" :
@@ -1206,6 +1217,11 @@ interface CompanyPriority {
   dueDate: string | null;
   linkedProjectName: string | null;
   links?: { id: number; linkType: string; projectName: string | null; taskId: number | null }[];
+  // Enriched strategic fields
+  effectiveHealth?: string;
+  effectiveProgress?: number;
+  projectCount?: number;
+  hasProjects?: boolean;
 }
 
 function severityBorder(s: string) {
@@ -1223,7 +1239,10 @@ function CompanyPrioritiesSection() {
   const active = priorities.filter((p: CompanyPriority) => p.status !== "completed" && p.status !== "cancelled");
   const sorted = [...active].sort((a, b) => {
     const sevOrder = (s: string) => s === "critical" ? 0 : s === "important" ? 1 : 2;
-    return sevOrder(a.severity) - sevOrder(b.severity);
+    const sevDiff = sevOrder(a.severity) - sevOrder(b.severity);
+    if (sevDiff !== 0) return sevDiff;
+    const healthOrder = (s?: string) => s === "critical" ? 0 : s === "at_risk" ? 1 : 2;
+    return healthOrder(a.effectiveHealth) - healthOrder(b.effectiveHealth);
   });
 
   if (isLoading) {
@@ -1269,6 +1288,22 @@ function CompanyPrioritiesSection() {
                     "bg-blue-100 text-blue-700"
                   }`}>{p.severity}</Badge>
                 </div>
+                {p.effectiveHealth && (
+                  <div className="flex items-center gap-1.5 text-[10px]">
+                    <span className={`inline-block h-2 w-2 rounded-full ${
+                      p.effectiveHealth === "critical" ? "bg-red-500" :
+                      p.effectiveHealth === "at_risk" ? "bg-amber-500" :
+                      "bg-green-500"
+                    }`} />
+                    <span className="text-muted-foreground capitalize">{p.effectiveHealth.replace("_", " ")}</span>
+                    {p.effectiveProgress != null && p.effectiveProgress > 0 && (
+                      <span className="text-muted-foreground ml-auto">{p.effectiveProgress}%</span>
+                    )}
+                    {(p.projectCount ?? 0) > 0 && (
+                      <span className="text-muted-foreground">{p.projectCount} proj</span>
+                    )}
+                  </div>
+                )}
                 {p.assignedTo && (
                   <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                     <Users className="h-3 w-3" /> {p.assignedTo}

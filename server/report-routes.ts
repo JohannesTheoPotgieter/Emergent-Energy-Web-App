@@ -558,8 +558,8 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
         r.totalTasks++;
         if (t.status === "Complete" || t.status === "Completed" || t.status === "Done") r.completedTasks++;
         else if (t.status === "In Progress" || t.status === "Active") r.inProgressTasks++;
-        r.plannedHours += (t as any).plannedHours || 0;
-        r.actualHours += (t as any).actualHours || 0;
+        r.plannedHours += t.plannedHours || 0;
+        r.actualHours += t.actualHours || 0;
         const pName = t.projectId ? (projNameMap.get(t.projectId) as string) || "" : "";
         if (pName) r.projects.add(pName);
       }
