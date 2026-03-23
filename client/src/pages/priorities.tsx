@@ -10,11 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Flag, Plus, AlertTriangle, Clock, Settings } from "lucide-react";
+import { Flag, Plus, AlertTriangle, AlertCircle, Clock, Settings, RefreshCw } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-
-const token = () => localStorage.getItem("auth_token") || "";
 
 interface Priority {
   id: number;
@@ -261,15 +259,8 @@ export default function PrioritiesPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
-  const { data: priorities = [], isLoading } = useQuery<Priority[]>({
+  const { data: priorities = [], isLoading, isError, error, refetch } = useQuery<Priority[]>({
     queryKey: ["/api/priorities"],
-    queryFn: async () => {
-      const res = await fetch("/api/priorities", {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (!res.ok) throw new Error(`Failed to load priorities (${res.status})`);
-      return res.json();
-    },
   });
 
   const categories = useMemo(() => {
@@ -369,6 +360,15 @@ export default function PrioritiesPage() {
           {[1, 2, 3, 4].map(i => (
             <div key={i} className="h-32 bg-muted animate-pulse rounded-lg" />
           ))}
+        </div>
+      ) : isError ? (
+        <div className="text-center py-12">
+          <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-500" />
+          <p className="text-sm font-medium text-red-600 mb-1">Failed to load priorities</p>
+          <p className="text-xs text-muted-foreground mb-3">{error?.message || "Unknown error"}</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RefreshCw className="w-3 h-3 mr-1" /> Retry
+          </Button>
         </div>
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
