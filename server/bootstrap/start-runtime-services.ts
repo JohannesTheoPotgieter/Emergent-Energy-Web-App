@@ -22,6 +22,14 @@ export async function startRuntimeServices(options: {
   }
 
   try {
+    const { startMonthlyReportScheduler } = await import("../services/monthly-report-scheduler");
+    startMonthlyReportScheduler();
+    started.push("monthly-report-scheduler");
+  } catch (err) {
+    log(`[Monthly Report Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+  }
+
+  try {
     const { startPeriodicSync } = await import("../ms-sync-service");
     if (startupSyncEnabled) {
       startPeriodicSync();
