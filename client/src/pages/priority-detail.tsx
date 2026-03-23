@@ -74,6 +74,8 @@ function ProjectLinker({ priorityId, existingProjectIds, onDone }: { priorityId:
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
       onDone();
     },
   });
@@ -163,6 +165,8 @@ export default function PriorityDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
     },
   });
 
