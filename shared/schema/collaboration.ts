@@ -757,6 +757,7 @@ export const standupSchedules = pgTable("standup_schedules", {
   cadenceDays: integer("cadence_days").notNull().default(2),
   anchorDate: text("anchor_date").notNull(),
   deadlineTime: text("deadline_time").default("10:00"),
+  deadlineTimezone: text("deadline_timezone").notNull().default("Africa/Johannesburg"),
   isActive: boolean("is_active").notNull().default(true),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -789,7 +790,9 @@ export const standupEntries = pgTable("standup_entries", {
   isLate: boolean("is_late").notNull().default(false),
   submittedAt: timestamp("submitted_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  uniqueScheduleUserDate: unique("standup_entries_unique_schedule_user_date").on(table.scheduleId, table.userId, table.standupDate),
+}));
 export const insertStandupEntrySchema = createInsertSchema(standupEntries).omit({ id: true, submittedAt: true, updatedAt: true } as any);
 export type InsertStandupEntry = z.infer<typeof insertStandupEntrySchema>;
 export type StandupEntry = typeof standupEntries.$inferSelect;
