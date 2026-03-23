@@ -13618,7 +13618,7 @@ export async function registerRoutes(
 
   // ==================== MY TOOL - TASKS ====================
 
-  app.get("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/tasks", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
 
@@ -13644,7 +13644,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/tasks", requireAuth, async (req, res) => {
     const userId = (req.user as any).id;
     const rawRequestId = req.header("x-idempotency-key") || req.body?.clientRequestId;
     const requestId = typeof rawRequestId === "string" ? rawRequestId.trim() : "";
@@ -13720,7 +13720,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
@@ -13810,7 +13810,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteMytoolTask(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "mytool_task", action: "delete", entityId: req.params.id, changesJson: { description: "MyTool task deleted" } });
@@ -13820,7 +13820,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/mytool/tasks/:id/dependencies", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const taskId = Number(req.params.id);
       const deps = await db.select().from(mytoolTaskDependencies).where(or(eq(mytoolTaskDependencies.predecessorTaskId, taskId), eq(mytoolTaskDependencies.successorTaskId, taskId)));
@@ -13830,7 +13830,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const successorTaskId = Number(req.params.id);
       const predecessorTaskId = Number(req.body.predecessorTaskId);
@@ -13851,7 +13851,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, async (req, res) => {
     try {
       const dependencyId = Number(req.params.dependencyId);
       const [dep] = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
