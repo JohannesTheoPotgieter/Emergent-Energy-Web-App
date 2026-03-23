@@ -284,6 +284,21 @@ Schema files in `shared/schema/` organized by domain:
 | 5 | File upload validation | [CONFIRMED] | Multer config limits file size (50-100MB). MIME type validation present on upload routes. |
 | 6 | No schema validation on PATCH routes | [GAP] | Most PATCH endpoints accept partial updates without validating allowed fields. Could accept unexpected or dangerous fields. |
 
+### 3.X Backend API BUGS (from deep audit)
+
+| # | Finding | Tag | Detail |
+|---|---------|-----|--------|
+| 1 | `POST /api/admin/mark-active` missing `requireAdmin` | [BUG] | Only has `requireAuth`. Any authenticated user can mark projects active/inactive. Every other `/api/admin/*` uses `requireAdmin`. File: `server/routes.ts:8953` |
+| 2 | `/api/role-auth/login` not rate limited | [BUG] | The rate limiter only covers `/api/auth/login`, `/api/auth/microsoft`, `/api/auth/microsoft/callback`. Role-auth login at `/api/role-auth/login` is unprotected from brute-force. File: `server/role-auth-routes.ts:68` |
+| 3 | N+1 query iterates ALL projects to find one plan task | [BUG] | Loops over every project, querying plan tasks for each, to find one task by ID. O(N) DB queries instead of 1. File: `server/routes.ts:11488-11494` |
+| 4 | Hardcoded default admin passwords in source | [BUG] | `COO_ADMIN: "2024"`, `CEO_ADMIN: "ceo2026"` hardcoded in `server/role-auth-routes.ts:46-49`. |
+| 5 | Internal error details leaked to client | [BUG] | `res.status(500).json({ error: err.message })` sends raw error messages (DB schema, file paths) to client. Pattern appears in dozens of endpoints. File: `server/routes.ts:13681` |
+| 6 | Minimum password length is 4 characters | [GAP] | `server/role-auth-routes.ts:221` — `if (newPassword.length < 4)`. NIST recommends 8+. |
+| 7 | File upload MIME check bypassed by extension | [BUG] | `server/routes.ts:188-202` — multer `fileFilter` accepts ANY file if named `.xlsx`. Extension check short-circuits MIME check. Attacker can upload malicious files with Excel extension. |
+| 8 | `/api/auth/status` leaks diagnostic info | [GAP] | Returns `dbMode`, `dbConnected`, cookie presence to unauthenticated callers. Aids reconnaissance. File: `server/routes/auth-routes.ts:56` |
+| 9 | No validation on ~95% of v1 write endpoints | [GAP] | Out of ~160 POST/PUT/PATCH/DELETE endpoints in `routes.ts`, only ~6 use Zod. Rest use ad-hoc checks or pass `req.body` directly. |
+| 10 | Multi-write operations without transactions | [GAP] | `POST /api/mytool/tasks` creates task then separately inserts entityAssignment. Second insert failure silently swallowed. File: `server/routes.ts:13724` |
+
 ### 3.2 Authentication & Authorization
 
 | # | Finding | Tag | Detail |
@@ -835,6 +850,9 @@ Schema files in `shared/schema/` organized by domain:
 
 | # | Area | Finding | Tag | Priority | Effort | Recommended Action |
 |---|------|---------|-----|----------|--------|-------------------|
+| 0m | Backend | `POST /api/admin/mark-active` missing `requireAdmin` — any user can toggle project status | [BUG] | Critical | Low | Add `requireAdmin` middleware to route in `routes.ts:8953` |
+| 0n | Backend | Hardcoded default admin passwords `"2024"` / `"ceo2026"` in source code | [BUG] | Critical | Low | Move to env vars or force-change on first login |
+| 0o | Backend | File upload MIME check bypassed by extension (`.xlsx` suffix accepts any content) | [BUG] | High | Low | Add magic-byte validation; don't trust extension alone |
 | 0p | Database | 25 FK references missing — orphan data risk across schema | [BUG] | Critical | Medium | Add FK constraints after backfilling orphans |
 | 0q | Database | `role_credentials.last_password_plain` stores plaintext passwords | [BUG] | Critical | Low | Drop the column entirely |
 | 0r | Database | `users.email` has no UNIQUE constraint | [BUG] | High | Low | Add UNIQUE after dedup |
