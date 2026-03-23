@@ -163,7 +163,7 @@ function enrichWithOverrides(expenses: any[], cosOverrideMap: Map<string, string
  */
 function buildCosRatioRevenue(
   allInflows: { projectName: string; milestoneAmount: any }[],
-  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any; expenseInvoiceNumber?: any; expensePoNumber?: any; _cosOverrideStatus?: any; _cosRealisedFlag?: any }[],
+  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any; expenseInvoiceNumber?: any; expensePoNumber?: any; invoiceDateConfirmed?: any; invoiceDateFontColor?: any; _cosOverrideStatus?: any; _cosRealisedFlag?: any }[],
   monthKeys: string[],
 ): Record<string, number> {
   // 1. Total revenue per project (from all inflows, regardless of date)
@@ -389,6 +389,8 @@ router.get(
           expenseInvoicedDate: programExpense.expenseInvoicedDate,
           expenseInvoiceNumber: programExpense.expenseInvoiceNumber,
           expensePoNumber: programExpense.expensePoNumber,
+          invoiceDateConfirmed: programExpense.invoiceDateConfirmed,
+          invoiceDateFontColor: programExpense.invoiceDateFontColor,
           rowNumber: programExpense.rowNumber,
           budgetTotal: programExpense.budgetTotal,
           forecastPaymentDate: programExpense.forecastPaymentDate,
