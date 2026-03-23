@@ -5,6 +5,7 @@ import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import ExcelJS from "exceljs";
 import { requirePermission } from "./permission-middleware";
+import { isDateBlack } from "./lib/calculations/stateClassifier";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) return next();
@@ -369,14 +370,15 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
       // 2. Invoice date font color IS black (confirming the invoice actually happened)
       function isCosRealizedCorrectly(line: any): boolean {
         const hasInvoiceNumber = line.invoiceNumber && String(line.invoiceNumber).trim().length > 0;
-        const invoiceDateIsBlack = line.invoiceDateConfirmed === true;
-        return hasInvoiceNumber && invoiceDateIsBlack;
+        const hasInvoiceDate = !!(line.invoiceDate && String(line.invoiceDate).trim());
+        const invoiceDateIsBlack = isDateBlack(line.invoiceDateConfirmed, line.invoiceDateFontColor);
+        return hasInvoiceNumber && hasInvoiceDate && invoiceDateIsBlack;
       }
 
       // Helper: determine payment status
       // Payment has NOT happened if font color is NOT black
       function isPaymentConfirmed(line: any): boolean {
-        return line.paidDateConfirmed === true;
+        return isDateBlack(line.paidDateConfirmed, line.paidDateFontColor);
       }
 
       const rows = costLines.map(c => {
