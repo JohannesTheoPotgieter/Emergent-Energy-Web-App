@@ -307,11 +307,15 @@ export default function AdminRolesPage() {
             <TabsTrigger value="audit" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-audit">
               Permission Audit Log
             </TabsTrigger>
+            <TabsTrigger value="pd-visibility" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-pd-visibility">
+              PD Visibility
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="roles" className="mt-4"><RolesControlCenter /></TabsContent>
           <TabsContent value="users" className="mt-4"><GlobalUsersView /></TabsContent>
           <TabsContent value="overrides" className="mt-4"><UserOverridesView /></TabsContent>
           <TabsContent value="audit" className="mt-4"><PermissionAuditLogView /></TabsContent>
+          <TabsContent value="pd-visibility" className="mt-4"><PdVisibilityView /></TabsContent>
         </Tabs>
       </div>
     </AdminPageShell>
@@ -1567,6 +1571,418 @@ function UserOverridesView() {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+// ========== PD VISIBILITY CONFIG VIEW ==========
+
+interface PdVisConfig {
+  id: number;
+  role: string | null;
+  userId: number | null;
+  ticketTypes: string[];
+  scope: string;
+  updatedAt: string;
+  updatedBy: number | null;
+}
+
+const PD_TICKET_TYPE_OPTIONS = [
+  { value: "pd", label: "PD Tickets", description: "Cost Proposals and other non-engineering tickets" },
+  { value: "engineering", label: "Engineering Tickets", description: "Feasibility Study, Design Review, IFC Planning, Grid Application, Battery Assessment, Site Assessment, Full EPC" },
+];
+
+const PD_SCOPE_OPTIONS = [
+  { value: "all", label: "All Tickets", description: "Can see all tickets matching the type filter" },
+  { value: "own", label: "Own Tickets Only", description: "Can only see tickets they created or are assigned to" },
+];
+
+const PD_CONFIGURABLE_ROLES = [
+  "PROJECT_DEVELOPER",
+  "KEY_ACCOUNTS_MANAGER",
+  "ENGINEER",
+  "PROGRAM_MANAGER",
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "CCO",
+];
+
+function PdVisibilityView() {
+  const { toast } = useToast();
+  const [configs, setConfigs] = useState<PdVisConfig[]>([]);
+  const [users, setUsers] = useState<UserSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // User override form state
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [userTicketTypes, setUserTicketTypes] = useState<string[]>(["pd", "engineering"]);
+  const [userScope, setUserScope] = useState("all");
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [configRes, usersRes] = await Promise.all([
+        fetch("/api/admin/pd-visibility", { headers: authHeaders(), credentials: "include" }),
+        fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }),
+      ]);
+      const configData = await configRes.json();
+      const usersData = await usersRes.json();
+      setConfigs(Array.isArray(configData) ? configData : []);
+      setUsers(Array.isArray(usersData) ? usersData : []);
+    } catch {
+      setConfigs([]);
+      setUsers([]);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { void loadAll(); }, []);
+
+  const roleConfigs = configs.filter(c => c.role && !c.userId);
+  const userConfigs = configs.filter(c => c.userId);
+
+  const getRoleConfig = (role: string) => roleConfigs.find(c => c.role === role);
+
+  const handleSaveRole = async (role: string, ticketTypes: string[], scope: string) => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/pd-visibility/role", {
+        method: "PUT",
+        headers: authHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ role, ticketTypes, scope }),
+      });
+      if (res.ok) {
+        toast({ title: "Saved", description: `Visibility config for ${role} updated.` });
+        void loadAll();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const handleSaveUser = async () => {
+    if (!selectedUserId) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/pd-visibility/user", {
+        method: "PUT",
+        headers: authHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ userId: selectedUserId, ticketTypes: userTicketTypes, scope: userScope }),
+      });
+      if (res.ok) {
+        toast({ title: "Saved", description: "User visibility override saved." });
+        setShowUserForm(false);
+        setSelectedUserId(null);
+        setUserTicketTypes(["pd", "engineering"]);
+        setUserScope("all");
+        void loadAll();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const handleDeleteConfig = async (configId: number) => {
+    try {
+      const res = await fetch(`/api/admin/pd-visibility/${configId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+        credentials: "include",
+      });
+      if (res.ok) {
+        toast({ title: "Removed", description: "Visibility config removed. Role will use hardcoded defaults." });
+        void loadAll();
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+  };
+
+  if (loading) return <div className="py-8 text-center text-gray-400">Loading...</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Role-Level Defaults */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-blue-600" />
+            Role-Level PD Visibility
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Configure which PD ticket types each role can see and whether they see all tickets or only their own.
+            Roles without a config use the system defaults.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Role</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Ticket Types</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Scope</th>
+                  <th className="px-4 py-2 text-right font-medium text-gray-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PD_CONFIGURABLE_ROLES.map(role => {
+                  const config = getRoleConfig(role);
+                  return <RoleVisibilityRow key={role} role={role} config={config} saving={saving} onSave={handleSaveRole} onDelete={handleDeleteConfig} />;
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* User-Level Overrides */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserCheck className="h-5 w-5 text-blue-600" />
+            User-Level PD Visibility Overrides
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Override PD visibility for specific users. User overrides take precedence over role-level configs.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => setShowUserForm(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Add User Override
+          </Button>
+
+          {userConfigs.length > 0 ? (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">User</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Ticket Types</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Scope</th>
+                    <th className="px-4 py-2 text-right font-medium text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {userConfigs.map(config => {
+                    const user = users.find(u => u.id === config.userId);
+                    return (
+                      <tr key={config.id} className="border-t hover:bg-gray-50/50">
+                        <td className="px-4 py-2">
+                          <div>{user?.name || `User #${config.userId}`}</div>
+                          <div className="text-xs text-gray-400">{user?.role || ""}</div>
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="flex gap-1 flex-wrap">
+                            {(config.ticketTypes || []).map(t => (
+                              <Badge key={t} variant="outline" className="text-xs">{t === "pd" ? "PD" : "Engineering"}</Badge>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2">
+                          <Badge variant={config.scope === "all" ? "default" : "secondary"}
+                            className={config.scope === "all" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"}>
+                            {config.scope === "all" ? "All Tickets" : "Own Only"}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteConfig(config.id)}>
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-6 text-gray-400 text-sm">No user-level overrides configured.</div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add User Override Dialog */}
+      <Dialog open={showUserForm} onOpenChange={setShowUserForm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add User Visibility Override</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs">User</Label>
+              <SearchableSelect
+                options={users.map(u => ({ value: String(u.id), label: `${u.name} (${u.role})` }))}
+                value={selectedUserId ? String(selectedUserId) : ""}
+                onValueChange={v => setSelectedUserId(v ? Number(v) : null)}
+                placeholder="Select user..."
+              />
+            </div>
+            <div>
+              <Label className="text-xs mb-2 block">Ticket Types</Label>
+              {PD_TICKET_TYPE_OPTIONS.map(opt => (
+                <div key={opt.value} className="flex items-center gap-2 py-1">
+                  <Switch
+                    checked={userTicketTypes.includes(opt.value)}
+                    onCheckedChange={checked => {
+                      setUserTicketTypes(prev =>
+                        checked ? [...prev, opt.value] : prev.filter(t => t !== opt.value)
+                      );
+                    }}
+                  />
+                  <div>
+                    <span className="text-sm font-medium">{opt.label}</span>
+                    <span className="text-xs text-gray-400 ml-2">{opt.description}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div>
+              <Label className="text-xs mb-2 block">Scope</Label>
+              {PD_SCOPE_OPTIONS.map(opt => (
+                <div key={opt.value} className="flex items-center gap-2 py-1">
+                  <input
+                    type="radio"
+                    name="userScope"
+                    value={opt.value}
+                    checked={userScope === opt.value}
+                    onChange={() => setUserScope(opt.value)}
+                    className="h-4 w-4 text-blue-600"
+                  />
+                  <div>
+                    <span className="text-sm font-medium">{opt.label}</span>
+                    <span className="text-xs text-gray-400 ml-2">{opt.description}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowUserForm(false)}>Cancel</Button>
+            <Button onClick={handleSaveUser} disabled={saving || !selectedUserId || userTicketTypes.length === 0} className="bg-blue-600 hover:bg-blue-700">
+              {saving ? "Saving..." : "Save Override"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function RoleVisibilityRow({ role, config, saving, onSave, onDelete }: {
+  role: string;
+  config: PdVisConfig | undefined;
+  saving: boolean;
+  onSave: (role: string, ticketTypes: string[], scope: string) => void;
+  onDelete: (id: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [ticketTypes, setTicketTypes] = useState<string[]>(config?.ticketTypes || ["pd", "engineering"]);
+  const [scope, setScope] = useState(config?.scope || "all");
+
+  useEffect(() => {
+    setTicketTypes(config?.ticketTypes || ["pd", "engineering"]);
+    setScope(config?.scope || "all");
+  }, [config]);
+
+  const hasChanges = config
+    ? JSON.stringify(ticketTypes.sort()) !== JSON.stringify([...(config.ticketTypes || [])].sort()) || scope !== config.scope
+    : true;
+
+  return (
+    <tr className="border-t hover:bg-gray-50/50">
+      <td className="px-4 py-3 font-medium">{role.replace(/_/g, " ")}</td>
+      <td className="px-4 py-3">
+        {editing ? (
+          <div className="flex gap-3">
+            {PD_TICKET_TYPE_OPTIONS.map(opt => (
+              <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ticketTypes.includes(opt.value)}
+                  onChange={e => {
+                    setTicketTypes(prev =>
+                      e.target.checked ? [...prev, opt.value] : prev.filter(t => t !== opt.value)
+                    );
+                  }}
+                  className="h-3.5 w-3.5 rounded text-blue-600"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        ) : (
+          <div className="flex gap-1 flex-wrap">
+            {config ? (config.ticketTypes || []).map(t => (
+              <Badge key={t} variant="outline" className="text-xs">{t === "pd" ? "PD" : "Engineering"}</Badge>
+            )) : (
+              <span className="text-xs text-gray-400 italic">System default</span>
+            )}
+          </div>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        {editing ? (
+          <div className="flex gap-3">
+            {PD_SCOPE_OPTIONS.map(opt => (
+              <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="radio"
+                  name={`scope-${role}`}
+                  value={opt.value}
+                  checked={scope === opt.value}
+                  onChange={() => setScope(opt.value)}
+                  className="h-3.5 w-3.5 text-blue-600"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        ) : config ? (
+          <Badge variant={config.scope === "all" ? "default" : "secondary"}
+            className={config.scope === "all" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"}>
+            {config.scope === "all" ? "All Tickets" : "Own Only"}
+          </Badge>
+        ) : (
+          <span className="text-xs text-gray-400 italic">System default</span>
+        )}
+      </td>
+      <td className="px-4 py-3 text-right">
+        {editing ? (
+          <div className="flex gap-1 justify-end">
+            <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setTicketTypes(config?.ticketTypes || ["pd", "engineering"]); setScope(config?.scope || "all"); }}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="sm" disabled={saving || ticketTypes.length === 0 || !hasChanges} className="bg-blue-600 hover:bg-blue-700"
+              onClick={() => { onSave(role, ticketTypes, scope); setEditing(false); }}>
+              <Save className="h-3.5 w-3.5 mr-1" /> Save
+            </Button>
+          </div>
+        ) : (
+          <div className="flex gap-1 justify-end">
+            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+              <Pencil className="h-3.5 w-3.5 text-blue-500" />
+            </Button>
+            {config && (
+              <Button variant="ghost" size="sm" onClick={() => onDelete(config.id)}>
+                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+              </Button>
+            )}
+          </div>
+        )}
+      </td>
+    </tr>
   );
 }
 

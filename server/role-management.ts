@@ -9,6 +9,7 @@ import {
   rolePermissions,
   userPermissionOverrides,
   permissionAuditLog,
+  pdVisibilityConfig,
   users,
   DEFAULT_ROLE_PERMISSIONS,
   type AuthorityAction,
@@ -874,6 +875,107 @@ export function registerRoleManagementRoutes(app: Express) {
       }));
 
       res.json({ entries: enriched, limit, offset });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== PD VISIBILITY CONFIG ==========
+
+  // Get all visibility configs (role-level + user-level)
+  app.get("/api/admin/pd-visibility", jwtAuth, requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const configs = await db.select().from(pdVisibilityConfig);
+      res.json(configs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Upsert a role-level visibility config
+  app.put("/api/admin/pd-visibility/role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { role, ticketTypes, scope } = req.body;
+      if (!role) return res.status(400).json({ error: "role is required" });
+
+      const adminUser = getEffectiveUser(req);
+
+      // Delete existing role config, then insert
+      await db.delete(pdVisibilityConfig)
+        .where(and(eq(pdVisibilityConfig.role, role), isNull(pdVisibilityConfig.userId)));
+
+      const [created] = await db.insert(pdVisibilityConfig).values({
+        role,
+        userId: null,
+        ticketTypes: ticketTypes || ["pd", "engineering"],
+        scope: scope || "all",
+        updatedBy: adminUser?.id || null,
+      }).returning();
+
+      logPermissionAudit(req, {
+        eventType: "pd_visibility_role_updated",
+        targetRole: role,
+        changeDetail: { ticketTypes: created.ticketTypes, scope: created.scope },
+      });
+
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Upsert a user-level visibility config (override)
+  app.put("/api/admin/pd-visibility/user", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId, ticketTypes, scope } = req.body;
+      if (!userId) return res.status(400).json({ error: "userId is required" });
+
+      const adminUser = getEffectiveUser(req);
+
+      // Delete existing user config, then insert
+      await db.delete(pdVisibilityConfig)
+        .where(eq(pdVisibilityConfig.userId, userId));
+
+      const [created] = await db.insert(pdVisibilityConfig).values({
+        role: null,
+        userId,
+        ticketTypes: ticketTypes || ["pd", "engineering"],
+        scope: scope || "all",
+        updatedBy: adminUser?.id || null,
+      }).returning();
+
+      logPermissionAudit(req, {
+        eventType: "pd_visibility_user_updated",
+        targetUserId: userId,
+        changeDetail: { ticketTypes: created.ticketTypes, scope: created.scope },
+      });
+
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete a visibility config by ID
+  app.delete("/api/admin/pd-visibility/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const configId = parseInt(req.params.id);
+      if (isNaN(configId)) return res.status(400).json({ error: "Invalid config ID" });
+
+      const [existing] = await db.select().from(pdVisibilityConfig)
+        .where(eq(pdVisibilityConfig.id, configId));
+      if (!existing) return res.status(404).json({ error: "Config not found" });
+
+      await db.delete(pdVisibilityConfig).where(eq(pdVisibilityConfig.id, configId));
+
+      logPermissionAudit(req, {
+        eventType: existing.userId ? "pd_visibility_user_removed" : "pd_visibility_role_removed",
+        targetRole: existing.role || undefined,
+        targetUserId: existing.userId || undefined,
+        changeDetail: { ticketTypes: existing.ticketTypes, scope: existing.scope },
+      });
+
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
