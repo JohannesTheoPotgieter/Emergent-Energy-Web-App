@@ -161,7 +161,6 @@ async function enrichPriority(priority: any, metrics: DerivedMetricsRow | null):
 // ==================== GET /api/priorities ====================
 router.get("/api/priorities", requireAuth, async (req: Request, res: Response) => {
   try {
-    const user = getEffectiveUser(req)!;
     const includeCancelled = req.query.include_cancelled === "true";
 
     // Fetch all priorities
@@ -176,36 +175,8 @@ router.get("/api/priorities", requireAuth, async (req: Request, res: Response) =
     const allMetrics = await getAllPriorityDerivedMetrics();
     const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
 
-    // Role filtering
-    const isFullAccess = ADMIN_ROLES.includes(user.role);
-    if (!isFullAccess) {
-      // Get projects assigned to this user
-      const userProjects = await db.select({ id: projectInfo.id })
-        .from(projectInfo)
-        .where(or(
-          eq(projectInfo.pmUserId, user.id),
-          eq(projectInfo.pdUserId, user.id),
-        ));
-      const userProjectIds = new Set(userProjects.map(p => p.id));
-
-      // Get priority-project links
-      const allLinks = await db.select().from(priorityProjects);
-      const priorityProjectMap = new Map<number, number[]>();
-      for (const link of allLinks) {
-        if (!priorityProjectMap.has(link.priorityId)) priorityProjectMap.set(link.priorityId, []);
-        priorityProjectMap.get(link.priorityId)!.push(link.projectId);
-      }
-
-      allPriorities = allPriorities.filter(p => {
-        const linkedProjectIds = priorityProjectMap.get(p.id) || [];
-        if (linkedProjectIds.length === 0) {
-          // Standalone: show if user is the owner
-          return p.ownerUserId === user.id || p.assignedTo === user.name;
-        }
-        // Has projects: show if any linked project is assigned to user
-        return linkedProjectIds.some(pid => userProjectIds.has(pid));
-      });
-    }
+    // Company priorities are strategic goals visible to all authenticated users.
+    // Write operations are still gated by role via requirePriorityAdmin middleware.
 
     // Enrich with metrics
     const enriched = await Promise.all(
