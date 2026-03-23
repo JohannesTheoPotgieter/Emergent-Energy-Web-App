@@ -164,7 +164,10 @@ export default function MyToolMeetingsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/meetings/webhook-status"] });
       if (vars.type === "task") queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
-      if (vars.type === "priority") queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      if (vars.type === "priority") {
+        queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      }
       setConvertDialog(null);
       setConvertForm({});
       const label = vars.type === "task" ? "task" : vars.type === "priority" ? "company priority" : "project";

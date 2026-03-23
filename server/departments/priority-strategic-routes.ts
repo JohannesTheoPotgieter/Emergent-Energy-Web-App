@@ -14,6 +14,7 @@ import {
   approvals,
 } from "@shared/schema";
 import { eq, and, sql, desc, asc, inArray, isNull, or } from "drizzle-orm";
+import { PRIORITY_HEALTH_VALUES, type PriorityHealth } from "@shared/kpi-definitions";
 
 const router = Router();
 
@@ -52,7 +53,7 @@ interface PriorityWithMetrics {
   // Derived
   owner: { id: number; name: string } | null;
   accountableExec: { id: number; name: string } | null;
-  effectiveHealth: string;
+  effectiveHealth: PriorityHealth;
   effectiveProgress: number;
   projectCount: number;
   atRiskProjectCount: number;
@@ -64,28 +65,41 @@ interface PriorityWithMetrics {
   hasProjects: boolean;
 }
 
-async function getPriorityDerivedMetrics(priorityId: number) {
-  const rows = await db.execute(sql`
+interface DerivedMetricsRow {
+  priority_id: number;
+  project_count: number;
+  at_risk_project_count: number;
+  derived_health: PriorityHealth | null;
+  total_revenue: number;
+  total_cos: number;
+  total_gp: number;
+  avg_progress: number;
+  blocker_count: number;
+  open_task_count: number;
+}
+
+async function getPriorityDerivedMetrics(priorityId: number): Promise<DerivedMetricsRow | null> {
+  const rows: any = await db.execute(sql`
     SELECT * FROM priority_derived_metrics WHERE priority_id = ${priorityId}
   `);
-  return rows.rows?.[0] || rows[0] || null;
+  return (rows.rows?.[0] || rows[0] || null) as DerivedMetricsRow | null;
 }
 
-async function getAllPriorityDerivedMetrics() {
-  const rows = await db.execute(sql`SELECT * FROM priority_derived_metrics`);
-  return (rows.rows || rows) as any[];
+async function getAllPriorityDerivedMetrics(): Promise<DerivedMetricsRow[]> {
+  const rows: any = await db.execute(sql`SELECT * FROM priority_derived_metrics`);
+  return (rows.rows || rows) as DerivedMetricsRow[];
 }
 
-async function getUserById(userId: number) {
+async function getUserById(userId: number): Promise<{ id: number; name: string } | null> {
   const [user] = await db.select({ id: users.id, name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
   return user || null;
 }
 
-async function enrichPriority(priority: any, metrics: any): Promise<PriorityWithMetrics> {
+async function enrichPriority(priority: any, metrics: DerivedMetricsRow | null): Promise<PriorityWithMetrics> {
   const projectCount = Number(metrics?.project_count || 0);
   const hasProjects = projectCount > 0;
 
-  const effectiveHealth = hasProjects
+  const effectiveHealth: PriorityHealth = hasProjects
     ? (metrics?.derived_health || "healthy")
     : (priority.manualHealth || "healthy");
 
@@ -294,7 +308,7 @@ router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Re
     }
 
     // Validate manual_health
-    if (manual_health && !["healthy", "at_risk", "critical"].includes(manual_health)) {
+    if (manual_health && !(PRIORITY_HEALTH_VALUES as readonly string[]).includes(manual_health)) {
       return res.status(400).json({ error: "manual_health must be one of: healthy, at_risk, critical" });
     }
 
@@ -390,7 +404,7 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
     }
 
     // Validate manual_health
-    if (manual_health !== undefined && manual_health !== null && !["healthy", "at_risk", "critical"].includes(manual_health)) {
+    if (manual_health !== undefined && manual_health !== null && !(PRIORITY_HEALTH_VALUES as readonly string[]).includes(manual_health)) {
       return res.status(400).json({ error: "manual_health must be one of: healthy, at_risk, critical" });
     }
 
