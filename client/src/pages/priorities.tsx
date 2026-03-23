@@ -1,13 +1,18 @@
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Flag, Plus, AlertTriangle, Clock } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Flag, Plus, AlertTriangle, Clock, Settings } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
 
 const token = () => localStorage.getItem("auth_token") || "";
 
@@ -91,6 +96,7 @@ export function PriorityCard({ priority }: { priority: Priority }) {
         {/* Meta */}
         <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
           {priority.owner && <span>{priority.owner.name}</span>}
+          {!priority.owner && priority.assignedTo && <span>{priority.assignedTo}</span>}
           {priority.dueDate && (
             <span className={days != null && days <= 7 ? "text-red-600 font-medium" : days != null && days <= 14 ? "text-amber-600 font-medium" : ""}>
               <Clock className="w-3 h-3 inline mr-0.5" />
@@ -125,6 +131,9 @@ export function PriorityCard({ priority }: { priority: Priority }) {
 
         {/* Footer */}
         <div className="text-xs text-muted-foreground">
+          {priority.department && (
+            <span className="mr-2">{priority.department}</span>
+          )}
           {priority.hasProjects ? (
             <span>
               {priority.projectCount} project{priority.projectCount !== 1 ? "s" : ""}
@@ -143,11 +152,114 @@ export function PriorityCard({ priority }: { priority: Priority }) {
   );
 }
 
+const emptyForm = {
+  title: "",
+  description: "",
+  department: "",
+  severity: "normal",
+  due_date: "",
+  target_outcome: "",
+  manual_health: "",
+  manual_progress: "",
+};
+
+function CreatePriorityDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const [form, setForm] = useState(emptyForm);
+  const queryClient = useQueryClient();
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/priorities", {
+        title: form.title,
+        description: form.description || null,
+        department: form.department || null,
+        severity: form.severity,
+        due_date: form.due_date || null,
+        target_outcome: form.target_outcome || null,
+        manual_health: form.manual_health || null,
+        manual_progress: form.manual_progress ? parseInt(form.manual_progress) : null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      setForm(emptyForm);
+      onOpenChange(false);
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add Priority</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label htmlFor="title" className="text-xs">Title *</Label>
+            <Input id="title" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Priority title" />
+          </div>
+          <div>
+            <Label htmlFor="description" className="text-xs">Description</Label>
+            <Textarea id="description" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Brief description" rows={2} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="department" className="text-xs">Department</Label>
+              <Input id="department" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} placeholder="e.g. Engineering" />
+            </div>
+            <div>
+              <Label htmlFor="severity" className="text-xs">Severity</Label>
+              <Select value={form.severity} onValueChange={v => setForm({ ...form, severity: v })}>
+                <SelectTrigger id="severity"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="important">High</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label htmlFor="due_date" className="text-xs">Due Date</Label>
+              <Input id="due_date" type="date" value={form.due_date} onChange={e => setForm({ ...form, due_date: e.target.value })} />
+            </div>
+            <div>
+              <Label htmlFor="manual_health" className="text-xs">Health</Label>
+              <Select value={form.manual_health || "none"} onValueChange={v => setForm({ ...form, manual_health: v === "none" ? "" : v })}>
+                <SelectTrigger id="manual_health"><SelectValue placeholder="Auto" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Auto</SelectItem>
+                  <SelectItem value="healthy">Healthy</SelectItem>
+                  <SelectItem value="at_risk">At Risk</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="target_outcome" className="text-xs">Target Outcome</Label>
+            <Textarea id="target_outcome" value={form.target_outcome} onChange={e => setForm({ ...form, target_outcome: e.target.value })} placeholder="What does success look like?" rows={2} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => createMutation.mutate()} disabled={!form.title.trim() || createMutation.isPending}>
+            {createMutation.isPending ? "Creating..." : "Create Priority"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function PrioritiesPage() {
   const { user } = useAuth();
   const [levelFilter, setLevelFilter] = useState("all");
   const [healthFilter, setHealthFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const { data: priorities = [], isLoading } = useQuery<Priority[]>({
     queryKey: ["/api/priorities"],
@@ -185,16 +297,22 @@ export default function PrioritiesPage() {
             Company Priorities
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Strategic focus areas — {filtered.length} active priorities
+            Strategic focus areas — {filtered.length} active priorit{filtered.length === 1 ? "y" : "ies"}
           </p>
         </div>
         {isAdmin && (
-          <Link href="/company-priorities">
-            <Button size="sm">
+          <div className="flex items-center gap-2">
+            <Link href="/company-priorities">
+              <Button variant="outline" size="sm">
+                <Settings className="w-4 h-4 mr-1" />
+                Manage
+              </Button>
+            </Link>
+            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="w-4 h-4 mr-1" />
               Add Priority
             </Button>
-          </Link>
+          </div>
         )}
       </div>
 
@@ -264,6 +382,8 @@ export default function PrioritiesPage() {
           ))}
         </div>
       )}
+
+      {isAdmin && <CreatePriorityDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />}
     </PageShell>
   );
 }

@@ -1202,6 +1202,85 @@ async function runAdditiveSchemaAlignments() {
     END $$;
   `);
 
+  // ── Priority strategic layer: priority_projects junction table ──
+  await safeExec("priority_projects table", `
+    CREATE TABLE IF NOT EXISTS priority_projects (
+      id SERIAL PRIMARY KEY,
+      priority_id INTEGER NOT NULL REFERENCES mytool_company_priorities(id) ON DELETE CASCADE,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      linked_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE(priority_id, project_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_priority_projects_priority_id ON priority_projects(priority_id);
+    CREATE INDEX IF NOT EXISTS idx_priority_projects_project_id ON priority_projects(project_id);
+  `);
+
+  // ── Strategic layer columns on mytool_company_priorities ──
+  await safeExec("priority strategic columns", `
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS accountable_exec_id INTEGER REFERENCES users(id);
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS owner_user_id INTEGER REFERENCES users(id);
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS target_start_date TEXT;
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS target_outcome TEXT;
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS manual_health TEXT;
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS manual_progress INTEGER;
+  `);
+
+  // ── Priority derived metrics VIEW ──
+  await safeExec("priority_derived_metrics view", `
+    CREATE OR REPLACE VIEW priority_derived_metrics AS
+    SELECT
+      cp.id AS priority_id,
+      COUNT(DISTINCT pp.project_id) AS project_count,
+      COUNT(DISTINCT CASE
+        WHEN LOWER(pes.rag_status) IN ('red') THEN pp.project_id
+      END) AS at_risk_project_count,
+      CASE
+        WHEN bool_or(LOWER(pes.rag_status) = 'red') THEN 'critical'
+        WHEN bool_or(LOWER(pes.rag_status) IN ('amber', 'orange')) THEN 'at_risk'
+        WHEN COUNT(DISTINCT pp.project_id) = 0 THEN NULL
+        ELSE 'healthy'
+      END AS derived_health,
+      COALESCE(SUM(CAST(dpk.total_planned_revenue AS NUMERIC)), 0) AS total_revenue,
+      COALESCE(SUM(CAST(dpk.total_planned_expenses AS NUMERIC)), 0) AS total_cos,
+      COALESCE(SUM(CAST(dpk.total_planned_revenue AS NUMERIC)), 0)
+        - COALESCE(SUM(CAST(dpk.total_planned_expenses AS NUMERIC)), 0) AS total_gp,
+      COALESCE(AVG(CAST(dpk.avg_actual_pct_complete AS NUMERIC)), 0) AS avg_progress,
+      (SELECT COUNT(*) FROM work_items wi
+       WHERE wi.project_id IN (SELECT project_id FROM priority_projects WHERE priority_id = cp.id)
+       AND (LOWER(wi.status) LIKE '%block%')
+       AND wi.deleted_at IS NULL) AS blocker_count,
+      (SELECT COUNT(*) FROM work_items wi
+       WHERE wi.project_id IN (SELECT project_id FROM priority_projects WHERE priority_id = cp.id)
+       AND LOWER(wi.status) NOT IN ('complete', 'completed', 'done', 'cancelled', 'canceled', 'qc approved')
+       AND wi.deleted_at IS NULL) AS open_task_count
+    FROM mytool_company_priorities cp
+    LEFT JOIN priority_projects pp ON cp.id = pp.priority_id
+    LEFT JOIN project_execution_state pes ON pp.project_id = pes.project_id
+    LEFT JOIN derived_project_kpis dpk ON pp.project_id = dpk.project_id
+    GROUP BY cp.id;
+  `);
+
+  // ── Migrate priority_links to priority_projects (one-time backfill) ──
+  await safeExec("migrate priority_links to priority_projects", `
+    INSERT INTO priority_projects (priority_id, project_id, linked_at)
+    SELECT pl.priority_id, pl.project_id, pl.created_at
+    FROM priority_links pl
+    WHERE pl.project_id IS NOT NULL
+    ON CONFLICT (priority_id, project_id) DO NOTHING;
+  `);
+
+  // ── Backfill owner_user_id from assigned_to text ──
+  await safeExec("backfill priority owner_user_id", `
+    UPDATE mytool_company_priorities mcp
+    SET owner_user_id = u.id
+    FROM users u
+    WHERE mcp.assigned_to IS NOT NULL
+      AND mcp.owner_user_id IS NULL
+      AND LOWER(TRIM(mcp.assigned_to)) = LOWER(TRIM(u.name));
+  `);
+
   console.log("[Schema] Additive alignments completed");
 }
 
