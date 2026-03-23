@@ -12,6 +12,20 @@ import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./ser
 import { requirePermission } from "./permission-middleware";
 import { notifyHandoverSubmitted, notifyHandoverAccepted, notifyHandoverRejected } from "./services/notification-service";
 import { PM_REVIEW_ROLES, canReviewHandover } from "@shared/roles/pd-roles";
+import { z } from "zod";
+
+const deliverableItemSchema = z.object({
+  reference: z.string().optional(),
+  date: z.string().optional(),
+  uploadedBy: z.string().optional(),
+  uploadedAt: z.string().optional(),
+}).passthrough();
+
+const deliverablesSchema = z.object({
+  handoverCharter: deliverableItemSchema.optional().nullable(),
+  siteVisitReport: deliverableItemSchema.optional().nullable(),
+  signedCostProposal: deliverableItemSchema.optional().nullable(),
+}).passthrough();
 const PD_PM_HANDOVER_GATE_ID = "PD_PM_HANDOVER";
 
 /** @deprecated Used only by legacy gate management routes. Migrate to Drizzle query builder. */
@@ -553,6 +567,18 @@ export function registerHandoverRoutes(app: Express) {
 
       const body = req.body || {};
       const user = (req as any).user as any;
+
+      // Validate deliverables JSONB structure if provided
+      if (body.deliverables && typeof body.deliverables === "object" && Object.keys(body.deliverables).length > 0) {
+        const parsed = deliverablesSchema.safeParse(body.deliverables);
+        if (!parsed.success) {
+          return res.status(400).json({
+            error: "Invalid deliverables format. Expected structure: { handoverCharter?: { reference, date }, siteVisitReport?: { reference, date }, signedCostProposal?: { reference, date } }",
+            details: parsed.error.issues,
+          });
+        }
+      }
+
       const existing = await db.select({ id: projectPdPmHandover.id }).from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
 
       const handoverValues = {
