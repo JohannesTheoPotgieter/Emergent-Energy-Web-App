@@ -377,6 +377,9 @@ router.get(
         db.select({
           projectName: programInflows.projectName,
           milestoneAmount: programInflows.milestoneAmount,
+          plannedPaymentDate: programInflows.plannedPaymentDate,
+          invoiceRaisedDate: programInflows.invoiceRaisedDate,
+          paymentReceivedDate: programInflows.paymentReceivedDate,
         }).from(programInflows).where(isNull(programInflows.effectiveTo)),
         db.select({
           projectName: programExpense.projectName,
@@ -404,10 +407,26 @@ router.get(
       const now = new Date();
       const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-      // 6. Build 3-month forecast from planned/scheduled expense data
-      // Use expenses not yet invoiced that have a forecast payment date
+      // 6. Build 3-month forecast from planned data in the system
       const forecastWindow = getNext3MonthKeys(currentMk);
-      const forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[] = [];
+
+      // Forecast Revenue: use planned inflow milestones with plannedPaymentDate in the forecast window
+      // (only milestones not yet received — i.e. no paymentReceivedDate)
+      const forecastRevByMonth: Record<string, number> = {};
+      for (const inf of allInflows) {
+        const amt = safeNum(inf.milestoneAmount);
+        if (amt === 0) continue;
+        // Skip milestones already received
+        if ((inf as any).paymentReceivedDate) continue;
+        const revDate = (inf as any).plannedPaymentDate || (inf as any).invoiceRaisedDate;
+        const mk = extractMonthKey(revDate);
+        if (mk && forecastWindow.includes(mk)) {
+          forecastRevByMonth[mk] = (forecastRevByMonth[mk] || 0) + amt;
+        }
+      }
+
+      // Forecast COS: use budget amounts from uninvoiced expenses with forecast/planned dates
+      const forecastCosByMonth: Record<string, number> = {};
       for (const exp of allExpenses) {
         if (exp.rowType !== "item" && exp.rowType != null) continue;
         // Skip items already invoiced (they're in actuals)
@@ -418,11 +437,9 @@ router.get(
         const forecastDate = (exp as any).computedForecastPaymentDate || (exp as any).forecastPaymentDate;
         const fMk = extractMonthKey(forecastDate);
         if (fMk && forecastWindow.includes(fMk)) {
-          forecastExpenses.push({ projectName: exp.projectName, rowType: exp.rowType, budgetTotal: budgetAmt, forecastMonth: fMk });
+          forecastCosByMonth[fMk] = (forecastCosByMonth[fMk] || 0) + budgetAmt;
         }
       }
-      const forecastRevByMonth = buildForecastRevenue(allInflows, forecastExpenses, forecastWindow);
-      const forecastCosByMonth = buildForecastCos(forecastExpenses, forecastWindow);
 
       // Build monthly dashboard data
       const months = monthKeys.map((mk) => {
