@@ -108,41 +108,46 @@ async function getUserById(userId: number): Promise<{ id: number; name: string }
 }
 
 async function enrichPriority(priority: any, metrics: DerivedMetricsRow | null): Promise<PriorityWithMetrics> {
-  const projectCount = Number(metrics?.project_count || 0);
-  const hasProjects = projectCount > 0;
-
-  const effectiveHealth: PriorityHealth = hasProjects
-    ? (metrics?.derived_health || "healthy")
-    : (priority.manualHealth || "healthy");
-
-  const effectiveProgress = hasProjects
-    ? Math.round(Number(metrics?.avg_progress || 0))
-    : (priority.manualProgress || 0);
-
-  const owner = priority.ownerUserId ? await getUserById(priority.ownerUserId) : null;
-  const accountableExec = priority.accountableExecId ? await getUserById(priority.accountableExecId) : null;
-
-  return {
+  // Handle both camelCase (drizzle ORM) and snake_case (raw SQL) column names
+  const p = {
     id: priority.id,
     title: priority.title,
     description: priority.description,
     department: priority.department,
     severity: priority.severity,
     status: priority.status,
-    dueDate: priority.dueDate,
-    assignedTo: priority.assignedTo,
-    ownerRole: priority.ownerRole,
-    sortOrder: priority.sortOrder || 0,
-    manualHealth: priority.manualHealth,
-    manualProgress: priority.manualProgress,
-    targetStartDate: priority.targetStartDate,
-    targetOutcome: priority.targetOutcome,
-    accountableExecId: priority.accountableExecId,
-    ownerUserId: priority.ownerUserId,
-    priorityRank: priority.priorityRank,
+    dueDate: priority.dueDate ?? priority.due_date,
+    assignedTo: priority.assignedTo ?? priority.assigned_to,
+    ownerRole: priority.ownerRole ?? priority.owner_role,
+    sortOrder: priority.sortOrder ?? priority.sort_order ?? 0,
+    manualHealth: priority.manualHealth ?? priority.manual_health,
+    manualProgress: priority.manualProgress ?? priority.manual_progress,
+    targetStartDate: priority.targetStartDate ?? priority.target_start_date,
+    targetOutcome: priority.targetOutcome ?? priority.target_outcome,
+    accountableExecId: priority.accountableExecId ?? priority.accountable_exec_id,
+    ownerUserId: priority.ownerUserId ?? priority.owner_user_id,
+    priorityRank: priority.priorityRank ?? priority.priority_rank,
     horizon: priority.horizon,
-    createdAt: priority.createdAt,
-    updatedAt: priority.updatedAt,
+    createdAt: priority.createdAt ?? priority.created_at,
+    updatedAt: priority.updatedAt ?? priority.updated_at,
+  };
+
+  const projectCount = Number(metrics?.project_count || 0);
+  const hasProjects = projectCount > 0;
+
+  const effectiveHealth: PriorityHealth = hasProjects
+    ? (metrics?.derived_health || "healthy")
+    : (p.manualHealth || "healthy");
+
+  const effectiveProgress = hasProjects
+    ? Math.round(Number(metrics?.avg_progress || 0))
+    : (p.manualProgress || 0);
+
+  const owner = p.ownerUserId ? await getUserById(p.ownerUserId) : null;
+  const accountableExec = p.accountableExecId ? await getUserById(p.accountableExecId) : null;
+
+  return {
+    ...p,
     owner,
     accountableExec,
     effectiveHealth,
@@ -164,11 +169,29 @@ router.get("/api/priorities", requireAuth, async (req: Request, res: Response) =
     const includeCancelled = req.query.include_cancelled === "true";
 
     // Fetch all priorities
-    let allPriorities = await db.select().from(mytoolCompanyPriorities);
+    let allPriorities: any[];
+    try {
+      allPriorities = await db.select().from(mytoolCompanyPriorities);
+    } catch (dbErr: any) {
+      console.error("[Priorities] DB query failed:", dbErr.message);
+      // Fallback: try raw SQL in case drizzle schema mismatch
+      try {
+        const raw: any = await db.execute(sql`SELECT * FROM mytool_company_priorities ORDER BY id`);
+        allPriorities = raw.rows || raw || [];
+      } catch (rawErr: any) {
+        console.error("[Priorities] Raw SQL fallback also failed:", rawErr.message);
+        return res.status(500).json({ error: "Database query failed", detail: dbErr.message });
+      }
+    }
+    console.log(`[Priorities] Fetched ${allPriorities.length} total priorities from DB`);
 
     // Filter out cancelled unless requested
     if (!includeCancelled) {
+      const beforeCount = allPriorities.length;
       allPriorities = allPriorities.filter(p => p.status !== "closed");
+      if (beforeCount !== allPriorities.length) {
+        console.log(`[Priorities] Filtered out ${beforeCount - allPriorities.length} closed priorities, ${allPriorities.length} remaining`);
+      }
     }
 
     // Get all derived metrics
