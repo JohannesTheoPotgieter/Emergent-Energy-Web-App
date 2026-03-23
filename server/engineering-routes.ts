@@ -12,7 +12,7 @@ import {
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory, projectExecutionState,
   projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
-  workItems, workItemAssignments,
+  workItems, workItemAssignments, notifications, notificationThrottle,
   msObjects,
   phaseTemplate as phaseTemplateTbl,
   uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication, appSettings,
@@ -138,11 +138,46 @@ function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
-// Notifications feature removed – keep function signature as no-op so callers don't break
-async function createNotification(_recipientUserId: number, _eventType: string, _title: string, _body: string | null, _opts: {
-  projectName?: string; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
+/** Insert an in-app notification row with throttle deduplication. Silently no-ops on error. */
+async function createNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
+  projectName?: string; projectId?: number; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
 } = {}) {
-  return null;
+  try {
+    // Throttle: skip if same recipient+event+entity was notified in last 5 minutes
+    const entityId = opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0;
+    const entityType = opts.linkedTaskId ? "task" : opts.linkedDeliverableId ? "deliverable" : "other";
+    if (entityId) {
+      const [recent] = await db.select({ id: notificationThrottle.id })
+        .from(notificationThrottle)
+        .where(and(
+          eq(notificationThrottle.recipientUserId, recipientUserId),
+          eq(notificationThrottle.eventType, eventType),
+          eq(notificationThrottle.entityType, entityType),
+          eq(notificationThrottle.entityId, entityId),
+          gt(notificationThrottle.lastSentAt, new Date(Date.now() - 5 * 60_000)),
+        ));
+      if (recent) return null; // Throttled — skip duplicate
+      await db.insert(notificationThrottle).values({ recipientUserId, eventType, entityType, entityId })
+        .onConflictDoNothing();
+    }
+
+    const [row] = await db.insert(notifications).values({
+      recipientUserId,
+      eventType,
+      title,
+      body,
+      projectName: opts.projectName ?? null,
+      projectId: opts.projectId ?? null,
+      linkedTaskId: opts.linkedTaskId ?? null,
+      linkedDeliverableId: opts.linkedDeliverableId ?? null,
+      linkedWarningId: opts.linkedWarningId ?? null,
+      linkedPlanItemId: opts.linkedPlanItemId ?? null,
+    }).returning();
+    return row;
+  } catch (err) {
+    console.error("[Notifications] Failed to create notification:", err);
+    return null;
+  }
 }
 
 /**
@@ -582,6 +617,7 @@ export function registerEngineeringRoutes(app: Express) {
         dueDate: data.dueDate || null,
         ownerUserId: data.ownerUserId || null,
         createdBy: getUser(req).id,
+        plannedHours: data.plannedHours ? parseFloat(data.plannedHours) : null,
       });
 
       if (task.ownerUserId && task.ownerUserId !== getUser(req).id) {
@@ -682,6 +718,7 @@ export function registerEngineeringRoutes(app: Express) {
         trackingRag: updates.trackingRag,
         taskTypeTag: updates.taskTypeTag,
         blockerReason: updates.blockerReason,
+        plannedHours: updates.plannedHours !== undefined ? parseFloat(updates.plannedHours) || null : undefined,
       });
       if (!updated) return sendError(res, notFound("Task"));
 
@@ -1563,6 +1600,15 @@ export function registerEngineeringRoutes(app: Express) {
         newValue: body.trim(),
       });
 
+      // Notify task owner about new comment
+      const [commentTask] = await db.select({ ownerUserId: workItems.ownerUserId, title: workItems.title, projectName: workItems.subProjectName })
+        .from(workItems).where(eq(workItems.id, taskId));
+      if (commentTask?.ownerUserId && commentTask.ownerUserId !== getUser(req).id) {
+        createNotification(commentTask.ownerUserId, "task.comment_added", `New comment on: ${commentTask.title}`,
+          `${getUser(req).name || "Someone"} commented on "${commentTask.title}"`,
+          { linkedTaskId: taskId, projectName: commentTask.projectName ?? undefined });
+      }
+
       res.json(comment);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -2347,61 +2393,23 @@ export function registerEngineeringRoutes(app: Express) {
         return "P0_FIRST_ASSESSMENT";
       }
 
-      const projectMap = new Map<string, {
-        projectName: string;
-        phase: string;
-        tasks: typeof allTasks;
-      }>();
+      const projectMap = new Map<string, { projectName: string; phase: string }>();
 
       for (const t of allTasks) {
         const key = t.projectName || "Unassigned";
         if (!projectMap.has(key)) {
-          const phase = lookupPhase(key);
-          projectMap.set(key, { projectName: key, phase, tasks: [] });
+          projectMap.set(key, { projectName: key, phase: lookupPhase(key) });
         }
-        projectMap.get(key)!.tasks.push(t);
       }
 
-      const todayStr = new Date().toISOString().split('T')[0];
-      const openStatuses = new Set(["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE"]);
+      const result = Array.from(projectMap.values()).map(p => ({
+        projectName: p.projectName,
+        displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+        phase: p.phase,
+        phaseLabel: PROJECT_PHASE_LABELS[p.phase as ProjectPhase] || p.phase,
+      }));
 
-      const result = Array.from(projectMap.values()).map(p => {
-        const openTasks = p.tasks.filter(t => openStatuses.has(t.status));
-        const holdTasks = p.tasks.filter(t => t.status === "HOLD");
-        const completedTasks = p.tasks.filter(t => t.status === "COMPLETE");
-        const allActive = p.tasks.filter(t => t.status !== "COMPLETE");
-        const overdueTasks = allActive.filter(t => t.dueDate && t.dueDate < todayStr);
-
-        return {
-          projectName: p.projectName,
-          displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
-          phase: p.phase,
-          phaseLabel: PROJECT_PHASE_LABELS[p.phase as ProjectPhase] || p.phase,
-          totalTasks: p.tasks.length,
-          activeTasks: allActive.length,
-          completedTasks: completedTasks.length,
-          overdueTasks: overdueTasks.length,
-          holdTasks: holdTasks.length,
-          tasks: [...openTasks, ...holdTasks].map(t => ({
-            id: t.id,
-            title: t.title,
-            status: t.status,
-            priority: t.priority,
-            dueDate: t.dueDate,
-            assignees: t.assignees,
-            trackingRag: t.trackingRag,
-          })),
-        };
-      }).sort((a, b) => {
-        if (a.overdueTasks !== b.overdueTasks) return b.overdueTasks - a.overdueTasks;
-        return b.activeTasks - a.activeTasks;
-      });
-
-      res.json({
-        projects: result,
-        lifecyclePhases: PROJECT_PHASES,
-        phaseLabels: PROJECT_PHASE_LABELS,
-      });
+      res.json({ projects: result });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
