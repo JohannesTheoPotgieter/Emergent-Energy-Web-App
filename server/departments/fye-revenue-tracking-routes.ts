@@ -513,71 +513,15 @@ router.get(
       // Filter: isActive may be undefined in SQLite (column missing) — treat as true
       const activeProjects = projects.filter((p) => p.isActive !== false);
 
-      // Try project_revenue_summary first (Postgres), fall back to computing from raw data
-      let revSummaryMap = new Map<string, any>();
+      // Try project_revenue_summary for hasTracker flag only
+      let trackerSet = new Set<string>();
       try {
         const revSummaries = await db.select({
           projectName: projectRevenueSummary.projectName,
-          plannedRevenue: projectRevenueSummary.plannedRevenue,
-          plannedExpenditure: projectRevenueSummary.plannedExpenditure,
-          actualRevenue: projectRevenueSummary.actualRevenue,
-          actualExpenditure: projectRevenueSummary.actualExpenditure,
         }).from(projectRevenueSummary);
-        if (revSummaries.length > 0) {
-          revSummaryMap = new Map(revSummaries.map((r) => [r.projectName, r]));
-        }
+        for (const r of revSummaries) trackerSet.add(r.projectName);
       } catch {
-        // Table may not exist in SQLite — proceed with computed values
-      }
-
-      // If project_revenue_summary is empty, compute from raw data (standardized to expenseActualTotal)
-      if (revSummaryMap.size === 0) {
-        const allInflows = await db.select({
-          projectName: programInflows.projectName,
-          milestoneAmount: programInflows.milestoneAmount,
-        }).from(programInflows);
-        // Total revenue per project (all milestones, all time)
-        const inflowsByProject = new Map<string, { budget: number }>();
-        for (const inf of allInflows) {
-          const pn = normalizeProjectName(inf.projectName);
-          if (!inflowsByProject.has(pn)) inflowsByProject.set(pn, { budget: 0 });
-          inflowsByProject.get(pn)!.budget += safeNum(inf.milestoneAmount);
-        }
-
-        // COS per project using expenseActualTotal only
-        const allExpenses = await db.select({
-          projectName: programExpense.projectName,
-          rowType: programExpense.rowType,
-          expenseActualTotal: programExpense.expenseActualTotal,
-          expenseInvoicedDate: programExpense.expenseInvoicedDate,
-        }).from(programExpense);
-        const expensesByProject = new Map<string, { budget: number; actual: number }>();
-        for (const exp of allExpenses) {
-          if (exp.rowType !== "item" && exp.rowType != null) continue;
-          const pn = normalizeProjectName(exp.projectName);
-          if (!expensesByProject.has(pn)) expensesByProject.set(pn, { budget: 0, actual: 0 });
-          const entry = expensesByProject.get(pn)!;
-          const amt = safeNum(exp.expenseActualTotal);
-          entry.budget += amt;
-          if (exp.expenseInvoicedDate) {
-            const mk = extractMonthKey(exp.expenseInvoicedDate);
-            if (mk && mk >= fyeStart && mk <= fyeEnd) {
-              entry.actual += amt;
-            }
-          }
-        }
-
-        for (const p of activeProjects) {
-          const pn = normalizeProjectName(p.projectName);
-          const inf = inflowsByProject.get(pn) || { budget: 0 };
-          const exp = expensesByProject.get(pn) || { budget: 0, actual: 0 };
-          revSummaryMap.set(p.projectName, {
-            plannedRevenue: inf.budget,
-            plannedExpenditure: exp.budget,
-            actualRevenue: exp.actual > 0 ? (exp.budget > 0 ? (exp.actual / exp.budget) * inf.budget : 0) : 0,
-            actualExpenditure: exp.actual,
-          });
-        }
+        // Table may not exist
       }
 
       // Editable fields (for project type, funding type, province)
@@ -628,44 +572,80 @@ router.get(
         // project_plan may not exist
       }
 
-      // Compute FYE-filtered actuals using COS-ratio allocation
-      // Load inflows and expenses for allocation
-      const [fyeInflows, fyeExpenses] = await Promise.all([
+      // Load all inflows and expenses for FYE-specific budget + actual computation
+      const [allInflows, allExpenses] = await Promise.all([
         db.select({
           projectName: programInflows.projectName,
           milestoneAmount: programInflows.milestoneAmount,
+          plannedPaymentDate: programInflows.plannedPaymentDate,
+          paymentReceivedDate: programInflows.paymentReceivedDate,
+          invoiceRaisedDate: programInflows.invoiceRaisedDate,
         }).from(programInflows),
         db.select({
           projectName: programExpense.projectName,
           rowType: programExpense.rowType,
+          budgetTotal: programExpense.budgetTotal,
           expenseActualTotal: programExpense.expenseActualTotal,
           expenseInvoicedDate: programExpense.expenseInvoicedDate,
+          forecastPaymentDate: programExpense.forecastPaymentDate,
+          computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
         }).from(programExpense),
       ]);
 
-      // Total revenue per project (all milestones, all time — denominator for COS-ratio)
-      const revenueByProject = new Map<string, number>();
-      for (const inf of fyeInflows) {
+      // ── Budget COS per project (FYE-specific) ──
+      // Use the best available date to allocate budget to the FYE:
+      //   1. expenseInvoicedDate (if already invoiced → budget realized in that period)
+      //   2. computedForecastPaymentDate (computed forecast)
+      //   3. forecastPaymentDate (manual forecast)
+      // budgetTotal is the planned cost per line item
+      const budgetCosByProject = new Map<string, number>();
+      // Also compute total COS per project (all time) for COS-ratio allocation
+      const totalCosByProject = new Map<string, number>();
+      for (const exp of allExpenses) {
+        if (exp.rowType !== "item" && exp.rowType != null) continue;
+        const pn = normalizeProjectName(exp.projectName);
+        const budgetAmt = safeNum(exp.budgetTotal);
+        const actualAmt = safeNum(exp.expenseActualTotal);
+
+        // Total COS (all time) for COS-ratio denominator
+        if (actualAmt > 0) {
+          totalCosByProject.set(pn, (totalCosByProject.get(pn) || 0) + actualAmt);
+        }
+
+        // FYE-specific budget COS: use best date to determine which FYE this expense belongs to
+        if (budgetAmt === 0) continue;
+        const budgetDate = exp.expenseInvoicedDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
+        const budgetMk = extractMonthKey(budgetDate);
+        if (budgetMk && budgetMk >= fyeStart && budgetMk <= fyeEnd) {
+          budgetCosByProject.set(pn, (budgetCosByProject.get(pn) || 0) + budgetAmt);
+        }
+      }
+
+      // ── Budget Revenue per project (FYE-specific) ──
+      // Use plannedPaymentDate (or paymentReceivedDate/invoiceRaisedDate as fallback) to allocate milestones to FYE
+      // Also compute total revenue per project (all time) for COS-ratio allocation
+      const budgetRevByProject = new Map<string, number>();
+      const totalRevByProject = new Map<string, number>();
+      for (const inf of allInflows) {
         const amt = safeNum(inf.milestoneAmount);
         if (amt === 0) continue;
         const pn = normalizeProjectName(inf.projectName);
-        revenueByProject.set(pn, (revenueByProject.get(pn) || 0) + amt);
+
+        // Total revenue (all time) for COS-ratio denominator
+        totalRevByProject.set(pn, (totalRevByProject.get(pn) || 0) + amt);
+
+        // FYE-specific budget revenue
+        const revDate = inf.plannedPaymentDate || inf.invoiceRaisedDate || inf.paymentReceivedDate;
+        const revMk = extractMonthKey(revDate);
+        if (revMk && revMk >= fyeStart && revMk <= fyeEnd) {
+          budgetRevByProject.set(pn, (budgetRevByProject.get(pn) || 0) + amt);
+        }
       }
 
-      // Total COS per project (all item expenses, all time — denominator for COS-ratio)
-      const totalCosByProject = new Map<string, number>();
-      for (const exp of fyeExpenses) {
-        if (exp.rowType !== "item" && exp.rowType != null) continue;
-        const amt = safeNum(exp.expenseActualTotal);
-        if (amt === 0) continue;
-        const pn = normalizeProjectName(exp.projectName);
-        totalCosByProject.set(pn, (totalCosByProject.get(pn) || 0) + amt);
-      }
-
-      // Actual Revenue & Actual Expense per project — only invoiced items within FYE window
+      // ── Actual Revenue & Actual Expense per project (invoiced within FYE window) ──
       const actualRevByProject = new Map<string, number>();
       const actualExpByProject = new Map<string, number>();
-      for (const exp of fyeExpenses) {
+      for (const exp of allExpenses) {
         if (exp.rowType !== "item" && exp.rowType != null) continue;
         const amt = safeNum(exp.expenseActualTotal);
         if (amt === 0) continue;
@@ -680,24 +660,29 @@ router.get(
 
         // Actual revenue: COS-ratio allocation
         const projectTotalCOS = totalCosByProject.get(pn) || 0;
-        const projectTotalRevenue = revenueByProject.get(pn) || 0;
+        const projectTotalRevenue = totalRevByProject.get(pn) || 0;
         const revenueAmount = projectTotalCOS > 0 ? (amt / projectTotalCOS) * projectTotalRevenue : 0;
         actualRevByProject.set(pn, (actualRevByProject.get(pn) || 0) + revenueAmount);
       }
 
-      const projectRows = activeProjects.map((p) => {
-        const summary = revSummaryMap.get(p.projectName) as any;
+      // Build project rows — only include FYE-relevant projects
+      const projectRows: any[] = [];
+      for (const p of activeProjects) {
         const editable = editableMap.get(p.projectName) as any;
         const pn = normalizeProjectName(p.projectName);
         const plans = plansByProject.get(pn) || [];
 
-        // Budget: from revenue summary (regardless of FYE/status)
-        const budgetRev = safeNum(summary?.plannedRevenue);
-        const budgetCos = safeNum(summary?.plannedExpenditure);
+        // FYE-specific budget
+        const budgetRev = budgetRevByProject.get(pn) || 0;
+        const budgetCos = budgetCosByProject.get(pn) || 0;
 
-        // Actual: only invoiced data within selected FYE window
+        // FYE-specific actuals
         const actualRev = actualRevByProject.get(pn) || 0;
         const actualExp = actualExpByProject.get(pn) || 0;
+
+        // Only include projects that have FYE-relevant data
+        if (budgetRev === 0 && budgetCos === 0 && actualRev === 0 && actualExp === 0) continue;
+
         const budgetGp = budgetRev - budgetCos;
         const actualGp = actualRev - actualExp;
 
@@ -709,7 +694,7 @@ router.get(
         // Province: editable field first, then pd_tickets fallback
         const province = editable?.province || provinceMap.get(p.projectName) || null;
 
-        return {
+        projectRows.push({
           projectId: p.id,
           projectName: p.projectName,
           businessDeveloper: p.pd || null,
@@ -729,9 +714,9 @@ router.get(
           budgetGpPct: safeDivide(budgetGp, budgetRev),
           actualGpPct: safeDivide(actualGp, actualRev),
           signedStatus: p.signedStatus || "NONE",
-          hasTracker: revSummaryMap.has(p.projectName),
-        };
-      });
+          hasTracker: trackerSet.has(p.projectName),
+        });
+      }
 
       // Summary totals
       const totals = projectRows.reduce(
