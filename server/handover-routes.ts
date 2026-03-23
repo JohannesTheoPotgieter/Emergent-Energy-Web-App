@@ -429,34 +429,34 @@ export function registerHandoverRoutes(app: Express) {
 
   app.get("/api/pd-pm-handover/control", requireAuth, requirePermission("handover", "view"), async (_req: Request, res: Response) => {
     try {
-      const rows: any[] = await db.execute(sql.raw(`
-        SELECT
-          p.id AS project_id,
-          p.project_name,
-          COALESCE(c.name, '') AS client_name,
-          p.pd,
-          p.pm,
-          p.excel_tracker_link,
-          p.execution_enabled,
-          h.status AS handover_status,
-          h.pd_owner,
-          h.pm_owner,
-          h.submitted_at AS submitted_date,
-          h.updated_at,
-          h.rejection_reason,
-          h.deliverables
-        FROM project_info p
-        LEFT JOIN clients c ON c.id = p.client_id
-        LEFT JOIN project_pd_pm_handover h ON h.project_id = p.id
-        WHERE p.is_active = true
-        ORDER BY COALESCE(h.updated_at, p.updated_at) DESC NULLS LAST, p.project_name ASC
-      `)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const rows = await db
+        .select({
+          project_id: projectInfo.id,
+          project_name: projectInfo.projectName,
+          client_name: sql<string>`COALESCE(${clients.name}, '')`,
+          pd: projectInfo.pd,
+          pm: projectInfo.pm,
+          excel_tracker_link: projectInfo.excelTrackerLink,
+          execution_enabled: projectInfo.executionEnabled,
+          handover_status: projectPdPmHandover.status,
+          pd_owner: projectPdPmHandover.pdOwner,
+          pm_owner: projectPdPmHandover.pmOwner,
+          submitted_date: projectPdPmHandover.submittedAt,
+          updated_at: sql<Date>`COALESCE(${projectPdPmHandover.updatedAt}, ${projectInfo.updatedAt})`,
+          rejection_reason: projectPdPmHandover.rejectionReason,
+          deliverables: projectPdPmHandover.deliverables,
+        })
+        .from(projectInfo)
+        .leftJoin(clients, eq(clients.id, projectInfo.clientId))
+        .leftJoin(projectPdPmHandover, eq(projectPdPmHandover.projectId, projectInfo.id))
+        .where(eq(projectInfo.isActive, true))
+        .orderBy(sql`COALESCE(${projectPdPmHandover.updatedAt}, ${projectInfo.updatedAt}) DESC NULLS LAST`, projectInfo.projectName);
 
       const now = Date.now();
       const items = rows.map((row) => {
         const status = row.handover_status || "DRAFT";
-        const deliverables = (() => { try { return typeof row.deliverables === "string" ? JSON.parse(row.deliverables) : (row.deliverables || {}); } catch { return {}; } })();
-        const deliverablesComplete = ["handoverCharter", "siteVisitReport", "signedCostProposal"].every((key) => Boolean(deliverables?.[key]));
+        const deliverables = normalizeDeliverables(row.deliverables);
+        const deliverablesComplete = ["handoverCharter", "siteVisitReport", "signedCostProposal"].every((key) => Boolean((deliverables as any)?.[key]));
         const trackerLinked = Boolean(row.excel_tracker_link);
         const executionEnabled = row.execution_enabled === true;
         const daysInStatus = row.updated_at ? Math.max(0, Math.floor((now - new Date(row.updated_at).getTime()) / (1000 * 60 * 60 * 24))) : 0;
@@ -815,7 +815,7 @@ export function registerHandoverRoutes(app: Express) {
       });
       // Notify PD team about acceptance
       try {
-        const pdOwnerName = handover.pd_owner;
+        const pdOwnerName = handover.pdOwner ?? handover.pd_owner;
         if (pdOwnerName) {
           const pdOwnerUsers = await db.select({ id: users.id }).from(users)
             .where(sql`${users.name} = ${pdOwnerName}`);
@@ -880,7 +880,7 @@ export function registerHandoverRoutes(app: Express) {
 
       // Notify PD team about rejection
       try {
-        const pdOwnerName = handover.pd_owner;
+        const pdOwnerName = handover.pdOwner ?? handover.pd_owner;
         if (pdOwnerName) {
           const pdOwnerUsers = await db.select({ id: users.id }).from(users)
             .where(sql`${users.name} = ${pdOwnerName}`);
