@@ -25,7 +25,6 @@ interface MonthMetric {
   budget: number;
   actualForecast: number;
   actual: number | null;
-  captured: number | null;
 }
 
 interface DashboardMonth {
@@ -179,24 +178,21 @@ function DashboardSection({
     { key: "budget", label: "Budget", color: "text-blue-700 bg-blue-50" },
     { key: "actualForecast", label: "Actual + Forecast", color: "text-emerald-700 bg-emerald-50" },
     { key: "actual", label: "Actual", color: "text-amber-700 bg-amber-50" },
-    { key: "captured", label: "Captured Data", color: "text-gray-700 bg-gray-50" },
   ] as const;
 
   const data = useMemo(() => {
     if (!isRunning) return months;
     // Cumulative
-    let cumBudget = 0, cumAF = 0, cumActual: number | null = 0, cumCaptured: number | null = 0;
+    let cumBudget = 0, cumAF = 0, cumActual: number | null = 0;
     return months.map((m) => {
       const metric = m[metricKey];
       cumBudget += metric.budget;
       cumAF += metric.actualForecast;
       if (metric.actual !== null) cumActual = (cumActual || 0) + metric.actual;
       else cumActual = cumActual || null;
-      if (metric.captured !== null) cumCaptured = (cumCaptured || 0) + metric.captured;
-      else cumCaptured = cumCaptured || null;
       return {
         ...m,
-        [metricKey]: { budget: cumBudget, actualForecast: cumAF, actual: cumActual, captured: cumCaptured },
+        [metricKey]: { budget: cumBudget, actualForecast: cumAF, actual: cumActual },
       };
     });
   }, [months, metricKey, isRunning]);
@@ -263,7 +259,6 @@ function DashboardChart({
     Budget: (m[metricKey] as MonthMetric).budget,
     "Actual + Forecast": (m[metricKey] as MonthMetric).actualForecast,
     Actual: (m[metricKey] as MonthMetric).actual,
-    Captured: (m[metricKey] as MonthMetric).captured,
   }));
 
   return (
@@ -282,7 +277,6 @@ function DashboardChart({
             <Area type="monotone" dataKey="Budget" fill="#3b82f6" stroke="#3b82f6" fillOpacity={0.15} strokeWidth={1} />
             <Line type="monotone" dataKey="Actual + Forecast" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
             <Line type="monotone" dataKey="Actual" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
-            <Line type="monotone" dataKey="Captured" stroke="#86efac" strokeWidth={1.5} strokeDasharray="4 2" dot={false} connectNulls={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
@@ -1272,9 +1266,9 @@ function SnapshotsTab({ fye }: { fye: number }) {
                   {sd.dashboard.months.map((m: any) => <th key={m.monthKey} className="text-right px-2 py-1.5 font-medium min-w-[80px]">{m.label}</th>)}
                 </tr></thead>
                 <tbody>
-                  {(["budget", "actualForecast", "actual", "captured"] as const).map((rk) => (
+                  {(["budget", "actualForecast", "actual"] as const).map((rk) => (
                     <tr key={rk} className="border-b hover:bg-muted/30">
-                      <td className="px-3 py-1.5 font-medium">{rk === "actualForecast" ? "Actual + Forecast" : rk === "captured" ? "Captured" : rk.charAt(0).toUpperCase() + rk.slice(1)}</td>
+                      <td className="px-3 py-1.5 font-medium">{rk === "actualForecast" ? "Actual + Forecast" : rk.charAt(0).toUpperCase() + rk.slice(1)}</td>
                       {sd.dashboard.months.map((m: any, i: number) => <td key={i} className="text-right px-2 py-1.5 tabular-nums">{m.revenue?.[rk] != null ? formatRand(m.revenue[rk]) : "–"}</td>)}
                     </tr>
                   ))}
