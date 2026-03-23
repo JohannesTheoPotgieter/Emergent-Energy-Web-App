@@ -25,6 +25,7 @@ import {
   Receipt,
   Truck,
   Building2,
+  FileText,
 } from "lucide-react";
 
 const token = () => localStorage.getItem("auth_token") || "";
@@ -668,6 +669,38 @@ export default function HomePage() {
         </h2>
         {getRoleKpis(roleCategory, kpis, stats, isLoading)}
       </div>
+
+      {/* Monthly Reporting — COO only */}
+      {userRole?.toUpperCase() === "COO_ADMIN" && (
+        <div className="mb-6">
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+            Monthly Reporting
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <QuickLink
+              href="/reports/pm/monthly"
+              icon={<FileText className="w-5 h-5 text-blue-600" />}
+              label="PM Monthly Report"
+              description="Project management monthly overview"
+              color="bg-blue-100"
+            />
+            <QuickLink
+              href="/reports/engineering/monthly"
+              icon={<FileText className="w-5 h-5 text-orange-600" />}
+              label="Engineering Monthly Report"
+              description="Engineering progress & metrics"
+              color="bg-orange-100"
+            />
+            <QuickLink
+              href="/reports/programme"
+              icon={<FileText className="w-5 h-5 text-violet-600" />}
+              label="Programme Reports"
+              description="Cross-programme reporting & analysis"
+              color="bg-violet-100"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Quick Access */}
       <div>
