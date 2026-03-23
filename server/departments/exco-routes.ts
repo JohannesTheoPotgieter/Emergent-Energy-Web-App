@@ -296,8 +296,13 @@ router.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
     });
 
     // Enrich with derived metrics from the strategic view for consistency
-    const metricsRows = await db.execute(sql`SELECT * FROM priority_derived_metrics`);
-    const allMetrics = (metricsRows.rows || metricsRows) as any[];
+    let allMetrics: any[] = [];
+    try {
+      const metricsRows = await db.execute(sql`SELECT * FROM priority_derived_metrics`);
+      allMetrics = (metricsRows.rows || metricsRows) as any[];
+    } catch (_) {
+      // View may not exist yet
+    }
     const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
 
     const enriched = priorities.map(p => {
