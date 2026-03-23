@@ -12,9 +12,8 @@ import {
   derivedProjectKpis,
   workItems,
   approvals,
-  dashboardProjectMetrics,
 } from "@shared/schema";
-import { eq, and, sql, desc, asc, inArray, not, isNull, or, ilike } from "drizzle-orm";
+import { eq, and, sql, desc, asc, inArray, isNull, or } from "drizzle-orm";
 
 const router = Router();
 

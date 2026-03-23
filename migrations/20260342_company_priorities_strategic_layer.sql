@@ -84,13 +84,13 @@ SELECT
   -- Project counts
   COUNT(DISTINCT pp.project_id) AS project_count,
   COUNT(DISTINCT CASE
-    WHEN pes.rag_status IN ('red', 'Red', 'RED') THEN pp.project_id
+    WHEN LOWER(pes.rag_status) IN ('red') THEN pp.project_id
   END) AS at_risk_project_count,
 
   -- Derived health: worst-of across all linked project RAG indicators
   CASE
-    WHEN bool_or(pes.rag_status IN ('red', 'Red', 'RED')) THEN 'critical'
-    WHEN bool_or(pes.rag_status IN ('amber', 'Amber', 'AMBER', 'orange', 'Orange')) THEN 'at_risk'
+    WHEN bool_or(LOWER(pes.rag_status) = 'red') THEN 'critical'
+    WHEN bool_or(LOWER(pes.rag_status) IN ('amber', 'orange')) THEN 'at_risk'
     WHEN COUNT(DISTINCT pp.project_id) = 0 THEN NULL
     ELSE 'healthy'
   END AS derived_health,
@@ -113,7 +113,7 @@ SELECT
   -- Open task count: work_items not done/cancelled in linked projects
   (SELECT COUNT(*) FROM work_items wi
    WHERE wi.project_id IN (SELECT project_id FROM priority_projects WHERE priority_id = cp.id)
-   AND LOWER(wi.status) NOT IN ('complete', 'completed', 'done', 'cancelled', 'canceled')
+   AND LOWER(wi.status) NOT IN ('complete', 'completed', 'done', 'cancelled', 'canceled', 'qc approved')
    AND wi.deleted_at IS NULL) AS open_task_count
 
 FROM mytool_company_priorities cp

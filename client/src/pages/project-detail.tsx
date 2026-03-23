@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useRoute, useLocation, useSearch } from "wouter";
+import { useRoute, useLocation, useSearch, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -110,12 +110,12 @@ function ProjectPriorityBadges({ projectId }: { projectId: number | null }) {
     <div className="flex items-center gap-2 mt-1 mb-2 flex-wrap">
       <span className="text-xs text-muted-foreground">Priorities:</span>
       {priorities.map((p: any) => (
-        <a key={p.id} href={`/priorities/${p.id}`} className="no-underline">
+        <Link key={p.id} href={`/priorities/${p.id}`} className="no-underline">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border cursor-pointer hover:shadow-sm ${healthColors[p.effectiveHealth] || healthColors.healthy}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${p.effectiveHealth === "critical" ? "bg-red-500" : p.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-blue-500"}`} />
             {p.title}
           </span>
-        </a>
+        </Link>
       ))}
     </div>
   );
