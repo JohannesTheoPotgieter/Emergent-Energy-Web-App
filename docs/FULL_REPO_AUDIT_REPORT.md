@@ -24,13 +24,16 @@
 | Financials | 7/10 | Temporal tracking, revenue/COS/GP/cashflow, programme rollup — but no budget variance alerts, no multi-currency, no approval workflow on financial edits |
 | Engineering & QA | 7/10 | Stage-gate templates, RACI, deliverable versioning, QC checklists with evidence — but no NCR register, no ISO compliance tracking, no formal inspection forms |
 
-### Top 5 Critical Findings
+### Top 8 Critical Findings
 
-1. **[DEBT] No CI/CD pipeline** — No GitHub Actions, no ESLint, no Prettier. Zero automated quality gates on merge. Any developer can push broken code directly.
-2. **[DEBT] TypeScript `strict: false`** — 178+ explicit `any` usages. Type safety is advisory, not enforced. Runtime type errors are likely in production.
-3. **[DEBT] `server/routes.ts` is 680KB** — Single monolithic route file that is excluded from TypeScript checking (`tsconfig.json` excludes it). This is the heart of the backend with zero type safety.
-4. **[GAP] No distributed rate limiting or caching** — Rate limiter is in-memory Map (lost on restart, per-instance only). No Redis or equivalent for caching or rate limiting at scale.
-5. **[GAP] No Content Security Policy (CSP)** — Security headers exist but CSP is missing. XSS attacks via injected scripts are not mitigated by headers.
+1. **[BUG] MS tokens stored unencrypted** — Column named `refresh_token_encrypted` stores plaintext. SSO access tokens also plaintext in DB. File: `server/ms-account-service.ts`
+2. **[BUG] SharePoint List auth broken** — Header typo `X_REPLIT_TOKEN` (underscores) instead of `X-Replit-Token` (hyphens) in `server/sharepoint-list.ts:24`. All SharePoint List operations fail silently.
+3. **[BUG] Graph API scope mismatch** — Code sends Teams/channel messages but only requests `Chat.Read` scope. Needs `Chat.ReadWrite`. Returns 403.
+4. **[DEBT] No CI/CD pipeline** — No GitHub Actions, no ESLint, no Prettier. Zero automated quality gates on merge.
+5. **[DEBT] TypeScript `strict: false`** — 178+ explicit `any` usages. Type safety is advisory, not enforced.
+6. **[DEBT] `server/routes.ts` is 680KB** — Monolithic route file excluded from TypeScript checking (`tsconfig.json` excludes it).
+7. **[GAP] No distributed rate limiting or caching** — Rate limiter is in-memory Map (lost on restart, per-instance only).
+8. **[GAP] No Content Security Policy (CSP)** — Security headers exist but CSP is missing.
 
 ---
 
@@ -571,6 +574,18 @@ Schema files in `shared/schema/` organized by domain:
 | 8 | No meeting scheduling from app | [GAP] | Cannot create Outlook meetings (standup, site visit) directly from the app. |
 | 9 | No email-to-task auto-creation | [GAP] | Emails can be manually linked to tasks but no inbound email processing to auto-create tasks. |
 
+### 6.X Microsoft Integration BUGS (from deep audit)
+
+| # | Finding | Tag | Detail |
+|---|---------|-----|--------|
+| 1 | Refresh tokens stored unencrypted | [BUG] | Column is named `refresh_token_encrypted` in `ms_accounts` table but value stored is plaintext MSAL serialized cache. Zero encryption anywhere. File: `server/ms-account-service.ts`, `shared/schema/collaboration.ts:669` |
+| 2 | SSO access token stored in plaintext | [BUG] | `ssoAccessToken: text("sso_access_token")` written directly to Postgres with no encryption. File: `shared/schema/collaboration.ts:670` |
+| 3 | SharePoint List header typo | [BUG] | `server/sharepoint-list.ts:24` uses `X_REPLIT_TOKEN` (underscores) instead of `X-Replit-Token` (hyphens). Compare to `server/sharepoint.ts:22` which is correct. This causes auth failures on all SharePoint List operations. |
+| 4 | Insufficient Graph API scopes for sending | [BUG] | Scope list includes `Chat.Read` but code calls `sendChatMessage` and `sendChannelMessage`. Needs `Chat.ReadWrite` and `ChannelMessage.Send`. Will get 403 errors. File: `server/microsoft-auth.ts:18` |
+| 5 | `graphPost` fails on 202 No Content | [BUG] | `server/outlook.ts` `graphPost` calls `res.json()` on all success responses, but `sendMail` returns 202 with empty body. JSON parse will throw. |
+| 6 | Duplicate Graph API helpers | [DEBT] | `graphGet` (line 119) and `graphGetWithToken` (line 434) are separate implementations. Bug fixes in one don't propagate. File: `server/outlook.ts` |
+| 7 | Hardcoded timezone inconsistency | [DEBT] | `graphGet`/`graphPost` set `Africa/Johannesburg` timezone but `graphGetWithToken` (Teams functions) does not. File: `server/outlook.ts` |
+
 ### 6.4 Azure AD / SSO
 
 | # | Finding | Tag | Detail |
@@ -775,6 +790,10 @@ Schema files in `shared/schema/` organized by domain:
 
 | # | Area | Finding | Tag | Priority | Effort | Recommended Action |
 |---|------|---------|-----|----------|--------|-------------------|
+| 0a | MS Integration | Refresh tokens stored unencrypted (column named `encrypted`) | [BUG] | Critical | Medium | Encrypt tokens at rest with AES-256 via vault key |
+| 0b | MS Integration | SharePoint List header typo (`X_REPLIT_TOKEN` vs `X-Replit-Token`) | [BUG] | Critical | Low | Fix header name in `server/sharepoint-list.ts:24` |
+| 0c | MS Integration | Insufficient Graph scopes for sending (Chat.Read, not Chat.ReadWrite) | [BUG] | Critical | Low | Add `Chat.ReadWrite`, `ChannelMessage.Send` to SCOPES in `microsoft-auth.ts` |
+| 0d | MS Integration | `graphPost` crashes on 202 No Content (sendMail) | [BUG] | Critical | Low | Check status code before calling `res.json()` in `outlook.ts` |
 | 1 | Security | JWT in localStorage | [DEBT] | Critical | Low | Migrate to httpOnly cookies |
 | 2 | Security | No CSP header | [GAP] | Critical | Low | Add CSP via security middleware |
 | 3 | Security | Dev login in production | [DEBT] | Critical | Low | Add NODE_ENV guard |
