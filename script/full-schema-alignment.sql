@@ -7100,4 +7100,48 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='actual_hours') THEN
     ALTER TABLE "work_items" ADD COLUMN "actual_hours" REAL DEFAULT 0;
   END IF;
+  -- Monthly Report Snapshots columns
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='report_type') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "report_type" VARCHAR(20) NOT NULL DEFAULT 'pm';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='report_month') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "report_month" VARCHAR(7) NOT NULL DEFAULT '2026-01';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='status') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "status" VARCHAR(20) NOT NULL DEFAULT 'draft';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='data') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "data" JSONB;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='generated_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "generated_at" TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='regenerated_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "regenerated_at" TIMESTAMPTZ;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='reviewed_by') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "reviewed_by" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='reviewed_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "reviewed_at" TIMESTAMPTZ;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='published_by') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "published_by" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='published_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "published_at" TIMESTAMPTZ;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='created_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "created_at" TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='updated_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "updated_at" TIMESTAMPTZ DEFAULT NOW();
+  END IF;
+END $$;
+
+-- Unique constraint for monthly_report_snapshots
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'monthly_report_snapshots_type_month_unique') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD CONSTRAINT "monthly_report_snapshots_type_month_unique" UNIQUE (report_type, report_month);
+  END IF;
 END $$;
