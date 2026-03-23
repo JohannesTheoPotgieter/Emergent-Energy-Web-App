@@ -491,7 +491,12 @@ Schema files in `shared/schema/` organized by domain:
 | 12 | No workload view | [GAP] | No view showing resource allocation across projects (who is overloaded). |
 | 13 | No blocked task escalation | [GAP] | Blocked tasks have `blockerReason` field but no automated escalation to managers. |
 | 14 | No recurring task auto-creation | [GAP] | Recurrence fields exist (`isRecurring`, `recurrenceFrequency`) but no background job to auto-create instances. |
-| 15 | No bulk actions on tasks | [GAP] | No batch status update, batch assign, or batch delete for work items. |
+| 15 | Bulk actions DO exist | [CONFIRMED] | `POST /api/eng/tasks/bulk-update` supports bulk status, priority, owner, hold updates in a transaction. Corrected from earlier GAP. |
+| 15a | Multi-assignee IDs lost on task creation | [BUG] | `server/engineering-routes.ts:604` — `data.assigneeUserIds` is populated but never passed to `createEngineeringWorkItem()`. Only `ownerUserId` is set. Multi-assignee IDs resolved from names are silently discarded. |
+| 15b | Engineering vs unified task status strings differ | [CONFLICT] | Engineering uses uppercase ("TO DO", "IN PROGRESS"), unified uses title case ("Not Started", "In Progress"). Two task creation paths produce inconsistent status values. |
+| 15c | Watchers do NOT receive notifications | [GAP] | Watcher list exists but `createNotification()` is never called for watchers on status changes or comments. Only `ownerUserId` notified. |
+| 15d | No time logging on engineering tasks | [GAP] | `taskTimeEntries` table and routes exist only for unified task hub (`/api/tasks/:id/time`). Engineering tasks (`/api/eng/tasks/`) have no equivalent time entry endpoints. |
+| 15e | Recurring tasks: schema exists but not implemented | [PLACEHOLDER] | Schema columns (`isRecurring`, `recurrenceFrequency`, etc.) exist but no server-side cron/scheduler materializes future instances. |
 | 16 | 4,758-line page component | [DEBT] | `EngineeringTasksPage.tsx` is massive. Needs decomposition into focused sub-components. |
 
 ### 5.4 Quality Task Management (QA)
@@ -508,7 +513,8 @@ Schema files in `shared/schema/` organized by domain:
 | 6 | Postmortem metrics | [CONFIRMED] | `qcPostmortem` + `qcPostmortemMetricValue` + `qcPostmortemSummary` — contractor and engineering quality scores. |
 | 7 | Commissioning items | [CONFIRMED] | `commissioningItems` with status lifecycle (not_started → in_progress → ready_for_review → approved → closed). |
 | 8 | Evidence scoring model | [CONFIRMED] | `evidenceRequirementDefinitions` with weights, thresholds. `evidenceEvaluations` with pass/fail and score percentage. |
-| 9 | No NCR register | [GAP] | No formal Non-Conformance Report table. Quality issues tracked as warnings but not as structured NCRs with root cause, corrective action, and close-out. |
+| 9 | No NCR register | [GAP] | No NCR numbering/tracking, no root cause analysis, no CAPA tracking, no closure verification. Warnings are closest equivalent but lack formal NCR structure. |
+| 9a | **QM notification system completely disabled** | [BUG] | `server/quality-routes.ts:96-101` — `createQmNotification()` is a no-op (returns null immediately). Approvers never notified when items sent for approval. Quality module operates silently. |
 | 10 | No inspection forms | [GAP] | No purpose-built inspection form schema. Inspections handled via generic QC checklist items. |
 | 11 | No QA reporting dashboard | [GAP] | Quality dashboard exists but no aggregated QA report showing trends, defect rates, or compliance metrics across projects. |
 | 12 | No ISO compliance tracking | [GAP] | No ISO 9001/14001 standard mapping. Checklists are project-specific, not standards-linked. |
