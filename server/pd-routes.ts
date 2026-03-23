@@ -347,6 +347,11 @@ export function registerPdRoutes(app: Express) {
         roofReplacementNeeded: body.roofReplacementNeeded || false,
         hseDiscussed: body.hseDiscussed || false,
         comments: body.comments || null,
+        estimatedProjectValue: body.estimatedProjectValue || null,
+        estimatedCost: body.estimatedCost || null,
+        estimatedMargin: body.estimatedMargin || null,
+        estimatedMarginPercent: body.estimatedMarginPercent || null,
+        financialNotes: body.financialNotes || null,
         createdBy: user?.id || null,
       }).returning();
 
@@ -382,6 +387,8 @@ export function registerPdRoutes(app: Express) {
         "siteInspectionForm", "siteInspectionLink", "workingSchedule",
         "batteriesNeeded", "batterySize", "dieselGenIntegration",
         "roofReplacementNeeded", "hseDiscussed", "comments",
+        "estimatedProjectValue", "estimatedCost", "estimatedMargin",
+        "estimatedMarginPercent", "financialNotes",
       ];
 
       for (const field of allowedFields) {
@@ -557,12 +564,19 @@ export function registerPdRoutes(app: Express) {
         rejected: handoverRows.filter(h => h.status === "REJECTED").length,
       };
 
+      // Pipeline value from financial estimates
+      const activeTicketsRaw = allTickets.map(r => r.ticket);
+      const totalPipelineValue = activeTicketsRaw
+        .filter(t => t.status !== "Completed" && t.status !== "Cancelled" && t.estimatedProjectValue)
+        .reduce((sum, t) => sum + parseFloat(t.estimatedProjectValue as string || "0"), 0);
+
       res.json({
         tickets: enrichedTickets,
         byStatus,
         byRequestType,
         overdue,
         handoverSummary,
+        totalPipelineValue,
         kanbanColumns: ["New", "In Progress", "Under Review", "Ready for Handover", "Handed Over"],
       });
     } catch (err: any) {
