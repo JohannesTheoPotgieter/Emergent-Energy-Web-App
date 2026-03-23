@@ -66,6 +66,7 @@ interface ProjectRow {
 
 interface DetailData {
   fye: number;
+  cutoffMonth: string | null;
   projects: ProjectRow[];
   totals: {
     budgetRevenue: number;
@@ -919,26 +920,45 @@ function DetailTab({ fye }: { fye: number }) {
   const [typeFilter, setTypeFilter] = useState<Set<string>>(() => parseSetParam(params, "type"));
   const [fundingFilter, setFundingFilter] = useState<Set<string>>(() => parseSetParam(params, "fund"));
   const [trackersOnly, setTrackersOnly] = useState(() => params.get("trackers") !== "0");
+  const [cutoffMonth, setCutoffMonth] = useState<string>(params.get("cutoff") || "");
   const [sortKey, setSortKey] = useState<keyof ProjectRow>("projectName");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Generate FYE month options for the period filter
+  const fyeMonthOptions = useMemo(() => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const options: { value: string; label: string }[] = [];
+    // Sep to Dec of fye-1
+    for (let m = 9; m <= 12; m++) {
+      const mk = `${fye - 1}-${String(m).padStart(2, "0")}`;
+      options.push({ value: mk, label: `End of ${months[m - 1]} ${String(fye - 1).slice(2)}` });
+    }
+    // Jan to Aug of fye
+    for (let m = 1; m <= 8; m++) {
+      const mk = `${fye}-${String(m).padStart(2, "0")}`;
+      options.push({ value: mk, label: `End of ${months[m - 1]} ${String(fye).slice(2)}` });
+    }
+    return options;
+  }, [fye]);
 
   // Sync filters to URL params (preserving existing params like fye)
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     // Clear filter-specific params, then re-set active ones
-    for (const key of ["q", "bd", "prov", "type", "fund", "trackers"]) p.delete(key);
+    for (const key of ["q", "bd", "prov", "type", "fund", "trackers", "cutoff"]) p.delete(key);
     if (debouncedSearch) p.set("q", debouncedSearch);
     if (bdFilter.size > 0) p.set("bd", setToParam(bdFilter));
     if (provinceFilter.size > 0) p.set("prov", setToParam(provinceFilter));
     if (typeFilter.size > 0) p.set("type", setToParam(typeFilter));
     if (fundingFilter.size > 0) p.set("fund", setToParam(fundingFilter));
     if (!trackersOnly) p.set("trackers", "0");
+    if (cutoffMonth) p.set("cutoff", cutoffMonth);
     const qs = p.toString();
     const currentPath = window.location.pathname;
     setLocation(qs ? `${currentPath}?${qs}` : currentPath, { replace: true });
-  }, [debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, trackersOnly, setLocation]);
+  }, [debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, trackersOnly, cutoffMonth, setLocation]);
 
-  const hasAnyFilter = debouncedSearch || bdFilter.size > 0 || provinceFilter.size > 0 || typeFilter.size > 0 || fundingFilter.size > 0 || !trackersOnly;
+  const hasAnyFilter = debouncedSearch || bdFilter.size > 0 || provinceFilter.size > 0 || typeFilter.size > 0 || fundingFilter.size > 0 || !trackersOnly || !!cutoffMonth;
 
   const clearAll = () => {
     setSearchInput("");
@@ -947,6 +967,7 @@ function DetailTab({ fye }: { fye: number }) {
     setTypeFilter(new Set());
     setFundingFilter(new Set());
     setTrackersOnly(true);
+    setCutoffMonth("");
   };
 
   const toggleSort = (key: keyof ProjectRow) => {
@@ -955,8 +976,11 @@ function DetailTab({ fye }: { fye: number }) {
   };
   const sortIndicator = (key: keyof ProjectRow) => sortKey === key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
 
+  const detailUrl = cutoffMonth
+    ? `/api/fye-revenue-tracking/detail?fye=${fye}&cutoffMonth=${cutoffMonth}`
+    : `/api/fye-revenue-tracking/detail?fye=${fye}`;
   const { data, isLoading, error, refetch } = useQuery<DetailData>({
-    queryKey: [`/api/fye-revenue-tracking/detail?fye=${fye}`],
+    queryKey: [detailUrl],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 
@@ -983,7 +1007,7 @@ function DetailTab({ fye }: { fye: number }) {
       await apiRequest("PUT", "/api/fye-revenue-tracking/detail/inline-edit", { projectName, field, value });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/detail?fye=${fye}`] });
+      queryClient.invalidateQueries({ queryKey: [detailUrl] });
     },
   });
 
@@ -1056,7 +1080,7 @@ function DetailTab({ fye }: { fye: number }) {
       const a = document.createElement("a");
       a.href = url;
       const today = new Date().toISOString().slice(0, 10);
-      a.download = `FYE_${fye}_Revenue_Detail_${today}.csv`;
+      a.download = `FYE_${fye}_Revenue_Detail${cutoffMonth ? `_to_${cutoffMonth}` : ""}_${today}.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {}
@@ -1070,6 +1094,10 @@ function DetailTab({ fye }: { fye: number }) {
   typeFilter.forEach((v) => pills.push({ label: `Type: ${v}`, onRemove: () => { const n = new Set(typeFilter); n.delete(v); setTypeFilter(n); } }));
   fundingFilter.forEach((v) => pills.push({ label: `Funding: ${v}`, onRemove: () => { const n = new Set(fundingFilter); n.delete(v); setFundingFilter(n); } }));
   if (!trackersOnly) pills.push({ label: "Showing All (incl. untracked)", onRemove: () => setTrackersOnly(true) });
+  if (cutoffMonth) {
+    const cutoffLabel = fyeMonthOptions.find((o) => o.value === cutoffMonth)?.label || cutoffMonth;
+    pills.push({ label: `Period: ${cutoffLabel}`, onRemove: () => setCutoffMonth("") });
+  }
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>;
   if (error || !data) return (
@@ -1098,6 +1126,19 @@ function DetailTab({ fye }: { fye: number }) {
         <MultiSelectFilter label="Province" options={uniqueProvinces} selected={provinceFilter} onChange={setProvinceFilter} />
         <MultiSelectFilter label="Project Type" options={uniqueTypes} selected={typeFilter} onChange={setTypeFilter} />
         <MultiSelectFilter label="Funding Type" options={uniqueFunding} selected={fundingFilter} onChange={setFundingFilter} />
+        <select
+          value={cutoffMonth}
+          onChange={(e) => setCutoffMonth(e.target.value)}
+          className={cn(
+            "h-8 text-xs border rounded px-2 bg-background min-w-[150px] cursor-pointer",
+            cutoffMonth && "border-blue-400 bg-blue-50"
+          )}
+        >
+          <option value="">Full FYE</option>
+          {fyeMonthOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
         <Button
           variant={trackersOnly ? "default" : "outline"}
           size="sm"
