@@ -519,6 +519,15 @@ export function registerTaskManagementRoutes(app: Express) {
         date: date || new Date().toISOString().split("T")[0],
       }).returning();
 
+      // Auto-aggregate actualHours on the work item
+      const [totals] = await db
+        .select({ total: sql<number>`COALESCE(SUM(${taskTimeEntries.durationMinutes}), 0)` })
+        .from(taskTimeEntries)
+        .where(eq(taskTimeEntries.workItemId, workItemId));
+      await db.update(workItems)
+        .set({ actualHours: Math.round((totals.total / 60) * 100) / 100 })
+        .where(eq(workItems.id, workItemId));
+
       res.status(201).json(entry);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

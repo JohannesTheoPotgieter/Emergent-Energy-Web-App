@@ -940,6 +940,20 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
+
+      // If this is the Handover Pack stage, log commissioning unlock
+      if (stage.templateName && /handover\s*pack/i.test(stage.templateName)) {
+        const [stageRow] = await db.select({ projectId: projectEngStages.projectId }).from(projectEngStages).where(eq(projectEngStages.id, stageId));
+        if (stageRow) {
+          logAuditFromReq(req, {
+            entityType: "commissioning_gate",
+            entityId: String(stageRow.projectId),
+            action: "unlocked",
+            changesJson: { description: "Commissioning unlocked: Handover Pack stage completed", stageId },
+          });
+        }
+      }
+
       res.json({ success: true, missing: [] });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
@@ -978,6 +992,21 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "override", changesJson: { description: "Stage override completed", reason } });
+
+      // If this is the Handover Pack stage, log commissioning unlock
+      const [overrideStageInfo] = await db.select({ projectId: projectEngStages.projectId, name: engStageTemplates.name })
+        .from(projectEngStages)
+        .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+        .where(eq(projectEngStages.id, stageId));
+      if (overrideStageInfo?.name && /handover\s*pack/i.test(overrideStageInfo.name)) {
+        logAuditFromReq(req, {
+          entityType: "commissioning_gate",
+          entityId: String(overrideStageInfo.projectId),
+          action: "unlocked",
+          changesJson: { description: "Commissioning unlocked: Handover Pack stage override completed", stageId, reason },
+        });
+      }
+
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
