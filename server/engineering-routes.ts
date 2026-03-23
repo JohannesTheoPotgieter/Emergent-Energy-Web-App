@@ -56,7 +56,7 @@ const BLOCKED_STATUSES = new Set(["HOLD", "ON HOLD"]);
 const REVIEW_NEEDED_STATUSES = new Set(["PROVIDE FEEDBACK"]);
 const APPROVAL_PENDING_STATUSES = new Set(["NEEDS APPROVAL", "OPERATIONAL APPROVAL"]);
 const COMPLETE_LIKE_STATUSES = new Set(["COMPLETE", "COMPLETED", "DONE"]);
-const MICROSOFT_ADMIN_ROLES = new Set(["admin", "COO_ADMIN", "CEO_ADMIN"]);
+const MICROSOFT_ADMIN_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
 
 function normalizeStatus(status?: string | null): string {
   return (status || "").trim().toUpperCase();
@@ -123,7 +123,7 @@ async function getFallbackPreferenceForUser(userId: number): Promise<"download" 
 function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   const role = getUserRole(req);
   const allowed = [
-    "admin", "eng_program_manager",
+    "eng_program_manager",
     "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO",
     "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER",
     "ENGINEERING_PROGRAM_MANAGER", "QUALITY_MANAGER", "HEAD_OF_DESIGN",
@@ -133,7 +133,7 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
 }
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (["admin", "COO_ADMIN", "CEO_ADMIN"].includes(getUserRole(req))) return next();
+  if (["COO_ADMIN", "CEO_ADMIN"].includes(getUserRole(req))) return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
@@ -2150,7 +2150,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/eng/dashboard/standup", requireAuth, async (req, res) => {
     try {
       const role = getUserRole(req);
-      const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
+      const managerRoles = ["eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
       const isManager = managerRoles.includes(role);
       const userName = getUser(req).name || "";
       const userFirstName = userName.split(/\s+/)[0];
@@ -2434,7 +2434,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   function requireAdmin(req: Request, res: Response, next: NextFunction) {
     const role = getUserRole(req);
-    if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+    if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
     sendError(res, forbidden("Admin access required"));
   }
 
@@ -2925,7 +2925,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, requirePermission("lifecycle", "edit"), async (req, res) => {
     try {
       const user = getUser(req);
-      if (user.role !== "admin") {
+      if (user.role !== "COO_ADMIN" && user.role !== "CEO_ADMIN") {
         return sendError(res, forbidden("Only admins can change project phases"));
       }
 

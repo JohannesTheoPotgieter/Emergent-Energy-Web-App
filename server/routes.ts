@@ -394,7 +394,7 @@ const requireAuth = sharedRequireAuth;
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") {
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
     return next();
   }
   res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
@@ -411,21 +411,21 @@ function requireRole(...roles: string[]) {
 
 function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   if ((req.session as any)?.qmChallengePassed) return next();
   res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
 }
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "Engineering Program Manager access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
 function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN" || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN" || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required", code: "ROLE_REQUIRED" });
 }
 
@@ -5184,7 +5184,7 @@ export async function registerRoutes(
 
       const user = (req as any).user;
       const role = user?.role || "";
-      const FULL_ACCESS_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"];
+      const FULL_ACCESS_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"];
       if (FULL_ACCESS_ROLES.includes(role)) {
         return res.json(tasks.map(stripTask));
       }
@@ -12391,7 +12391,7 @@ export async function registerRoutes(
     const user = req.user as any;
     if (!user) return false;
     const role = user.role || "";
-    if (["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(role)) return true;
+    if (["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(role)) return true;
     const info = await storage.getProjectInfo(projectName);
     if (!info) return false;
     if (info.pm === user.name || info.pd === user.name) return true;

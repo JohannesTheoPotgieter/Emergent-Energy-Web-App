@@ -522,7 +522,7 @@ export function registerMsSyncRoutes(app: Express) {
       const userRole = currentUser?.role || "";
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
-      const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN"];
+      const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
       const isAdmin = ADMIN_ROLES.includes(userRole);
 
       const username = currentUser?.username || "";
@@ -1077,7 +1077,7 @@ export function registerMsSyncRoutes(app: Express) {
     try {
       const userId = (req as any).user?.id;
       const userRole = (req as any).user?.role || "";
-      if (!["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
+      if (!["COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
         return res.status(403).json({ error: "Only admin/COO can unlink Teams chats" });
       }
 

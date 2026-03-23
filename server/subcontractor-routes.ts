@@ -630,7 +630,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
     const user = (req as any).user || {};
     const rawRole = user.role || '';
     const userRole = rawRole === 'admin' ? 'COO_ADMIN' : rawRole;
-    const adminRoles = ['admin', 'COO_ADMIN', 'CEO_ADMIN'];
+    const adminRoles = ['COO_ADMIN', 'CEO_ADMIN'];
     if (!adminRoles.includes(userRole)) {
       return res.status(403).json({ error: "Only admin users can merge counterparties" });
     }

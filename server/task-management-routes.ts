@@ -5,9 +5,11 @@ import {
   workItems, workItemAssignments, workItemStatusHistory,
   taskTags, workItemTags, taskTimeEntries,
   users, projectInfo,
+  normalizeRoleForPermissions,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
+import { attachWorkstreamVisibility, type WorkstreamVisibility } from "./workstream-visibility-middleware";
 
 type AppUser = { id: number; email: string; name: string; role: string };
 
@@ -15,12 +17,38 @@ function getUser(req: Request): AppUser {
   return getEffectiveUser(req) as AppUser;
 }
 
+/** Build SQL conditions for workstream filtering based on the user's visibility config. */
+function buildWorkstreamConditions(req: Request): ReturnType<typeof eq>[] {
+  const visibility = (req as any).workstreamVisibility as WorkstreamVisibility | undefined;
+  if (!visibility) return [];
+
+  const conditions: ReturnType<typeof eq>[] = [];
+
+  // Workstream filter — restrict to allowed workstreams
+  if (visibility.workstreams.length > 0 && visibility.workstreams.length < 7) {
+    conditions.push(inArray(workItems.workstream, visibility.workstreams as any));
+  }
+
+  // Scope filter — "own" means only tasks owned by or assigned to the user
+  if (visibility.scope === "own") {
+    const user = getUser(req);
+    conditions.push(
+      or(
+        eq(workItems.ownerUserId, user.id),
+        eq(workItems.createdBy, user.id),
+      )!,
+    );
+  }
+
+  return conditions;
+}
+
 export function registerTaskManagementRoutes(app: Express) {
 
   // ── Unified Task Hub ───────────────────────────────────────────────────────
 
   /** List tasks with comprehensive filters */
-  app.get("/api/tasks", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
+  app.get("/api/tasks", requireAuth, attachWorkstreamVisibility, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
       const {
         projectId, status, priority, assigneeId, workstream,
@@ -32,7 +60,7 @@ export function registerTaskManagementRoutes(app: Express) {
       const limit = parseInt(limitStr as string) || 50;
       const offset = parseInt(offsetStr as string) || 0;
 
-      const conditions = [isNull(workItems.deletedAt)];
+      const conditions = [isNull(workItems.deletedAt), ...buildWorkstreamConditions(req)];
 
       if (projectId) conditions.push(eq(workItems.projectId, parseInt(projectId as string)));
       if (status) conditions.push(eq(workItems.status, status as string));
@@ -144,10 +172,10 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Board view — tasks grouped by status */
-  app.get("/api/tasks/board", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
+  app.get("/api/tasks/board", requireAuth, attachWorkstreamVisibility, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
       const { projectId, assigneeId, workstream } = req.query;
-      const conditions = [isNull(workItems.deletedAt)];
+      const conditions = [isNull(workItems.deletedAt), ...buildWorkstreamConditions(req)];
 
       if (projectId) conditions.push(eq(workItems.projectId, parseInt(projectId as string)));
       if (assigneeId) conditions.push(eq(workItems.ownerUserId, parseInt(assigneeId as string)));
@@ -193,10 +221,10 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Calendar view — tasks bucketed by date */
-  app.get("/api/tasks/calendar", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
+  app.get("/api/tasks/calendar", requireAuth, attachWorkstreamVisibility, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
       const { startDate, endDate, projectId, assigneeId } = req.query;
-      const conditions = [isNull(workItems.deletedAt)];
+      const conditions = [isNull(workItems.deletedAt), ...buildWorkstreamConditions(req)];
 
       if (projectId) conditions.push(eq(workItems.projectId, parseInt(projectId as string)));
       if (assigneeId) conditions.push(eq(workItems.ownerUserId, parseInt(assigneeId as string)));
@@ -241,11 +269,11 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Task metrics — velocity, completion rate, tag breakdown */
-  app.get("/api/tasks/metrics", requireAuth, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
+  app.get("/api/tasks/metrics", requireAuth, attachWorkstreamVisibility, requirePermission("task_management", "view"), async (req: Request, res: Response) => {
     try {
       const { projectId, days } = req.query;
       const lookbackDays = parseInt(days as string) || 30;
-      const conditions = [isNull(workItems.deletedAt)];
+      const conditions = [isNull(workItems.deletedAt), ...buildWorkstreamConditions(req)];
 
       if (projectId) conditions.push(eq(workItems.projectId, parseInt(projectId as string)));
 
@@ -572,7 +600,7 @@ export function registerTaskManagementRoutes(app: Express) {
       // Only allow deletion of own entries (or admin)
       const [entry] = await db.select().from(taskTimeEntries).where(eq(taskTimeEntries.id, entryId));
       if (!entry) return res.status(404).json({ error: "Time entry not found" });
-      if (entry.userId !== user.id && user.role !== "admin") {
+      if (entry.userId !== user.id && user.role !== "COO_ADMIN" && user.role !== "CEO_ADMIN") {
         return res.status(403).json({ error: "Can only delete your own time entries" });
       }
 

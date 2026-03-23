@@ -33,11 +33,11 @@ import { recordOverride } from "../lib/audit/diff-engine";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
 
-const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
+const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
 function requireAdminOrFinancialEditor(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   if (role === "PROJECT_MANAGER_SITE" || role === "PROGRAM_MANAGER" || role === "PROGRAM_FINANCE_MANAGER" || role === "CONSTRUCTION_MANAGER") return next();
   res.status(403).json({ error: "admin_required", message: "Admin or financial editor access required", code: "ADMIN_REQUIRED" });
 }

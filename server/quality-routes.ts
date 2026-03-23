@@ -64,7 +64,7 @@ function requireRole(...roles: string[]) {
 }
 
 function isAdminRole(role: string) {
-  return role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN";
+  return role === "COO_ADMIN" || role === "CEO_ADMIN";
 }
 
 
@@ -1889,7 +1889,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/holidays", requireAuth, requireRole("admin"), async (req, res) => {
+  app.post("/api/quality/holidays", requireAuth, requireRole("COO_ADMIN", "CEO_ADMIN"), async (req, res) => {
     try {
       const { date, name, countryCode } = req.body;
       const [h] = await db.insert(calendarHoliday).values({ date, name, countryCode: countryCode || "ZA" }).returning();
@@ -1901,7 +1901,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/holidays/:id", requireAuth, requireRole("admin"), async (req, res) => {
+  app.delete("/api/quality/holidays/:id", requireAuth, requireRole("COO_ADMIN", "CEO_ADMIN"), async (req, res) => {
     try {
       await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseInt(String(req.params.id), 10)));
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(req.params.id), action: "delete", changesJson: { description: "Holiday deleted" } });
@@ -1940,7 +1940,7 @@ export function registerQualityRoutes(app: Express) {
 
   // ========== QM USER MANAGEMENT ==========
 
-  app.get("/api/quality/users", requireAuth, requireRole("admin"), async (req, res) => {
+  app.get("/api/quality/users", requireAuth, requireRole("COO_ADMIN", "CEO_ADMIN"), async (req, res) => {
     try {
       const { users } = await import("@shared/schema");
       const allUsers = await db.select({ id: users.id, email: users.email, name: users.name, role: users.role }).from(users);
