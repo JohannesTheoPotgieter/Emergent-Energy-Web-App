@@ -8,7 +8,8 @@ import { z } from "zod";
 import { OVERRIDE_CATEGORIES, users, projectInfo } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { recordOverride } from "../lib/audit/diff-engine";
-import { classifyExpenseState } from "../lib/calculations/stateClassifier";
+import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClassifier";
+import { isCosRealised } from "../lib/calculations/financeUtils";
 
 const router = Router();
 
@@ -1128,9 +1129,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
       cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
 
-      const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
-      const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-      if (hasInvoice && hasInvDate) {
+      if (isCosRealised(exp)) {
         cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
       }
     }

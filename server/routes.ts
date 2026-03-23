@@ -97,6 +97,7 @@ import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
 import { mytoolTaskIdempotencyStore } from "./lib/mytool-task-idempotency";
 import { computeNextRecurrenceDate, computeMilestoneProgress, isOverdue, shouldBlockTask, validateDependencyPair } from "./lib/mytool-work-engine";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag, DEFAULT_RAG_THRESHOLDS } from "@shared/kpi-definitions";
+import { STATIC_COS_BUDGET_FY26 } from "./lib/calculations/financeUtils";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -108,7 +109,9 @@ function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: 
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  return hasInvoice && hasInvDate;
+  if (!hasInvoice || !hasInvDate) return false;
+  const invoiceDateBlack = isDateConfirmedCheck(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
+  return invoiceDateBlack;
 }
 
 function isCashflowConfirmedCheck(exp: any): boolean {
@@ -822,11 +825,7 @@ export async function registerRoutes(
       const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
 
       // COS realised %
-      const isCosRealised = (e: any) => {
-        const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
-        const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
-        return hasInvoice && hasInvDate;
-      };
+      const isCosRealised = (e: any) => isCosRealisedCheck(e);
       const totalRealisedCos = expenses.reduce((s: number, e: any) => isCosRealised(e) ? s + (Number(e.expenseActualTotal) || 0) : s, 0);
       const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
       const cosRealisedPct = cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0;
@@ -3373,21 +3372,6 @@ export async function registerRoutes(
         }
       }
 
-      const staticCosBudget: Record<string, number> = {
-        '2025-09': 8083466.99,
-        '2025-10': 16346971.77,
-        '2025-11': 20803804.86,
-        '2025-12': 12381055.48,
-        '2026-01': 12395435.22,
-        '2026-02': 20724666.08,
-        '2026-03': 30199956.69,
-        '2026-04': 21137178.14,
-        '2026-05': 31405517.81,
-        '2026-06': 41720854.07,
-        '2026-07': 30116780.50,
-        '2026-08': 73983803.91,
-      };
-
       const months: any[] = [];
       const startMonth = new Date(Date.UTC(2025, 8, 1));
 
@@ -3414,7 +3398,7 @@ export async function registerRoutes(
         const unrealisedCOS = Math.max(0, totalCOS - realisedCOS);
 
         const manual = manualMap.get(monthKey);
-        const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
+        const budget = manual?.budget ? parseFloat(manual.budget) : (STATIC_COS_BUDGET_FY26[monthKey] ?? 0);
 
         const variance = totalCOS - budget;
         const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
@@ -3691,14 +3675,6 @@ export async function registerRoutes(
       const lastMonthStart = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1));
       const lastMonthEnd = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0));
 
-      // Static COS budget for variance
-      const staticCosBudget: Record<string, number> = {
-        '2025-09': 8083466.99, '2025-10': 16346971.77, '2025-11': 20803804.86,
-        '2025-12': 12381055.48, '2026-01': 12395435.22, '2026-02': 20724666.08,
-        '2026-03': 30199956.69, '2026-04': 21137178.14, '2026-05': 31405517.81,
-        '2026-06': 41720854.07, '2026-07': 30116780.50, '2026-08': 73983803.91,
-      };
-
       interface PeriodBucket {
         total: number;
         realised: number;
@@ -3846,7 +3822,7 @@ export async function registerRoutes(
       for (let i = 0; i < 12; i++) {
         const d = new Date(Date.UTC(fyStartYear, 8 + i, 1));
         const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-        if (mk <= currentMK) ytdBudget += staticCosBudget[mk] ?? 0;
+        if (mk <= currentMK) ytdBudget += STATIC_COS_BUDGET_FY26[mk] ?? 0;
       }
 
       res.json({

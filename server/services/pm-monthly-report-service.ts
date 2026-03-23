@@ -28,6 +28,7 @@ import {
   smartImportRuns,
 } from "@shared/schema";
 import { desc } from "drizzle-orm";
+import { isDateBlack } from "../lib/calculations/stateClassifier";
 
 const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
 const COMPLETED_STATUSES = ["COMPLETE", "COMPLETED", "DONE"];
@@ -202,9 +203,9 @@ export async function generatePmReportData(month: string) {
     const lines = costByProject.get(p.id) || [];
     const budgetTotal = lines.reduce((s, c) => s + toNum(c.budgetTotal), 0);
     const actualCost = lines.reduce((s, c) => s + toNum(c.amountExVat), 0);
-    const cosRealised = lines.filter(c => c.invoiceDateConfirmed && c.invoiceNumber).reduce((s, c) => s + toNum(c.amountExVat), 0);
+    const cosRealised = lines.filter(c => c.invoiceNumber && c.invoiceDate && isDateBlack(c.invoiceDateConfirmed, c.invoiceDateFontColor)).reduce((s, c) => s + toNum(c.amountExVat), 0);
     const paid = lines.filter(c => c.paidDateConfirmed).reduce((s, c) => s + toNum(c.amountExVat), 0);
-    const committed = lines.filter(c => c.poNumber && !(c.invoiceDateConfirmed && c.invoiceNumber)).reduce((s, c) => s + toNum(c.amountExVat), 0);
+    const committed = lines.filter(c => c.poNumber && !(c.invoiceNumber && c.invoiceDate && isDateBlack(c.invoiceDateConfirmed, c.invoiceDateFontColor))).reduce((s, c) => s + toNum(c.amountExVat), 0);
     const costsThisMonth = lines.filter(c => isDateStrInMonth(c.invoiceDate, monthStartStr, monthEndStr)).reduce((s, c) => s + toNum(c.amountExVat), 0);
     return {
       projectId: p.id,
