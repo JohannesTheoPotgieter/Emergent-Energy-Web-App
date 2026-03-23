@@ -396,60 +396,61 @@ export async function runPdTicketSeed() {
     console.log(`[PD-Seed] All ${uniqueNames.size} users resolved successfully`);
   }
 
-  // ── Step 2: clear existing PD data ──
-  // Delete work-items linked to PD tickets first
-  try {
-    await db
-      .delete(workItems)
-      .where(isNotNull(workItems.pdTicketId));
-    console.log(`[PD-Seed] Deleted work_items with pd_ticket_id`);
-  } catch (err: any) {
-    console.log(`[PD-Seed] Skipped work_items cleanup: ${err.message}`);
-  }
+  // ── Step 2+3: clear existing PD data and insert new (transaction-wrapped) ──
+  await db.transaction(async (tx) => {
+    // Delete work-items linked to PD tickets first
+    try {
+      await tx
+        .delete(workItems)
+        .where(isNotNull(workItems.pdTicketId));
+      console.log(`[PD-Seed] Deleted work_items with pd_ticket_id`);
+    } catch (err: any) {
+      console.log(`[PD-Seed] Skipped work_items cleanup: ${err.message}`);
+    }
 
-  // Delete all PD tickets
-  const deletedTickets = await db.delete(pdTickets);
-  console.log(`[PD-Seed] Deleted all pd_tickets`);
+    // Delete all PD tickets
+    await tx.delete(pdTickets);
+    console.log(`[PD-Seed] Deleted all pd_tickets`);
 
-  // ── Step 3: insert 11 records ──
-  let inserted = 0;
-  for (const r of SOURCE_DATA) {
-    const devName = parsePeopleName(r.projectDeveloper);
-    const designerName = parsePeopleName(r.designer);
+    // Insert 11 records
+    let inserted = 0;
+    for (const r of SOURCE_DATA) {
+      const devName = parsePeopleName(r.projectDeveloper);
+      const designerName = parsePeopleName(r.designer);
 
-    await db.insert(pdTickets).values({
-      projectSiteName: r.projectSiteName,
-      clientNameSnapshot: r.projectSiteName,
-      dueDate: r.dueDate,
-      requestType: r.requestType,
-      priority: r.priority,
-      status: r.status,
-      numberOfReworks: r.numberOfReworks,
-      projectDeveloperUserId: devName ? nameToId[devName] ?? null : null,
-      designerUserId: designerName ? nameToId[designerName] ?? null : null,
-      fundingType: r.fundingType,
-      sizeKwp: r.sizeKwp,
-      province: r.province || null,
-      gpsCoordinates: r.gpsCoordinates || null,
-      billsOrTariffData: r.billsOrTariffData,
-      meteringDataAvailable: r.meteringDataAvailable,
-      siteInspectionForm: r.siteInspectionForm,
-      siteInspectionLink: r.siteInspectionLink,
-      workingSchedule: r.workingSchedule,
-      batteriesNeeded: r.batteriesNeeded,
-      batterySize: r.batterySize,
-      dieselGenIntegration: r.dieselGenIntegration,
-      roofReplacementNeeded: r.roofReplacementNeeded,
-      hseDiscussed: r.hseDiscussed,
-      comments: r.comments || null,
-      clickUpSynced: r.clickUpSynced,
-    });
-    inserted++;
-  }
+      await tx.insert(pdTickets).values({
+        projectSiteName: r.projectSiteName,
+        clientNameSnapshot: r.projectSiteName,
+        dueDate: r.dueDate,
+        requestType: r.requestType,
+        priority: r.priority,
+        status: r.status,
+        numberOfReworks: r.numberOfReworks,
+        projectDeveloperUserId: devName ? nameToId[devName] ?? null : null,
+        designerUserId: designerName ? nameToId[designerName] ?? null : null,
+        fundingType: r.fundingType,
+        sizeKwp: r.sizeKwp,
+        province: r.province || null,
+        gpsCoordinates: r.gpsCoordinates || null,
+        billsOrTariffData: r.billsOrTariffData,
+        meteringDataAvailable: r.meteringDataAvailable,
+        siteInspectionForm: r.siteInspectionForm,
+        siteInspectionLink: r.siteInspectionLink,
+        workingSchedule: r.workingSchedule,
+        batteriesNeeded: r.batteriesNeeded,
+        batterySize: r.batterySize,
+        dieselGenIntegration: r.dieselGenIntegration,
+        roofReplacementNeeded: r.roofReplacementNeeded,
+        hseDiscussed: r.hseDiscussed,
+        comments: r.comments || null,
+        clickUpSynced: r.clickUpSynced,
+      });
+      inserted++;
+    }
+    console.log(`[PD-Seed] Inserted ${inserted} PD tickets`);
+  });
 
-  console.log(`[PD-Seed] Inserted ${inserted} PD tickets`);
-
-  // ── Step 4: verify ──
+  // ── Step 4: verify (outside transaction) ──
   const countResult = await db.select({ cnt: sql<number>`count(*)` }).from(pdTickets);
   const count = Number(countResult[0]?.cnt ?? 0);
   if (count !== 11) {

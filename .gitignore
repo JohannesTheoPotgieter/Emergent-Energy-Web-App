@@ -7,3 +7,5 @@ vite.config.ts.*
 uploads/
 data/
 server/data-seed/.migrated
+server/.pd-seed-done
+backups/
