@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell, SectionHeader, FilterBar } from "@/components/layout/page-shell";
@@ -554,7 +555,19 @@ function CreateTaskDialog({ onCreated }: { onCreated: () => void }) {
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("Medium");
   const [taskCategory, setTaskCategory] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState("");
   const { toast } = useToast();
+
+  const { data: allProjects = [] } = useQuery<Array<{ id: number; projectName: string; isActive?: boolean }>>({
+    queryKey: ["/api/project-info"],
+    select: (data: any[]) =>
+      data
+        .filter((p: any) => p.isActive !== false)
+        .map((p: any) => ({ id: p.id, projectName: p.projectName || p.project_name }))
+        .filter((p) => p.id && p.projectName)
+        .sort((a, b) => a.projectName.localeCompare(b.projectName)),
+    enabled: open,
+  });
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiFetch("/api/tasks", { method: "POST", body: JSON.stringify(data) }),
@@ -563,15 +576,16 @@ function CreateTaskDialog({ onCreated }: { onCreated: () => void }) {
       setOpen(false);
       setTitle("");
       setDescription("");
+      setSelectedProjectId("");
       onCreated();
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
   const handleCreate = () => {
-    if (!title.trim()) return;
+    if (!title.trim() || !selectedProjectId) return;
     createMutation.mutate({
-      projectId: 1,
+      projectId: Number(selectedProjectId),
       title: title.trim(),
       description: description.trim() || null,
       priority,
@@ -594,6 +608,15 @@ function CreateTaskDialog({ onCreated }: { onCreated: () => void }) {
           <DialogTitle>Create Task</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Project</Label>
+            <SearchableSelect
+              value={selectedProjectId}
+              onValueChange={setSelectedProjectId}
+              placeholder="Select a project"
+              options={allProjects.map((p) => ({ value: String(p.id), label: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ") }))}
+            />
+          </div>
           <div className="space-y-1.5">
             <Label>Title</Label>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Task title" />
@@ -627,7 +650,7 @@ function CreateTaskDialog({ onCreated }: { onCreated: () => void }) {
               </Select>
             </div>
           </div>
-          <Button onClick={handleCreate} disabled={!title.trim() || createMutation.isPending} className="w-full">
+          <Button onClick={handleCreate} disabled={!title.trim() || !selectedProjectId || createMutation.isPending} className="w-full">
             {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
             Create Task
           </Button>
