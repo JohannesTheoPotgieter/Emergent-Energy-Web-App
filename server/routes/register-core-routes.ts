@@ -23,8 +23,16 @@ export async function registerCoreRoutes(app: Express) {
   registerTaskManagementRoutes(app);
   const { registerStandupRoutes } = await import("../standup-routes");
   registerStandupRoutes(app);
-  const { registerPmMonthlyReportRoutes } = await import("./pm-monthly-report-routes");
-  registerPmMonthlyReportRoutes(app);
-  const { registerEngineeringMonthlyReportRoutes } = await import("./engineering-monthly-report-routes");
-  registerEngineeringMonthlyReportRoutes(app);
+  try {
+    const { registerPmMonthlyReportRoutes } = await import("./pm-monthly-report-routes");
+    registerPmMonthlyReportRoutes(app);
+  } catch (err: any) {
+    console.error("[Startup:Routes] Failed to register PM monthly report routes:", err.message);
+  }
+  try {
+    const { registerEngineeringMonthlyReportRoutes } = await import("./engineering-monthly-report-routes");
+    registerEngineeringMonthlyReportRoutes(app);
+  } catch (err: any) {
+    console.error("[Startup:Routes] Failed to register Engineering monthly report routes:", err.message);
+  }
 }
