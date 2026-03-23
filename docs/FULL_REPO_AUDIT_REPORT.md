@@ -623,16 +623,25 @@ Schema files in `shared/schema/` organized by domain:
 | 4 | No CSP header | [GAP] | Content Security Policy is not set. Critical for XSS mitigation. |
 | 5 | No helmet middleware | [GAP] | Not using `helmet` npm package. Security headers are manually set (incomplete). |
 | 6 | JWT token storage | [DEBT] | JWT stored in `localStorage` on client side. Vulnerable to XSS. Should use `httpOnly` session cookies. File: `client/src/lib/queryClient.ts:33` |
-| 7 | SQL injection protection | [CONFIRMED] | Drizzle ORM parameterizes all queries by default. No raw SQL in application code (only in migration files). |
+| 7 | SQL injection protection (ORM) | [CONFIRMED] | Drizzle ORM parameterizes all queries by default. |
+| 7a | **SQL injection risk via `sql.raw()`** | [BUG] | `sql.raw()` used 30+ times across server. `server/auth-routes.ts:45-46` and `server/migration-finalize-routes.ts:224` use string interpolation with manual quote escaping. Fragile pattern — should use parameterized queries. |
 | 8 | XSS protection | [CONFIRMED] | `dompurify` in dependencies for HTML sanitization. Markdown rendering via `react-markdown` with built-in sanitization. |
 | 9 | File upload validation | [CONFIRMED] | Multer limits file size. MIME type checks on upload routes. |
 | 10 | No file content scanning | [GAP] | Uploaded files are not scanned for malicious content (viruses, macros). Only MIME type checked. |
+| 10a | Invoice/engineering/quality uploads have NO fileFilter | [GAP] | `server/invoice-capture-routes.ts:17-23`, `server/engineering-routes.ts`, `server/quality-routes.ts` — any file type can be uploaded. Only admin import routes validate MIME type. |
+| 10b | Unsanitized original filename in uploads | [BUG] | `server/invoice-capture-routes.ts:20` uses `file.originalname` without sanitization — path traversal risk. Compare with `admin-routes.ts` which sanitizes correctly. |
+| 10c | Static file serving without auth | [GAP] | `security-middleware.ts:121-128` serves uploaded files statically — only blocks paths with `_private_`. Other uploads are publicly accessible without authentication. |
+| 10d | XSS via `innerHTML` in Teams chat | [BUG] | `client/src/pages/teams-chats.tsx:48` uses `innerHTML` to strip HTML from Teams messages. Intermediate assignment could trigger script execution. Should use DOMParser. |
 | 11 | CORS configuration | [CONFIRMED] | `Cross-Origin-Resource-Policy` set. Replit-aware CORS allows dev preview. Production restricts to `same-origin`. |
 | 12 | HTTPS enforcement | [DEBT] | No explicit HTTPS redirect middleware. Relies on hosting platform (Replit) for HTTPS termination. |
 | 13 | Auth rate limiting | [CONFIRMED] | 20 requests per 15 minutes on auth endpoints. In-memory store with 5000-entry cap and periodic cleanup. |
 | 14 | No rate limiting on API | [GAP] | Non-auth endpoints have zero rate limiting. |
 | 15 | Session management | [CONFIRMED] | `connect-pg-simple` stores sessions in PostgreSQL. Session secret from env vars. |
 | 16 | Password hashing | [CONFIRMED] | `bcryptjs` used for password hashing. |
+| 17 | JWT algorithm not pinned | [GAP] | `jwt.sign()`/`jwt.verify()` don't specify `{ algorithms: ['HS256'] }`. Algorithm confusion attack vector. File: `server/jwt.ts` |
+| 18 | Token revocation is in-memory | [GAP] | `revokedBearerTokens`, `revokedSessionIds` Maps in `server/auth-context.ts` — lost on restart, not shared across instances. |
+| 19 | Test files contain hardcoded credentials | [BUG] | `qa/tests/e2e/smoke.spec.ts:45-48` has plaintext usernames/passwords (`johannes`/`2023`, `eon`/`2035`) repeated across 10+ test files. |
+| 20 | Password login hardcoded to specific usernames | [DEBT] | `server/routes/auth-routes.ts:112-114` — `ALLOWED_PASSWORD_LOGIN_USERNAMES = ["johannes"]` with magic user ID `31`. |
 
 ---
 
@@ -660,8 +669,9 @@ Schema files in `shared/schema/` organized by domain:
 | # | Finding | Tag | Detail |
 |---|---------|-----|--------|
 | 1 | TypeScript `strict: false` | [DEBT] | `tsconfig.json` has `strict: false`. No strict null checks, no strict property initialization. File: `tsconfig.json:22` |
-| 2 | 178+ `any` type usages | [DEBT] | Explicit `: any` found across 20+ files. Highest concentration: `server/quality-routes.ts` (69 occurrences). |
-| 3 | `routes.ts` excluded from type checking | [DEBT] | `tsconfig.json` explicitly excludes `server/routes.ts` and `server/storage.ts` — the two largest backend files have zero type safety. |
+| 2 | ~500 `any` type usages | [DEBT] | Explicit `: any` across server and client. Highest: `server/quality-routes.ts` (69), `server/routes.ts` (100+). `db` variable in `db.ts:14` is typed as `any`. |
+| 3 | `routes.ts` + `storage.ts` excluded from type checking | [DEBT] | `tsconfig.json:13-14` explicitly excludes the two largest backend files. |
+| 3a | **`@ts-nocheck` in 40 server files** | [DEBT] | Including critical files: `storage.ts`, `routes.ts`, `auth-routes.ts`, `engineering-routes.ts`, `lifecycle-routes.ts`, `role-management.ts`. Nearly half the server codebase has zero TS checking. |
 | 4 | No ESLint | [GAP] | No `.eslintrc` file. No linting rules enforced. Code style is convention-only. |
 | 5 | No Prettier | [GAP] | No `.prettierrc` file. No automated formatting. |
 | 6 | No CI/CD pipeline | [GAP] | No `.github/workflows` directory. No GitHub Actions. No automated testing, linting, or build on PR. |
@@ -805,6 +815,11 @@ Schema files in `shared/schema/` organized by domain:
 
 | # | Area | Finding | Tag | Priority | Effort | Recommended Action |
 |---|------|---------|-----|----------|--------|-------------------|
+| 0s | Security | SQL injection risk via `sql.raw()` with string interpolation | [BUG] | Critical | Low | Replace with parameterized queries in `auth-routes.ts:45`, `migration-finalize-routes.ts:224` |
+| 0t | Security | File uploads missing type filter (invoice, eng, quality) | [GAP] | Critical | Low | Add `fileFilter` to multer config in all upload routes |
+| 0u | Security | Unsanitized filename in upload → path traversal | [BUG] | Critical | Low | Sanitize `originalname` in `invoice-capture-routes.ts:20` |
+| 0v | Security | Uploaded files served without auth | [GAP] | High | Medium | Add auth middleware to static file serving |
+| 0w | Security | XSS via `innerHTML` in Teams chat | [BUG] | High | Low | Replace with DOMParser in `teams-chats.tsx:48` |
 | 0x | Frontend | 401 redirect goes to `/login` instead of `/auth/login` — hits 404 | [BUG] | Critical | Low | Fix redirect path in `queryClient.ts:183` |
 | 0y | Frontend | Dashboard queries skip Bearer token — uses raw `fetch()` | [BUG] | Critical | Low | Replace with `apiRequest` or `getQueryFn` in `dashboard.tsx` |
 | 0z | Frontend | 10+ queries silently swallow 403/500 as empty arrays | [BUG] | High | Medium | Add error state handling in `project-detail.tsx` |
