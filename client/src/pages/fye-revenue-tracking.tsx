@@ -262,12 +262,23 @@ function DashboardChart({
   const metric0 = months[0]?.[metricKey] as MonthMetric | undefined;
   const hasPipeline = metric0?.pipeline !== undefined;
 
-  const chartData = months.map((m) => {
+  // Find last month index that has actual data (to split solid vs dashed)
+  const lastActualIdx = months.reduce((acc, m, i) => {
     const metric = m[metricKey] as MonthMetric;
+    return metric.actual !== null ? i : acc;
+  }, -1);
+
+  const chartData = months.map((m, i) => {
+    const metric = m[metricKey] as MonthMetric;
+    const isActual = i <= lastActualIdx;
+    const isForecastStart = i === lastActualIdx; // overlap point to connect lines
+    const isForecast = i > lastActualIdx || isForecastStart;
+
     const point: Record<string, any> = {
       label: m.label,
       Budget: metric.budget,
-      "Actual + Forecast": metric.actualForecast,
+      "Actual + Forecast": isActual ? metric.actualForecast : null,
+      Forecast: isForecast ? metric.actualForecast : null,
       Actual: metric.actual,
     };
     if (hasPipeline) point["Pipeline (95%+)"] = metric.pipeline || 0;
@@ -285,10 +296,11 @@ function DashboardChart({
             <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
             <XAxis dataKey="label" tick={{ fontSize: 10 }} />
             <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatRandShort(v)} />
-            <Tooltip formatter={(v: number) => formatRand(v)} />
+            <Tooltip formatter={(v: number, name: string) => [formatRand(v), name === "Forecast" ? "Actual + Forecast" : name]} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Area type="monotone" dataKey="Budget" fill="#3b82f6" stroke="#3b82f6" fillOpacity={0.15} strokeWidth={1} />
             <Line type="monotone" dataKey="Actual + Forecast" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
+            <Line type="monotone" dataKey="Forecast" stroke="#10b981" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls={false} legendType="none" />
             <Line type="monotone" dataKey="Actual" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
             {hasPipeline && <Line type="monotone" dataKey="Pipeline (95%+)" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 5" dot={false} />}
           </ComposedChart>
