@@ -26,9 +26,10 @@ function getMonthOptions(): { value: string; label: string }[] {
 
 export default function PmMonthlyReportCompare() {
   const [, navigate] = useLocation();
-  const params = new URLSearchParams(window.location.search);
-  const [monthA, setMonthA] = useState(params.get("monthA") || getMonthOptions()[1]?.value || "");
-  const [monthB, setMonthB] = useState(params.get("monthB") || getMonthOptions()[0]?.value || "");
+  // Use window.location on mount for initial params (works with wouter)
+  const initParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const [monthA, setMonthA] = useState(() => initParams?.get("monthA") || getMonthOptions()[1]?.value || "");
+  const [monthB, setMonthB] = useState(() => initParams?.get("monthB") || getMonthOptions()[0]?.value || "");
   const monthOptions = getMonthOptions();
 
   const { data, isLoading, error } = useQuery({

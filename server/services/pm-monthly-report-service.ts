@@ -25,7 +25,9 @@ import {
   financeRevenueMonthly,
   cashflowPoints,
   users,
+  smartImportRuns,
 } from "@shared/schema";
+import { desc } from "drizzle-orm";
 
 const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
 const COMPLETED_STATUSES = ["COMPLETE", "COMPLETED", "DONE"];
@@ -100,6 +102,7 @@ export async function generatePmReportData(month: string) {
     revenueMonthly,
     cashflowPts,
     allUsers,
+    lastImportRows,
   ] = await Promise.all([
     db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
     db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
@@ -115,6 +118,10 @@ export async function generatePmReportData(month: string) {
     db.select().from(financeRevenueMonthly),
     db.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)),
     db.select({ id: users.id, name: users.name }).from(users),
+    db.select({ committedAt: smartImportRuns.committedAt }).from(smartImportRuns)
+      .where(eq(smartImportRuns.status, "COMMITTED"))
+      .orderBy(desc(smartImportRuns.committedAt))
+      .limit(1),
   ]);
 
   // Build lookup maps
@@ -197,6 +204,7 @@ export async function generatePmReportData(month: string) {
     const actualCost = lines.reduce((s, c) => s + toNum(c.amountExVat), 0);
     const cosRealised = lines.filter(c => c.invoiceDateConfirmed && c.invoiceNumber).reduce((s, c) => s + toNum(c.amountExVat), 0);
     const paid = lines.filter(c => c.paidDateConfirmed).reduce((s, c) => s + toNum(c.amountExVat), 0);
+    const committed = lines.filter(c => c.poNumber && !(c.invoiceDateConfirmed && c.invoiceNumber)).reduce((s, c) => s + toNum(c.amountExVat), 0);
     const costsThisMonth = lines.filter(c => isDateStrInMonth(c.invoiceDate, monthStartStr, monthEndStr)).reduce((s, c) => s + toNum(c.amountExVat), 0);
     return {
       projectId: p.id,
@@ -204,6 +212,7 @@ export async function generatePmReportData(month: string) {
       budgetTotal,
       actualCost,
       cosRealised,
+      committed,
       paid,
       variance: budgetTotal - actualCost,
       costsThisMonth,
@@ -344,7 +353,7 @@ export async function generatePmReportData(month: string) {
   }));
 
   // ===== SECTION 5: RAID =====
-  const openRaid = allRaidRows.filter(r => r.status === "open" || r.status === "mitigating");
+  const openRaid = allRaidRows.filter(r => r.status === "open");
   const raidWithDetails = openRaid.map(r => {
     const proj = projectMap.get(r.projectId);
     return {
@@ -414,10 +423,14 @@ export async function generatePmReportData(month: string) {
   });
 
   // ===== SECTION 7: Procurement =====
-  const allCounterparties = await db.select().from(counterparties);
-  const counterpartyMap = new Map(allCounterparties.map(c => [c.id, c]));
+  const activeProcurement = allProcurement.filter(p => activeProjectIds.has(p.projectId));
+  const supplierIds = [...new Set(activeProcurement.map(p => p.supplierId).filter((id): id is number => id != null))];
+  const relevantCounterparties = supplierIds.length > 0
+    ? await db.select().from(counterparties).where(inArray(counterparties.id, supplierIds))
+    : [];
+  const counterpartyMap = new Map(relevantCounterparties.map(c => [c.id, c]));
 
-  const procurement = allProcurement.filter(p => activeProjectIds.has(p.projectId)).map(p => {
+  const procurement = activeProcurement.map(p => {
     const proj = projectMap.get(p.projectId);
     const supplier = p.supplierId ? counterpartyMap.get(p.supplierId) : null;
     return {
@@ -436,12 +449,20 @@ export async function generatePmReportData(month: string) {
   const duration = Date.now() - startTs;
   console.log(`[PM Monthly Report] Data generation for ${month} took ${duration}ms`);
 
+  const STALENESS_THRESHOLD_DAYS = 7;
+  const lastImportAt = lastImportRows[0]?.committedAt || null;
+  const daysSinceImport = lastImportAt ? Math.floor((Date.now() - new Date(lastImportAt).getTime()) / (1000 * 60 * 60 * 24)) : -1;
+
   return {
     meta: {
       month,
       monthLabel: getMonthLabel(month),
       generatedAt: new Date().toISOString(),
       activeProjectCount: activeProjects.length,
+      stalenessThresholdDays: STALENESS_THRESHOLD_DAYS,
+      lastImportAt: lastImportAt ? new Date(lastImportAt).toISOString() : null,
+      daysSinceImport,
+      isStale: daysSinceImport < 0 || daysSinceImport > STALENESS_THRESHOLD_DAYS,
     },
     kpis,
     financials: {

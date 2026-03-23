@@ -21,6 +21,7 @@ export default function PmMonthlyReportProject() {
     queryKey: ["/api/reports/pm/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/pm/monthly?month=${month}`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to load report");
       return res.json();
     },
     enabled: !!month,
@@ -28,10 +29,11 @@ export default function PmMonthlyReportProject() {
 
   const reportId = report?.id;
 
-  const { data: projectData, isLoading } = useQuery({
+  const { data: projectData, isLoading, error } = useQuery({
     queryKey: ["/api/reports/pm/monthly/project", reportId, projectId],
     queryFn: async () => {
       const res = await fetch(`/api/reports/pm/monthly/${reportId}/project/${projectId}`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to load project data");
       return res.json();
     },
     enabled: !!reportId && !!projectId,
@@ -54,9 +56,11 @@ export default function PmMonthlyReportProject() {
         <span className="text-sm text-muted-foreground">{month}</span>
       </div>
 
+      {error && <p className="text-sm text-red-600">{(error as Error).message}</p>}
+
       {isLoading ? (
         <div className="flex items-center justify-center min-h-[30vh]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
-      ) : !ps ? (
+      ) : !ps && !error ? (
         <p className="text-muted-foreground">No data available for this project.</p>
       ) : (
         <>

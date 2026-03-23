@@ -20,6 +20,7 @@ export default function EngineeringMonthlyReportProject() {
     queryKey: ["/api/reports/engineering/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/engineering/monthly?month=${month}`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to load report");
       return res.json();
     },
     enabled: !!month,
@@ -27,10 +28,11 @@ export default function EngineeringMonthlyReportProject() {
 
   const reportId = report?.id;
 
-  const { data: projectData, isLoading } = useQuery({
+  const { data: projectData, isLoading, error } = useQuery({
     queryKey: ["/api/reports/engineering/monthly/project", reportId, projectId],
     queryFn: async () => {
       const res = await fetch(`/api/reports/engineering/monthly/${reportId}/project/${projectId}`, { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to load project data");
       return res.json();
     },
     enabled: !!reportId && !!projectId,
@@ -50,6 +52,8 @@ export default function EngineeringMonthlyReportProject() {
         <h1 className="text-2xl font-bold">Engineering Project Detail</h1>
         <span className="text-sm text-muted-foreground">{month}</span>
       </div>
+
+      {error && <p className="text-sm text-red-600">{(error as Error).message}</p>}
 
       {isLoading ? (
         <div className="flex items-center justify-center min-h-[30vh]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>

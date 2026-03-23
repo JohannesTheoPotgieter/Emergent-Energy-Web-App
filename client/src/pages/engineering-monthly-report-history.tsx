@@ -16,6 +16,7 @@ export default function EngineeringMonthlyReportHistory() {
     queryKey: ["/api/reports/engineering/monthly/history"],
     queryFn: async () => {
       const res = await fetch("/api/reports/engineering/monthly/history", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error("Failed to load report history");
       return res.json();
     },
   });
@@ -66,8 +67,14 @@ export default function EngineeringMonthlyReportHistory() {
                   <td className="px-4 py-2.5 text-xs text-muted-foreground">
                     {new Date(h.generatedAt).toLocaleString("en-ZA")}
                   </td>
-                  <td className="px-4 py-2.5 text-xs">{h.reviewedByName || "—"}</td>
-                  <td className="px-4 py-2.5 text-xs">{h.publishedByName || "—"}</td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {h.reviewedByName || "—"}
+                    {h.reviewedAt && <span className="text-muted-foreground ml-1">({new Date(h.reviewedAt).toLocaleDateString("en-ZA")})</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {h.publishedByName || "—"}
+                    {h.publishedAt && <span className="text-muted-foreground ml-1">({new Date(h.publishedAt).toLocaleDateString("en-ZA")})</span>}
+                  </td>
                   <td className="px-4 py-2.5">
                     <Button variant="ghost" size="sm" className="text-xs" onClick={() => navigate(`/reports/engineering/monthly?month=${h.reportMonth}`)}>
                       View

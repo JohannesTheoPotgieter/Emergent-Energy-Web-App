@@ -58,6 +58,7 @@ export async function generateEngineeringReportData(month: string) {
     allProjectRows,
     allWorkItemRows,
     allDeliverables,
+    allDeliverableVersions,
     allStages,
     stageTemplates,
     allApprovals,
@@ -67,6 +68,7 @@ export async function generateEngineeringReportData(month: string) {
     db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
     db.select().from(workItems).where(and(isNull(workItems.deletedAt), eq(workItems.workstream, "ENG"))),
     db.select().from(deliverables),
+    db.select().from(deliverableVersions),
     db.select().from(projectEngStages),
     db.select().from(engStageTemplates),
     db.select().from(projectEngApprovals),
@@ -95,11 +97,17 @@ export async function generateEngineeringReportData(month: string) {
 
   const activeDeliverables = allDeliverables.filter(d => activeProjectIds.has(d.projectId));
 
+  const activeTasks = engWorkItems.filter(w => {
+    const status = (w.status || "").toUpperCase();
+    return !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
+  }).length;
+
   const kpis = {
     totalEngineeringTasks: totalEngTasks,
     tasksCompletedThisMonth: completedThisMonth,
-    completionRate: totalEngTasks > 0 ? (totalCompleted / totalEngTasks) * 100 : 0,
-    deliverablesSubmitted: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
+    cumulativeCompletionRate: totalEngTasks > 0 ? (totalCompleted / totalEngTasks) * 100 : 0,
+    monthlyCompletionRate: (completedThisMonth + activeTasks) > 0 ? (completedThisMonth / (completedThisMonth + activeTasks)) * 100 : 0,
+    deliverablesSubmitted: activeDeliverables.filter(d => isTimestampInMonth(d.createdAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
     deliverablesApproved: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && (d.status === "QC APPROVED" || d.status === "COMPLETE")).length,
     deliverablesRejected: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "PROVIDE FEEDBACK").length,
     openBlockers: engWorkItems.filter(w => {
@@ -144,8 +152,20 @@ export async function generateEngineeringReportData(month: string) {
   }).filter(p => p.totalTasks > 0);
 
   // ===== SECTION 3: Deliverable status =====
+  // Build version history by deliverable
+  const versionsByDeliverable = new Map<number, typeof allDeliverableVersions>();
+  for (const v of allDeliverableVersions) {
+    if (!versionsByDeliverable.has(v.deliverableId)) versionsByDeliverable.set(v.deliverableId, []);
+    versionsByDeliverable.get(v.deliverableId)!.push(v);
+  }
+
   const deliverableRegister = activeDeliverables.map(d => {
     const proj = projectMap.get(d.projectId);
+    const versions = (versionsByDeliverable.get(d.id) || []).map(v => ({
+      versionNumber: v.versionNumber,
+      status: v.status,
+      createdAt: v.createdAt?.toISOString() || null,
+    }));
     return {
       projectId: d.projectId,
       projectName: proj?.projectName || d.projectName,
@@ -156,12 +176,13 @@ export async function generateEngineeringReportData(month: string) {
       currentVersion: d.currentVersion,
       ownerName: d.ownerUserId ? (userMap.get(d.ownerUserId) || null) : null,
       reviewerName: d.reviewerUserId ? (userMap.get(d.reviewerUserId) || null) : null,
-      updatedAt: d.updatedAt?.toISOString() || null,
+      updatedAt: d.updatedAt instanceof Date ? d.updatedAt.toISOString() : (d.updatedAt || null),
+      versions,
     };
   });
 
   const deliverableActivity = {
-    submittedThisMonth: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
+    submittedThisMonth: activeDeliverables.filter(d => isTimestampInMonth(d.createdAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
     approvedThisMonth: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && (d.status === "QC APPROVED" || d.status === "COMPLETE")).length,
     rejectedThisMonth: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "PROVIDE FEEDBACK").length,
     pendingReview: activeDeliverables.filter(d => d.status === "NEEDS APPROVAL").length,

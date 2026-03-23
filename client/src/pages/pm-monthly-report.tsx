@@ -126,6 +126,13 @@ export default function PmMonthlyReport() {
         </div>
       ) : !error && (
         <>
+          {reportData.meta?.isStale && (
+            <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              Data is {reportData.meta.daysSinceImport >= 0 ? `${reportData.meta.daysSinceImport} day(s)` : "never imported"} since last import (threshold: {reportData.meta.stalenessThresholdDays} days)
+            </div>
+          )}
+
           <KPITileGrid tiles={kpiTiles} />
 
           <Tabs defaultValue="financial" className="w-full">

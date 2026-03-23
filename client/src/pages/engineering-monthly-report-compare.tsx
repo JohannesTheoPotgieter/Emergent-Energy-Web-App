@@ -26,9 +26,9 @@ function getMonthOptions(): { value: string; label: string }[] {
 
 export default function EngineeringMonthlyReportCompare() {
   const [, navigate] = useLocation();
-  const params = new URLSearchParams(window.location.search);
-  const [monthA, setMonthA] = useState(params.get("monthA") || getMonthOptions()[1]?.value || "");
-  const [monthB, setMonthB] = useState(params.get("monthB") || getMonthOptions()[0]?.value || "");
+  const initParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const [monthA, setMonthA] = useState(() => initParams?.get("monthA") || getMonthOptions()[1]?.value || "");
+  const [monthB, setMonthB] = useState(() => initParams?.get("monthB") || getMonthOptions()[0]?.value || "");
   const monthOptions = getMonthOptions();
 
   const { data, isLoading, error } = useQuery({
@@ -99,7 +99,10 @@ export default function EngineeringMonthlyReportCompare() {
                     const a = m.a ?? 0;
                     const b = m.b ?? 0;
                     const delta = b - a;
-                    const fmtVal = (v: number) => m.pct ? `${v.toFixed(1)}%` : String(Math.round(v));
+                    const fmtVal = (v: number) => {
+                      if (m.pct) return `${v.toFixed(1)}%`;
+                      return String(Math.round(v));
+                    };
                     return (
                       <tr key={i} className="border-b hover:bg-muted/30">
                         <td className="px-3 py-2 font-medium">{m.label}</td>
