@@ -66,9 +66,9 @@ import {
   fyeReportSnapshots,
   projectPlan,
 } from "@shared/schema";
-import { eq, and, sql, desc, isNull } from "drizzle-orm";
+import { eq, and, sql, desc, isNull, gte } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { extractMonthKey, normalizeProjectName } from "../lib/calculations/financeUtils";
+import { extractMonthKey, normalizeProjectName, isCosRealised, currentMonthKey } from "../lib/calculations/financeUtils";
 
 const router = Router();
 
@@ -377,6 +377,9 @@ router.get(
         db.select({
           projectName: programInflows.projectName,
           milestoneAmount: programInflows.milestoneAmount,
+          plannedPaymentDate: programInflows.plannedPaymentDate,
+          invoiceRaisedDate: programInflows.invoiceRaisedDate,
+          paymentReceivedDate: programInflows.paymentReceivedDate,
         }).from(programInflows).where(isNull(programInflows.effectiveTo)),
         db.select({
           projectName: programExpense.projectName,
@@ -404,10 +407,26 @@ router.get(
       const now = new Date();
       const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-      // 6. Build 3-month forecast from planned/scheduled expense data
-      // Use expenses not yet invoiced that have a forecast payment date
+      // 6. Build 3-month forecast from planned data in the system
       const forecastWindow = getNext3MonthKeys(currentMk);
-      const forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[] = [];
+
+      // Forecast Revenue: use planned inflow milestones with plannedPaymentDate in the forecast window
+      // (only milestones not yet received — i.e. no paymentReceivedDate)
+      const forecastRevByMonth: Record<string, number> = {};
+      for (const inf of allInflows) {
+        const amt = safeNum(inf.milestoneAmount);
+        if (amt === 0) continue;
+        // Skip milestones already received
+        if ((inf as any).paymentReceivedDate) continue;
+        const revDate = (inf as any).plannedPaymentDate || (inf as any).invoiceRaisedDate;
+        const mk = extractMonthKey(revDate);
+        if (mk && forecastWindow.includes(mk)) {
+          forecastRevByMonth[mk] = (forecastRevByMonth[mk] || 0) + amt;
+        }
+      }
+
+      // Forecast COS: use budget amounts from uninvoiced expenses with forecast/planned dates
+      const forecastCosByMonth: Record<string, number> = {};
       for (const exp of allExpenses) {
         if (exp.rowType !== "item" && exp.rowType != null) continue;
         // Skip items already invoiced (they're in actuals)
@@ -418,11 +437,47 @@ router.get(
         const forecastDate = (exp as any).computedForecastPaymentDate || (exp as any).forecastPaymentDate;
         const fMk = extractMonthKey(forecastDate);
         if (fMk && forecastWindow.includes(fMk)) {
-          forecastExpenses.push({ projectName: exp.projectName, rowType: exp.rowType, budgetTotal: budgetAmt, forecastMonth: fMk });
+          forecastCosByMonth[fMk] = (forecastCosByMonth[fMk] || 0) + budgetAmt;
         }
       }
-      const forecastRevByMonth = buildForecastRevenue(allInflows, forecastExpenses, forecastWindow);
-      const forecastCosByMonth = buildForecastCos(forecastExpenses, forecastWindow);
+
+      // 7. Pipeline (95%+) revenue spread using historical COS realization curve
+      const pipelineRevByMonth: Record<string, number> = {};
+      try {
+        const pipelineDeals = await db.select({
+          solarRevenue: forecastPipeline.solarRevenue,
+          bessRevenue: forecastPipeline.bessRevenue,
+        }).from(forecastPipeline)
+          .where(and(
+            eq(forecastPipeline.fyeYear, fye),
+            gte(forecastPipeline.dealProbabilityPct, 95),
+            eq(forecastPipeline.status, "active"),
+          ));
+
+        const totalPipelineRev = pipelineDeals.reduce(
+          (sum, d) => sum + safeNum(d.solarRevenue) + safeNum(d.bessRevenue), 0
+        );
+
+        if (totalPipelineRev > 0) {
+          // Build COS realization curve from historical actuals (what % of total COS fell in each month)
+          const totalActualCos = monthKeys.reduce((s, mk) => s + (actualCosByMonth[mk] || 0), 0);
+          if (totalActualCos > 0) {
+            // Distribute pipeline revenue proportionally to how COS was realised per month
+            for (const mk of monthKeys) {
+              const cosPct = (actualCosByMonth[mk] || 0) / totalActualCos;
+              pipelineRevByMonth[mk] = totalPipelineRev * cosPct;
+            }
+          } else {
+            // No COS history yet — spread evenly across all FYE months
+            const perMonth = totalPipelineRev / monthKeys.length;
+            for (const mk of monthKeys) {
+              pipelineRevByMonth[mk] = perMonth;
+            }
+          }
+        }
+      } catch {
+        // forecastPipeline may not exist yet
+      }
 
       // Build monthly dashboard data
       const months = monthKeys.map((mk) => {
@@ -452,6 +507,8 @@ router.get(
           actualForecastCos = 0;
         }
 
+        const pipelineRev = pipelineRevByMonth[mk] || 0;
+
         return {
           monthKey: mk,
           label: monthKeyToLabel(mk),
@@ -459,6 +516,7 @@ router.get(
             budget: budgetRev,
             actualForecast: actualForecastRev,
             actual: actualRev,
+            pipeline: pipelineRev,
           },
           cos: {
             budget: budgetCos,
@@ -492,6 +550,10 @@ router.get(
       const monthKeys = getFyeMonthKeys(fye);
       const fyeStart = `${fye - 1}-09`;
       const fyeEnd = `${fye}-08`;
+
+      // Optional cutoff month filter: only include data up to this month (e.g. "2026-02" for end of Feb)
+      const cutoffMonth = req.query.cutoffMonth ? String(req.query.cutoffMonth) : null;
+      const effectiveEnd = cutoffMonth && cutoffMonth >= fyeStart && cutoffMonth <= fyeEnd ? cutoffMonth : fyeEnd;
 
       // Get all projects (isActive may not exist in SQLite — treat null as true)
       const projects = await db
@@ -589,6 +651,10 @@ router.get(
           expenseInvoicedDate: programExpense.expenseInvoicedDate,
           forecastPaymentDate: programExpense.forecastPaymentDate,
           computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
+          expenseInvoiceNumber: programExpense.expenseInvoiceNumber,
+          expensePoNumber: programExpense.expensePoNumber,
+          invoiceDateConfirmed: programExpense.invoiceDateConfirmed,
+          invoiceDateFontColor: programExpense.invoiceDateFontColor,
         }).from(programExpense).where(isNull(programExpense.effectiveTo)),
       ]);
 
@@ -616,7 +682,7 @@ router.get(
         if (budgetAmt === 0) continue;
         const budgetDate = exp.expenseInvoicedDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
         const budgetMk = extractMonthKey(budgetDate);
-        if (budgetMk && budgetMk >= fyeStart && budgetMk <= fyeEnd) {
+        if (budgetMk && budgetMk >= fyeStart && budgetMk <= effectiveEnd) {
           budgetCosByProject.set(pn, (budgetCosByProject.get(pn) || 0) + budgetAmt);
         }
       }
@@ -637,12 +703,15 @@ router.get(
         // FYE-specific budget revenue
         const revDate = inf.plannedPaymentDate || inf.invoiceRaisedDate || inf.paymentReceivedDate;
         const revMk = extractMonthKey(revDate);
-        if (revMk && revMk >= fyeStart && revMk <= fyeEnd) {
+        if (revMk && revMk >= fyeStart && revMk <= effectiveEnd) {
           budgetRevByProject.set(pn, (budgetRevByProject.get(pn) || 0) + amt);
         }
       }
 
-      // ── Actual Revenue & Actual Expense per project (invoiced within FYE window) ──
+      // ── Actual Revenue & Actual Expense per project (realised COS within FYE window) ──
+      // COS is "realised" when: invoice number + invoice date + invoice date confirmed (black font)
+      // Revenue is allocated proportionally using COS-ratio: (realisedCOS / totalCOS) × totalRevenue
+      const curMk = currentMonthKey();
       const actualRevByProject = new Map<string, number>();
       const actualExpByProject = new Map<string, number>();
       for (const exp of allExpenses) {
@@ -651,11 +720,16 @@ router.get(
         if (amt === 0) continue;
         if (!exp.expenseInvoicedDate) continue;
         const mk = extractMonthKey(exp.expenseInvoicedDate);
-        if (!mk || mk < fyeStart || mk > fyeEnd) continue;
+        if (!mk || mk < fyeStart || mk > effectiveEnd) continue;
+        // Only future months are excluded; realised check handles confirmation
+        if (mk > curMk) continue;
+
+        // Check if this expense line is realised (invoice confirmed)
+        if (!isCosRealised(exp)) continue;
 
         const pn = normalizeProjectName(exp.projectName);
 
-        // Actual expense: direct sum of invoiced COS in FYE window
+        // Actual expense: direct sum of realised COS in FYE window
         actualExpByProject.set(pn, (actualExpByProject.get(pn) || 0) + amt);
 
         // Actual revenue: COS-ratio allocation
@@ -734,6 +808,7 @@ router.get(
 
       res.json({
         fye,
+        cutoffMonth: cutoffMonth || null,
         projects: projectRows,
         totals: {
           ...totals,
