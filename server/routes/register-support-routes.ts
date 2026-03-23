@@ -43,7 +43,4 @@ export async function registerSupportRoutes(app: Express) {
 
   const { registerExceptionDashboardRoutes } = await import("../exception-dashboard-routes");
   registerExceptionDashboardRoutes(app);
-
-  const { registerNotificationRoutes } = await import("../notification-routes");
-  registerNotificationRoutes(app);
 }
