@@ -1078,6 +1078,15 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
+  {
+    entity: 'reports',
+    view_roles: ['COO_ADMIN'],
+    create_roles: ['COO_ADMIN'],
+    edit_roles: ['COO_ADMIN'],
+    approve_roles: ['COO_ADMIN'],
+    override_roles: ['COO_ADMIN'],
+    delete_roles: ['COO_ADMIN'],
+  },
 ];
 
 export function checkPermission(role: string, entity: PermissionEntity, action: PermissionAction): boolean {
