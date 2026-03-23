@@ -37,6 +37,38 @@ export function computeOverallRag(schedule: "green" | "amber" | "red", cost: "gr
   return "green";
 }
 
+// ── Priority Health Constants ────────────────────────────────────────
+// Single source of truth for health status values used across the
+// priority_derived_metrics VIEW, strategic routes, and UI components.
+
+export type PriorityHealth = "healthy" | "at_risk" | "critical";
+
+export const PRIORITY_HEALTH_VALUES: readonly PriorityHealth[] = ["healthy", "at_risk", "critical"] as const;
+
+/**
+ * Maps a project RAG status (case-insensitive) to a priority health value.
+ * "red" → "critical", "amber"/"orange" → "at_risk", else → "healthy".
+ */
+export function ragStatusToHealth(ragStatus: string | null | undefined): PriorityHealth {
+  if (!ragStatus) return "healthy";
+  const lower = ragStatus.toLowerCase();
+  if (lower === "red") return "critical";
+  if (lower === "amber" || lower === "orange") return "at_risk";
+  return "healthy";
+}
+
+/**
+ * Derives worst-of health from an array of project RAG statuses.
+ * Returns null if no statuses provided (no projects linked).
+ */
+export function deriveHealthFromRagStatuses(ragStatuses: string[]): PriorityHealth | null {
+  if (ragStatuses.length === 0) return null;
+  const mapped = ragStatuses.map(ragStatusToHealth);
+  if (mapped.includes("critical")) return "critical";
+  if (mapped.includes("at_risk")) return "at_risk";
+  return "healthy";
+}
+
 export type KpiSourceLayer = "foundation" | "business_logic" | "derived_kpi" | "view_model";
 
 export interface KpiDefinition {

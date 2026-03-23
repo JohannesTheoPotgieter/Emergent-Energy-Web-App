@@ -68,6 +68,8 @@ export function isCosRealised(exp: {
   expenseInvoiceNumber?: string | null;
   expenseInvoicedDate?: string | null;
   expensePoNumber?: string | null;
+  invoiceDateConfirmed?: boolean | null;
+  invoiceDateFontColor?: string | null;
   _cosOverrideStatus?: string | null;
   _cosRealisedFlag?: boolean | null;
 }): boolean {
@@ -75,11 +77,13 @@ export function isCosRealised(exp: {
   if (exp._cosOverrideStatus === 'COS Realised') return true;
   // Normalized table boolean flag
   if (exp._cosRealisedFlag === true) return true;
-  // Classification from invoice data
+  // Classification from invoice data (must include confirmation fields for isDateBlack check)
   const status = classifyCosStatus({
     expenseInvoiceNumber: exp.expenseInvoiceNumber ?? null,
     expenseInvoicedDate: exp.expenseInvoicedDate ?? null,
     expensePoNumber: exp.expensePoNumber ?? null,
+    invoiceDateConfirmed: exp.invoiceDateConfirmed ?? null,
+    invoiceDateFontColor: exp.invoiceDateFontColor ?? null,
   });
   return status === 'COS Realised';
 }

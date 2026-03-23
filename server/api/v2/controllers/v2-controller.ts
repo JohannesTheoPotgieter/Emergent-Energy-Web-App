@@ -61,7 +61,8 @@ export const dashboardByRole = asyncHandler(async (req: Request, res: Response) 
 export const listProjects = asyncHandler(async (req, res) => {
   const query = validate(paginationQuerySchema, req.query, "Invalid pagination query");
   const scope = getProjectScope(req);
-  const response = await service.listProjectsService({ ...query, page: query.page ?? 1, pageSize: query.pageSize ?? 25, sortDir: query.sortDir ?? "asc", scopeProjectIds: scopeProjectIds(scope) });
+  const priorityId = req.query.priority_id ? Number(req.query.priority_id) : undefined;
+  const response = await service.listProjectsService({ ...query, page: query.page ?? 1, pageSize: query.pageSize ?? 25, sortDir: query.sortDir ?? "asc", scopeProjectIds: scopeProjectIds(scope), priorityId });
   ok(res, response.rows, response.meta);
 });
 

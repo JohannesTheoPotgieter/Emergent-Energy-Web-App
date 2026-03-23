@@ -294,7 +294,34 @@ router.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
       if (!linksByPriority[l.priorityId]) linksByPriority[l.priorityId] = [];
       linksByPriority[l.priorityId].push(l);
     });
-    const enriched = priorities.map(p => ({ ...p, links: linksByPriority[p.id] || [] }));
+
+    // Enrich with derived metrics from the strategic view for consistency
+    let allMetrics: any[] = [];
+    try {
+      const metricsRows = await db.execute(sql`SELECT * FROM priority_derived_metrics`);
+      allMetrics = (metricsRows.rows || metricsRows) as any[];
+    } catch (_) {
+      // View may not exist yet
+    }
+    const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+
+    const enriched = priorities.map(p => {
+      const metrics = metricsMap.get(p.id);
+      const projectCount = Number(metrics?.project_count || 0);
+      const hasProjects = projectCount > 0;
+      return {
+        ...p,
+        links: linksByPriority[p.id] || [],
+        effectiveHealth: hasProjects
+          ? (metrics?.derived_health || "healthy")
+          : (p.manualHealth || "healthy"),
+        effectiveProgress: hasProjects
+          ? Math.round(Number(metrics?.avg_progress || 0))
+          : (p.manualProgress || 0),
+        projectCount,
+        hasProjects,
+      };
+    });
     res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: err.message });

@@ -17,8 +17,10 @@ import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/p
 import {
   Users, Calendar, BarChart3, Plus, Loader2, Send, Clock,
   CheckCircle2, AlertTriangle, MessageSquare,
-  Smile, Meh, Frown, ThumbsUp, XCircle, History,
+  Smile, Meh, Frown, ThumbsUp, XCircle, History, TrendingUp,
+  Settings, UserPlus, UserMinus, Copy, Download, Flame, Star, ClipboardCopy,
 } from "lucide-react";
+import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 
@@ -45,6 +47,7 @@ interface StandupSchedule {
   cadenceDays: number;
   anchorDate: string;
   deadlineTime: string | null;
+  deadlineTimezone: string;
   isActive: boolean;
   createdAt: string;
 }
@@ -89,6 +92,56 @@ interface StandupAnalytics {
   participationRate: number;
 }
 
+interface TrendDataPoint {
+  date: string;
+  submissions: number;
+  participationRate: number;
+  blockers: number;
+  avgMoodScore: number | null;
+}
+
+interface StandupTrends {
+  series: TrendDataPoint[];
+  totalParticipants: number;
+}
+
+interface PersonStat {
+  userId: number;
+  userName: string | null;
+  userEmail: string | null;
+  isRequired: boolean;
+  totalSubmissions: number;
+  participationRate: number;
+  lateCount: number;
+  onTimeRate: number;
+  blockerCount: number;
+  avgMoodScore: number | null;
+  currentStreak: number;
+}
+
+interface PerPersonAnalytics {
+  members: PersonStat[];
+  totalStandups: number;
+}
+
+interface DigestResponse {
+  text: string;
+  markdown: string;
+  date: string;
+  scheduleName: string;
+  submissionCount: number;
+  participantCount: number;
+  blockerCount: number;
+  missingCount: number;
+}
+
+interface TeamMember {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+}
+
 interface Suggestions {
   whatIDid: string[];
   whatImDoing: string[];
@@ -130,6 +183,14 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
   const [blockers, setBlockers] = useState(existing?.blockers || "");
   const [mood, setMood] = useState(existing?.mood || "");
   const { toast } = useToast();
+
+  // Reset form when schedule or existing entry changes
+  useEffect(() => {
+    setWhatIDid(existing?.whatIDid || "");
+    setWhatImDoing(existing?.whatImDoing || "");
+    setBlockers(existing?.blockers || "");
+    setMood(existing?.mood || "");
+  }, [scheduleId, existing?.id]);
 
   const { data: suggestions } = useQuery<Suggestions>({
     queryKey: ["standup-suggestions"],
@@ -282,6 +343,11 @@ function TeamView({ scheduleId }: { scheduleId: number }) {
         />
         <span className="text-sm text-muted-foreground">
           {entries?.length || 0} of {participants?.length || 0} submitted
+          {(() => {
+            const reqCount = (participants || []).filter((p) => p.isRequired).length;
+            const reqSubmitted = (entries || []).filter((e) => (participants || []).some((p) => p.userId === e.userId && p.isRequired)).length;
+            return reqCount > 0 ? ` (${reqSubmitted}/${reqCount} required)` : "";
+          })()}
         </span>
       </div>
 
@@ -343,9 +409,10 @@ function TeamView({ scheduleId }: { scheduleId: number }) {
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">Awaiting submission</p>
               <div className="flex flex-wrap gap-2">
                 {missingParticipants.map((p) => (
-                  <Badge key={p.userId} variant="outline" className="gap-1 text-xs">
+                  <Badge key={p.userId} variant="outline" className={`gap-1 text-xs ${p.isRequired ? "border-red-200 bg-red-50 text-red-700" : ""}`}>
                     <Users className="h-3 w-3" />
                     {p.userName || p.userEmail || `User ${p.userId}`}
+                    {p.isRequired && <span className="text-[8px] font-bold">(required)</span>}
                   </Badge>
                 ))}
               </div>
@@ -367,84 +434,163 @@ function TeamView({ scheduleId }: { scheduleId: number }) {
 
 // ── History View ─────────────────────────────────────────────────────────────
 
+interface HistoryResponse {
+  entries: Record<string, StandupEntry[]>;
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 function HistoryView({ scheduleId }: { scheduleId: number }) {
-  const { data, isLoading } = useQuery<{
-    entries: Record<string, StandupEntry[]>;
-    total: number;
-  }>({
-    queryKey: ["standup-history", scheduleId],
-    queryFn: () => apiFetch(`/api/standups/entries/${scheduleId}/history?limit=50`),
+  const PAGE_SIZE = 20;
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [allEntries, setAllEntries] = useState<Record<string, StandupEntry[]>>({});
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setOffset(0);
+      setAllEntries({});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const { data, isLoading, isFetching } = useQuery<HistoryResponse>({
+    queryKey: ["standup-history", scheduleId, debouncedSearch, offset],
+    queryFn: () => apiFetch(`/api/standups/entries/${scheduleId}/history?limit=${PAGE_SIZE}&offset=${offset}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ""}`),
   });
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-  }
+  // Merge new page data into accumulated entries
+  useEffect(() => {
+    if (!data) return;
+    setHasMore(data.hasMore);
+    if (offset === 0) {
+      setAllEntries(data.entries);
+    } else {
+      setAllEntries((prev) => {
+        const merged = { ...prev };
+        for (const [date, entries] of Object.entries(data.entries)) {
+          merged[date] = [...(merged[date] || []), ...entries];
+        }
+        return merged;
+      });
+    }
+  }, [data, offset]);
 
-  const dates = Object.keys(data?.entries || {}).sort().reverse();
+  const dates = Object.keys(allEntries).sort().reverse();
 
   return (
-    <ScrollArea className="h-[calc(100vh-400px)] min-h-[300px]">
-      <div className="space-y-4">
-        {dates.map((date) => {
-          const entries = data!.entries[date];
-          return (
-            <div key={date}>
-              <div className="flex items-center gap-2 mb-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold tracking-tight">
-                  {new Date(date + "T00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
-                </span>
-                <Badge variant="outline" className="text-[10px] font-semibold">{entries.length} entries</Badge>
-              </div>
-              <div className="space-y-1.5 pl-6">
-                {entries.map((entry) => (
-                  <Card key={entry.id}>
-                    <CardContent className="px-3 py-2.5">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-semibold">{entry.userName}</span>
-                        <MoodBadge mood={entry.mood} />
-                      </div>
-                      {entry.whatIDid && (
-                        <p className="text-xs text-muted-foreground">
-                          <span className="text-emerald-600 font-semibold">Completed:</span> {entry.whatIDid}
-                        </p>
-                      )}
-                      {entry.whatImDoing && (
-                        <p className="text-xs text-muted-foreground">
-                          <span className="text-blue-600 font-semibold">Working on:</span> {entry.whatImDoing}
-                        </p>
-                      )}
-                      {entry.blockers && (
-                        <p className="text-xs text-orange-700 font-medium">
-                          <span className="font-semibold">Blocker:</span> {entry.blockers}
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-              <Separator className="mt-3" />
-            </div>
-          );
-        })}
-        {dates.length === 0 && (
-          <div className="ee-empty-state">
-            <History className="h-8 w-8 text-muted-foreground/30 mb-2" />
-            <p className="text-sm font-medium">No standup history yet</p>
-            <p className="text-xs text-muted-foreground mt-1">History will appear after the first standup submission</p>
-          </div>
-        )}
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Input
+          placeholder="Search standup history..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-sm h-8 text-xs"
+        />
+        {isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        {data && <span className="text-xs text-muted-foreground">{data.total} total entries</span>}
       </div>
-    </ScrollArea>
+
+      <ScrollArea className="h-[calc(100vh-440px)] min-h-[300px]">
+        <div className="space-y-4">
+          {isLoading && offset === 0 ? (
+            <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : dates.length === 0 ? (
+            <div className="ee-empty-state">
+              <History className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-sm font-medium">{debouncedSearch ? "No matching entries" : "No standup history yet"}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {debouncedSearch ? "Try a different search term" : "History will appear after the first standup submission"}
+              </p>
+            </div>
+          ) : (
+            <>
+              {dates.map((date) => {
+                const entries = allEntries[date];
+                return (
+                  <div key={date}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold tracking-tight">
+                        {new Date(date + "T00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+                      </span>
+                      <Badge variant="outline" className="text-[10px] font-semibold">{entries.length} entries</Badge>
+                    </div>
+                    <div className="space-y-1.5 pl-6">
+                      {entries.map((entry) => (
+                        <Card key={entry.id}>
+                          <CardContent className="px-3 py-2.5">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-semibold">{entry.userName}</span>
+                              <MoodBadge mood={entry.mood} />
+                            </div>
+                            {entry.whatIDid && (
+                              <p className="text-xs text-muted-foreground">
+                                <span className="text-emerald-600 font-semibold">Completed:</span> {entry.whatIDid}
+                              </p>
+                            )}
+                            {entry.whatImDoing && (
+                              <p className="text-xs text-muted-foreground">
+                                <span className="text-blue-600 font-semibold">Working on:</span> {entry.whatImDoing}
+                              </p>
+                            )}
+                            {entry.blockers && (
+                              <p className="text-xs text-orange-700 font-medium">
+                                <span className="font-semibold">Blocker:</span> {entry.blockers}
+                              </p>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                    <Separator className="mt-3" />
+                  </div>
+                );
+              })}
+
+              {hasMore && (
+                <div className="flex justify-center pt-2 pb-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    disabled={isFetching}
+                    onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
+                  >
+                    {isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <History className="h-3.5 w-3.5" />}
+                    Load More
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
 
 // ── Analytics View ───────────────────────────────────────────────────────────
 
+function formatDateShort(dateStr: string) {
+  return new Date(dateStr + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function AnalyticsView({ scheduleId }: { scheduleId: number }) {
   const { data: analytics, isLoading } = useQuery<StandupAnalytics>({
     queryKey: ["standup-analytics", scheduleId],
     queryFn: () => apiFetch(`/api/standups/analytics/${scheduleId}`),
+  });
+
+  const { data: trends } = useQuery<StandupTrends>({
+    queryKey: ["standup-trends", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/analytics/${scheduleId}/trends?days=30`),
   });
 
   if (isLoading || !analytics) {
@@ -454,6 +600,11 @@ function AnalyticsView({ scheduleId }: { scheduleId: number }) {
   const onTimeRate = analytics.totalEntries > 0
     ? Math.round(((analytics.totalEntries - analytics.lateEntries) / analytics.totalEntries) * 100)
     : 0;
+
+  const trendData = (trends?.series || []).map((d) => ({
+    ...d,
+    dateLabel: formatDateShort(d.date),
+  }));
 
   return (
     <div className="space-y-6">
@@ -483,6 +634,84 @@ function AnalyticsView({ scheduleId }: { scheduleId: number }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Participation Rate Trend */}
+      {trendData.length > 1 && (
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2">
+            <CardTitle className="ee-section-title flex items-center gap-1.5">
+              <TrendingUp className="h-4 w-4" /> Participation Trend (30 days)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-2 pb-3">
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={trendData}>
+                <defs>
+                  <linearGradient id="participationGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
+                <Tooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  formatter={(value: number) => [`${value}%`, "Participation"]}
+                  labelFormatter={(label) => `Date: ${label}`}
+                />
+                <Area type="monotone" dataKey="participationRate" stroke="#10b981" fill="url(#participationGrad)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mood Score + Blockers Trend */}
+      {trendData.length > 1 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="px-4 py-3 pb-2">
+              <CardTitle className="ee-section-title">Team Mood Score</CardTitle>
+              <p className="text-[10px] text-muted-foreground">5 = Great, 1 = Blocked</p>
+            </CardHeader>
+            <CardContent className="px-2 pb-3">
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={trendData.filter((d) => d.avgMoodScore !== null)}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                  <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
+                  <YAxis domain={[1, 5]} tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                    formatter={(value: number) => [value.toFixed(1), "Avg Mood"]}
+                  />
+                  <Line type="monotone" dataKey="avgMoodScore" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="px-4 py-3 pb-2">
+              <CardTitle className="ee-section-title">Blockers Over Time</CardTitle>
+            </CardHeader>
+            <CardContent className="px-2 pb-3">
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                  <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                    formatter={(value: number) => [value, "Blockers"]}
+                  />
+                  <Bar dataKey="blockers" fill="#f97316" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {analytics.moodDistribution.length > 0 && (
         <Card>
@@ -525,6 +754,341 @@ function AnalyticsView({ scheduleId }: { scheduleId: number }) {
   );
 }
 
+// ── Participant Management ───────────────────────────────────────────────────
+
+function ManageParticipantsDialog({ scheduleId }: { scheduleId: number }) {
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: participants, isLoading } = useQuery<Participant[]>({
+    queryKey: ["standup-participants", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/schedules/${scheduleId}/participants`),
+    enabled: open,
+  });
+
+  const { data: allUsers } = useQuery<TeamMember[]>({
+    queryKey: ["team-members"],
+    queryFn: () => apiFetch("/api/eng/team-members"),
+    enabled: open,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: ({ userId, isRequired }: { userId: number; isRequired: boolean }) =>
+      apiFetch(`/api/standups/schedules/${scheduleId}/participants`, {
+        method: "POST",
+        body: JSON.stringify({ userId, isRequired }),
+      }),
+    onSuccess: () => {
+      toast({ title: "Participant added" });
+      queryClient.invalidateQueries({ queryKey: ["standup-participants", scheduleId] });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (userId: number) =>
+      apiFetch(`/api/standups/schedules/${scheduleId}/participants/${userId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast({ title: "Participant removed" });
+      queryClient.invalidateQueries({ queryKey: ["standup-participants", scheduleId] });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const participantUserIds = new Set((participants || []).map((p) => p.userId));
+  const availableUsers = (allUsers || []).filter((u) => !participantUserIds.has(u.id));
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs">
+          <Settings className="h-3.5 w-3.5" />
+          Manage Team
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Manage Participants</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          {/* Current participants */}
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Members ({participants?.length || 0})</Label>
+            {isLoading ? (
+              <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
+            ) : (
+              <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                {(participants || []).map((p) => (
+                  <div key={p.userId} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-muted/50">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback className="text-[10px] font-semibold">
+                          {getInitials(p.userName || "?")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="text-sm font-medium">{p.userName || p.userEmail}</p>
+                        <Badge variant="outline" className={`text-[9px] px-1 py-0 ${p.isRequired ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500"}`}>
+                          {p.isRequired ? "Required" : "Optional"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-600"
+                      onClick={() => removeMutation.mutate(p.userId)}
+                      disabled={removeMutation.isPending}
+                    >
+                      <UserMinus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Add participants */}
+          {availableUsers.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add Member</Label>
+              <ScrollArea className="max-h-[180px]">
+                <div className="space-y-1">
+                  {availableUsers.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-muted/50">
+                      <div>
+                        <p className="text-sm font-medium">{u.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{u.role}</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-[10px] gap-1"
+                          onClick={() => addMutation.mutate({ userId: u.id, isRequired: true })}
+                          disabled={addMutation.isPending}
+                        >
+                          <UserPlus className="h-3 w-3" /> Required
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-[10px] gap-1"
+                          onClick={() => addMutation.mutate({ userId: u.id, isRequired: false })}
+                          disabled={addMutation.isPending}
+                        >
+                          <UserPlus className="h-3 w-3" /> Optional
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Per-Person Analytics ─────────────────────────────────────────────────────
+
+function PersonAnalyticsView({ scheduleId }: { scheduleId: number }) {
+  const { data, isLoading } = useQuery<PerPersonAnalytics>({
+    queryKey: ["standup-per-person", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/analytics/${scheduleId}/per-person`),
+  });
+
+  if (isLoading || !data) {
+    return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  const sorted = [...data.members].sort((a, b) => b.participationRate - a.participationRate);
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">{data.totalStandups} standup sessions tracked</p>
+      <div className="space-y-2">
+        {sorted.map((m) => {
+          const moodLabel = m.avgMoodScore !== null
+            ? m.avgMoodScore >= 4.5 ? "Great" : m.avgMoodScore >= 3.5 ? "Good" : m.avgMoodScore >= 2.5 ? "Okay" : m.avgMoodScore >= 1.5 ? "Low" : "Critical"
+            : "—";
+          const moodColor = m.avgMoodScore !== null
+            ? m.avgMoodScore >= 4.5 ? "text-emerald-600" : m.avgMoodScore >= 3.5 ? "text-emerald-500" : m.avgMoodScore >= 2.5 ? "text-amber-500" : m.avgMoodScore >= 1.5 ? "text-orange-600" : "text-red-600"
+            : "text-muted-foreground";
+
+          return (
+            <Card key={m.userId}>
+              <CardContent className="px-4 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-7 w-7">
+                      <AvatarFallback className="text-[10px] font-semibold">
+                        {getInitials(m.userName || "?")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-semibold">{m.userName}</p>
+                      <Badge variant="outline" className={`text-[9px] px-1 py-0 ${m.isRequired ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500"}`}>
+                        {m.isRequired ? "Required" : "Optional"}
+                      </Badge>
+                    </div>
+                  </div>
+                  {m.currentStreak > 0 && (
+                    <div className="flex items-center gap-1 text-xs font-semibold text-orange-500">
+                      <Flame className="h-3.5 w-3.5" />
+                      {m.currentStreak} streak
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className="text-lg font-bold tracking-tight">{m.participationRate}%</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">Participation</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className="text-lg font-bold tracking-tight">{m.onTimeRate}%</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">On-Time</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className="text-lg font-bold tracking-tight">{m.totalSubmissions}</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">Submitted</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className="text-lg font-bold tracking-tight">{m.blockerCount}</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">Blockers</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className={`text-lg font-bold tracking-tight ${moodColor}`}>{moodLabel}</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">Avg Mood</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+        {sorted.length === 0 && (
+          <div className="ee-empty-state">
+            <Users className="h-8 w-8 text-muted-foreground/30 mb-2" />
+            <p className="text-sm font-medium">No participants yet</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Standup Digest / Copy / Export ───────────────────────────────────────────
+
+function DigestView({ scheduleId }: { scheduleId: number }) {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [date, setDate] = useState(todayStr);
+  const { toast } = useToast();
+
+  const { data: digest, isLoading } = useQuery<DigestResponse>({
+    queryKey: ["standup-digest", scheduleId, date],
+    queryFn: () => apiFetch(`/api/standups/digest/${scheduleId}?date=${date}`),
+  });
+
+  const copyText = () => {
+    if (digest) {
+      navigator.clipboard.writeText(digest.text);
+      toast({ title: "Copied to clipboard", description: "Plain text digest copied" });
+    }
+  };
+
+  const copyMarkdown = () => {
+    if (digest) {
+      navigator.clipboard.writeText(digest.markdown);
+      toast({ title: "Copied to clipboard", description: "Markdown digest copied" });
+    }
+  };
+
+  const downloadCsv = () => {
+    if (!digest) return;
+    // Re-fetch entries for CSV
+    apiFetch(`/api/standups/entries/${scheduleId}?date=${date}`).then((entries: StandupEntry[]) => {
+      const rows = [["Name", "Completed", "Working On", "Blockers", "Mood", "Late"].join(",")];
+      for (const e of entries) {
+        rows.push([
+          `"${e.userName || ""}"`,
+          `"${(e.whatIDid || "").replace(/"/g, '""')}"`,
+          `"${(e.whatImDoing || "").replace(/"/g, '""')}"`,
+          `"${(e.blockers || "").replace(/"/g, '""')}"`,
+          `"${e.mood || ""}"`,
+          e.isLate ? "Yes" : "No",
+        ].join(","));
+      }
+      const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `standup-${date}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "CSV downloaded" });
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-[180px] h-8 text-xs" />
+        <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={copyText} disabled={!digest}>
+          <ClipboardCopy className="h-3.5 w-3.5" /> Copy Text
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={copyMarkdown} disabled={!digest}>
+          <Copy className="h-3.5 w-3.5" /> Copy Markdown
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={downloadCsv} disabled={!digest}>
+          <Download className="h-3.5 w-3.5" /> CSV
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : digest ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card><CardContent className="px-3 py-2 text-center">
+              <p className="text-xl font-bold">{digest.submissionCount}/{digest.participantCount}</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Submitted</p>
+            </CardContent></Card>
+            <Card><CardContent className="px-3 py-2 text-center">
+              <p className="text-xl font-bold text-orange-600">{digest.blockerCount}</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Blockers</p>
+            </CardContent></Card>
+            <Card><CardContent className="px-3 py-2 text-center">
+              <p className="text-xl font-bold text-red-600">{digest.missingCount}</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Missing</p>
+            </CardContent></Card>
+            <Card><CardContent className="px-3 py-2 text-center">
+              <p className="text-xl font-bold text-emerald-600">{digest.participantCount > 0 ? Math.round((digest.submissionCount / digest.participantCount) * 100) : 0}%</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Rate</p>
+            </CardContent></Card>
+          </div>
+
+          <Card>
+            <CardHeader className="px-4 py-3 pb-2">
+              <CardTitle className="ee-section-title">Preview</CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-3">
+              <pre className="text-xs whitespace-pre-wrap font-mono bg-muted/50 rounded-lg p-3 max-h-[400px] overflow-y-auto">{digest.text}</pre>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="ee-empty-state">
+          <p className="text-sm font-medium">No entries for this date</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Create Schedule Dialog ───────────────────────────────────────────────────
 
 function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
@@ -533,6 +1097,7 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
   const [teamLabel, setTeamLabel] = useState("");
   const [cadenceDays, setCadenceDays] = useState("2");
   const [deadlineTime, setDeadlineTime] = useState("10:00");
+  const [deadlineTimezone, setDeadlineTimezone] = useState("Africa/Johannesburg");
   const { toast } = useToast();
 
   const createMutation = useMutation({
@@ -545,6 +1110,7 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
           cadenceDays: parseInt(cadenceDays),
           cadence: cadenceDays === "1" ? "DAILY" : cadenceDays === "2" ? "EVERY_2_DAYS" : cadenceDays === "3" ? "EVERY_3_DAYS" : "WEEKLY",
           deadlineTime,
+          deadlineTimezone,
           anchorDate: new Date().toISOString().split("T")[0],
         }),
       }),
@@ -596,6 +1162,23 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
               <Label>Submission Deadline</Label>
               <Input type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Deadline Timezone</Label>
+            <Select value={deadlineTimezone} onValueChange={setDeadlineTimezone}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Africa/Johannesburg">Africa/Johannesburg (SAST)</SelectItem>
+                <SelectItem value="Europe/London">Europe/London (GMT/BST)</SelectItem>
+                <SelectItem value="America/New_York">America/New York (EST/EDT)</SelectItem>
+                <SelectItem value="America/Chicago">America/Chicago (CST/CDT)</SelectItem>
+                <SelectItem value="America/Los_Angeles">America/Los Angeles (PST/PDT)</SelectItem>
+                <SelectItem value="Asia/Dubai">Asia/Dubai (GST)</SelectItem>
+                <SelectItem value="Asia/Kolkata">Asia/Kolkata (IST)</SelectItem>
+                <SelectItem value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</SelectItem>
+                <SelectItem value="UTC">UTC</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <Button onClick={() => createMutation.mutate()} disabled={!name.trim() || createMutation.isPending} className="w-full">
             {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
@@ -680,46 +1263,79 @@ export default function StandupsPage() {
             </div>
           )}
 
-          {todayStandups && todayStandups.filter((t) => !t.hasSubmitted).length > 0 && (
-            <WorkspaceNotice
-              tone="warning"
-              icon={<MessageSquare className="h-4 w-4" />}
-              title="Standup submission pending"
-              description={`You have ${todayStandups.filter((t) => !t.hasSubmitted).length} standup(s) due today.`}
-              actions={
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    const pending = todayStandups!.find((t) => !t.hasSubmitted);
-                    if (pending) { setSelectedScheduleId(pending.schedule.id); setTab("today"); }
-                  }}
-                >
-                  Submit Now
-                </Button>
+          {todayStandups && todayStandups.filter((t) => !t.hasSubmitted).length > 0 && (() => {
+            const pending = todayStandups.filter((t) => !t.hasSubmitted);
+            const firstPending = pending[0];
+            let timeRemaining = "";
+            if (firstPending?.schedule.deadlineTime) {
+              const tz = firstPending.schedule.deadlineTimezone || "Africa/Johannesburg";
+              const nowStr = new Date().toLocaleString("en-US", { timeZone: tz });
+              const nowLocal = new Date(nowStr);
+              const [dh, dm] = firstPending.schedule.deadlineTime.split(":").map(Number);
+              const deadline = new Date(nowLocal);
+              deadline.setHours(dh, dm, 0, 0);
+              const diffMs = deadline.getTime() - nowLocal.getTime();
+              if (diffMs > 0) {
+                const hrs = Math.floor(diffMs / 3600000);
+                const mins = Math.floor((diffMs % 3600000) / 60000);
+                timeRemaining = hrs > 0 ? ` (${hrs}h ${mins}m remaining)` : ` (${mins}m remaining)`;
+              } else {
+                timeRemaining = " (overdue!)";
               }
-            />
-          )}
+            }
+            return (
+              <WorkspaceNotice
+                tone="warning"
+                icon={<MessageSquare className="h-4 w-4" />}
+                title="Standup submission pending"
+                description={`You have ${pending.length} standup(s) due today${timeRemaining}`}
+                actions={
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (firstPending) { setSelectedScheduleId(firstPending.schedule.id); setTab("today"); }
+                    }}
+                  >
+                    Submit Now
+                  </Button>
+                }
+              />
+            );
+          })()}
 
           <Tabs value={tab} onValueChange={setTab}>
-            <TabsList>
-              <TabsTrigger value="today" className="gap-1.5">
-                <Send className="h-4 w-4" />
-                Submit
-              </TabsTrigger>
-              <TabsTrigger value="team" className="gap-1.5">
-                <Users className="h-4 w-4" />
-                Team View
-              </TabsTrigger>
-              <TabsTrigger value="history" className="gap-1.5">
-                <History className="h-4 w-4" />
-                History
-              </TabsTrigger>
-              <TabsTrigger value="analytics" className="gap-1.5">
-                <BarChart3 className="h-4 w-4" />
-                Analytics
-              </TabsTrigger>
-            </TabsList>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <TabsList>
+                <TabsTrigger value="today" className="gap-1.5">
+                  <Send className="h-4 w-4" />
+                  Submit
+                </TabsTrigger>
+                <TabsTrigger value="team" className="gap-1.5">
+                  <Users className="h-4 w-4" />
+                  Team
+                </TabsTrigger>
+                <TabsTrigger value="digest" className="gap-1.5">
+                  <ClipboardCopy className="h-4 w-4" />
+                  Digest
+                </TabsTrigger>
+                <TabsTrigger value="history" className="gap-1.5">
+                  <History className="h-4 w-4" />
+                  History
+                </TabsTrigger>
+                <TabsTrigger value="analytics" className="gap-1.5">
+                  <BarChart3 className="h-4 w-4" />
+                  Analytics
+                </TabsTrigger>
+                <TabsTrigger value="members" className="gap-1.5">
+                  <Star className="h-4 w-4" />
+                  Members
+                </TabsTrigger>
+              </TabsList>
+              {selectedScheduleId && (
+                <ManageParticipantsDialog scheduleId={selectedScheduleId} />
+              )}
+            </div>
 
             <TabsContent value="today" className="mt-4">
               {selectedScheduleId ? (
@@ -766,12 +1382,32 @@ export default function StandupsPage() {
               )}
             </TabsContent>
 
+            <TabsContent value="digest" className="mt-4">
+              {selectedScheduleId ? (
+                <DigestView scheduleId={selectedScheduleId} />
+              ) : (
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to generate digest</p>
+                </div>
+              )}
+            </TabsContent>
+
             <TabsContent value="analytics" className="mt-4">
               {selectedScheduleId ? (
                 <AnalyticsView scheduleId={selectedScheduleId} />
               ) : (
                 <div className="ee-empty-state">
                   <p className="text-sm font-medium">Select a schedule to view analytics</p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="members" className="mt-4">
+              {selectedScheduleId ? (
+                <PersonAnalyticsView scheduleId={selectedScheduleId} />
+              ) : (
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to view member stats</p>
                 </div>
               )}
             </TabsContent>

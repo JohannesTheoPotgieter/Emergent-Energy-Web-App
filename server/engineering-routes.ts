@@ -12,8 +12,7 @@ import {
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory, projectExecutionState,
   projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
-  dashboardWidgetConfig, DEFAULT_WIDGET_ORDER,
-  workItems, workItemAssignments,
+  workItems, workItemAssignments, notifications, notificationThrottle,
   msObjects,
   phaseTemplate as phaseTemplateTbl,
   uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication, appSettings,
@@ -25,7 +24,7 @@ import { applyTemplate } from "./template-routes";
 import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { requireAuthority, requirePermission, evaluateAuthorityForRequest } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-import { sendError } from "./lib/api-error";
+import { ApiError, sendError, badRequest, notFound, forbidden, serverError } from "./lib/api-error";
 import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
@@ -130,7 +129,7 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
     "ENGINEERING_PROGRAM_MANAGER", "QUALITY_MANAGER", "HEAD_OF_DESIGN",
   ];
   if (allowed.includes(role)) return next();
-  res.status(403).json({ error: "forbidden", message: "Admin or EPM access required" });
+  sendError(res, forbidden("Admin or EPM access required"));
 }
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
@@ -139,11 +138,46 @@ function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
-// Notifications feature removed – keep function signature as no-op so callers don't break
-async function createNotification(_recipientUserId: number, _eventType: string, _title: string, _body: string | null, _opts: {
-  projectName?: string; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
+/** Insert an in-app notification row with throttle deduplication. Silently no-ops on error. */
+async function createNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
+  projectName?: string; projectId?: number; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
 } = {}) {
-  return null;
+  try {
+    // Throttle: skip if same recipient+event+entity was notified in last 5 minutes
+    const entityId = opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0;
+    const entityType = opts.linkedTaskId ? "task" : opts.linkedDeliverableId ? "deliverable" : "other";
+    if (entityId) {
+      const [recent] = await db.select({ id: notificationThrottle.id })
+        .from(notificationThrottle)
+        .where(and(
+          eq(notificationThrottle.recipientUserId, recipientUserId),
+          eq(notificationThrottle.eventType, eventType),
+          eq(notificationThrottle.entityType, entityType),
+          eq(notificationThrottle.entityId, entityId),
+          gt(notificationThrottle.lastSentAt, new Date(Date.now() - 5 * 60_000)),
+        ));
+      if (recent) return null; // Throttled — skip duplicate
+      await db.insert(notificationThrottle).values({ recipientUserId, eventType, entityType, entityId })
+        .onConflictDoNothing();
+    }
+
+    const [row] = await db.insert(notifications).values({
+      recipientUserId,
+      eventType,
+      title,
+      body,
+      projectName: opts.projectName ?? null,
+      projectId: opts.projectId ?? null,
+      linkedTaskId: opts.linkedTaskId ?? null,
+      linkedDeliverableId: opts.linkedDeliverableId ?? null,
+      linkedWarningId: opts.linkedWarningId ?? null,
+      linkedPlanItemId: opts.linkedPlanItemId ?? null,
+    }).returning();
+    return row;
+  } catch (err) {
+    console.error("[Notifications] Failed to create notification:", err);
+    return null;
+  }
 }
 
 /**
@@ -350,7 +384,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ enabled, mappedPath, fallbackPreference });
     } catch (err: any) {
-      res.status(500).json({ error: "Failed to load local synced save config" });
+      sendError(res, serverError("Failed to load local synced save config"));
     }
   });
 
@@ -389,7 +423,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ ok: true, mappedPath, fallbackPreference });
     } catch (err: any) {
-      res.status(500).json({ error: "Failed to save local synced save config" });
+      sendError(res, serverError("Failed to save local synced save config"));
     }
   });
 
@@ -432,7 +466,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.delete("/api/project-team/:id", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, id));
       logAuditFromReq(req, { entityType: "project_team", entityId: req.params.id, action: "delete", changesJson: { description: "Team member removed" } });
       res.json({ success: true });
@@ -550,6 +584,15 @@ export function registerEngineeringRoutes(app: Express) {
       if (!TASK_STATUSES.includes(data.status)) {
         data.status = "TO DO";
       }
+
+      // Resolve projectName to projectId if projectId is not provided
+      let resolvedProjectId = data.projectId || null;
+      if (!resolvedProjectId && data.projectName) {
+        const [project] = await db.select({ id: projectInfo.id }).from(projectInfo)
+          .where(eq(projectInfo.projectName, data.projectName)).limit(1);
+        if (project) resolvedProjectId = project.id;
+      }
+
       if (data.assignees?.length > 0) {
         const { resolveNameToUserId } = await import("./user-resolver");
         const resolvedIds: number[] = [];
@@ -564,7 +607,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       const task = await createEngineeringWorkItem({
-        projectId: data.projectId || null,
+        projectId: resolvedProjectId,
         title: data.title,
         description: data.description || null,
         status: data.status || "TO DO",
@@ -574,6 +617,7 @@ export function registerEngineeringRoutes(app: Express) {
         dueDate: data.dueDate || null,
         ownerUserId: data.ownerUserId || null,
         createdBy: getUser(req).id,
+        plannedHours: data.plannedHours ? parseFloat(data.plannedHours) : null,
       });
 
       if (task.ownerUserId && task.ownerUserId !== getUser(req).id) {
@@ -610,12 +654,12 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
-      if (!existing) return res.status(404).json({ error: "Task not found" });
+      if (!existing) return sendError(res, notFound("Task"));
 
       const updates = { ...req.body, updatedAt: new Date() };
 
       if (updates.status && !TASK_STATUSES.includes(updates.status)) {
-        return res.status(400).json({ error: `Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}` });
+        return sendError(res, badRequest(`Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}`));
       }
 
       if (updates.status) {
@@ -624,19 +668,19 @@ export function registerEngineeringRoutes(app: Express) {
           assertTaskWorkflowTransition(context, updates.status, "status_update");
         } catch (err: any) {
           if (err instanceof TaskWorkflowGuardError) {
-            return res.status(err.statusCode).json({ error: err.message });
+            return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message));
           }
           throw err;
         }
       }
 
       if (updates.status === "HOLD" && !updates.holdReason) {
-        return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
+        return sendError(res, badRequest("Hold reason required when setting status to HOLD"));
       }
       if (updates.status === "HOLD") {
         const bt = updates.blockedType;
         if (!bt || !["Internal", "External"].includes(bt)) {
-          return res.status(400).json({ error: "Blocked type (Internal or External) required when setting status to HOLD" });
+          return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to HOLD"));
         }
       }
 
@@ -674,8 +718,9 @@ export function registerEngineeringRoutes(app: Express) {
         trackingRag: updates.trackingRag,
         taskTypeTag: updates.taskTypeTag,
         blockerReason: updates.blockerReason,
+        plannedHours: updates.plannedHours !== undefined ? parseFloat(updates.plannedHours) || null : undefined,
       });
-      if (!updated) return res.status(404).json({ error: "Task not found" });
+      if (!updated) return sendError(res, notFound("Task"));
 
       if (updates.status && updates.status !== "") {
         if (updated.ownerUserId) {
@@ -716,14 +761,14 @@ export function registerEngineeringRoutes(app: Express) {
 
     try {
       const existing = await getEngineeringWorkItemById(id);
-      if (!existing) return res.status(404).json({ error: "Task not found" });
+      if (!existing) return sendError(res, notFound("Task"));
 
       try {
         const context = await buildTaskWorkflowContext(id, existing.status);
         assertTaskWorkflowTransition(context, "NEEDS APPROVAL", "send_for_approval");
       } catch (err: any) {
         if (err instanceof TaskWorkflowGuardError) {
-          return res.status(err.statusCode).json({ error: err.message });
+          return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message));
         }
         throw err;
       }
@@ -751,7 +796,7 @@ export function registerEngineeringRoutes(app: Express) {
       for (const check of suggestionChecks) {
         if (check.suggestion && check.final && check.suggestion !== check.final) {
           if (!check.reason) {
-            return res.status(400).json({ error: `${check.field} override reason is required` });
+            return sendError(res, badRequest(`${check.field} override reason is required`));
           }
           logAuditFromReq(req, {
             entityType: "approval_send_flow",
@@ -786,7 +831,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
 
       const updated = await updateEngineeringWorkItem(id, { status: "NEEDS APPROVAL" });
-      if (!updated) return res.status(404).json({ error: "Task not found" });
+      if (!updated) return sendError(res, notFound("Task"));
 
       await db.insert(taskActivityLog).values({
         workItemId: id,
@@ -955,10 +1000,10 @@ export function registerEngineeringRoutes(app: Express) {
 
     try {
       const existing = await getEngineeringWorkItemById(id);
-      if (!existing) return res.status(404).json({ error: "Task not found" });
+      if (!existing) return sendError(res, notFound("Task"));
 
       const recipientUserId = parseInt(req.body.recipientUserId);
-      if (!recipientUserId || isNaN(recipientUserId)) return res.status(400).json({ error: "A valid recipient is required" });
+      if (!recipientUserId || isNaN(recipientUserId)) return sendError(res, badRequest("A valid recipient is required"));
 
       const recipientSuggestion = req.body?.recipientSuggestion || null;
       const recipientFinal = req.body?.recipientFinal || String(recipientUserId);
@@ -990,7 +1035,7 @@ export function registerEngineeringRoutes(app: Express) {
       for (const check of overrideChecks) {
         if (check.suggestion && check.final && check.suggestion !== check.final) {
           if (!check.reason) {
-            return res.status(400).json({ error: `${check.field} override reason is required` });
+            return sendError(res, badRequest(`${check.field} override reason is required`));
           }
           logAuditFromReq(req, {
             entityType: "deliverable_send_flow",
@@ -1018,7 +1063,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       const file = req.file;
-      if (!file) return res.status(400).json({ error: "A file attachment is required" });
+      if (!file) return sendError(res, badRequest("A file attachment is required"));
       const note = req.body.note || "";
       let localSave: any = null;
     if (typeof req.body?.localSave === "string") {
@@ -1239,11 +1284,11 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
-      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+      if (!deliverable) return sendError(res, notFound("Deliverable"));
 
       const user = getUser(req);
       if (deliverable.recipientUserId !== user.id) {
-        return res.status(403).json({ error: "Only the recipient can acknowledge this deliverable" });
+        return sendError(res, forbidden("Only the recipient can acknowledge this deliverable"));
       }
 
       const [updated] = await db.update(taskDeliverables).set({
@@ -1282,10 +1327,10 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
-      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+      if (!deliverable) return sendError(res, notFound("Deliverable"));
 
       const filePath = path.join(approvalUploadsDir, deliverable.filename);
-      if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found on disk" });
+      if (!fs.existsSync(filePath)) return sendError(res, notFound("File"));
 
       res.setHeader("Content-Disposition", `attachment; filename="${deliverable.originalName}"`);
       res.sendFile(filePath);
@@ -1299,10 +1344,10 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
-      if (!existing) return res.status(404).json({ error: "Task not found" });
+      if (!existing) return sendError(res, notFound("Task"));
 
       const deleted = await deleteEngineeringWorkItem(id);
-      if (!deleted) return res.status(404).json({ error: "Task not found" });
+      if (!deleted) return sendError(res, notFound("Task"));
 
       res.json({ success: true, message: `Task "${existing.title}" deleted` });
     } catch (err: any) {
@@ -1315,13 +1360,13 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const { taskIds, updates } = req.body;
       if (!Array.isArray(taskIds) || taskIds.length === 0) {
-        return res.status(400).json({ error: "taskIds array required" });
+        return sendError(res, badRequest("taskIds array required"));
       }
       if (updates.status === "HOLD" && !updates.holdReason) {
-        return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
+        return sendError(res, badRequest("Hold reason required when setting status to HOLD"));
       }
       if (updates.status === "HOLD" && !updates.blockedType) {
-        return res.status(400).json({ error: "Blocked type (Internal or External) required when setting status to HOLD" });
+        return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to HOLD"));
       }
       // Validate ALL tasks before updating any (fail-fast)
       if (updates.status) {
@@ -1333,7 +1378,7 @@ export function registerEngineeringRoutes(app: Express) {
             assertTaskWorkflowTransition(context, updates.status, "bulk_status_update");
           } catch (err: any) {
             if (err instanceof TaskWorkflowGuardError) {
-              return res.status(err.statusCode).json({ error: err.message, taskId });
+              return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message, { taskId: String(taskId) }));
             }
             throw err;
           }
@@ -1400,7 +1445,7 @@ export function registerEngineeringRoutes(app: Express) {
         linkedDeliverableId: linkedDeliverableId !== undefined ? linkedDeliverableId : undefined,
         linkedQualityItemInstanceId: linkedQualityItemInstanceId !== undefined ? linkedQualityItemInstanceId : undefined,
       });
-      if (!updated) return res.status(404).json({ error: "Task not found" });
+      if (!updated) return sendError(res, notFound("Task"));
 
       await db.insert(taskActivityLog).values({
         workItemId: id, actorId: getUser(req).id,
@@ -1436,13 +1481,13 @@ export function registerEngineeringRoutes(app: Express) {
       const taskId = parseInt(req.params.id);
       const userId = parseInt(req.body.userId);
       if (isNaN(taskId) || isNaN(userId)) {
-        return res.status(400).json({ error: "Valid taskId and userId are required" });
+        return sendError(res, badRequest("Valid taskId and userId are required"));
       }
 
       // Verify task exists
       const [task] = await db.select({ id: workItems.id }).from(workItems)
         .where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
-      if (!task) return res.status(404).json({ error: "Task not found" });
+      if (!task) return sendError(res, notFound("Task"));
 
       // Prevent duplicate watchers
       const [existing] = await db.select({ id: taskWatchers.id }).from(taskWatchers)
@@ -1475,7 +1520,7 @@ export function registerEngineeringRoutes(app: Express) {
       const taskId = parseInt(req.params.taskId);
       const userId = parseInt(req.params.userId);
       if (isNaN(taskId) || isNaN(userId)) {
-        return res.status(400).json({ error: "Valid taskId and userId are required" });
+        return sendError(res, badRequest("Valid taskId and userId are required"));
       }
 
       await db.delete(taskWatchers).where(
@@ -1505,7 +1550,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const task = await getEngineeringWorkItemById(id);
-      if (!task) return res.status(404).json({ error: "Task not found" });
+      if (!task) return sendError(res, notFound("Task"));
       const [enriched] = await enrichEngineeringTasks([task], req);
       res.json(enriched);
     } catch (err: any) {
@@ -1540,7 +1585,7 @@ export function registerEngineeringRoutes(app: Express) {
       const taskId = parseInt(req.params.id);
       const { body } = req.body;
       if (!body || !body.trim()) {
-        return res.status(400).json({ error: "Comment body is required" });
+        return sendError(res, badRequest("Comment body is required"));
       }
       const [comment] = await db.insert(taskComments).values({
         workItemId: taskId,
@@ -1554,6 +1599,15 @@ export function registerEngineeringRoutes(app: Express) {
         actionType: "comment_added",
         newValue: body.trim(),
       });
+
+      // Notify task owner about new comment
+      const [commentTask] = await db.select({ ownerUserId: workItems.ownerUserId, title: workItems.title, projectName: workItems.subProjectName })
+        .from(workItems).where(eq(workItems.id, taskId));
+      if (commentTask?.ownerUserId && commentTask.ownerUserId !== getUser(req).id) {
+        createNotification(commentTask.ownerUserId, "task.comment_added", `New comment on: ${commentTask.title}`,
+          `${getUser(req).name || "Someone"} commented on "${commentTask.title}"`,
+          { linkedTaskId: taskId, projectName: commentTask.projectName ?? undefined });
+      }
 
       res.json(comment);
     } catch (err: any) {
@@ -1602,11 +1656,11 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const parentId = parseInt(req.params.id);
       const parent = await getEngineeringWorkItemById(parentId);
-      if (!parent) return res.status(404).json({ error: "Parent task not found" });
+      if (!parent) return sendError(res, notFound("Parent task"));
 
       const data = req.body;
       if (!data.title) {
-        return res.status(400).json({ error: "Subtask title is required" });
+        return sendError(res, badRequest("Subtask title is required"));
       }
 
       const subtaskWorkItem = await createEngineeringWorkItem({
@@ -1669,7 +1723,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const [del] = await db.select().from(deliverables).where(eq(deliverables.id, id));
-      if (!del) return res.status(404).json({ error: "Deliverable not found" });
+      if (!del) return sendError(res, notFound("Deliverable"));
 
       const versions = await db.select().from(deliverableVersions)
         .where(eq(deliverableVersions.deliverableId, id))
@@ -1703,7 +1757,7 @@ export function registerEngineeringRoutes(app: Express) {
       const data = req.body;
       const projectId = Number(data.projectId);
       if (!Number.isInteger(projectId) || projectId <= 0) {
-        return res.status(400).json({ error: "projectId is required" });
+        return sendError(res, badRequest("projectId is required"));
       }
       const [del] = await db.insert(deliverables).values({
         ...data,
@@ -1738,7 +1792,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
-      if (!existing) return res.status(404).json({ error: "Deliverable not found" });
+      if (!existing) return sendError(res, notFound("Deliverable"));
 
       const nextStatus = req.body?.status;
       const approvalStatuses = new Set(["COMPLETE", "QC APPROVED", "OPERATIONAL APPROVAL", "PROVIDE FEEDBACK"]);
@@ -1821,7 +1875,7 @@ export function registerEngineeringRoutes(app: Express) {
       const { changeReason, impactJson } = req.body;
 
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
-      if (!existing) return res.status(404).json({ error: "Deliverable not found" });
+      if (!existing) return sendError(res, notFound("Deliverable"));
 
       const newVersion = existing.currentVersion + 1;
 
@@ -1873,7 +1927,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.patch("/api/deliverables/files/:fileId/approve", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
       const fileId = parseInt(req.params.fileId);
-      if (isNaN(fileId)) return res.status(400).json({ error: "Invalid file ID" });
+      if (isNaN(fileId)) return sendError(res, badRequest("Invalid file ID"));
       const [file] = await db.update(deliverableFiles)
         .set({ isApproved: true })
         .where(eq(deliverableFiles.id, fileId))
@@ -1927,7 +1981,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.delete("/api/eng/file-pointers/:id", requireAuth, requirePermission("engineering", "delete"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       await db.delete(spFilePointers).where(eq(spFilePointers.id, id));
       logAuditFromReq(req, { entityType: "file_pointer", entityId: req.params.id, action: "delete", changesJson: { description: "File pointer deleted" } });
       res.json({ success: true });
@@ -2053,7 +2107,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.patch("/api/eng/warnings/:id", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       const updates = { ...req.body, updatedAt: new Date() };
       const [updated] = await db.update(qcWarning).set(updates).where(eq(qcWarning.id, id)).returning();
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(id), action: "update", changesJson: { description: "Warning updated", status: req.body.status } });
@@ -2339,208 +2393,23 @@ export function registerEngineeringRoutes(app: Express) {
         return "P0_FIRST_ASSESSMENT";
       }
 
-      const projectMap = new Map<string, {
-        projectName: string;
-        phase: string;
-        tasks: typeof allTasks;
-      }>();
+      const projectMap = new Map<string, { projectName: string; phase: string }>();
 
       for (const t of allTasks) {
         const key = t.projectName || "Unassigned";
         if (!projectMap.has(key)) {
-          const phase = lookupPhase(key);
-          projectMap.set(key, { projectName: key, phase, tasks: [] });
-        }
-        projectMap.get(key)!.tasks.push(t);
-      }
-
-      const todayStr = new Date().toISOString().split('T')[0];
-      const openStatuses = new Set(["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE"]);
-
-      const result = Array.from(projectMap.values()).map(p => {
-        const openTasks = p.tasks.filter(t => openStatuses.has(t.status));
-        const holdTasks = p.tasks.filter(t => t.status === "HOLD");
-        const completedTasks = p.tasks.filter(t => t.status === "COMPLETE");
-        const allActive = p.tasks.filter(t => t.status !== "COMPLETE");
-        const overdueTasks = allActive.filter(t => t.dueDate && t.dueDate < todayStr);
-
-        return {
-          projectName: p.projectName,
-          displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
-          phase: p.phase,
-          phaseLabel: PROJECT_PHASE_LABELS[p.phase as ProjectPhase] || p.phase,
-          totalTasks: p.tasks.length,
-          activeTasks: allActive.length,
-          completedTasks: completedTasks.length,
-          overdueTasks: overdueTasks.length,
-          holdTasks: holdTasks.length,
-          tasks: [...openTasks, ...holdTasks].map(t => ({
-            id: t.id,
-            title: t.title,
-            status: t.status,
-            priority: t.priority,
-            dueDate: t.dueDate,
-            assignees: t.assignees,
-            trackingRag: t.trackingRag,
-          })),
-        };
-      }).sort((a, b) => {
-        if (a.overdueTasks !== b.overdueTasks) return b.overdueTasks - a.overdueTasks;
-        return b.activeTasks - a.activeTasks;
-      });
-
-      res.json({
-        projects: result,
-        lifecyclePhases: PROJECT_PHASES,
-        phaseLabels: PROJECT_PHASE_LABELS,
-      });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      sendError(res, err);
-    }
-  });
-
-  app.get("/api/eng/dashboard/workload", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const allUsers = await db.select().from(users);
-      const allCanonical = await listEngineeringWorkItems({});
-      const allTasks = allCanonical.filter((t: any) => t.status !== "COMPLETE");
-
-      const today = new Date().toISOString().split('T')[0];
-      const endOfWeek = new Date();
-      endOfWeek.setDate(endOfWeek.getDate() + 7);
-      const weekEnd = endOfWeek.toISOString().split('T')[0];
-
-      const assigneeSet = new Set<string>();
-      for (const t of allTasks) {
-        if (t.assignees && Array.isArray(t.assignees)) {
-          for (const a of t.assignees) if (a) assigneeSet.add(a);
+          projectMap.set(key, { projectName: key, phase: lookupPhase(key) });
         }
       }
 
-      const workload: any[] = [];
-      if (assigneeSet.size > 0) {
-        for (const name of assigneeSet) {
-          const userTasks = allTasks.filter(t => t.assignees && t.assignees.includes(name));
-          workload.push({
-            name,
-            activeTasks: userTasks.length,
-            dueThisWeek: userTasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd).length,
-            overdue: userTasks.filter(t => t.dueDate && t.dueDate < today).length,
-            onHold: userTasks.filter(t => t.status === "HOLD").length,
-            needsApproval: userTasks.filter(t => t.status === "NEEDS APPROVAL").length,
-            provideFeedback: userTasks.filter(t => t.status === "PROVIDE FEEDBACK").length,
-          });
-        }
-      } else {
-        const userWorkload = allUsers.map(u => {
-          const userTasks = allTasks.filter(t => t.ownerUserId === u.id);
-          return {
-            name: u.name,
-            activeTasks: userTasks.length,
-            dueThisWeek: userTasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd).length,
-            overdue: userTasks.filter(t => t.dueDate && t.dueDate < today).length,
-            onHold: userTasks.filter(t => t.status === "HOLD").length,
-            needsApproval: userTasks.filter(t => t.status === "NEEDS APPROVAL").length,
-            provideFeedback: userTasks.filter(t => t.status === "PROVIDE FEEDBACK").length,
-          };
-        }).filter(w => w.activeTasks > 0);
-        workload.push(...userWorkload);
-      }
-      workload.sort((a, b) => b.activeTasks - a.activeTasks);
+      const result = Array.from(projectMap.values()).map(p => ({
+        projectName: p.projectName,
+        displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+        phase: p.phase,
+        phaseLabel: PROJECT_PHASE_LABELS[p.phase as ProjectPhase] || p.phase,
+      }));
 
-      res.json(workload);
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      sendError(res, err);
-    }
-  });
-
-  app.get("/api/eng/dashboard/milestones-at-risk", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const twoWeeks = new Date();
-      twoWeeks.setDate(twoWeeks.getDate() + 14);
-      const twoWeeksStr = twoWeeks.toISOString().split('T')[0];
-
-      const allCanonical = await listEngineeringWorkItems({});
-      const atRiskTasks = allCanonical.filter((t: any) =>
-        t.status !== "COMPLETE" && t.dueDate && t.dueDate <= twoWeeksStr
-      ).sort((a: any, b: any) => (a.dueDate || "").localeCompare(b.dueDate || ""));
-
-      const grouped = new Map<string, typeof atRiskTasks>();
-      for (const t of atRiskTasks) {
-        const key = t.projectName || "Unassigned";
-        if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key)!.push(t);
-      }
-
-      const result = Array.from(grouped.entries()).map(([projectName, tasks]) => {
-        const overdue = tasks.filter(t => t.dueDate && t.dueDate < todayStr);
-        const onHold = tasks.filter(t => t.status === "HOLD");
-        return {
-          id: projectName,
-          projectName: projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
-          milestoneName: `${tasks.length} task${tasks.length !== 1 ? "s" : ""} due within 14 days`,
-          dueDate: tasks[0]?.dueDate || null,
-          linkedTasks: tasks.length,
-          incompleteTasks: tasks.length,
-          highWarnings: overdue.length + onHold.length,
-          deliverableStatuses: tasks.slice(0, 4).map(t => ({
-            name: t.title.substring(0, 40),
-            status: t.status,
-          })),
-        };
-      }).sort((a, b) => b.highWarnings - a.highWarnings);
-
-      res.json(result);
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      sendError(res, err);
-    }
-  });
-
-  app.get("/api/eng/dashboard/deliverables-pipeline", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const allCanonical = await listEngineeringWorkItems({});
-      const taskStatuses = [
-        "TO DO", "IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL",
-        "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "COMPLETE"
-      ];
-      const pipeline: Record<string, number> = {};
-      for (const s of taskStatuses) {
-        pipeline[s] = allCanonical.filter((t: any) => t.status === s).length;
-      }
-      res.json(pipeline);
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      sendError(res, err);
-    }
-  });
-
-  app.get("/api/eng/dashboard/orphan-tasks", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const allCanonical = await listEngineeringWorkItems({});
-      const orphans = allCanonical.filter((t: any) =>
-        !t.linkedPlanItemId && !t.linkedDeliverableId && !t.linkedQualityItemInstanceId &&
-        t.status !== "COMPLETE"
-      );
-      res.json(orphans);
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      sendError(res, err);
-    }
-  });
-
-  app.get("/api/eng/dashboard/warning-tower", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const highWarnings = await db.select().from(qcWarning)
-        .where(and(
-          eq(qcWarning.status, "open"),
-          eq(qcWarning.severity, "HIGH" as any)
-        ))
-        .orderBy(asc(qcWarning.createdAt));
-      res.json(highWarnings);
+      res.json({ projects: result });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
@@ -2566,7 +2435,7 @@ export function registerEngineeringRoutes(app: Express) {
   function requireAdmin(req: Request, res: Response, next: NextFunction) {
     const role = getUserRole(req);
     if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-    res.status(403).json({ error: "forbidden", message: "Admin access required" });
+    sendError(res, forbidden("Admin access required"));
   }
 
   app.get("/api/eng/unified-audit", requireAuth, requireAdmin, async (req, res) => {
@@ -2921,7 +2790,7 @@ export function registerEngineeringRoutes(app: Express) {
       }).from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(projectInfo.id, projectId));
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       // Idempotency: already signed
       if (project.cpSigned) {
@@ -2935,10 +2804,10 @@ export function registerEngineeringRoutes(app: Express) {
 
       // Validate evidence
       if (!evidenceType || !["file_upload", "email_reference"].includes(evidenceType)) {
-        return res.status(400).json({ error: "evidenceType must be 'file_upload' or 'email_reference'" });
+        return sendError(res, badRequest("evidenceType must be 'file_upload' or 'email_reference'"));
       }
       if (evidenceType === "email_reference" && !emailSubject) {
-        return res.status(400).json({ error: "emailSubject required for email_reference evidence" });
+        return sendError(res, badRequest("emailSubject required for email_reference evidence"));
       }
 
       const evidenceRef = evidenceType === "file_upload"
@@ -3033,7 +2902,7 @@ export function registerEngineeringRoutes(app: Express) {
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(projectInfo.id, projectId));
 
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       let signedByName: string | null = null;
       if (project.cpSignedByUserId) {
@@ -3057,36 +2926,33 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (user.role !== "admin") {
-        return res.status(403).json({ error: "forbidden", message: "Only admins can change project phases" });
+        return sendError(res, forbidden("Only admins can change project phases"));
       }
 
       const projectId = parseInt(req.params.projectId);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const { toPhase, reason, overrideSequence } = req.body;
       if (!toPhase || !reason || typeof reason !== "string" || reason.trim().length === 0) {
-        return res.status(400).json({ error: "toPhase and reason are required" });
+        return sendError(res, badRequest("toPhase and reason are required"));
       }
       if (!PROJECT_PHASES.includes(toPhase as any)) {
-        return res.status(400).json({ error: "Invalid phase value", validPhases: PROJECT_PHASES });
+        return sendError(res, badRequest("Invalid phase value", { validPhases: PROJECT_PHASES.join(", ") }));
       }
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       const fromPhase = project.phase;
 
       if (fromPhase === toPhase) {
-        return res.status(400).json({ error: "Project is already in this phase" });
+        return sendError(res, badRequest("Project is already in this phase"));
       }
 
       const fromIdx = PROJECT_PHASES.indexOf(fromPhase as any);
       const toIdx = PROJECT_PHASES.indexOf(toPhase as any);
       if (fromIdx >= 0 && toIdx >= 0 && Math.abs(toIdx - fromIdx) > 1 && !overrideSequence) {
-        return res.status(400).json({
-          error: "sequential_required",
-          message: `Phase can only move one step at a time (${PROJECT_PHASE_LABELS[fromPhase as ProjectPhase] || fromPhase} → next). Set overrideSequence=true to skip.`,
-        });
+        return sendError(res, badRequest(`Phase can only move one step at a time (${PROJECT_PHASE_LABELS[fromPhase as ProjectPhase] || fromPhase} → next). Set overrideSequence=true to skip.`));
       }
 
       let tasksCreated = 0;
@@ -3165,10 +3031,10 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/projects/:projectId/phase-history", jwtAuth, requireAuth, requirePermission("lifecycle", "view"), async (req, res) => {
     try {
       const projectId = parseInt(req.params.projectId);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       const history = await db.select({
         id: projectPhaseHistory.id,
@@ -3197,10 +3063,10 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/projects/:projectId/eng-tasks", jwtAuth, requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const projectId = parseInt(req.params.projectId);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
       const tasks = await listEngineeringWorkItems({ projectId });
@@ -3220,14 +3086,14 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const user = getUser(req);
       const projectId = parseInt(req.params.projectId);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       const existing = await listEngineeringWorkItems({ projectId });
       if (existing.length > 0) {
-        return res.status(400).json({ error: "Engineering tasks already exist for this project" });
+        return sendError(res, badRequest("Engineering tasks already exist for this project"));
       }
 
       const created = await generateDefaultEngineeringWorkItemsForProject(projectId, user.id);
@@ -3521,66 +3387,4 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  app.get("/api/dashboard/widget-config", requireAuth, async (req, res) => {
-    try {
-      const currentUser = getUser(req);
-      const [config] = await db
-        .select()
-        .from(dashboardWidgetConfig)
-        .where(eq(dashboardWidgetConfig.userId, currentUser.id));
-
-      if (!config) {
-        return res.json({
-          widgetOrder: [...DEFAULT_WIDGET_ORDER],
-          hiddenWidgets: [],
-        });
-      }
-
-      return res.json({
-        widgetOrder: config.widgetOrder,
-        hiddenWidgets: config.hiddenWidgets,
-      });
-    } catch (err: any) {
-      console.error("[Engineering] Widget config GET error:", err);
-      sendError(res, err);
-    }
-  });
-
-  app.put("/api/dashboard/widget-config", requireAuth, async (req, res) => {
-    try {
-      const currentUser = getUser(req);
-      const { widgetOrder, hiddenWidgets } = req.body;
-
-      if (!Array.isArray(widgetOrder) || !Array.isArray(hiddenWidgets)) {
-        return res.status(400).json({ error: "widgetOrder and hiddenWidgets must be arrays" });
-      }
-
-      const [existing] = await db
-        .select()
-        .from(dashboardWidgetConfig)
-        .where(eq(dashboardWidgetConfig.userId, currentUser.id));
-
-      if (existing) {
-        await db
-          .update(dashboardWidgetConfig)
-          .set({
-            widgetOrder,
-            hiddenWidgets,
-            updatedAt: new Date(),
-          })
-          .where(eq(dashboardWidgetConfig.userId, currentUser.id));
-      } else {
-        await db.insert(dashboardWidgetConfig).values({
-          userId: currentUser.id,
-          widgetOrder,
-          hiddenWidgets,
-        });
-      }
-
-      return res.json({ success: true });
-    } catch (err: any) {
-      console.error("[Engineering] Widget config PUT error:", err);
-      sendError(res, err);
-    }
-  });
 }

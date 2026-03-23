@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useRoute, useLocation, useSearch } from "wouter";
+import { useRoute, useLocation, useSearch, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import {
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
-  MessageSquare, FolderOpen, FileCheck,
+  MessageSquare, FolderOpen, FileCheck, Search, X,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -81,6 +81,43 @@ function PhaseBadge({ phase }: { phase: string | null }) {
     >
       {getPhaseLabel(phase)}
     </span>
+  );
+}
+
+function ProjectPriorityBadges({ projectId }: { projectId: number | null }) {
+  const { data: priorities } = useQuery<any[]>({
+    queryKey: [`/api/projects/${projectId}/priorities`],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`/api/projects/${projectId}/priorities`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  if (!priorities || priorities.length === 0) return null;
+
+  const healthColors: Record<string, string> = {
+    critical: "bg-red-100 text-red-700 border-red-200",
+    at_risk: "bg-amber-100 text-amber-700 border-amber-200",
+    healthy: "bg-blue-100 text-blue-700 border-blue-200",
+  };
+
+  return (
+    <div className="flex items-center gap-2 mt-1 mb-2 flex-wrap">
+      <span className="text-xs text-muted-foreground">Priorities:</span>
+      {priorities.map((p: any) => (
+        <Link key={p.id} href={`/priorities/${p.id}`} className="no-underline">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border cursor-pointer hover:shadow-sm ${healthColors[p.effectiveHealth] || healthColors.healthy}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${p.effectiveHealth === "critical" ? "bg-red-500" : p.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-blue-500"}`} />
+            {p.title}
+          </span>
+        </Link>
+      ))}
+    </div>
   );
 }
 
@@ -268,9 +305,15 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   const [, setLocation] = useLocation();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newPriority, setNewPriority] = useState("Med");
+  const [newDueDate, setNewDueDate] = useState("");
+  const [newAssigneeUserId, setNewAssigneeUserId] = useState<string>("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const { allowed: canEdit } = usePermission('pd_eng_tasks', 'edit');
   const { allowed: canDelete } = usePermission('pd_eng_tasks', 'delete');
 
@@ -294,10 +337,19 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   });
 
   const createMutation = useMutation({
-    mutationFn: async (title: string) => {
+    mutationFn: async (taskData: { title: string; description?: string; priority?: string; dueDate?: string; ownerUserId?: number | null }) => {
       const res = await engFetch("/api/eng/tasks", {
         method: "POST",
-        body: JSON.stringify({ title, projectName, status: "TO DO", taskTypeTag: "PROJECT" }),
+        body: JSON.stringify({
+          title: taskData.title,
+          description: taskData.description || null,
+          priority: taskData.priority || "Med",
+          dueDate: taskData.dueDate || null,
+          ownerUserId: taskData.ownerUserId || null,
+          projectId: projectInfoId,
+          status: "TO DO",
+          taskTypeTag: "PROJECT",
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -309,6 +361,10 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
       toast({ title: "Task created" });
       qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
       setNewTitle("");
+      setNewDescription("");
+      setNewPriority("Med");
+      setNewDueDate("");
+      setNewAssigneeUserId("");
       setShowAddForm(false);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -374,13 +430,37 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     return <div className="flex justify-center py-12"><EnergyLoader size="md" label="Loading project..." /></div>;
   }
 
-  const tasks = engData?.tasks || [];
-  const openTasks = tasks.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
-  const completedTasks = tasks.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
-  const overdue = tasks.filter((t: any) => {
+  const allTasks = engData?.tasks || [];
+  const openTasks = allTasks.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
+  const completedTasks = allTasks.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
+  const overdue = allTasks.filter((t: any) => {
     const due = t.dueDate || t.endDate;
     return due && due < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE" && t.status !== "Complete";
   });
+
+  // Apply status filter and search
+  const tasks = useMemo(() => {
+    let filtered = allTasks;
+    if (statusFilter === "open") {
+      filtered = filtered.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
+    } else if (statusFilter === "completed") {
+      filtered = filtered.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
+    } else if (statusFilter === "overdue") {
+      const today = new Date().toISOString().split("T")[0];
+      filtered = filtered.filter((t: any) => {
+        const due = t.dueDate || t.endDate;
+        return due && due < today && t.status !== "COMPLETE" && t.status !== "Complete";
+      });
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((t: any) =>
+        (t.title || "").toLowerCase().includes(q) ||
+        (t.description || "").toLowerCase().includes(q)
+      );
+    }
+    return filtered;
+  }, [allTasks, statusFilter, searchQuery]);
 
   const phaseGroups = new Map<string, any[]>();
   for (const t of tasks) {
@@ -391,12 +471,23 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
 
   const getTaskId = (task: any) => task.id;
 
+  const handleCreateTask = () => {
+    if (!newTitle.trim()) return;
+    createMutation.mutate({
+      title: newTitle.trim(),
+      description: newDescription.trim() || undefined,
+      priority: newPriority,
+      dueDate: newDueDate || undefined,
+      ownerUserId: newAssigneeUserId ? parseInt(newAssigneeUserId) : null,
+    });
+  };
+
   return (
     <div className="space-y-4" data-testid="eng-tasks-tab">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-sm font-semibold">Engineering Tasks</h3>
         <div className="flex gap-2">
-          {tasks.length === 0 && isAdmin && (
+          {allTasks.length === 0 && isAdmin && (
             <Button size="sm" variant="outline" onClick={() => setShowGenerateConfirm(true)} disabled={generateMutation.isPending} className="h-7 text-xs gap-1" data-testid="button-generate-eng-tasks">
               {generateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
               Generate from Template
@@ -411,20 +502,70 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
       </div>
 
       {showAddForm && (
-        <Card className="p-3">
-          <div className="flex gap-2">
+        <Card className="p-3 space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-[10px] uppercase text-muted-foreground">Title</Label>
             <Input
               placeholder="Task title..."
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               className="h-8 text-sm"
-              onKeyDown={(e) => { if (e.key === "Enter" && newTitle.trim()) createMutation.mutate(newTitle.trim()); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && newTitle.trim()) handleCreateTask(); }}
               data-testid="input-new-eng-task"
             />
-            <Button size="sm" className="h-8" onClick={() => { if (newTitle.trim()) createMutation.mutate(newTitle.trim()); }} disabled={!newTitle.trim() || createMutation.isPending} data-testid="button-save-eng-task">
-              {createMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Add"}
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[10px] uppercase text-muted-foreground">Description</Label>
+            <Textarea
+              placeholder="Task description..."
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              className="text-sm min-h-[60px]"
+              data-testid="input-new-eng-task-desc"
+            />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase text-muted-foreground">Priority</Label>
+              <SearchableSelect
+                value={newPriority}
+                onValueChange={setNewPriority}
+                triggerClassName="h-8 text-sm"
+                options={ALL_PRIORITIES.map(p => ({ value: p, label: p }))}
+                data-testid="select-new-eng-task-priority"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase text-muted-foreground">Due Date</Label>
+              <Input
+                type="date"
+                value={newDueDate}
+                onChange={(e) => setNewDueDate(e.target.value)}
+                className="h-8 text-sm"
+                data-testid="input-new-eng-task-due"
+              />
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <Label className="text-[10px] uppercase text-muted-foreground">Assignee</Label>
+              <SearchableSelect
+                value={newAssigneeUserId}
+                onValueChange={setNewAssigneeUserId}
+                triggerClassName="h-8 text-sm"
+                placeholder="Unassigned"
+                options={[
+                  { value: "", label: "Unassigned" },
+                  ...(allUsers || []).map((u: any) => ({ value: String(u.id), label: u.name })),
+                ]}
+                data-testid="select-new-eng-task-assignee"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" className="h-8" onClick={handleCreateTask} disabled={!newTitle.trim() || createMutation.isPending} data-testid="button-save-eng-task">
+              {createMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+              Create Task
             </Button>
-            <Button size="sm" variant="ghost" className="h-8" onClick={() => { setShowAddForm(false); setNewTitle(""); }} data-testid="button-cancel-eng-task">Cancel</Button>
+            <Button size="sm" variant="ghost" className="h-8" onClick={() => { setShowAddForm(false); setNewTitle(""); setNewDescription(""); setNewPriority("Med"); setNewDueDate(""); setNewAssigneeUserId(""); }} data-testid="button-cancel-eng-task">Cancel</Button>
           </div>
         </Card>
       )}
@@ -454,35 +595,53 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
         </DialogContent>
       </Dialog>
 
-      {tasks.length === 0 && !showAddForm ? (
+      {allTasks.length === 0 && !showAddForm ? (
         <div className="text-center py-12 space-y-2">
           <Wrench className="h-12 w-12 mx-auto text-muted-foreground/30" />
           <p className="text-lg font-medium text-muted-foreground">No engineering tasks yet</p>
           <p className="text-sm text-muted-foreground/70">Add tasks manually or generate from templates.</p>
         </div>
-      ) : tasks.length > 0 && (
+      ) : allTasks.length > 0 && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Card className="p-3">
+            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "all" ? "ring-2 ring-primary" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("all")}>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
-              <p className="text-xl font-bold mt-1">{tasks.length}</p>
+              <p className="text-xl font-bold mt-1">{allTasks.length}</p>
             </Card>
-            <Card className="p-3">
+            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "open" ? "ring-2 ring-blue-500" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("open")}>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Open</p>
               <p className="text-xl font-bold mt-1 text-blue-600">{openTasks.length}</p>
             </Card>
-            <Card className="p-3">
+            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "completed" ? "ring-2 ring-emerald-500" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("completed")}>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Completed</p>
               <p className="text-xl font-bold mt-1 text-emerald-600">{completedTasks.length}</p>
             </Card>
-            <Card className={`p-3 ${overdue.length > 0 ? "border-red-200" : ""}`}>
+            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "overdue" ? "ring-2 ring-red-500" : ""} ${overdue.length > 0 ? "border-red-200 hover:bg-red-50/30" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("overdue")}>
               <p className={`text-[10px] uppercase tracking-wider ${overdue.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Overdue</p>
               <p className={`text-xl font-bold mt-1 ${overdue.length > 0 ? "text-red-600" : ""}`}>{overdue.length}</p>
             </Card>
           </div>
 
           <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${(completedTasks.length / tasks.length) * 100}%` }} />
+            <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${(completedTasks.length / allTasks.length) * 100}%` }} />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search tasks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-8 text-sm pl-8"
+                data-testid="eng-tasks-search"
+              />
+            </div>
+            {(statusFilter !== "all" || searchQuery) && (
+              <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => { setStatusFilter("all"); setSearchQuery(""); }} data-testid="eng-tasks-clear-filter">
+                <X className="h-3 w-3 mr-1" /> Clear
+              </Button>
+            )}
           </div>
 
           {Array.from(phaseGroups.entries()).map(([phase, phaseTasks]) => (
@@ -1261,6 +1420,9 @@ export default function ProjectDetailPage() {
         pmAssignableUsers={pmAssignableUsers || []}
         onPhaseChangeClick={() => setPhaseModalOpen(true)}
       />
+
+      {/* Priority badges */}
+      <ProjectPriorityBadges projectId={projectInfoId ?? null} />
 
       {/* GC-012: Contract value reconciliation warning — uses V2 finance summary */}
       {(() => {

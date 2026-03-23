@@ -1082,3 +1082,26 @@ export const projectLinkageReviewQueue = pgTable("project_linkage_review_queue",
 }));
 export type ProjectLinkageReviewQueue = typeof projectLinkageReviewQueue.$inferSelect;
 
+// ===================== MONTHLY REPORT SNAPSHOTS =====================
+
+export const monthlyReportSnapshots = pgTable("monthly_report_snapshots", {
+  id: serial("id").primaryKey(),
+  reportType: varchar("report_type", { length: 20 }).notNull(),
+  reportMonth: varchar("report_month", { length: 7 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("draft"),
+  data: jsonb("data").notNull(),
+  generatedAt: timestamp("generated_at").notNull().defaultNow(),
+  regeneratedAt: timestamp("regenerated_at"),
+  reviewedBy: integer("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  publishedBy: integer("published_by").references(() => users.id),
+  publishedAt: timestamp("published_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueTypeMonth: unique("monthly_report_snapshots_type_month_unique").on(table.reportType, table.reportMonth),
+}));
+export const insertMonthlyReportSnapshotSchema = createInsertSchema(monthlyReportSnapshots).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertMonthlyReportSnapshot = z.infer<typeof insertMonthlyReportSnapshotSchema>;
+export type MonthlyReportSnapshot = typeof monthlyReportSnapshots.$inferSelect;
+

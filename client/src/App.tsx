@@ -92,6 +92,16 @@ const PhaseTemplatesPage = lazy(() => import("@/pages/phase-templates"));
 const ProjectCreatePage = lazy(() => import("@/pages/project-create"));
 const DepartmentScoresPage = lazy(() => import("@/pages/department-scores"));
 const EngTemplateAdminPage = lazy(() => import("@/pages/eng-template-admin"));
+const PrioritiesPage = lazy(() => import("@/pages/priorities"));
+const PriorityDetailPage = lazy(() => import("@/pages/priority-detail"));
+const PmMonthlyReportPage = lazy(() => import("@/pages/pm-monthly-report"));
+const PmMonthlyReportHistoryPage = lazy(() => import("@/pages/pm-monthly-report-history"));
+const PmMonthlyReportComparePage = lazy(() => import("@/pages/pm-monthly-report-compare"));
+const PmMonthlyReportProjectPage = lazy(() => import("@/pages/pm-monthly-report-project"));
+const EngMonthlyReportPage = lazy(() => import("@/pages/engineering-monthly-report"));
+const EngMonthlyReportHistoryPage = lazy(() => import("@/pages/engineering-monthly-report-history"));
+const EngMonthlyReportComparePage = lazy(() => import("@/pages/engineering-monthly-report-compare"));
+const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-monthly-report-project"));
 
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
 const PM_ALLOWED_PATHS = ["/", "/dashboard", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
@@ -174,6 +184,16 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   ProjectCreatePage,
   DepartmentScoresPage,
   EngTemplateAdminPage,
+  PrioritiesPage,
+  PriorityDetailPage,
+  PmMonthlyReportPage,
+  PmMonthlyReportHistoryPage,
+  PmMonthlyReportComparePage,
+  PmMonthlyReportProjectPage,
+  EngMonthlyReportPage,
+  EngMonthlyReportHistoryPage,
+  EngMonthlyReportComparePage,
+  EngMonthlyReportProjectPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
