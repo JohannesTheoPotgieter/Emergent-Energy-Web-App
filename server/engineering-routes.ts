@@ -12,7 +12,7 @@ import {
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
   qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory, projectExecutionState,
   projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
-  workItems, workItemAssignments, notifications,
+  workItems, workItemAssignments, notifications, notificationThrottle,
   msObjects,
   phaseTemplate as phaseTemplateTbl,
   uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication, appSettings,
@@ -138,11 +138,29 @@ function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
-/** Insert an in-app notification row. Silently no-ops on error so callers are never blocked. */
+/** Insert an in-app notification row with throttle deduplication. Silently no-ops on error. */
 async function createNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
   projectName?: string; projectId?: number; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
 } = {}) {
   try {
+    // Throttle: skip if same recipient+event+entity was notified in last 5 minutes
+    const entityId = opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0;
+    const entityType = opts.linkedTaskId ? "task" : opts.linkedDeliverableId ? "deliverable" : "other";
+    if (entityId) {
+      const [recent] = await db.select({ id: notificationThrottle.id })
+        .from(notificationThrottle)
+        .where(and(
+          eq(notificationThrottle.recipientUserId, recipientUserId),
+          eq(notificationThrottle.eventType, eventType),
+          eq(notificationThrottle.entityType, entityType),
+          eq(notificationThrottle.entityId, entityId),
+          gt(notificationThrottle.lastSentAt, new Date(Date.now() - 5 * 60_000)),
+        ));
+      if (recent) return null; // Throttled — skip duplicate
+      await db.insert(notificationThrottle).values({ recipientUserId, eventType, entityType, entityId })
+        .onConflictDoNothing();
+    }
+
     const [row] = await db.insert(notifications).values({
       recipientUserId,
       eventType,
@@ -590,6 +608,7 @@ export function registerEngineeringRoutes(app: Express) {
         dueDate: data.dueDate || null,
         ownerUserId: data.ownerUserId || null,
         createdBy: getUser(req).id,
+        plannedHours: data.plannedHours ? parseFloat(data.plannedHours) : null,
       });
 
       if (task.ownerUserId && task.ownerUserId !== getUser(req).id) {
@@ -690,6 +709,7 @@ export function registerEngineeringRoutes(app: Express) {
         trackingRag: updates.trackingRag,
         taskTypeTag: updates.taskTypeTag,
         blockerReason: updates.blockerReason,
+        plannedHours: updates.plannedHours !== undefined ? parseFloat(updates.plannedHours) || null : undefined,
       });
       if (!updated) return sendError(res, notFound("Task"));
 

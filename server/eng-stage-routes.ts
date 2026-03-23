@@ -943,7 +943,7 @@ export function registerEngStageRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
 
-      // Notify project team members about stage completion
+      // Notify project team members + PM about stage completion
       try {
         const [stageProject] = await db.select({ projectId: projectEngStages.projectId })
           .from(projectEngStages).where(eq(projectEngStages.id, stageId));
@@ -951,11 +951,17 @@ export function registerEngStageRoutes(app: Express) {
           const teamMembers = await db.select({ userId: projectTeamMembers.userId })
             .from(projectTeamMembers)
             .where(eq(projectTeamMembers.projectId, stageProject.projectId));
+          // Also fetch the project PM to ensure they're notified even if not a team member
+          const [proj] = await db.select({ pmUserId: projectInfo.pmUserId })
+            .from(projectInfo).where(eq(projectInfo.id, stageProject.projectId));
+          const recipientIds = new Set(teamMembers.map(m => m.userId).filter(Boolean));
+          if (proj?.pmUserId) recipientIds.add(proj.pmUserId);
+
           const currentUser = getUser(req);
-          for (const m of teamMembers) {
-            if (m.userId && m.userId !== currentUser.id) {
+          for (const userId of recipientIds) {
+            if (userId !== currentUser.id) {
               await db.insert(notifications).values({
-                recipientUserId: m.userId,
+                recipientUserId: userId,
                 eventType: "stage.completed",
                 title: `Stage completed: ${stage.templateName}`,
                 body: `Engineering stage "${stage.templateName}" has been marked complete.`,
