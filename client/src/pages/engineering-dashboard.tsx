@@ -211,6 +211,17 @@ function TaskRow({ task, showProject = true }: { task: StandupTask; showProject?
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
+        {task.trackingRag && (
+          <span
+            className={`w-2 h-2 rounded-full shrink-0 ${
+              task.trackingRag.toLowerCase() === "red" ? "bg-red-500" :
+              task.trackingRag.toLowerCase() === "amber" ? "bg-amber-500" :
+              task.trackingRag.toLowerCase() === "green" ? "bg-emerald-500" :
+              "bg-gray-300"
+            }`}
+            title={`RAG: ${task.trackingRag}`}
+          />
+        )}
         {task.dueDate && (
           <span className={`text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded-md ${
             isOverdue ? "text-red-700 bg-red-100 font-bold" :

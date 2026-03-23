@@ -2338,61 +2338,23 @@ export function registerEngineeringRoutes(app: Express) {
         return "P0_FIRST_ASSESSMENT";
       }
 
-      const projectMap = new Map<string, {
-        projectName: string;
-        phase: string;
-        tasks: typeof allTasks;
-      }>();
+      const projectMap = new Map<string, { projectName: string; phase: string }>();
 
       for (const t of allTasks) {
         const key = t.projectName || "Unassigned";
         if (!projectMap.has(key)) {
-          const phase = lookupPhase(key);
-          projectMap.set(key, { projectName: key, phase, tasks: [] });
+          projectMap.set(key, { projectName: key, phase: lookupPhase(key) });
         }
-        projectMap.get(key)!.tasks.push(t);
       }
 
-      const todayStr = new Date().toISOString().split('T')[0];
-      const openStatuses = new Set(["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE"]);
+      const result = Array.from(projectMap.values()).map(p => ({
+        projectName: p.projectName,
+        displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+        phase: p.phase,
+        phaseLabel: PROJECT_PHASE_LABELS[p.phase as ProjectPhase] || p.phase,
+      }));
 
-      const result = Array.from(projectMap.values()).map(p => {
-        const openTasks = p.tasks.filter(t => openStatuses.has(t.status));
-        const holdTasks = p.tasks.filter(t => t.status === "HOLD");
-        const completedTasks = p.tasks.filter(t => t.status === "COMPLETE");
-        const allActive = p.tasks.filter(t => t.status !== "COMPLETE");
-        const overdueTasks = allActive.filter(t => t.dueDate && t.dueDate < todayStr);
-
-        return {
-          projectName: p.projectName,
-          displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
-          phase: p.phase,
-          phaseLabel: PROJECT_PHASE_LABELS[p.phase as ProjectPhase] || p.phase,
-          totalTasks: p.tasks.length,
-          activeTasks: allActive.length,
-          completedTasks: completedTasks.length,
-          overdueTasks: overdueTasks.length,
-          holdTasks: holdTasks.length,
-          tasks: [...openTasks, ...holdTasks].map(t => ({
-            id: t.id,
-            title: t.title,
-            status: t.status,
-            priority: t.priority,
-            dueDate: t.dueDate,
-            assignees: t.assignees,
-            trackingRag: t.trackingRag,
-          })),
-        };
-      }).sort((a, b) => {
-        if (a.overdueTasks !== b.overdueTasks) return b.overdueTasks - a.overdueTasks;
-        return b.activeTasks - a.activeTasks;
-      });
-
-      res.json({
-        projects: result,
-        lifecyclePhases: PROJECT_PHASES,
-        phaseLabels: PROJECT_PHASE_LABELS,
-      });
+      res.json({ projects: result });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
       sendError(res, err);
