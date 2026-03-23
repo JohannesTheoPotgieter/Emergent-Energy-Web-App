@@ -11,6 +11,7 @@ import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
 import { useTablePagination } from "@/hooks/use-table-pagination";
 import { TablePagination } from "@/components/ui/table-pagination";
+import { ExportDropdown } from "@/components/ui/export-dropdown";
 
 function pdFetch(url: string) {
   return fetch(url, { credentials: "include" }).then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); });
@@ -79,9 +80,23 @@ export default function PdTicketsPage() {
           <FileEdit className="h-5 w-5 text-violet-600" />
           PD Tickets
         </h1>
-        <Button onClick={() => navigate("/pd/tickets/create")} className="gap-1.5" data-testid="btn-create-ticket">
-          <Plus className="h-4 w-4" /> New Ticket
-        </Button>
+        <div className="flex items-center gap-2">
+          <ExportDropdown
+            data={filtered.map((r: any) => r.ticket)}
+            columns={[
+              { key: "projectSiteName", header: "Project / Site" },
+              { key: "requestType", header: "Request Type" },
+              { key: "priority", header: "Priority" },
+              { key: "status", header: "Status" },
+              { key: "dueDate", header: "Due Date" },
+              { key: "createdAt", header: "Created" },
+            ]}
+            filename="pd-tickets"
+          />
+          <Button onClick={() => navigate("/pd/tickets/create")} className="gap-1.5" data-testid="btn-create-ticket">
+            <Plus className="h-4 w-4" /> New Ticket
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -145,21 +160,21 @@ export default function PdTicketsPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="overflow-x-auto border rounded-lg">
-          <table className="w-full text-sm min-w-[1100px]">
+        <div className="overflow-x-auto border rounded-lg" role="region" aria-label="PD Tickets table">
+          <table className="w-full text-sm min-w-[1100px]" aria-label="PD Tickets">
             <thead>
               <tr className="bg-muted/40 border-b text-[11px] text-muted-foreground">
-                <th className="text-left p-2.5 pl-3">Project / Site</th>
-                <th className="text-left p-2.5">Client</th>
-                <th className="text-left p-2.5">Request Type</th>
-                <th className="text-left p-2.5">Priority</th>
-                <th className="text-left p-2.5">Status</th>
-                <th className="text-left p-2.5">Due Date</th>
-                <th className="text-left p-2.5">Days In Progress</th>
-                <th className="text-left p-2.5">Developer</th>
-                <th className="text-left p-2.5">Tasks</th>
-                <th className="text-left p-2.5">Next Action</th>
-                <th className="text-left p-2.5">Designer</th>
+                <th scope="col" className="text-left p-2.5 pl-3">Project / Site</th>
+                <th scope="col" className="text-left p-2.5">Client</th>
+                <th scope="col" className="text-left p-2.5">Request Type</th>
+                <th scope="col" className="text-left p-2.5">Priority</th>
+                <th scope="col" className="text-left p-2.5">Status</th>
+                <th scope="col" className="text-left p-2.5">Due Date</th>
+                <th scope="col" className="text-left p-2.5">Days In Progress</th>
+                <th scope="col" className="text-left p-2.5">Developer</th>
+                <th scope="col" className="text-left p-2.5">Tasks</th>
+                <th scope="col" className="text-left p-2.5">Next Action</th>
+                <th scope="col" className="text-left p-2.5">Designer</th>
               </tr>
             </thead>
             <tbody>
