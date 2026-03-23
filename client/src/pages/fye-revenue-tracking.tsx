@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getQueryFn, apiRequest } from "@/lib/queryClient";
+import { getQueryFn, fetchQueryFn, apiRequest } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-permissions";
 import {
   Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -294,8 +294,8 @@ function BudgetEditorModal({ fye, months, open, onClose }: { fye: number; months
   const [saved, setSaved] = useState(false);
 
   const { data: budgets, isLoading: budgetsLoading } = useQuery<BudgetRow[]>({
-    queryKey: [`/api/fye-revenue-tracking/budgets?fye=${fye}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/fye-revenue-tracking/budgets", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/budgets?fye=${fye}`),
     enabled: open,
   });
 
@@ -342,8 +342,8 @@ function BudgetEditorModal({ fye, months, open, onClose }: { fye: number; months
       }
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/dashboard?fye=${fye}`] });
-      qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/budgets?fye=${fye}`] });
+      qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/dashboard", fye] });
+      qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/budgets", fye] });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     },
@@ -440,8 +440,8 @@ function DashboardTab({ fye }: { fye: number }) {
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const canEdit = usePermission("fye_revenue_tracking", "edit");
   const { data, isLoading, error, refetch } = useQuery<DashboardData>({
-    queryKey: [`/api/fye-revenue-tracking/dashboard?fye=${fye}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/fye-revenue-tracking/dashboard", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/dashboard?fye=${fye}`),
   });
 
   if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-40 w-full" />)}</div>;
@@ -530,12 +530,12 @@ function PipelineSection({ pipeline, canEdit, fye }: { pipeline: PipelineRow[]; 
         await apiRequest("POST", "/api/fye-revenue-tracking/pipeline", payload);
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/pipeline?fye=${fye}`] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/pipeline", fye] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fye-revenue-tracking/pipeline/${id}`); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/pipeline?fye=${fye}`] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/pipeline", fye] }); },
   });
 
   const startEdit = (p: PipelineRow) => {
@@ -656,12 +656,12 @@ function LostDealsSection({ lostDeals, canEdit, fye }: { lostDeals: LostDealRow[
         await apiRequest("POST", "/api/fye-revenue-tracking/lost-deals", payload);
       }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/lost-deals?fye=${fye}`] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/lost-deals", fye] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fye-revenue-tracking/lost-deals/${id}`); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/lost-deals?fye=${fye}`] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/lost-deals", fye] }); },
   });
 
   const startEdit = (d: LostDealRow) => {
@@ -956,23 +956,23 @@ function DetailTab({ fye }: { fye: number }) {
   const sortIndicator = (key: keyof ProjectRow) => sortKey === key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
 
   const { data, isLoading, error, refetch } = useQuery<DetailData>({
-    queryKey: [`/api/fye-revenue-tracking/detail?fye=${fye}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/fye-revenue-tracking/detail", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/detail?fye=${fye}`),
   });
 
   const { data: pipeline } = useQuery<PipelineRow[]>({
-    queryKey: [`/api/fye-revenue-tracking/pipeline?fye=${fye}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/fye-revenue-tracking/pipeline", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/pipeline?fye=${fye}`),
   });
 
   const { data: lostDeals } = useQuery<LostDealRow[]>({
-    queryKey: [`/api/fye-revenue-tracking/lost-deals?fye=${fye}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/fye-revenue-tracking/lost-deals", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/lost-deals?fye=${fye}`),
   });
 
   const { data: kpis } = useQuery<KpiData>({
-    queryKey: [`/api/fye-revenue-tracking/kpis?fye=${fye}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/fye-revenue-tracking/kpis", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/kpis?fye=${fye}`),
   });
 
   const canEdit = usePermission("fye_revenue_tracking", "edit");
@@ -1269,13 +1269,13 @@ function SnapshotsTab({ fye }: { fye: number }) {
   const canEdit = usePermission("fye_revenue_tracking", "edit");
 
   const { data: snapshots, isLoading } = useQuery<SnapshotSummary[]>({
-    queryKey: [`/api/fye-revenue-tracking/snapshots?fye=${fye}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/fye-revenue-tracking/snapshots", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/snapshots?fye=${fye}`),
   });
 
   const { data: viewData, isLoading: viewLoading } = useQuery<any>({
-    queryKey: [`/api/fye-revenue-tracking/snapshots/${viewId}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/fye-revenue-tracking/snapshots", viewId],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/snapshots/${viewId}`),
     enabled: viewId !== null,
   });
 
@@ -1283,17 +1283,17 @@ function SnapshotsTab({ fye }: { fye: number }) {
     mutationFn: async () => {
       await apiRequest("POST", "/api/fye-revenue-tracking/snapshots", { fyeYear: fye, snapshotLabel: label, notes: notes || undefined });
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/snapshots?fye=${fye}`] }); setShowCreate(false); setLabel(""); setNotes(""); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/snapshots", fye] }); setShowCreate(false); setLabel(""); setNotes(""); },
   });
 
   const submitMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("PUT", `/api/fye-revenue-tracking/snapshots/${id}/submit`); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/snapshots?fye=${fye}`] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/snapshots", fye] }); },
   });
 
   const approveMutation = useMutation({
     mutationFn: async (id: number) => { await apiRequest("PUT", `/api/fye-revenue-tracking/snapshots/${id}/approve`); },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/snapshots?fye=${fye}`] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/snapshots", fye] }); },
   });
 
   // Auto-suggest label
