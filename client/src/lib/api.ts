@@ -452,6 +452,6 @@ export const overviewQueryOptions = queryOptions({
 });
 
 export const projectsSummaryQueryOptions = queryOptions({
-  queryKey: ["projects-summary"],
+  queryKey: ["/api/projects-summary"],
   queryFn: overviewApi.getProjectsSummary,
 });

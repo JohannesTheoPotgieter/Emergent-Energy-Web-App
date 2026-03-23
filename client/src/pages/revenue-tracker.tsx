@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip as UiTooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { getQueryFn, apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
+import { getQueryFn, fetchQueryFn, apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import { usePermission } from "@/hooks/use-permissions";
 import {
   Bar,
@@ -127,8 +127,8 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
   const projectParam = projectFilter !== "all" ? `&project=${encodeURIComponent(projectFilter)}` : "";
 
   const { data: rawItems, isLoading } = useQuery<MonthDetailItem[]>({
-    queryKey: [`/api/revenue-tracker/month-detail?monthKey=${monthKey}${stateParam}${projectParam}`],
-    queryFn: getQueryFn({ on401: "throw" }),
+    queryKey: ["/api/revenue-tracker/month-detail", monthKey, stateFilter, projectFilter],
+    queryFn: fetchQueryFn(`/api/revenue-tracker/month-detail?monthKey=${monthKey}${stateParam}${projectParam}`),
   });
 
   const items = rawItems ?? [];

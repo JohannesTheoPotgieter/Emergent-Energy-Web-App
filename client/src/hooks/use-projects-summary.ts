@@ -13,7 +13,7 @@ export function useProjectsSummary() {
   const { isAuthenticated, isLoading: authLoading } = useAuth();
 
   const { data: projectsSummary, isLoading } = useQuery<ProjectSummary[]>({
-    queryKey: ["projects-summary"],
+    queryKey: ["/api/projects-summary"],
     queryFn: overviewApi.getProjectsSummary,
     enabled: isAuthenticated && !authLoading,
     staleTime: 30_000,
