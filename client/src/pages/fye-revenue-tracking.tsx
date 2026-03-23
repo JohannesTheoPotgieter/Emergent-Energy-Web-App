@@ -844,6 +844,68 @@ function setToParam(s: Set<string>): string {
   return [...s].join(",");
 }
 
+/** Inline-editable text cell for admin users. Click to edit, blur/Enter to save. */
+function InlineEditCell({
+  value,
+  projectName,
+  field,
+  canEdit,
+  onSave,
+}: {
+  value: string | null;
+  projectName: string;
+  field: "province" | "projectType" | "fundingType";
+  canEdit: boolean;
+  onSave: (projectName: string, field: string, value: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  if (!canEdit) return <>{value || "—"}</>;
+
+  if (!editing) {
+    return (
+      <span
+        className="cursor-pointer hover:bg-blue-50 rounded px-1 -mx-1 inline-block min-w-[40px]"
+        onClick={() => { setDraft(value || ""); setEditing(true); }}
+        title="Click to edit"
+      >
+        {value || <span className="text-muted-foreground">—</span>}
+        <Pencil className="inline-block h-2.5 w-2.5 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100" />
+      </span>
+    );
+  }
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    const newVal = trimmed || null;
+    if (newVal !== value) onSave(projectName, field, newVal);
+    setEditing(false);
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") setEditing(false);
+      }}
+      className="w-full bg-white border border-blue-300 rounded px-1 py-0 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+    />
+  );
+}
+
 function DetailTab({ fye }: { fye: number }) {
   const searchString = useSearch();
   const [, setLocation] = useLocation();
@@ -914,6 +976,20 @@ function DetailTab({ fye }: { fye: number }) {
   });
 
   const canEdit = usePermission("fye_revenue_tracking", "edit");
+  const queryClient = useQueryClient();
+
+  const inlineEditMutation = useMutation({
+    mutationFn: async ({ projectName, field, value }: { projectName: string; field: string; value: string | null }) => {
+      await apiRequest("PUT", "/api/fye-revenue-tracking/detail/inline-edit", { projectName, field, value });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/fye-revenue-tracking/detail?fye=${fye}`] });
+    },
+  });
+
+  const handleInlineEdit = useCallback((projectName: string, field: string, value: string | null) => {
+    inlineEditMutation.mutate({ projectName, field, value });
+  }, [inlineEditMutation]);
 
   // Extract unique filter options from data
   const uniqueBds = useMemo(() => [...new Set(data?.projects.map((p) => p.businessDeveloper).filter(Boolean) as string[])].sort(), [data]);
@@ -1104,15 +1180,21 @@ function DetailTab({ fye }: { fye: number }) {
                     <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : null)}</td>
                   </tr>
                   {filtered.map((p) => (
-                    <tr key={p.projectId} className="border-b hover:bg-muted/30">
+                    <tr key={p.projectId} className="border-b hover:bg-muted/30 group">
                       <td className="px-3 py-1.5 font-medium sticky left-0 bg-white z-10 truncate max-w-[200px]" title={p.projectName}>
                         <Link href={`/project/${encodeURIComponent(p.projectName)}`} className="text-blue-600 hover:underline">{p.projectName}</Link>
                       </td>
                       <td className="px-2 py-1.5 truncate max-w-[120px]" title={p.businessDeveloper || ""}>{p.businessDeveloper || "—"}</td>
-                      <td className="px-2 py-1.5">{p.province || "—"}</td>
+                      <td className="px-2 py-1.5">
+                        <InlineEditCell value={p.province} projectName={p.projectName} field="province" canEdit={canEdit} onSave={handleInlineEdit} />
+                      </td>
                       <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp ? p.sizeKwp.toLocaleString() : "—"}</td>
-                      <td className="px-2 py-1.5">{p.projectType || "—"}</td>
-                      <td className="px-2 py-1.5">{p.fundingType || "—"}</td>
+                      <td className="px-2 py-1.5">
+                        <InlineEditCell value={p.projectType} projectName={p.projectName} field="projectType" canEdit={canEdit} onSave={handleInlineEdit} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <InlineEditCell value={p.fundingType} projectName={p.projectName} field="fundingType" canEdit={canEdit} onSave={handleInlineEdit} />
+                      </td>
                       <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.startDate)}</td>
                       <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.pcDate)}</td>
                       <td className="px-2 py-1.5">{p.status ? <Badge variant="outline" className="text-[10px]">{p.status}</Badge> : "—"}</td>
