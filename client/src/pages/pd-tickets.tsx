@@ -14,7 +14,7 @@ function pdFetch(url: string) {
   return fetch(url, { credentials: "include" }).then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); });
 }
 
-const REQUEST_TYPES = ["Cost Proposal", "IFC Planning", "Site Assessment", "Feasibility Study", "Grid Application", "Design Review", "Battery Assessment", "Full EPC"];
+const REQUEST_TYPES = ["Cost Proposal", "IFC Planning", "Site Assessment", "Feasibility Study", "Grid Application", "Design Review", "Battery Assessment", "Full EPC", "Data Analysis Request", "Meter installation", "Site visit Report", "CP - PVSOL", "First Assessment - PowerPoint Template", "Sizing Rational Request"];
 const STATUSES = ["Draft", "In Progress", "On Hold", "Completed", "Cancelled"];
 const PRIORITIES = ["Critical", "High", "Medium", "Low"];
 
