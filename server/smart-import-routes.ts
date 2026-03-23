@@ -2233,7 +2233,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
         const newPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber })
           .from(programExpense)
-          .where(eq(programExpense.projectName, projectName));
+          .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
         const newIdByRow = new Map(newPeRows.filter(r => r.rowNumber != null).map(r => [r.rowNumber!, r.id]));
         const newIdSet = new Set(newPeRows.map(r => r.id));
 

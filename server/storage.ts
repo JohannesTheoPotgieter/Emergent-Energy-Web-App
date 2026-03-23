@@ -1056,7 +1056,7 @@ export class DatabaseStorage implements IStorage {
     const [costLines, piRows, peRows] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
-      this.dbInstance.select().from(programExpense),
+      this.dbInstance.select().from(programExpense).where(isNull(programExpense.effectiveTo)),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
     const adapted = costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
@@ -1094,7 +1094,7 @@ export class DatabaseStorage implements IStorage {
     const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
 
     const peRows = await this.dbInstance.select().from(programExpense)
-      .where(eq(programExpense.projectName, projectName));
+      .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
     if (peRows.length === 0) return adapted;
 
     const budgetByRow = new Map<number, any>();
@@ -1345,11 +1345,11 @@ export class DatabaseStorage implements IStorage {
 
   // Cashflow Points (new)
   async getAllCashflowPoints(): Promise<CashflowPoint[]> {
-    return this.dbInstance.select().from(cashflowPoints).orderBy(desc(cashflowPoints.createdAt));
+    return this.dbInstance.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)).orderBy(desc(cashflowPoints.createdAt));
   }
 
   async getCashflowPointsByProject(projectName: string): Promise<CashflowPoint[]> {
-    return this.dbInstance.select().from(cashflowPoints).where(eq(cashflowPoints.projectName, projectName));
+    return this.dbInstance.select().from(cashflowPoints).where(and(eq(cashflowPoints.projectName, projectName), isNull(cashflowPoints.effectiveTo)));
   }
 
   async createManyCashflowPoints(pointList: InsertCashflowPoint[]): Promise<CashflowPoint[]> {
@@ -1376,11 +1376,11 @@ export class DatabaseStorage implements IStorage {
 
   // Finance Revenue Monthly (new)
   async getAllFinanceRevenueMonthly(): Promise<FinanceRevenueMonthly[]> {
-    return this.dbInstance.select().from(financeRevenueMonthly).orderBy(desc(financeRevenueMonthly.createdAt));
+    return this.dbInstance.select().from(financeRevenueMonthly).where(isNull(financeRevenueMonthly.effectiveTo)).orderBy(desc(financeRevenueMonthly.createdAt));
   }
 
   async getFinanceRevenueMonthlyByProject(projectName: string): Promise<FinanceRevenueMonthly[]> {
-    return this.dbInstance.select().from(financeRevenueMonthly).where(eq(financeRevenueMonthly.projectName, projectName));
+    return this.dbInstance.select().from(financeRevenueMonthly).where(and(eq(financeRevenueMonthly.projectName, projectName), isNull(financeRevenueMonthly.effectiveTo)));
   }
 
   async createManyFinanceRevenueMonthly(dataList: InsertFinanceRevenueMonthly[]): Promise<FinanceRevenueMonthly[]> {
@@ -1407,11 +1407,11 @@ export class DatabaseStorage implements IStorage {
 
   // Finance COS Monthly (new)
   async getAllFinanceCosMonthly(): Promise<FinanceCosMonthly[]> {
-    return this.dbInstance.select().from(financeCosMonthly).orderBy(desc(financeCosMonthly.createdAt));
+    return this.dbInstance.select().from(financeCosMonthly).where(isNull(financeCosMonthly.effectiveTo)).orderBy(desc(financeCosMonthly.createdAt));
   }
 
   async getFinanceCosMonthlyByProject(projectName: string): Promise<FinanceCosMonthly[]> {
-    return this.dbInstance.select().from(financeCosMonthly).where(eq(financeCosMonthly.projectName, projectName));
+    return this.dbInstance.select().from(financeCosMonthly).where(and(eq(financeCosMonthly.projectName, projectName), isNull(financeCosMonthly.effectiveTo)));
   }
 
   async createManyFinanceCosMonthly(dataList: InsertFinanceCosMonthly[]): Promise<FinanceCosMonthly[]> {
@@ -1625,11 +1625,11 @@ export class DatabaseStorage implements IStorage {
 
   // Project Revenue Summary
   async getAllProjectRevenueSummaries(): Promise<ProjectRevenueSummary[]> {
-    return this.dbInstance.select().from(projectRevenueSummary);
+    return this.dbInstance.select().from(projectRevenueSummary).where(isNull(projectRevenueSummary.effectiveTo));
   }
 
   async getProjectRevenueSummary(projectName: string): Promise<ProjectRevenueSummary | undefined> {
-    const results = await this.dbInstance.select().from(projectRevenueSummary).where(eq(projectRevenueSummary.projectName, projectName));
+    const results = await this.dbInstance.select().from(projectRevenueSummary).where(and(eq(projectRevenueSummary.projectName, projectName), isNull(projectRevenueSummary.effectiveTo)));
     return results[0];
   }
 
