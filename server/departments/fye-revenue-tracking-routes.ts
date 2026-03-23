@@ -458,15 +458,18 @@ router.get(
         }
       }
 
-      // 7. Pipeline (95%+) revenue allocated by expected sign date
+      // 7. Pipeline (95%+) revenue, COS, and GP allocated by expected sign date
       //    Each deal's revenue is placed in its forecastSignatureDate month.
+      //    COS is derived from revenue using forecastGpPct: COS = revenue × (1 - gpPct).
       //    Deals without a sign date are spread evenly across future months.
       const pipelineRevByMonth: Record<string, number> = {};
+      const pipelineCosByMonth: Record<string, number> = {};
       try {
         const pipelineDeals = await db.select({
           solarRevenue: forecastPipeline.solarRevenue,
           bessRevenue: forecastPipeline.bessRevenue,
           forecastSignatureDate: forecastPipeline.forecastSignatureDate,
+          forecastGpPct: forecastPipeline.forecastGpPct,
         }).from(forecastPipeline)
           .where(and(
             eq(forecastPipeline.fyeYear, fye),
@@ -478,29 +481,35 @@ router.get(
 
         const futureMonths = monthKeys.filter(mk => mk > currentMk);
         let undatedPipelineRev = 0;
+        let undatedPipelineCos = 0;
 
         for (const deal of pipelineDeals) {
           const dealRev = safeNum(deal.solarRevenue) + safeNum(deal.bessRevenue);
           if (dealRev === 0) continue;
+          const gpPct = safeNum(deal.forecastGpPct);
+          const dealCos = dealRev * (1 - gpPct);
 
           const signMk = extractMonthKey(deal.forecastSignatureDate);
-          if (signMk && futureMonths.includes(signMk)) {
+          if (signMk && monthKeys.includes(signMk) && signMk > currentMk) {
             // Allocate to the expected sign date month
             pipelineRevByMonth[signMk] = (pipelineRevByMonth[signMk] || 0) + dealRev;
-          } else if (signMk && monthKeys.includes(signMk) && signMk > currentMk) {
-            // Sign date is in FYE range and future — allocate there
-            pipelineRevByMonth[signMk] = (pipelineRevByMonth[signMk] || 0) + dealRev;
+            pipelineCosByMonth[signMk] = (pipelineCosByMonth[signMk] || 0) + dealCos;
           } else {
             // No valid future sign date — accumulate for even spreading
             undatedPipelineRev += dealRev;
+            undatedPipelineCos += dealCos;
           }
         }
 
-        // Spread undated pipeline revenue evenly across future months
-        if (undatedPipelineRev > 0 && futureMonths.length > 0) {
-          const perMonth = undatedPipelineRev / futureMonths.length;
-          for (const mk of futureMonths) {
-            pipelineRevByMonth[mk] = (pipelineRevByMonth[mk] || 0) + perMonth;
+        // Spread undated pipeline revenue/COS evenly across future months
+        if (futureMonths.length > 0) {
+          if (undatedPipelineRev > 0) {
+            const perMonthRev = undatedPipelineRev / futureMonths.length;
+            const perMonthCos = undatedPipelineCos / futureMonths.length;
+            for (const mk of futureMonths) {
+              pipelineRevByMonth[mk] = (pipelineRevByMonth[mk] || 0) + perMonthRev;
+              pipelineCosByMonth[mk] = (pipelineCosByMonth[mk] || 0) + perMonthCos;
+            }
           }
         }
 
@@ -539,6 +548,8 @@ router.get(
         }
 
         const pipelineRev = pipelineRevByMonth[mk] || 0;
+        const pipelineCos = pipelineCosByMonth[mk] || 0;
+        const pipelineGp = pipelineRev - pipelineCos;
 
         return {
           monthKey: mk,
@@ -553,11 +564,13 @@ router.get(
             budget: budgetCos,
             actualForecast: actualForecastCos,
             actual: actualCos,
+            pipeline: pipelineCos,
           },
           gp: {
             budget: budgetRev - budgetCos,
             actualForecast: actualForecastRev - actualForecastCos,
             actual: actualRev !== null && actualCos !== null ? actualRev - actualCos : null,
+            pipeline: pipelineGp,
           },
         };
       });
