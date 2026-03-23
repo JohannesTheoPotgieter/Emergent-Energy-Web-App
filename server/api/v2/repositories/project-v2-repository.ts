@@ -1,9 +1,9 @@
 import { and, asc, count, desc, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../../db";
-import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, workItemPm, workItemEngineering, workItemScheduling, users, counterparties, projectExecutionState, projectSettings, projectTeamMembers, dashboardProjectMetrics, qcWarning, qcItemEvidence } from "@shared/schema";
+import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLines, procurementItems, projectEngDeliverables, projectEngStages, projectInfo, projectPhaseHistory, projectRevenueSummary, qcChecklist, qcItemInstance, smartImportRuns, workItems, workItemPm, workItemEngineering, workItemScheduling, users, counterparties, projectExecutionState, projectSettings, projectTeamMembers, dashboardProjectMetrics, qcWarning, qcItemEvidence, priorityProjects } from "@shared/schema";
 import { syncProjectSplitTables } from "../../../lib/project-info-sync";
 
-export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null }) {
+export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null; priorityId?: number }) {
   const filters = [eq(projectExecutionState.isActive, true)];
   if (params.q) filters.push(ilike(projectInfo.projectName, `%${params.q}%`));
 
@@ -14,6 +14,16 @@ export async function listProjects(params: { q?: string; page: number; pageSize:
     }
     const ids = [...params.scopeProjectIds];
     filters.push(inArray(projectInfo.id, ids));
+  }
+
+  // Priority filter: only show projects linked to a specific priority
+  if (params.priorityId) {
+    const linkedProjects = await db.select({ projectId: priorityProjects.projectId })
+      .from(priorityProjects)
+      .where(eq(priorityProjects.priorityId, params.priorityId));
+    const linkedIds = linkedProjects.map(l => l.projectId);
+    if (linkedIds.length === 0) return { rows: [], total: 0 };
+    filters.push(inArray(projectInfo.id, linkedIds));
   }
 
   const where = and(...filters);

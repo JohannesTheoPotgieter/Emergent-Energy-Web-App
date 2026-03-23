@@ -84,6 +84,43 @@ function PhaseBadge({ phase }: { phase: string | null }) {
   );
 }
 
+function ProjectPriorityBadges({ projectId }: { projectId: number | null }) {
+  const { data: priorities } = useQuery<any[]>({
+    queryKey: [`/api/projects/${projectId}/priorities`],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`/api/projects/${projectId}/priorities`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  if (!priorities || priorities.length === 0) return null;
+
+  const healthColors: Record<string, string> = {
+    critical: "bg-red-100 text-red-700 border-red-200",
+    at_risk: "bg-amber-100 text-amber-700 border-amber-200",
+    healthy: "bg-blue-100 text-blue-700 border-blue-200",
+  };
+
+  return (
+    <div className="flex items-center gap-2 mt-1 mb-2 flex-wrap">
+      <span className="text-xs text-muted-foreground">Priorities:</span>
+      {priorities.map((p: any) => (
+        <a key={p.id} href={`/priorities/${p.id}`} className="no-underline">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border cursor-pointer hover:shadow-sm ${healthColors[p.effectiveHealth] || healthColors.healthy}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${p.effectiveHealth === "critical" ? "bg-red-500" : p.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-blue-500"}`} />
+            {p.title}
+          </span>
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -1261,6 +1298,9 @@ export default function ProjectDetailPage() {
         pmAssignableUsers={pmAssignableUsers || []}
         onPhaseChangeClick={() => setPhaseModalOpen(true)}
       />
+
+      {/* Priority badges */}
+      <ProjectPriorityBadges projectId={projectInfoId ?? null} />
 
       {/* GC-012: Contract value reconciliation warning — uses V2 finance summary */}
       {(() => {
