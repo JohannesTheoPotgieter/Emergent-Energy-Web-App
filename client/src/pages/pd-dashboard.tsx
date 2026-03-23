@@ -45,6 +45,7 @@ export default function PdDashboardPage() {
     byRequestType: Record<string, number>;
     overdue: { week: any[]; twoWeeks: any[]; month: any[] };
     handoverSummary: { notStarted: number; draft: number; submitted: number; accepted: number; rejected: number };
+    totalPipelineValue: number;
     kanbanColumns: string[];
   }>({
     queryKey: ["/api/pd/pipeline"],
@@ -132,7 +133,14 @@ export default function PdDashboardPage() {
       {/* Pipeline Summary */}
       {pipeline && !pipelineLoading && (
         <div>
-          <h2 className="text-lg font-semibold mb-3">Pipeline Summary</h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Pipeline Summary</h2>
+            {pipeline.totalPipelineValue > 0 && (
+              <Badge variant="outline" className="text-sm gap-1 font-semibold">
+                Pipeline Value: R {pipeline.totalPipelineValue.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+              </Badge>
+            )}
+          </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
             {(pipeline.kanbanColumns || []).map(col => {
               const data = pipeline.byStatus[col];
