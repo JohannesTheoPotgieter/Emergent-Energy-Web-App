@@ -444,7 +444,12 @@ Schema files in `shared/schema/` organized by domain:
 | 8 | No import diff preview | [GAP] | Cannot see side-by-side comparison of current vs incoming data before commit. |
 | 9 | No version history on imported rows | [GAP] | Once data is written to financial tables, the previous version is overwritten (temporal tracking via `effectiveFrom`/`effectiveTo` provides some history but not a user-facing diff). |
 | 10 | No async processing | [GAP] | Excel parsing happens synchronously in the request handler. Large files (10MB+) could timeout. No job queue. |
-| 11 | Cascade to KPIs not automatic | [GAP] | After import commit, derived KPI tables are not automatically refreshed. Requires separate API call. |
+| 11 | KPI refresh IS triggered post-commit | [CONFIRMED] | `refreshProjectMetricsAsync(projectId)` called at line 2517 post-commit (corrected from earlier GAP assessment). Has 5-min cooldown and concurrency limit of 5. |
+| 12 | Rollback does NOT restore projectInfo or projectRevenueSummary | [GAP] | Rollback removes financial/plan data but project metadata (sizeKwp, contractValue, phase) overwritten by import is not restored. Revenue summary is UPDATE'd in-place (no temporal close). File: `server/smart-import-routes.ts:2544` |
+| 13 | No rollback UI button | [GAP] | Rollback is API-only. `client/src/pages/smart-import.tsx` has no rollback button. |
+| 14 | Date parsing ambiguity (DD/MM vs MM/DD) | [BUG] | `server/lib/import/utils.ts:50-53` — DD/MM/YYYY regex doesn't validate month<=12 or day<=31. Ambiguous dates like `03/04/2025` always parsed as UK format. US-format source data silently corrupted. |
+| 15 | Hardcoded FY26 COS budget | [PLACEHOLDER] | `server/lib/calculations/financeUtils.ts:16-29` — `STATIC_COS_BUDGET_FY26` hardcoded for Sep 2025–Aug 2026. FY2027 defaults to 0. |
+| 16 | Financial warning notifications are no-ops | [BUG] | `server/departments/financial-integration-routes.ts:87-106` — `sendFinancialWarningNotifications()` and `sendIntegrationWarningNotifications()` are empty functions. Critical path/revenue impact changes produce no alerts. |
 
 ### 5.2 Project Financials
 
