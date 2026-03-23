@@ -60,6 +60,7 @@ const PdDashboardPage = lazy(() => import("@/pages/pd-dashboard"));
 const PdTicketsPage = lazy(() => import("@/pages/pd-tickets"));
 const PdTicketCreatePage = lazy(() => import("@/pages/pd-ticket-create"));
 const PdTicketDetailPage = lazy(() => import("@/pages/pd-ticket-detail"));
+const PdReportsPage = lazy(() => import("@/pages/pd-reports"));
 const TeamsChatsPage = lazy(() => import("@/pages/teams-chats"));
 const CollaborationPage = lazy(() => import("@/pages/collaboration"));
 const CollabEmailPage = lazy(() => import("@/pages/collab-email"));
@@ -142,6 +143,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PdTicketsPage,
   PdTicketCreatePage,
   PdTicketDetailPage,
+  PdReportsPage,
   TeamsChatsPage,
   CollaborationPage,
   CollabEmailPage,
