@@ -3,7 +3,7 @@ import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
 import {
   standupSchedules, standupParticipants, standupEntries,
-  users, projectInfo, workItems, workItemStatusHistory,
+  users, projectInfo, workItems, workItemStatusHistory, notifications,
   type InsertStandupSchedule, type InsertStandupEntry, type InsertStandupParticipant,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
@@ -15,18 +15,61 @@ function getUser(req: Request): AppUser {
   return getEffectiveUser(req) as AppUser;
 }
 
-/** Check if today is a standup day for a given schedule */
+/** Check if today is a standup day for a given schedule (uses UTC to avoid DST issues) */
 function isStandupDay(anchorDate: string, cadenceDays: number, checkDate: string): boolean {
-  const anchor = new Date(anchorDate);
-  const check = new Date(checkDate);
+  const anchor = new Date(`${anchorDate}T00:00:00Z`);
+  const check = new Date(`${checkDate}T00:00:00Z`);
   const diffMs = check.getTime() - anchor.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
   return diffDays >= 0 && diffDays % cadenceDays === 0;
 }
 
 /** Get today as YYYY-MM-DD */
 function today(): string {
   return new Date().toISOString().split("T")[0];
+}
+
+/** Notify other participants when someone submits a standup or flags a blocker */
+async function notifyStandupParticipants(
+  scheduleId: number,
+  submitter: AppUser,
+  entry: { blockers: string | null; mood: string | null },
+  scheduleName: string,
+) {
+  try {
+    const participants = await db
+      .select({ userId: standupParticipants.userId })
+      .from(standupParticipants)
+      .where(eq(standupParticipants.scheduleId, scheduleId));
+
+    const hasBlocker = entry.blockers && entry.blockers.trim().length > 0;
+    const isBlocked = entry.mood === "blocked" || entry.mood === "struggling";
+
+    // Only notify on blockers/struggling — regular submissions are too noisy
+    if (!hasBlocker && !isBlocked) return;
+
+    const title = hasBlocker
+      ? `Blocker flagged by ${submitter.name}`
+      : `${submitter.name} is ${entry.mood}`;
+    const body = hasBlocker
+      ? `${submitter.name} flagged a blocker in "${scheduleName}": ${entry.blockers!.slice(0, 200)}`
+      : `${submitter.name} reported feeling ${entry.mood} in "${scheduleName}"`;
+
+    const notificationRows = participants
+      .filter((p) => p.userId !== submitter.id)
+      .map((p) => ({
+        recipientUserId: p.userId,
+        eventType: hasBlocker ? "standup.blocker" : "standup.mood_alert",
+        title,
+        body,
+      }));
+
+    if (notificationRows.length > 0) {
+      await db.insert(notifications).values(notificationRows);
+    }
+  } catch (err) {
+    console.error("[Standup] Failed to send notifications:", err);
+  }
 }
 
 export function registerStandupRoutes(app: Express) {
@@ -81,7 +124,11 @@ export function registerStandupRoutes(app: Express) {
   app.post("/api/standups/schedules", requireAuth, requirePermission("standups", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const { name, teamLabel, projectId, cadence, cadenceDays, anchorDate, deadlineTime } = req.body;
+      const { name, teamLabel, projectId, cadence, cadenceDays, anchorDate, deadlineTime, deadlineTimezone } = req.body;
+
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "Schedule name is required" });
+      }
 
       const [schedule] = await db.insert(standupSchedules).values({
         name,
@@ -91,6 +138,7 @@ export function registerStandupRoutes(app: Express) {
         cadenceDays: cadenceDays || 2,
         anchorDate: anchorDate || today(),
         deadlineTime: deadlineTime || "10:00",
+        deadlineTimezone: deadlineTimezone || "Africa/Johannesburg",
         createdBy: user.id,
       }).returning();
 
@@ -112,7 +160,7 @@ export function registerStandupRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id as string);
       const updates: Partial<InsertStandupSchedule> = {};
-      const allowed = ["name", "teamLabel", "projectId", "cadence", "cadenceDays", "anchorDate", "deadlineTime", "isActive"] as const;
+      const allowed = ["name", "teamLabel", "projectId", "cadence", "cadenceDays", "anchorDate", "deadlineTime", "deadlineTimezone", "isActive"] as const;
       for (const key of allowed) {
         if (req.body[key] !== undefined) (updates as any)[key] = req.body[key];
       }
@@ -169,7 +217,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Add participant to schedule */
-  app.post("/api/standups/schedules/:id/participants", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/standups/schedules/:id/participants", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const scheduleId = parseInt(req.params.id as string);
       const { userId, isRequired } = req.body;
@@ -187,7 +235,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Remove participant from schedule */
-  app.delete("/api/standups/schedules/:scheduleId/participants/:userId", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/standups/schedules/:scheduleId/participants/:userId", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const scheduleId = parseInt(req.params.scheduleId as string);
       const userId = parseInt(req.params.userId as string);
@@ -261,6 +309,10 @@ export function registerStandupRoutes(app: Express) {
       const user = getUser(req);
       const { scheduleId, standupDate, whatIDid, whatImDoing, blockers, mood } = req.body;
 
+      if (!scheduleId || typeof scheduleId !== "number") {
+        return res.status(400).json({ error: "scheduleId is required and must be a number" });
+      }
+
       const dateStr = standupDate || today();
 
       // Check if already submitted for this schedule+date
@@ -288,7 +340,7 @@ export function registerStandupRoutes(app: Express) {
         return res.json(updated);
       }
 
-      // Check if late
+      // Check if late (timezone-aware using schedule's deadlineTimezone)
       const schedule = await db
         .select()
         .from(standupSchedules)
@@ -297,11 +349,13 @@ export function registerStandupRoutes(app: Express) {
 
       let isLate = false;
       if (schedule.length > 0 && schedule[0].deadlineTime) {
-        const now = new Date();
+        const tz = schedule[0].deadlineTimezone || "Africa/Johannesburg";
+        const nowInTz = new Date().toLocaleString("en-US", { timeZone: tz });
+        const nowLocal = new Date(nowInTz);
         const [h, m] = schedule[0].deadlineTime.split(":").map(Number);
-        const deadline = new Date(now);
+        const deadline = new Date(nowLocal);
         deadline.setHours(h, m, 0, 0);
-        isLate = now > deadline;
+        isLate = nowLocal > deadline;
       }
 
       const [entry] = await db.insert(standupEntries).values({
@@ -314,6 +368,9 @@ export function registerStandupRoutes(app: Express) {
         mood: mood || null,
         isLate,
       }).returning();
+
+      // Notify other participants about this submission (async, non-blocking)
+      notifyStandupParticipants(scheduleId, user, entry, schedule[0]?.name || "Standup").catch(() => {});
 
       res.status(201).json(entry);
     } catch (err: any) {
@@ -331,7 +388,7 @@ export function registerStandupRoutes(app: Express) {
         .update(standupEntries)
         .set({
           whatIDid, whatImDoing, blockers,
-          mood: mood || undefined,
+          mood: mood || null,
           updatedAt: new Date(),
         })
         .where(eq(standupEntries.id, id))
@@ -386,7 +443,17 @@ export function registerStandupRoutes(app: Express) {
       const offset = parseInt(req.query.offset as string) || 0;
       const search = req.query.search as string;
 
-      let query = db
+      const conditions = [eq(standupEntries.scheduleId, scheduleId)];
+      if (search) {
+        const pattern = `%${search}%`;
+        conditions.push(sql`(
+          ${standupEntries.whatIDid} ILIKE ${pattern} OR
+          ${standupEntries.whatImDoing} ILIKE ${pattern} OR
+          ${standupEntries.blockers} ILIKE ${pattern}
+        )`);
+      }
+
+      const entries = await db
         .select({
           id: standupEntries.id,
           userId: standupEntries.userId,
@@ -401,12 +468,10 @@ export function registerStandupRoutes(app: Express) {
         })
         .from(standupEntries)
         .leftJoin(users, eq(standupEntries.userId, users.id))
-        .where(eq(standupEntries.scheduleId, scheduleId))
+        .where(and(...conditions))
         .orderBy(desc(standupEntries.standupDate), asc(standupEntries.submittedAt))
         .limit(limit)
         .offset(offset);
-
-      const entries = await query;
 
       // Group by date
       const grouped: Record<string, typeof entries> = {};
@@ -416,7 +481,24 @@ export function registerStandupRoutes(app: Express) {
         grouped[date].push(entry);
       }
 
-      res.json({ entries: grouped, total: entries.length, limit, offset });
+      // Get total count for pagination
+      const totalConditions = [eq(standupEntries.scheduleId, scheduleId)];
+      if (search) {
+        const searchPattern = `%${search}%`;
+        totalConditions.push(sql`(
+          ${standupEntries.whatIDid} ILIKE ${searchPattern} OR
+          ${standupEntries.whatImDoing} ILIKE ${searchPattern} OR
+          ${standupEntries.blockers} ILIKE ${searchPattern}
+        )`);
+      }
+      const [totalCountResult] = await db
+        .select({ count: count() })
+        .from(standupEntries)
+        .where(and(...totalConditions));
+
+      const totalCount = Number(totalCountResult.count);
+
+      res.json({ entries: grouped, total: totalCount, limit, offset, hasMore: offset + limit < totalCount });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -477,16 +559,297 @@ export function registerStandupRoutes(app: Express) {
         .from(standupParticipants)
         .where(eq(standupParticipants.scheduleId, scheduleId));
 
+      // Count unique standup dates to compute average per-standup participation
+      const [dateCountResult] = await db
+        .select({ count: sql<number>`COUNT(DISTINCT ${standupEntries.standupDate})` })
+        .from(standupEntries)
+        .where(eq(standupEntries.scheduleId, scheduleId));
+
+      const uniqueDates = Number(dateCountResult.count) || 0;
+      const avgParticipation = (uniqueDates > 0 && participantsResult.count > 0)
+        ? Math.round(((totalResult.count / uniqueDates) / participantsResult.count) * 100)
+        : 0;
+
       res.json({
         totalEntries: totalResult.count,
         lateEntries: lateResult.count,
         totalParticipants: participantsResult.count,
         recentBlockers: blockerEntries,
         moodDistribution: moodDist,
-        participationRate: participantsResult.count > 0
-          ? Math.round((totalResult.count / participantsResult.count) * 100) / 100
-          : 0,
+        participationRate: avgParticipation,
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /** Standup trends over time (for time-series charts) */
+  app.get("/api/standups/analytics/:scheduleId/trends", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const scheduleId = parseInt(req.params.scheduleId as string);
+      const days = parseInt(req.query.days as string) || 30;
+
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      const cutoffStr = cutoffDate.toISOString().split("T")[0];
+
+      // Participation per standup date
+      const participationTrend = await db
+        .select({
+          standupDate: standupEntries.standupDate,
+          submissions: count(),
+        })
+        .from(standupEntries)
+        .where(and(
+          eq(standupEntries.scheduleId, scheduleId),
+          sql`${standupEntries.standupDate} >= ${cutoffStr}`
+        ))
+        .groupBy(standupEntries.standupDate)
+        .orderBy(asc(standupEntries.standupDate));
+
+      // Mood trend per standup date
+      const moodTrend = await db
+        .select({
+          standupDate: standupEntries.standupDate,
+          mood: standupEntries.mood,
+          count: count(),
+        })
+        .from(standupEntries)
+        .where(and(
+          eq(standupEntries.scheduleId, scheduleId),
+          sql`${standupEntries.standupDate} >= ${cutoffStr}`,
+          sql`${standupEntries.mood} IS NOT NULL`
+        ))
+        .groupBy(standupEntries.standupDate, standupEntries.mood)
+        .orderBy(asc(standupEntries.standupDate));
+
+      // Blocker count per standup date
+      const blockerTrend = await db
+        .select({
+          standupDate: standupEntries.standupDate,
+          blockerCount: count(),
+        })
+        .from(standupEntries)
+        .where(and(
+          eq(standupEntries.scheduleId, scheduleId),
+          sql`${standupEntries.standupDate} >= ${cutoffStr}`,
+          sql`${standupEntries.blockers} IS NOT NULL AND ${standupEntries.blockers} != ''`
+        ))
+        .groupBy(standupEntries.standupDate)
+        .orderBy(asc(standupEntries.standupDate));
+
+      // Total participant count for rate calculation
+      const [participantsResult] = await db
+        .select({ count: count() })
+        .from(standupParticipants)
+        .where(eq(standupParticipants.scheduleId, scheduleId));
+
+      const totalParticipants = Number(participantsResult.count) || 1;
+
+      // Build unified date series
+      const dateSet = new Set<string>();
+      participationTrend.forEach((r) => dateSet.add(r.standupDate));
+      const dates = Array.from(dateSet).sort();
+
+      const participationMap = new Map(participationTrend.map((r) => [r.standupDate, Number(r.submissions)]));
+      const blockerMap = new Map(blockerTrend.map((r) => [r.standupDate, Number(r.blockerCount)]));
+
+      // Mood score: great=5, good=4, okay=3, struggling=2, blocked=1
+      const moodScores: Record<string, number> = { great: 5, good: 4, okay: 3, struggling: 2, blocked: 1 };
+      const moodByDate = new Map<string, { total: number; count: number }>();
+      for (const row of moodTrend) {
+        const existing = moodByDate.get(row.standupDate) || { total: 0, count: 0 };
+        existing.total += (moodScores[row.mood || "okay"] || 3) * Number(row.count);
+        existing.count += Number(row.count);
+        moodByDate.set(row.standupDate, existing);
+      }
+
+      const series = dates.map((date) => {
+        const submissions = participationMap.get(date) || 0;
+        const moodData = moodByDate.get(date);
+        return {
+          date,
+          submissions,
+          participationRate: Math.round((submissions / totalParticipants) * 100),
+          blockers: blockerMap.get(date) || 0,
+          avgMoodScore: moodData ? Math.round((moodData.total / moodData.count) * 10) / 10 : null,
+        };
+      });
+
+      res.json({ series, totalParticipants });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /** Per-person analytics for a schedule */
+  app.get("/api/standups/analytics/:scheduleId/per-person", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const scheduleId = parseInt(req.params.scheduleId as string);
+
+      // All participants
+      const participants = await db
+        .select({
+          userId: standupParticipants.userId,
+          isRequired: standupParticipants.isRequired,
+          userName: users.name,
+          userEmail: users.email,
+        })
+        .from(standupParticipants)
+        .leftJoin(users, eq(standupParticipants.userId, users.id))
+        .where(eq(standupParticipants.scheduleId, scheduleId));
+
+      // All entries for this schedule
+      const entries = await db
+        .select({
+          userId: standupEntries.userId,
+          standupDate: standupEntries.standupDate,
+          mood: standupEntries.mood,
+          isLate: standupEntries.isLate,
+          blockers: standupEntries.blockers,
+        })
+        .from(standupEntries)
+        .where(eq(standupEntries.scheduleId, scheduleId))
+        .orderBy(asc(standupEntries.standupDate));
+
+      // Unique standup dates (total possible submissions)
+      const uniqueDates = new Set(entries.map((e) => e.standupDate));
+      const totalStandups = uniqueDates.size;
+
+      const moodScores: Record<string, number> = { great: 5, good: 4, okay: 3, struggling: 2, blocked: 1 };
+
+      const personStats = participants.map((p) => {
+        const userEntries = entries.filter((e) => e.userId === p.userId);
+        const totalSubmissions = userEntries.length;
+        const lateCount = userEntries.filter((e) => e.isLate).length;
+        const blockerCount = userEntries.filter((e) => e.blockers && e.blockers.trim()).length;
+        const moodEntries = userEntries.filter((e) => e.mood);
+        const avgMood = moodEntries.length > 0
+          ? Math.round((moodEntries.reduce((sum, e) => sum + (moodScores[e.mood!] || 3), 0) / moodEntries.length) * 10) / 10
+          : null;
+
+        // Calculate current streak (consecutive submissions from most recent)
+        const sortedDates = Array.from(uniqueDates).sort().reverse();
+        let streak = 0;
+        for (const date of sortedDates) {
+          if (userEntries.some((e) => e.standupDate === date)) {
+            streak++;
+          } else {
+            break;
+          }
+        }
+
+        return {
+          userId: p.userId,
+          userName: p.userName,
+          userEmail: p.userEmail,
+          isRequired: p.isRequired,
+          totalSubmissions,
+          participationRate: totalStandups > 0 ? Math.round((totalSubmissions / totalStandups) * 100) : 0,
+          lateCount,
+          onTimeRate: totalSubmissions > 0 ? Math.round(((totalSubmissions - lateCount) / totalSubmissions) * 100) : 0,
+          blockerCount,
+          avgMoodScore: avgMood,
+          currentStreak: streak,
+        };
+      });
+
+      res.json({ members: personStats, totalStandups });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /** Generate formatted digest of a specific standup date */
+  app.get("/api/standups/digest/:scheduleId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const scheduleId = parseInt(req.params.scheduleId as string);
+      const date = (req.query.date as string) || today();
+
+      const schedule = await db
+        .select()
+        .from(standupSchedules)
+        .where(eq(standupSchedules.id, scheduleId))
+        .limit(1);
+
+      const entries = await db
+        .select({
+          userName: users.name,
+          whatIDid: standupEntries.whatIDid,
+          whatImDoing: standupEntries.whatImDoing,
+          blockers: standupEntries.blockers,
+          mood: standupEntries.mood,
+          isLate: standupEntries.isLate,
+        })
+        .from(standupEntries)
+        .leftJoin(users, eq(standupEntries.userId, users.id))
+        .where(and(
+          eq(standupEntries.scheduleId, scheduleId),
+          eq(standupEntries.standupDate, date)
+        ))
+        .orderBy(asc(users.name));
+
+      const participants = await db
+        .select({ userName: users.name })
+        .from(standupParticipants)
+        .leftJoin(users, eq(standupParticipants.userId, users.id))
+        .where(eq(standupParticipants.scheduleId, scheduleId));
+
+      const submittedNames = new Set(entries.map((e) => e.userName));
+      const missing = participants.filter((p) => !submittedNames.has(p.userName)).map((p) => p.userName);
+
+      const scheduleName = schedule[0]?.name || "Standup";
+      const blockerEntries = entries.filter((e) => e.blockers && e.blockers.trim());
+
+      // Build text digest
+      let text = `📋 ${scheduleName} — ${date}\n`;
+      text += `${entries.length}/${participants.length} submitted\n\n`;
+
+      for (const entry of entries) {
+        text += `👤 ${entry.userName}${entry.isLate ? " (late)" : ""}${entry.mood ? ` [${entry.mood}]` : ""}\n`;
+        if (entry.whatIDid) text += `  ✅ ${entry.whatIDid}\n`;
+        if (entry.whatImDoing) text += `  🔄 ${entry.whatImDoing}\n`;
+        if (entry.blockers) text += `  🚧 ${entry.blockers}\n`;
+        text += "\n";
+      }
+
+      if (blockerEntries.length > 0) {
+        text += `⚠️ BLOCKERS (${blockerEntries.length}):\n`;
+        for (const e of blockerEntries) {
+          text += `  • ${e.userName}: ${e.blockers}\n`;
+        }
+        text += "\n";
+      }
+
+      if (missing.length > 0) {
+        text += `❌ Not submitted: ${missing.join(", ")}\n`;
+      }
+
+      // Build markdown digest
+      let markdown = `## ${scheduleName} — ${date}\n\n`;
+      markdown += `**${entries.length}/${participants.length}** submitted\n\n`;
+
+      for (const entry of entries) {
+        markdown += `### ${entry.userName}${entry.isLate ? " *(late)*" : ""}${entry.mood ? ` — ${entry.mood}` : ""}\n`;
+        if (entry.whatIDid) markdown += `- **Completed:** ${entry.whatIDid}\n`;
+        if (entry.whatImDoing) markdown += `- **Working on:** ${entry.whatImDoing}\n`;
+        if (entry.blockers) markdown += `- **Blocker:** ${entry.blockers}\n`;
+        markdown += "\n";
+      }
+
+      if (blockerEntries.length > 0) {
+        markdown += `### ⚠️ Blockers\n`;
+        for (const e of blockerEntries) {
+          markdown += `- **${e.userName}:** ${e.blockers}\n`;
+        }
+        markdown += "\n";
+      }
+
+      if (missing.length > 0) {
+        markdown += `*Not submitted: ${missing.join(", ")}*\n`;
+      }
+
+      res.json({ text, markdown, date, scheduleName, submissionCount: entries.length, participantCount: participants.length, blockerCount: blockerEntries.length, missingCount: missing.length });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
