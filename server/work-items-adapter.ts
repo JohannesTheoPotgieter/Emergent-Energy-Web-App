@@ -449,6 +449,7 @@ export async function createWorkItem(data: {
   legacyTable?: string;
   legacyId?: number;
   externalRef?: string;
+  plannedHours?: number | null;
 }): Promise<any> {
   const [item] = await db.insert(workItems).values({
     projectId: data.projectId ?? null,
@@ -466,6 +467,7 @@ export async function createWorkItem(data: {
     legacyTable: data.legacyTable ?? null,
     legacyId: data.legacyId ?? null,
     externalRef: data.externalRef ?? null,
+    plannedHours: data.plannedHours ?? null,
   }).returning();
 
   if (data.ownerUserId) {
@@ -726,6 +728,7 @@ export async function createEngineeringWorkItem(data: {
   dueDate?: string | null;
   ownerUserId?: number | null;
   createdBy?: number | null;
+  plannedHours?: number | null;
 }): Promise<WorkItem> {
   return createWorkItem({
     projectId: data.projectId ?? null,
@@ -739,6 +742,7 @@ export async function createEngineeringWorkItem(data: {
     endDate: data.dueDate ?? null,
     ownerUserId: data.ownerUserId ?? null,
     createdBy: data.createdBy ?? null,
+    plannedHours: data.plannedHours ?? null,
   });
 }
 
@@ -763,6 +767,7 @@ export async function updateEngineeringWorkItem(workItemId: number, updates: {
   taskTypeTag?: string | null;
   blockerReason?: string | null;
   approvalRequired?: boolean;
+  plannedHours?: number | null;
 }): Promise<WorkItem | null> {
   const setData: any = { updatedAt: new Date() };
   if (updates.title !== undefined) setData.title = updates.title;
@@ -785,6 +790,7 @@ export async function updateEngineeringWorkItem(workItemId: number, updates: {
   if (updates.taskTypeTag !== undefined) setData.taskTypeTag = updates.taskTypeTag;
   if (updates.blockerReason !== undefined) setData.blockerReason = updates.blockerReason;
   if (updates.approvalRequired !== undefined) setData.approvalRequired = updates.approvalRequired;
+  if (updates.plannedHours !== undefined) setData.plannedHours = updates.plannedHours;
 
   const [updated] = await db.update(workItems)
     .set(setData)

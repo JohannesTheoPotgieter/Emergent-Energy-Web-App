@@ -2913,15 +2913,24 @@ function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClick: (tas
   );
 }
 
-function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }: {
+function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange, onBulkStatusChange, onBulkPriorityChange }: {
   tasks: Task[];
   onCardClick: (task: Task) => void;
   onStatusChange: (id: number, status: string) => void;
   onPriorityChange: (id: number, priority: string) => void;
+  onBulkStatusChange?: (taskIds: number[], status: string) => void;
+  onBulkPriorityChange?: (taskIds: number[], priority: string) => void;
 }) {
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [visibleCount, setVisibleCount] = useState(100);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }, []);
+  const toggleAll = useCallback(() => {
+    setSelectedIds(prev => prev.size === tasks.length ? new Set() : new Set(tasks.map(t => t.id)));
+  }, [tasks]);
 
   const toggleSort = useCallback((col: string) => {
     if (sortCol === col) { setSortDir(d => d === "asc" ? "desc" : "asc"); }
@@ -2961,10 +2970,30 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
   return (
     <Card>
       <CardContent className="p-0">
+        {selectedIds.size > 0 && onBulkStatusChange && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-b border-blue-200" data-testid="list-bulk-bar">
+            <span className="text-xs font-semibold text-blue-800">{selectedIds.size} selected</span>
+            <div className="h-4 w-px bg-blue-200" />
+            <SearchableSelect value="" onValueChange={(s) => { onBulkStatusChange(Array.from(selectedIds), s); setSelectedIds(new Set()); }}
+              placeholder="Set status..." triggerClassName="h-7 text-[10px] min-w-[100px]"
+              options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))} />
+            {onBulkPriorityChange && (
+              <SearchableSelect value="" onValueChange={(p) => { onBulkPriorityChange(Array.from(selectedIds), p); setSelectedIds(new Set()); }}
+                placeholder="Set priority..." triggerClassName="h-7 text-[10px] min-w-[90px]"
+                options={PRIORITIES.map(p => ({ value: p, label: p }))} />
+            )}
+            <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={() => setSelectedIds(new Set())}>
+              <X className="h-3 w-3 mr-1" /> Clear
+            </Button>
+          </div>
+        )}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[860px]">
+          <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className="border-b bg-muted/30 text-[11px] text-muted-foreground">
+                <th className="w-8 p-2 text-center">
+                  <input type="checkbox" checked={selectedIds.size === tasks.length && tasks.length > 0} onChange={toggleAll} className="h-3 w-3" />
+                </th>
                 <SortHeader col="title">Title</SortHeader>
                 <SortHeader col="project">Project</SortHeader>
                 <SortHeader col="status">Status</SortHeader>
@@ -2983,9 +3012,12 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
                 return (
                   <tr
                     key={task.id}
-                    className="border-b hover:bg-muted/10 transition-colors"
+                    className={`border-b hover:bg-muted/10 transition-colors ${selectedIds.has(task.id) ? "bg-blue-50/50" : ""}`}
                     data-testid={`row-task-${task.id}`}
                   >
+                    <td className="w-8 p-2 text-center" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds.has(task.id)} onChange={() => toggleSelect(task.id)} className="h-3 w-3" />
+                    </td>
                     <td
                       className="p-2 pl-3 font-medium max-w-[250px] truncate cursor-pointer hover:text-blue-600"
                       onClick={() => onCardClick(task)}
@@ -4664,6 +4696,8 @@ export default function EngineeringTasksPage() {
           onCardClick={setSelectedTask}
           onStatusChange={handleStatusChange}
           onPriorityChange={handlePriorityChange}
+          onBulkStatusChange={(ids, status) => bulkStatusMutation.mutate({ taskIds: ids, status })}
+          onBulkPriorityChange={(ids, priority) => bulkPriorityMutation.mutate({ taskIds: ids, priority })}
         />
       )}
 

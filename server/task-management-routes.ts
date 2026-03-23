@@ -562,6 +562,37 @@ export function registerTaskManagementRoutes(app: Express) {
     }
   });
 
+  /** Delete a time entry and re-aggregate actualHours */
+  app.delete("/api/tasks/:taskId/time/:entryId", requireAuth, requirePermission("task_management", "edit"), async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const workItemId = parseInt(req.params.taskId as string);
+      const entryId = parseInt(req.params.entryId as string);
+
+      // Only allow deletion of own entries (or admin)
+      const [entry] = await db.select().from(taskTimeEntries).where(eq(taskTimeEntries.id, entryId));
+      if (!entry) return res.status(404).json({ error: "Time entry not found" });
+      if (entry.userId !== user.id && user.role !== "admin") {
+        return res.status(403).json({ error: "Can only delete your own time entries" });
+      }
+
+      await db.delete(taskTimeEntries).where(eq(taskTimeEntries.id, entryId));
+
+      // Re-aggregate actualHours
+      const [totals] = await db
+        .select({ total: sql<number>`COALESCE(SUM(${taskTimeEntries.durationMinutes}), 0)` })
+        .from(taskTimeEntries)
+        .where(eq(taskTimeEntries.workItemId, workItemId));
+      await db.update(workItems)
+        .set({ actualHours: Math.round((totals.total / 60) * 100) / 100 })
+        .where(eq(workItems.id, workItemId));
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ── Tags ───────────────────────────────────────────────────────────────────
 
   /** List all tags */
