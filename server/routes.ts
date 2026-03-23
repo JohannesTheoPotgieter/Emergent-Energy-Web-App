@@ -829,7 +829,7 @@ export async function registerRoutes(
       const engProgressPct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
 
       // Alerts
-      const overdueEngineeringCount = engBoardTasks.filter((t: any) => t.dueDate && t.dueDate < today && String(t.status).toUpperCase() !== "COMPLETE").length;
+      const overdueEngineeringCount = engBoardTasks.filter((t: any) => (t.endDate || t.dueDate) && (t.endDate || t.dueDate) < today && String(t.status).toUpperCase() !== "COMPLETE").length;
 
       res.json({
         schedule: { rag: scheduleRag, overdueTasks: overduePlanTasks.length, completionPct: Math.round(planCompletionPct * 10) / 10 },
