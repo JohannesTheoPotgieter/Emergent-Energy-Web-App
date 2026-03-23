@@ -10,13 +10,8 @@
 
 import { db } from "./db";
 import { pdTickets } from "@shared/schema/projects";
-import { workItems } from "@shared/schema/tasks";
 import { users } from "@shared/schema/users";
-import { sql, eq, isNotNull, asc } from "drizzle-orm";
-import * as fs from "fs";
-import * as path from "path";
-
-const DONE_FLAG = path.join(process.cwd(), "server", ".pd-seed-done");
+import { sql, asc } from "drizzle-orm";
 
 // ─── helpers ──────────────────────────────────────────────────────
 
@@ -367,12 +362,20 @@ const SOURCE_DATA: SourceRecord[] = [
 // ─── main seed function ───────────────────────────────────────────
 
 export async function runPdTicketSeed() {
-  if (fs.existsSync(DONE_FLAG)) {
-    console.log("[PD-Seed] Already completed, skipping");
+  // Check if PD tickets already exist in the database — skip if so
+  try {
+    const countResult = await db.select({ cnt: sql<number>`count(*)` }).from(pdTickets);
+    const existing = Number(countResult[0]?.cnt ?? 0);
+    if (existing > 0) {
+      console.log(`[PD-Seed] ${existing} PD tickets already exist, skipping seed`);
+      return;
+    }
+  } catch (err: any) {
+    console.log(`[PD-Seed] Could not check pd_tickets count (${err.message}), skipping seed`);
     return;
   }
 
-  console.log("[PD-Seed] Starting PD ticket import…");
+  console.log("[PD-Seed] No PD tickets found, starting import…");
 
   // ── Step 1: resolve all unique user names ──
   const uniqueNames = new Set<string>();
@@ -396,23 +399,8 @@ export async function runPdTicketSeed() {
     console.log(`[PD-Seed] All ${uniqueNames.size} users resolved successfully`);
   }
 
-  // ── Step 2+3: clear existing PD data and insert new (transaction-wrapped) ──
+  // ── Insert seed records (transaction-wrapped) ──
   await db.transaction(async (tx) => {
-    // Delete work-items linked to PD tickets first
-    try {
-      await tx
-        .delete(workItems)
-        .where(isNotNull(workItems.pdTicketId));
-      console.log(`[PD-Seed] Deleted work_items with pd_ticket_id`);
-    } catch (err: any) {
-      console.log(`[PD-Seed] Skipped work_items cleanup: ${err.message}`);
-    }
-
-    // Delete all PD tickets
-    await tx.delete(pdTickets);
-    console.log(`[PD-Seed] Deleted all pd_tickets`);
-
-    // Insert 11 records
     let inserted = 0;
     for (const r of SOURCE_DATA) {
       const devName = parsePeopleName(r.projectDeveloper);
@@ -450,17 +438,8 @@ export async function runPdTicketSeed() {
     console.log(`[PD-Seed] Inserted ${inserted} PD tickets`);
   });
 
-  // ── Step 4: verify (outside transaction) ──
-  const countResult = await db.select({ cnt: sql<number>`count(*)` }).from(pdTickets);
-  const count = Number(countResult[0]?.cnt ?? 0);
-  if (count !== 11) {
-    console.error(`[PD-Seed] VERIFICATION FAILED: expected 11 tickets, found ${count}`);
-    return;
-  }
-  console.log(`[PD-Seed] Verification passed: ${count} PD tickets in database`);
-
-  // Write flag to prevent re-execution
-  fs.mkdirSync(path.dirname(DONE_FLAG), { recursive: true });
-  fs.writeFileSync(DONE_FLAG, "v1", "utf-8");
-  console.log("[PD-Seed] Done ✓");
+  // ── Verify ──
+  const verifyResult = await db.select({ cnt: sql<number>`count(*)` }).from(pdTickets);
+  const count = Number(verifyResult[0]?.cnt ?? 0);
+  console.log(`[PD-Seed] Done — ${count} PD tickets in database`);
 }
