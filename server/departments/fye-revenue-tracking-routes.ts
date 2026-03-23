@@ -21,12 +21,12 @@
  * FYE DETAIL:
  *   Project Name               → project_info.projectName [read-only]
  *   Business Developer         → project_info.pd (project developer) [read-only]
- *   Province                   → pd_tickets.province / intake_requests.province [read-only]
+ *   Province                   → project_editable_fields.province (editable), pd_tickets fallback [admin-editable]
  *   Size (kWp)                 → project_info.sizeKwp [read-only]
- *   Project Type               → project_editable_fields.costProposalType [read-only]
- *   Funding Type               → project_editable_fields.fundingType [read-only]
- *   Start Date                 → project_info.constructionStartDate [read-only]
- *   PC Date                    → project_info.commissioningDate [read-only]
+ *   Project Type               → project_editable_fields.costProposalType [admin-editable]
+ *   Funding Type               → project_editable_fields.fundingType [admin-editable]
+ *   Start Date                 → project_plan: min(actualStart) where highLevelProgramme matches 'site establishment' [from plan]
+ *   PC Date                    → project_plan: max(actualEnd) where highLevelProgramme matches 'practical completion' [from plan]
  *   Status                     → project_info.phase [read-only]
  *   Budget Revenue             → project_revenue_summary.plannedRevenue [read-only import]
  *   Budget COS                 → project_revenue_summary.plannedExpenditure [read-only import]
@@ -64,6 +64,7 @@ import {
   pdTickets,
   fyeKpiCounters,
   fyeReportSnapshots,
+  projectPlan,
 } from "@shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
@@ -109,6 +110,34 @@ function safeDivide(num: number, den: number): number | null {
 function safeNum(v: any): number {
   const n = parseFloat(String(v));
   return isNaN(n) ? 0 : n;
+}
+
+/** Find the minimum actualStart date from plan tasks matching given patterns. */
+function findMinStartDate(plans: { highLevelProgramme: string | null; actualStart: string | null }[], patterns: string[]): string | null {
+  let minDate: string | null = null;
+  for (const task of plans) {
+    const desc = (task.highLevelProgramme || '').toLowerCase();
+    const matches = patterns.some(p => desc.includes(p.toLowerCase()));
+    if (matches && task.actualStart && /^\d{4}-\d{2}-\d{2}/.test(task.actualStart)) {
+      const dateStr = task.actualStart.substring(0, 10);
+      if (!minDate || dateStr < minDate) minDate = dateStr;
+    }
+  }
+  return minDate;
+}
+
+/** Find the maximum actualEnd date from plan tasks matching given patterns. */
+function findMaxEndDate(plans: { highLevelProgramme: string | null; actualEnd: string | null }[], patterns: string[]): string | null {
+  let maxDate: string | null = null;
+  for (const task of plans) {
+    const desc = (task.highLevelProgramme || '').toLowerCase();
+    const matches = patterns.some(p => desc.includes(p.toLowerCase()));
+    if (matches && task.actualEnd && /^\d{4}-\d{2}-\d{2}/.test(task.actualEnd)) {
+      const dateStr = task.actualEnd.substring(0, 10);
+      if (!maxDate || dateStr > maxDate) maxDate = dateStr;
+    }
+  }
+  return maxDate;
 }
 
 /** Load COS status overrides for isCosRealised enrichment.
@@ -551,20 +580,21 @@ router.get(
         }
       }
 
-      // Editable fields (for project type, funding type)
+      // Editable fields (for project type, funding type, province)
       let editableMap = new Map<string, any>();
       try {
         const editableFields = await db.select({
           projectName: projectEditableFields.projectName,
           costProposalType: projectEditableFields.costProposalType,
           fundingType: projectEditableFields.fundingType,
+          province: projectEditableFields.province,
         }).from(projectEditableFields);
         editableMap = new Map(editableFields.map((e) => [e.projectName, e]));
       } catch {
         // Table may have schema mismatch
       }
 
-      // PD tickets for province (use latest per project)
+      // PD tickets for province fallback (use latest per project)
       let provinceMap = new Map<string, string>();
       try {
         const tickets = await db.select({
@@ -580,26 +610,115 @@ router.get(
         // pd_tickets may not exist in older SQLite schemas
       }
 
+      // Load project plan tasks for Start Date (site establishment) and PC Date (practical completion)
+      let plansByProject = new Map<string, { highLevelProgramme: string | null; actualStart: string | null; actualEnd: string | null }[]>();
+      try {
+        const planTasks = await db.select({
+          projectName: projectPlan.projectName,
+          highLevelProgramme: projectPlan.highLevelProgramme,
+          actualStart: projectPlan.actualStart,
+          actualEnd: projectPlan.actualEnd,
+        }).from(projectPlan);
+        for (const t of planTasks) {
+          const pn = normalizeProjectName(t.projectName);
+          if (!plansByProject.has(pn)) plansByProject.set(pn, []);
+          plansByProject.get(pn)!.push(t);
+        }
+      } catch {
+        // project_plan may not exist
+      }
+
+      // Compute FYE-filtered actuals using COS-ratio allocation
+      // Load inflows and expenses for allocation
+      const [fyeInflows, fyeExpenses] = await Promise.all([
+        db.select({
+          projectName: programInflows.projectName,
+          milestoneAmount: programInflows.milestoneAmount,
+        }).from(programInflows),
+        db.select({
+          projectName: programExpense.projectName,
+          rowType: programExpense.rowType,
+          expenseActualTotal: programExpense.expenseActualTotal,
+          expenseInvoicedDate: programExpense.expenseInvoicedDate,
+        }).from(programExpense),
+      ]);
+
+      // Total revenue per project (all milestones, all time — denominator for COS-ratio)
+      const revenueByProject = new Map<string, number>();
+      for (const inf of fyeInflows) {
+        const amt = safeNum(inf.milestoneAmount);
+        if (amt === 0) continue;
+        const pn = normalizeProjectName(inf.projectName);
+        revenueByProject.set(pn, (revenueByProject.get(pn) || 0) + amt);
+      }
+
+      // Total COS per project (all item expenses, all time — denominator for COS-ratio)
+      const totalCosByProject = new Map<string, number>();
+      for (const exp of fyeExpenses) {
+        if (exp.rowType !== "item" && exp.rowType != null) continue;
+        const amt = safeNum(exp.expenseActualTotal);
+        if (amt === 0) continue;
+        const pn = normalizeProjectName(exp.projectName);
+        totalCosByProject.set(pn, (totalCosByProject.get(pn) || 0) + amt);
+      }
+
+      // Actual Revenue & Actual Expense per project — only invoiced items within FYE window
+      const actualRevByProject = new Map<string, number>();
+      const actualExpByProject = new Map<string, number>();
+      for (const exp of fyeExpenses) {
+        if (exp.rowType !== "item" && exp.rowType != null) continue;
+        const amt = safeNum(exp.expenseActualTotal);
+        if (amt === 0) continue;
+        if (!exp.expenseInvoicedDate) continue;
+        const mk = extractMonthKey(exp.expenseInvoicedDate);
+        if (!mk || mk < fyeStart || mk > fyeEnd) continue;
+
+        const pn = normalizeProjectName(exp.projectName);
+
+        // Actual expense: direct sum of invoiced COS in FYE window
+        actualExpByProject.set(pn, (actualExpByProject.get(pn) || 0) + amt);
+
+        // Actual revenue: COS-ratio allocation
+        const projectTotalCOS = totalCosByProject.get(pn) || 0;
+        const projectTotalRevenue = revenueByProject.get(pn) || 0;
+        const revenueAmount = projectTotalCOS > 0 ? (amt / projectTotalCOS) * projectTotalRevenue : 0;
+        actualRevByProject.set(pn, (actualRevByProject.get(pn) || 0) + revenueAmount);
+      }
+
       const projectRows = activeProjects.map((p) => {
         const summary = revSummaryMap.get(p.projectName) as any;
         const editable = editableMap.get(p.projectName) as any;
+        const pn = normalizeProjectName(p.projectName);
+        const plans = plansByProject.get(pn) || [];
+
+        // Budget: from revenue summary (regardless of FYE/status)
         const budgetRev = safeNum(summary?.plannedRevenue);
         const budgetCos = safeNum(summary?.plannedExpenditure);
-        const actualRev = safeNum(summary?.actualRevenue);
-        const actualExp = safeNum(summary?.actualExpenditure);
+
+        // Actual: only invoiced data within selected FYE window
+        const actualRev = actualRevByProject.get(pn) || 0;
+        const actualExp = actualExpByProject.get(pn) || 0;
         const budgetGp = budgetRev - budgetCos;
         const actualGp = actualRev - actualExp;
+
+        // Start Date from plan: site establishment task's actualStart
+        const startDateFromPlan = findMinStartDate(plans, ['site establishment']);
+        // PC Date from plan: practical completion task's actualEnd
+        const pcDateFromPlan = findMaxEndDate(plans, ['practical completion']);
+
+        // Province: editable field first, then pd_tickets fallback
+        const province = editable?.province || provinceMap.get(p.projectName) || null;
 
         return {
           projectId: p.id,
           projectName: p.projectName,
           businessDeveloper: p.pd || null,
-          province: provinceMap.get(p.projectName) || null,
+          province,
           sizeKwp: safeNum(p.sizeKwp),
           projectType: editable?.costProposalType || null,
           fundingType: editable?.fundingType || null,
-          startDate: p.constructionStartDate || null,
-          pcDate: p.commissioningDate || null,
+          startDate: startDateFromPlan || p.constructionStartDate || null,
+          pcDate: pcDateFromPlan || p.commissioningDate || null,
           status: p.phase || null,
           budgetRevenue: budgetRev,
           budgetCos: budgetCos,
@@ -640,6 +759,58 @@ router.get(
     } catch (error: any) {
       console.error("FYE detail error:", error);
       res.status(500).json({ error: "Failed to fetch FYE detail", message: error?.message });
+    }
+  }
+);
+
+// ─── PUT /api/fye-revenue-tracking/detail/inline-edit ───
+// Allows admin to inline-edit Province, Project Type, and Funding Type
+router.put(
+  "/api/fye-revenue-tracking/detail/inline-edit",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const schema = z.object({
+        projectName: z.string().min(1),
+        field: z.enum(["province", "projectType", "fundingType"]),
+        value: z.string().nullable(),
+      });
+      const { projectName, field, value } = schema.parse(req.body);
+
+      // Map frontend field names to DB column names
+      const fieldMap: Record<string, string> = {
+        province: "province",
+        projectType: "costProposalType",
+        fundingType: "fundingType",
+      };
+      const dbField = fieldMap[field];
+
+      // Upsert into project_editable_fields
+      const existing = await db
+        .select({ id: projectEditableFields.id })
+        .from(projectEditableFields)
+        .where(eq(projectEditableFields.projectName, projectName));
+
+      if (existing.length > 0) {
+        await db
+          .update(projectEditableFields)
+          .set({ [dbField]: value, updatedAt: new Date() })
+          .where(eq(projectEditableFields.id, existing[0].id));
+      } else {
+        await db.insert(projectEditableFields).values({
+          projectName,
+          [dbField]: value,
+        } as any);
+      }
+
+      res.json({ ok: true });
+    } catch (error: any) {
+      if (error?.name === "ZodError") {
+        return res.status(400).json({ error: "Invalid input", details: error.errors });
+      }
+      console.error("FYE inline edit error:", error);
+      res.status(500).json({ error: "Failed to update field", message: error?.message });
     }
   }
 );

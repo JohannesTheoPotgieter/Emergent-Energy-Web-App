@@ -747,6 +747,7 @@ async function runAdditiveSchemaAlignments() {
   await safeExec("project_id FK additions", `
     ALTER TABLE milestone_task_links ADD COLUMN IF NOT EXISTS project_id INTEGER;
     ALTER TABLE project_editable_fields ADD COLUMN IF NOT EXISTS project_id INTEGER;
+    ALTER TABLE project_editable_fields ADD COLUMN IF NOT EXISTS province TEXT;
     ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS linked_project_id INTEGER;
     ALTER TABLE priority_links ADD COLUMN IF NOT EXISTS project_id INTEGER;
     ALTER TABLE expense_task_links ADD COLUMN IF NOT EXISTS project_id INTEGER;
