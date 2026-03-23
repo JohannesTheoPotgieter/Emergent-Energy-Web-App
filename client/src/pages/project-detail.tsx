@@ -1038,6 +1038,24 @@ export default function ProjectDetailPage() {
     staleTime: 30_000,
   });
 
+  // Revenue milestones (from revenue-tab endpoint — provides milestone-level detail not in V2)
+  const revTabMilestones: any[] = revenueTrustData?.milestones || [];
+
+  const nextMilestone = useMemo<NextMilestoneSummary | null>(() => {
+    const milestones = revTabMilestones;
+    const unpaid = milestones
+      .filter((m: any) => m.status !== 'inBank' && m.date)
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    if (unpaid.length > 0) {
+      const m = unpaid[0];
+      return { name: m.milestoneName || "Revenue Milestone", date: m.date, allPaid: false };
+    }
+    if (milestones.length > 0) {
+      return { name: "All Paid", date: null, allPaid: true };
+    }
+    return null;
+  }, [revTabMilestones]);
+
   if (!projectName) {
     return (
       <div className="space-y-6">
@@ -1132,24 +1150,6 @@ export default function ProjectDetailPage() {
   const qualityApprovedItems = healthSummary?.quality.approvedItems ?? qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
   const qualityProgressPct = healthSummary?.quality.progressPct ?? (qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0);
   const qualityRag: "green" | "amber" | "red" = (healthSummary?.quality.rag as any) ?? computeQualityRag(!!qualitySummaryLegacy?.hasChecklist, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
-
-  // Revenue milestones (from revenue-tab endpoint — provides milestone-level detail not in V2)
-  const revTabMilestones: any[] = revenueTrustData?.milestones || [];
-
-  const nextMilestone = useMemo<NextMilestoneSummary | null>(() => {
-    const milestones = revTabMilestones;
-    const unpaid = milestones
-      .filter((m: any) => m.status !== 'inBank' && m.date)
-      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    if (unpaid.length > 0) {
-      const m = unpaid[0];
-      return { name: m.milestoneName || "Revenue Milestone", date: m.date, allPaid: false };
-    }
-    if (milestones.length > 0) {
-      return { name: "All Paid", date: null, allPaid: true };
-    }
-    return null;
-  }, [revTabMilestones]);
 
   // Revenue realisation
   const totalPaidInflows = healthSummary?.revenue.totalPaidInflows ?? v2Detail?.financeSummary?.receivedRevenue ?? revTabMilestones
