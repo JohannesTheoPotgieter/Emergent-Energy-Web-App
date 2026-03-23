@@ -550,6 +550,15 @@ export function registerEngineeringRoutes(app: Express) {
       if (!TASK_STATUSES.includes(data.status)) {
         data.status = "TO DO";
       }
+
+      // Resolve projectName to projectId if projectId is not provided
+      let resolvedProjectId = data.projectId || null;
+      if (!resolvedProjectId && data.projectName) {
+        const [project] = await db.select({ id: projectInfo.id }).from(projectInfo)
+          .where(eq(projectInfo.projectName, data.projectName)).limit(1);
+        if (project) resolvedProjectId = project.id;
+      }
+
       if (data.assignees?.length > 0) {
         const { resolveNameToUserId } = await import("./user-resolver");
         const resolvedIds: number[] = [];
@@ -564,7 +573,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       const task = await createEngineeringWorkItem({
-        projectId: data.projectId || null,
+        projectId: resolvedProjectId,
         title: data.title,
         description: data.description || null,
         status: data.status || "TO DO",
