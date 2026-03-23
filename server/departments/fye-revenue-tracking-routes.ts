@@ -68,7 +68,7 @@ import {
 } from "@shared/schema";
 import { eq, and, sql, desc, isNull } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { extractMonthKey, normalizeProjectName } from "../lib/calculations/financeUtils";
+import { extractMonthKey, normalizeProjectName, isCosRealised, currentMonthKey } from "../lib/calculations/financeUtils";
 
 const router = Router();
 
@@ -593,6 +593,10 @@ router.get(
           expenseInvoicedDate: programExpense.expenseInvoicedDate,
           forecastPaymentDate: programExpense.forecastPaymentDate,
           computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
+          expenseInvoiceNumber: programExpense.expenseInvoiceNumber,
+          expensePoNumber: programExpense.expensePoNumber,
+          invoiceDateConfirmed: programExpense.invoiceDateConfirmed,
+          invoiceDateFontColor: programExpense.invoiceDateFontColor,
         }).from(programExpense).where(isNull(programExpense.effectiveTo)),
       ]);
 
@@ -646,7 +650,10 @@ router.get(
         }
       }
 
-      // ── Actual Revenue & Actual Expense per project (invoiced within FYE window) ──
+      // ── Actual Revenue & Actual Expense per project (realised COS within FYE window) ──
+      // COS is "realised" when: invoice number + invoice date + invoice date confirmed (black font)
+      // Revenue is allocated proportionally using COS-ratio: (realisedCOS / totalCOS) × totalRevenue
+      const curMk = currentMonthKey();
       const actualRevByProject = new Map<string, number>();
       const actualExpByProject = new Map<string, number>();
       for (const exp of allExpenses) {
@@ -656,10 +663,15 @@ router.get(
         if (!exp.expenseInvoicedDate) continue;
         const mk = extractMonthKey(exp.expenseInvoicedDate);
         if (!mk || mk < fyeStart || mk > effectiveEnd) continue;
+        // Only future months are excluded; realised check handles confirmation
+        if (mk > curMk) continue;
+
+        // Check if this expense line is realised (invoice confirmed)
+        if (!isCosRealised(exp)) continue;
 
         const pn = normalizeProjectName(exp.projectName);
 
-        // Actual expense: direct sum of invoiced COS in FYE window
+        // Actual expense: direct sum of realised COS in FYE window
         actualExpByProject.set(pn, (actualExpByProject.get(pn) || 0) + amt);
 
         // Actual revenue: COS-ratio allocation
