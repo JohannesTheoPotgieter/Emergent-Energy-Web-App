@@ -5,6 +5,7 @@ import { runMsAssignmentCleanup } from "./backfills/ms-assignment-cleanup-backfi
 import { runWorkItemsBackfill } from "./backfills/work-items-backfill";
 import { runAssigneeUserIdsBackfill } from "./backfills/assignee-user-ids-backfill";
 import { runIntegrityGuard } from "./backfills/integrity-guard";
+import { runPdTicketEntitiesBackfill } from "./backfills/pd-ticket-entities-backfill";
 
 export async function runStartupBackfills(options: {
   startupBackfillEnabled: boolean;
@@ -26,5 +27,8 @@ export async function runStartupBackfills(options: {
   );
   await runIntegrityGuard(log).catch((err: any) =>
     log(`[Backfill] integrity guard error: ${err?.message || err}`, "Startup:Backfill"),
+  );
+  await runPdTicketEntitiesBackfill(log).catch((err: any) =>
+    log(`[Backfill] PD ticket entities error: ${err?.message || err}`, "Startup:Backfill"),
   );
 }
