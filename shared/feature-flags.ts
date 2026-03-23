@@ -173,7 +173,7 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "standup_system",
     label: "Standup system",
     description: "Controls the bi-daily standup system with async submissions, team views, and analytics.",
-    defaultValue: false,
+    defaultValue: true,
   },
 ];
 

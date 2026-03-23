@@ -903,6 +903,7 @@ async function ensureSqliteSchema() {
         cadence_days INTEGER NOT NULL DEFAULT 2,
         anchor_date TEXT NOT NULL,
         deadline_time TEXT DEFAULT '10:00',
+        deadline_timezone TEXT NOT NULL DEFAULT 'Africa/Johannesburg',
         is_active INTEGER NOT NULL DEFAULT 1,
         created_by INTEGER,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -935,6 +936,7 @@ async function ensureSqliteSchema() {
       )
     `);
     await db.run(sql`CREATE INDEX IF NOT EXISTS idx_standup_entries_schedule_date ON standup_entries(schedule_id, standup_date)`);
+    await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_standup_entries_unique_schedule_user_date ON standup_entries(schedule_id, user_id, standup_date)`);
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS task_tags (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
