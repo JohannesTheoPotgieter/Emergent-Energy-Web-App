@@ -1188,6 +1188,33 @@ export const permissionAuditLog = pgTable("permission_audit_log", {
 });
 export type PermissionAuditLogEntry = typeof permissionAuditLog.$inferSelect;
 
+// ===================== PD VISIBILITY CONFIG =====================
+
+/**
+ * Configurable PD ticket visibility rules.
+ * – Role-level defaults: `role` is set, `userId` is null.
+ * – Per-user overrides: `userId` is set (takes precedence over role config).
+ *
+ * `ticketTypes`: which ticket categories the role/user can see.
+ *   - "pd"          — non-engineering PD tickets (e.g. Cost Proposal)
+ *   - "engineering"  — engineering request types (Feasibility Study, Design Review, etc.)
+ *
+ * `scope`: whether they see all matching tickets or only their own.
+ *   - "all" — see every ticket matching the type filter
+ *   - "own" — only tickets they created or are assigned to
+ */
+export const pdVisibilityConfig = pgTable("pd_visibility_config", {
+  id: serial("id").primaryKey(),
+  role: text("role"),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  ticketTypes: text("ticket_types").array().notNull().default(["pd", "engineering"]),
+  scope: text("scope").notNull().default("all"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  updatedBy: integer("updated_by").references(() => users.id),
+});
+export type PdVisibilityConfig = typeof pdVisibilityConfig.$inferSelect;
+export type InsertPdVisibilityConfig = typeof pdVisibilityConfig.$inferInsert;
+
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
   { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },

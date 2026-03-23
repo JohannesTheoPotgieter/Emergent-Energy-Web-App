@@ -7163,3 +7163,14 @@ DO $$ BEGIN
     ALTER TABLE "monthly_report_snapshots" ADD CONSTRAINT "monthly_report_snapshots_type_month_unique" UNIQUE (report_type, report_month);
   END IF;
 END $$;
+
+-- PD Visibility Config table
+CREATE TABLE IF NOT EXISTS "pd_visibility_config" (
+  "id" SERIAL PRIMARY KEY,
+  "role" TEXT,
+  "user_id" INTEGER REFERENCES "users"("id") ON DELETE CASCADE,
+  "ticket_types" TEXT[] NOT NULL DEFAULT ARRAY['pd','engineering'],
+  "scope" TEXT NOT NULL DEFAULT 'all',
+  "updated_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+  "updated_by" INTEGER REFERENCES "users"("id")
+);

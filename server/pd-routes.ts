@@ -1,8 +1,8 @@
 // @ts-nocheck
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
-import { clients, pdTickets, workItems, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory } from "@shared/schema";
-import { eq, ilike, sql, and, desc, asc, or, count } from "drizzle-orm";
+import { clients, pdTickets, workItems, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig } from "@shared/schema";
+import { eq, ilike, sql, and, desc, asc, or, count, isNull } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
 
@@ -16,17 +16,43 @@ function requireAuth(req: Request, res: Response, next: () => void) {
 import { isPdRole, canCreatePdTicket, canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 
 /**
- * Filter an array of PD ticket rows by the requesting user's role.
- * Accepts any object with a `.createdBy` and `.projectDeveloperUserId` at the
- * top level **or** nested under a `.ticket` property.
+ * Resolve the effective PD visibility config for a user.
+ * Priority: user-level override > role-level config > hardcoded defaults.
+ */
+async function getEffectiveVisibilityConfig(userId: number | undefined, role: string) {
+  // 1. Check for a user-level override
+  if (userId) {
+    const [userConfig] = await db.select().from(pdVisibilityConfig)
+      .where(eq(pdVisibilityConfig.userId, userId));
+    if (userConfig) return userConfig;
+  }
+
+  // 2. Check for a role-level config
+  if (role) {
+    const [roleConfig] = await db.select().from(pdVisibilityConfig)
+      .where(and(eq(pdVisibilityConfig.role, role), isNull(pdVisibilityConfig.userId)));
+    if (roleConfig) return roleConfig;
+  }
+
+  // 3. Return null — caller uses hardcoded defaults
+  return null;
+}
+
+const engineeringRequestTypesSet = new Set<string>(ENGINEERING_REQUEST_TYPES as readonly string[]);
+
+/**
+ * Filter an array of PD ticket rows by the requesting user's role and
+ * the configurable pdVisibilityConfig settings.
  *
- * For roles listed in PD_VIEW_ALL_ROLES the full list is returned unchanged.
- * PROJECT_DEVELOPER users only see tickets they created or are assigned to.
- * Engineers see tickets with engineering request types or where they are the designer.
- * All other roles receive the full list (guarded by route-level auth).
+ * When a visibility config exists (per-user or per-role), it controls:
+ *   - ticketTypes: ["pd", "engineering"] — which request type categories to show
+ *   - scope: "all" | "own" — whether to show all tickets or only the user's own
  *
- * `engineerAssignedTicketIds` is an optional pre-fetched set of ticket IDs
- * the engineer user owns via work-items (avoids an extra query when not needed).
+ * When no config exists, the original hardcoded logic applies:
+ *   - PD_VIEW_ALL_ROLES see everything
+ *   - PROJECT_DEVELOPER sees own tickets only
+ *   - ENGINEER sees engineering-type tickets + assigned tickets
+ *   - Other roles see everything
  */
 async function filterTicketsByRole<T extends Record<string, any>>(
   tickets: T[],
@@ -34,10 +60,40 @@ async function filterTicketsByRole<T extends Record<string, any>>(
   role: string,
   engineerAssignedTicketIds?: Set<number>,
 ): Promise<T[]> {
-  if (canViewAllTickets(role)) return tickets;
-
   // Helper to read a field from either the top-level object or a nested `.ticket`
   const field = (row: T, key: string) => (row as any).ticket?.[key] ?? (row as any)[key];
+
+  // Try to load a visibility config for this user/role
+  const config = await getEffectiveVisibilityConfig(user?.id, role);
+
+  if (config) {
+    // Configurable path: apply ticketTypes + scope filters
+    const allowedTypes = new Set(config.ticketTypes || ["pd", "engineering"]);
+    const scopeAll = config.scope === "all";
+
+    return tickets.filter(r => {
+      const reqType = field(r, "requestType") || "";
+      const isEngineering = engineeringRequestTypesSet.has(reqType);
+      const ticketCategory = isEngineering ? "engineering" : "pd";
+
+      // Ticket type filter
+      if (!allowedTypes.has(ticketCategory)) return false;
+
+      // Scope filter
+      if (!scopeAll) {
+        const isOwn =
+          field(r, "createdBy") === user?.id ||
+          field(r, "projectDeveloperUserId") === user?.id ||
+          field(r, "designerUserId") === user?.id;
+        if (!isOwn) return false;
+      }
+
+      return true;
+    });
+  }
+
+  // --- Fallback: original hardcoded logic when no config exists ---
+  if (canViewAllTickets(role)) return tickets;
 
   if (role === "PROJECT_DEVELOPER") {
     return tickets.filter(
@@ -46,7 +102,6 @@ async function filterTicketsByRole<T extends Record<string, any>>(
   }
 
   if (role === "ENGINEER") {
-    const engineeringRequestTypes = new Set<string>(ENGINEERING_REQUEST_TYPES as readonly string[]);
     let assignedIds = engineerAssignedTicketIds;
     if (!assignedIds) {
       const rows = await db
@@ -65,7 +120,7 @@ async function filterTicketsByRole<T extends Record<string, any>>(
       r =>
         assignedIds!.has(field(r, "id")) ||
         field(r, "designerUserId") === user?.id ||
-        engineeringRequestTypes.has(field(r, "requestType")),
+        engineeringRequestTypesSet.has(field(r, "requestType")),
     );
   }
 
