@@ -327,7 +327,7 @@ export function registerLifecycleRoutes(app: Express) {
       const allEngTasks = await db.execute(sql`
         SELECT pi.project_name AS "projectName", wi.status, wi.end_date AS "dueDate", wi.priority, NULL AS assignees
         FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id
-        WHERE wi.deleted_at IS NULL
+        WHERE wi.deleted_at IS NULL AND wi.workstream = 'ENG'
       `).then((r: any) => r.rows || r);
 
       const rawPlanTasks = (await getAllPMWorkItemsAsProjectPlan()).map((wi: any) => ({
