@@ -23,9 +23,9 @@ export function serveStatic(app: Express) {
   }));
 
   app.use("/{*path}", (_req, res) => {
-    // Never serve HTML for API routes — return proper JSON 404 instead
+    // Never serve HTML for API routes — return 404 JSON instead
     if (_req.originalUrl.startsWith("/api/")) {
-      return res.status(404).json({ error: "Not found", message: `No API route matches ${_req.method} ${_req.originalUrl}` });
+      return res.status(404).json({ error: "Not found" });
     }
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("Pragma", "no-cache");
