@@ -54,7 +54,6 @@ export async function seedRoleCredentials() {
       await db.insert(roleCredentials).values({
         role,
         passwordHash,
-        lastPasswordPlain: password,
         failedAttempts: 0,
         updatedBy: "system",
       });
@@ -151,7 +150,7 @@ export function registerRoleAuthRoutes(app: Express) {
     }
   });
 
-  app.post("/api/role-auth/seed", async (_req: Request, res: Response) => {
+  app.post("/api/role-auth/seed", requireCompanyRole("COO_ADMIN" as CompanyRole), async (_req: Request, res: Response) => {
     try {
       const existing = await db.select().from(roleCredentials);
       if (existing.length > 0) {
@@ -186,7 +185,7 @@ export function registerRoleAuthRoutes(app: Express) {
     }
   });
 
-  app.get("/api/role-auth/roles", (_req: Request, res: Response) => {
+  app.get("/api/role-auth/roles", requireCompanyRole(...COMPANY_ROLES as unknown as CompanyRole[]), (_req: Request, res: Response) => {
     const roles = COMPANY_ROLES.map((role) => ({
       role,
       label: COMPANY_ROLE_LABELS[role],
@@ -226,7 +225,7 @@ export function registerRoleAuthRoutes(app: Express) {
       const passwordHash = await bcrypt.hash(newPassword, 10);
       await db.update(roleCredentials).set({
         passwordHash,
-        lastPasswordPlain: newPassword,
+        lastPasswordPlain: null,
         failedAttempts: 0,
         lockedUntil: null,
         updatedBy: currentRole,
@@ -263,7 +262,6 @@ export function registerRoleAuthRoutes(app: Express) {
 
       const creds = await db.select({
         role: roleCredentials.role,
-        lastPasswordPlain: roleCredentials.lastPasswordPlain,
         updatedBy: roleCredentials.updatedBy,
         updatedAt: roleCredentials.updatedAt,
       }).from(roleCredentials);
