@@ -8,8 +8,6 @@ import { monthlyReportSnapshots, users } from "@shared/schema";
 import { eq, and, desc } from "drizzle-orm";
 import { requirePermission } from "../permission-middleware";
 import { generateEngineeringReportData } from "../services/engineering-monthly-report-service";
-import { generateReportPdf } from "../services/monthly-report-pdf-service";
-import { generateReportExcel } from "../services/monthly-report-excel-service";
 import { requireAuth, validateMonth, computeKpiDeltas } from "./monthly-report-shared";
 
 const REPORT_TYPE = "engineering";
@@ -229,6 +227,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
 
+      const { generateReportPdf } = await import("../services/monthly-report-pdf-service");
       const pdfBuffer = await generateReportPdf(REPORT_TYPE, snapshot.data as any, snapshot.reportMonth);
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="Engineering_Monthly_Report_${snapshot.reportMonth}.pdf"`);
@@ -246,6 +245,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
 
+      const { generateReportExcel } = await import("../services/monthly-report-excel-service");
       await generateReportExcel(REPORT_TYPE, snapshot.data as any, snapshot.reportMonth, res);
     } catch (err: any) {
       console.error("[Engineering Monthly Report] Excel export error:", err.message);
