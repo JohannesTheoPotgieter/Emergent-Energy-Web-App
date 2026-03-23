@@ -506,10 +506,6 @@ function StandupTaskDrawer({
   const [commentText, setCommentText] = useState("");
   const [activeTab, setActiveTab] = useState<"updates" | "activity">("updates");
   const [activityLimit, setActivityLimit] = useState(20);
-  const visibleActivity = useMemo(
-    () => [...activity].reverse().slice(0, activityLimit),
-    [activity, activityLimit]
-  );
 
   const { data: comments = [] } = useQuery<TaskComment[]>({
     queryKey: ["standup-task-comments", task.id],
@@ -520,6 +516,11 @@ function StandupTaskDrawer({
     queryKey: ["standup-task-activity", task.id],
     queryFn: () => engFetch(`/api/eng/tasks/${task.id}/activity`),
   });
+
+  const visibleActivity = useMemo(
+    () => [...activity].reverse().slice(0, activityLimit),
+    [activity, activityLimit]
+  );
 
   const { data: teamMembers = [] } = useQuery<{ id: number; name: string }[]>({
     queryKey: ["team-members"],
