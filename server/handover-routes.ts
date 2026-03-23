@@ -11,8 +11,7 @@ import { storage } from "./storage";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
 import { requirePermission } from "./permission-middleware";
 import { notifyHandoverSubmitted, notifyHandoverAccepted, notifyHandoverRejected } from "./services/notification-service";
-
-const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+import { PM_REVIEW_ROLES, canReviewHandover } from "@shared/roles/pd-roles";
 const PD_PM_HANDOVER_GATE_ID = "PD_PM_HANDOVER";
 
 /** @deprecated Used only by legacy gate management routes. Migrate to Drizzle query builder. */
