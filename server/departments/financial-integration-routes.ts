@@ -257,9 +257,76 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
       .where(eq(financialEditRequests.id, requestId))
       .returning();
 
-    // Notifications feature removed - approval notification is now a no-op
+    // Apply the overrides now that they've been approved
+    if (existing.editType === "expenditure_override") {
+      try {
+        const payload = typeof existing.editPayload === "string" ? JSON.parse(existing.editPayload) : existing.editPayload;
+        const overrides = payload.overrides;
+        if (Array.isArray(overrides)) {
+          const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: existing.requestedByUserId }));
+          await storage.upsertManyExpenditureOverrides(overridesWithUser);
 
-    res.json({ message: "Edit request approved", request: updated });
+          const fieldToColumnMap: Record<string, string> = {
+            expenseInvoicedDate: "expenseInvoicedDate",
+            expensePaymentDate: "expensePaymentDate",
+            expensePoNumber: "expensePoNumber",
+            expenseInvoiceNumber: "expenseInvoiceNumber",
+            expenseLineItem: "expenseLineItem",
+            expenseActualTotal: "expenseActualTotal",
+            budgetTotal: "budgetTotal",
+            forecastPaymentDate: "forecastPaymentDate",
+            expenseQty: "expenseQty",
+            expenseRateUnit: "expenseRateUnit",
+            budgetQty: "budgetQty",
+            budgetRateUnit: "budgetRateUnit",
+            invoiceDateFontColor: "invoiceDateFontColor",
+            paymentDateFontColor: "paymentDateFontColor",
+            supplierName: "supplierName",
+          };
+
+          const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+          for (const pn of projectNames) {
+            const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+            const expenses = await storage.getProgramExpensesByProject(pn as string);
+            const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
+
+            const rowGroups = new Map<number, Record<string, any>>();
+            for (const ov of projectOverrides) {
+              const colName = fieldToColumnMap[ov.fieldName];
+              if (!colName) continue;
+              const expense = rowMap.get(ov.rowNumber);
+              if (!expense) continue;
+              if (!rowGroups.has(expense.id)) rowGroups.set(expense.id, {});
+              const fields = rowGroups.get(expense.id)!;
+              const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+              fields[colName] = effectiveValue;
+              if (ov.fieldName === 'expenseInvoicedDate' && !effectiveValue) {
+                fields.invoiceDateConfirmed = false;
+              }
+              if (ov.fieldName === 'expensePaymentDate' && !effectiveValue) {
+                fields.paymentDateConfirmed = false;
+              }
+            }
+
+            for (const [expenseId, fields] of rowGroups.entries()) {
+              if (Object.keys(fields).length > 0) {
+                await storage.updateProgramExpenseFields(expenseId, fields);
+              }
+            }
+          }
+          console.log(`[fin-edit-request] Applied ${overrides.length} expenditure override(s) after approval of request #${requestId}`);
+        }
+      } catch (applyErr: any) {
+        console.error(`[fin-edit-request] Failed to apply overrides for request #${requestId}:`, applyErr.message);
+        // Mark as approved but flag the application failure
+        await db.update(financialEditRequests)
+          .set({ reviewComment: `${comment || ""} [WARNING: Overrides approved but failed to apply: ${applyErr.message}]`.trim() })
+          .where(eq(financialEditRequests.id, requestId));
+        return res.status(500).json({ error: "Approved but failed to apply overrides", message: applyErr.message });
+      }
+    }
+
+    res.json({ message: "Edit request approved and applied", request: updated });
   } catch (error: any) {
     console.error("[fin-edit-request] Approve error:", error);
     res.status(500).json({ error: "Failed to approve request" });
