@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{DOCUMENT_TITLE}} | Emergent Energy</title>
+  <style>
+    /* ============================================================
+       EMERGENT ENERGY — BRANDED DOCUMENT TEMPLATE
+       Version 1.0 | March 2026
+
+       Usage: Copy this file for new training documents.
+       Replace {{PLACEHOLDERS}} with your content.
+       ============================================================ */
+
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Barlow:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    :root {
+      --ee-green:        #16A34A;
+      --ee-green-dark:   #15803D;
+      --ee-green-light:  #22C55E;
+      --ee-green-bg:     #F0FDF4;
+      --ee-navy:         #1E293B;
+      --ee-slate:        #64748B;
+      --ee-light-gray:   #F8FAFC;
+      --ee-border:       #E2E8F0;
+      --ee-white:        #FFFFFF;
+      --ee-red:          #DC2626;
+      --ee-amber:        #D97706;
+      --ee-blue:         #2563EB;
+      --ee-violet:       #7C3AED;
+      --font-body:       'Inter', -apple-system, sans-serif;
+      --font-heading:    'Barlow', -apple-system, sans-serif;
+      --font-mono:       'JetBrains Mono', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: var(--font-body);
+      color: var(--ee-navy);
+      line-height: 1.6;
+      background: var(--ee-white);
+      font-size: 14px;
+    }
+
+    /* ---- PAGE LAYOUT ---- */
+    .page {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px;
+    }
+
+    @media print {
+      .page { padding: 20px; max-width: 100%; }
+      .page-break { page-break-before: always; }
+      .no-print { display: none !important; }
+    }
+
+    /* ---- HEADER ---- */
+    .doc-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 20px;
+      border-bottom: 3px solid var(--ee-green);
+      margin-bottom: 32px;
+    }
+    .doc-header img {
+      height: 40px;
+      object-fit: contain;
+    }
+    .doc-header .doc-meta {
+      text-align: right;
+      font-size: 11px;
+      color: var(--ee-slate);
+    }
+    .doc-header .doc-meta strong {
+      color: var(--ee-navy);
+      display: block;
+      font-size: 12px;
+    }
+
+    /* ---- COVER PAGE ---- */
+    .cover {
+      text-align: center;
+      padding: 80px 20px;
+      border-bottom: 3px solid var(--ee-green);
+      margin-bottom: 40px;
+    }
+    .cover img {
+      height: 60px;
+      margin-bottom: 32px;
+    }
+    .cover h1 {
+      font-family: var(--font-heading);
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--ee-navy);
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    .cover .subtitle {
+      font-size: 18px;
+      color: var(--ee-green);
+      font-weight: 500;
+      margin-bottom: 24px;
+    }
+    .cover .doc-info {
+      font-size: 12px;
+      color: var(--ee-slate);
+      line-height: 2;
+    }
+    .cover .doc-info strong {
+      color: var(--ee-navy);
+    }
+
+    /* ---- TABLE OF CONTENTS ---- */
+    .toc {
+      background: var(--ee-light-gray);
+      border: 1px solid var(--ee-border);
+      border-radius: 12px;
+      padding: 24px 28px;
+      margin-bottom: 32px;
+    }
+    .toc h2 {
+      font-family: var(--font-heading);
+      font-size: 16px;
+      color: var(--ee-green);
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .toc ol {
+      padding-left: 20px;
+      font-size: 13px;
+    }
+    .toc li {
+      padding: 4px 0;
+      color: var(--ee-navy);
+    }
+    .toc li a {
+      color: var(--ee-navy);
+      text-decoration: none;
+    }
+    .toc li a:hover {
+      color: var(--ee-green);
+      text-decoration: underline;
+    }
+
+    /* ---- HEADINGS ---- */
+    h1, h2, h3, h4 {
+      font-family: var(--font-heading);
+      letter-spacing: -0.3px;
+    }
+    h1 {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--ee-navy);
+      margin: 40px 0 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--ee-green);
+    }
+    h2 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--ee-navy);
+      margin: 32px 0 12px;
+    }
+    h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--ee-green-dark);
+      margin: 24px 0 8px;
+    }
+    h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--ee-slate);
+      margin: 16px 0 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* ---- BODY TEXT ---- */
+    p {
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    ul, ol {
+      margin-bottom: 12px;
+      padding-left: 24px;
+    }
+    li {
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+    strong { font-weight: 600; }
+    code {
+      font-family: var(--font-mono);
+      background: var(--ee-light-gray);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 12px;
+      border: 1px solid var(--ee-border);
+    }
+
+    /* ---- CALLOUT BOXES ---- */
+    .callout {
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 16px 0;
+      font-size: 13px;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .callout .icon {
+      font-size: 18px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .callout-info {
+      background: #EFF6FF;
+      border: 1px solid #BFDBFE;
+      color: #1E40AF;
+    }
+    .callout-warning {
+      background: #FFFBEB;
+      border: 1px solid #FDE68A;
+      color: #92400E;
+    }
+    .callout-success {
+      background: var(--ee-green-bg);
+      border: 1px solid #BBF7D0;
+      color: var(--ee-green-dark);
+    }
+    .callout-danger {
+      background: #FEF2F2;
+      border: 1px solid #FECACA;
+      color: #991B1B;
+    }
+    .callout strong { display: block; margin-bottom: 4px; }
+
+    /* ---- STEP BOXES ---- */
+    .step-box {
+      display: flex;
+      gap: 16px;
+      margin: 16px 0;
+      padding: 16px;
+      background: var(--ee-light-gray);
+      border: 1px solid var(--ee-border);
+      border-radius: 10px;
+      align-items: flex-start;
+    }
+    .step-number {
+      background: var(--ee-green);
+      color: white;
+      font-family: var(--font-heading);
+      font-weight: 700;
+      font-size: 16px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .step-content h4 {
+      margin: 0 0 4px;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--ee-navy);
+      font-size: 14px;
+    }
+    .step-content p {
+      margin: 0;
+      font-size: 13px;
+      color: var(--ee-slate);
+    }
+
+    /* ---- WIREFRAME BOXES ---- */
+    .wireframe {
+      border: 2px solid var(--ee-border);
+      border-radius: 12px;
+      padding: 20px;
+      margin: 20px 0;
+      background: var(--ee-light-gray);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      line-height: 1.4;
+      overflow-x: auto;
+      white-space: pre;
+      color: var(--ee-slate);
+    }
+    .wireframe .highlight {
+      color: var(--ee-green);
+      font-weight: 600;
+    }
+
+    /* ---- TABLES ---- */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+      font-size: 13px;
+    }
+    th {
+      background: var(--ee-green);
+      color: white;
+      padding: 10px 14px;
+      text-align: left;
+      font-weight: 600;
+      font-family: var(--font-heading);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    th:first-child { border-radius: 8px 0 0 0; }
+    th:last-child { border-radius: 0 8px 0 0; }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--ee-border);
+    }
+    tr:hover td { background: var(--ee-green-bg); }
+
+    /* ---- BADGES ---- */
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .badge-green  { background: #DCFCE7; color: #166534; }
+    .badge-red    { background: #FEE2E2; color: #991B1B; }
+    .badge-amber  { background: #FEF3C7; color: #92400E; }
+    .badge-blue   { background: #DBEAFE; color: #1E40AF; }
+    .badge-violet { background: #EDE9FE; color: #5B21B6; }
+    .badge-slate  { background: #F1F5F9; color: #475569; }
+
+    /* ---- FOOTER ---- */
+    .doc-footer {
+      margin-top: 60px;
+      padding-top: 16px;
+      border-top: 2px solid var(--ee-green);
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--ee-slate);
+    }
+
+    /* ---- SCREENSHOT PLACEHOLDER ---- */
+    .screenshot {
+      border: 2px dashed var(--ee-border);
+      border-radius: 12px;
+      padding: 40px 20px;
+      margin: 20px 0;
+      text-align: center;
+      background: var(--ee-light-gray);
+      color: var(--ee-slate);
+      font-size: 12px;
+    }
+    .screenshot .label {
+      font-weight: 600;
+      color: var(--ee-navy);
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+    .screenshot img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--ee-border);
+      margin-top: 8px;
+    }
+
+    /* ---- ROLE TAG ---- */
+    .role-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .role-pd     { background: #EDE9FE; color: #5B21B6; }
+    .role-pm     { background: #DBEAFE; color: #1E40AF; }
+    .role-eng    { background: #FEF3C7; color: #92400E; }
+    .role-admin  { background: #DCFCE7; color: #166534; }
+    .role-leader { background: #FCE7F3; color: #9D174D; }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <!-- ============ DOCUMENT HEADER ============ -->
+    <div class="doc-header">
+      <img src="assets/emergent-logo.png" alt="Emergent Energy">
+      <div class="doc-meta">
+        <strong>{{DOCUMENT_TYPE}}</strong>
+        {{DOC_NUMBER}} | Version {{VERSION}}<br>
+        Last Updated: {{DATE}}
+      </div>
+    </div>
+
+    <!-- ============ YOUR CONTENT HERE ============ -->
+
+    <h1>{{DOCUMENT_TITLE}}</h1>
+    <p>{{DOCUMENT_DESCRIPTION}}</p>
+
+    <!-- Example sections: -->
+
+    <div class="callout callout-info">
+      <span class="icon">&#x2139;&#xFE0F;</span>
+      <div><strong>Note</strong> This is an informational callout box.</div>
+    </div>
+
+    <div class="callout callout-warning">
+      <span class="icon">&#x26A0;&#xFE0F;</span>
+      <div><strong>Warning</strong> This is a warning callout box.</div>
+    </div>
+
+    <div class="callout callout-success">
+      <span class="icon">&#x2705;</span>
+      <div><strong>Success</strong> This is a success callout box.</div>
+    </div>
+
+    <div class="step-box">
+      <div class="step-number">1</div>
+      <div class="step-content">
+        <h4>Step Title</h4>
+        <p>Step description goes here.</p>
+      </div>
+    </div>
+
+    <div class="screenshot">
+      <div class="label">Screenshot: Screen Name</div>
+      Replace this with an actual screenshot or wireframe image.
+    </div>
+
+    <table>
+      <thead>
+        <tr><th>Column 1</th><th>Column 2</th><th>Column 3</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Data</td><td>Data</td><td>Data</td></tr>
+      </tbody>
+    </table>
+
+    <p>Roles:
+      <span class="role-tag role-pd">Project Developer</span>
+      <span class="role-tag role-pm">Project Manager</span>
+      <span class="role-tag role-eng">Engineer</span>
+      <span class="role-tag role-admin">Admin</span>
+      <span class="role-tag role-leader">COO / CEO</span>
+    </p>
+
+    <p>Badges:
+      <span class="badge badge-green">Active</span>
+      <span class="badge badge-red">Overdue</span>
+      <span class="badge badge-amber">On Hold</span>
+      <span class="badge badge-blue">In Progress</span>
+      <span class="badge badge-violet">Draft</span>
+      <span class="badge badge-slate">Completed</span>
+    </p>
+
+    <!-- ============ FOOTER ============ -->
+    <div class="doc-footer">
+      <span>Emergent Energy (Pty) Ltd | Confidential</span>
+      <span>{{DOC_NUMBER}} v{{VERSION}}</span>
+    </div>
+
+  </div>
+</body>
+</html>
