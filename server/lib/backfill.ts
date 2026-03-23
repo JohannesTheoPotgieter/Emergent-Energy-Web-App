@@ -12,7 +12,7 @@ async function getProjectMap(): Promise<Map<string, ProjectInfo>> {
 }
 
 export async function backfillExpenseComputedFields(): Promise<{ updated: number }> {
-  const costLines = await db.select().from(normalizedCostLines);
+  const costLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
   const projectMap = await getProjectMap();
 
   let updated = 0;

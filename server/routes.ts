@@ -866,8 +866,8 @@ export async function registerRoutes(
         storage.getLatestRefresh(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        db.select().from(normalizedCostLines),
-        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
         useCanonicalOv
           ? (async () => {
               const [wiRows, piRows] = await Promise.all([
@@ -1774,8 +1774,8 @@ export async function registerRoutes(
         storage.getAllOperationalTasks().catch((e: any) => { console.warn("[projects-summary] allOpTasks failed:", e.message); return []; }),
         db.selectDistinct({ fileName: uploadMetadata.fileName }).from(uploadMetadata).catch((e: any) => { console.warn("[projects-summary] uploadMetadata failed:", e.message); return []; }),
         db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')).catch((e: any) => { console.warn("[projects-summary] smartImportRuns failed:", e.message); return []; }),
-        db.select().from(normalizedCostLines).catch((e: any) => { console.warn("[projects-summary] normalizedCostLines failed:", e.message); return []; }),
-        db.select().from(normalizedRevenueLines).catch((e: any) => { console.warn("[projects-summary] normalizedRevenueLines failed:", e.message); return []; }),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)).catch((e: any) => { console.warn("[projects-summary] normalizedCostLines failed:", e.message); return []; }),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)).catch((e: any) => { console.warn("[projects-summary] normalizedRevenueLines failed:", e.message); return []; }),
         useCanonicalPs
           ? (async () => {
               const [wiRows, piRows] = await Promise.all([
@@ -2507,8 +2507,8 @@ export async function registerRoutes(
       );
 
       const [allNormCosts, allNormRev] = await Promise.all([
-        db.select().from(normalizedCostLines),
-        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
       ]);
 
       let totalRevenue = 0;
@@ -3936,7 +3936,7 @@ export async function registerRoutes(
         description: normalizedRevenueLines.description,
         milestoneName: normalizedRevenueLines.milestoneName,
         paidDate: normalizedRevenueLines.paidDate,
-      }).from(normalizedRevenueLines);
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       for (const r of inflowRows) {
         if (r.paidDate) continue;
@@ -3961,7 +3961,7 @@ export async function registerRoutes(
         description: normalizedCostLines.description,
         counterpartyName: normalizedCostLines.counterpartyName,
         paidDate: normalizedCostLines.paidDate,
-      }).from(normalizedCostLines);
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       for (const c of outflowRows) {
         if (c.paidDate) continue;
@@ -4014,7 +4014,7 @@ export async function registerRoutes(
         milestoneName: normalizedRevenueLines.milestoneName,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDate: normalizedRevenueLines.paidDate,
-      }).from(normalizedRevenueLines);
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       for (const r of inflowRows) {
         if (r.paidDate) continue;
@@ -4042,7 +4042,7 @@ export async function registerRoutes(
         counterpartyName: normalizedCostLines.counterpartyName,
         paidDate: normalizedCostLines.paidDate,
         invoiceNumber: normalizedCostLines.invoiceNumber,
-      }).from(normalizedCostLines);
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       for (const c of outflowRows) {
         if (c.paidDate) continue;
@@ -4089,8 +4089,8 @@ export async function registerRoutes(
 
       const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows, revOverrides, cosOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
-        db.select().from(normalizedRevenueLines),
-        db.select().from(normalizedCostLines),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
         db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
         // Read ENG work_items
         db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),
