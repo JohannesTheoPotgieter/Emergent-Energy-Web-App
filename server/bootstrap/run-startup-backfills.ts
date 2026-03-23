@@ -25,10 +25,13 @@ export async function runStartupBackfills(options: {
   await runAssigneeUserIdsBackfill(log).catch((err: any) =>
     log(`[Backfill] assignee_user_ids sync error: ${err?.message || err}`, "Startup:Backfill"),
   );
-  await runIntegrityGuard(log).catch((err: any) =>
-    log(`[Backfill] integrity guard error: ${err?.message || err}`, "Startup:Backfill"),
-  );
+  // PD ticket entities must run BEFORE integrity guard so that any newly
+  // created projects get their project_execution_state / project_settings
+  // rows auto-inserted by the guard.
   await runPdTicketEntitiesBackfill(log).catch((err: any) =>
     log(`[Backfill] PD ticket entities error: ${err?.message || err}`, "Startup:Backfill"),
+  );
+  await runIntegrityGuard(log).catch((err: any) =>
+    log(`[Backfill] integrity guard error: ${err?.message || err}`, "Startup:Backfill"),
   );
 }
