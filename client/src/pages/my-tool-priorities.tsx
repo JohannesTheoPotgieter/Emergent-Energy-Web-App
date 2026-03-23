@@ -141,8 +141,8 @@ export default function MyToolPrioritiesPage() {
   const { allowed: canView } = usePermission('company_priorities', 'view');
   const { allowed: canEditPerm } = usePermission('company_priorities', 'edit');
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const editRoles = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "admin"];
-  const canEdit = canEditPerm || isAdmin || (companyRole ? editRoles.includes(companyRole) : false) || user?.role === "admin";
+  const editRoles = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"];
+  const canEdit = canEditPerm || isAdmin || (companyRole ? editRoles.includes(companyRole) : false);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [showDialog, setShowDialog] = useState(false);

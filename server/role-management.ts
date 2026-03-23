@@ -10,6 +10,9 @@ import {
   userPermissionOverrides,
   permissionAuditLog,
   pdVisibilityConfig,
+  workstreamVisibilityConfig,
+  WORKSTREAM_VISIBILITY_DEFAULTS,
+  ROLE_DEPARTMENT_MAP,
   users,
   DEFAULT_ROLE_PERMISSIONS,
   type AuthorityAction,
@@ -973,6 +976,141 @@ export function registerRoleManagementRoutes(app: Express) {
         targetRole: existing.role || undefined,
         targetUserId: existing.userId || undefined,
         changeDetail: { ticketTypes: existing.ticketTypes, scope: existing.scope },
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ========== WORKSTREAM VISIBILITY CONFIG ==========
+
+  // Get all workstream visibility configs + defaults for roles without config
+  app.get("/api/admin/workstream-visibility", jwtAuth, requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      let configs: any[] = [];
+      try {
+        configs = await db.select().from(workstreamVisibilityConfig);
+      } catch {
+        // Table may not exist yet
+      }
+      res.json({
+        configs,
+        defaults: WORKSTREAM_VISIBILITY_DEFAULTS,
+        roleDepartmentMap: ROLE_DEPARTMENT_MAP,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Upsert a role-level workstream visibility config
+  app.put("/api/admin/workstream-visibility/role", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { role, workstreams, ticketTypes, scope, sections } = req.body;
+      if (!role) return res.status(400).json({ error: "role is required" });
+
+      const adminUser = getEffectiveUser(req);
+
+      // Delete existing role config, then insert
+      await db.delete(workstreamVisibilityConfig)
+        .where(and(eq(workstreamVisibilityConfig.role, role), isNull(workstreamVisibilityConfig.userId)));
+
+      const [created] = await db.insert(workstreamVisibilityConfig).values({
+        role,
+        userId: null,
+        workstreams: workstreams || ["ENG", "PD", "PM", "QUALITY", "FINANCE", "GOVERNANCE", "PERSONAL"],
+        ticketTypes: ticketTypes || ["pd", "engineering"],
+        scope: scope || "all",
+        sections: sections || [],
+        updatedBy: adminUser?.id || null,
+      }).returning();
+
+      // Also sync to legacy pdVisibilityConfig for backward compatibility
+      await db.delete(pdVisibilityConfig)
+        .where(and(eq(pdVisibilityConfig.role, role), isNull(pdVisibilityConfig.userId)));
+      await db.insert(pdVisibilityConfig).values({
+        role,
+        userId: null,
+        ticketTypes: ticketTypes || ["pd", "engineering"],
+        scope: scope || "all",
+        updatedBy: adminUser?.id || null,
+      });
+
+      logPermissionAudit(req, {
+        eventType: "workstream_visibility_role_updated",
+        targetRole: role,
+        changeDetail: { workstreams: created.workstreams, ticketTypes: created.ticketTypes, scope: created.scope },
+      });
+
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Upsert a user-level workstream visibility config (override)
+  app.put("/api/admin/workstream-visibility/user", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { userId, workstreams, ticketTypes, scope, sections } = req.body;
+      if (!userId) return res.status(400).json({ error: "userId is required" });
+
+      const adminUser = getEffectiveUser(req);
+
+      await db.delete(workstreamVisibilityConfig)
+        .where(eq(workstreamVisibilityConfig.userId, userId));
+
+      const [created] = await db.insert(workstreamVisibilityConfig).values({
+        role: null,
+        userId,
+        workstreams: workstreams || ["ENG", "PD", "PM", "QUALITY", "FINANCE", "GOVERNANCE", "PERSONAL"],
+        ticketTypes: ticketTypes || ["pd", "engineering"],
+        scope: scope || "all",
+        sections: sections || [],
+        updatedBy: adminUser?.id || null,
+      }).returning();
+
+      // Sync to legacy table
+      await db.delete(pdVisibilityConfig)
+        .where(eq(pdVisibilityConfig.userId, userId));
+      await db.insert(pdVisibilityConfig).values({
+        role: null,
+        userId,
+        ticketTypes: ticketTypes || ["pd", "engineering"],
+        scope: scope || "all",
+        updatedBy: adminUser?.id || null,
+      });
+
+      logPermissionAudit(req, {
+        eventType: "workstream_visibility_user_updated",
+        targetUserId: userId,
+        changeDetail: { workstreams: created.workstreams, ticketTypes: created.ticketTypes, scope: created.scope },
+      });
+
+      res.json(created);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete a workstream visibility config by ID
+  app.delete("/api/admin/workstream-visibility/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const configId = parseInt(req.params.id);
+      if (isNaN(configId)) return res.status(400).json({ error: "Invalid config ID" });
+
+      const [existing] = await db.select().from(workstreamVisibilityConfig)
+        .where(eq(workstreamVisibilityConfig.id, configId));
+      if (!existing) return res.status(404).json({ error: "Config not found" });
+
+      await db.delete(workstreamVisibilityConfig).where(eq(workstreamVisibilityConfig.id, configId));
+
+      logPermissionAudit(req, {
+        eventType: existing.userId ? "workstream_visibility_user_removed" : "workstream_visibility_role_removed",
+        targetRole: existing.role || undefined,
+        targetUserId: existing.userId || undefined,
+        changeDetail: { workstreams: existing.workstreams, ticketTypes: existing.ticketTypes, scope: existing.scope },
       });
 
       res.json({ success: true });

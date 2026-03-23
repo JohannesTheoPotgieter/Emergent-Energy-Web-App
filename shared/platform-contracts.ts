@@ -23,7 +23,6 @@ export const PLATFORM_DEPARTMENT_IDS = [
 export type PlatformDepartmentId = typeof PLATFORM_DEPARTMENT_IDS[number];
 
 export const PLATFORM_ROLE_IDS = [
-  "admin",
   "member",
   "viewer",
   "quality_manager",

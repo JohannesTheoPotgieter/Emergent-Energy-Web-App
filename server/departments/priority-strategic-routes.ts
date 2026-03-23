@@ -20,8 +20,8 @@ const router = Router();
 
 // ==================== HELPERS ====================
 
-const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
-const COO_ONLY_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN"];
+const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
+const COO_ONLY_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
 function requireCooOnly(req: Request, res: Response, next: any) {
   const role = getEffectiveUser(req)?.role;

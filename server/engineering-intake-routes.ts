@@ -13,7 +13,7 @@ function getUser(req: Request) {
 
 function requireCOO(req: Request, res: Response, next: NextFunction) {
   const role = getUser(req)?.role || "";
-  const cooRoles = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+  const cooRoles = ["COO_ADMIN", "CEO_ADMIN"];
   if (cooRoles.includes(role)) return next();
   res.status(403).json({ error: "forbidden", message: "COO access required" });
 }

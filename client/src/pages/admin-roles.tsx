@@ -22,7 +22,7 @@ import {
 } from "./admin-roles.utils";
 import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, Clock, Copy, Eye, EyeOff, FileText, Pencil, Plus, Save, Search, Shield, ShieldCheck, Trash2, Users, UserCheck, Lock, X, ToggleLeft, ToggleRight } from "lucide-react";
 import type { PermissionAction, PermissionEntity } from "@shared/schema";
-import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
+import { ENTITY_PERMISSION_DEFAULTS, WORKSTREAM_VISIBILITY_DEFAULTS, ROLE_DEPARTMENT_MAP, COMPANY_ROLES } from "@shared/schema";
 
 const DEPARTMENTS = [
   "Executive", "Engineering", "Finance", "Operations", "Project Development",
@@ -310,12 +310,16 @@ export default function AdminRolesPage() {
             <TabsTrigger value="pd-visibility" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-pd-visibility">
               PD Visibility
             </TabsTrigger>
+            <TabsTrigger value="workstream-visibility" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-workstream-visibility">
+              Workstream Visibility
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="roles" className="mt-4"><RolesControlCenter /></TabsContent>
           <TabsContent value="users" className="mt-4"><GlobalUsersView /></TabsContent>
           <TabsContent value="overrides" className="mt-4"><UserOverridesView /></TabsContent>
           <TabsContent value="audit" className="mt-4"><PermissionAuditLogView /></TabsContent>
           <TabsContent value="pd-visibility" className="mt-4"><PdVisibilityView /></TabsContent>
+          <TabsContent value="workstream-visibility" className="mt-4"><WorkstreamVisibilityView /></TabsContent>
         </Tabs>
       </div>
     </AdminPageShell>
@@ -2123,4 +2127,361 @@ function summarizeChangeDetail(detail: Record<string, any>): string {
   if (detail.hasEntityPermChanges) parts.push("Entity perms updated");
   if (detail.hasAuthorityModelChanges) parts.push("Authority model updated");
   return parts.join(" | ") || JSON.stringify(detail).slice(0, 80);
+}
+
+// ========== WORKSTREAM VISIBILITY CONFIG VIEW ==========
+
+const ALL_WORKSTREAMS = ["PD", "ENG", "QUALITY", "PM", "FINANCE", "GOVERNANCE", "PERSONAL"] as const;
+
+const WORKSTREAM_LABELS: Record<string, string> = {
+  PD: "Project Development",
+  ENG: "Engineering",
+  QUALITY: "Quality",
+  PM: "Project Management",
+  FINANCE: "Finance",
+  GOVERNANCE: "Governance",
+  PERSONAL: "Personal",
+};
+
+const WORKSTREAM_COLORS: Record<string, string> = {
+  PD: "bg-blue-100 text-blue-700 border-blue-200",
+  ENG: "bg-purple-100 text-purple-700 border-purple-200",
+  QUALITY: "bg-teal-100 text-teal-700 border-teal-200",
+  PM: "bg-orange-100 text-orange-700 border-orange-200",
+  FINANCE: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  GOVERNANCE: "bg-gray-100 text-gray-700 border-gray-200",
+  PERSONAL: "bg-pink-100 text-pink-700 border-pink-200",
+};
+
+const DEPARTMENT_COLORS: Record<string, string> = {
+  ADMIN: "bg-red-50 border-red-200",
+  LEADERSHIP: "bg-amber-50 border-amber-200",
+  ENGINEERING: "bg-purple-50 border-purple-200",
+  PROJECT_DEVELOPMENT: "bg-blue-50 border-blue-200",
+  PROJECT_MANAGEMENT: "bg-orange-50 border-orange-200",
+  FINANCE: "bg-emerald-50 border-emerald-200",
+};
+
+interface WorkstreamVisConfig {
+  id: number;
+  role: string | null;
+  userId: number | null;
+  workstreams: string[];
+  ticketTypes: string[];
+  scope: string;
+  sections: string[];
+  updatedAt: string;
+  updatedBy: number | null;
+}
+
+function WorkstreamVisibilityView() {
+  const { toast } = useToast();
+  const [configs, setConfigs] = useState<WorkstreamVisConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editingRole, setEditingRole] = useState<string | null>(null);
+  const [editWorkstreams, setEditWorkstreams] = useState<string[]>([]);
+  const [editTicketTypes, setEditTicketTypes] = useState<string[]>([]);
+  const [editScope, setEditScope] = useState("all");
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/workstream-visibility", { headers: authHeaders(), credentials: "include" });
+      const data = await res.json();
+      setConfigs(Array.isArray(data.configs) ? data.configs : []);
+    } catch {
+      setConfigs([]);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { void loadAll(); }, []);
+
+  const roleConfigs = configs.filter(c => c.role && !c.userId);
+  const userConfigs = configs.filter(c => c.userId);
+
+  const getEffectiveConfig = (role: string) => {
+    const dbConfig = roleConfigs.find(c => c.role === role);
+    if (dbConfig) return { ...dbConfig, source: "configured" as const };
+    const defaults = WORKSTREAM_VISIBILITY_DEFAULTS[role];
+    if (defaults) return { ...defaults, source: "default" as const, id: 0 };
+    return null;
+  };
+
+  const startEdit = (role: string) => {
+    const config = getEffectiveConfig(role);
+    setEditingRole(role);
+    setEditWorkstreams(config?.workstreams || [...ALL_WORKSTREAMS]);
+    setEditTicketTypes(config?.ticketTypes || ["pd", "engineering"]);
+    setEditScope(config?.scope || "all");
+  };
+
+  const handleSave = async () => {
+    if (!editingRole) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/workstream-visibility/role", {
+        method: "PUT",
+        headers: authHeaders(),
+        credentials: "include",
+        body: JSON.stringify({
+          role: editingRole,
+          workstreams: editWorkstreams,
+          ticketTypes: editTicketTypes,
+          scope: editScope,
+        }),
+      });
+      if (res.ok) {
+        toast({ title: "Saved", description: `Workstream visibility for ${editingRole.replace(/_/g, " ")} updated.` });
+        setEditingRole(null);
+        void loadAll();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const handleReset = async (configId: number) => {
+    try {
+      const res = await fetch(`/api/admin/workstream-visibility/${configId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+        credentials: "include",
+      });
+      if (res.ok) {
+        toast({ title: "Reset", description: "Reverted to system defaults." });
+        void loadAll();
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+  };
+
+  if (loading) return <div className="py-8 text-center text-gray-400">Loading...</div>;
+
+  // Group roles by department
+  const departments = new Map<string, string[]>();
+  for (const role of COMPANY_ROLES) {
+    const dept = ROLE_DEPARTMENT_MAP[role] || "OTHER";
+    if (!departments.has(dept)) departments.set(dept, []);
+    departments.get(dept)!.push(role);
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-blue-600" />
+            Workstream Visibility by Role
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Controls which task workstreams each role can see in the unified task hub. Roles are grouped by department.
+            Configured overrides take precedence over system defaults.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {Array.from(departments.entries()).map(([dept, roles]) => (
+            <div key={dept} className="mb-6">
+              <div className={`px-3 py-2 rounded-t-lg border font-semibold text-sm ${DEPARTMENT_COLORS[dept] || "bg-gray-50 border-gray-200"}`}>
+                {dept.replace(/_/g, " ")}
+              </div>
+              <div className="border border-t-0 rounded-b-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600 w-48">Role</th>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600">Workstreams</th>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600 w-28">Scope</th>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600 w-24">Source</th>
+                      <th className="px-4 py-2 text-right font-medium text-gray-600 w-28">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roles.map(role => {
+                      const config = getEffectiveConfig(role);
+                      const isEditing = editingRole === role;
+
+                      if (isEditing) {
+                        return (
+                          <tr key={role} className="border-t bg-blue-50/30">
+                            <td className="px-4 py-3 font-medium">{role.replace(/_/g, " ")}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap gap-2">
+                                {ALL_WORKSTREAMS.map(ws => (
+                                  <label key={ws} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={editWorkstreams.includes(ws)}
+                                      onChange={e => {
+                                        setEditWorkstreams(prev =>
+                                          e.target.checked ? [...prev, ws] : prev.filter(w => w !== ws)
+                                        );
+                                      }}
+                                      className="h-3.5 w-3.5 rounded text-blue-600"
+                                    />
+                                    <span className={`px-1.5 py-0.5 rounded text-xs border ${WORKSTREAM_COLORS[ws]}`}>
+                                      {ws}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                              <div className="flex gap-3 mt-2">
+                                {PD_TICKET_TYPE_OPTIONS.map(opt => (
+                                  <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={editTicketTypes.includes(opt.value)}
+                                      onChange={e => {
+                                        setEditTicketTypes(prev =>
+                                          e.target.checked ? [...prev, opt.value] : prev.filter(t => t !== opt.value)
+                                        );
+                                      }}
+                                      className="h-3.5 w-3.5 rounded text-blue-600"
+                                    />
+                                    {opt.label}
+                                  </label>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-col gap-1">
+                                {PD_SCOPE_OPTIONS.map(opt => (
+                                  <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`ws-scope-${role}`}
+                                      value={opt.value}
+                                      checked={editScope === opt.value}
+                                      onChange={() => setEditScope(opt.value)}
+                                      className="h-3.5 w-3.5 text-blue-600"
+                                    />
+                                    {opt.label}
+                                  </label>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600 border-blue-200">Editing</Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button size="sm" variant="ghost" onClick={() => setEditingRole(null)}>
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button size="sm" className="bg-blue-600 hover:bg-blue-700 h-7 text-xs" onClick={handleSave} disabled={saving}>
+                                  <Save className="h-3.5 w-3.5 mr-1" />{saving ? "..." : "Save"}
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return (
+                        <tr key={role} className="border-t hover:bg-gray-50/50">
+                          <td className="px-4 py-3 font-medium">{role.replace(/_/g, " ")}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1 flex-wrap">
+                              {(config?.workstreams || []).map(ws => (
+                                <Badge key={ws} variant="outline" className={`text-xs ${WORKSTREAM_COLORS[ws] || ""}`}>
+                                  {ws}
+                                </Badge>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant={config?.scope === "all" ? "default" : "secondary"}
+                              className={config?.scope === "all" ? "bg-emerald-100 text-emerald-700 border-emerald-200 text-xs" : "bg-amber-100 text-amber-700 border-amber-200 text-xs"}>
+                              {config?.scope === "all" ? "All" : "Own"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className={`text-xs ${
+                              config?.source === "configured"
+                                ? "bg-blue-50 text-blue-600 border-blue-200"
+                                : "bg-gray-50 text-gray-500 border-gray-200"
+                            }`}>
+                              {config?.source === "configured" ? "Custom" : "Default"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex gap-1 justify-end">
+                              <Button variant="ghost" size="sm" onClick={() => startEdit(role)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              {config?.source === "configured" && config.id > 0 && (
+                                <Button variant="ghost" size="sm" onClick={() => handleReset(config.id)}>
+                                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* User-Level Overrides */}
+      {userConfigs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-blue-600" />
+              User-Level Workstream Overrides
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">User</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Workstreams</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Scope</th>
+                    <th className="px-4 py-2 text-right font-medium text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {userConfigs.map(config => (
+                    <tr key={config.id} className="border-t hover:bg-gray-50/50">
+                      <td className="px-4 py-2">User #{config.userId}</td>
+                      <td className="px-4 py-2">
+                        <div className="flex gap-1 flex-wrap">
+                          {config.workstreams.map(ws => (
+                            <Badge key={ws} variant="outline" className={`text-xs ${WORKSTREAM_COLORS[ws] || ""}`}>{ws}</Badge>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <Badge className={config.scope === "all" ? "bg-emerald-100 text-emerald-700 border-emerald-200 text-xs" : "bg-amber-100 text-amber-700 border-amber-200 text-xs"}>
+                          {config.scope === "all" ? "All" : "Own"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <Button variant="ghost" size="sm" onClick={() => handleReset(config.id)}>
+                          <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
 }

@@ -103,7 +103,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = (req as any).user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   res.status(403).json({ error: "Admin access required" });
 }
 
@@ -328,7 +328,7 @@ export function registerHandoverRoutes(app: Express) {
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const role = ((req as any).user as any)?.role || "";
-      const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER"];
+      const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
       if (!ADMIN_ROLES.includes(role)) {
         return res.status(403).json({ error: "Only admin/program manager can reopen gates" });
       }
