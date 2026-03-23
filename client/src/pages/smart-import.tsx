@@ -754,15 +754,15 @@ function SectionDetectionStep({
         ))}
       </div>
 
-      {detection?.multiProject?.isMultiProject && detection.multiProject.subProjects?.length > 0 && (
+      {preview?.detection?.multiProject?.isMultiProject && preview.detection.multiProject.subProjects?.length > 0 && (
         <Card className="border-blue-200 bg-blue-50" data-testid="multi-project-summary">
           <CardContent className="p-4">
             <div className="flex items-start gap-2 mb-2">
               <span className="font-semibold text-sm text-blue-800">Multi-Project Tracker</span>
-              <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">{detection.multiProject.subProjects.length} sub-projects</span>
+              <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">{preview.detection.multiProject.subProjects.length} sub-projects</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {detection.multiProject.subProjects.map((sp: string) => (
+              {preview.detection.multiProject.subProjects.map((sp: string) => (
                 <span key={sp} className="text-xs bg-white border border-blue-200 text-blue-700 px-2 py-0.5 rounded">{sp}</span>
               ))}
             </div>
