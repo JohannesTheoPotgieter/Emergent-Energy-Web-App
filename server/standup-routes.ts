@@ -3,7 +3,7 @@ import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
 import {
   standupSchedules, standupParticipants, standupEntries,
-  users, projectInfo, workItems, workItemStatusHistory,
+  users, projectInfo, workItems, workItemStatusHistory, notifications,
   type InsertStandupSchedule, type InsertStandupEntry, type InsertStandupParticipant,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
@@ -27,6 +27,49 @@ function isStandupDay(anchorDate: string, cadenceDays: number, checkDate: string
 /** Get today as YYYY-MM-DD */
 function today(): string {
   return new Date().toISOString().split("T")[0];
+}
+
+/** Notify other participants when someone submits a standup or flags a blocker */
+async function notifyStandupParticipants(
+  scheduleId: number,
+  submitter: AppUser,
+  entry: { blockers: string | null; mood: string | null },
+  scheduleName: string,
+) {
+  try {
+    const participants = await db
+      .select({ userId: standupParticipants.userId })
+      .from(standupParticipants)
+      .where(eq(standupParticipants.scheduleId, scheduleId));
+
+    const hasBlocker = entry.blockers && entry.blockers.trim().length > 0;
+    const isBlocked = entry.mood === "blocked" || entry.mood === "struggling";
+
+    // Only notify on blockers/struggling — regular submissions are too noisy
+    if (!hasBlocker && !isBlocked) return;
+
+    const title = hasBlocker
+      ? `Blocker flagged by ${submitter.name}`
+      : `${submitter.name} is ${entry.mood}`;
+    const body = hasBlocker
+      ? `${submitter.name} flagged a blocker in "${scheduleName}": ${entry.blockers!.slice(0, 200)}`
+      : `${submitter.name} reported feeling ${entry.mood} in "${scheduleName}"`;
+
+    const notificationRows = participants
+      .filter((p) => p.userId !== submitter.id)
+      .map((p) => ({
+        recipientUserId: p.userId,
+        eventType: hasBlocker ? "standup.blocker" : "standup.mood_alert",
+        title,
+        body,
+      }));
+
+    if (notificationRows.length > 0) {
+      await db.insert(notifications).values(notificationRows);
+    }
+  } catch (err) {
+    console.error("[Standup] Failed to send notifications:", err);
+  }
 }
 
 export function registerStandupRoutes(app: Express) {
@@ -81,7 +124,7 @@ export function registerStandupRoutes(app: Express) {
   app.post("/api/standups/schedules", requireAuth, requirePermission("standups", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const { name, teamLabel, projectId, cadence, cadenceDays, anchorDate, deadlineTime } = req.body;
+      const { name, teamLabel, projectId, cadence, cadenceDays, anchorDate, deadlineTime, deadlineTimezone } = req.body;
 
       if (!name || typeof name !== "string" || !name.trim()) {
         return res.status(400).json({ error: "Schedule name is required" });
@@ -95,6 +138,7 @@ export function registerStandupRoutes(app: Express) {
         cadenceDays: cadenceDays || 2,
         anchorDate: anchorDate || today(),
         deadlineTime: deadlineTime || "10:00",
+        deadlineTimezone: deadlineTimezone || "Africa/Johannesburg",
         createdBy: user.id,
       }).returning();
 
@@ -116,7 +160,7 @@ export function registerStandupRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id as string);
       const updates: Partial<InsertStandupSchedule> = {};
-      const allowed = ["name", "teamLabel", "projectId", "cadence", "cadenceDays", "anchorDate", "deadlineTime", "isActive"] as const;
+      const allowed = ["name", "teamLabel", "projectId", "cadence", "cadenceDays", "anchorDate", "deadlineTime", "deadlineTimezone", "isActive"] as const;
       for (const key of allowed) {
         if (req.body[key] !== undefined) (updates as any)[key] = req.body[key];
       }
@@ -296,7 +340,7 @@ export function registerStandupRoutes(app: Express) {
         return res.json(updated);
       }
 
-      // Check if late
+      // Check if late (timezone-aware using schedule's deadlineTimezone)
       const schedule = await db
         .select()
         .from(standupSchedules)
@@ -305,11 +349,13 @@ export function registerStandupRoutes(app: Express) {
 
       let isLate = false;
       if (schedule.length > 0 && schedule[0].deadlineTime) {
-        const now = new Date();
+        const tz = schedule[0].deadlineTimezone || "Africa/Johannesburg";
+        const nowInTz = new Date().toLocaleString("en-US", { timeZone: tz });
+        const nowLocal = new Date(nowInTz);
         const [h, m] = schedule[0].deadlineTime.split(":").map(Number);
-        const deadline = new Date(now);
+        const deadline = new Date(nowLocal);
         deadline.setHours(h, m, 0, 0);
-        isLate = now > deadline;
+        isLate = nowLocal > deadline;
       }
 
       const [entry] = await db.insert(standupEntries).values({
@@ -322,6 +368,9 @@ export function registerStandupRoutes(app: Express) {
         mood: mood || null,
         isLate,
       }).returning();
+
+      // Notify other participants about this submission (async, non-blocking)
+      notifyStandupParticipants(scheduleId, user, entry, schedule[0]?.name || "Standup").catch(() => {});
 
       res.status(201).json(entry);
     } catch (err: any) {
@@ -432,7 +481,24 @@ export function registerStandupRoutes(app: Express) {
         grouped[date].push(entry);
       }
 
-      res.json({ entries: grouped, total: entries.length, limit, offset });
+      // Get total count for pagination
+      const totalConditions = [eq(standupEntries.scheduleId, scheduleId)];
+      if (search) {
+        const searchPattern = `%${search}%`;
+        totalConditions.push(sql`(
+          ${standupEntries.whatIDid} ILIKE ${searchPattern} OR
+          ${standupEntries.whatImDoing} ILIKE ${searchPattern} OR
+          ${standupEntries.blockers} ILIKE ${searchPattern}
+        )`);
+      }
+      const [totalCountResult] = await db
+        .select({ count: count() })
+        .from(standupEntries)
+        .where(and(...totalConditions));
+
+      const totalCount = Number(totalCountResult.count);
+
+      res.json({ entries: grouped, total: totalCount, limit, offset, hasMore: offset + limit < totalCount });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -512,6 +578,105 @@ export function registerStandupRoutes(app: Express) {
         moodDistribution: moodDist,
         participationRate: avgParticipation,
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  /** Standup trends over time (for time-series charts) */
+  app.get("/api/standups/analytics/:scheduleId/trends", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const scheduleId = parseInt(req.params.scheduleId as string);
+      const days = parseInt(req.query.days as string) || 30;
+
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - days);
+      const cutoffStr = cutoffDate.toISOString().split("T")[0];
+
+      // Participation per standup date
+      const participationTrend = await db
+        .select({
+          standupDate: standupEntries.standupDate,
+          submissions: count(),
+        })
+        .from(standupEntries)
+        .where(and(
+          eq(standupEntries.scheduleId, scheduleId),
+          sql`${standupEntries.standupDate} >= ${cutoffStr}`
+        ))
+        .groupBy(standupEntries.standupDate)
+        .orderBy(asc(standupEntries.standupDate));
+
+      // Mood trend per standup date
+      const moodTrend = await db
+        .select({
+          standupDate: standupEntries.standupDate,
+          mood: standupEntries.mood,
+          count: count(),
+        })
+        .from(standupEntries)
+        .where(and(
+          eq(standupEntries.scheduleId, scheduleId),
+          sql`${standupEntries.standupDate} >= ${cutoffStr}`,
+          sql`${standupEntries.mood} IS NOT NULL`
+        ))
+        .groupBy(standupEntries.standupDate, standupEntries.mood)
+        .orderBy(asc(standupEntries.standupDate));
+
+      // Blocker count per standup date
+      const blockerTrend = await db
+        .select({
+          standupDate: standupEntries.standupDate,
+          blockerCount: count(),
+        })
+        .from(standupEntries)
+        .where(and(
+          eq(standupEntries.scheduleId, scheduleId),
+          sql`${standupEntries.standupDate} >= ${cutoffStr}`,
+          sql`${standupEntries.blockers} IS NOT NULL AND ${standupEntries.blockers} != ''`
+        ))
+        .groupBy(standupEntries.standupDate)
+        .orderBy(asc(standupEntries.standupDate));
+
+      // Total participant count for rate calculation
+      const [participantsResult] = await db
+        .select({ count: count() })
+        .from(standupParticipants)
+        .where(eq(standupParticipants.scheduleId, scheduleId));
+
+      const totalParticipants = Number(participantsResult.count) || 1;
+
+      // Build unified date series
+      const dateSet = new Set<string>();
+      participationTrend.forEach((r) => dateSet.add(r.standupDate));
+      const dates = Array.from(dateSet).sort();
+
+      const participationMap = new Map(participationTrend.map((r) => [r.standupDate, Number(r.submissions)]));
+      const blockerMap = new Map(blockerTrend.map((r) => [r.standupDate, Number(r.blockerCount)]));
+
+      // Mood score: great=5, good=4, okay=3, struggling=2, blocked=1
+      const moodScores: Record<string, number> = { great: 5, good: 4, okay: 3, struggling: 2, blocked: 1 };
+      const moodByDate = new Map<string, { total: number; count: number }>();
+      for (const row of moodTrend) {
+        const existing = moodByDate.get(row.standupDate) || { total: 0, count: 0 };
+        existing.total += (moodScores[row.mood || "okay"] || 3) * Number(row.count);
+        existing.count += Number(row.count);
+        moodByDate.set(row.standupDate, existing);
+      }
+
+      const series = dates.map((date) => {
+        const submissions = participationMap.get(date) || 0;
+        const moodData = moodByDate.get(date);
+        return {
+          date,
+          submissions,
+          participationRate: Math.round((submissions / totalParticipants) * 100),
+          blockers: blockerMap.get(date) || 0,
+          avgMoodScore: moodData ? Math.round((moodData.total / moodData.count) * 10) / 10 : null,
+        };
+      });
+
+      res.json({ series, totalParticipants });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

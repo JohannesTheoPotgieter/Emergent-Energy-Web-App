@@ -17,8 +17,9 @@ import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/p
 import {
   Users, Calendar, BarChart3, Plus, Loader2, Send, Clock,
   CheckCircle2, AlertTriangle, MessageSquare,
-  Smile, Meh, Frown, ThumbsUp, XCircle, History,
+  Smile, Meh, Frown, ThumbsUp, XCircle, History, TrendingUp,
 } from "lucide-react";
+import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ interface StandupSchedule {
   cadenceDays: number;
   anchorDate: string;
   deadlineTime: string | null;
+  deadlineTimezone: string;
   isActive: boolean;
   createdAt: string;
 }
@@ -87,6 +89,19 @@ interface StandupAnalytics {
   recentBlockers: { standupDate: string; blockers: string; userName: string }[];
   moodDistribution: { mood: string; count: number }[];
   participationRate: number;
+}
+
+interface TrendDataPoint {
+  date: string;
+  submissions: number;
+  participationRate: number;
+  blockers: number;
+  avgMoodScore: number | null;
+}
+
+interface StandupTrends {
+  series: TrendDataPoint[];
+  totalParticipants: number;
 }
 
 interface Suggestions {
@@ -375,84 +390,163 @@ function TeamView({ scheduleId }: { scheduleId: number }) {
 
 // ── History View ─────────────────────────────────────────────────────────────
 
+interface HistoryResponse {
+  entries: Record<string, StandupEntry[]>;
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 function HistoryView({ scheduleId }: { scheduleId: number }) {
-  const { data, isLoading } = useQuery<{
-    entries: Record<string, StandupEntry[]>;
-    total: number;
-  }>({
-    queryKey: ["standup-history", scheduleId],
-    queryFn: () => apiFetch(`/api/standups/entries/${scheduleId}/history?limit=50`),
+  const PAGE_SIZE = 20;
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [allEntries, setAllEntries] = useState<Record<string, StandupEntry[]>>({});
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+
+  // Debounce search input
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+      setOffset(0);
+      setAllEntries({});
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  const { data, isLoading, isFetching } = useQuery<HistoryResponse>({
+    queryKey: ["standup-history", scheduleId, debouncedSearch, offset],
+    queryFn: () => apiFetch(`/api/standups/entries/${scheduleId}/history?limit=${PAGE_SIZE}&offset=${offset}${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ""}`),
   });
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-  }
+  // Merge new page data into accumulated entries
+  useEffect(() => {
+    if (!data) return;
+    setHasMore(data.hasMore);
+    if (offset === 0) {
+      setAllEntries(data.entries);
+    } else {
+      setAllEntries((prev) => {
+        const merged = { ...prev };
+        for (const [date, entries] of Object.entries(data.entries)) {
+          merged[date] = [...(merged[date] || []), ...entries];
+        }
+        return merged;
+      });
+    }
+  }, [data, offset]);
 
-  const dates = Object.keys(data?.entries || {}).sort().reverse();
+  const dates = Object.keys(allEntries).sort().reverse();
 
   return (
-    <ScrollArea className="h-[calc(100vh-400px)] min-h-[300px]">
-      <div className="space-y-4">
-        {dates.map((date) => {
-          const entries = data!.entries[date];
-          return (
-            <div key={date}>
-              <div className="flex items-center gap-2 mb-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm font-semibold tracking-tight">
-                  {new Date(date + "T00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
-                </span>
-                <Badge variant="outline" className="text-[10px] font-semibold">{entries.length} entries</Badge>
-              </div>
-              <div className="space-y-1.5 pl-6">
-                {entries.map((entry) => (
-                  <Card key={entry.id}>
-                    <CardContent className="px-3 py-2.5">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-semibold">{entry.userName}</span>
-                        <MoodBadge mood={entry.mood} />
-                      </div>
-                      {entry.whatIDid && (
-                        <p className="text-xs text-muted-foreground">
-                          <span className="text-emerald-600 font-semibold">Completed:</span> {entry.whatIDid}
-                        </p>
-                      )}
-                      {entry.whatImDoing && (
-                        <p className="text-xs text-muted-foreground">
-                          <span className="text-blue-600 font-semibold">Working on:</span> {entry.whatImDoing}
-                        </p>
-                      )}
-                      {entry.blockers && (
-                        <p className="text-xs text-orange-700 font-medium">
-                          <span className="font-semibold">Blocker:</span> {entry.blockers}
-                        </p>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-              <Separator className="mt-3" />
-            </div>
-          );
-        })}
-        {dates.length === 0 && (
-          <div className="ee-empty-state">
-            <History className="h-8 w-8 text-muted-foreground/30 mb-2" />
-            <p className="text-sm font-medium">No standup history yet</p>
-            <p className="text-xs text-muted-foreground mt-1">History will appear after the first standup submission</p>
-          </div>
-        )}
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Input
+          placeholder="Search standup history..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="max-w-sm h-8 text-xs"
+        />
+        {isFetching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+        {data && <span className="text-xs text-muted-foreground">{data.total} total entries</span>}
       </div>
-    </ScrollArea>
+
+      <ScrollArea className="h-[calc(100vh-440px)] min-h-[300px]">
+        <div className="space-y-4">
+          {isLoading && offset === 0 ? (
+            <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+          ) : dates.length === 0 ? (
+            <div className="ee-empty-state">
+              <History className="h-8 w-8 text-muted-foreground/30 mb-2" />
+              <p className="text-sm font-medium">{debouncedSearch ? "No matching entries" : "No standup history yet"}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {debouncedSearch ? "Try a different search term" : "History will appear after the first standup submission"}
+              </p>
+            </div>
+          ) : (
+            <>
+              {dates.map((date) => {
+                const entries = allEntries[date];
+                return (
+                  <div key={date}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold tracking-tight">
+                        {new Date(date + "T00:00").toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+                      </span>
+                      <Badge variant="outline" className="text-[10px] font-semibold">{entries.length} entries</Badge>
+                    </div>
+                    <div className="space-y-1.5 pl-6">
+                      {entries.map((entry) => (
+                        <Card key={entry.id}>
+                          <CardContent className="px-3 py-2.5">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-sm font-semibold">{entry.userName}</span>
+                              <MoodBadge mood={entry.mood} />
+                            </div>
+                            {entry.whatIDid && (
+                              <p className="text-xs text-muted-foreground">
+                                <span className="text-emerald-600 font-semibold">Completed:</span> {entry.whatIDid}
+                              </p>
+                            )}
+                            {entry.whatImDoing && (
+                              <p className="text-xs text-muted-foreground">
+                                <span className="text-blue-600 font-semibold">Working on:</span> {entry.whatImDoing}
+                              </p>
+                            )}
+                            {entry.blockers && (
+                              <p className="text-xs text-orange-700 font-medium">
+                                <span className="font-semibold">Blocker:</span> {entry.blockers}
+                              </p>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                    <Separator className="mt-3" />
+                  </div>
+                );
+              })}
+
+              {hasMore && (
+                <div className="flex justify-center pt-2 pb-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 text-xs"
+                    disabled={isFetching}
+                    onClick={() => setOffset((prev) => prev + PAGE_SIZE)}
+                  >
+                    {isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <History className="h-3.5 w-3.5" />}
+                    Load More
+                  </Button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
 
 // ── Analytics View ───────────────────────────────────────────────────────────
 
+function formatDateShort(dateStr: string) {
+  return new Date(dateStr + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 function AnalyticsView({ scheduleId }: { scheduleId: number }) {
   const { data: analytics, isLoading } = useQuery<StandupAnalytics>({
     queryKey: ["standup-analytics", scheduleId],
     queryFn: () => apiFetch(`/api/standups/analytics/${scheduleId}`),
+  });
+
+  const { data: trends } = useQuery<StandupTrends>({
+    queryKey: ["standup-trends", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/analytics/${scheduleId}/trends?days=30`),
   });
 
   if (isLoading || !analytics) {
@@ -462,6 +556,11 @@ function AnalyticsView({ scheduleId }: { scheduleId: number }) {
   const onTimeRate = analytics.totalEntries > 0
     ? Math.round(((analytics.totalEntries - analytics.lateEntries) / analytics.totalEntries) * 100)
     : 0;
+
+  const trendData = (trends?.series || []).map((d) => ({
+    ...d,
+    dateLabel: formatDateShort(d.date),
+  }));
 
   return (
     <div className="space-y-6">
@@ -491,6 +590,84 @@ function AnalyticsView({ scheduleId }: { scheduleId: number }) {
           </CardContent>
         </Card>
       </div>
+
+      {/* Participation Rate Trend */}
+      {trendData.length > 1 && (
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2">
+            <CardTitle className="ee-section-title flex items-center gap-1.5">
+              <TrendingUp className="h-4 w-4" /> Participation Trend (30 days)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-2 pb-3">
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={trendData}>
+                <defs>
+                  <linearGradient id="participationGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
+                <Tooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  formatter={(value: number) => [`${value}%`, "Participation"]}
+                  labelFormatter={(label) => `Date: ${label}`}
+                />
+                <Area type="monotone" dataKey="participationRate" stroke="#10b981" fill="url(#participationGrad)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Mood Score + Blockers Trend */}
+      {trendData.length > 1 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="px-4 py-3 pb-2">
+              <CardTitle className="ee-section-title">Team Mood Score</CardTitle>
+              <p className="text-[10px] text-muted-foreground">5 = Great, 1 = Blocked</p>
+            </CardHeader>
+            <CardContent className="px-2 pb-3">
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={trendData.filter((d) => d.avgMoodScore !== null)}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                  <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
+                  <YAxis domain={[1, 5]} tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                    formatter={(value: number) => [value.toFixed(1), "Avg Mood"]}
+                  />
+                  <Line type="monotone" dataKey="avgMoodScore" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="px-4 py-3 pb-2">
+              <CardTitle className="ee-section-title">Blockers Over Time</CardTitle>
+            </CardHeader>
+            <CardContent className="px-2 pb-3">
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                  <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                    formatter={(value: number) => [value, "Blockers"]}
+                  />
+                  <Bar dataKey="blockers" fill="#f97316" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {analytics.moodDistribution.length > 0 && (
         <Card>
@@ -541,6 +718,7 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
   const [teamLabel, setTeamLabel] = useState("");
   const [cadenceDays, setCadenceDays] = useState("2");
   const [deadlineTime, setDeadlineTime] = useState("10:00");
+  const [deadlineTimezone, setDeadlineTimezone] = useState("Africa/Johannesburg");
   const { toast } = useToast();
 
   const createMutation = useMutation({
@@ -553,6 +731,7 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
           cadenceDays: parseInt(cadenceDays),
           cadence: cadenceDays === "1" ? "DAILY" : cadenceDays === "2" ? "EVERY_2_DAYS" : cadenceDays === "3" ? "EVERY_3_DAYS" : "WEEKLY",
           deadlineTime,
+          deadlineTimezone,
           anchorDate: new Date().toISOString().split("T")[0],
         }),
       }),
@@ -604,6 +783,23 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
               <Label>Submission Deadline</Label>
               <Input type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} />
             </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Deadline Timezone</Label>
+            <Select value={deadlineTimezone} onValueChange={setDeadlineTimezone}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Africa/Johannesburg">Africa/Johannesburg (SAST)</SelectItem>
+                <SelectItem value="Europe/London">Europe/London (GMT/BST)</SelectItem>
+                <SelectItem value="America/New_York">America/New York (EST/EDT)</SelectItem>
+                <SelectItem value="America/Chicago">America/Chicago (CST/CDT)</SelectItem>
+                <SelectItem value="America/Los_Angeles">America/Los Angeles (PST/PDT)</SelectItem>
+                <SelectItem value="Asia/Dubai">Asia/Dubai (GST)</SelectItem>
+                <SelectItem value="Asia/Kolkata">Asia/Kolkata (IST)</SelectItem>
+                <SelectItem value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</SelectItem>
+                <SelectItem value="UTC">UTC</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <Button onClick={() => createMutation.mutate()} disabled={!name.trim() || createMutation.isPending} className="w-full">
             {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
