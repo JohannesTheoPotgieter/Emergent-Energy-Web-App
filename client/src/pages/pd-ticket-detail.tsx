@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { statusColorClasses, priorityColorClasses } from "@/lib/status-colors";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -116,6 +117,9 @@ export default function PdTicketDetailPage() {
       comments: t.comments || "",
       numberOfReworks: t.numberOfReworks || 0,
       projectId: t.projectId || "",
+      estimatedProjectValue: t.estimatedProjectValue || "",
+      estimatedCost: t.estimatedCost || "",
+      financialNotes: t.financialNotes || "",
     });
     setEditing(true);
   };
@@ -138,8 +142,8 @@ export default function PdTicketDetailPage() {
               </h1>
               <div className="flex flex-wrap items-center gap-2 mt-1">
                 <Badge variant="outline" className="text-[10px]">{t.requestType}</Badge>
-                <Badge className={`text-[10px] ${statusColor(t.status)}`}>{t.status}</Badge>
-                <Badge className={`text-[10px] ${priorityColor(t.priority)}`}>{t.priority}</Badge>
+                <Badge className={`text-[10px] ${statusColorClasses(t.status)}`}>{t.status}</Badge>
+                <Badge className={`text-[10px] ${priorityColorClasses(t.priority)}`}>{t.priority}</Badge>
                 {overdue && <Badge className="text-[10px] bg-red-100 text-red-700">Overdue</Badge>}
                 <span className="text-[11px] text-muted-foreground">Ticket #{t.id}</span>
               </div>
@@ -154,7 +158,16 @@ export default function PdTicketDetailPage() {
                   <Button variant="outline" size="sm" onClick={() => setEditing(false)} data-testid="btn-cancel-edit">
                     <X className="h-3.5 w-3.5 mr-1" /> Cancel
                   </Button>
-                  <Button size="sm" onClick={() => updateMutation.mutate(editForm)} disabled={updateMutation.isPending} data-testid="btn-save-edit">
+                  <Button size="sm" onClick={() => {
+                    const payload = { ...editForm };
+                    if (payload.estimatedProjectValue && payload.estimatedCost) {
+                      const val = parseFloat(payload.estimatedProjectValue);
+                      const cost = parseFloat(payload.estimatedCost);
+                      payload.estimatedMargin = String(val - cost);
+                      payload.estimatedMarginPercent = val > 0 ? String(Math.round(((val - cost) / val) * 10000) / 100) : "0";
+                    }
+                    updateMutation.mutate(payload);
+                  }} disabled={updateMutation.isPending} data-testid="btn-save-edit">
                     {updateMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />} Save
                   </Button>
                 </>
@@ -210,6 +223,18 @@ export default function PdTicketDetailPage() {
                 <Label className="text-xs">Comments</Label>
                 <Textarea className="text-xs min-h-[60px]" value={editForm.comments} onChange={e => setEditForm(p => ({ ...p, comments: e.target.value }))} data-testid="edit-comments" />
               </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Est. Project Value (R)</Label>
+                <Input type="number" className="h-8 text-xs" placeholder="0.00" value={editForm.estimatedProjectValue} onChange={e => setEditForm(p => ({ ...p, estimatedProjectValue: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Est. Cost (R)</Label>
+                <Input type="number" className="h-8 text-xs" placeholder="0.00" value={editForm.estimatedCost} onChange={e => setEditForm(p => ({ ...p, estimatedCost: e.target.value }))} />
+              </div>
+              <div className="col-span-2 md:col-span-4 space-y-1">
+                <Label className="text-xs">Financial Notes</Label>
+                <Textarea className="text-xs min-h-[50px]" value={editForm.financialNotes} onChange={e => setEditForm(p => ({ ...p, financialNotes: e.target.value }))} />
+              </div>
             </div>
           ) : null}
 
@@ -251,6 +276,44 @@ export default function PdTicketDetailPage() {
               <div>
                 <p className="text-xs font-medium text-muted-foreground mb-1">Comments</p>
                 <p className="text-sm whitespace-pre-wrap">{t.comments}</p>
+              </div>
+            </>
+          )}
+
+          {(t.estimatedProjectValue || t.estimatedCost || t.financialNotes) && (
+            <>
+              <Separator className="my-3" />
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">Financial Estimates</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {t.estimatedProjectValue && (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">Project Value</p>
+                      <p className="text-sm font-semibold">R {parseFloat(t.estimatedProjectValue).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  )}
+                  {t.estimatedCost && (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">Estimated Cost</p>
+                      <p className="text-sm font-semibold">R {parseFloat(t.estimatedCost).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  )}
+                  {t.estimatedMargin && (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">Margin</p>
+                      <p className={`text-sm font-semibold ${parseFloat(t.estimatedMargin) >= 0 ? "text-green-600" : "text-red-600"}`}>R {parseFloat(t.estimatedMargin).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}</p>
+                    </div>
+                  )}
+                  {t.estimatedMarginPercent && (
+                    <div>
+                      <p className="text-[10px] text-muted-foreground">Margin %</p>
+                      <p className={`text-sm font-semibold ${parseFloat(t.estimatedMarginPercent) >= 0 ? "text-green-600" : "text-red-600"}`}>{t.estimatedMarginPercent}%</p>
+                    </div>
+                  )}
+                </div>
+                {t.financialNotes && (
+                  <p className="text-xs text-muted-foreground mt-2 whitespace-pre-wrap">{t.financialNotes}</p>
+                )}
               </div>
             </>
           )}
@@ -475,21 +538,6 @@ function InfoItem({ label, value, sub, icon, action }: { label: string; value: s
       {sub && <p className="text-[10px] text-muted-foreground">{sub}</p>}
     </div>
   );
-}
-
-function statusColor(s: string) {
-  if (s === "Completed") return "bg-green-100 text-green-700";
-  if (s === "In Progress") return "bg-blue-100 text-blue-700";
-  if (s === "On Hold") return "bg-orange-100 text-orange-700";
-  if (s === "Cancelled") return "bg-muted text-muted-foreground";
-  return "bg-muted text-foreground";
-}
-
-function priorityColor(p: string) {
-  if (p === "Critical") return "bg-red-100 text-red-700";
-  if (p === "High") return "bg-orange-100 text-orange-700";
-  if (p === "Low") return "bg-green-100 text-green-700";
-  return "bg-blue-100 text-blue-700";
 }
 
 function taskStatusColor(s: string) {

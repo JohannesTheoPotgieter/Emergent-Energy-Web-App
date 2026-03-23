@@ -20,14 +20,12 @@ function jwtAuth(req: Request, _res: Response, next: NextFunction) {
 
 const LEGACY_TABLES = [
   "normalized_plan_tasks",
-  "engineering_tasks",
   "qc_item_instance",
-  "operational_tasks",
+  "work_items",
   "mytool_tasks",
   "tasks",
   "intake_tasks",
   "project_eng_tasks",
-  "working_plan_task_override",
 ];
 
 const ARCHIVE_SUFFIX = "_legacy_archive";

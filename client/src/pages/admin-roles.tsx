@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,8 +20,9 @@ import {
   type RoleSummary,
   type UserSummary,
 } from "./admin-roles.utils";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Eye, EyeOff, Pencil, Plus, Save, Search, Shield, ShieldCheck, Trash2, Users, UserCheck, Lock, X, ToggleLeft, ToggleRight } from "lucide-react";
-import type { PermissionAction } from "@shared/schema";
+import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, Clock, Copy, Eye, EyeOff, FileText, Pencil, Plus, Save, Search, Shield, ShieldCheck, Trash2, Users, UserCheck, Lock, X, ToggleLeft, ToggleRight } from "lucide-react";
+import type { PermissionAction, PermissionEntity } from "@shared/schema";
+import { ENTITY_PERMISSION_DEFAULTS, WORKSTREAM_VISIBILITY_DEFAULTS, ROLE_DEPARTMENT_MAP, COMPANY_ROLES } from "@shared/schema";
 
 const DEPARTMENTS = [
   "Executive", "Engineering", "Finance", "Operations", "Project Development",
@@ -46,7 +48,6 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   home: "Home page dashboard & landing",
   my_work: "My Work hub — tasks, calendar, meetings",
   my_tool: "My Work task planner (Today, Week, Backlog)",
-  notifications: "Top bar notification bell",
   company_priorities: "Company-wide priorities & goals",
 
   lifecycle: "Project Lifecycle overview & board",
@@ -57,33 +58,54 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_tickets: "PD Tickets — development tickets & tracking",
 
   projects: "Project List — all projects summary table",
+  project_normalized: "Project Normalized — standardized project view",
   execution_board: "Execution Dashboard — delivery KPIs & cards",
   deliverables: "Deliverables tracker across projects",
   pm_dashboard: "Project Manager Dashboard",
   pm_on_the_go: "PM On-The-Go mobile site management",
   approvals: "Approvals — pending approval queue",
+  weekly_reviews: "Weekly Reviews — review submissions & history",
   weekly_review_wizard: "Weekly Reviews — guided review wizard",
   portfolios: "Portfolio view — grouped project analysis",
   portfolio_detail: "Portfolio detail — drilldown view",
+  tr_register: "Technical Register — technical tracking & records",
+  triage_inbox: "Triage Inbox — incoming items to classify",
+  unclassified_tasks: "Unclassified Tasks — tasks pending classification",
+  notifications: "Notifications — system & user notifications",
+  phase_templates: "Phase Templates — project phase configuration",
 
   engineering: "Engineering Overview — team workload & status",
   eng_tasks: "Engineering Requests & Tasks",
   eng_stages: "Engineering 5-Stage Checklist system",
+  eng_sync: "Engineering Sync — synchronize engineering data",
+  eng_inbox: "Engineering Inbox — incoming engineering requests",
 
   quality: "Quality Workspace — QA gates & inspections",
 
   cashflow: "Cashflow — inflows, outflows, forecast",
+  cashflow_forecast: "Cashflow Forecast — forward-looking projections",
   cos: "Cost of Sales — COS tracking & realised",
+  cos_control: "COS Control — cost of sales oversight & rules",
   revenue_tracker: "Revenue Tracker — invoiced & outstanding",
+  revenue: "Revenue — general revenue access & tracking",
   gp_tracker: "Gross Profit Tracker — GP% & margins",
+  fye_revenue_tracking: "FYE Revenue Tracking — financial year-end revenue",
   financials: "Finance — general financial access",
+  financial_integration: "Financial Integration — rule-based matching",
+  financial_linking: "Financial Linking — expense/revenue pairing",
   procurement: "Procurement Hub & subcontractor management",
   subcontractors: "Counterparties & procurement pipeline",
+  counterparties: "Counterparties — external counterparty records",
   invoice_patterns: "Invoice Pattern Library",
 
   ee_info: "Lifecycle & SOP — company knowledge base",
+  ee_info_lifecycle: "EE Info > Lifecycle — lifecycle knowledge articles",
+  ee_info_departments: "EE Info > Departments — department knowledge hub",
+  ee_info_processes: "EE Info > Processes — process documentation",
+  ee_info_templates: "EE Info > Templates — document templates",
   leaderboard: "Leaderboard — team & department scores",
   training: "Training — learning resources & modules",
+  knowledge_game: "Knowledge Game — quiz & training game",
   feedback: "Feedback & Support — suggestions & issues",
   department_scores: "Department Scores — team performance",
 
@@ -98,8 +120,13 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   smart_import: "Smart Import — Excel data import",
   data_import: "Data Import tools",
   data_export: "Data Export tools",
-  excel_updates: "Excel Updates — batch data updates",
   database_migration: "Database Migration tools",
+  task_management: "Task Management — create, edit, assign, delete tasks",
+  handover: "PD-PM Handover — submit, approve, reject, reopen handovers",
+  standups: "Standups — manage standup schedules and entries",
+  reports: "Reports — view project plan, cost, quality, resource reports",
+  counterparties: "Counterparties — manage external counterparty records",
+  commissioning: "Commissioning — manage commissioning items and evidence",
   ms_integration: "Microsoft 365 integration setup",
   ms_sync: "MS Graph Sync — calendar, email, Teams",
   activity_log: "Activity Log — system change audit",
@@ -127,11 +154,8 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_raid: "Project detail > RAID log (Risks, Actions, Issues)",
 
   dashboard_widgets: "Home dashboard — widget cards & charts",
-  excel_sync_ack: "Smart Import — sync acknowledgement panel",
-  financial_integration: "Financial Integration — rule-based matching",
-  financial_linking: "Financial Linking — expense/revenue pairing",
   governance: "Governance — phase gate & compliance controls",
-  operational_tasks: "Operational Tasks — ad-hoc task tracking",
+  operational_tasks: "Operational Tasks — ad-hoc task tracking (via work_items)",
   gamification: "Gamification — points, streaks & leaderboard",
   project_creation: "Create Project — new project wizard",
   project_tagging: "Project Tagging — labels & categories",
@@ -141,7 +165,7 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
 const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
   home: {
     label: "Home",
-    entities: ["home", "my_work", "my_tool", "notifications", "company_priorities"],
+    entities: ["home", "my_work", "my_tool", "company_priorities"],
   },
   lifecycle: {
     label: "Project Lifecycle",
@@ -153,11 +177,11 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   project_management: {
     label: "Project Management",
-    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_review_wizard", "portfolios", "portfolio_detail"],
+    entities: ["projects", "project_normalized", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "triage_inbox", "unclassified_tasks", "handover", "commissioning", "task_management", "standups", "notifications", "phase_templates"],
   },
   engineering: {
     label: "Engineering",
-    entities: ["engineering", "eng_tasks", "eng_stages"],
+    entities: ["engineering", "eng_tasks", "eng_stages", "eng_sync", "eng_inbox"],
   },
   quality: {
     label: "Quality",
@@ -165,19 +189,19 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   finance: {
     label: "Finance",
-    entities: ["cashflow", "cos", "revenue_tracker", "gp_tracker", "financials", "procurement", "subcontractors", "invoice_patterns"],
+    entities: ["cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
   },
   knowledge: {
     label: "Knowledge",
-    entities: ["ee_info", "leaderboard", "training", "feedback", "department_scores"],
+    entities: ["ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "leaderboard", "training", "knowledge_game", "feedback", "department_scores"],
   },
   collaboration: {
     label: "Collaboration",
-    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings"],
+    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings", "reports"],
   },
   admin: {
     label: "Admin",
-    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "excel_updates", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail"],
+    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail"],
   },
   project_detail: {
     label: "Project Detail Tabs",
@@ -185,7 +209,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   other: {
     label: "Other Permissions",
-    entities: ["dashboard_widgets", "excel_sync_ack", "financial_integration", "financial_linking", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
+    entities: ["dashboard_widgets", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
   },
 };
 
@@ -277,9 +301,25 @@ export default function AdminRolesPage() {
             <TabsTrigger value="users" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-users">
               Users
             </TabsTrigger>
+            <TabsTrigger value="overrides" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-overrides">
+              User Overrides
+            </TabsTrigger>
+            <TabsTrigger value="audit" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-audit">
+              Permission Audit Log
+            </TabsTrigger>
+            <TabsTrigger value="pd-visibility" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-pd-visibility">
+              PD Visibility
+            </TabsTrigger>
+            <TabsTrigger value="workstream-visibility" className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-5 py-2 text-sm font-medium" data-testid="tab-workstream-visibility">
+              Workstream Visibility
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="roles" className="mt-4"><RolesControlCenter /></TabsContent>
           <TabsContent value="users" className="mt-4"><GlobalUsersView /></TabsContent>
+          <TabsContent value="overrides" className="mt-4"><UserOverridesView /></TabsContent>
+          <TabsContent value="audit" className="mt-4"><PermissionAuditLogView /></TabsContent>
+          <TabsContent value="pd-visibility" className="mt-4"><PdVisibilityView /></TabsContent>
+          <TabsContent value="workstream-visibility" className="mt-4"><WorkstreamVisibilityView /></TabsContent>
         </Tabs>
       </div>
     </AdminPageShell>
@@ -297,11 +337,19 @@ function RolesControlCenter() {
   const [showCreate, setShowCreate] = useState(false);
   const [createKey, setCreateKey] = useState("");
   const [createLabel, setCreateLabel] = useState("");
+  const [showClone, setShowClone] = useState(false);
+  const [cloneKey, setCloneKey] = useState("");
+  const [cloneLabel, setCloneLabel] = useState("");
+  const [showArchive, setShowArchive] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>("");
   const [canManageRoles, setCanManageRoles] = useState(false);
   const [activeTab, setActiveTab] = useState<"navigation" | "permissions">("navigation");
   const [permSearch, setPermSearch] = useState("");
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
   const load = async () => {
     setIsLoading(true);
@@ -359,21 +407,69 @@ function RolesControlCenter() {
     setDraft((d) => ({ ...d, entityPermissions: next }));
   };
 
-  const save = async () => {
-    if (!selected || !canManageRoles) return;
-    const res = await fetch(`/api/roles/${selected.role}`, { method: "PUT", headers: authHeaders(), credentials: "include", body: JSON.stringify(draft) });
-    if (!res.ok) return toast({ title: "Save failed", variant: "destructive" });
-    setDraft({});
-    await load();
-    toast({ title: "Role saved successfully" });
+  const saveRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !canManageRoles) throw new Error("Not allowed");
+      const res = await fetch(`/api/roles/${selected.role}`, { method: "PUT", headers: authHeaders(), credentials: "include", body: JSON.stringify(draft) });
+      if (!res.ok) throw new Error("Save failed");
+    },
+    onSuccess: () => { setDraft({}); load(); toast({ title: "Role saved successfully" }); },
+    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+  });
+  const save = () => saveRoleMutation.mutate();
+
+  const createRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!canManageRoles) throw new Error("Not allowed");
+      const res = await fetch("/api/roles", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: createKey.trim(), label: createLabel.trim(), sections: ["MY_WORK"], canEditData: true }) });
+      if (!res.ok) throw new Error("Create role failed");
+    },
+    onSuccess: () => { setShowCreate(false); setCreateKey(""); setCreateLabel(""); load(); toast({ title: "Role created" }); },
+    onError: () => toast({ title: "Create role failed", variant: "destructive" }),
+  });
+  const createRole = () => createRoleMutation.mutate();
+
+  const cloneRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !canManageRoles) throw new Error("Not allowed");
+      const res = await fetch(`/api/roles/${selected.role}/clone`, { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: cloneKey.trim(), label: cloneLabel.trim() }) });
+      if (!res.ok) { const err = await parseJsonSafe<{ error?: string }>(res); throw new Error(err?.error || "Clone failed"); }
+    },
+    onSuccess: () => { setShowClone(false); setCloneKey(""); setCloneLabel(""); load(); toast({ title: "Role cloned", description: `${cloneLabel} created from ${selected?.label}` }); },
+    onError: (err: Error) => toast({ title: "Clone failed", description: err.message, variant: "destructive" }),
+  });
+
+  const archiveRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !canManageRoles) throw new Error("Not allowed");
+      const res = await fetch(`/api/roles/${selected.role}/archive`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ archived: true }) });
+      if (!res.ok) { const err = await parseJsonSafe<{ error?: string }>(res); throw new Error(err?.error || "Archive failed"); }
+    },
+    onSuccess: () => { setShowArchive(false); load(); toast({ title: "Role archived", description: `${selected?.label} has been archived` }); },
+    onError: (err: Error) => toast({ title: "Archive failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !canManageRoles) throw new Error("Not allowed");
+      const res = await fetch(`/api/roles/${selected.role}`, { method: "DELETE", headers: authHeaders(), credentials: "include" });
+      if (!res.ok) { const err = await parseJsonSafe<{ error?: string }>(res); throw new Error(err?.error || "Delete failed"); }
+    },
+    onSuccess: () => { setShowDelete(false); setSelectedRole(""); load(); toast({ title: "Role deleted", description: `${selected?.label} has been permanently removed` }); },
+    onError: (err: Error) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
+  });
+
+  const saveDescription = () => {
+    setDraft((d) => ({ ...d, description: descriptionDraft }));
+    setEditingDescription(false);
   };
 
-  const createRole = async () => {
-    if (!canManageRoles) return;
-    const res = await fetch("/api/roles", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: createKey.trim(), label: createLabel.trim(), sections: ["MY_WORK"], canEditData: true }) });
-    if (!res.ok) return toast({ title: "Create role failed", variant: "destructive" });
-    setShowCreate(false); setCreateKey(""); setCreateLabel(""); await load();
-    toast({ title: "Role created" });
+  const toggleCategory = (key: string) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
   };
 
   const resources = Object.keys(currentEp).filter((k) => !k.startsWith("_")).sort();
@@ -411,8 +507,48 @@ function RolesControlCenter() {
     })).filter((cat) => cat.entities.length > 0);
   }, [categorizedEntities, permSearch]);
 
-  const totalGranted = allEntities.reduce((s, e) => s + Object.values(currentEp[e] || {}).filter(Boolean).length, 0);
+  // Calculate effective permissions by merging defaults + DB overrides
+  const totalGranted = useMemo(() => {
+    const normalizedRole = effectiveRole.role || "";
+    return allEntities.reduce((sum, entity) => {
+      return sum + ACTIONS.reduce((actionSum, action) => {
+        // Check DB override first
+        const dbOverride = currentEp[entity]?.[action];
+        if (typeof dbOverride === "boolean") return actionSum + (dbOverride ? 1 : 0);
+        // Fall back to hardcoded defaults
+        const defaultRule = ENTITY_PERMISSION_DEFAULTS.find((r) => r.entity === entity);
+        if (defaultRule) {
+          const roleList = (defaultRule as any)[`${action}_roles`] as string[] | undefined;
+          if (roleList?.includes(normalizedRole)) return actionSum + 1;
+        }
+        return actionSum;
+      }, 0);
+    }, 0);
+  }, [allEntities, currentEp, effectiveRole.role]);
   const totalPossible = allEntities.length * ACTIONS.length;
+
+  // Per-category permission summary
+  const categorySummary = useMemo(() => {
+    const normalizedRole = effectiveRole.role || "";
+    const summary: Record<string, { granted: number; total: number }> = {};
+    for (const cat of categorizedEntities) {
+      let granted = 0;
+      const total = cat.entities.length * ACTIONS.length;
+      for (const entity of cat.entities) {
+        for (const action of ACTIONS) {
+          const dbOverride = currentEp[entity]?.[action];
+          if (typeof dbOverride === "boolean") { if (dbOverride) granted++; continue; }
+          const defaultRule = ENTITY_PERMISSION_DEFAULTS.find((r) => r.entity === entity);
+          if (defaultRule) {
+            const roleList = (defaultRule as any)[`${action}_roles`] as string[] | undefined;
+            if (roleList?.includes(normalizedRole)) granted++;
+          }
+        }
+      }
+      summary[cat.key] = { granted, total };
+    }
+    return summary;
+  }, [categorizedEntities, currentEp, effectiveRole.role]);
 
   return (
     <div className="flex gap-4" style={{ minHeight: 'calc(100vh - 10rem)' }}>
@@ -514,18 +650,84 @@ function RolesControlCenter() {
                         <p className="text-xs text-muted-foreground">
                           {selected?.isSystem ? "System" : "Custom"} · {roleUsers.length} user{roleUsers.length !== 1 ? "s" : ""} · {totalGranted}/{totalPossible} permissions granted
                         </p>
+                        {/* Editable description */}
+                        {selected && !editingDescription && (
+                          <button
+                            type="button"
+                            className="text-[11px] text-muted-foreground hover:text-foreground mt-0.5 flex items-center gap-1 group"
+                            onClick={() => { setDescriptionDraft((draft.description ?? selected.description) || ""); setEditingDescription(true); }}
+                            disabled={!canManageRoles}
+                          >
+                            {(draft.description ?? selected.description) || "No description — click to add"}
+                            {canManageRoles && <Pencil className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                          </button>
+                        )}
+                        {editingDescription && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <Input
+                              className="h-6 text-[11px] w-64"
+                              value={descriptionDraft}
+                              onChange={(e) => setDescriptionDraft(e.target.value)}
+                              placeholder="Role description..."
+                              autoFocus
+                              onKeyDown={(e) => { if (e.key === "Enter") saveDescription(); if (e.key === "Escape") setEditingDescription(false); }}
+                            />
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveDescription}><Check className="h-3 w-3 text-emerald-600" /></Button>
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingDescription(false)}><X className="h-3 w-3 text-gray-400" /></Button>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    {roleUsers.length > 0 && (
-                      <div className="flex -space-x-2">
-                        {roleUsers.slice(0, 5).map((u) => (
-                          <div key={u.id} className="h-7 w-7 rounded-full bg-emerald-100 border-2 border-white flex items-center justify-center text-emerald-700 font-bold text-[10px]" title={u.name}>
-                            {(u.name || "?").charAt(0).toUpperCase()}
-                          </div>
-                        ))}
-                        {roleUsers.length > 5 && <div className="h-7 w-7 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center text-gray-600 font-bold text-[10px]">+{roleUsers.length - 5}</div>}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {roleUsers.length > 0 && (
+                        <div className="flex -space-x-2 mr-2">
+                          {roleUsers.slice(0, 5).map((u) => (
+                            <div key={u.id} className="h-7 w-7 rounded-full bg-emerald-100 border-2 border-white flex items-center justify-center text-emerald-700 font-bold text-[10px]" title={u.name}>
+                              {(u.name || "?").charAt(0).toUpperCase()}
+                            </div>
+                          ))}
+                          {roleUsers.length > 5 && <div className="h-7 w-7 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center text-gray-600 font-bold text-[10px]">+{roleUsers.length - 5}</div>}
+                        </div>
+                      )}
+                      {/* Role action buttons */}
+                      {canManageRoles && selected && (
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm" variant="outline"
+                            className="h-7 text-[11px] gap-1 text-gray-600 border-gray-200 hover:bg-gray-50"
+                            onClick={() => { setCloneKey(""); setCloneLabel(`${selected.label} (Copy)`); setShowClone(true); }}
+                            title="Clone this role"
+                            data-testid="button-clone-role"
+                          >
+                            <Copy className="h-3 w-3" /> Clone
+                          </Button>
+                          {!selected.protected && (
+                            <>
+                              <Button
+                                size="sm" variant="outline"
+                                className="h-7 text-[11px] gap-1 text-amber-600 border-amber-200 hover:bg-amber-50"
+                                onClick={() => setShowArchive(true)}
+                                title="Archive this role"
+                                data-testid="button-archive-role"
+                              >
+                                <Archive className="h-3 w-3" /> Archive
+                              </Button>
+                              {!selected.isSystem && (
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="h-7 text-[11px] gap-1 text-red-600 border-red-200 hover:bg-red-50"
+                                  onClick={() => setShowDelete(true)}
+                                  title="Delete this role"
+                                  data-testid="button-delete-role"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -574,14 +776,29 @@ function RolesControlCenter() {
                                   {filteredCategories.length === 0 && (
                                     <tr><td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="text-center py-8 text-sm text-muted-foreground">No permissions match "{permSearch}"</td></tr>
                                   )}
-                                  {filteredCategories.map((cat) => (
+                                  {filteredCategories.map((cat) => {
+                                    const summary = categorySummary[cat.key];
+                                    const isCollapsed = collapsedCategories.has(cat.key);
+                                    const pct = summary ? Math.round((summary.granted / summary.total) * 100) : 0;
+                                    return (
                                     <React.Fragment key={cat.key}>
-                                      <tr className="bg-gray-50/80">
+                                      <tr className="bg-gray-50/80 cursor-pointer" onClick={() => toggleCategory(cat.key)}>
                                         <td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="px-3 py-1.5">
                                           <div className="flex items-center justify-between">
-                                            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{cat.label}</span>
+                                            <div className="flex items-center gap-2">
+                                              {isCollapsed ? <ChevronRight className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400" />}
+                                              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{cat.label}</span>
+                                              {summary && (
+                                                <div className="flex items-center gap-1.5 ml-2">
+                                                  <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                                    <div className={`h-full rounded-full transition-all ${pct > 75 ? "bg-emerald-500" : pct > 25 ? "bg-amber-500" : "bg-gray-400"}`} style={{ width: `${pct}%` }} />
+                                                  </div>
+                                                  <span className="text-[10px] text-gray-400 font-medium">{summary.granted}/{summary.total}</span>
+                                                </div>
+                                              )}
+                                            </div>
                                             {canManageRoles && (
-                                              <div className="flex gap-1">
+                                              <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                                                 <button type="button" onClick={() => bulkUpdateCategory(cat.entities, true)} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-medium" data-testid={`grant-category-${cat.key}`}>Grant all</button>
                                                 <button type="button" onClick={() => bulkUpdateCategory(cat.entities, false)} className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium" data-testid={`revoke-category-${cat.key}`}>Revoke all</button>
                                               </div>
@@ -589,7 +806,7 @@ function RolesControlCenter() {
                                           </div>
                                         </td>
                                       </tr>
-                                      {cat.entities.map((entity) => {
+                                      {!isCollapsed && cat.entities.map((entity) => {
                                         const perms = currentEp[entity] || {};
                                         return (
                                           <tr key={entity} className="border-t border-gray-100 hover:bg-gray-50/50" data-testid={`perm-row-${entity}`}>
@@ -625,7 +842,8 @@ function RolesControlCenter() {
                                         );
                                       })}
                                     </React.Fragment>
-                                  ))}
+                                  );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
@@ -687,6 +905,88 @@ function RolesControlCenter() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Clone Role Dialog */}
+      <Dialog open={showClone} onOpenChange={setShowClone}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Copy className="h-5 w-5 text-emerald-600" /> Clone Role
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Create a new role with all navigation sections and permissions copied from <strong>{selected?.label}</strong>.
+          </p>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs font-medium text-gray-600">New Role Key *</Label>
+              <Input value={cloneKey} onChange={(e) => setCloneKey(e.target.value.toUpperCase())} placeholder="e.g. SITE_MANAGER" data-testid="input-clone-role-key" />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Display Name *</Label>
+              <Input value={cloneLabel} onChange={(e) => setCloneLabel(e.target.value)} placeholder="e.g. Site Manager" data-testid="input-clone-role-label" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowClone(false)}>Cancel</Button>
+            <Button onClick={() => cloneRoleMutation.mutate()} disabled={!cloneKey.trim() || !cloneLabel.trim() || cloneRoleMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-clone">
+              {cloneRoleMutation.isPending ? "Cloning..." : "Clone Role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archive Role Dialog */}
+      <Dialog open={showArchive} onOpenChange={setShowArchive}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <Archive className="h-5 w-5" /> Archive Role
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 py-2">
+            Archive <strong>{selected?.label}</strong>? This will disable data editing for users with this role. The role can be unarchived later.
+          </p>
+          {(selected?.userCount ?? 0) > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>This role has {selected?.userCount} assigned user{(selected?.userCount ?? 0) !== 1 ? "s" : ""}. They will lose edit access.</span>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowArchive(false)}>Cancel</Button>
+            <Button onClick={() => archiveRoleMutation.mutate()} disabled={archiveRoleMutation.isPending} className="bg-amber-600 hover:bg-amber-700 text-white" data-testid="button-confirm-archive">
+              {archiveRoleMutation.isPending ? "Archiving..." : "Archive Role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Role Dialog */}
+      <Dialog open={showDelete} onOpenChange={setShowDelete}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" /> Delete Role
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 py-2">
+            Permanently delete <strong>{selected?.label}</strong>? This action cannot be undone.
+          </p>
+          {(selected?.userCount ?? 0) > 0 && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-2.5 text-xs text-red-800 flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>This role has {selected?.userCount} assigned user{(selected?.userCount ?? 0) !== 1 ? "s" : ""}. They will need to be reassigned.</span>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDelete(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteRoleMutation.mutate()} disabled={deleteRoleMutation.isPending} data-testid="button-confirm-delete-role">
+              {deleteRoleMutation.isPending ? "Deleting..." : "Delete Role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -718,64 +1018,77 @@ function GlobalUsersView() {
 
   useEffect(() => { void loadUsers(); }, []);
 
-  const updateRole = async (id: number, role: string) => {
-    if (!role) return;
-    setSaving(true);
-    try {
+  const updateRoleMutation = useMutation({
+    mutationFn: async ({ id, role }: { id: number; role: string }) => {
       const res = await fetch(`/api/admin/users/${id}/role`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role }) });
-      if (res.ok) {
-        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
-        toast({ title: "Role updated", description: `Role changed to ${roles.find(r => r.role === role)?.label || role}` });
-      }
-    } finally { setSaving(false); }
-  };
+      if (!res.ok) throw new Error("Failed to update role");
+      return { id, role };
+    },
+    onSuccess: ({ id, role }) => {
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, role } : u)));
+      toast({ title: "Role updated", description: `Role changed to ${roles.find(r => r.role === role)?.label || role}` });
+    },
+    onError: () => toast({ title: "Failed to update role", variant: "destructive" }),
+  });
+  const updateRole = (id: number, role: string) => { if (role) updateRoleMutation.mutate({ id, role }); };
 
-  const updateDepartment = async (id: number, department: string) => {
-    setSaving(true);
-    try {
+  const updateDepartmentMutation = useMutation({
+    mutationFn: async ({ id, department }: { id: number; department: string }) => {
       const res = await fetch(`/api/admin/users/${id}/department`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ department }) });
-      if (res.ok) {
-        const data = await parseJsonSafe<UserRow>(res);
-        setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, department: ((data as any)?.department ?? department) || null } : u)));
-        toast({ title: "Department updated" });
-      }
-    } finally { setSaving(false); }
-  };
+      if (!res.ok) throw new Error("Failed to update department");
+      return { id, department, data: await parseJsonSafe<UserRow>(res) };
+    },
+    onSuccess: ({ id, department, data }) => {
+      setUsers((prev) => prev.map((u) => (u.id === id ? { ...u, department: ((data as any)?.department ?? department) || null } : u)));
+      toast({ title: "Department updated" });
+    },
+    onError: () => toast({ title: "Failed to update department", variant: "destructive" }),
+  });
+  const updateDepartment = (id: number, department: string) => updateDepartmentMutation.mutate({ id, department });
 
-  const handleCreate = async () => {
+  const createUserMutation = useMutation({
+    mutationFn: async (form: typeof createForm) => {
+      const res = await fetch("/api/admin/users", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify(form) });
+      const data = await parseJsonSafe<any>(res);
+      if (!res.ok || !data || data.error) throw new Error(data?.error || "Unknown error");
+      return data;
+    },
+    onSuccess: (data) => {
+      setUsers((prev) => [...prev, data]);
+      setShowCreateDialog(false);
+      setCreateForm({ username: "", name: "", email: "", password: "", role: "", department: "" });
+      toast({ title: "User created", description: `${data.name} has been added` });
+    },
+    onError: (err: Error) => toast({ title: "Failed to create user", description: err.message, variant: "destructive" }),
+  });
+  const handleCreate = () => {
     if (!createForm.username || !createForm.name || !createForm.email || !createForm.password) {
       toast({ title: "Missing fields", description: "Please fill in all required fields", variant: "destructive" });
       return;
     }
-    setSaving(true);
-    try {
-      const res = await fetch("/api/admin/users", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify(createForm) });
-      const data = await parseJsonSafe<any>(res);
-      if (res.ok && data && !data.error) {
-        setUsers((prev) => [...prev, data]);
-        setShowCreateDialog(false);
-        setCreateForm({ username: "", name: "", email: "", password: "", role: "", department: "" });
-        toast({ title: "User created", description: `${data.name} has been added` });
-      } else {
-        toast({ title: "Failed to create user", description: data?.error || "Unknown error", variant: "destructive" });
-      }
-    } finally { setSaving(false); }
+    createUserMutation.mutate(createForm);
   };
 
-  const handleDelete = async () => {
-    if (!showDeleteDialog) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/admin/users/${showDeleteDialog.id}`, { method: "DELETE", headers: authHeaders(), credentials: "include" });
-      if (res.ok) {
-        setUsers((prev) => prev.filter((u) => u.id !== showDeleteDialog.id));
-        if (expandedId === showDeleteDialog.id) setExpandedId(null);
-        toast({ title: "User deleted", description: `${showDeleteDialog.name} has been removed` });
-      } else {
+  const deleteUserMutation = useMutation({
+    mutationFn: async (user: { id: number; name: string }) => {
+      const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE", headers: authHeaders(), credentials: "include" });
+      if (!res.ok) {
         const data = await parseJsonSafe<any>(res);
-        toast({ title: "Failed to delete", description: data?.error || "Unknown error", variant: "destructive" });
+        throw new Error(data?.error || "Unknown error");
       }
-    } finally { setSaving(false); setShowDeleteDialog(null); }
+      return user;
+    },
+    onSuccess: (user) => {
+      setUsers((prev) => prev.filter((u) => u.id !== user.id));
+      if (expandedId === user.id) setExpandedId(null);
+      toast({ title: "User deleted", description: `${user.name} has been removed` });
+      setShowDeleteDialog(null);
+    },
+    onError: (err: Error) => { toast({ title: "Failed to delete", description: err.message, variant: "destructive" }); setShowDeleteDialog(null); },
+  });
+  const handleDelete = () => {
+    if (!showDeleteDialog) return;
+    deleteUserMutation.mutate(showDeleteDialog);
   };
 
   const handleResetPassword = async () => {
@@ -1054,5 +1367,1121 @@ function GlobalUsersView() {
         </DialogContent>
       </Dialog>
     </Card>
+  );
+}
+
+// ========== USER OVERRIDES VIEW ==========
+
+interface UserOverrideRow {
+  id: number;
+  userId: number;
+  entity: string;
+  action: string;
+  allowed: boolean;
+  scope: string | null;
+  reason: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+function UserOverridesView() {
+  const { toast } = useToast();
+  const [users, setUsers] = useState<UserSummary[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [overrides, setOverrides] = useState<UserOverrideRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newEntity, setNewEntity] = useState("");
+  const [newAction, setNewAction] = useState<string>("view");
+  const [newAllowed, setNewAllowed] = useState(true);
+  const [newReason, setNewReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" });
+      const data = await res.json();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch { setUsers([]); }
+    setLoading(false);
+  };
+
+  const loadOverrides = async (userId: number) => {
+    try {
+      const res = await fetch(`/api/admin/user-overrides/${userId}`, { headers: authHeaders(), credentials: "include" });
+      const data = await res.json();
+      setOverrides(Array.isArray(data) ? data : []);
+    } catch { setOverrides([]); }
+  };
+
+  useEffect(() => { void loadUsers(); }, []);
+  useEffect(() => { if (selectedUserId) void loadOverrides(selectedUserId); else setOverrides([]); }, [selectedUserId]);
+
+  const handleAdd = async () => {
+    if (!selectedUserId || !newEntity || !newAction) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/user-overrides", {
+        method: "POST",
+        headers: authHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ userId: selectedUserId, entity: newEntity, action: newAction, allowed: newAllowed, reason: newReason || null }),
+      });
+      if (res.ok) {
+        toast({ title: "Override added" });
+        setShowAdd(false);
+        setNewEntity("");
+        setNewAction("view");
+        setNewAllowed(true);
+        setNewReason("");
+        void loadOverrides(selectedUserId);
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch { toast({ title: "Error", variant: "destructive" }); }
+    setSaving(false);
+  };
+
+  const handleDelete = async (overrideId: number) => {
+    try {
+      const res = await fetch(`/api/admin/user-overrides/${overrideId}`, { method: "DELETE", headers: authHeaders(), credentials: "include" });
+      if (res.ok) {
+        toast({ title: "Override removed" });
+        if (selectedUserId) void loadOverrides(selectedUserId);
+      }
+    } catch { toast({ title: "Error", variant: "destructive" }); }
+  };
+
+  const selectedUser = users.find((u) => u.id === selectedUserId);
+  const entityOptions = ENTITY_PERMISSION_DEFAULTS.map((e) => e.entity);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <UserCheck className="h-5 w-5 text-blue-600" />
+          User Permission Overrides
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Grant or revoke specific permissions for individual users, overriding their role defaults.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-4">
+          <div className="w-72">
+            <Label className="text-xs text-gray-500 mb-1 block">Select User</Label>
+            <SearchableSelect
+              options={users.map((u) => ({ value: String(u.id), label: `${u.name} (${u.role})` }))}
+              value={selectedUserId ? String(selectedUserId) : ""}
+              onValueChange={(v) => setSelectedUserId(v ? Number(v) : null)}
+              placeholder="Choose a user..."
+            />
+          </div>
+          {selectedUserId && (
+            <Button size="sm" className="mt-5 bg-blue-600 hover:bg-blue-700" onClick={() => setShowAdd(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Add Override
+            </Button>
+          )}
+        </div>
+
+        {selectedUser && (
+          <div className="text-sm text-gray-600">
+            Showing overrides for <strong>{selectedUser.name}</strong> (Role: <Badge variant="outline">{selectedUser.role}</Badge>)
+          </div>
+        )}
+
+        {overrides.length > 0 ? (
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Entity</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Action</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Access</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Reason</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Expires</th>
+                  <th className="px-4 py-2 text-right font-medium text-gray-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {overrides.map((o) => (
+                  <tr key={o.id} className="border-t hover:bg-gray-50/50">
+                    <td className="px-4 py-2 font-mono text-xs">{o.entity}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{o.action}</td>
+                    <td className="px-4 py-2">
+                      <Badge variant={o.allowed ? "default" : "destructive"} className={o.allowed ? "bg-emerald-100 text-emerald-700 border-emerald-200" : ""}>
+                        {o.allowed ? "Granted" : "Denied"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-500">{o.reason || "—"}</td>
+                    <td className="px-4 py-2 text-xs text-gray-500">{o.expiresAt ? new Date(o.expiresAt).toLocaleDateString() : "Never"}</td>
+                    <td className="px-4 py-2 text-right">
+                      <Button variant="ghost" size="sm" onClick={() => handleDelete(o.id)}>
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : selectedUserId ? (
+          <div className="text-center py-8 text-gray-400 text-sm">No user-specific overrides. This user uses their role defaults only.</div>
+        ) : null}
+      </CardContent>
+
+      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Permission Override</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs">Entity</Label>
+              <SearchableSelect
+                options={entityOptions.map((e) => ({ value: e, label: `${e} — ${ENTITY_DESCRIPTIONS[e] || e}` }))}
+                value={newEntity}
+                onValueChange={setNewEntity}
+                placeholder="Select entity..."
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Action</Label>
+              <SearchableSelect
+                options={["view", "create", "edit", "approve", "override", "delete"].map((a) => ({ value: a, label: a }))}
+                value={newAction}
+                onValueChange={setNewAction}
+                placeholder="Select action..."
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <Label className="text-xs">Access</Label>
+              <Switch checked={newAllowed} onCheckedChange={setNewAllowed} />
+              <span className="text-sm">{newAllowed ? "Grant" : "Deny"}</span>
+            </div>
+            <div>
+              <Label className="text-xs">Reason (optional)</Label>
+              <Input value={newReason} onChange={(e) => setNewReason(e.target.value)} placeholder="Why this override exists..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button onClick={handleAdd} disabled={saving || !newEntity || !newAction} className="bg-blue-600 hover:bg-blue-700">
+              {saving ? "Saving..." : "Add Override"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
+// ========== PD VISIBILITY CONFIG VIEW ==========
+
+interface PdVisConfig {
+  id: number;
+  role: string | null;
+  userId: number | null;
+  ticketTypes: string[];
+  scope: string;
+  updatedAt: string;
+  updatedBy: number | null;
+}
+
+const PD_TICKET_TYPE_OPTIONS = [
+  { value: "pd", label: "PD Tickets", description: "Cost Proposals and other non-engineering tickets" },
+  { value: "engineering", label: "Engineering Tickets", description: "Feasibility Study, Design Review, IFC Planning, Grid Application, Battery Assessment, Site Assessment, Full EPC" },
+];
+
+const PD_SCOPE_OPTIONS = [
+  { value: "all", label: "All Tickets", description: "Can see all tickets matching the type filter" },
+  { value: "own", label: "Own Tickets Only", description: "Can only see tickets they created or are assigned to" },
+];
+
+const PD_CONFIGURABLE_ROLES = [
+  "PROJECT_DEVELOPER",
+  "KEY_ACCOUNTS_MANAGER",
+  "ENGINEER",
+  "PROGRAM_MANAGER",
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "CCO",
+];
+
+function PdVisibilityView() {
+  const { toast } = useToast();
+  const [configs, setConfigs] = useState<PdVisConfig[]>([]);
+  const [users, setUsers] = useState<UserSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  // User override form state
+  const [showUserForm, setShowUserForm] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<number | null>(null);
+  const [userTicketTypes, setUserTicketTypes] = useState<string[]>(["pd", "engineering"]);
+  const [userScope, setUserScope] = useState("all");
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const [configRes, usersRes] = await Promise.all([
+        fetch("/api/admin/pd-visibility", { headers: authHeaders(), credentials: "include" }),
+        fetch("/api/admin/users", { headers: authHeaders(), credentials: "include" }),
+      ]);
+      const configData = await configRes.json();
+      const usersData = await usersRes.json();
+      setConfigs(Array.isArray(configData) ? configData : []);
+      setUsers(Array.isArray(usersData) ? usersData : []);
+    } catch {
+      setConfigs([]);
+      setUsers([]);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { void loadAll(); }, []);
+
+  const roleConfigs = configs.filter(c => c.role && !c.userId);
+  const userConfigs = configs.filter(c => c.userId);
+
+  const getRoleConfig = (role: string) => roleConfigs.find(c => c.role === role);
+
+  const handleSaveRole = async (role: string, ticketTypes: string[], scope: string) => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/pd-visibility/role", {
+        method: "PUT",
+        headers: authHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ role, ticketTypes, scope }),
+      });
+      if (res.ok) {
+        toast({ title: "Saved", description: `Visibility config for ${role} updated.` });
+        void loadAll();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const handleSaveUser = async () => {
+    if (!selectedUserId) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/pd-visibility/user", {
+        method: "PUT",
+        headers: authHeaders(),
+        credentials: "include",
+        body: JSON.stringify({ userId: selectedUserId, ticketTypes: userTicketTypes, scope: userScope }),
+      });
+      if (res.ok) {
+        toast({ title: "Saved", description: "User visibility override saved." });
+        setShowUserForm(false);
+        setSelectedUserId(null);
+        setUserTicketTypes(["pd", "engineering"]);
+        setUserScope("all");
+        void loadAll();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const handleDeleteConfig = async (configId: number) => {
+    try {
+      const res = await fetch(`/api/admin/pd-visibility/${configId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+        credentials: "include",
+      });
+      if (res.ok) {
+        toast({ title: "Removed", description: "Visibility config removed. Role will use hardcoded defaults." });
+        void loadAll();
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+  };
+
+  if (loading) return <div className="py-8 text-center text-gray-400">Loading...</div>;
+
+  return (
+    <div className="space-y-6">
+      {/* Role-Level Defaults */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-blue-600" />
+            Role-Level PD Visibility
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Configure which PD ticket types each role can see and whether they see all tickets or only their own.
+            Roles without a config use the system defaults.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Role</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Ticket Types</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Scope</th>
+                  <th className="px-4 py-2 text-right font-medium text-gray-600">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {PD_CONFIGURABLE_ROLES.map(role => {
+                  const config = getRoleConfig(role);
+                  return <RoleVisibilityRow key={role} role={role} config={config} saving={saving} onSave={handleSaveRole} onDelete={handleDeleteConfig} />;
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* User-Level Overrides */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <UserCheck className="h-5 w-5 text-blue-600" />
+            User-Level PD Visibility Overrides
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Override PD visibility for specific users. User overrides take precedence over role-level configs.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Button size="sm" className="bg-blue-600 hover:bg-blue-700" onClick={() => setShowUserForm(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Add User Override
+          </Button>
+
+          {userConfigs.length > 0 ? (
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">User</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Ticket Types</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Scope</th>
+                    <th className="px-4 py-2 text-right font-medium text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {userConfigs.map(config => {
+                    const user = users.find(u => u.id === config.userId);
+                    return (
+                      <tr key={config.id} className="border-t hover:bg-gray-50/50">
+                        <td className="px-4 py-2">
+                          <div>{user?.name || `User #${config.userId}`}</div>
+                          <div className="text-xs text-gray-400">{user?.role || ""}</div>
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="flex gap-1 flex-wrap">
+                            {(config.ticketTypes || []).map(t => (
+                              <Badge key={t} variant="outline" className="text-xs">{t === "pd" ? "PD" : "Engineering"}</Badge>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2">
+                          <Badge variant={config.scope === "all" ? "default" : "secondary"}
+                            className={config.scope === "all" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"}>
+                            {config.scope === "all" ? "All Tickets" : "Own Only"}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-2 text-right">
+                          <Button variant="ghost" size="sm" onClick={() => handleDeleteConfig(config.id)}>
+                            <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-6 text-gray-400 text-sm">No user-level overrides configured.</div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Add User Override Dialog */}
+      <Dialog open={showUserForm} onOpenChange={setShowUserForm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add User Visibility Override</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs">User</Label>
+              <SearchableSelect
+                options={users.map(u => ({ value: String(u.id), label: `${u.name} (${u.role})` }))}
+                value={selectedUserId ? String(selectedUserId) : ""}
+                onValueChange={v => setSelectedUserId(v ? Number(v) : null)}
+                placeholder="Select user..."
+              />
+            </div>
+            <div>
+              <Label className="text-xs mb-2 block">Ticket Types</Label>
+              {PD_TICKET_TYPE_OPTIONS.map(opt => (
+                <div key={opt.value} className="flex items-center gap-2 py-1">
+                  <Switch
+                    checked={userTicketTypes.includes(opt.value)}
+                    onCheckedChange={checked => {
+                      setUserTicketTypes(prev =>
+                        checked ? [...prev, opt.value] : prev.filter(t => t !== opt.value)
+                      );
+                    }}
+                  />
+                  <div>
+                    <span className="text-sm font-medium">{opt.label}</span>
+                    <span className="text-xs text-gray-400 ml-2">{opt.description}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div>
+              <Label className="text-xs mb-2 block">Scope</Label>
+              {PD_SCOPE_OPTIONS.map(opt => (
+                <div key={opt.value} className="flex items-center gap-2 py-1">
+                  <input
+                    type="radio"
+                    name="userScope"
+                    value={opt.value}
+                    checked={userScope === opt.value}
+                    onChange={() => setUserScope(opt.value)}
+                    className="h-4 w-4 text-blue-600"
+                  />
+                  <div>
+                    <span className="text-sm font-medium">{opt.label}</span>
+                    <span className="text-xs text-gray-400 ml-2">{opt.description}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowUserForm(false)}>Cancel</Button>
+            <Button onClick={handleSaveUser} disabled={saving || !selectedUserId || userTicketTypes.length === 0} className="bg-blue-600 hover:bg-blue-700">
+              {saving ? "Saving..." : "Save Override"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function RoleVisibilityRow({ role, config, saving, onSave, onDelete }: {
+  role: string;
+  config: PdVisConfig | undefined;
+  saving: boolean;
+  onSave: (role: string, ticketTypes: string[], scope: string) => void;
+  onDelete: (id: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [ticketTypes, setTicketTypes] = useState<string[]>(config?.ticketTypes || ["pd", "engineering"]);
+  const [scope, setScope] = useState(config?.scope || "all");
+
+  useEffect(() => {
+    setTicketTypes(config?.ticketTypes || ["pd", "engineering"]);
+    setScope(config?.scope || "all");
+  }, [config]);
+
+  const hasChanges = config
+    ? JSON.stringify(ticketTypes.sort()) !== JSON.stringify([...(config.ticketTypes || [])].sort()) || scope !== config.scope
+    : true;
+
+  return (
+    <tr className="border-t hover:bg-gray-50/50">
+      <td className="px-4 py-3 font-medium">{role.replace(/_/g, " ")}</td>
+      <td className="px-4 py-3">
+        {editing ? (
+          <div className="flex gap-3">
+            {PD_TICKET_TYPE_OPTIONS.map(opt => (
+              <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={ticketTypes.includes(opt.value)}
+                  onChange={e => {
+                    setTicketTypes(prev =>
+                      e.target.checked ? [...prev, opt.value] : prev.filter(t => t !== opt.value)
+                    );
+                  }}
+                  className="h-3.5 w-3.5 rounded text-blue-600"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        ) : (
+          <div className="flex gap-1 flex-wrap">
+            {config ? (config.ticketTypes || []).map(t => (
+              <Badge key={t} variant="outline" className="text-xs">{t === "pd" ? "PD" : "Engineering"}</Badge>
+            )) : (
+              <span className="text-xs text-gray-400 italic">System default</span>
+            )}
+          </div>
+        )}
+      </td>
+      <td className="px-4 py-3">
+        {editing ? (
+          <div className="flex gap-3">
+            {PD_SCOPE_OPTIONS.map(opt => (
+              <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="radio"
+                  name={`scope-${role}`}
+                  value={opt.value}
+                  checked={scope === opt.value}
+                  onChange={() => setScope(opt.value)}
+                  className="h-3.5 w-3.5 text-blue-600"
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        ) : config ? (
+          <Badge variant={config.scope === "all" ? "default" : "secondary"}
+            className={config.scope === "all" ? "bg-emerald-100 text-emerald-700 border-emerald-200" : "bg-amber-100 text-amber-700 border-amber-200"}>
+            {config.scope === "all" ? "All Tickets" : "Own Only"}
+          </Badge>
+        ) : (
+          <span className="text-xs text-gray-400 italic">System default</span>
+        )}
+      </td>
+      <td className="px-4 py-3 text-right">
+        {editing ? (
+          <div className="flex gap-1 justify-end">
+            <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setTicketTypes(config?.ticketTypes || ["pd", "engineering"]); setScope(config?.scope || "all"); }}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="sm" disabled={saving || ticketTypes.length === 0 || !hasChanges} className="bg-blue-600 hover:bg-blue-700"
+              onClick={() => { onSave(role, ticketTypes, scope); setEditing(false); }}>
+              <Save className="h-3.5 w-3.5 mr-1" /> Save
+            </Button>
+          </div>
+        ) : (
+          <div className="flex gap-1 justify-end">
+            <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+              <Pencil className="h-3.5 w-3.5 text-blue-500" />
+            </Button>
+            {config && (
+              <Button variant="ghost" size="sm" onClick={() => onDelete(config.id)}>
+                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+              </Button>
+            )}
+          </div>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+// ========== PERMISSION AUDIT LOG VIEW ==========
+
+interface AuditLogEntry {
+  id: number;
+  eventType: string;
+  targetRole: string | null;
+  targetUserId: number | null;
+  targetUserName: string | null;
+  changedByUserId: number | null;
+  changedByName: string | null;
+  changedByRole: string | null;
+  changeDetail: Record<string, any>;
+  createdAt: string;
+}
+
+function PermissionAuditLogView() {
+  const [entries, setEntries] = useState<AuditLogEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [eventTypeFilter, setEventTypeFilter] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "100" });
+      if (eventTypeFilter) params.set("eventType", eventTypeFilter);
+      const res = await fetch(`/api/admin/permission-audit-log?${params}`, { headers: authHeaders(), credentials: "include" });
+      const data = await res.json();
+      setEntries(Array.isArray(data?.entries) ? data.entries : []);
+    } catch { setEntries([]); }
+    setLoading(false);
+  };
+
+  useEffect(() => { void load(); }, [eventTypeFilter]);
+
+  const eventTypes = ["role_created", "role_updated", "role_deleted", "role_cloned", "role_archived", "user_role_changed", "user_override_added", "user_override_removed"];
+
+  const formatEventType = (type: string) => {
+    return type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  };
+
+  const getEventColor = (type: string): string => {
+    if (type.includes("deleted") || type.includes("removed")) return "bg-red-100 text-red-700 border-red-200";
+    if (type.includes("created") || type.includes("added") || type.includes("cloned")) return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    if (type.includes("updated") || type.includes("changed")) return "bg-blue-100 text-blue-700 border-blue-200";
+    return "bg-gray-100 text-gray-700 border-gray-200";
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <FileText className="h-5 w-5 text-purple-600" />
+          Permission Audit Log
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Track all role changes, permission updates, user overrides, and access control events.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-64">
+            <SearchableSelect
+              options={[{ value: "", label: "All Events" }, ...eventTypes.map((t) => ({ value: t, label: formatEventType(t) }))]}
+              value={eventTypeFilter}
+              onValueChange={setEventTypeFilter}
+              placeholder="Filter by event type..."
+            />
+          </div>
+          <Button variant="outline" size="sm" onClick={load}>
+            Refresh
+          </Button>
+        </div>
+
+        {loading ? (
+          <div className="text-center py-8 text-gray-400 text-sm">Loading audit log...</div>
+        ) : entries.length === 0 ? (
+          <div className="text-center py-8 text-gray-400 text-sm">No permission audit events recorded yet.</div>
+        ) : (
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Time</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Event</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Target</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Changed By</th>
+                  <th className="px-4 py-2 text-left font-medium text-gray-600">Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((entry) => (
+                  <tr key={entry.id} className="border-t hover:bg-gray-50/50">
+                    <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">
+                      <Clock className="h-3 w-3 inline mr-1" />
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </td>
+                    <td className="px-4 py-2">
+                      <Badge variant="outline" className={getEventColor(entry.eventType)}>
+                        {formatEventType(entry.eventType)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-2 text-xs">
+                      {entry.targetRole && <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded">{entry.targetRole}</span>}
+                      {entry.targetUserName && <span className="ml-1 text-gray-600">{entry.targetUserName}</span>}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-600">
+                      {entry.changedByName || "System"}
+                      {entry.changedByRole && <span className="text-gray-400 ml-1">({entry.changedByRole})</span>}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-500 max-w-xs truncate">
+                      {summarizeChangeDetail(entry.changeDetail)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function summarizeChangeDetail(detail: Record<string, any>): string {
+  if (!detail) return "";
+  const parts: string[] = [];
+  if (detail.entity) parts.push(`Entity: ${detail.entity}`);
+  if (detail.action) parts.push(`Action: ${detail.action}`);
+  if (detail.previousRole && detail.newRole) parts.push(`${detail.previousRole} → ${detail.newRole}`);
+  if (detail.label) parts.push(`Label: ${detail.label}`);
+  if (detail.sourceRole) parts.push(`Cloned from: ${detail.sourceRole}`);
+  if (typeof detail.allowed === "boolean") parts.push(detail.allowed ? "Granted" : "Denied");
+  if (detail.reason) parts.push(`Reason: ${detail.reason}`);
+  if (detail.sections) parts.push(`Sections: ${Array.isArray(detail.sections) ? detail.sections.length : "updated"}`);
+  if (detail.hasEntityPermChanges) parts.push("Entity perms updated");
+  if (detail.hasAuthorityModelChanges) parts.push("Authority model updated");
+  return parts.join(" | ") || JSON.stringify(detail).slice(0, 80);
+}
+
+// ========== WORKSTREAM VISIBILITY CONFIG VIEW ==========
+
+const ALL_WORKSTREAMS = ["PD", "ENG", "QUALITY", "PM", "FINANCE", "GOVERNANCE", "PERSONAL"] as const;
+
+const WORKSTREAM_LABELS: Record<string, string> = {
+  PD: "Project Development",
+  ENG: "Engineering",
+  QUALITY: "Quality",
+  PM: "Project Management",
+  FINANCE: "Finance",
+  GOVERNANCE: "Governance",
+  PERSONAL: "Personal",
+};
+
+const WORKSTREAM_COLORS: Record<string, string> = {
+  PD: "bg-blue-100 text-blue-700 border-blue-200",
+  ENG: "bg-purple-100 text-purple-700 border-purple-200",
+  QUALITY: "bg-teal-100 text-teal-700 border-teal-200",
+  PM: "bg-orange-100 text-orange-700 border-orange-200",
+  FINANCE: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  GOVERNANCE: "bg-gray-100 text-gray-700 border-gray-200",
+  PERSONAL: "bg-pink-100 text-pink-700 border-pink-200",
+};
+
+const DEPARTMENT_COLORS: Record<string, string> = {
+  ADMIN: "bg-red-50 border-red-200",
+  LEADERSHIP: "bg-amber-50 border-amber-200",
+  ENGINEERING: "bg-purple-50 border-purple-200",
+  PROJECT_DEVELOPMENT: "bg-blue-50 border-blue-200",
+  PROJECT_MANAGEMENT: "bg-orange-50 border-orange-200",
+  FINANCE: "bg-emerald-50 border-emerald-200",
+};
+
+interface WorkstreamVisConfig {
+  id: number;
+  role: string | null;
+  userId: number | null;
+  workstreams: string[];
+  ticketTypes: string[];
+  scope: string;
+  sections: string[];
+  updatedAt: string;
+  updatedBy: number | null;
+}
+
+function WorkstreamVisibilityView() {
+  const { toast } = useToast();
+  const [configs, setConfigs] = useState<WorkstreamVisConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editingRole, setEditingRole] = useState<string | null>(null);
+  const [editWorkstreams, setEditWorkstreams] = useState<string[]>([]);
+  const [editTicketTypes, setEditTicketTypes] = useState<string[]>([]);
+  const [editScope, setEditScope] = useState("all");
+
+  const loadAll = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/admin/workstream-visibility", { headers: authHeaders(), credentials: "include" });
+      const data = await res.json();
+      setConfigs(Array.isArray(data.configs) ? data.configs : []);
+    } catch {
+      setConfigs([]);
+    }
+    setLoading(false);
+  };
+
+  useEffect(() => { void loadAll(); }, []);
+
+  const roleConfigs = configs.filter(c => c.role && !c.userId);
+  const userConfigs = configs.filter(c => c.userId);
+
+  const getEffectiveConfig = (role: string) => {
+    const dbConfig = roleConfigs.find(c => c.role === role);
+    if (dbConfig) return { ...dbConfig, source: "configured" as const };
+    const defaults = WORKSTREAM_VISIBILITY_DEFAULTS[role];
+    if (defaults) return { ...defaults, source: "default" as const, id: 0 };
+    return null;
+  };
+
+  const startEdit = (role: string) => {
+    const config = getEffectiveConfig(role);
+    setEditingRole(role);
+    setEditWorkstreams(config?.workstreams || [...ALL_WORKSTREAMS]);
+    setEditTicketTypes(config?.ticketTypes || ["pd", "engineering"]);
+    setEditScope(config?.scope || "all");
+  };
+
+  const handleSave = async () => {
+    if (!editingRole) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/workstream-visibility/role", {
+        method: "PUT",
+        headers: authHeaders(),
+        credentials: "include",
+        body: JSON.stringify({
+          role: editingRole,
+          workstreams: editWorkstreams,
+          ticketTypes: editTicketTypes,
+          scope: editScope,
+        }),
+      });
+      if (res.ok) {
+        toast({ title: "Saved", description: `Workstream visibility for ${editingRole.replace(/_/g, " ")} updated.` });
+        setEditingRole(null);
+        void loadAll();
+      } else {
+        const err = await res.json();
+        toast({ title: "Error", description: err.error, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+    setSaving(false);
+  };
+
+  const handleReset = async (configId: number) => {
+    try {
+      const res = await fetch(`/api/admin/workstream-visibility/${configId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+        credentials: "include",
+      });
+      if (res.ok) {
+        toast({ title: "Reset", description: "Reverted to system defaults." });
+        void loadAll();
+      }
+    } catch {
+      toast({ title: "Error", variant: "destructive" });
+    }
+  };
+
+  if (loading) return <div className="py-8 text-center text-gray-400">Loading...</div>;
+
+  // Group roles by department
+  const departments = new Map<string, string[]>();
+  for (const role of COMPANY_ROLES) {
+    const dept = ROLE_DEPARTMENT_MAP[role] || "OTHER";
+    if (!departments.has(dept)) departments.set(dept, []);
+    departments.get(dept)!.push(role);
+  }
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldCheck className="h-5 w-5 text-blue-600" />
+            Workstream Visibility by Role
+          </CardTitle>
+          <p className="text-sm text-muted-foreground">
+            Controls which task workstreams each role can see in the unified task hub. Roles are grouped by department.
+            Configured overrides take precedence over system defaults.
+          </p>
+        </CardHeader>
+        <CardContent>
+          {Array.from(departments.entries()).map(([dept, roles]) => (
+            <div key={dept} className="mb-6">
+              <div className={`px-3 py-2 rounded-t-lg border font-semibold text-sm ${DEPARTMENT_COLORS[dept] || "bg-gray-50 border-gray-200"}`}>
+                {dept.replace(/_/g, " ")}
+              </div>
+              <div className="border border-t-0 rounded-b-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600 w-48">Role</th>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600">Workstreams</th>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600 w-28">Scope</th>
+                      <th className="px-4 py-2 text-left font-medium text-gray-600 w-24">Source</th>
+                      <th className="px-4 py-2 text-right font-medium text-gray-600 w-28">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roles.map(role => {
+                      const config = getEffectiveConfig(role);
+                      const isEditing = editingRole === role;
+
+                      if (isEditing) {
+                        return (
+                          <tr key={role} className="border-t bg-blue-50/30">
+                            <td className="px-4 py-3 font-medium">{role.replace(/_/g, " ")}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap gap-2">
+                                {ALL_WORKSTREAMS.map(ws => (
+                                  <label key={ws} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={editWorkstreams.includes(ws)}
+                                      onChange={e => {
+                                        setEditWorkstreams(prev =>
+                                          e.target.checked ? [...prev, ws] : prev.filter(w => w !== ws)
+                                        );
+                                      }}
+                                      className="h-3.5 w-3.5 rounded text-blue-600"
+                                    />
+                                    <span className={`px-1.5 py-0.5 rounded text-xs border ${WORKSTREAM_COLORS[ws]}`}>
+                                      {ws}
+                                    </span>
+                                  </label>
+                                ))}
+                              </div>
+                              <div className="flex gap-3 mt-2">
+                                {PD_TICKET_TYPE_OPTIONS.map(opt => (
+                                  <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={editTicketTypes.includes(opt.value)}
+                                      onChange={e => {
+                                        setEditTicketTypes(prev =>
+                                          e.target.checked ? [...prev, opt.value] : prev.filter(t => t !== opt.value)
+                                        );
+                                      }}
+                                      className="h-3.5 w-3.5 rounded text-blue-600"
+                                    />
+                                    {opt.label}
+                                  </label>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-col gap-1">
+                                {PD_SCOPE_OPTIONS.map(opt => (
+                                  <label key={opt.value} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                                    <input
+                                      type="radio"
+                                      name={`ws-scope-${role}`}
+                                      value={opt.value}
+                                      checked={editScope === opt.value}
+                                      onChange={() => setEditScope(opt.value)}
+                                      className="h-3.5 w-3.5 text-blue-600"
+                                    />
+                                    {opt.label}
+                                  </label>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className="text-xs bg-blue-50 text-blue-600 border-blue-200">Editing</Badge>
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button size="sm" variant="ghost" onClick={() => setEditingRole(null)}>
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button size="sm" className="bg-blue-600 hover:bg-blue-700 h-7 text-xs" onClick={handleSave} disabled={saving}>
+                                  <Save className="h-3.5 w-3.5 mr-1" />{saving ? "..." : "Save"}
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return (
+                        <tr key={role} className="border-t hover:bg-gray-50/50">
+                          <td className="px-4 py-3 font-medium">{role.replace(/_/g, " ")}</td>
+                          <td className="px-4 py-3">
+                            <div className="flex gap-1 flex-wrap">
+                              {(config?.workstreams || []).map(ws => (
+                                <Badge key={ws} variant="outline" className={`text-xs ${WORKSTREAM_COLORS[ws] || ""}`}>
+                                  {ws}
+                                </Badge>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant={config?.scope === "all" ? "default" : "secondary"}
+                              className={config?.scope === "all" ? "bg-emerald-100 text-emerald-700 border-emerald-200 text-xs" : "bg-amber-100 text-amber-700 border-amber-200 text-xs"}>
+                              {config?.scope === "all" ? "All" : "Own"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Badge variant="outline" className={`text-xs ${
+                              config?.source === "configured"
+                                ? "bg-blue-50 text-blue-600 border-blue-200"
+                                : "bg-gray-50 text-gray-500 border-gray-200"
+                            }`}>
+                              {config?.source === "configured" ? "Custom" : "Default"}
+                            </Badge>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex gap-1 justify-end">
+                              <Button variant="ghost" size="sm" onClick={() => startEdit(role)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              {config?.source === "configured" && config.id > 0 && (
+                                <Button variant="ghost" size="sm" onClick={() => handleReset(config.id)}>
+                                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                                </Button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      {/* User-Level Overrides */}
+      {userConfigs.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-blue-600" />
+              User-Level Workstream Overrides
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">User</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Workstreams</th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-600">Scope</th>
+                    <th className="px-4 py-2 text-right font-medium text-gray-600">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {userConfigs.map(config => (
+                    <tr key={config.id} className="border-t hover:bg-gray-50/50">
+                      <td className="px-4 py-2">User #{config.userId}</td>
+                      <td className="px-4 py-2">
+                        <div className="flex gap-1 flex-wrap">
+                          {config.workstreams.map(ws => (
+                            <Badge key={ws} variant="outline" className={`text-xs ${WORKSTREAM_COLORS[ws] || ""}`}>{ws}</Badge>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2">
+                        <Badge className={config.scope === "all" ? "bg-emerald-100 text-emerald-700 border-emerald-200 text-xs" : "bg-amber-100 text-amber-700 border-amber-200 text-xs"}>
+                          {config.scope === "all" ? "All" : "Own"}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <Button variant="ghost" size="sm" onClick={() => handleReset(config.id)}>
+                          <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }

@@ -15,8 +15,14 @@ import {
   projectEngDeliverables,
   projectEngApprovals,
   projectInfo,
+  users,
+  workItems,
+  notifications,
+  projectTeamMembers,
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
+import { sendError } from "./lib/api-error";
+import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -51,8 +57,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required", message: "Authentication required" });
 }
 
-const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
-const ENGINEER_ROLES = ["ENGINEER", "COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER"];
+const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+const ENGINEER_ROLES = ["ENGINEER", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
 const QA_ROLE = "QUALITY_MANAGER";
 
 function getUser(req: Request): { id: number; name: string; role: string } {
@@ -66,6 +72,12 @@ function isCoo(role: string): boolean {
 
 function isEngineer(role: string): boolean {
   return ENGINEER_ROLES.includes(role) || role === QA_ROLE;
+}
+
+function requireEngineerOrAdmin(req: Request, res: Response, next: NextFunction) {
+  const role = getUser(req).role;
+  if (isEngineer(role) || isCoo(role)) return next();
+  res.status(403).json({ error: "forbidden", message: "Insufficient role for this action" });
 }
 
 export async function generateEngStagesForProject(
@@ -105,10 +117,27 @@ export async function generateEngStagesForProject(
       .orderBy(engTaskTemplates.sequence);
 
     for (const tt of taskTemplates) {
+      // Idempotency: check if a work_item already exists for this stage+template combo
+      const [existingStageTask] = await db.select({ id: projectEngTasks.id, workItemId: projectEngTasks.workItemId })
+        .from(projectEngTasks)
+        .where(and(eq(projectEngTasks.projectEngStageId, stage.id), eq(projectEngTasks.taskTemplateId, tt.id)));
+
+      if (existingStageTask) continue; // Already generated — skip
+
+      const wi = await createEngineeringWorkItem({
+        projectId,
+        title: `[${template.name}] ${tt.title}`,
+        status: "TO DO",
+        priority: "Med",
+        phase: template.name,
+        createdBy: userId,
+      });
+
       await db.insert(projectEngTasks).values({
         projectEngStageId: stage.id,
         taskTemplateId: tt.id,
         status: "pending",
+        workItemId: wi.id,
       });
       tasksCreated++;
     }
@@ -153,7 +182,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ templates: result });
     } catch (err: any) {
       console.error("[EngStages] Templates list error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -169,11 +198,11 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ template, tasks, deliverables });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.patch("/api/eng-stages/templates/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/templates/:id", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -185,11 +214,11 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.post("/api/eng-stages/templates/:id/tasks", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/eng-stages/templates/:id/tasks", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -209,11 +238,11 @@ export function registerEngStageRoutes(app: Express) {
       res.json(task);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.patch("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -231,11 +260,11 @@ export function registerEngStageRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.delete("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/eng-stages/template-tasks/:taskId", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -246,11 +275,11 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.post("/api/eng-stages/templates/:id/deliverables", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/eng-stages/templates/:id/deliverables", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -269,11 +298,11 @@ export function registerEngStageRoutes(app: Express) {
       res.json(deliverable);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.patch("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -291,11 +320,11 @@ export function registerEngStageRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.delete("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/eng-stages/template-deliverables/:delId", jwtAuth, requireAuth, requireEngineerOrAdmin, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
@@ -306,7 +335,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -360,7 +389,7 @@ export function registerEngStageRoutes(app: Express) {
     } catch (err: any) {
       console.error("[EngStages] Generate error:", err.message);
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -417,9 +446,13 @@ export function registerEngStageRoutes(app: Express) {
         const approvals = await db.select({
           id: projectEngApprovals.id,
           approverRole: projectEngApprovals.approverRole,
+          approverUserId: projectEngApprovals.approverUserId,
           status: projectEngApprovals.status,
+          comments: projectEngApprovals.comments,
+          approverUserName: users.name,
         })
           .from(projectEngApprovals)
+          .leftJoin(users, eq(projectEngApprovals.approverUserId, users.id))
           .where(eq(projectEngApprovals.projectEngStageId, s.id));
 
         result.push({
@@ -436,7 +469,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ stages: result });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -485,6 +518,8 @@ export function registerEngStageRoutes(app: Express) {
         isRequired: engTaskTemplates.isRequired,
         sequence: engTaskTemplates.sequence,
         defaultOwnerRole: engTaskTemplates.defaultOwnerRole,
+        ownerUserName: sql<string>`(SELECT name FROM users WHERE id = ${projectEngTasks.ownerUserId})`,
+        completedByName: sql<string>`(SELECT name FROM users WHERE id = ${projectEngTasks.completedBy})`,
       })
         .from(projectEngTasks)
         .innerJoin(engTaskTemplates, eq(projectEngTasks.taskTemplateId, engTaskTemplates.id))
@@ -499,8 +534,19 @@ export function registerEngStageRoutes(app: Express) {
         .from(projectEngDeliverables)
         .where(eq(projectEngDeliverables.projectEngStageId, stageId));
 
-      const approvals = await db.select()
+      const approvals = await db.select({
+        id: projectEngApprovals.id,
+        projectEngStageId: projectEngApprovals.projectEngStageId,
+        approverRole: projectEngApprovals.approverRole,
+        approverUserId: projectEngApprovals.approverUserId,
+        status: projectEngApprovals.status,
+        comments: projectEngApprovals.comments,
+        createdAt: projectEngApprovals.createdAt,
+        updatedAt: projectEngApprovals.updatedAt,
+        approverUserName: users.name,
+      })
         .from(projectEngApprovals)
+        .leftJoin(users, eq(projectEngApprovals.approverUserId, users.id))
         .where(eq(projectEngApprovals.projectEngStageId, stageId));
 
       res.json({
@@ -512,7 +558,7 @@ export function registerEngStageRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -572,6 +618,22 @@ export function registerEngStageRoutes(app: Express) {
       if (hasDeliverable !== undefined) updates.hasDeliverable = hasDeliverable;
 
       await db.update(projectEngTasks).set(updates).where(eq(projectEngTasks.id, taskId));
+
+      // Sync stage task status to linked work_item
+      if (existingTask.workItemId && status !== undefined) {
+        const statusMap: Record<string, string> = {
+          "pending": "TO DO",
+          "in_progress": "IN PROGRESS",
+          "complete": "COMPLETE",
+          "skipped": "COMPLETE",
+        };
+        const mappedStatus = statusMap[status] || "TO DO";
+        await updateEngineeringWorkItem(existingTask.workItemId, {
+          status: mappedStatus,
+          completedAt: status === "complete" ? new Date() : undefined,
+        });
+      }
+
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "update", changesJson: { description: "Stage task updated", status, notes } });
 
       const [task] = await db.select({ stageId: projectEngTasks.projectEngStageId })
@@ -597,7 +659,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -631,7 +693,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ deliverable });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -666,7 +728,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true, status });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -699,7 +761,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ deliverable });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -717,7 +779,7 @@ export function registerEngStageRoutes(app: Express) {
       fs.createReadStream(filePath).pipe(res);
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -735,7 +797,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -786,7 +848,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -866,16 +928,68 @@ export function registerEngStageRoutes(app: Express) {
       await db.update(projectEngStages).set({ status: "complete", completedAt: new Date() })
         .where(eq(projectEngStages.id, stageId));
 
-      const [stageProj] = await db.select({ projectName: projectInfo.projectName })
-        .from(projectInfo).where(eq(projectInfo.id, stage.projectId));
-      if (stageProj) {
+      // Sync all linked work_items to COMPLETE
+      const stageTasks = await db.select({ workItemId: projectEngTasks.workItemId })
+        .from(projectEngTasks)
+        .where(eq(projectEngTasks.projectEngStageId, stageId));
+      for (const st of stageTasks) {
+        if (st.workItemId) {
+          await updateEngineeringWorkItem(st.workItemId, {
+            status: "COMPLETE",
+            completedAt: new Date(),
+          });
+        }
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
+
+      // Notify project team members + PM about stage completion
+      try {
+        const [stageProject] = await db.select({ projectId: projectEngStages.projectId })
+          .from(projectEngStages).where(eq(projectEngStages.id, stageId));
+        if (stageProject) {
+          const teamMembers = await db.select({ userId: projectTeamMembers.userId })
+            .from(projectTeamMembers)
+            .where(eq(projectTeamMembers.projectId, stageProject.projectId));
+          // Also fetch the project PM to ensure they're notified even if not a team member
+          const [proj] = await db.select({ pmUserId: projectInfo.pmUserId })
+            .from(projectInfo).where(eq(projectInfo.id, stageProject.projectId));
+          const recipientIds = new Set(teamMembers.map(m => m.userId).filter(Boolean));
+          if (proj?.pmUserId) recipientIds.add(proj.pmUserId);
+
+          const currentUser = getUser(req);
+          for (const userId of recipientIds) {
+            if (userId !== currentUser.id) {
+              await db.insert(notifications).values({
+                recipientUserId: userId,
+                eventType: "stage.completed",
+                title: `Stage completed: ${stage.templateName}`,
+                body: `Engineering stage "${stage.templateName}" has been marked complete.`,
+                projectId: stageProject.projectId,
+                linkedTaskId: null,
+              }).catch(() => {});
+            }
+          }
+        }
+      } catch (_) { /* notification is best-effort */ }
+
+      // If this is the Handover Pack stage, log commissioning unlock
+      if (stage.templateName && /handover\s*pack/i.test(stage.templateName)) {
+        const [stageRow] = await db.select({ projectId: projectEngStages.projectId }).from(projectEngStages).where(eq(projectEngStages.id, stageId));
+        if (stageRow) {
+          logAuditFromReq(req, {
+            entityType: "commissioning_gate",
+            entityId: String(stageRow.projectId),
+            action: "unlocked",
+            changesJson: { description: "Commissioning unlocked: Handover Pack stage completed", stageId },
+          });
+        }
+      }
+
       res.json({ success: true, missing: [] });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -896,20 +1010,39 @@ export function registerEngStageRoutes(app: Express) {
         overrideReason: reason,
       }).where(eq(projectEngStages.id, stageId));
 
-      const [overrideStage] = await db.select({ projectId: projectEngStages.projectId })
-        .from(projectEngStages).where(eq(projectEngStages.id, stageId));
-      if (overrideStage) {
-        const [proj] = await db.select({ projectName: projectInfo.projectName })
-          .from(projectInfo).where(eq(projectInfo.id, overrideStage.projectId));
-        if (proj) {
+      // Sync all linked work_items to COMPLETE on override
+      const overrideStageTasks = await db.select({ workItemId: projectEngTasks.workItemId })
+        .from(projectEngTasks)
+        .where(eq(projectEngTasks.projectEngStageId, stageId));
+      for (const st of overrideStageTasks) {
+        if (st.workItemId) {
+          await updateEngineeringWorkItem(st.workItemId, {
+            status: "COMPLETE",
+            completedAt: new Date(),
+          });
         }
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "override", changesJson: { description: "Stage override completed", reason } });
+
+      // If this is the Handover Pack stage, log commissioning unlock
+      const [overrideStageInfo] = await db.select({ projectId: projectEngStages.projectId, name: engStageTemplates.name })
+        .from(projectEngStages)
+        .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+        .where(eq(projectEngStages.id, stageId));
+      if (overrideStageInfo?.name && /handover\s*pack/i.test(overrideStageInfo.name)) {
+        logAuditFromReq(req, {
+          entityType: "commissioning_gate",
+          entityId: String(overrideStageInfo.projectId),
+          action: "unlocked",
+          changesJson: { description: "Commissioning unlocked: Handover Pack stage override completed", stageId, reason },
+        });
+      }
+
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -938,7 +1071,7 @@ export function registerEngStageRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 }

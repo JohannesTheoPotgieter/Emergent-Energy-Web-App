@@ -64,6 +64,20 @@ export interface ExecutionDashboardResponse {
       link: string;
     }>;
   };
+  dataFreshness?: {
+    generatedAt: string;
+    recordCounts: {
+      activeProjects: number;
+      dashboardProjects: number;
+      planTasks: number;
+      revenueLines: number;
+      costLines: number;
+      engineeringTasks: number;
+      qualityWarnings: number;
+      approvals: number;
+      importRuns: number;
+    };
+  };
 }
 
 export interface ExecutionFilters {

@@ -1,5 +1,15 @@
 import ExcelJS from "exceljs";
 
+// Excel formula error values — these should be treated as null
+const EXCEL_ERRORS = new Set(["#REF!", "#DIV/0!", "#VALUE!", "#N/A", "#NAME?", "#NULL!", "#NUM!"]);
+
+function isExcelError(value: any): boolean {
+  if (value == null) return false;
+  if (typeof value === "object" && value.error && EXCEL_ERRORS.has(value.error)) return true;
+  if (typeof value === "string" && EXCEL_ERRORS.has(value.trim())) return true;
+  return false;
+}
+
 function excelSerialToDate(serial: number): { y: number; m: number; d: number } | null {
   if (serial < 1) return null;
   if (serial > 59) serial -= 1;
@@ -10,6 +20,7 @@ function excelSerialToDate(serial: number): { y: number; m: number; d: number } 
 
 export function parseDate(value: any): string | null {
   if (!value) return null;
+  if (isExcelError(value)) return null;
 
   if (value instanceof Date) {
     if (isNaN(value.getTime())) return null;
@@ -53,6 +64,7 @@ export function parseDate(value: any): string | null {
 
 export function parseNumber(value: any): string | null {
   if (value === null || value === undefined || value === "") return null;
+  if (isExcelError(value)) return null;
   const num = parseFloat(String(value).replace(/[,$]/g, ""));
   return isNaN(num) ? null : String(num);
 }

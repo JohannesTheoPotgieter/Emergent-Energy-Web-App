@@ -109,7 +109,7 @@ export interface TeamMember {
 }
 
 export interface EngDefaultView {
-  viewMode: "board" | "list" | "projects" | "mytasks";
+  viewMode: "board" | "list" | "projects" | "mytasks" | "timeline";
   statusFilter: string;
   priorityFilter: string;
   assigneeFilter: string;

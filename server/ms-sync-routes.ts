@@ -3,11 +3,12 @@ import { z } from "zod";
 import { db } from "./db";
 import { eq, and, or, desc, asc, sql, inArray, isNull, ne } from "drizzle-orm";
 import {
-  mytoolTasks, operationalTasks, trItems, deliverables,
+  mytoolTasks, trItems, deliverables,
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
-  projectInfo, users, normalizedPlanTasks, engineeringTasks, approvals,
+  projectInfo, users, normalizedPlanTasks, approvals,
   msAccounts, msObjects, communicationFollowUps, projectCommunicationTimelineEvents, workItemAssignments,
+  workItems,
 } from "@shared/schema";
 import {
   tagToProject,
@@ -27,6 +28,7 @@ import {
   listAssignableDirectory,
   listAssignableDirectoryForTaskSource,
   getAssignmentsForEntity,
+  getAssignmentsForEntities,
   mapTaskSourceToEntityType,
   setEntityAssignment,
 } from "./services/assignment-service";
@@ -65,11 +67,11 @@ function normalizeTaskStatus(status: string | null | undefined): string {
 export function registerMsSyncRoutes(app: Express) {
   const assignmentPayloadSchema = z
     .object({
-      taskId: z.number().int().positive(),
+      taskId: z.coerce.number().finite().int().positive(),
       taskSource: z.string().min(1),
       assigneeType: z.enum(["internal_user", "external_counterparty", "external_contact"]).nullable().optional(),
-      assigneeId: z.number().int().positive().nullable().optional(),
-      userId: z.number().int().positive().nullable().optional(), // legacy shape
+      assigneeId: z.coerce.number().finite().int().positive().nullable().optional(),
+      userId: z.coerce.number().finite().int().positive().nullable().optional(), // legacy shape
     })
     .superRefine((data, ctx) => {
       const effectiveAssigneeType = data.assigneeType ?? (data.userId != null ? "internal_user" : null);
@@ -336,6 +338,23 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
+  app.get("/api/entity-assignments/:entityType/:entityId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const entityType = mapTaskSourceToEntityType(req.params.entityType as string);
+      if (!entityType) {
+        return res.status(400).json({ error: `Unknown entity type: ${req.params.entityType}` });
+      }
+      const entityId = parseInt(req.params.entityId as string, 10);
+      if (!Number.isFinite(entityId) || entityId <= 0) {
+        return res.status(400).json({ error: `Invalid entity ID: ${req.params.entityId}` });
+      }
+      const assignments = await getAssignmentsForEntity(entityType, entityId);
+      res.json(assignments);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/assignables", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const search = typeof req.query.search === "string" ? req.query.search : undefined;
@@ -353,12 +372,26 @@ export function registerMsSyncRoutes(app: Express) {
     try {
       const parsed = assignmentPayloadSchema.safeParse(req.body);
       if (!parsed.success) {
+        console.error("[Reassign] Zod validation failed:", parsed.error.issues, "body:", req.body);
         return res.status(400).json({ error: "Invalid assignment payload", details: parsed.error.issues });
       }
 
       const { taskId, taskSource } = parsed.data;
+      if (!Number.isFinite(taskId) || taskId <= 0) {
+        console.error("[Reassign] Invalid taskId after Zod parse:", taskId, "body:", req.body);
+        return res.status(400).json({ error: `Invalid task ID: ${taskId}` });
+      }
       const assigneeType = parsed.data.assigneeType ?? (parsed.data.userId != null ? "internal_user" : null);
-      const assigneeId = parsed.data.assigneeId ?? parsed.data.userId ?? null;
+      const rawAssigneeId = parsed.data.assigneeId ?? parsed.data.userId ?? null;
+      const assigneeId = rawAssigneeId != null ? Number(rawAssigneeId) : null;
+      if (assigneeId != null && (!Number.isFinite(assigneeId) || assigneeId <= 0)) {
+        return res.status(400).json({ error: `Invalid assignee ID: ${rawAssigneeId}` });
+      }
+      const actorId = getEffectiveUser(req)?.id;
+      if (!actorId || !Number.isFinite(actorId)) {
+        return res.status(401).json({ error: "Valid user session required" });
+      }
+      console.log("[Reassign] Processing:", { taskId, taskSource, assigneeType, assigneeId, actorId, body: JSON.stringify(req.body) });
 
       if (taskSource === "plan_viewer" || taskSource === "remove_viewer") {
         const viewerUserId = assigneeType === "internal_user" ? assigneeId : parsed.data.userId ?? null;
@@ -431,6 +464,29 @@ export function registerMsSyncRoutes(app: Express) {
         assigneeId,
         mode: assigneeType ? mode : "clear",
       });
+      console.log("[Reassign] Assignment saved to DB:", { entityType, taskId, assignmentRole, mode, resultCount: assignments.length });
+
+      if (entityType === "work_item") {
+        try {
+          const internalAssigneeIds = assignments
+            .filter((a) => a.active && a.assigneeType === "internal_user" && Number.isFinite(a.assigneeId))
+            .map((a) => a.assigneeId);
+          const internalNames = assignments
+            .filter((a) => a.active && a.assigneeType === "internal_user")
+            .map((a) => a.displayLabel)
+            .filter(Boolean);
+          const primaryOwner = internalAssigneeIds[0] || null;
+          await db.update(workItems).set({
+            ownerUserId: primaryOwner,
+            assigneeUserIds: internalAssigneeIds.length > 0 ? internalAssigneeIds : null,
+            assignees: internalNames.length > 0 ? internalNames : null,
+            updatedAt: new Date(),
+          }).where(eq(workItems.id, taskId));
+          console.log("[Reassign] Synced back to work_items:", { taskId, primaryOwner, internalAssigneeIds, internalNames });
+        } catch (syncErr: any) {
+          console.error("[Reassign] Sync-back to work_items failed (non-fatal):", syncErr.message);
+        }
+      }
 
       const current = assignments.find((assignment) =>
         assigneeType != null &&
@@ -452,14 +508,9 @@ export function registerMsSyncRoutes(app: Express) {
         assignments,
       });
     } catch (err: any) {
-      console.error("[Reassign] Assignment update failed", {
-        error: err?.message,
-        stack: err?.stack,
-        body: req.body,
-        userId: getEffectiveUser(req)?.id,
-      });
+      console.error("[Reassign] Assignment update failed", err?.message, err?.stack?.split("\n").slice(0, 8).join("\n"));
       const status = err?.message?.toLowerCase().includes("permission") ? 403 : err?.message?.toLowerCase().includes("not found") ? 404 : err?.message?.toLowerCase().includes("required") ? 400 : 500;
-      res.status(status).json({ error: err.message || "Assignment update failed" });
+      res.status(status).json({ error: err.message || "Assignment update failed", _debug: { body: req.body, stack: err?.stack?.split("\n").slice(0, 8) } });
     }
   });
 
@@ -471,7 +522,7 @@ export function registerMsSyncRoutes(app: Express) {
       const userRole = currentUser?.role || "";
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
-      const ADMIN_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN"];
+      const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
       const isAdmin = ADMIN_ROLES.includes(userRole);
 
       const username = currentUser?.username || "";
@@ -482,9 +533,12 @@ export function registerMsSyncRoutes(app: Express) {
       const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems, planTasks, engTasks, qualityTasks, microsoftItems] = await Promise.all([
         db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)).orderBy(desc(mytoolTasks.createdAt)),
 
-        db.select().from(operationalTasks).where(
-          sql`(${operationalTasks.ownerUserId} = ${userId} OR ${userName} = ANY(${operationalTasks.assignees}) OR ${userId} = ANY(${operationalTasks.assigneeUserIds}))`
-        ).orderBy(asc(operationalTasks.sortOrder)),
+        db.select().from(workItems).where(
+          and(
+            isNull(workItems.deletedAt),
+            sql`(${workItems.ownerUserId} = ${userId} OR EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = ${workItems.id} AND wia.user_id = ${userId}))`
+          )
+        ).orderBy(asc(workItems.sortOrder)),
 
         db.select().from(trItems).where(
             sql`(${userName} = ANY(${trItems.owners}) OR ${userId} = ANY(${trItems.ownerUserIds}))`
@@ -557,10 +611,7 @@ export function registerMsSyncRoutes(app: Express) {
             .where(eq(approvals.status, "pending"))
             .orderBy(desc(approvals.requestedAt));
 
-          const generalAssignmentEntries = await Promise.all(
-            generalApprovals.map(async (approval) => [approval.id, await getAssignmentsForEntity("approval", approval.id, "APPROVER")] as const),
-          );
-          const generalAssignmentsById = new Map(generalAssignmentEntries);
+          const generalAssignmentsById = await getAssignmentsForEntities("approval", generalApprovals.map((a) => a.id), "APPROVER");
 
           let filteredGeneral = generalApprovals;
           if (!isAdmin) {
@@ -613,10 +664,12 @@ export function registerMsSyncRoutes(app: Express) {
             `
         ).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
 
-        db.select().from(engineeringTasks).where(
+        // Read ENG tasks from work_items
+        db.select().from(workItems).where(
           and(
-            eq(engineeringTasks.assigneeUserId, userId),
-            isNull(engineeringTasks.softDeletedAt)
+            eq(workItems.workstream, "ENG"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt)
           )
         ),
 
@@ -640,12 +693,12 @@ export function registerMsSyncRoutes(app: Express) {
           actionRequired: msObjects.actionRequired,
           linkedProjectId: msObjects.linkedProjectId,
           linkedTaskId: msObjects.linkedTaskId,
-          linkedQualityItemInstanceId: operationalTasks.linkedQualityItemInstanceId,
+          linkedQualityItemInstanceId: workItems.linkedQualityItemInstanceId,
           linkedProjectName: projectInfo.projectName,
         })
           .from(msObjects)
           .leftJoin(projectInfo, eq(msObjects.linkedProjectId, projectInfo.id))
-          .leftJoin(operationalTasks, eq(msObjects.linkedTaskId, operationalTasks.id))
+          .leftJoin(workItems, eq(msObjects.linkedTaskId, workItems.id))
           .where(and(
             eq(msObjects.userId, userId),
             eq(msObjects.actionRequired, true),
@@ -654,15 +707,15 @@ export function registerMsSyncRoutes(app: Express) {
           .orderBy(desc(msObjects.receivedOrStartDatetime)),
       ]);
 
-      const subtaskParentIds = opTasks.filter(t => t.parentTaskId === null || t.parentTaskId === undefined).map(t => t.id);
+      const subtaskParentIds = opTasks.filter(t => t.parentId === null || t.parentId === undefined).map(t => t.id);
       let subtaskCounts: Record<number, number> = {};
       if (subtaskParentIds.length > 0) {
         const counts = await db.select({
-          parentTaskId: operationalTasks.parentTaskId,
+          parentId: workItems.parentId,
           count: sql<number>`count(*)`,
-        }).from(operationalTasks).where(inArray(operationalTasks.parentTaskId, subtaskParentIds)).groupBy(operationalTasks.parentTaskId);
+        }).from(workItems).where(and(inArray(workItems.parentId, subtaskParentIds), isNull(workItems.deletedAt))).groupBy(workItems.parentId);
         for (const c of counts) {
-          if (c.parentTaskId) subtaskCounts[c.parentTaskId] = Number(c.count);
+          if (c.parentId) subtaskCounts[c.parentId] = Number(c.count);
         }
       }
 
@@ -727,20 +780,20 @@ export function registerMsSyncRoutes(app: Express) {
           projectName: t.projectName,
         })),
         operational: opTasks.map(t => {
-          const isOwnerOrAssignee = t.ownerUserId === userId || (t.assignees || []).includes(userName);
+          const isOwnerOrAssignee = t.ownerUserId === userId;
           const isCreator = t.createdBy === userId;
           const trackingRole = isOwnerOrAssignee && isCreator ? "both" : isOwnerOrAssignee ? "assignee" : "creator";
           return withSourceLinks("operational", {
             ...t,
             status: normalizeTaskStatus(t.status),
             subtaskCount: subtaskCounts[t.id] || 0,
-            resolvedAssignees: mergeResolvedWithTextNames(resolveUserIds(t.assigneeUserIds), t.assignees, userMap),
+            resolvedAssignees: [] as ResolvedUser[],
             resolvedOwner: resolveUserId(t.ownerUserId),
             trackingRole,
           }, {
             itemKey: `op-${t.id}`,
             rawId: t.id,
-            projectName: t.projectName,
+            projectName: null,
           });
         }),
         trRegister: trRegisterItems.map(t => {
@@ -1024,7 +1077,7 @@ export function registerMsSyncRoutes(app: Express) {
     try {
       const userId = (req as any).user?.id;
       const userRole = (req as any).user?.role || "";
-      if (!["admin", "COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
+      if (!["COO_ADMIN", "CEO_ADMIN"].includes(userRole)) {
         return res.status(403).json({ error: "Only admin/COO can unlink Teams chats" });
       }
 
@@ -1039,6 +1092,39 @@ export function registerMsSyncRoutes(app: Express) {
     } catch (err: any) {
       console.error("[MS Teams Unlink] Error:", err);
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Dashboard channels derived from user's synced Teams data
+  app.get("/api/chat-groups/mine", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = (req as any).user?.id;
+      if (!userId) return res.status(401).json({ error: "auth_required" });
+
+      const teamsItems = await db
+        .select()
+        .from(msObjects)
+        .where(and(eq(msObjects.userId, userId), eq(msObjects.type, "teams"), ne(msObjects.dismissed, true)))
+        .orderBy(desc(msObjects.receivedOrStartDatetime));
+
+      const groups = teamsItems.map((item) => {
+        const meta = (item.metadata as any) || {};
+        return {
+          id: item.id,
+          name: item.subjectOrTitle || "Chat",
+          type: meta.chatType === "oneOnOne" ? "project" : "department",
+          memberCount: meta.memberCount || 0,
+          unreadCount: item.isRead === false ? 1 : 0,
+          lastUpdated: item.receivedOrStartDatetime,
+          msId: item.msId,
+          webLink: item.webLink,
+        };
+      });
+
+      res.json(groups);
+    } catch (err: any) {
+      console.error("[Chat Groups] Error:", err);
+      res.status(500).json({ error: "Failed to fetch chat groups" });
     }
   });
 

@@ -47,7 +47,7 @@ function oldInvoiceRefFallback(id: number): string {
 }
 
 export function registerInvoiceCaptureRoutes(app: Express) {
-  app.get("/api/invoice-captures/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/invoice-captures/project/:projectId", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });

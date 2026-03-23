@@ -10,13 +10,13 @@ import {
   withDeliverableRequirementTag,
 } from "@shared/task-deliverable-requirement";
 import type {
-  OperationalTask,
   TaskComment,
   TaskChecklist,
   TaskChecklistItem,
   TaskAttachment,
   TaskActivityLog,
 } from "@shared/schema";
+import type { UnifiedTask } from "@shared/types/unified-task";
 
 import {
   Sheet,
@@ -70,7 +70,7 @@ interface TaskDetailDrawerProps {
 }
 
 interface TaskDetailResponse {
-  task: OperationalTask;
+  task: UnifiedTask & Record<string, any>;
   comments: TaskComment[];
   checklists: Array<TaskChecklist & { items: TaskChecklistItem[] }>;
   attachments: TaskAttachment[];
@@ -114,7 +114,7 @@ export default function TaskDetailDrawer({
     ? ["baseline-task-detail", taskId, projectName]
     : ["operational-task-detail", taskId];
 
-  const { data, isLoading } = useQuery<TaskDetailResponse | null>({
+  const { data, isLoading, isError, error } = useQuery<TaskDetailResponse | null>({
     queryKey: detailQueryKey,
     queryFn: async () => {
       if (isBaselineTask) {
@@ -343,8 +343,8 @@ export default function TaskDetailDrawer({
 
 
   const guardedUpdateTask = (updates: Record<string, unknown>) => {
-    if (typeof updates.status === "string" && data) {
-      const blockedReason = getTaskWorkflowBlockReason(data as any, updates.status);
+    if (typeof updates.status === "string" && data?.task) {
+      const blockedReason = getTaskWorkflowBlockReason(data.task as any, updates.status);
       if (blockedReason) {
         toast({ title: "Status change blocked", description: blockedReason, variant: "destructive" });
         return;
@@ -371,6 +371,16 @@ export default function TaskDetailDrawer({
             {isLoading ? (
               <div className="flex items-center justify-center py-12" data-testid="task-detail-loading">
                 <span className="text-muted-foreground">Loading…</span>
+              </div>
+            ) : isError ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2" data-testid="task-detail-error">
+                <span className="text-destructive font-medium">Failed to load task</span>
+                <span className="text-xs text-muted-foreground max-w-[300px] text-center">
+                  {error instanceof Error ? error.message : "A database or network error occurred. Please try again."}
+                </span>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => queryClient.invalidateQueries({ queryKey: detailQueryKey })}>
+                  Retry
+                </Button>
               </div>
             ) : !data ? (
               <div className="flex items-center justify-center py-12" data-testid="task-detail-empty">
@@ -747,11 +757,11 @@ function TaskDetailContent({
                 </label>
                 <div className="flex items-center gap-2 text-xs" data-testid="baseline-dates">
                   <Badge variant="outline" className="text-xs font-mono">
-                    {baselineStartDate ? format(new Date(baselineStartDate), "MMM d, yyyy") : "—"}
+                    {formatDate(baselineStartDate) || "—"}
                   </Badge>
                   <ArrowRight className="h-3 w-3 text-muted-foreground" />
                   <Badge variant="outline" className="text-xs font-mono">
-                    {baselineEndDate ? format(new Date(baselineEndDate), "MMM d, yyyy") : "—"}
+                    {formatDate(baselineEndDate) || "—"}
                   </Badge>
                 </div>
               </div>
@@ -811,7 +821,7 @@ function TaskDetailContent({
           </label>
           {isBaselineTask ? (
             <UserAssignmentPicker
-              taskId={Math.abs(task.id)}
+              taskId={(task as any).workItemId || (Number.isFinite(task.id) ? Math.abs(task.id) : 0)}
               taskSource="plan"
               resolvedUsers={task.resolvedAssignees || null}
               textNames={task.assignees || null}
@@ -821,7 +831,7 @@ function TaskDetailContent({
             />
           ) : (
             <UserAssignmentPicker
-              taskId={task.id}
+              taskId={Number.isFinite(task.id) ? task.id : 0}
               taskSource="operational"
               resolvedUsers={task.resolvedAssignees || null}
               textNames={task.assignees || null}

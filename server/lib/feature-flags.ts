@@ -9,7 +9,11 @@ function parseFlagValue(raw: string | null | undefined): boolean {
 
 function isMissingAppSettingsTableError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? "");
-  return message.includes("no such table: app_settings");
+  return (
+    message.includes("no such table: app_settings") ||
+    message.includes('relation "app_settings" does not exist') ||
+    message.includes("app_settings")
+  );
 }
 
 export async function getFeatureFlag(key: string): Promise<boolean> {

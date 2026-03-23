@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { ragDotClass } from "@/lib/status-colors";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -259,19 +260,7 @@ function pctBar(label: string, done: number, total: number, color: string) {
 }
 
 function ragDot(status: string | null) {
-  const colorMap: Record<string, string> = {
-    Green: "bg-green-500",
-    GREEN: "bg-green-500",
-    green: "bg-green-500",
-    Amber: "bg-amber-500",
-    AMBER: "bg-amber-500",
-    amber: "bg-amber-500",
-    Red: "bg-red-500",
-    RED: "bg-red-500",
-    red: "bg-red-500",
-  };
-  const color = status ? colorMap[status] || "bg-gray-300" : "bg-gray-300";
-  return <div className={`w-2.5 h-2.5 rounded-full ${color} shrink-0 ring-1 ring-black/10`} />;
+  return <div className={`w-2.5 h-2.5 rounded-full ${ragDotClass(status)} shrink-0 ring-1 ring-black/10`} />;
 }
 
 function trackerBadge(hasTracker: boolean) {
@@ -451,7 +440,7 @@ export default function LifecycleBoardPage() {
 
   const role = localStorage.getItem("company_role") || "";
   const isExec = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
-  const canOverrideStageGate = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER", "admin"].includes(role);
+  const canOverrideStageGate = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"].includes(role);
 
   function getGateAuthHeaders(): HeadersInit {
     const token = localStorage.getItem("auth_token");
@@ -464,7 +453,7 @@ export default function LifecycleBoardPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/lifecycle-board/projects"] });
   };
 
-  const canEditRag = ["COO_ADMIN", "CEO_ADMIN", "CCO"].includes(role);
+  const { allowed: canEditRag } = usePermission('projects', 'approve');
 
   const openRagModal = async (p: ProjectInfo, e: React.MouseEvent) => {
     e.stopPropagation();

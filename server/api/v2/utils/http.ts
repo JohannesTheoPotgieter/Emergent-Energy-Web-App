@@ -20,6 +20,24 @@ export function created(res: Response, data: unknown, meta?: Record<string, unkn
   return res.status(201).json({ success: true, data, meta: meta ?? null, error: null });
 }
 
+/**
+ * Validate outgoing response data against a Zod schema.
+ * In development, throws on mismatch; in production, logs a warning.
+ */
+export function validateResponse<T>(schema: ZodSchema<T>, data: unknown, endpointLabel: string): T {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    const message = `Response validation failed for ${endpointLabel}: ${result.error.message}`;
+    if (process.env.NODE_ENV === "production") {
+      console.warn(message);
+      return data as T;
+    }
+    console.error(message, result.error.flatten());
+    return data as T;
+  }
+  return result.data;
+}
+
 export function fail(res: Response, err: unknown) {
   if (err instanceof ApiV2Error) {
     return res.status(err.status).json({ success: false, data: null, meta: null, error: { code: err.code, message: err.message, details: err.details ?? null } });

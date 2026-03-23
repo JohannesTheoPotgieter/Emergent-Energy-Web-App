@@ -30,7 +30,20 @@ export function resolveDbConfig(): DbConfig {
       strictMode,
     };
   }
-  
+
+  // Auto-detect Replit PostgreSQL module env vars (PGHOST, PGPORT, PGUSER, etc.)
+  if (!process.env.DATABASE_URL && process.env.PGHOST) {
+    const host = process.env.PGHOST;
+    const port = process.env.PGPORT || '5432';
+    const user = process.env.PGUSER || 'runner';
+    const password = process.env.PGPASSWORD || '';
+    const database = process.env.PGDATABASE || 'postgres';
+    const encoded = password ? encodeURIComponent(password) : '';
+    const authPart = encoded ? `${user}:${encoded}` : user;
+    process.env.DATABASE_URL = `postgresql://${authPart}@${host}:${port}/${database}`;
+    console.log(`[DB] Auto-detected Replit PostgreSQL: host=${host}, db=${database}`);
+  }
+
   // Priority 1: Use DATABASE_URL if present
   if (process.env.DATABASE_URL) {
     const url = process.env.DATABASE_URL;

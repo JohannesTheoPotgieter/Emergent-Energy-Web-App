@@ -9,9 +9,10 @@ import { nanoid } from "nanoid";
 const viteLogger = createLogger();
 
 export async function setupVite(server: Server, app: Express) {
+  const isReplit = !!(process.env.REPL_ID || process.env.REPLIT_DEV_DOMAIN);
   const serverOptions = {
     middlewareMode: true,
-    hmr: { server, path: "/vite-hmr" },
+    hmr: { server, path: "/vite-hmr", ...(isReplit ? { clientPort: 443 } : {}) },
     allowedHosts: true as const,
   };
 
@@ -22,7 +23,6 @@ export async function setupVite(server: Server, app: Express) {
       ...viteLogger,
       error: (msg, options) => {
         viteLogger.error(msg, options);
-        process.exit(1);
       },
     },
     server: serverOptions,
@@ -33,6 +33,11 @@ export async function setupVite(server: Server, app: Express) {
 
   app.use("/{*path}", async (req, res, next) => {
     const url = req.originalUrl;
+
+    // Never serve HTML for API routes — return 404 JSON instead
+    if (url.startsWith("/api/")) {
+      return res.status(404).json({ error: "Not found" });
+    }
 
     try {
       const clientTemplate = path.resolve(

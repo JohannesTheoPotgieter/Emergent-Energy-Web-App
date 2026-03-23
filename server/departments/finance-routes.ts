@@ -9,28 +9,35 @@ import { z } from "zod";
 import {
   approvals,
   changeSets,
-  cosStatusOverrides,
   fieldChanges,
   financialEditRequests,
-  insertBudgetSchema,
   msObjects,
   normalizedRevenueLines,
-  notifications,
   OVERRIDE_CATEGORIES,
   projectInfo,
   users,
 } from "@shared/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
+import {
+  STATIC_COS_BUDGET_FY26,
+  extractMonthKey,
+  allocateRevenue,
+  isCosRealised as isCosRealisedShared,
+  normalizeProjectName,
+  mapToSortedArray,
+  currentMonthKey as getCurrentMonthKey,
+  parseExpenseAmount,
+} from "../lib/calculations/financeUtils";
 import { recordOverride } from "../lib/audit/diff-engine";
-import { sendExcelSyncNotification } from "../excel-sync-notifications";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
+import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
 
-const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
+const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
 function requireAdminOrFinancialEditor(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   if (role === "PROJECT_MANAGER_SITE" || role === "PROGRAM_MANAGER" || role === "PROGRAM_FINANCE_MANAGER" || role === "CONSTRUCTION_MANAGER") return next();
   res.status(403).json({ error: "admin_required", message: "Admin or financial editor access required", code: "ADMIN_REQUIRED" });
 }
@@ -61,22 +68,7 @@ async function createPendingEditRequest(
     status: "pending",
   }).returning();
 
-  const recipients = await db.select({ id: users.id }).from(users)
-    .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
-  const [requestor] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-
-  for (const r of recipients) {
-    if (r.id === userId) continue;
-    await db.insert(notifications).values({
-      recipientUserId: r.id,
-      eventType: "financial.edit_request",
-      title: `Edit Request: ${projectName}`,
-      body: `${requestor?.name || "A PM"} submitted a ${editType} edit requiring approval. ${editSummary}`,
-      projectName,
-      requiresConfirmation: true,
-      changeDetails: JSON.stringify({ requestId: saved.id, editType, editSummary }),
-    });
-  }
+  // Notifications feature removed - financial edit request notifications are now no-ops
 
   return saved;
 }
@@ -90,10 +82,10 @@ function isDateConfirmed(confirmed: boolean | null | undefined, fontColor: strin
   return false;
 }
 
+// Delegates to shared utility in financeUtils.ts (aligned with classifyCosStatus).
+// Respects COS overrides and the cosRealised boolean from normalizedCostLines.
 function isCosRealised(exp: any): boolean {
-  const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
-  const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  return hasInvoice && hasInvDate;
+  return isCosRealisedShared(exp);
 }
 
 function isCashflowConfirmed(exp: any): boolean {
@@ -153,64 +145,6 @@ function calculateRevenueRecognition(
   });
 
   return { weekly, cumulative };
-}
-
-function applyPlanningOverrides(
-  baselinePoints: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselinePoints;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.projectName}|${o.weekStartDate}|${o.seriesName}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselinePoints.map((point: any) => {
-    const key = `${point.projectName}|${point.pointDate}|${point.seriesName}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...point,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return point;
-  });
-}
-
-function applyRevenueTrackingOverrides(
-  baselineRows: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      if (fieldName === 'inBank') {
-        updatedRow[fieldName] = value === '1' || value === 1 || value === true ? 1 : 0;
-      } else {
-        updatedRow[fieldName] = value;
-      }
-    });
-    return updatedRow;
-  });
 }
 
 function resolveInflowEffectiveDates(
@@ -273,87 +207,6 @@ function resolveInflowEffectiveDates(
       ...inf,
       effectiveDate: inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
     };
-  });
-}
-
-function applyExpenditureOverrides(
-  baselineRows: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      updatedRow[fieldName] = value;
-    });
-    return updatedRow;
-  });
-}
-
-function applyFinanceRevenueOverrides(
-  baselineData: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineData;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.category}|${o.monthEndDate}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselineData.map((row: any) => {
-    const key = `${row.category}|${row.monthEndDate}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...row,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return row;
-  });
-}
-
-function applyFinanceCosOverrides(
-  baselineData: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineData;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.category}|${o.monthEndDate}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselineData.map((row: any) => {
-    const key = `${row.category}|${row.monthEndDate}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...row,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return row;
   });
 }
 
@@ -692,10 +545,12 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
     const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
     const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
 
-    const [allExpenses, latestRefresh] = await Promise.all([
+    const [allExpenses, latestRefresh, cosOverrideMapCos] = await Promise.all([
       storage.getAllProgramExpenses(),
-      storage.getLatestRefresh()
+      storage.getLatestRefresh(),
+      Promise.resolve(new Map()),
     ]);
+
 
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
@@ -888,12 +743,24 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       }
 
       let projectOutflowsSum = 0;
+      let pastDueUnpaidSum = 0;
+      const todayStr = new Date().toISOString().split('T')[0];
       for (const expense of allExpenses) {
+        // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
+        if (expense.rowType !== 'item') continue;
         if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
-        const d = expense.expensePaymentDate;
+        // Use effective payment date: actual payment date, then computed forecast, then forecast, then invoice date
+        const d = expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-        if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
-          projectOutflowsSum += parseFloat(expense.expenseActualTotal) || 0;
+        // Use actual total with budget fallback, matching project-detail level logic
+        const amt = parseFloat(expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
+        if (d >= weekStart && d < weekEnd && amt > 0) {
+          projectOutflowsSum += amt;
+          // Flag past-due unpaid: payment date in past, but not confirmed out of bank
+          const payDateConfirmed = expense.expensePaymentDate && isDateConfirmed((expense as any).paymentDateConfirmed, (expense as any).paymentDateFontColor);
+          if (d < todayStr && !payDateConfirmed) {
+            pastDueUnpaidSum += amt;
+          }
         }
       }
 
@@ -922,6 +789,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
         weekEnd,
         projectInflows: projectInflowsSum,
         projectOutflows: projectOutflowsSum,
+        pastDueUnpaid: pastDueUnpaidSum,
         openingBalance,
         computedOpening,
         hasManualOverride,
@@ -972,19 +840,24 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
 
     const outflows = allExpenses
       .filter(e => {
+        // Bottom-up: only leaf-node (item) rows, matching project-detail level logic
+        if (e.rowType !== 'item') return false;
         if (projectFilters && !projectFilters.has(e.projectName || "")) return false;
-        const pd = e.expensePaymentDate;
+        const pd = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
         return pd >= weekStart && pd < weekEnd;
       })
-      .map(e => ({
-        projectName: e.projectName,
-        expenseCategory: e.expenseCategory,
-        expenseLineItem: e.expenseLineItem,
-        expenseInvoiceNumber: e.expenseInvoiceNumber,
-        expensePaymentDate: e.expensePaymentDate,
-        expenseActualTotal: e.expenseActualTotal ? parseFloat(e.expenseActualTotal) : 0,
-      }));
+      .map(e => {
+        const effectiveDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+        return {
+          projectName: e.projectName,
+          expenseCategory: e.expenseCategory,
+          expenseLineItem: e.expenseLineItem,
+          expenseInvoiceNumber: e.expenseInvoiceNumber,
+          expensePaymentDate: effectiveDate,
+          expenseActualTotal: parseFloat(e.expenseActualTotal || (e as any).budgetTotal || '0') || 0,
+        };
+      });
 
     const inflows = resolvedInflows
       .filter((inf: any) => {
@@ -1166,6 +1039,12 @@ router.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit"
     if (!trackerType || !monthKey) {
       return res.status(400).json({ error: "trackerType and monthKey required" });
     }
+    if (!/^\d{4}-\d{2}$/.test(monthKey)) {
+      return res.status(400).json({ error: "monthKey must be in YYYY-MM format" });
+    }
+    if (!["COS", "REV", "GP"].includes(trackerType)) {
+      return res.status(400).json({ error: "trackerType must be COS, REV, or GP" });
+    }
     const result = await storage.upsertTrackerMonthlyManual({
       trackerType,
       monthKey,
@@ -1235,14 +1114,14 @@ router.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
 
       const variance = planned - budget;
-      const variancePct = budget !== 0 ? (planned - budget) / budget : 0;
+      const variancePct = budget !== 0 ? ((planned - budget) / budget) * 100 : 0;
 
       ytdPlanned += planned;
       ytdRealised += realised;
       ytdOutstanding += outstanding;
       ytdBudget += budget;
       const ytdVariance = ytdPlanned - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? (ytdPlanned - ytdBudget) / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? ((ytdPlanned - ytdBudget) / ytdBudget) * 100 : 0;
 
       months.push({
         monthKey,
@@ -1273,14 +1152,16 @@ router.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
-    const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
+    const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getTrackerMonthlyManual('COS'),
       storage.getAllProgramInflows(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
+      Promise.resolve(new Map()),
     ]);
+
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
     const revByMonth = new Map<string, number>();
@@ -1339,31 +1220,13 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       }
     }
 
-    const staticCosBudget: Record<string, number> = {
-      '2025-09': 8083466.99,
-      '2025-10': 16346971.77,
-      '2025-11': 20803804.86,
-      '2025-12': 12381055.48,
-      '2026-01': 12395435.22,
-      '2026-02': 20724666.08,
-      '2026-03': 30199956.69,
-      '2026-04': 21137178.14,
-      '2026-05': 31405517.81,
-      '2026-06': 41720854.07,
-      '2026-07': 30116780.50,
-      '2026-08': 73983803.91,
-    };
+    // Uses shared static COS budget from financeUtils.ts (single source of truth)
+    const staticCosBudget = STATIC_COS_BUDGET_FY26;
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
 
     let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdRevRealised = 0;
-
-    function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
-      const arr: { projectName: string; value: number }[] = [];
-      m.forEach((v, k) => arr.push({ projectName: k, value: v }));
-      return arr.sort((a, b) => b.value - a.value);
-    }
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1383,7 +1246,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
 
       const variance = totalCOS - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       const revRealised = revByMonth.get(monthKey) ?? 0;
       ytdCOS += totalCOS;
@@ -1392,7 +1255,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       ytdRevRealised += revRealised;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       months.push({
         monthKey,
@@ -1411,8 +1274,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         ytdVariance,
         ytdVariancePct,
         ytdRevRealised,
-        cosProjects: mapToArray(bucket?.projects ?? new Map()),
-        realisedProjects: mapToArray(realisedBucket?.projects ?? new Map()),
+        cosProjects: mapToSortedArray(bucket?.projects ?? new Map()),
+        realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const cosPs = bucket?.projects ?? new Map<string, number>();
           const realPs = realisedBucket?.projects ?? new Map<string, number>();
@@ -1421,7 +1284,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
             const diff = v - (realPs.get(k) || 0);
             if (diff !== 0) unrealMap.set(k, diff);
           });
-          return mapToArray(unrealMap);
+          return mapToSortedArray(unrealMap);
         })(),
       });
     }
@@ -1509,14 +1372,14 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       const unrealisedCOS = totalCOS - realisedCOS;
       const budget = budgetByMonth.get(monthKey) ?? 0;
       const variance = totalCOS - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
       ytdBudget += budget;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       const monthItems = itemsByMonth.get(monthKey) || [];
 
@@ -1556,7 +1419,11 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     const match = monthKey.match(/^(\d{4})-(\d{2})$/);
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-    const allExpenses = await storage.getAllProgramExpenses();
+    const [allExpenses, cosOverrideMapMD] = await Promise.all([
+      storage.getAllProgramExpenses(),
+      Promise.resolve(new Map()),
+    ]);
+
 
     interface LineItem {
       id: number;
@@ -1597,11 +1464,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       }
 
       const nowD = new Date();
-      const curMK = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
-      const isFutureMonth = itemMonthKey ? itemMonthKey > curMK : false;
+      const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
-      const isRealised = isCosRealised(exp) && !isFutureMonth;
-      const isConfirmedPayment = isCashflowConfirmed(exp) && !isFutureMonth;
+      const isRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
+      const isConfirmedPayment = isCashflowConfirmed(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
 
       let cosState = 'Planned';
       if (isConfirmedPayment) {
@@ -1673,7 +1539,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
 
-    const { realised } = req.body as { realised: boolean };
+    const { realised, expectedUpdatedAt } = req.body as { realised: boolean; expectedUpdatedAt?: string };
     if (typeof realised !== 'boolean') return res.status(400).json({ error: "realised (boolean) required" });
 
     const allExpenses = await storage.getAllProgramExpenses();
@@ -1684,20 +1550,27 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "Cannot mark as realised without an invoice number" });
     }
 
-    await storage.updateProgramExpenseFields(id, {
-      invoiceDateConfirmed: realised,
-    });
-
-    const updatedExpenses = await storage.getAllProgramExpenses();
-    const updatedExpense = updatedExpenses.find(e => e.id === id);
-    if (updatedExpense) {
-      const newState = classifyExpenseState(updatedExpense as any);
-      await storage.updateProgramExpenseFields(id, {
-        computedState: newState,
-      });
+    if (realised && !expense.expenseInvoicedDate) {
+      return res.status(400).json({ error: "Cannot mark as realised without an invoice date" });
     }
 
+    const updated = await storage.updateProgramExpenseFields(id, {
+      invoiceDateConfirmed: realised,
+    }, expectedUpdatedAt);
+
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to update expense fields" });
+    }
+
+    const newState = classifyExpenseState(updated as any);
+    await storage.updateProgramExpenseFields(id, {
+      computedState: newState,
+    });
+
     res.json({ success: true, id, realised });
+
+    // Refresh dashboard metrics for the affected project
+    if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
   } catch (error) {
     console.error("Toggle realised error:", error);
     res.status(500).json({ error: "Failed to toggle realised status" });
@@ -1710,11 +1583,12 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
   try {
     const id = parseInt(String(req.params.id || ""), 10);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid cost line id" });
-    const { noRevenueLinked } = req.body as { noRevenueLinked: boolean };
+    const { noRevenueLinked, expectedUpdatedAt } = req.body as { noRevenueLinked: boolean; expectedUpdatedAt?: string };
     if (typeof noRevenueLinked !== 'boolean') return res.status(400).json({ error: "noRevenueLinked (boolean) required" });
-    await storage.updateProgramExpenseFields(id, { noRevenueLinked });
+    await storage.updateProgramExpenseFields(id, { noRevenueLinked }, expectedUpdatedAt);
     res.json({ success: true, id, noRevenueLinked });
-  } catch (error) {
+  } catch (error: any) {
+    if (error.status === 409) return res.status(409).json({ error: error.message });
     console.error("Toggle no-revenue-linked error:", error);
     res.status(500).json({ error: "Failed to toggle no-revenue-linked" });
   }
@@ -1809,14 +1683,14 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
       const manual = manualBudgetMap.get(monthKey);
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
       const variance = totalRevenue - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       ytdRevenue += totalRevenue;
       ytdRealised += realisedRevenue;
       ytdBudget += budget;
       const ytdUnrealised = ytdRevenue - ytdRealised;
       const ytdVariance = ytdRevenue - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       const monthItems = itemsByMonth.get(monthKey) || [];
 
@@ -1854,35 +1728,23 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
 
 router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   try {
-    const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries] = await Promise.all([
+    const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
       storage.getTrackerMonthlyManual('REV'),
       storage.getTrackerMonthlyManual('COS'),
+      Promise.resolve(new Map()),
     ]);
+
 
     const revManualBudgetMap = new Map(revManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
     const cosManualBudgetMap = new Map(cosManualEntries.map(e => [e.monthKey, e.budget ? parseFloat(e.budget) : 0]));
 
-    const staticCosBudgetGP: Record<string, number> = {
-      '2025-09': 8083466.99,
-      '2025-10': 16346971.77,
-      '2025-11': 20803804.86,
-      '2025-12': 12381055.48,
-      '2026-01': 12395435.22,
-      '2026-02': 20724666.08,
-      '2026-03': 30199956.69,
-      '2026-04': 21137178.14,
-      '2026-05': 31405517.81,
-      '2026-06': 41720854.07,
-      '2026-07': 30116780.50,
-      '2026-08': 73983803.91,
-    };
-
+    // Uses shared static COS budget from financeUtils.ts (single source of truth)
     function getCosBudget(monthKey: string): number {
       const manual = cosManualBudgetMap.get(monthKey);
       if (manual && manual !== 0) return manual;
-      return staticCosBudgetGP[monthKey] ?? 0;
+      return STATIC_COS_BUDGET_FY26[monthKey] ?? 0;
     }
 
     const revByProject = new Map<string, number>();
@@ -2023,10 +1885,12 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
 router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
-    const [projectExpenses, revLines] = await Promise.all([
+    const [projectExpenses, revLines, cosOverrideMapProj] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getProgramInflowsByProject(projectName),
+      Promise.resolve(new Map()),
     ]);
+
 
     const totalMilestoneRevenue = revLines.reduce((s: number, r: any) => {
       const amt = parseFloat(r.milestoneAmount as string) || 0;
@@ -2158,13 +2022,110 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
   }
 });
 
+// GP Tracker — month detail drill-down (line-item level)
+router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
+  try {
+    const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
+    if (!monthKey) return res.status(400).json({ error: "monthKey required" });
+
+    const keyMatch = monthKey.match(/^(\d{4})-(\d{2})$/);
+    if (!keyMatch) return res.status(400).json({ error: "Invalid monthKey format" });
+
+    const [allExpenses, allInflowsRaw, cosOverrideMapGPD] = await Promise.all([
+      storage.getAllProgramExpenses(),
+      storage.getAllProgramInflows(),
+      Promise.resolve(new Map()),
+    ]);
+
+
+    const revByProject = new Map<string, number>();
+    for (const rev of allInflowsRaw) {
+      const pName = normalizeProjectName(rev.projectName);
+      const amt = parseFloat(rev.milestoneAmount as string) || 0;
+      revByProject.set(pName, (revByProject.get(pName) || 0) + amt);
+    }
+
+    const cosByProject = new Map<string, number>();
+    for (const exp of allExpenses) {
+      const amount = parseExpenseAmount(exp);
+      if (amount === 0) continue;
+      const pName = normalizeProjectName(exp.projectName);
+      cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
+    }
+
+    const curMK = getCurrentMonthKey();
+    const items: any[] = [];
+
+    for (const exp of allExpenses) {
+      const amount = parseExpenseAmount(exp);
+      if (amount === 0) continue;
+
+      const itemMonthKey = extractMonthKey(exp.expenseInvoicedDate as string | null);
+      if (itemMonthKey !== monthKey) continue;
+
+      const pName = normalizeProjectName(exp.projectName);
+      if (project && pName !== project) continue;
+
+      const totalCOSProject = cosByProject.get(pName) || 1;
+      const totalRevProject = revByProject.get(pName) || 0;
+      const isNoRevLinked = !!(exp as any).noRevenueLinked;
+      const revenueAmount = allocateRevenue(amount, totalCOSProject, totalRevProject, isNoRevLinked);
+      const gpAmount = revenueAmount - amount;
+
+      const cosRealised = isCosRealised(exp) && itemMonthKey <= curMK;
+      const gpState = cosRealised ? 'Realised' : 'Unrealised';
+
+      if (stateFilter && stateFilter.toLowerCase() !== gpState.toLowerCase()) continue;
+
+      items.push({
+        id: exp.id,
+        projectName: pName,
+        category: exp.expenseCategory || null,
+        lineItem: exp.expenseLineItem || null,
+        costAmount: amount,
+        revenueAmount,
+        gpAmount,
+        gpPct: revenueAmount !== 0 ? (gpAmount / revenueAmount) * 100 : 0,
+        invoiceNumber: exp.expenseInvoiceNumber || null,
+        poNumber: exp.expensePoNumber || null,
+        invoiceDate: exp.expenseInvoicedDate || null,
+        supplier: exp.supplierName || null,
+        isRealised: cosRealised,
+        noRevenueLinked: isNoRevLinked,
+        gpState,
+      });
+    }
+
+    items.sort((a, b) => b.gpAmount - a.gpAmount);
+
+    const realisedGP = items.filter(i => i.isRealised).reduce((s, i) => s + i.gpAmount, 0);
+    const unrealisedGP = items.filter(i => !i.isRealised).reduce((s, i) => s + i.gpAmount, 0);
+
+    res.json({
+      monthKey,
+      lineCount: items.length,
+      totalRevenue: items.reduce((s, i) => s + i.revenueAmount, 0),
+      totalCOS: items.reduce((s, i) => s + i.costAmount, 0),
+      totalGP: items.reduce((s, i) => s + i.gpAmount, 0),
+      realisedGP,
+      unrealisedGP,
+      items,
+    });
+  } catch (error) {
+    console.error("GP tracker month-detail error:", error);
+    res.status(500).json({ error: "Failed to fetch GP tracker month detail" });
+  }
+});
+
 router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
-    const [allExpenses, allInflowsRaw, manualEntries] = await Promise.all([
+    const [allExpenses, allInflowsRaw, manualEntries, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
       storage.getTrackerMonthlyManual('REV'),
+      Promise.resolve(new Map()),
     ]);
+
 
     const manualBudgetMap = new Map(manualEntries.map(e => [e.monthKey, e]));
 
@@ -2225,12 +2186,6 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
       }
     }
 
-    function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
-      const arr: { projectName: string; value: number }[] = [];
-      m.forEach((v, k) => arr.push({ projectName: k, value: v }));
-      return arr.sort((a, b) => b.value - a.value);
-    }
-
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
     let ytdRevenue = 0, ytdRealised = 0, ytdBudget = 0;
@@ -2252,14 +2207,14 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
       const manual = manualBudgetMap.get(monthKey);
       const budget = manual?.budget ? parseFloat(manual.budget) : 0;
       const variance = totalRevenue - budget;
-      const variancePct = budget !== 0 ? variance / budget : 0;
+      const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
       ytdRevenue += totalRevenue;
       ytdRealised += realisedRevenue;
       ytdBudget += budget;
       const ytdUnrealised = ytdRevenue - ytdRealised;
       const ytdVariance = ytdRevenue - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+      const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
       months.push({
         monthKey,
@@ -2276,8 +2231,8 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
         ytdBudget,
         ytdVariance,
         ytdVariancePct,
-        revProjects: mapToArray(bucket?.projects ?? new Map()),
-        realisedProjects: mapToArray(realisedBucket?.projects ?? new Map()),
+        revProjects: mapToSortedArray(bucket?.projects ?? new Map()),
+        realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const revPs = bucket?.projects ?? new Map<string, number>();
           const realPs = realisedBucket?.projects ?? new Map<string, number>();
@@ -2286,7 +2241,7 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
             const diff = v - (realPs.get(k) || 0);
             if (diff !== 0) unrealMap.set(k, diff);
           });
-          return mapToArray(unrealMap);
+          return mapToSortedArray(unrealMap);
         })(),
       });
     }
@@ -2310,9 +2265,11 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     const { monthKey, project, state: stateFilter } = req.query as { monthKey?: string; project?: string; state?: string };
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
-    const allExpenses = project
-      ? await storage.getProgramExpensesByProject(project)
-      : await storage.getAllProgramExpenses();
+    const [allExpenses, cosOverrideMapRMD] = await Promise.all([
+      project ? storage.getProgramExpensesByProject(project) : storage.getAllProgramExpenses(),
+      Promise.resolve(new Map()),
+    ]);
+
 
     const allInflowsRaw = project
       ? await storage.getProgramInflowsByProject(project)
@@ -2389,43 +2346,6 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
   }
 });
 
-// ==================== BUDGETS CRUD ====================
-
-router.get("/api/budgets", requireAuth, async (req, res) => {
-  try {
-    const budgets = await storage.getAllBudgets();
-    res.json(budgets);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch budgets", message: "Failed to fetch budgets" });
-  }
-});
-
-router.post("/api/budgets", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const parsed = insertBudgetSchema.parse(req.body);
-    const budget = await storage.createBudget(parsed);
-    res.status(201).json(budget);
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Invalid budget data", message: "Invalid budget data", errors: error.errors });
-    }
-    res.status(500).json({ error: "Failed to create budget", message: "Failed to create budget" });
-  }
-});
-
-router.delete("/api/budgets/:id", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const id = parseInt(String(req.params.id));
-    const deleted = await storage.deleteBudget(id);
-    if (!deleted) {
-      return res.status(404).json({ error: "Budget not found", message: "Budget not found" });
-    }
-    res.json({ message: "Budget deleted" });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to delete budget", message: "Failed to delete budget" });
-  }
-});
-
 // ==================== PROGRAM EXPENSES & INFLOWS ====================
 
 router.get("/api/program-expenses", requireAuth, async (req, res) => {
@@ -2436,10 +2356,7 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       expenses = await storage.getProgramExpensesByProject(projectName);
 
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getExpenditureOverridesByProject(projectName);
-        expenses = applyExpenditureOverrides(expenses, overrides);
-      }
+      // Override data now baked into base rows
     } else {
       expenses = await storage.getAllProgramExpenses();
     }
@@ -2460,14 +2377,8 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
 router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.params;
-    const { applyOverrides } = req.query;
 
     let expenses = await storage.getProgramExpensesByProject(projectName);
-
-    if (applyOverrides === 'true') {
-      const overrides = await storage.getExpenditureOverridesByProject(projectName);
-      expenses = applyExpenditureOverrides(expenses, overrides);
-    }
 
     res.json(expenses);
   } catch (error) {
@@ -2483,10 +2394,7 @@ router.get("/api/program-inflows", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       inflows = await storage.getProgramInflowsByProject(projectName);
 
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
-        inflows = applyRevenueTrackingOverrides(inflows, overrides);
-      }
+      // Override data now baked into base rows
     } else {
       inflows = await storage.getAllProgramInflows();
     }
@@ -2533,8 +2441,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
       points = await storage.getAllCashflowPoints();
     }
 
-    const overrides = await storage.getAllPlanningOverrides();
-    points = applyPlanningOverrides(points, overrides);
+    // Override data now baked into base rows
 
     const expenses = projectName
       ? await storage.getProgramExpensesByProject(projectName)
@@ -2584,7 +2491,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
         }
 
         for (const exp of projExpenses) {
-          const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
+          const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate || exp.expenseInvoicedDate || null;
           if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
           const amt = parseFloat(exp.expenseActualTotal || exp.budgetTotal || '0');
           if (amt === 0) continue;
@@ -2689,11 +2596,8 @@ router.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => 
     const { projectName } = req.query;
     let overrides;
 
-    if (projectName && typeof projectName === 'string') {
-      overrides = await storage.getPlanningOverridesByProject(projectName);
-    } else {
-      overrides = await storage.getAllPlanningOverrides();
-    }
+    // Override data now baked into base rows
+    overrides = [];
 
     res.json(overrides);
   } catch (error) {
@@ -2750,14 +2654,6 @@ router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async
       console.warn("[audit] Planning override audit failed (non-blocking):", auditErr.message);
     }
 
-    sendExcelSyncNotification({
-      projectName: req.body?.projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "cashflow_override",
-      changeDescription: "Cashflow planning override applied",
-      details: req.body,
-    });
-
     res.json({ message: "Planning overrides saved", count: saved.length, overrides: saved });
   } catch (error) {
     res.status(500).json({
@@ -2788,8 +2684,7 @@ router.get("/api/revenue-tracking/overrides", requireAuth, async (req, res) => {
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
-    res.json(overrides);
+    res.json([]);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
   }
@@ -2828,31 +2723,45 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       });
     }
 
-    const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
     const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
     const baselineRowsByProject = new Map<string, Map<number, any>>();
+    const saved: any[] = [];
 
     for (const projectName of projectNames) {
-      const [rawInflows, existingOverrides] = await Promise.all([
-        storage.getProgramInflowsByProject(projectName),
-        storage.getRevenueTrackingOverridesByProject(projectName),
-      ]);
-      const currentRows = applyRevenueTrackingOverrides(rawInflows, existingOverrides);
+      const rawInflows = await storage.getProgramInflowsByProject(projectName);
       baselineRowsByProject.set(
         projectName,
-        new Map(currentRows.map((row: any) => [row.rowNumber, row])),
+        new Map(rawInflows.map((row: any) => [row.rowNumber, row])),
       );
     }
 
-    const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
+    // Apply overrides directly to the base table (normalized_revenue_lines)
+    for (const pn of projectNames) {
+      const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+      const inflows = baselineRowsByProject.get(pn)!;
 
+      const rowGroups = new Map<number, Record<string, any>>();
+      for (const ov of projectOverrides) {
+        const inflow = inflows.get(ov.rowNumber);
+        if (!inflow) continue;
+        if (!rowGroups.has(inflow.id)) rowGroups.set(inflow.id, {});
+        const fields = rowGroups.get(inflow.id)!;
+        const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+        fields[ov.fieldName] = effectiveValue;
+      }
+
+      for (const [inflowId, fields] of rowGroups.entries()) {
+        if (Object.keys(fields).length > 0) {
+          const result = await storage.updateProgramInflowFields(inflowId, fields);
+          if (result) saved.push(result);
+        }
+      }
+    }
+
+    // Sync inBank status on updated rows
     try {
       for (const projectName of projectNames) {
-        const [rawInflows, latestOverrides] = await Promise.all([
-          storage.getProgramInflowsByProject(projectName),
-          storage.getRevenueTrackingOverridesByProject(projectName),
-        ]);
-        const appliedRows = applyRevenueTrackingOverrides(rawInflows, latestOverrides);
+        const appliedRows = await storage.getProgramInflowsByProject(projectName);
         for (const r of appliedRows) {
           const milestoneNo = r.milestoneNo;
           if (!milestoneNo || !/^\d+$/.test(String(milestoneNo).trim())) continue;
@@ -2905,15 +2814,17 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
       console.warn("[audit] Revenue override audit failed:", auditErr.message);
     }
 
-    sendExcelSyncNotification({
-      projectName: projectNames[0] || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "revenue_override",
-      changeDescription: "Revenue tracking override applied",
-      details: req.body,
-    });
-
     res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
+
+    // Prompt 12: Refresh materialized dashboard metrics for affected projects
+    try {
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const nameToId = new Map(allProjectInfoRows.map((p: any) => [p.projectName, p.id]));
+      for (const pn of projectNames) {
+        const pid = nameToId.get(pn);
+        if (pid) refreshProjectMetricsAsync(pid);
+      }
+    } catch (_) { /* non-blocking */ }
   } catch (error) {
     res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
   }
@@ -2925,7 +2836,7 @@ router.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requi
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deleteRevenueTrackingOverridesByProject(projectName);
+    // Override tables collapsed into base tables — no separate overrides to delete
     res.json({ message: `Revenue tracking overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete revenue tracking overrides", message: "Failed to delete revenue tracking overrides" });
@@ -2941,7 +2852,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     const useCanonical = await isWorkItemsEnabled();
     const [rawInflows, overrides, projectInfoList, savedSummary, canonicalTasks, legacyOperationalTasks, planTasks, taskLinks] = await Promise.all([
       storage.getProgramInflowsByProject(projectName),
-      storage.getRevenueTrackingOverridesByProject(projectName),
+      Promise.resolve([]),
       storage.getAllProjectInfo(),
       storage.getProjectRevenueSummary(projectName),
       useCanonical ? getWorkItemsAsOperationalTasks(projectName) : Promise.resolve([]),
@@ -2951,7 +2862,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     ]);
     const operationalTasks = (useCanonical && canonicalTasks.length > 0) ? canonicalTasks : legacyOperationalTasks;
 
-    const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
+    const inflows = rawInflows;
     const sourceInflowByRow = new Map(rawInflows.map((row: any) => [row.rowNumber, row]));
     const overrideByFieldKey = new Map(overrides.map((row: any) => [`${row.rowNumber}|${row.fieldName}`, row]));
     const taskLinkByRow = new Map(taskLinks.map((row: any) => [row.milestoneRowNumber, row]));
@@ -3172,7 +3083,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     });
 
     const totalContract = milestones.reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-    const invoiced = milestones.filter((m: any) => m.status === 'invoiced').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+    const invoiced = milestones.filter((m: any) => m.status === 'invoiced' || m.status === 'inBank' || m.status === 'received').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
     const inBankTotal = milestones.filter((m: any) => m.status === 'inBank').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
     const pending = milestones.filter((m: any) => m.status === 'planned' || m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
     const overdueTotal = milestones.filter((m: any) => m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
@@ -3202,7 +3113,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     const costedExpenditureFinal = plannedExpenditureVal;
 
     const actualRevenue = inBankTotal;
-    const actualProfit = actualRevenue - actualExpenditure;
+    const actualProfit = actualRevenue - allExpenditure;
     const actualMargin = actualRevenue > 0 ? actualProfit / actualRevenue : 0;
 
     const liveRevenue = totalContract;
@@ -3322,7 +3233,7 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
         },
         actual: {
           revenue: actualRevenue,
-          expenditure: actualExpenditure,
+          expenditure: allExpenditure,
           profit: actualProfit,
           margin: actualMargin,
         },
@@ -3438,14 +3349,6 @@ router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrF
       console.warn("[audit] Costed values audit failed:", auditErr.message);
     }
 
-    sendExcelSyncNotification({
-      projectName,
-      changedByUserId: userId,
-      changeType: "project_revenue_summary_override",
-      changeDescription: "Project costed revenue/expenditure updated",
-      details: { revenue, expenditure, changeReason: auditComment, changeCategory: auditCategory },
-    });
-
     res.json(saved);
   } catch (error) {
     console.error("Save costed error:", error);
@@ -3548,14 +3451,6 @@ router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdmin
       console.warn("[audit] Milestone task link audit failed:", auditErr.message);
     }
 
-    sendExcelSyncNotification({
-      projectName,
-      changedByUserId: userId,
-      changeType: "milestone_task_linked",
-      changeDescription: `Milestone ${milestoneRowNumber} linked to task ${taskId}`,
-      details: { milestoneRowNumber, taskId },
-    });
-
     res.json(link);
   } catch (error) {
     console.error("Link task error:", error);
@@ -3586,14 +3481,6 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
       await storage.updateMilestoneDateOverride(projectName, milestoneRowNumber, dateOverride, reason || null);
     }
 
-    sendExcelSyncNotification({
-      projectName: decodeURIComponent(req.params.projectName),
-      changedByUserId: (req as any).user?.id,
-      changeType: "revenue_date_override",
-      changeDescription: "Revenue date override applied",
-      details: req.body,
-    });
-
     try {
       await recordOverride({
         actorUserId: (req as any).user?.id,
@@ -3616,6 +3503,15 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
     }
 
     res.json({ success: true });
+
+    // Refresh dashboard metrics for this project
+    try {
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const proj = allProjectInfoRows.find((p: any) => p.projectName === projectName);
+      if (proj) refreshProjectMetricsAsync(proj.id);
+    } catch (metricsErr: any) {
+      console.warn("[finance] Revenue date override metrics refresh failed:", metricsErr.message);
+    }
   } catch (error) {
     console.error("Date override error:", error);
     res.status(500).json({ error: "Failed to save date override" });
@@ -3670,8 +3566,7 @@ router.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    const overrides = await storage.getExpenditureOverridesByProject(projectName);
-    res.json(overrides);
+    res.json([]);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch expenditure overrides", message: "Failed to fetch expenditure overrides" });
   }
@@ -3692,11 +3587,13 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
     const userId = req.user?.id;
     const userRole = req.user?.role;
 
+    const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+
+    // PM-only roles require approval; admins and financial approvers apply directly
     if (isPmOnlyRole(userRole)) {
-      const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
       const hasHighExpense = overrides.some((o: any) => o.fieldName === "expenseActualTotal" && Number(o.overrideValue) > 50000);
       const hasBudgetChange = overrides.some((o: any) => o.fieldName === "budgetTotal");
-      const editSummary = `Expenditure override: ${overrides.length} field(s). Category: ${overrideCategory}. Comment: ${overrideComment.trim()}${hasHighExpense ? " [HIGH EXPENSE]" : ""}${hasBudgetChange ? " [BUDGET CHANGE]" : ""}`;
+      const editSummary = `Expenditure override: ${overrides.length} field(s). Category: ${overrideCategory}. Comment: ${overrideComment.trim()}${hasHighExpense ? " [HIGH EXPENSE]" : ""}${hasBudgetChange ? " [BUDGET CHANGE]" : ""} [Submitted by ${userRole || "unknown"}]`;
       const saved = await createPendingEditRequest(
         userId!,
         projectNames[0] || "Unknown",
@@ -3706,15 +3603,13 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
         editSummary
       );
       return res.json({
-        message: "Your expenditure edit has been submitted for approval",
+        message: "Your cost correction has been submitted for approval",
         status: "pending_approval",
         requestId: saved.id,
       });
     }
 
-    const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-    const saved = await storage.upsertManyExpenditureOverrides(overridesWithUser);
-
+    // Admin/approver: apply overrides directly to base table
     const fieldToColumnMap: Record<string, string> = {
       expenseInvoicedDate: "expenseInvoicedDate",
       expensePaymentDate: "expensePaymentDate",
@@ -3732,16 +3627,6 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       paymentDateFontColor: "paymentDateFontColor",
       supplierName: "supplierName",
     };
-
-    const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-    const baselineExpenseRowsByProject = new Map<string, Map<number, any>>();
-    for (const pn of projectNames) {
-      const expenses = await storage.getProgramExpensesByProject(pn as string);
-      baselineExpenseRowsByProject.set(
-        pn as string,
-        new Map(expenses.map((expense: any) => [expense.rowNumber, expense])),
-      );
-    }
 
     for (const pn of projectNames) {
       const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
@@ -3773,34 +3658,19 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
       }
     }
 
+    res.json({ message: "Expenditure overrides applied successfully", count: overrides.length });
+
+    // Refresh dashboard metrics for affected projects
     try {
-      for (const o of overrides) {
-        await recordOverride({
-          actorUserId: userId,
-          actorRole: (req as any).user?.role,
-          entityType: "expenditure_override",
-          entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
-          projectName: o.projectName,
-          action: "EXPENDITURE_OVERRIDE",
-          overrideCategory,
-          overrideComment: overrideComment.trim(),
-          oldRecord: { [o.fieldName]: baselineExpenseRowsByProject.get(o.projectName)?.get(o.rowNumber)?.[o.fieldName] ?? null },
-          newRecord: { [o.fieldName]: normalizeOverrideValue(o.overrideValue) },
-        });
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const nameToId = new Map(allProjectInfoRows.map((p: any) => [p.projectName, p.id]));
+      for (const pn of projectNames) {
+        const pid = nameToId.get(pn);
+        if (pid) refreshProjectMetricsAsync(pid);
       }
-    } catch (auditErr: any) {
-      console.warn("[audit] Expenditure override audit failed:", auditErr.message);
+    } catch (metricsErr: any) {
+      console.warn("[finance] Expenditure override metrics refresh failed:", metricsErr.message);
     }
-
-    sendExcelSyncNotification({
-      projectName: projectNames[0] || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "expenditure_override",
-      changeDescription: "Expenditure override applied",
-      details: req.body,
-    });
-
-    res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
   } catch (error) {
     console.error("Failed to save expenditure overrides:", error);
     res.status(500).json({ error: "Failed to save expenditure overrides", message: error instanceof Error ? error.message : "Failed to save expenditure overrides" });
@@ -3813,7 +3683,7 @@ router.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdm
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deleteExpenditureOverridesByProject(projectName);
+    // Override tables collapsed into base tables — no separate overrides to delete
     res.json({ message: `Expenditure overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete expenditure overrides", message: "Failed to delete expenditure overrides" });
@@ -3838,14 +3708,6 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
       return res.status(400).json({ error: "expenseId and taskId are required" });
     }
     const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
-
-    sendExcelSyncNotification({
-      projectName: decodeURIComponent(req.params.projectName),
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_task_linked",
-      changeDescription: `Expense ${expenseId} linked to task ${taskId}`,
-      details: { expenseId, taskId },
-    });
 
     try {
       await recordOverride({
@@ -3876,14 +3738,6 @@ router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, re
     const expenseId = parseInt(req.params.expenseId);
     await storage.deleteExpenseTaskLink(req.params.projectName, expenseId);
 
-    sendExcelSyncNotification({
-      projectName: decodeURIComponent(req.params.projectName),
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_task_unlinked",
-      changeDescription: `Expense ${expenseId} unlinked from task`,
-      details: { expenseId },
-    });
-
     try {
       await recordOverride({
         actorUserId: (req as any).user?.id,
@@ -3910,17 +3764,19 @@ router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, re
 router.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     const { dateOverride, reason } = req.body;
-    await storage.updateExpenseTaskLinkDateOverride(req.params.projectName, parseInt(req.params.expenseId), dateOverride, reason);
-
-    sendExcelSyncNotification({
-      projectName: decodeURIComponent(req.params.projectName),
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_date_override",
-      changeDescription: "Expense task link date override applied",
-      details: req.body,
-    });
+    const expProjectName = req.params.projectName;
+    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseInt(req.params.expenseId), dateOverride, reason);
 
     res.json({ success: true });
+
+    // Refresh dashboard metrics for this project
+    try {
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const proj = allProjectInfoRows.find((p: any) => p.projectName === expProjectName);
+      if (proj) refreshProjectMetricsAsync(proj.id);
+    } catch (metricsErr: any) {
+      console.warn("[finance] Expense date override metrics refresh failed:", metricsErr.message);
+    }
   } catch (error) {
     res.status(500).json({ error: "Failed to save date override" });
   }
@@ -3950,14 +3806,6 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
       lineStatus: 'Planned',
     });
 
-    sendExcelSyncNotification({
-      projectName: projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_line_added",
-      changeDescription: "Manual expense line added",
-      details: req.body,
-    });
-
     res.json(newExpense);
   } catch (error) {
     console.error("Add expense line error:", error);
@@ -3979,14 +3827,6 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
       rowType: 'category',
       expenseCategory: categoryName,
       expenseLineItem: categoryName,
-    });
-
-    sendExcelSyncNotification({
-      projectName: projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "expense_category_added",
-      changeDescription: `New expense category added: ${categoryName}`,
-      details: req.body,
     });
 
     res.json(newCategory);
@@ -4028,14 +3868,6 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
     });
     await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
 
-    sendExcelSyncNotification({
-      projectName: projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "task_to_expense_line",
-      changeDescription: "Plan task inserted as expense line",
-      details: req.body,
-    });
-
     res.json(newExpense);
   } catch (error) {
     console.error("Insert task as line error:", error);
@@ -4048,13 +3880,11 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
 router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
-    const [expenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides, projectRows, revSummary] = await Promise.all([
+    const [expenses, taskLinks, opTasks, planTasks, projectRows, revSummary] = await Promise.all([
       storage.getProgramExpensesByProject(projectName),
       storage.getExpenseTaskLinks(projectName),
       storage.getOperationalTasksByProject(projectName),
       storage.getProjectPlansByProject(projectName),
-      db.select().from(cosStatusOverrides).where(eq(cosStatusOverrides.projectName, projectName)),
-      storage.getExpenditureOverridesByProject(projectName),
       db
         .select({
           id: projectInfo.id,
@@ -4066,15 +3896,13 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       storage.getProjectRevenueSummary(projectName),
     ]);
 
-    const cosOverrideByExpenseId = new Map(cosOverrides.map(o => [o.expenseId, o]));
-    const cosOverrideByRow = new Map(cosOverrides.map(o => [`${o.projectName}:${o.rowNumber}`, o]));
-    const overrideByFieldKey = new Map(expenditureOverrides.map((row: any) => [`${row.rowNumber}|${row.fieldName}`, row]));
+    const cosOverrideByExpenseId = new Map();
+    const cosOverrideByRow = new Map();
+    const overrideByFieldKey = new Map();
     const governance = await loadProjectFinanceGovernanceContext(
       projectName,
       projectRows[0]?.id ?? null,
-      expenditureOverrides
-        .map((row: any) => row.createdBy)
-        .filter((id: any): id is number => typeof id === "number" && Number.isFinite(id))
+      []
     );
 
     const linkMap = new Map(taskLinks.map(l => [l.expenseId, l]));
@@ -4113,8 +3941,9 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       const hasInvoice = !!(exp.expenseInvoiceNumber && exp.expenseInvoiceNumber.trim());
       const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
 
+      const invDateConfirmed = hasInvDate && isDateConfirmed(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
       let cosStatus: string;
-      if (hasInvoice && hasInvDate) {
+      if (hasInvoice && hasInvDate && invDateConfirmed) {
         cosStatus = 'COS Realised';
       } else if (hasPO || hasInvoice) {
         cosStatus = 'Committed';
@@ -4122,8 +3951,10 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         cosStatus = 'Planned';
       }
 
-      const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
-      const paymentDateBlack = hasPayDate && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
+      const effectivePaymentDate = link?.dateOverride || linkedTask?.dueDate || exp.expensePaymentDate || exp.forecastPaymentDate || null;
+      const hasPayDate = !!(effectivePaymentDate && String(effectivePaymentDate).trim());
+      const isFutureDate = hasPayDate && new Date(effectivePaymentDate!) > new Date();
+      const paymentDateBlack = hasPayDate && !isFutureDate && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
 
       let paymentStatus: string;
       if (paymentDateBlack && hasInvoice) {
@@ -4133,8 +3964,6 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       } else {
         paymentStatus = 'Planned';
       }
-
-      const effectivePaymentDate = link?.dateOverride || linkedTask?.dueDate || exp.expensePaymentDate || exp.forecastPaymentDate || null;
       let plannedMonth: string | null = null;
       if (effectivePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(effectivePaymentDate)) {
         const d = new Date(effectivePaymentDate);
@@ -4227,6 +4056,7 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         hasDateOverride: !!link?.dateOverride,
         dateOverrideReason: link?.dateOverrideReason || null,
         cosOverride: cosOverride ? { reason: cosOverride.reason, overriddenBy: cosOverride.overriddenBy, originalStatus: cosOverride.originalStatus, overrideStatus: cosOverride.overrideStatus } : null,
+        paymentDateFontColor: isFutureDate ? "red" : (exp.paymentDateFontColor || null),
         trust: {
           sourceSheet: "Expenditure Breakdown",
           sourceRow: exp.rowNumber,
@@ -4272,8 +4102,8 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
     const committedUnpaidTotal = enriched
       .filter((item: any) => item.cosStatus === "Committed" && item.paymentStatus !== "Out of Bank")
       .reduce((sum: number, item: any) => sum + safeNum(item.expenseActualTotal), 0);
-    const overriddenRowCount = new Set(expenditureOverrides.map((row: any) => row.rowNumber)).size;
-    const overriddenFieldCount = new Set(expenditureOverrides.map((row: any) => `${row.rowNumber}:${row.fieldName}`)).size;
+    const overriddenRowCount = 0;
+    const overriddenFieldCount = 0;
     const noRevenueLinkedCount = enriched.filter((item: any) => item.noRevenueLinked).length;
     const overBudgetItems = enriched.filter((item: any) => safeNum(item.expenseActualTotal) > safeNum(item.budgetTotal));
     const riskSignals = [
@@ -4418,15 +4248,20 @@ router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, require
       }
     } catch (auditErr: any) { console.warn("[audit] Finance revenue override audit failed:", auditErr.message); }
 
-    sendExcelSyncNotification({
-      projectName: overrides[0]?.projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "finance_revenue_override",
-      changeDescription: "Finance revenue override applied",
-      details: req.body,
-    });
-
     res.json({ message: "Finance revenue overrides saved", count: saved.length, overrides: saved });
+
+    // Refresh dashboard metrics for affected projects
+    try {
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const nameToId = new Map(allProjectInfoRows.map((p: any) => [p.projectName, p.id]));
+      for (const pn of projectNames) {
+        const pid = nameToId.get(pn);
+        if (pid) refreshProjectMetricsAsync(pid);
+      }
+    } catch (metricsErr: any) {
+      console.warn("[finance] Finance revenue override metrics refresh failed:", metricsErr.message);
+    }
   } catch (error) {
     res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
   }
@@ -4488,15 +4323,20 @@ router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePerm
       }
     } catch (auditErr: any) { console.warn("[audit] Finance COS override audit failed:", auditErr.message); }
 
-    sendExcelSyncNotification({
-      projectName: overrides[0]?.projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "finance_cos_override",
-      changeDescription: "Finance COS override applied",
-      details: req.body,
-    });
-
     res.json({ message: "Finance COS overrides saved", count: saved.length, overrides: saved });
+
+    // Refresh dashboard metrics for affected projects
+    try {
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+      const allProjectInfoRows = await storage.getAllProjectInfo();
+      const nameToId = new Map(allProjectInfoRows.map((p: any) => [p.projectName, p.id]));
+      for (const pn of projectNames) {
+        const pid = nameToId.get(pn);
+        if (pid) refreshProjectMetricsAsync(pid);
+      }
+    } catch (metricsErr: any) {
+      console.warn("[finance] Finance COS override metrics refresh failed:", metricsErr.message);
+    }
   } catch (error) {
     res.status(500).json({ error: "Failed to save finance COS overrides", message: error instanceof Error ? error.message : "Failed to save finance COS overrides" });
   }
@@ -4525,10 +4365,7 @@ router.get("/api/finance/revenue", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       data = await storage.getFinanceRevenueMonthlyByProject(projectName);
 
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
-        data = applyFinanceRevenueOverrides(data, overrides);
-      }
+      // Override data now baked into base rows
     } else {
       data = await storage.getAllFinanceRevenueMonthly();
     }
@@ -4554,10 +4391,7 @@ router.get("/api/finance/cos", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       data = await storage.getFinanceCosMonthlyByProject(projectName);
 
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getFinanceCosOverridesByProject(projectName);
-        data = applyFinanceCosOverrides(data, overrides);
-      }
+      // Override data now baked into base rows
     } else {
       data = await storage.getAllFinanceCosMonthly();
     }

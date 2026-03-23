@@ -2,7 +2,8 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and, isNull } from "drizzle-orm";
+import { softCloseRows, addTemporalColumns } from "./lib/temporal-helpers";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { verifyToken } from "./jwt";
 import { requirePermission } from "./permission-middleware";
@@ -39,7 +40,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
     const coreOnly = req.query.coreOnly === "true";
 
     const [allLines, counterpartyList, patternRules] = await Promise.all([
-      db.select().from(normalizedCostLines),
+      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       db.select().from(counterparties),
       db.select().from(invoicePatternRules),
     ]);
@@ -207,7 +208,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
 router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req: Request, res: Response) => {
   try {
     const name = decodeURIComponent(req.params.name);
-    const allLines = await db.select().from(normalizedCostLines);
+    const allLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
     const normalizedName = name.trim().toLowerCase();
     const lines = allLines.filter(l => {
       const cpName = (l.counterpartyName || "").trim().toLowerCase();
@@ -347,7 +348,7 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
 
     const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
     const [rawCosts, piRows] = await Promise.all([
-      db.select().from(normalizedCostLines),
+      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       db.select({ projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map(p => p.projectName));
@@ -408,9 +409,8 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
         }
       }
 
-      await tx.delete(normalizedCostLines).where(
-        sql`${normalizedCostLines.sourceSheet} = 'program_expense'`
-      );
+      // Temporal: soft-close existing rows instead of hard delete (Prompt 10)
+      await softCloseRows(tx, "normalized_cost_lines", "source_sheet = 'program_expense'");
 
       const projectsProcessed = new Set<string>();
       const costValues: any[] = [];
@@ -478,7 +478,7 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
       const batchSize = 500;
       for (let i = 0; i < costValues.length; i += batchSize) {
         const batch = costValues.slice(i, i + batchSize);
-        await tx.insert(normalizedCostLines).values(batch);
+        await tx.insert(normalizedCostLines).values(addTemporalColumns(batch) as any);
       }
 
       console.log(`[procurement-analysis] Processed ${costValues.length} cost lines, ${counterpartiesCreated} new counterparties, ${projectsProcessed.size} projects`);
@@ -500,7 +500,7 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
 
 router.get("/api/procurement-analysis/status", requireAuth, async (_req: Request, res: Response) => {
   try {
-    const [costResult] = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines);
+    const [costResult] = await db.select({ count: sql<number>`count(*)` }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
     const [cpResult] = await db.select({ count: sql<number>`count(*)` }).from(counterparties);
     res.json({
       costLines: Number(costResult.count),
@@ -570,12 +570,12 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, re
 
       if (cpRows.length > 0) {
         const cpId = cpRows[0].id;
-        await tx.delete(normalizedCostLines)
-          .where(sql`${normalizedCostLines.counterpartyId} = ${cpId} OR LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
+        // Temporal: soft-close cost lines instead of hard delete (Prompt 10)
+        await softCloseRows(tx, "normalized_cost_lines", `counterparty_id = ${cpId} OR LOWER(TRIM(counterparty_name)) = '${normalized.replace(/'/g, "''")}'`);
         await tx.delete(counterparties).where(eq(counterparties.id, cpId));
       } else {
-        await tx.delete(normalizedCostLines)
-          .where(sql`LOWER(TRIM(${normalizedCostLines.counterpartyName})) = ${normalized}`);
+        // Temporal: soft-close cost lines instead of hard delete (Prompt 10)
+        await softCloseRows(tx, "normalized_cost_lines", `LOWER(TRIM(counterparty_name)) = '${normalized.replace(/'/g, "''")}'`);
       }
     });
 
@@ -630,7 +630,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
     const user = (req as any).user || {};
     const rawRole = user.role || '';
     const userRole = rawRole === 'admin' ? 'COO_ADMIN' : rawRole;
-    const adminRoles = ['admin', 'COO_ADMIN', 'CEO_ADMIN'];
+    const adminRoles = ['COO_ADMIN', 'CEO_ADMIN'];
     if (!adminRoles.includes(userRole)) {
       return res.status(403).json({ error: "Only admin users can merge counterparties" });
     }
@@ -791,7 +791,7 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
     let patternCreated = null;
     if (createPattern) {
       const lines = await db.select().from(normalizedCostLines).where(
-        sql`${normalizedCostLines.id} = ANY(${normalizedLineIds})`
+        and(sql`${normalizedCostLines.id} = ANY(${normalizedLineIds})`, isNull(normalizedCostLines.effectiveTo))
       );
       const invoiceNumbers = lines.map(l => l.invoiceNumber).filter(Boolean);
       if (invoiceNumbers.length > 0) {
@@ -827,7 +827,7 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
 router.get("/api/subcontractor-dashboard/overdue", requireAuth, async (req: Request, res: Response) => {
   try {
     const [allLines, patternRules] = await Promise.all([
-      db.select().from(normalizedCostLines),
+      db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       db.select().from(invoicePatternRules),
     ]);
     const now = new Date();

@@ -1,6 +1,6 @@
-import { desc, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import type { PlatformProjectSummaryContract } from "@shared/platform-contracts";
-import { clients, msObjects, projectInfo, projectPhaseHistory } from "@shared/schema";
+import { clients, msObjects, projectInfo, projectPhaseHistory, projectExecutionState } from "@shared/schema";
 import { db } from "../db";
 import { getPlatformProjectSummaryMap } from "./project-platform-summary-service";
 
@@ -603,21 +603,22 @@ export async function buildProjectLifecycleWorkspace(): Promise<ProjectLifecycle
         canonicalProjectId: projectInfo.canonicalProjectId,
         projectName: projectInfo.projectName,
         clientId: projectInfo.clientId,
-        phase: projectInfo.phase,
-        executionPhase: projectInfo.executionPhase,
+        phase: projectExecutionState.phase,
+        executionPhase: projectExecutionState.executionPhase,
         pm: projectInfo.pm,
         pd: projectInfo.pd,
-        isActive: projectInfo.isActive,
-        archivedStatus: projectInfo.archivedStatus,
-        phaseUpdatedAt: projectInfo.phaseUpdatedAt,
-        executionGateStatus: projectInfo.executionGateStatus,
-        executionEnabled: projectInfo.executionEnabled,
-        signedStatus: projectInfo.signedStatus,
-        signedDate: projectInfo.signedDate,
-        ragStatus: projectInfo.ragStatus,
-        escalationLevel: projectInfo.escalationLevel,
+        isActive: projectExecutionState.isActive,
+        archivedStatus: projectExecutionState.archivedStatus,
+        phaseUpdatedAt: projectExecutionState.phaseUpdatedAt,
+        executionGateStatus: projectExecutionState.executionGateStatus,
+        executionEnabled: projectExecutionState.executionEnabled,
+        signedStatus: projectExecutionState.signedStatus,
+        signedDate: projectExecutionState.signedDate,
+        ragStatus: projectExecutionState.ragStatus,
+        escalationLevel: projectExecutionState.escalationLevel,
       })
       .from(projectInfo)
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
       .orderBy(projectInfo.projectName),
     db
       .select({

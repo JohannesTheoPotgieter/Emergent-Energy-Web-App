@@ -1,0 +1,1789 @@
+/**
+ * FYE Revenue Tracking API Routes
+ *
+ * Provides endpoints for the FYE Revenue Tracking report:
+ * - Dashboard data (monthly Revenue/COS/GP with budget, actual, forecast)
+ * - FYE Detail (project-level budget vs actual)
+ * - Forecast Pipeline CRUD
+ * - Lost Deals CRUD
+ * - KPI counts
+ *
+ * Field-to-source mapping:
+ * ─────────────────────────────────────────────────────────────────
+ * DASHBOARD:
+ *   Budget Revenue (monthly)   → fye_budgets (budgetType="revenue") [editable by finance]
+ *   Budget COS (monthly)       → fye_budgets (budgetType="cos") [editable by finance]
+ *   Actual Revenue (monthly)   → COS-ratio allocation: (lineItemCOS / projectTotalCOS) * projectTotalRevenue, keyed by expenseInvoicedDate [matches Revenue Tracker]
+ *   Actual COS (monthly)       → program_expense.expenseActualTotal, keyed by expenseInvoicedDate [read-only import]
+ *   Forecast Revenue           → fye_budgets for future months (budget as forecast proxy)
+ *   GP                         → Revenue - COS (derived)
+ *
+ * FYE DETAIL:
+ *   Project Name               → project_info.projectName [read-only]
+ *   Business Developer         → project_info.pd (project developer) [read-only]
+ *   Province                   → project_editable_fields.province (editable), pd_tickets fallback [admin-editable]
+ *   Size (kWp)                 → project_info.sizeKwp [read-only]
+ *   Project Type               → project_editable_fields.costProposalType [admin-editable]
+ *   Funding Type               → project_editable_fields.fundingType [admin-editable]
+ *   Start Date                 → project_plan: min(actualStart) where highLevelProgramme matches 'site establishment' [from plan]
+ *   PC Date                    → project_plan: max(actualEnd) where highLevelProgramme matches 'practical completion' [from plan]
+ *   Status                     → project_info.phase [read-only]
+ *   Budget Revenue             → project_revenue_summary.plannedRevenue [read-only import]
+ *   Budget COS                 → project_revenue_summary.plannedExpenditure [read-only import]
+ *   Actual Revenue             → project_revenue_summary.actualRevenue [read-only import]
+ *   Actual Expense             → project_revenue_summary.actualExpenditure [read-only import]
+ *
+ * FORECAST PIPELINE:
+ *   All fields                 → forecast_pipeline table [editable by finance/commercial roles]
+ *
+ * LOST DEALS:
+ *   All fields                 → lost_deals table [editable by finance/commercial roles]
+ *
+ * KPI COUNTS:
+ *   Brought In                 → project_info where phase in active development phases
+ *   Signed                     → project_info where signedStatus = 'SIGNED'
+ *   Total                      → Brought In + Signed
+ * ─────────────────────────────────────────────────────────────────
+ */
+
+import { Router, type Express } from "express";
+import { requireAuth } from "../auth-context";
+import { requirePermission } from "../permission-middleware";
+import { db } from "../db";
+import { z } from "zod";
+import {
+  projectInfo,
+  projectExecutionState,
+  projectRevenueSummary,
+  projectEditableFields,
+  programInflows,
+  programExpense,
+  fyeBudgets,
+  forecastPipeline,
+  lostDeals,
+  pdTickets,
+  fyeKpiCounters,
+  fyeReportSnapshots,
+  projectPlan,
+} from "@shared/schema";
+import { eq, and, sql, desc, isNull, gte } from "drizzle-orm";
+import ExcelJS from "exceljs";
+import { extractMonthKey, normalizeProjectName, isCosRealised, currentMonthKey } from "../lib/calculations/financeUtils";
+
+const router = Router();
+
+// ─── Helpers ───
+
+/** Generate the 12 month keys for a given FYE (Sep of FYE-1 to Aug of FYE). */
+function getFyeMonthKeys(fye: number): string[] {
+  const months: string[] = [];
+  for (let m = 9; m <= 12; m++) {
+    months.push(`${fye - 1}-${String(m).padStart(2, "0")}`);
+  }
+  for (let m = 1; m <= 8; m++) {
+    months.push(`${fye}-${String(m).padStart(2, "0")}`);
+  }
+  return months;
+}
+
+/** Get current active FYE: if we're in Sep-Dec, FYE = currentYear+1; else FYE = currentYear. */
+function getCurrentFye(): number {
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  return month >= 9 ? now.getFullYear() + 1 : now.getFullYear();
+}
+
+/** Get month label like "Sep 25" from "2025-09". */
+function monthKeyToLabel(mk: string): string {
+  const [y, m] = mk.split("-");
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${months[parseInt(m, 10) - 1]} ${y.slice(2)}`;
+}
+
+/** Safe divide, returns null on division by zero. */
+function safeDivide(num: number, den: number): number | null {
+  if (den === 0 || !isFinite(den)) return null;
+  return num / den;
+}
+
+/** Safe parse float. */
+function safeNum(v: any): number {
+  const n = parseFloat(String(v));
+  return isNaN(n) ? 0 : n;
+}
+
+/** Find the minimum actualStart date from plan tasks matching given patterns. */
+function findMinStartDate(plans: { highLevelProgramme: string | null; actualStart: string | null }[], patterns: string[]): string | null {
+  let minDate: string | null = null;
+  for (const task of plans) {
+    const desc = (task.highLevelProgramme || '').toLowerCase();
+    const matches = patterns.some(p => desc.includes(p.toLowerCase()));
+    if (matches && task.actualStart && /^\d{4}-\d{2}-\d{2}/.test(task.actualStart)) {
+      const dateStr = task.actualStart.substring(0, 10);
+      if (!minDate || dateStr < minDate) minDate = dateStr;
+    }
+  }
+  return minDate;
+}
+
+/** Find the maximum actualEnd date from plan tasks matching given patterns. */
+function findMaxEndDate(plans: { highLevelProgramme: string | null; actualEnd: string | null }[], patterns: string[]): string | null {
+  let maxDate: string | null = null;
+  for (const task of plans) {
+    const desc = (task.highLevelProgramme || '').toLowerCase();
+    const matches = patterns.some(p => desc.includes(p.toLowerCase()));
+    if (matches && task.actualEnd && /^\d{4}-\d{2}-\d{2}/.test(task.actualEnd)) {
+      const dateStr = task.actualEnd.substring(0, 10);
+      if (!maxDate || dateStr > maxDate) maxDate = dateStr;
+    }
+  }
+  return maxDate;
+}
+
+/** Load COS status overrides for isCosRealised enrichment.
+ *  NOTE: cosStatusOverrides table was removed — override data is now baked into base rows.
+ *  This function returns an empty map for backward compatibility. */
+async function loadCosOverrides(): Promise<Map<string, string>> {
+  return new Map();
+}
+
+/** Attach COS override status to expense rows for isCosRealised(). */
+function enrichWithOverrides(expenses: any[], cosOverrideMap: Map<string, string>): void {
+  for (const exp of expenses) {
+    const key = `${exp.projectName}::${exp._sourceRow || exp.rowNumber}`;
+    const override = cosOverrideMap.get(key);
+    if (override) exp._cosOverrideStatus = override;
+  }
+}
+
+/**
+ * COS-ratio revenue allocation — matches Revenue Tracker logic exactly.
+ * Builds per-project revenue and COS totals, then distributes revenue
+ * to months proportionally based on when COS is invoiced.
+ */
+function buildCosRatioRevenue(
+  allInflows: { projectName: string; milestoneAmount: any }[],
+  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any; expenseInvoiceNumber?: any; expensePoNumber?: any; invoiceDateConfirmed?: any; invoiceDateFontColor?: any; _cosOverrideStatus?: any; _cosRealisedFlag?: any }[],
+  monthKeys: string[],
+): Record<string, number> {
+  // 1. Total revenue per project (from all inflows, regardless of date)
+  const revenueByProject = new Map<string, number>();
+  for (const inf of allInflows) {
+    const amt = safeNum(inf.milestoneAmount);
+    if (amt === 0) continue;
+    const pName = normalizeProjectName(inf.projectName);
+    revenueByProject.set(pName, (revenueByProject.get(pName) || 0) + amt);
+  }
+
+  // 2. Total COS per project (from all item expenses, regardless of date)
+  const cosByProject = new Map<string, number>();
+  for (const exp of allExpenses) {
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    const amount = safeNum(exp.expenseActualTotal);
+    if (amount === 0) continue;
+    const pName = normalizeProjectName(exp.projectName);
+    cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
+  }
+
+  // 3. Allocate revenue to months via COS-ratio (revenue recognized when COS invoiced)
+  const revByMonth: Record<string, number> = {};
+  for (const exp of allExpenses) {
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    const amount = safeNum(exp.expenseActualTotal);
+    if (amount === 0) continue;
+    const mk = extractMonthKey(exp.expenseInvoicedDate);
+    if (!mk || !monthKeys.includes(mk)) continue;
+
+    const pName = normalizeProjectName(exp.projectName);
+    const projectTotalCOS = cosByProject.get(pName) || 0;
+    const projectTotalRevenue = revenueByProject.get(pName) || 0;
+
+    const revenueAmount = projectTotalCOS > 0
+      ? (amount / projectTotalCOS) * projectTotalRevenue
+      : 0;
+
+    revByMonth[mk] = (revByMonth[mk] || 0) + revenueAmount;
+  }
+  return revByMonth;
+}
+
+/**
+ * Build monthly COS totals using only expenseActualTotal (standardized).
+ */
+function buildCosByMonth(
+  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any }[],
+  monthKeys: string[],
+): Record<string, number> {
+  const cosByMonth: Record<string, number> = {};
+  for (const exp of allExpenses) {
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    const amount = safeNum(exp.expenseActualTotal);
+    if (amount === 0) continue;
+    const mk = extractMonthKey(exp.expenseInvoicedDate);
+    if (!mk || !monthKeys.includes(mk)) continue;
+    cosByMonth[mk] = (cosByMonth[mk] || 0) + amount;
+  }
+  return cosByMonth;
+}
+
+/**
+ * Return the month key for the month before the given month key.
+ * E.g. "2026-03" → "2026-02", "2026-01" → "2025-12"
+ */
+function getPreviousMonthKey(mk: string): string {
+  const [y, m] = mk.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Compute the 3 month keys immediately following a given month key.
+ * E.g. "2026-03" → ["2026-04", "2026-05", "2026-06"]
+ */
+function getNext3MonthKeys(currentMk: string): string[] {
+  const [y, m] = currentMk.split("-").map(Number);
+  const keys: string[] = [];
+  for (let i = 1; i <= 3; i++) {
+    const d = new Date(Date.UTC(y, m - 1 + i, 1));
+    keys.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
+/**
+ * Build forecast revenue for the next 3 months using COS-ratio allocation
+ * on expenses with forecast payment dates (not yet invoiced).
+ * Also includes planned inflows (milestones not yet received).
+ */
+function buildForecastRevenue(
+  allInflows: { projectName: string; milestoneAmount: any }[],
+  forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[],
+  forecastMonthKeys: string[],
+): Record<string, number> {
+  // Total revenue per project (same denominator as actuals)
+  const revenueByProject = new Map<string, number>();
+  for (const inf of allInflows) {
+    const amt = safeNum(inf.milestoneAmount);
+    if (amt === 0) continue;
+    const pName = normalizeProjectName(inf.projectName);
+    revenueByProject.set(pName, (revenueByProject.get(pName) || 0) + amt);
+  }
+
+  // Total budget COS per project (from budgetTotal on all items)
+  const budgetCosByProject = new Map<string, number>();
+  for (const exp of forecastExpenses) {
+    const amt = safeNum(exp.budgetTotal);
+    if (amt === 0) continue;
+    const pName = normalizeProjectName(exp.projectName);
+    budgetCosByProject.set(pName, (budgetCosByProject.get(pName) || 0) + amt);
+  }
+
+  // Allocate revenue to forecast months via COS-ratio on budget amounts
+  const forecastRevByMonth: Record<string, number> = {};
+  for (const exp of forecastExpenses) {
+    if (!forecastMonthKeys.includes(exp.forecastMonth)) continue;
+    const amt = safeNum(exp.budgetTotal);
+    if (amt === 0) continue;
+    const pName = normalizeProjectName(exp.projectName);
+    const projectTotalCOS = budgetCosByProject.get(pName) || 0;
+    const projectTotalRevenue = revenueByProject.get(pName) || 0;
+    const revenueAmount = projectTotalCOS > 0 ? (amt / projectTotalCOS) * projectTotalRevenue : 0;
+    forecastRevByMonth[exp.forecastMonth] = (forecastRevByMonth[exp.forecastMonth] || 0) + revenueAmount;
+  }
+  return forecastRevByMonth;
+}
+
+/**
+ * Build forecast COS for the next 3 months from expenses
+ * with forecast payment dates but not yet invoiced.
+ */
+function buildForecastCos(
+  forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[],
+  forecastMonthKeys: string[],
+): Record<string, number> {
+  const forecastCosByMonth: Record<string, number> = {};
+  for (const exp of forecastExpenses) {
+    if (!forecastMonthKeys.includes(exp.forecastMonth)) continue;
+    const amt = safeNum(exp.budgetTotal);
+    if (amt === 0) continue;
+    forecastCosByMonth[exp.forecastMonth] = (forecastCosByMonth[exp.forecastMonth] || 0) + amt;
+  }
+  return forecastCosByMonth;
+}
+
+// ─── GET /api/fye-revenue-tracking/years ───
+// Returns available FYE years derived from data in fye_budgets, forecast_pipeline,
+// fye_kpi_counters, and fye_report_snapshots, merged with a default range around
+// the current active FYE so the selector always has reasonable options.
+router.get(
+  "/api/fye-revenue-tracking/years",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (_req, res) => {
+    try {
+      const current = getCurrentFye();
+      const yearSet = new Set<number>([current - 1, current, current + 1]);
+
+      // Gather distinct years from FYE tables
+      try {
+        const budgetYears = await db.selectDistinct({ fye: fyeBudgets.fye }).from(fyeBudgets);
+        for (const r of budgetYears) { const y = parseInt(String(r.fye), 10); if (!isNaN(y)) yearSet.add(y); }
+      } catch {}
+      try {
+        const pipelineYears = await db.selectDistinct({ fye: forecastPipeline.fyeYear }).from(forecastPipeline);
+        for (const r of pipelineYears) { if (r.fye) yearSet.add(r.fye); }
+      } catch {}
+      try {
+        const kpiYears = await db.selectDistinct({ fye: fyeKpiCounters.fyeYear }).from(fyeKpiCounters);
+        for (const r of kpiYears) { if (r.fye) yearSet.add(r.fye); }
+      } catch {}
+      try {
+        const snapYears = await db.selectDistinct({ fye: fyeReportSnapshots.fyeYear }).from(fyeReportSnapshots);
+        for (const r of snapYears) { if (r.fye) yearSet.add(r.fye); }
+      } catch {}
+
+      const years = [...yearSet].sort((a, b) => b - a); // Descending
+      res.json({ years, currentFye: current });
+    } catch (error: any) {
+      console.error("FYE years error:", error);
+      res.status(500).json({ error: "Failed to fetch FYE years", message: error?.message });
+    }
+  }
+);
+
+// ─── GET /api/fye-revenue-tracking/dashboard ───
+router.get(
+  "/api/fye-revenue-tracking/dashboard",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+      const monthKeys = getFyeMonthKeys(fye);
+
+      // 1. Budget data from fye_budgets (may be empty if not yet entered)
+      const budgetRevByMonth: Record<string, number> = {};
+      const budgetCosByMonth: Record<string, number> = {};
+      try {
+        const budgetRows = await db
+          .select({ monthKey: fyeBudgets.monthKey, budgetType: fyeBudgets.budgetType, amount: fyeBudgets.amount })
+          .from(fyeBudgets)
+          .where(eq(fyeBudgets.fye, String(fye)));
+
+        for (const b of budgetRows) {
+          const amt = safeNum(b.amount);
+          if (b.budgetType === "revenue") {
+            budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
+          } else if (b.budgetType === "cos") {
+            budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + amt;
+          }
+        }
+      } catch {
+        // fye_budgets table may not exist yet
+      }
+
+      // 2. Load inflows + expenses + COS overrides for COS-ratio revenue allocation
+      const [allInflows, allExpenses, cosOverrideMap] = await Promise.all([
+        db.select({
+          projectName: programInflows.projectName,
+          milestoneAmount: programInflows.milestoneAmount,
+          plannedPaymentDate: programInflows.plannedPaymentDate,
+          computedForecastReceiptDate: programInflows.computedForecastReceiptDate,
+          invoiceRaisedDate: programInflows.invoiceRaisedDate,
+          paymentReceivedDate: programInflows.paymentReceivedDate,
+        }).from(programInflows).where(isNull(programInflows.effectiveTo)),
+        db.select({
+          projectName: programExpense.projectName,
+          rowType: programExpense.rowType,
+          expenseActualTotal: programExpense.expenseActualTotal,
+          expenseInvoicedDate: programExpense.expenseInvoicedDate,
+          expenseInvoiceNumber: programExpense.expenseInvoiceNumber,
+          expensePoNumber: programExpense.expensePoNumber,
+          invoiceDateConfirmed: programExpense.invoiceDateConfirmed,
+          invoiceDateFontColor: programExpense.invoiceDateFontColor,
+          rowNumber: programExpense.rowNumber,
+          budgetTotal: programExpense.budgetTotal,
+          forecastPaymentDate: programExpense.forecastPaymentDate,
+          computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
+        }).from(programExpense).where(isNull(programExpense.effectiveTo)),
+        loadCosOverrides(),
+      ]);
+      enrichWithOverrides(allExpenses, cosOverrideMap);
+
+      // 3. Actual Revenue via COS-ratio allocation (matches Revenue Tracker)
+      const actualRevByMonth = buildCosRatioRevenue(allInflows, allExpenses as any, monthKeys);
+
+      // 4. Actual COS using expenseActualTotal only (standardized)
+      const actualCosByMonth = buildCosByMonth(allExpenses as any, monthKeys);
+
+      // Determine current month key for actual vs forecast split
+      // Actuals are only available for completed months (before current month).
+      // The current in-progress month is treated as forecast.
+      const now = new Date();
+      const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const lastActualMk = getPreviousMonthKey(currentMk);
+
+      // 6. Build 3-month forecast from planned data in the system (milestones/expenses, NOT budget)
+      // Forecast window starts from the current month (since it's incomplete)
+      const forecastWindow = getNext3MonthKeys(lastActualMk);
+
+      // Forecast Revenue: use planned inflow milestones with plannedPaymentDate in the forecast window
+      // (only milestones not yet received — i.e. no paymentReceivedDate)
+      const forecastRevByMonth: Record<string, number> = {};
+      for (const inf of allInflows) {
+        const amt = safeNum(inf.milestoneAmount);
+        if (amt === 0) continue;
+        // Skip milestones already received
+        if ((inf as any).paymentReceivedDate) continue;
+        const revDate = (inf as any).plannedPaymentDate || (inf as any).computedForecastReceiptDate || (inf as any).invoiceRaisedDate;
+        const mk = extractMonthKey(revDate);
+        if (mk && forecastWindow.includes(mk)) {
+          forecastRevByMonth[mk] = (forecastRevByMonth[mk] || 0) + amt;
+        }
+      }
+
+      // Fallback: if a forecast month has no planned inflow data, use budget as the forecast
+      for (const mk of forecastWindow) {
+        if (!forecastRevByMonth[mk] || forecastRevByMonth[mk] === 0) {
+          forecastRevByMonth[mk] = budgetRevByMonth[mk] || 0;
+        }
+      }
+
+      // Forecast COS: use budget amounts from uninvoiced expenses with forecast/planned dates
+      const forecastCosByMonth: Record<string, number> = {};
+      for (const exp of allExpenses) {
+        if (exp.rowType !== "item" && exp.rowType != null) continue;
+        // Skip items already invoiced (they're in actuals)
+        if (exp.expenseInvoicedDate) continue;
+        const budgetAmt = safeNum((exp as any).budgetTotal);
+        if (budgetAmt === 0) continue;
+        // Use computed forecast date first, then manual forecast date
+        const forecastDate = (exp as any).computedForecastPaymentDate || (exp as any).forecastPaymentDate;
+        const fMk = extractMonthKey(forecastDate);
+        if (fMk && forecastWindow.includes(fMk)) {
+          forecastCosByMonth[fMk] = (forecastCosByMonth[fMk] || 0) + budgetAmt;
+        }
+      }
+
+      // Fallback: if a forecast month has no planned COS data, use budget as the forecast
+      for (const mk of forecastWindow) {
+        if (!forecastCosByMonth[mk] || forecastCosByMonth[mk] === 0) {
+          forecastCosByMonth[mk] = budgetCosByMonth[mk] || 0;
+        }
+      }
+
+      // 7. Pipeline (95%+) revenue, COS, and GP allocated by expected sign date
+      //    Each deal's revenue is placed in its forecastSignatureDate month.
+      //    COS is derived from revenue using forecastGpPct: COS = revenue × (1 - gpPct).
+      //    Deals without a sign date are spread evenly across future months.
+      const pipelineRevByMonth: Record<string, number> = {};
+      const pipelineCosByMonth: Record<string, number> = {};
+      try {
+        const pipelineDeals = await db.select({
+          solarRevenue: forecastPipeline.solarRevenue,
+          bessRevenue: forecastPipeline.bessRevenue,
+          forecastSignatureDate: forecastPipeline.forecastSignatureDate,
+          forecastGpPct: forecastPipeline.forecastGpPct,
+        }).from(forecastPipeline)
+          .where(and(
+            eq(forecastPipeline.fyeYear, fye),
+            gte(forecastPipeline.dealProbabilityPct, 95),
+            eq(forecastPipeline.status, "active"),
+          ));
+
+        console.log(`[FYE Dashboard] Pipeline deals (95%+, FYE ${fye}): ${pipelineDeals.length} found`);
+
+        const futureMonths = monthKeys.filter(mk => mk > currentMk);
+        let undatedPipelineRev = 0;
+        let undatedPipelineCos = 0;
+
+        for (const deal of pipelineDeals) {
+          const dealRev = safeNum(deal.solarRevenue) + safeNum(deal.bessRevenue);
+          if (dealRev === 0) continue;
+          const gpPct = safeNum(deal.forecastGpPct);
+          const dealCos = dealRev * (1 - gpPct);
+
+          const signMk = extractMonthKey(deal.forecastSignatureDate);
+          if (signMk && monthKeys.includes(signMk) && signMk > currentMk) {
+            // Allocate to the expected sign date month
+            pipelineRevByMonth[signMk] = (pipelineRevByMonth[signMk] || 0) + dealRev;
+            pipelineCosByMonth[signMk] = (pipelineCosByMonth[signMk] || 0) + dealCos;
+          } else {
+            // No valid future sign date — accumulate for even spreading
+            undatedPipelineRev += dealRev;
+            undatedPipelineCos += dealCos;
+          }
+        }
+
+        // Spread undated pipeline revenue/COS evenly across future months
+        if (futureMonths.length > 0) {
+          if (undatedPipelineRev > 0) {
+            const perMonthRev = undatedPipelineRev / futureMonths.length;
+            const perMonthCos = undatedPipelineCos / futureMonths.length;
+            for (const mk of futureMonths) {
+              pipelineRevByMonth[mk] = (pipelineRevByMonth[mk] || 0) + perMonthRev;
+              pipelineCosByMonth[mk] = (pipelineCosByMonth[mk] || 0) + perMonthCos;
+            }
+          }
+        }
+
+        const totalPipelineRev = Object.values(pipelineRevByMonth).reduce((s, v) => s + v, 0);
+        console.log(`[FYE Dashboard] Total pipeline revenue: R${totalPipelineRev.toLocaleString()}, future months: ${futureMonths.length}`);
+      } catch {
+        // forecastPipeline may not exist yet
+      }
+
+      // Build monthly dashboard data
+      const months = monthKeys.map((mk) => {
+        const budgetRev = budgetRevByMonth[mk] || 0;
+        const budgetCos = budgetCosByMonth[mk] || 0;
+        const isPastOrCurrent = mk < currentMk;
+        const isForecastMonth = forecastWindow.includes(mk);
+
+        // Actual values - only for past/current months, null for future
+        const actualRev = isPastOrCurrent ? (actualRevByMonth[mk] || 0) : null;
+        const actualCos = isPastOrCurrent ? (actualCosByMonth[mk] || 0) : null;
+
+        // Actual + Forecast blending:
+        //   Past/current months → actual values
+        //   Next 3 months → forecast from planned data
+        //   Beyond forecast window → 0
+        let actualForecastRev: number;
+        let actualForecastCos: number;
+        if (isPastOrCurrent) {
+          actualForecastRev = actualRevByMonth[mk] || 0;
+          actualForecastCos = actualCosByMonth[mk] || 0;
+        } else if (isForecastMonth) {
+          actualForecastRev = forecastRevByMonth[mk] || 0;
+          actualForecastCos = forecastCosByMonth[mk] || 0;
+        } else {
+          actualForecastRev = 0;
+          actualForecastCos = 0;
+        }
+
+        const pipelineRev = pipelineRevByMonth[mk] || 0;
+        const pipelineCos = pipelineCosByMonth[mk] || 0;
+        const pipelineGp = pipelineRev - pipelineCos;
+
+        return {
+          monthKey: mk,
+          label: monthKeyToLabel(mk),
+          revenue: {
+            budget: budgetRev,
+            actualForecast: actualForecastRev,
+            actual: actualRev,
+            pipeline: pipelineRev,
+          },
+          cos: {
+            budget: budgetCos,
+            actualForecast: actualForecastCos,
+            actual: actualCos,
+            pipeline: pipelineCos,
+          },
+          gp: {
+            budget: budgetRev - budgetCos,
+            actualForecast: actualForecastRev - actualForecastCos,
+            actual: actualRev !== null && actualCos !== null ? actualRev - actualCos : null,
+            pipeline: pipelineGp,
+          },
+        };
+      });
+
+      res.json({ fye, months, monthKeys });
+    } catch (error: any) {
+      console.error("FYE dashboard error:", error);
+      res.status(500).json({ error: "Failed to fetch FYE dashboard", message: error?.message });
+    }
+  }
+);
+
+// ─── GET /api/fye-revenue-tracking/detail ───
+router.get(
+  "/api/fye-revenue-tracking/detail",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+      const monthKeys = getFyeMonthKeys(fye);
+      const fyeStart = `${fye - 1}-09`;
+      const fyeEnd = `${fye}-08`;
+
+      // Optional cutoff month filter: only include data up to this month (e.g. "2026-02" for end of Feb)
+      const cutoffMonth = req.query.cutoffMonth ? String(req.query.cutoffMonth) : null;
+      const effectiveEnd = cutoffMonth && cutoffMonth >= fyeStart && cutoffMonth <= fyeEnd ? cutoffMonth : fyeEnd;
+
+      // Get all projects (isActive may not exist in SQLite — treat null as true)
+      const projects = await db
+        .select({
+          id: projectInfo.id,
+          projectName: projectInfo.projectName,
+          sizeKwp: projectInfo.sizeKwp,
+          pd: projectInfo.pd,
+          constructionStartDate: projectExecutionState.constructionStartDate,
+          commissioningDate: projectExecutionState.commissioningDate,
+          phase: projectExecutionState.phase,
+          signedStatus: projectExecutionState.signedStatus,
+          isActive: projectExecutionState.isActive,
+          contractValue: projectInfo.contractValue,
+        })
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+
+      // Filter: isActive may be undefined in SQLite (column missing) — treat as true
+      const activeProjects = projects.filter((p) => p.isActive !== false);
+
+      // Try project_revenue_summary for hasTracker flag only
+      let trackerSet = new Set<string>();
+      try {
+        const revSummaries = await db.select({
+          projectName: projectRevenueSummary.projectName,
+        }).from(projectRevenueSummary).where(isNull(projectRevenueSummary.effectiveTo));
+        for (const r of revSummaries) trackerSet.add(r.projectName);
+      } catch {
+        // Table may not exist
+      }
+
+      // Editable fields (for project type, funding type, province)
+      let editableMap = new Map<string, any>();
+      try {
+        const editableFields = await db.select({
+          projectName: projectEditableFields.projectName,
+          costProposalType: projectEditableFields.costProposalType,
+          fundingType: projectEditableFields.fundingType,
+          province: projectEditableFields.province,
+        }).from(projectEditableFields);
+        editableMap = new Map(editableFields.map((e) => [e.projectName, e]));
+      } catch {
+        // Table may have schema mismatch
+      }
+
+      // PD tickets for province fallback (use latest per project)
+      let provinceMap = new Map<string, string>();
+      try {
+        const tickets = await db.select({
+          projectSiteName: pdTickets.projectSiteName,
+          province: pdTickets.province,
+        }).from(pdTickets);
+        for (const t of tickets) {
+          if (t.province && t.projectSiteName) {
+            provinceMap.set(t.projectSiteName, t.province);
+          }
+        }
+      } catch {
+        // pd_tickets may not exist in older SQLite schemas
+      }
+
+      // Load project plan tasks for Start Date (site establishment) and PC Date (practical completion)
+      let plansByProject = new Map<string, { highLevelProgramme: string | null; actualStart: string | null; actualEnd: string | null }[]>();
+      try {
+        const planTasks = await db.select({
+          projectName: projectPlan.projectName,
+          highLevelProgramme: projectPlan.highLevelProgramme,
+          actualStart: projectPlan.actualStart,
+          actualEnd: projectPlan.actualEnd,
+        }).from(projectPlan);
+        for (const t of planTasks) {
+          const pn = normalizeProjectName(t.projectName);
+          if (!plansByProject.has(pn)) plansByProject.set(pn, []);
+          plansByProject.get(pn)!.push(t);
+        }
+      } catch {
+        // project_plan may not exist
+      }
+
+      // Load all inflows and expenses for FYE-specific budget + actual computation
+      const [allInflows, allExpenses] = await Promise.all([
+        db.select({
+          projectName: programInflows.projectName,
+          milestoneAmount: programInflows.milestoneAmount,
+          plannedPaymentDate: programInflows.plannedPaymentDate,
+          paymentReceivedDate: programInflows.paymentReceivedDate,
+          invoiceRaisedDate: programInflows.invoiceRaisedDate,
+        }).from(programInflows).where(isNull(programInflows.effectiveTo)),
+        db.select({
+          projectName: programExpense.projectName,
+          rowType: programExpense.rowType,
+          budgetTotal: programExpense.budgetTotal,
+          expenseActualTotal: programExpense.expenseActualTotal,
+          expenseInvoicedDate: programExpense.expenseInvoicedDate,
+          forecastPaymentDate: programExpense.forecastPaymentDate,
+          computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
+          expenseInvoiceNumber: programExpense.expenseInvoiceNumber,
+          expensePoNumber: programExpense.expensePoNumber,
+          invoiceDateConfirmed: programExpense.invoiceDateConfirmed,
+          invoiceDateFontColor: programExpense.invoiceDateFontColor,
+        }).from(programExpense).where(isNull(programExpense.effectiveTo)),
+      ]);
+
+      // ── Budget COS per project (FYE-specific) ──
+      // Use the best available date to allocate budget to the FYE:
+      //   1. expenseInvoicedDate (if already invoiced → budget realized in that period)
+      //   2. computedForecastPaymentDate (computed forecast)
+      //   3. forecastPaymentDate (manual forecast)
+      // budgetTotal is the planned cost per line item
+      const budgetCosByProject = new Map<string, number>();
+      // Also compute total COS per project (all time) for COS-ratio allocation
+      const totalCosByProject = new Map<string, number>();
+      for (const exp of allExpenses) {
+        if (exp.rowType !== "item" && exp.rowType != null) continue;
+        const pn = normalizeProjectName(exp.projectName);
+        const budgetAmt = safeNum(exp.budgetTotal);
+        const actualAmt = safeNum(exp.expenseActualTotal);
+
+        // Total COS (all time) for COS-ratio denominator
+        if (actualAmt > 0) {
+          totalCosByProject.set(pn, (totalCosByProject.get(pn) || 0) + actualAmt);
+        }
+
+        // FYE-specific budget COS: use best date to determine which FYE this expense belongs to
+        if (budgetAmt === 0) continue;
+        const budgetDate = exp.expenseInvoicedDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
+        const budgetMk = extractMonthKey(budgetDate);
+        if (budgetMk && budgetMk >= fyeStart && budgetMk <= effectiveEnd) {
+          budgetCosByProject.set(pn, (budgetCosByProject.get(pn) || 0) + budgetAmt);
+        }
+      }
+
+      // ── Budget Revenue per project (FYE-specific) ──
+      // Use plannedPaymentDate (or paymentReceivedDate/invoiceRaisedDate as fallback) to allocate milestones to FYE
+      // Also compute total revenue per project (all time) for COS-ratio allocation
+      const budgetRevByProject = new Map<string, number>();
+      const totalRevByProject = new Map<string, number>();
+      for (const inf of allInflows) {
+        const amt = safeNum(inf.milestoneAmount);
+        if (amt === 0) continue;
+        const pn = normalizeProjectName(inf.projectName);
+
+        // Total revenue (all time) for COS-ratio denominator
+        totalRevByProject.set(pn, (totalRevByProject.get(pn) || 0) + amt);
+
+        // FYE-specific budget revenue
+        const revDate = inf.plannedPaymentDate || inf.invoiceRaisedDate || inf.paymentReceivedDate;
+        const revMk = extractMonthKey(revDate);
+        if (revMk && revMk >= fyeStart && revMk <= effectiveEnd) {
+          budgetRevByProject.set(pn, (budgetRevByProject.get(pn) || 0) + amt);
+        }
+      }
+
+      // ── Actual Revenue & Actual Expense per project (realised COS within FYE window) ──
+      // COS is "realised" when: invoice number + invoice date + invoice date confirmed (black font)
+      // Revenue is allocated proportionally using COS-ratio: (realisedCOS / totalCOS) × totalRevenue
+      const curMk = currentMonthKey();
+      const actualRevByProject = new Map<string, number>();
+      const actualExpByProject = new Map<string, number>();
+      for (const exp of allExpenses) {
+        if (exp.rowType !== "item" && exp.rowType != null) continue;
+        const amt = safeNum(exp.expenseActualTotal);
+        if (amt === 0) continue;
+        if (!exp.expenseInvoicedDate) continue;
+        const mk = extractMonthKey(exp.expenseInvoicedDate);
+        if (!mk || mk < fyeStart || mk > effectiveEnd) continue;
+        // Only future months are excluded; realised check handles confirmation
+        if (mk > curMk) continue;
+
+        // Check if this expense line is realised (invoice confirmed)
+        if (!isCosRealised(exp)) continue;
+
+        const pn = normalizeProjectName(exp.projectName);
+
+        // Actual expense: direct sum of realised COS in FYE window
+        actualExpByProject.set(pn, (actualExpByProject.get(pn) || 0) + amt);
+
+        // Actual revenue: COS-ratio allocation
+        const projectTotalCOS = totalCosByProject.get(pn) || 0;
+        const projectTotalRevenue = totalRevByProject.get(pn) || 0;
+        const revenueAmount = projectTotalCOS > 0 ? (amt / projectTotalCOS) * projectTotalRevenue : 0;
+        actualRevByProject.set(pn, (actualRevByProject.get(pn) || 0) + revenueAmount);
+      }
+
+      // Build project rows — only include FYE-relevant projects
+      const projectRows: any[] = [];
+      for (const p of activeProjects) {
+        const editable = editableMap.get(p.projectName) as any;
+        const pn = normalizeProjectName(p.projectName);
+        const plans = plansByProject.get(pn) || [];
+
+        // FYE-specific budget
+        const budgetRev = budgetRevByProject.get(pn) || 0;
+        const budgetCos = budgetCosByProject.get(pn) || 0;
+
+        // FYE-specific actuals
+        const actualRev = actualRevByProject.get(pn) || 0;
+        const actualExp = actualExpByProject.get(pn) || 0;
+
+        // Only include projects that have FYE-relevant data
+        if (budgetRev === 0 && budgetCos === 0 && actualRev === 0 && actualExp === 0) continue;
+
+        const budgetGp = budgetRev - budgetCos;
+        const actualGp = actualRev - actualExp;
+
+        // Start Date from plan: site establishment task's actualStart
+        const startDateFromPlan = findMinStartDate(plans, ['site establishment']);
+        // PC Date from plan: practical completion task's actualEnd
+        const pcDateFromPlan = findMaxEndDate(plans, ['practical completion']);
+
+        // Province: editable field first, then pd_tickets fallback
+        const province = editable?.province || provinceMap.get(p.projectName) || null;
+
+        projectRows.push({
+          projectId: p.id,
+          projectName: p.projectName,
+          businessDeveloper: p.pd || null,
+          province,
+          sizeKwp: safeNum(p.sizeKwp),
+          projectType: editable?.costProposalType || null,
+          fundingType: editable?.fundingType || null,
+          startDate: startDateFromPlan || p.constructionStartDate || null,
+          pcDate: pcDateFromPlan || p.commissioningDate || null,
+          status: p.phase || null,
+          budgetRevenue: budgetRev,
+          budgetCos: budgetCos,
+          budgetGp,
+          actualRevenue: actualRev,
+          actualExpense: actualExp,
+          actualGp,
+          budgetGpPct: safeDivide(budgetGp, budgetRev),
+          actualGpPct: safeDivide(actualGp, actualRev),
+          signedStatus: p.signedStatus || "NONE",
+          hasTracker: trackerSet.has(p.projectName),
+        });
+      }
+
+      // Summary totals
+      const totals = projectRows.reduce(
+        (acc, r) => {
+          acc.budgetRevenue += r.budgetRevenue;
+          acc.budgetCos += r.budgetCos;
+          acc.budgetGp += r.budgetGp;
+          acc.actualRevenue += r.actualRevenue;
+          acc.actualExpense += r.actualExpense;
+          acc.actualGp += r.actualGp;
+          return acc;
+        },
+        { budgetRevenue: 0, budgetCos: 0, budgetGp: 0, actualRevenue: 0, actualExpense: 0, actualGp: 0 }
+      );
+
+      res.json({
+        fye,
+        cutoffMonth: cutoffMonth || null,
+        projects: projectRows,
+        totals: {
+          ...totals,
+          budgetGpPct: safeDivide(totals.budgetGp, totals.budgetRevenue),
+          actualGpPct: safeDivide(totals.actualGp, totals.actualRevenue),
+        },
+      });
+    } catch (error: any) {
+      console.error("FYE detail error:", error);
+      res.status(500).json({ error: "Failed to fetch FYE detail", message: error?.message });
+    }
+  }
+);
+
+// ─── PUT /api/fye-revenue-tracking/detail/inline-edit ───
+// Allows admin to inline-edit Province, Project Type, and Funding Type
+router.put(
+  "/api/fye-revenue-tracking/detail/inline-edit",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const schema = z.object({
+        projectName: z.string().min(1),
+        field: z.enum(["province", "projectType", "fundingType"]),
+        value: z.string().nullable(),
+      });
+      const { projectName, field, value } = schema.parse(req.body);
+
+      // Map frontend field names to DB column names
+      const fieldMap: Record<string, string> = {
+        province: "province",
+        projectType: "costProposalType",
+        fundingType: "fundingType",
+      };
+      const dbField = fieldMap[field];
+
+      // Upsert into project_editable_fields
+      const existing = await db
+        .select({ id: projectEditableFields.id })
+        .from(projectEditableFields)
+        .where(eq(projectEditableFields.projectName, projectName));
+
+      if (existing.length > 0) {
+        await db
+          .update(projectEditableFields)
+          .set({ [dbField]: value, updatedAt: new Date() })
+          .where(eq(projectEditableFields.id, existing[0].id));
+      } else {
+        await db.insert(projectEditableFields).values({
+          projectName,
+          [dbField]: value,
+        } as any);
+      }
+
+      res.json({ ok: true });
+    } catch (error: any) {
+      if (error?.name === "ZodError") {
+        return res.status(400).json({ error: "Invalid input", details: error.errors });
+      }
+      console.error("FYE inline edit error:", error);
+      res.status(500).json({ error: "Failed to update field", message: error?.message });
+    }
+  }
+);
+
+// ─── GET /api/fye-revenue-tracking/budgets ───
+router.get(
+  "/api/fye-revenue-tracking/budgets",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const fye = String(req.query.fye || getCurrentFye());
+      const rows = await db.select({
+        id: fyeBudgets.id, projectName: fyeBudgets.projectName, fye: fyeBudgets.fye,
+        monthKey: fyeBudgets.monthKey, budgetType: fyeBudgets.budgetType, amount: fyeBudgets.amount,
+      }).from(fyeBudgets).where(eq(fyeBudgets.fye, fye));
+      res.json(rows);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch budgets", message: error?.message });
+    }
+  }
+);
+
+// ─── POST /api/fye-revenue-tracking/budgets ───
+router.post(
+  "/api/fye-revenue-tracking/budgets",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const schema = z.object({
+        projectName: z.string(),
+        fye: z.string(),
+        monthKey: z.string(),
+        budgetType: z.enum(["revenue", "cos"]),
+        amount: z.string().or(z.number()),
+      });
+      const data = schema.parse(req.body);
+      const userId = (req as any).user?.id;
+
+      // Upsert
+      const existing = await db
+        .select({ id: fyeBudgets.id })
+        .from(fyeBudgets)
+        .where(
+          and(
+            eq(fyeBudgets.projectName, data.projectName),
+            eq(fyeBudgets.fye, data.fye),
+            eq(fyeBudgets.monthKey, data.monthKey),
+            eq(fyeBudgets.budgetType, data.budgetType)
+          )
+        );
+
+      if (existing.length > 0) {
+        await db
+          .update(fyeBudgets)
+          .set({ amount: String(data.amount), updatedBy: userId, updatedAt: new Date() })
+          .where(eq(fyeBudgets.id, existing[0].id));
+      } else {
+        // Lookup project ID
+        const [proj] = await db
+          .select({ id: projectInfo.id })
+          .from(projectInfo)
+          .where(eq(projectInfo.projectName, data.projectName))
+          .limit(1);
+
+        await db.execute(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, updated_by, created_at, updated_at)
+          VALUES (${proj?.id || null}, ${data.projectName}, ${data.fye}, ${data.monthKey}, ${data.budgetType}, ${String(data.amount)}, ${userId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+      }
+
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to save budget", message: error?.message });
+    }
+  }
+);
+
+// ─── Forecast Pipeline CRUD ───
+router.get(
+  "/api/fye-revenue-tracking/pipeline",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+      const rows = await db
+        .select({
+          id: forecastPipeline.id,
+          fyeYear: forecastPipeline.fyeYear,
+          projectName: forecastPipeline.projectName,
+          projectDeveloper: forecastPipeline.projectDeveloper,
+          location: forecastPipeline.location,
+          sizeKwp: forecastPipeline.sizeKwp,
+          dealProbabilityPct: forecastPipeline.dealProbabilityPct,
+          forecastSignatureDate: forecastPipeline.forecastSignatureDate,
+          solarRevenue: forecastPipeline.solarRevenue,
+          bessRevenue: forecastPipeline.bessRevenue,
+          forecastGpPct: forecastPipeline.forecastGpPct,
+          status: forecastPipeline.status,
+          notes: forecastPipeline.notes,
+          updatedAt: forecastPipeline.updatedAt,
+        })
+        .from(forecastPipeline)
+        .where(and(eq(forecastPipeline.status, "active"), eq(forecastPipeline.fyeYear, fye)))
+        .orderBy(desc(forecastPipeline.updatedAt));
+      res.json(rows);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch pipeline", message: error?.message });
+    }
+  }
+);
+
+router.post(
+  "/api/fye-revenue-tracking/pipeline",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const pipelineSchema = z.object({
+        fyeYear: z.number().optional(),
+        projectName: z.string().min(1),
+        projectDeveloper: z.string().optional(),
+        location: z.string().optional(),
+        sizeKwp: z.string().or(z.number()).optional(),
+        dealProbabilityPct: z.number().min(0).max(100),
+        forecastSignatureDate: z.string().optional(),
+        solarRevenue: z.string().or(z.number()).optional(),
+        bessRevenue: z.string().or(z.number()).optional(),
+        forecastGpPct: z.string().or(z.number()).nullable().optional(),
+        notes: z.string().optional(),
+      });
+      const data = pipelineSchema.parse(req.body);
+      const userId = (req as any).user?.id;
+
+      await db.execute(sql`INSERT INTO forecast_pipeline (fye_year, project_name, project_developer, location, size_kwp, deal_probability_pct, forecast_signature_date, solar_revenue, bess_revenue, forecast_gp_pct, notes, status, created_by, updated_by, created_at, updated_at)
+        VALUES (${data.fyeYear || getCurrentFye()}, ${data.projectName}, ${data.projectDeveloper || null}, ${data.location || null}, ${data.sizeKwp != null ? String(data.sizeKwp) : null}, ${data.dealProbabilityPct}, ${data.forecastSignatureDate || null}, ${data.solarRevenue != null ? String(data.solarRevenue) : "0"}, ${data.bessRevenue != null ? String(data.bessRevenue) : "0"}, ${data.forecastGpPct != null ? String(data.forecastGpPct) : null}, ${data.notes || null}, 'active', ${userId || null}, ${userId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+
+      const [row] = await db.select({ id: forecastPipeline.id, projectName: forecastPipeline.projectName }).from(forecastPipeline).orderBy(desc(forecastPipeline.id)).limit(1);
+      res.json(row);
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to create pipeline entry", message: error?.message });
+    }
+  }
+);
+
+router.put(
+  "/api/fye-revenue-tracking/pipeline/:id",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const userId = (req as any).user?.id;
+      const data = req.body;
+
+      await db
+        .update(forecastPipeline)
+        .set({
+          ...data,
+          sizeKwp: data.sizeKwp != null ? String(data.sizeKwp) : undefined,
+          solarRevenue: data.solarRevenue != null ? String(data.solarRevenue) : undefined,
+          bessRevenue: data.bessRevenue != null ? String(data.bessRevenue) : undefined,
+          forecastGpPct: data.forecastGpPct != null ? String(data.forecastGpPct) : undefined,
+          updatedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(forecastPipeline.id, id));
+
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to update pipeline entry", message: error?.message });
+    }
+  }
+);
+
+router.delete(
+  "/api/fye-revenue-tracking/pipeline/:id",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "delete"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      // Soft delete - set status to archived
+      await db
+        .update(forecastPipeline)
+        .set({ status: "archived", updatedAt: new Date() })
+        .where(eq(forecastPipeline.id, id));
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to archive pipeline entry", message: error?.message });
+    }
+  }
+);
+
+// ─── Lost Deals CRUD ───
+router.get(
+  "/api/fye-revenue-tracking/lost-deals",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+      const rows = await db.select({
+        id: lostDeals.id,
+        fyeYear: lostDeals.fyeYear,
+        dealName: lostDeals.dealName,
+        dealValue: lostDeals.dealValue,
+        businessDeveloper: lostDeals.businessDeveloper,
+        lostReason: lostDeals.lostReason,
+        lostDate: lostDeals.lostDate,
+        notes: lostDeals.notes,
+        updatedAt: lostDeals.updatedAt,
+      }).from(lostDeals).where(eq(lostDeals.fyeYear, fye)).orderBy(desc(lostDeals.updatedAt));
+      res.json(rows);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch lost deals", message: error?.message });
+    }
+  }
+);
+
+router.post(
+  "/api/fye-revenue-tracking/lost-deals",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const lostDealSchema = z.object({
+        fyeYear: z.number().optional(),
+        dealName: z.string().min(1),
+        dealValue: z.string().or(z.number()).optional(),
+        businessDeveloper: z.string().optional(),
+        lostReason: z.string().optional(),
+        lostDate: z.string().optional(),
+        notes: z.string().optional(),
+      });
+      const data = lostDealSchema.parse(req.body);
+      const userId = (req as any).user?.id;
+
+      await db.execute(sql`INSERT INTO lost_deals (fye_year, deal_name, deal_value, business_developer, lost_reason, lost_date, notes, created_by, updated_by, created_at, updated_at)
+        VALUES (${data.fyeYear || getCurrentFye()}, ${data.dealName}, ${data.dealValue != null ? String(data.dealValue) : null}, ${data.businessDeveloper || null}, ${data.lostReason || null}, ${data.lostDate || null}, ${data.notes || null}, ${userId || null}, ${userId || null}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+
+      const [row] = await db.select({ id: lostDeals.id, dealName: lostDeals.dealName }).from(lostDeals).orderBy(desc(lostDeals.id)).limit(1);
+      res.json(row);
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to create lost deal", message: error?.message });
+    }
+  }
+);
+
+router.put(
+  "/api/fye-revenue-tracking/lost-deals/:id",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const userId = (req as any).user?.id;
+      const data = req.body;
+
+      await db
+        .update(lostDeals)
+        .set({
+          ...data,
+          dealValue: data.dealValue != null ? String(data.dealValue) : undefined,
+          updatedBy: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(lostDeals.id, id));
+
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to update lost deal", message: error?.message });
+    }
+  }
+);
+
+router.delete(
+  "/api/fye-revenue-tracking/lost-deals/:id",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "delete"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      await db.delete(lostDeals).where(eq(lostDeals.id, id));
+      res.json({ ok: true });
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to delete lost deal", message: error?.message });
+    }
+  }
+);
+
+// ─── KPI Counts ───
+router.get(
+  "/api/fye-revenue-tracking/kpis",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+
+      // Try fye_kpi_counters first (manually seeded/editable values)
+      try {
+        const [counter] = await db
+          .select({
+            broughtIn: fyeKpiCounters.broughtIn,
+            signed: fyeKpiCounters.signed,
+          })
+          .from(fyeKpiCounters)
+          .where(eq(fyeKpiCounters.fyeYear, fye));
+
+        if (counter) {
+          return res.json({
+            broughtIn: counter.broughtIn,
+            signed: counter.signed,
+            total: counter.broughtIn + counter.signed,
+          });
+        }
+      } catch {
+        // Table may not exist — fall through to derived
+      }
+
+      // Fallback: derive from project_info
+      const projects = await db
+        .select({
+          id: projectInfo.id,
+          phase: projectExecutionState.phase,
+          signedStatus: projectExecutionState.signedStatus,
+          isActive: projectExecutionState.isActive,
+        })
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+
+      const activeProjects = projects.filter((p) => p.isActive !== false);
+      const signed = activeProjects.filter((p) => p.signedStatus === "SIGNED").length;
+      const broughtIn = activeProjects.filter(
+        (p) =>
+          p.phase &&
+          ["Construction", "Commissioning", "Operations", "Complete", "Handover"].some((ph) =>
+            (p.phase || "").toLowerCase().includes(ph.toLowerCase())
+          )
+      ).length;
+
+      res.json({ broughtIn, signed, total: broughtIn + signed });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch KPIs", message: error?.message });
+    }
+  }
+);
+
+// ─── Seed Data (idempotent) ───
+// ─── Snapshot data collector ───
+async function collectSnapshotData(fye: number) {
+  const monthKeys = getFyeMonthKeys(fye);
+  const fyeStart = `${fye - 1}-09`;
+  const fyeEnd = `${fye}-08`;
+  const now = new Date();
+  const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const lastActualMk = getPreviousMonthKey(currentMk);
+
+  // Budget
+  const budgetRevByMonth: Record<string, number> = {};
+  const budgetCosByMonth: Record<string, number> = {};
+  try {
+    const budgetRows = await db.select({ monthKey: fyeBudgets.monthKey, budgetType: fyeBudgets.budgetType, amount: fyeBudgets.amount }).from(fyeBudgets).where(eq(fyeBudgets.fye, String(fye)));
+    for (const b of budgetRows) {
+      const amt = safeNum(b.amount);
+      if (b.budgetType === "revenue") budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
+      else if (b.budgetType === "cos") budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + amt;
+    }
+  } catch {}
+
+  // Actual Revenue + COS via COS-ratio allocation (matches Revenue Tracker)
+  const [allInflows, allExpenses, snapCosOverrides] = await Promise.all([
+    db.select({ projectName: programInflows.projectName, milestoneAmount: programInflows.milestoneAmount }).from(programInflows).where(isNull(programInflows.effectiveTo)),
+    db.select({ projectName: programExpense.projectName, rowType: programExpense.rowType, expenseActualTotal: programExpense.expenseActualTotal, expenseInvoicedDate: programExpense.expenseInvoicedDate, expenseInvoiceNumber: programExpense.expenseInvoiceNumber, expensePoNumber: programExpense.expensePoNumber, rowNumber: programExpense.rowNumber, budgetTotal: programExpense.budgetTotal, forecastPaymentDate: programExpense.forecastPaymentDate, computedForecastPaymentDate: programExpense.computedForecastPaymentDate }).from(programExpense).where(isNull(programExpense.effectiveTo)),
+    loadCosOverrides(),
+  ]);
+  enrichWithOverrides(allExpenses, snapCosOverrides);
+  const actualRevByMonth = buildCosRatioRevenue(allInflows, allExpenses as any, monthKeys);
+  const actualCosByMonth = buildCosByMonth(allExpenses as any, monthKeys);
+
+  // Build 3-month forecast from planned/scheduled expense data (same as dashboard)
+  // Forecast window starts from current month (since it's incomplete)
+  const forecastWindow = getNext3MonthKeys(lastActualMk);
+  const forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[] = [];
+  for (const exp of allExpenses) {
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    if (exp.expenseInvoicedDate) continue; // Skip already invoiced
+    const budgetAmt = safeNum((exp as any).budgetTotal);
+    if (budgetAmt === 0) continue;
+    const forecastDate = (exp as any).computedForecastPaymentDate || (exp as any).forecastPaymentDate;
+    const fMk = extractMonthKey(forecastDate);
+    if (fMk && forecastWindow.includes(fMk)) {
+      forecastExpenses.push({ projectName: exp.projectName, rowType: exp.rowType, budgetTotal: budgetAmt, forecastMonth: fMk });
+    }
+  }
+  const forecastRevByMonth = buildForecastRevenue(allInflows, forecastExpenses, forecastWindow);
+  const forecastCosByMonth = buildForecastCos(forecastExpenses, forecastWindow);
+
+  // Dashboard months
+  const dashboardMonths = monthKeys.map((mk) => {
+    const bRev = budgetRevByMonth[mk] || 0, bCos = budgetCosByMonth[mk] || 0;
+    const isPast = mk < currentMk;
+    const isForecast = forecastWindow.includes(mk);
+    const aRev = isPast ? (actualRevByMonth[mk] || 0) : null;
+    const aCos = isPast ? (actualCosByMonth[mk] || 0) : null;
+    // Actual + Forecast blending: past=actual, next 3 months=forecast, beyond=0
+    let afRev: number, afCos: number;
+    if (isPast) {
+      afRev = actualRevByMonth[mk] || 0;
+      afCos = actualCosByMonth[mk] || 0;
+    } else if (isForecast) {
+      afRev = forecastRevByMonth[mk] || 0;
+      afCos = forecastCosByMonth[mk] || 0;
+    } else {
+      afRev = 0;
+      afCos = 0;
+    }
+    return {
+      monthKey: mk, label: monthKeyToLabel(mk),
+      revenue: { budget: bRev, actualForecast: afRev, actual: aRev },
+      cos: { budget: bCos, actualForecast: afCos, actual: aCos },
+      gp: { budget: bRev - bCos, actualForecast: afRev - afCos, actual: aRev !== null && aCos !== null ? aRev - aCos : null },
+    };
+  });
+
+  // Detail projects
+  const projects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName, sizeKwp: projectInfo.sizeKwp, pd: projectInfo.pd, constructionStartDate: projectExecutionState.constructionStartDate, commissioningDate: projectExecutionState.commissioningDate, phase: projectExecutionState.phase, signedStatus: projectExecutionState.signedStatus, isActive: projectExecutionState.isActive, contractValue: projectInfo.contractValue }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+  const activeProjects = projects.filter((p) => p.isActive !== false);
+
+  // Compute per-project financials (standardized to expenseActualTotal)
+  const inflowsByProject = new Map<string, { budget: number; actual: number }>();
+  for (const inf of allInflows) {
+    const pName = normalizeProjectName(inf.projectName);
+    if (!inflowsByProject.has(pName)) inflowsByProject.set(pName, { budget: 0, actual: 0 });
+    const e = inflowsByProject.get(pName)!;
+    e.budget += safeNum(inf.milestoneAmount);
+  }
+  const expensesByProject = new Map<string, { budget: number; actual: number }>();
+  for (const exp of allExpenses) {
+    if (exp.rowType !== "item" && exp.rowType != null) continue;
+    const pName = normalizeProjectName(exp.projectName);
+    if (!expensesByProject.has(pName)) expensesByProject.set(pName, { budget: 0, actual: 0 });
+    const e = expensesByProject.get(pName)!;
+    const amt = safeNum(exp.expenseActualTotal);
+    e.budget += amt;
+    if (exp.expenseInvoicedDate) { const mk = extractMonthKey(exp.expenseInvoicedDate); if (mk && mk >= fyeStart && mk <= fyeEnd) e.actual += amt; }
+  }
+
+  const projectRows = activeProjects.map((p) => {
+    const pName = normalizeProjectName(p.projectName);
+    const inf = inflowsByProject.get(pName) || { budget: 0, actual: 0 };
+    const exp = expensesByProject.get(pName) || { budget: 0, actual: 0 };
+    return { projectName: p.projectName, businessDeveloper: p.pd, province: null, sizeKwp: safeNum(p.sizeKwp), status: p.phase, budgetRevenue: inf.budget, budgetCos: exp.budget, budgetGp: inf.budget - exp.budget, actualRevenue: inf.actual, actualExpense: exp.actual, actualGp: inf.actual - exp.actual, budgetGpPct: safeDivide(inf.budget - exp.budget, inf.budget), actualGpPct: safeDivide(inf.actual - exp.actual, inf.actual) };
+  });
+  const totals = projectRows.reduce((a, r) => ({ budgetRevenue: a.budgetRevenue + r.budgetRevenue, budgetCos: a.budgetCos + r.budgetCos, budgetGp: a.budgetGp + r.budgetGp, actualRevenue: a.actualRevenue + r.actualRevenue, actualExpense: a.actualExpense + r.actualExpense, actualGp: a.actualGp + r.actualGp }), { budgetRevenue: 0, budgetCos: 0, budgetGp: 0, actualRevenue: 0, actualExpense: 0, actualGp: 0 });
+
+  // Pipeline
+  let pipelineRows: any[] = [];
+  try {
+    pipelineRows = await db.select({ id: forecastPipeline.id, projectName: forecastPipeline.projectName, projectDeveloper: forecastPipeline.projectDeveloper, location: forecastPipeline.location, sizeKwp: forecastPipeline.sizeKwp, dealProbabilityPct: forecastPipeline.dealProbabilityPct, forecastSignatureDate: forecastPipeline.forecastSignatureDate, solarRevenue: forecastPipeline.solarRevenue, bessRevenue: forecastPipeline.bessRevenue, forecastGpPct: forecastPipeline.forecastGpPct }).from(forecastPipeline).where(and(eq(forecastPipeline.status, "active"), eq(forecastPipeline.fyeYear, fye)));
+  } catch {}
+
+  // Lost deals
+  let lostDealRows: any[] = [];
+  try {
+    lostDealRows = await db.select({ id: lostDeals.id, dealName: lostDeals.dealName, dealValue: lostDeals.dealValue, businessDeveloper: lostDeals.businessDeveloper, lostReason: lostDeals.lostReason, lostDate: lostDeals.lostDate }).from(lostDeals).where(eq(lostDeals.fyeYear, fye));
+  } catch {}
+
+  // KPIs
+  let kpi = { broughtIn: 0, signed: 0, total: 0 };
+  try {
+    const [counter] = await db.select({ broughtIn: fyeKpiCounters.broughtIn, signed: fyeKpiCounters.signed }).from(fyeKpiCounters).where(eq(fyeKpiCounters.fyeYear, fye));
+    if (counter) kpi = { broughtIn: counter.broughtIn, signed: counter.signed, total: counter.broughtIn + counter.signed };
+  } catch {}
+
+  return {
+    dashboard: { months: dashboardMonths, monthKeys },
+    detail: { projects: projectRows, totals: { ...totals, budgetGpPct: safeDivide(totals.budgetGp, totals.budgetRevenue), actualGpPct: safeDivide(totals.actualGp, totals.actualRevenue) } },
+    pipeline: pipelineRows,
+    lostDeals: lostDealRows,
+    kpi,
+  };
+}
+
+/** Map calendar month to FYE month index (Sep=1, Oct=2, ..., Aug=12) */
+function calendarToFyeMonth(calMonth: number): number {
+  return calMonth >= 9 ? calMonth - 8 : calMonth + 4;
+}
+
+// ─── Snapshot CRUD ───
+
+router.post(
+  "/api/fye-revenue-tracking/snapshots",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const schema = z.object({
+        fyeYear: z.number().optional(),
+        snapshotLabel: z.string().min(1),
+        notes: z.string().optional(),
+      });
+      const data = schema.parse(req.body);
+      const fye = data.fyeYear || getCurrentFye();
+      const userId = (req as any).user?.id;
+      const now = new Date();
+      const snapshotMonth = calendarToFyeMonth(now.getMonth() + 1);
+
+      const snapshotData = await collectSnapshotData(fye);
+
+      await db.execute(sql`INSERT INTO fye_report_snapshots (fye_year, snapshot_month, snapshot_date, snapshot_label, status, snapshot_data, notes, created_by, created_at)
+        VALUES (${fye}, ${snapshotMonth}, ${now.toISOString().slice(0, 10)}, ${data.snapshotLabel}, 'draft', ${JSON.stringify(snapshotData)}, ${data.notes || null}, ${userId || null}, CURRENT_TIMESTAMP)`);
+
+      // Get the inserted row id
+      const [last] = await db.select({ id: fyeReportSnapshots.id, snapshotLabel: fyeReportSnapshots.snapshotLabel, status: fyeReportSnapshots.status }).from(fyeReportSnapshots).orderBy(desc(fyeReportSnapshots.id)).limit(1);
+
+      res.json({ id: last.id, snapshotLabel: last.snapshotLabel, status: last.status, message: "Snapshot created as draft" });
+    } catch (error: any) {
+      console.error("Snapshot create error:", error);
+      res.status(400).json({ error: "Failed to create snapshot", message: error?.message });
+    }
+  }
+);
+
+router.get(
+  "/api/fye-revenue-tracking/snapshots",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const fye = parseInt(String(req.query.fye || getCurrentFye()), 10);
+      const rows = await db.select({
+        id: fyeReportSnapshots.id,
+        fyeYear: fyeReportSnapshots.fyeYear,
+        snapshotMonth: fyeReportSnapshots.snapshotMonth,
+        snapshotDate: fyeReportSnapshots.snapshotDate,
+        snapshotLabel: fyeReportSnapshots.snapshotLabel,
+        status: fyeReportSnapshots.status,
+        notes: fyeReportSnapshots.notes,
+        createdBy: fyeReportSnapshots.createdBy,
+        createdAt: fyeReportSnapshots.createdAt,
+        submittedAt: fyeReportSnapshots.submittedAt,
+        approvedAt: fyeReportSnapshots.approvedAt,
+      }).from(fyeReportSnapshots).where(eq(fyeReportSnapshots.fyeYear, fye)).orderBy(desc(fyeReportSnapshots.snapshotDate));
+      res.json(rows);
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to list snapshots", message: error?.message });
+    }
+  }
+);
+
+router.get(
+  "/api/fye-revenue-tracking/snapshots/:id",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const [row] = await db.select().from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
+      if (!row) return res.status(404).json({ error: "Snapshot not found" });
+      res.json({ ...row, snapshotData: JSON.parse(row.snapshotData) });
+    } catch (error: any) {
+      res.status(500).json({ error: "Failed to fetch snapshot", message: error?.message });
+    }
+  }
+);
+
+router.put(
+  "/api/fye-revenue-tracking/snapshots/:id/submit",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const userId = (req as any).user?.id;
+      const [row] = await db.select({ status: fyeReportSnapshots.status }).from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
+      if (!row) return res.status(404).json({ error: "Snapshot not found" });
+      if (row.status !== "draft") return res.status(400).json({ error: "Only draft snapshots can be submitted" });
+
+      await db.execute(sql`UPDATE fye_report_snapshots SET status = 'submitted', submitted_by = ${userId || null}, submitted_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
+      res.json({ ok: true, status: "submitted" });
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to submit snapshot", message: error?.message });
+    }
+  }
+);
+
+router.put(
+  "/api/fye-revenue-tracking/snapshots/:id/approve",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "edit"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const userId = (req as any).user?.id;
+      const [row] = await db.select({ status: fyeReportSnapshots.status }).from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
+      if (!row) return res.status(404).json({ error: "Snapshot not found" });
+      if (row.status !== "submitted") return res.status(400).json({ error: "Only submitted snapshots can be approved" });
+
+      await db.execute(sql`UPDATE fye_report_snapshots SET status = 'approved', approved_by = ${userId || null}, approved_at = CURRENT_TIMESTAMP WHERE id = ${id}`);
+      res.json({ ok: true, status: "approved" });
+    } catch (error: any) {
+      res.status(400).json({ error: "Failed to approve snapshot", message: error?.message });
+    }
+  }
+);
+
+router.get(
+  "/api/fye-revenue-tracking/snapshots/:id/export",
+  requireAuth,
+  requirePermission("fye_revenue_tracking", "view"),
+  async (req, res) => {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const [row] = await db.select().from(fyeReportSnapshots).where(eq(fyeReportSnapshots.id, id));
+      if (!row) return res.status(404).json({ error: "Snapshot not found" });
+
+      const data = JSON.parse(row.snapshotData);
+      const workbook = new ExcelJS.Workbook();
+      const redFont = { color: { argb: "FFDC2626" } };
+      const headerFill: ExcelJS.FillPattern = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE8E8E8" } };
+      const randFmt = '#,##0;[Red]-#,##0';
+      const pctFmt = '0.0%;[Red]-0.0%';
+
+      // Sheet 1: Dashboard
+      const dashSheet = workbook.addWorksheet("Dashboard");
+      const monthLabels = data.dashboard.months.map((m: any) => m.label);
+      const hdrRow = dashSheet.addRow(["", ...monthLabels, "Total"]);
+      hdrRow.font = { bold: true };
+      hdrRow.fill = headerFill;
+
+      const sections = [
+        { title: "Revenue Tracking", key: "revenue" },
+        { title: "COS Tracking", key: "cos" },
+        { title: "GP Tracking", key: "gp" },
+      ];
+      const rowTypes = ["budget", "actualForecast", "actual"];
+      const rowLabels: Record<string, string> = { budget: "Budget", actualForecast: "Actual + Forecast", actual: "Actual" };
+
+      for (const sec of sections) {
+        dashSheet.addRow([]);
+        const secRow = dashSheet.addRow([sec.title]);
+        secRow.font = { bold: true, size: 11 };
+        for (const rt of rowTypes) {
+          const vals = data.dashboard.months.map((m: any) => m[sec.key]?.[rt] ?? null);
+          const nonNull = vals.filter((v: any) => v !== null);
+          const total = nonNull.length > 0 ? nonNull.reduce((a: number, b: number) => a + b, 0) : null;
+          const xlRow = dashSheet.addRow([rowLabels[rt], ...vals, total]);
+          // Apply Rand formatting and red for negatives
+          for (let c = 2; c <= xlRow.cellCount; c++) {
+            const cell = xlRow.getCell(c);
+            if (typeof cell.value === "number") {
+              cell.numFmt = randFmt;
+              if ((cell.value as number) < 0) cell.font = redFont;
+            }
+          }
+        }
+      }
+
+      dashSheet.getColumn(1).width = 20;
+      for (let i = 2; i <= monthLabels.length + 2; i++) dashSheet.getColumn(i).width = 16;
+
+      // Sheet 2: FYE Detail
+      const detailSheet = workbook.addWorksheet("FYE Detail");
+
+      // Summary
+      const t = data.detail.totals;
+      detailSheet.addRow(["Summary"]).font = { bold: true, size: 12 };
+      const summaryFields = [
+        ["Budget Revenue", t.budgetRevenue], ["Budget COS", t.budgetCos], ["Budget GP", t.budgetGp],
+        ["Actual Revenue", t.actualRevenue], ["Actual Expense", t.actualExpense], ["Actual GP", t.actualGp],
+      ];
+      for (const [label, val] of summaryFields) {
+        const r = detailSheet.addRow([label, val]);
+        r.getCell(2).numFmt = randFmt;
+        if (typeof val === "number" && val < 0) r.getCell(2).font = redFont;
+      }
+      detailSheet.addRow([]);
+
+      // Project table
+      const projHdr = detailSheet.addRow(["Project Name", "Business Developer", "Size (kWp)", "Status", "Budget Revenue", "Budget COS", "Budget GP", "Actual Revenue", "Actual Expense", "Actual GP"]);
+      projHdr.font = { bold: true };
+      projHdr.fill = headerFill;
+      for (const p of data.detail.projects) {
+        const r = detailSheet.addRow([p.projectName, p.businessDeveloper, p.sizeKwp, p.status, p.budgetRevenue, p.budgetCos, p.budgetGp, p.actualRevenue, p.actualExpense, p.actualGp]);
+        for (let c = 5; c <= 10; c++) {
+          r.getCell(c).numFmt = randFmt;
+          if (typeof r.getCell(c).value === "number" && (r.getCell(c).value as number) < 0) r.getCell(c).font = redFont;
+        }
+      }
+      // Totals row
+      const totRow = detailSheet.addRow(["TOTALS", "", "", "", t.budgetRevenue, t.budgetCos, t.budgetGp, t.actualRevenue, t.actualExpense, t.actualGp]);
+      totRow.font = { bold: true };
+      for (let c = 5; c <= 10; c++) {
+        totRow.getCell(c).numFmt = randFmt;
+        if (typeof totRow.getCell(c).value === "number" && (totRow.getCell(c).value as number) < 0) totRow.getCell(c).font = { bold: true, ...redFont };
+      }
+      detailSheet.addRow([]);
+
+      // Pipeline
+      detailSheet.addRow(["Pipeline Deals (>= 75%)"]).font = { bold: true, size: 11 };
+      const pipHdr = detailSheet.addRow(["Project Name", "Developer", "Location", "Size (kWp)", "Probability %", "Solar Revenue", "BESS Revenue", "GP%", "Forecast GP"]);
+      pipHdr.font = { bold: true };
+      pipHdr.fill = headerFill;
+      for (const p of data.pipeline) {
+        const s = parseFloat(p.solarRevenue || "0"), b = parseFloat(p.bessRevenue || "0"), gp = p.forecastGpPct ? parseFloat(p.forecastGpPct) : null;
+        const r = detailSheet.addRow([p.projectName, p.projectDeveloper, p.location, p.sizeKwp, p.dealProbabilityPct, s, b, gp != null ? gp : null, gp != null ? gp * (s + b) : null]);
+        r.getCell(6).numFmt = randFmt;
+        r.getCell(7).numFmt = randFmt;
+        if (gp != null) r.getCell(8).numFmt = pctFmt;
+        r.getCell(9).numFmt = randFmt;
+      }
+      detailSheet.addRow([]);
+
+      // Lost Deals
+      detailSheet.addRow(["Lost Deals"]).font = { bold: true, size: 11 };
+      const lostHdr = detailSheet.addRow(["Deal Name", "Deal Value", "Business Developer", "Lost Reason"]);
+      lostHdr.font = { bold: true };
+      lostHdr.fill = headerFill;
+      for (const d of data.lostDeals) {
+        const r = detailSheet.addRow([d.dealName, parseFloat(d.dealValue || "0"), d.businessDeveloper, d.lostReason]);
+        r.getCell(2).numFmt = randFmt;
+      }
+      detailSheet.addRow([]);
+
+      // KPIs
+      detailSheet.addRow(["KPI Counters"]).font = { bold: true, size: 11 };
+      detailSheet.addRow(["Brought In", data.kpi.broughtIn]);
+      detailSheet.addRow(["Signed", data.kpi.signed]);
+      const kpiTotal = detailSheet.addRow(["Total", data.kpi.total]);
+      kpiTotal.font = { bold: true };
+
+      detailSheet.getColumn(1).width = 30;
+      for (let i = 2; i <= 10; i++) detailSheet.getColumn(i).width = 16;
+
+      const safeLabel = row.snapshotLabel.replace(/[^a-zA-Z0-9_-]/g, "_");
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="FYE_${row.fyeYear}_Revenue_Tracking_${safeLabel}.xlsx"`);
+      await workbook.xlsx.write(res);
+      res.end();
+    } catch (error: any) {
+      console.error("Snapshot export error:", error);
+      res.status(500).json({ error: "Failed to export snapshot", message: error?.message });
+    }
+  }
+);
+
+// ─── Seed Data (idempotent) ───
+async function seedFyeData() {
+  try {
+    // Seed pipeline deals for FYE 2026 — uses raw SQL to avoid Drizzle defaultNow() on SQLite
+    const existingPipeline = await db
+      .select({ id: forecastPipeline.id })
+      .from(forecastPipeline)
+      .limit(1);
+
+    if (existingPipeline.length === 0) {
+      const pipelineDeals = [
+        [2026,"Engen Mbekweni","Cole Bisset","Paarl","130",90,"2026-11-30","761633","0","0.20"],
+        [2026,"Wolwendrift Trust","Cole Bisset","Cape Town","75",95,"2025-11-24","1682698","0","0.1958"],
+        [2026,"GIMCO-6th Avenue Shopping Centre","Gordon Upton","Port Elizabeth","250",100,"2025-11-28","3414591.17","0","0.1862"],
+        [2026,"Volvo Moffett Retail Park","Gordon Upton","Port Elizabeth","45",100,"2025-12-31","1251129","631416","0.20"],
+        [2026,"Moffett Retail Park deal","Gordon Upton","Port Elizabeth","715",100,"2025-12-31","5669948","0","0.1659"],
+        [2026,"Saxon Industrial Park","Cole Bisset","Cape Town","182",80,"2026-02-09","1699292","0","0.15"],
+        [2026,"SPEK deal","Cole Bisset","Cape Town","670",75,"2026-02-23","5004014","0","0.13"],
+        [2026,"Pangea Made - Finishing deal","Gordon Upton","Joburg","252",80,"2026-02-27","2729166","0","0.16"],
+        [2026,"Pangea Made - Cutting","Gordon Upton","Joburg","185",80,"2026-02-27","1597247","0","0.18"],
+        [2026,"WEG - 6 Laneshaw","Cole Bisset","Joburg","480",80,"2026-03-23","9946481","5134357","0.13"],
+        [2026,"Pick n Pay Bethal","Megan Moore","Gauteng","420",80,"2026-03-31","3530327","0","0.17"],
+        [2026,"Pick n Pay Secunda deal","Megan Moore","Joburg","303",80,"2026-04-30","4351728","763673","0.17"],
+        [2026,"Freshco","Gordon Upton","Port Elizabeth","350",75,"2026-06-01","8456914","5018177","0.10"],
+        [2026,"Wilec Clayville Deal","Megan Moore","Joburg","1200",80,"2026-06-30","10191761","0","0.11"],
+        [2026,"Unitrans Brackenfell","Cole Bisset","Cape Town","188",95,"2025-12-10","1900000","3700000",null],
+      ];
+      for (const d of pipelineDeals) {
+        await db.execute(sql`INSERT INTO forecast_pipeline (fye_year, project_name, project_developer, location, size_kwp, deal_probability_pct, forecast_signature_date, solar_revenue, bess_revenue, forecast_gp_pct, status, created_at, updated_at)
+          VALUES (${d[0]}, ${d[1]}, ${d[2]}, ${d[3]}, ${d[4]}, ${d[5]}, ${d[6]}, ${d[7]}, ${d[8]}, ${d[9]}, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+      }
+      console.log("[FYE Seed] Inserted 15 pipeline deals");
+    }
+
+    // Seed lost deals for FYE 2026
+    const existingLost = await db
+      .select({ id: lostDeals.id })
+      .from(lostDeals)
+      .limit(1);
+
+    if (existingLost.length === 0) {
+      const lostDealData = [
+        [2026,"House Anand","1000000","Gordon Upton","Wanted Sunsync instead of Victron"],
+        [2026,"Volvo Trucks JetPark Phase 2","10443453.63","Megan Moore","Lost tender - too expensive"],
+        [2026,"Wanderers Club (Padel) deal","3970811","Megan Moore","Went ahead with someone else connected to the board"],
+        [2026,"Green Gate deal (DS) PEET","10862099","Peet Verreynne","Lost to EP - PPA 10 cents cheaper"],
+        [2026,"Volvo Trucks JetPark Phase 1","3142443.69","Megan Moore","Lost tender - too expensive"],
+        [2026,"Neulux Park deal","1968450","Gordon Upton","Lost to someone else"],
+      ];
+      for (const d of lostDealData) {
+        await db.execute(sql`INSERT INTO lost_deals (fye_year, deal_name, deal_value, business_developer, lost_reason, created_at, updated_at)
+          VALUES (${d[0]}, ${d[1]}, ${d[2]}, ${d[3]}, ${d[4]}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+      }
+      console.log("[FYE Seed] Inserted 6 lost deals");
+    }
+
+    // Seed KPI counters for FYE 2026
+    const existingKpi = await db
+      .select({ id: fyeKpiCounters.id })
+      .from(fyeKpiCounters)
+      .where(eq(fyeKpiCounters.fyeYear, 2026))
+      .limit(1);
+
+    if (existingKpi.length === 0) {
+      await db.execute(sql`INSERT INTO fye_kpi_counters (fye_year, brought_in, signed, created_at, updated_at)
+        VALUES (2026, 26, 10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+      console.log("[FYE Seed] Inserted KPI counters for FYE 2026");
+    }
+
+    // Seed FYE 2026 aggregate monthly budgets (Revenue + COS)
+    const existingBudgets = await db
+      .select({ id: fyeBudgets.id })
+      .from(fyeBudgets)
+      .where(and(eq(fyeBudgets.fye, "2026"), eq(fyeBudgets.projectName, "__FYE_TOTAL__")))
+      .limit(1);
+
+    if (existingBudgets.length === 0) {
+      const budgetData: [string, string, string][] = [
+        // [monthKey, revenueAmount, cosAmount]
+        ["2025-09", "9348308.37",  "8083466.99"],
+        ["2025-10", "18892558.25", "16346971.77"],
+        ["2025-11", "23185462.07", "20063809.84"],
+        ["2025-12", "14313016.10", "12381959.44"],
+        ["2026-01", "14328580.47", "12395435.22"],
+        ["2026-02", "23948744.22", "20724666.98"],
+        ["2026-03", "23811191.68", "20599956.60"],
+        ["2026-04", "26808799.27", "23137378.14"],
+        ["2026-05", "36331899.47", "31403537.82"],
+        ["2026-06", "48187541.07", "41710854.07"],
+        ["2026-07", "45191393.46", "39116760.20"],
+        ["2026-08", "85332843.65", "73983831.01"],
+      ];
+      for (const [monthKey, rev, cos] of budgetData) {
+        await db.execute(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, created_at, updated_at)
+          VALUES (NULL, '__FYE_TOTAL__', '2026', ${monthKey}, 'revenue', ${rev}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+        await db.execute(sql`INSERT INTO fye_budgets (project_id, project_name, fye, month_key, budget_type, amount, created_at, updated_at)
+          VALUES (NULL, '__FYE_TOTAL__', '2026', ${monthKey}, 'cos', ${cos}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`);
+      }
+      console.log("[FYE Seed] Inserted 24 budget rows (12 revenue + 12 COS) for FYE 2026");
+    }
+  } catch (err: any) {
+    console.error("[FYE Seed] Error:", err.message);
+  }
+}
+
+export function registerFyeRevenueTrackingRoutes(app: Express) {
+  app.use(router);
+  // Run seed on startup (idempotent)
+  seedFyeData().catch(() => {});
+}

@@ -2,8 +2,29 @@ import { db } from "./db";
 import { eq, and, isNull, sql, asc, desc, inArray } from "drizzle-orm";
 import { workItems, workItemAssignments, projectInfo, type WorkItem, type WorkItemAssignment } from "@shared/schema";
 import { getFeatureFlag } from "./lib/feature-flags";
+import { queryWorkItems, getAssignmentsByWorkItemIds } from "./lib/work-item-queries";
+import type { UnifiedTask } from "@shared/types/unified-task";
+import { fromWorkItem, toOperationalTaskShape } from "@shared/types/unified-task";
 
 export const WORK_ITEMS_FLAG = "canonical_work_items_v1";
+
+// Re-export for convenience
+export type { UnifiedTask } from "@shared/types/unified-task";
+export { fromWorkItem, toOperationalTaskShape, toEngineeringTaskShape } from "@shared/types/unified-task";
+
+/**
+ * Fetch all work_items for a project as UnifiedTask[].
+ * This is the canonical query path — reads from work_items + extension JOINs.
+ */
+export async function getUnifiedTasksForProject(projectId: number): Promise<UnifiedTask[]> {
+  const tasks = await queryWorkItems({ projectId });
+  const ids = tasks.map(t => t.id);
+  const assignments = await getAssignmentsByWorkItemIds(ids);
+  for (const t of tasks) {
+    t.assigneeUserIds = assignments.get(t.id) || null;
+  }
+  return tasks;
+}
 
 export async function isWorkItemsEnabled(): Promise<boolean> {
   return getFeatureFlag(WORK_ITEMS_FLAG);
@@ -428,6 +449,7 @@ export async function createWorkItem(data: {
   legacyTable?: string;
   legacyId?: number;
   externalRef?: string;
+  plannedHours?: number | null;
 }): Promise<any> {
   const [item] = await db.insert(workItems).values({
     projectId: data.projectId ?? null,
@@ -445,6 +467,7 @@ export async function createWorkItem(data: {
     legacyTable: data.legacyTable ?? null,
     legacyId: data.legacyId ?? null,
     externalRef: data.externalRef ?? null,
+    plannedHours: data.plannedHours ?? null,
   }).returning();
 
   if (data.ownerUserId) {
@@ -605,10 +628,29 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
   const projectRows = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
   const projectMap = new Map(projectRows.map((row) => [row.id, row.projectName]));
 
+  // For items without projectId, try to resolve project name from legacy operational_tasks table
+  const orphanedItems = items.filter((wi) => !wi.projectId && wi.legacyTable === "operational_tasks" && wi.legacyId != null);
+  const legacyProjectNameMap = new Map<number, string>();
+  if (orphanedItems.length > 0) {
+    try {
+      const legacyIds = orphanedItems.map((wi) => wi.legacyId!);
+      const legacyRows = await db.execute(
+        sql`SELECT id, project_name FROM operational_tasks WHERE id IN (${sql.join(legacyIds.map((id) => sql`${id}`), sql`, `)})`
+      );
+      for (const row of (legacyRows as any).rows || []) {
+        if (row.project_name) legacyProjectNameMap.set(row.id, row.project_name);
+      }
+    } catch {
+      // operational_tasks table may not exist; ignore
+    }
+  }
+
   return items.map((wi) => ({
     id: wi.id,
     projectId: wi.projectId,
-    projectName: wi.projectId ? projectMap.get(wi.projectId) || null : null,
+    projectName: wi.projectId
+      ? projectMap.get(wi.projectId) || null
+      : (wi.legacyTable === "operational_tasks" && wi.legacyId != null ? legacyProjectNameMap.get(wi.legacyId) || null : null),
     importedTaskId: null,
     taskNumber: wi.wbsCode,
     parentTaskId: wi.parentId,
@@ -621,16 +663,16 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
     ownerUserId: wi.ownerUserId,
     requesterUserId: null,
     approverUserId: null,
-    holdReason: null,
-    blockedType: null,
-    approvalRequired: false,
+    holdReason: wi.holdReason || null,
+    blockedType: wi.blockedType || null,
+    approvalRequired: wi.approvalRequired ?? false,
     startDate: wi.startDate,
     dueDate: wi.endDate,
     durationDays: wi.duration,
     actualStartDate: wi.actualStart,
     actualEndDate: wi.actualEnd,
     actualDurationDays: wi.actualDuration,
-    completedAt: wi.status === "Complete" ? wi.updatedAt : null,
+    completedAt: wi.completedAt || (wi.status === "Complete" ? wi.updatedAt : null),
     percentComplete: wi.percentComplete != null ? Math.round(wi.percentComplete) : 0,
     expectedPercentComplete: null,
     comment: wi.description,
@@ -638,23 +680,23 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
     assigneeUserIds: assigneeMap.get(wi.id) || [],
     watchers: null,
     tags: null,
-    blockerReason: null,
+    blockerReason: wi.blockerReason || null,
     plannedHours: null,
     actualHours: null,
     escalationLevel: null,
     sortOrder: wi.sortOrder ?? 0,
     isBaseline: false,
-    linkedPlanItemId: null,
-    linkedDeliverableId: null,
-    linkedQualityItemInstanceId: null,
+    linkedPlanItemId: wi.linkedPlanItemId || null,
+    linkedDeliverableId: wi.linkedDeliverableId || null,
+    linkedQualityItemInstanceId: wi.linkedQualityItemInstanceId || null,
     externalSource: null,
     externalTaskId: wi.externalRef,
     externalSubtaskIds: null,
     externalSubtaskUrls: null,
-    trackingRag: null,
+    trackingRag: wi.trackingRag || null,
     summaryText: null,
     importedCommentCount: null,
-    taskTypeTag: null,
+    taskTypeTag: wi.taskTypeTag || null,
     domain: "BOTH",
     pdTicketId: null,
     createdBy: wi.createdBy,
@@ -670,6 +712,11 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
   }));
 }
 
+export async function getEngineeringWorkItemById(id: number): Promise<any | null> {
+  const items = await listEngineeringWorkItems({});
+  return items.find((item) => item.id === id) || null;
+}
+
 export async function createEngineeringWorkItem(data: {
   projectId?: number | null;
   title: string;
@@ -681,6 +728,7 @@ export async function createEngineeringWorkItem(data: {
   dueDate?: string | null;
   ownerUserId?: number | null;
   createdBy?: number | null;
+  plannedHours?: number | null;
 }): Promise<WorkItem> {
   return createWorkItem({
     projectId: data.projectId ?? null,
@@ -694,6 +742,7 @@ export async function createEngineeringWorkItem(data: {
     endDate: data.dueDate ?? null,
     ownerUserId: data.ownerUserId ?? null,
     createdBy: data.createdBy ?? null,
+    plannedHours: data.plannedHours ?? null,
   });
 }
 
@@ -707,6 +756,18 @@ export async function updateEngineeringWorkItem(workItemId: number, updates: {
   dueDate?: string | null;
   percentComplete?: number | null;
   ownerUserId?: number | null;
+  projectId?: number | null;
+  holdReason?: string | null;
+  blockedType?: string | null;
+  completedAt?: Date | null;
+  linkedPlanItemId?: number | null;
+  linkedDeliverableId?: number | null;
+  linkedQualityItemInstanceId?: number | null;
+  trackingRag?: string | null;
+  taskTypeTag?: string | null;
+  blockerReason?: string | null;
+  approvalRequired?: boolean;
+  plannedHours?: number | null;
 }): Promise<WorkItem | null> {
   const setData: any = { updatedAt: new Date() };
   if (updates.title !== undefined) setData.title = updates.title;
@@ -718,6 +779,18 @@ export async function updateEngineeringWorkItem(workItemId: number, updates: {
   if (updates.dueDate !== undefined) setData.endDate = updates.dueDate;
   if (updates.percentComplete !== undefined) setData.percentComplete = updates.percentComplete;
   if (updates.ownerUserId !== undefined) setData.ownerUserId = updates.ownerUserId;
+  if (updates.projectId !== undefined) setData.projectId = updates.projectId;
+  if (updates.holdReason !== undefined) setData.holdReason = updates.holdReason;
+  if (updates.blockedType !== undefined) setData.blockedType = updates.blockedType;
+  if (updates.completedAt !== undefined) setData.completedAt = updates.completedAt;
+  if (updates.linkedPlanItemId !== undefined) setData.linkedPlanItemId = updates.linkedPlanItemId;
+  if (updates.linkedDeliverableId !== undefined) setData.linkedDeliverableId = updates.linkedDeliverableId;
+  if (updates.linkedQualityItemInstanceId !== undefined) setData.linkedQualityItemInstanceId = updates.linkedQualityItemInstanceId;
+  if (updates.trackingRag !== undefined) setData.trackingRag = updates.trackingRag;
+  if (updates.taskTypeTag !== undefined) setData.taskTypeTag = updates.taskTypeTag;
+  if (updates.blockerReason !== undefined) setData.blockerReason = updates.blockerReason;
+  if (updates.approvalRequired !== undefined) setData.approvalRequired = updates.approvalRequired;
+  if (updates.plannedHours !== undefined) setData.plannedHours = updates.plannedHours;
 
   const [updated] = await db.update(workItems)
     .set(setData)

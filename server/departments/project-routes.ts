@@ -8,8 +8,8 @@ import { z } from "zod";
 import { OVERRIDE_CATEGORIES, users, projectInfo } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { recordOverride } from "../lib/audit/diff-engine";
-import { sendExcelSyncNotification } from "../excel-sync-notifications";
-import { classifyExpenseState } from "../lib/calculations/stateClassifier";
+import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClassifier";
+import { isCosRealised } from "../lib/calculations/financeUtils";
 
 const router = Router();
 
@@ -24,42 +24,6 @@ function coercePlanOverride(fieldName: string, value: any): any {
   return value;
 }
 
-function applyProjectPlanOverrides(
-  baselineRows: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const deletedRows = new Set<number>();
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
-      deletedRows.add(o.rowNumber);
-      return;
-    }
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
-  });
-
-  return baselineRows
-    .filter((row: any) => {
-      if (!row.rowNumber) return true;
-      return !deletedRows.has(row.rowNumber);
-    })
-    .map((row: any) => {
-      if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-        return row;
-      }
-      const fieldOverrides = overrideMap.get(row.rowNumber)!;
-      const updatedRow = { ...row };
-      fieldOverrides.forEach((value, fieldName) => {
-        updatedRow[fieldName] = value;
-      });
-      return updatedRow;
-    });
-}
 
 function resolveInflowEffectiveDates(
   inflows: any[],
@@ -678,18 +642,17 @@ router.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/projects-summary", requireAuth, async (req, res) => {
   try {
-    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, allPlanOverrides, workItemsResult, handoverRows] = await Promise.all([
-      storage.getAllProjectInfo(),
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
-      storage.getAllProjectPlans(),
-      storage.getAllProjectEditableFields(),
-      storage.getAllMilestoneTaskLinks(),
-      storage.getAllOperationalTasks(),
-      db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`),
-      storage.getAllProjectPlanOverrides(),
-      db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`),
-      db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`),
+    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, workItemsResult, handoverRows] = await Promise.all([
+      storage.getAllProjectInfo().catch((e: any) => { console.warn("[dept-projects] allProjectInfo failed:", e.message); return []; }),
+      storage.getAllProgramExpenses().catch((e: any) => { console.warn("[dept-projects] allExpenses failed:", e.message); return []; }),
+      storage.getAllProgramInflows().catch((e: any) => { console.warn("[dept-projects] rawInflows failed:", e.message); return []; }),
+      storage.getAllProjectPlans().catch((e: any) => { console.warn("[dept-projects] rawPlans failed:", e.message); return []; }),
+      storage.getAllProjectEditableFields().catch((e: any) => { console.warn("[dept-projects] allEditableFields failed:", e.message); return []; }),
+      storage.getAllMilestoneTaskLinks().catch((e: any) => { console.warn("[dept-projects] allTaskLinks failed:", e.message); return []; }),
+      storage.getAllOperationalTasks().catch((e: any) => { console.warn("[dept-projects] allOpTasks failed:", e.message); return []; }),
+      db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`).catch((e: any) => { console.warn("[dept-projects] uploadMetadata failed:", e.message); return { rows: [] }; }),
+      db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
+      db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`).catch(() => ({ rows: [] })),
     ]);
 
     const handoverMap = new Map<number, any>();
@@ -708,21 +671,6 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
     const milestoneKeys = new Set<string>();
-    for (const o of allPlanOverrides) {
-      if (o.fieldName === "parentRowNumber" && o.overrideValue && o.overrideValue !== "" && o.overrideValue !== "0") {
-        milestoneKeys.add(`${o.projectName}::${o.overrideValue}`);
-      }
-    }
-    for (const o of allPlanOverrides) {
-      if (o.fieldName === "indentLevel" && o.overrideValue === "0" && milestoneKeys.has(`${o.projectName}::${o.rowNumber}`)) {
-        milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
-      }
-    }
-    for (const o of allPlanOverrides) {
-      if (o.rowNumber < 0) {
-        milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
-      }
-    }
 
     const importedProjectNames = new Set<string>();
     for (const row of uploadMetaRows.rows) {
@@ -772,7 +720,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       counts[status] = (counts[status] || 0) + 1;
     }
 
-    const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+    const projectInfoMap = new Map<string, any>(allProjectInfo.map((info: any) => [info.projectName, info]));
 
     const projectsSummary = Array.from(allProjectNames).map(projectName => {
       const info = projectInfoMap.get(projectName);
@@ -1087,13 +1035,6 @@ router.post("/api/projects-summary/:projectName/edit", requireAuth, requireAdmin
       }
     }
     const result = await storage.upsertProjectEditableFields(data as any);
-    sendExcelSyncNotification({
-      projectName,
-      changedByUserId: (req as any).user?.id,
-      changeType: "project_summary_edit",
-      changeDescription: "Project summary fields updated",
-      details: parsed,
-    });
     res.json(result);
   } catch (error) {
     console.error("Project edit error:", error);
@@ -1116,13 +1057,6 @@ router.patch("/api/projects-summary/:projectName/latest-update", requireAuth, re
       latestUpdateBy: latestUpdate ? roleName : null,
     };
     const result = await storage.upsertProjectEditableFields(data as any);
-    sendExcelSyncNotification({
-      projectName,
-      changedByUserId: (req as any).user?.id,
-      changeType: "latest_update",
-      changeDescription: "Project latest update changed",
-      details: { latestUpdate },
-    });
     res.json(result);
   } catch (error) {
     console.error("Latest update error:", error);
@@ -1139,13 +1073,6 @@ router.patch("/api/projects-summary/:projectInfoId/escalation", requireAuth, req
     const { escalationLevel } = schema.parse(req.body);
     const result = await storage.updateProjectInfoById(id, { escalationLevel });
     const pName = result?.projectName || "Unknown";
-    sendExcelSyncNotification({
-      projectName: pName,
-      changedByUserId: (req as any).user?.id,
-      changeType: "escalation_change",
-      changeDescription: "Escalation level changed to " + (escalationLevel || "None"),
-      details: { escalationLevel },
-    });
     res.json(result);
   } catch (error) {
     console.error("Escalation update error:", error);
@@ -1202,9 +1129,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
       cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
 
-      const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
-      const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-      if (hasInvoice && hasInvDate) {
+      if (isCosRealised(exp)) {
         cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
       }
     }
@@ -1259,7 +1184,7 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       expensesByProject.get(expense.projectName)!.push(expense);
     }
 
-    const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+    const projectInfoMap = new Map<string, any>(allProjectInfo.map((info: any) => [info.projectName, info]));
 
     const activeProjectInfo = allProjectInfo.filter(info =>
       info.isActive !== false &&
@@ -1579,7 +1504,7 @@ router.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
     const today = new Date().toISOString().split("T")[0];
-    const projectInfoMap = new Map(allProjectInfo.map(info => [info.projectName, info]));
+    const projectInfoMap = new Map<string, any>(allProjectInfo.map((info: any) => [info.projectName, info]));
 
     const overdueExpenses: Array<{
       id: number;
@@ -1822,10 +1747,6 @@ router.get("/api/project-plans", requireAuth, async (req, res) => {
     if (projectName && typeof projectName === 'string') {
       plans = await storage.getProjectPlansByProject(projectName);
       
-      if (applyOverrides === 'true') {
-        const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-        plans = applyProjectPlanOverrides(plans, overrides);
-      }
       return res.json(plans);
     }
     plans = await storage.getAllProjectPlans();
@@ -1837,15 +1758,12 @@ router.get("/api/project-plans", requireAuth, async (req, res) => {
 
 router.get("/api/project-plan/:projectName", requireAuth, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = req.params.projectName as string;
     const { applyOverrides } = req.query;
-    
+
     let plans = await storage.getProjectPlansByProject(projectName);
-    
-    if (applyOverrides === 'true') {
-      const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-      plans = applyProjectPlanOverrides(plans, overrides);
-    }
+
+    // Override data is now baked into base rows (override collapse)
     
     res.json(plans);
   } catch (error) {
@@ -1894,7 +1812,7 @@ router.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
 
 router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id as string);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
     const schema = z.object({
@@ -1911,13 +1829,6 @@ router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('
     }
 
     const pName = updated?.projectName || "Unknown";
-    sendExcelSyncNotification({
-      projectName: pName,
-      changedByUserId: (req as any).user?.id,
-      changeType: "pm_assignment",
-      changeDescription: "Project Manager assigned: " + pm,
-      details: { pm, pmUserId },
-    });
     res.json(updated);
   } catch (error) {
     console.error("PM assignment error:", error);
@@ -1927,7 +1838,7 @@ router.patch("/api/project-info/:id/assign-pm", requireAuth, requirePermission('
 
 router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(req.params.id as string);
     if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
     const editSchema = z.object({
@@ -1949,13 +1860,6 @@ router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res
     const parsed = editSchema.parse(req.body);
     const updated = await storage.updateProjectInfoById(id, parsed as any);
     if (!updated) return res.status(404).json({ error: "Project not found" });
-    sendExcelSyncNotification({
-      projectName: updated?.projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "project_info_edit",
-      changeDescription: "Project information updated",
-      details: parsed,
-    });
     res.json(updated);
   } catch (error) {
     console.error("Project info update error:", error);
@@ -1966,88 +1870,12 @@ router.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res
   }
 });
 
-// ==================== PROJECT PLAN OVERRIDES ====================
-
-router.get("/api/project-plan/overrides", requireAuth, async (req, res) => {
-  try {
-    const { projectName } = req.query;
-    if (!projectName || typeof projectName !== 'string') {
-      return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-    }
-    const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-    res.json(overrides);
-  } catch (error) {
-    res.status(500).json({ error: "Failed to fetch project plan overrides", message: "Failed to fetch project plan overrides" });
-  }
-});
-
-router.post("/api/project-plan/overrides", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const { overrides, overrideCategory, overrideComment } = req.body;
-    if (!Array.isArray(overrides)) {
-      return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
-    }
-    if (!overrideCategory || !OVERRIDE_CATEGORIES.includes(overrideCategory)) {
-      return res.status(400).json({ error: "Override category is required. Must be one of: " + OVERRIDE_CATEGORIES.join(", ") });
-    }
-    if (!overrideComment || typeof overrideComment !== "string" || overrideComment.trim().length < 3) {
-      return res.status(400).json({ error: "Override comment is required (min 3 characters)" });
-    }
-    const userId = req.user?.id;
-    const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-    const saved = await storage.upsertManyProjectPlanOverrides(overridesWithUser);
-
-    try {
-      for (const o of overrides) {
-        await recordOverride({
-          actorUserId: userId,
-          actorRole: (req as any).user?.role,
-          entityType: "project_plan_override",
-          entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
-          projectName: o.projectName,
-          action: "PROJECT_PLAN_OVERRIDE",
-          overrideCategory,
-          overrideComment: overrideComment.trim(),
-          oldRecord: {},
-          newRecord: { [o.fieldName]: o.overrideValue },
-        });
-      }
-    } catch (auditErr: any) {
-      console.warn("[audit] Project plan override audit failed:", auditErr.message);
-    }
-
-    const pName = overrides[0]?.projectName || "Unknown";
-    sendExcelSyncNotification({
-      projectName: pName,
-      changedByUserId: (req as any).user?.id || 0,
-      changeType: "plan_override",
-      changeDescription: overrides.length + " plan task override(s) applied. Reason: " + overrideComment,
-      details: { count: overrides.length, category: overrideCategory, fields: overrides.map((o: any) => o.fieldName).filter((v: any, i: any, a: any) => a.indexOf(v) === i) },
-    });
-    res.json({ message: "Project plan overrides saved", count: saved.length, overrides: saved });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to save project plan overrides", message: error instanceof Error ? error.message : "Failed to save project plan overrides" });
-  }
-});
-
-router.delete("/api/project-plan/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const projectName = req.params.projectName;
-    if (!projectName || typeof projectName !== 'string') {
-      return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-    }
-    await storage.deleteProjectPlanOverridesByProject(projectName);
-    res.json({ message: `Project plan overrides deleted for project: ${projectName}` });
-  } catch (error) {
-    res.status(500).json({ error: "Failed to delete project plan overrides", message: "Failed to delete project plan overrides" });
-  }
-});
 
 // ==================== KEY DATE MAPPINGS ====================
 
 router.get("/api/key-date-mappings/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName));
+    const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName as string));
     res.json(mappings);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -2065,14 +1893,7 @@ router.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Req
 
 router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const updated = await storage.updateKeyDateMapping(parseInt(req.params.id), req.body);
-    sendExcelSyncNotification({
-      projectName: updated?.projectName || req.body?.projectName || "Unknown",
-      changedByUserId: (req as any).user?.id,
-      changeType: "key_date_mapping",
-      changeDescription: "Key date mapping updated",
-      details: req.body,
-    });
+    const updated = await storage.updateKeyDateMapping(parseInt(req.params.id as string), req.body);
     res.json(updated);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -2081,7 +1902,7 @@ router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req
 
 router.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    await storage.deleteKeyDateMapping(parseInt(req.params.id));
+    await storage.deleteKeyDateMapping(parseInt(req.params.id as string));
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -2090,7 +1911,7 @@ router.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (re
 
 router.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectName = decodeURIComponent(req.params.projectName);
+    const projectName = decodeURIComponent(req.params.projectName as string);
     const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
 
     const [planTasksDirect, planTasksTracker] = await Promise.all([

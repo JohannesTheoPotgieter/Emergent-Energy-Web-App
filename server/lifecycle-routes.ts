@@ -3,7 +3,8 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, operationalTasks, projectPlanOverrides, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns } from "@shared/schema";
+import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory } from "@shared/schema";
+import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
@@ -11,6 +12,7 @@ import { requirePermission } from "./permission-middleware";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle-stage-gate-service";
 import { buildProjectLifecycleWorkspace } from "./services/project-lifecycle-workspace-service";
+import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -31,8 +33,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required", message: "Authentication required" });
 }
 
-const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER", "admin"];
-const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER", "admin"];
+const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
+const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 
 
 function requireExecRole(req: Request, res: Response, next: NextFunction) {
@@ -214,19 +216,21 @@ export function registerLifecycleRoutes(app: Express) {
         return res.status(400).json({ error: "Comment must be at least 5 characters" });
       }
 
-      const [project] = await db.select({ id: projectInfo.id, ragStatus: projectInfo.ragStatus }).from(projectInfo).where(eq(projectInfo.id, projectId));
+      const [project] = await db.select({ id: projectInfo.id, ragStatus: projectExecutionState.ragStatus }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
       const userId = ((req as any).user as any)?.id;
       const fromRag = project.ragStatus || null;
 
       await db.transaction(async (tx) => {
-        await tx.update(projectInfo).set({
+        const ragFields = {
           ragStatus: rag,
           ragComment: comment.trim(),
           ragUpdatedAt: new Date(),
           ragUpdatedByUserId: userId,
-        }).where(eq(projectInfo.id, projectId));
+        };
+        await tx.update(projectInfo).set(ragFields).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, ragFields, tx);
 
         await tx.insert(projectRagAudit).values({
           projectId,
@@ -298,34 +302,33 @@ export function registerLifecycleRoutes(app: Express) {
         pd: projectInfo.pd,
         pm: projectInfo.pm,
         contractValue: projectInfo.contractValue,
-        phase: projectInfo.phase,
-        isActive: projectInfo.isActive,
-        escalationLevel: projectInfo.escalationLevel,
-        ragStatus: projectInfo.ragStatus,
-        ragComment: projectInfo.ragComment,
-        ragUpdatedAt: projectInfo.ragUpdatedAt,
-        ragUpdatedByUserId: projectInfo.ragUpdatedByUserId,
-        executionEnabled: projectInfo.executionEnabled,
-        executionGateStatus: projectInfo.executionGateStatus,
-        signedStatus: projectInfo.signedStatus,
-        signedDate: projectInfo.signedDate,
-        signedDocumentLink: projectInfo.signedDocumentLink,
-        executionPhase: projectInfo.executionPhase,
-        archivedStatus: projectInfo.archivedStatus,
-        phaseUpdatedAt: projectInfo.phaseUpdatedAt,
+        phase: projectExecutionState.phase,
+        isActive: projectExecutionState.isActive,
+        escalationLevel: projectExecutionState.escalationLevel,
+        ragStatus: projectExecutionState.ragStatus,
+        ragComment: projectExecutionState.ragComment,
+        ragUpdatedAt: projectExecutionState.ragUpdatedAt,
+        ragUpdatedByUserId: projectExecutionState.ragUpdatedByUserId,
+        executionEnabled: projectExecutionState.executionEnabled,
+        executionGateStatus: projectExecutionState.executionGateStatus,
+        signedStatus: projectExecutionState.signedStatus,
+        signedDate: projectExecutionState.signedDate,
+        signedDocumentLink: projectExecutionState.signedDocumentLink,
+        executionPhase: projectExecutionState.executionPhase,
+        archivedStatus: projectExecutionState.archivedStatus,
+        phaseUpdatedAt: projectExecutionState.phaseUpdatedAt,
         updatedAt: projectInfo.updatedAt,
-        constructionStartDate: projectInfo.constructionStartDate,
-        commissioningDate: projectInfo.commissioningDate,
-        clientHandoverDate: projectInfo.clientHandoverDate,
-      }).from(projectInfo);
+        constructionStartDate: projectExecutionState.constructionStartDate,
+        commissioningDate: projectExecutionState.commissioningDate,
+        clientHandoverDate: projectExecutionState.clientHandoverDate,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
-      const allEngTasks = await db.select({
-        projectName: operationalTasks.projectName,
-        status: operationalTasks.status,
-        dueDate: operationalTasks.dueDate,
-        priority: operationalTasks.priority,
-        assignees: operationalTasks.assignees,
-      }).from(operationalTasks);
+      const allEngTasks = await db.execute(sql`
+        SELECT pi.project_name AS "projectName", wi.status, wi.end_date AS "dueDate", wi.priority, NULL AS assignees
+        FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id
+        WHERE wi.deleted_at IS NULL AND wi.workstream = 'ENG'
+      `).then((r: any) => r.rows || r);
 
       const rawPlanTasks = (await getAllPMWorkItemsAsProjectPlan()).map((wi: any) => ({
         projectName: wi.projectName,
@@ -338,53 +341,14 @@ export function registerLifecycleRoutes(app: Express) {
         actualEnd: wi.actualEnd,
       }));
 
-      const allPlanOverrides = await db.select().from(projectPlanOverrides);
-      const deletedKeys = new Set<string>();
-      const overrideMap = new Map<string, Map<number, Map<string, any>>>();
-      for (const o of allPlanOverrides) {
-        if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
-          deletedKeys.add(`${o.projectName}::${o.rowNumber}`);
-          continue;
-        }
-        if (!overrideMap.has(o.projectName)) overrideMap.set(o.projectName, new Map());
-        const projMap = overrideMap.get(o.projectName)!;
-        if (!projMap.has(o.rowNumber)) projMap.set(o.rowNumber, new Map());
-        const val = o.overrideValue;
-        const fieldName = o.fieldName;
-        let coerced: any = val;
-        if (val !== null && val !== undefined && val !== "") {
-          if (fieldName === "actualPctComplete" || fieldName === "expectedPctComplete" || fieldName === "durationDays") {
-            const num = Number(val);
-            coerced = isNaN(num) ? null : num;
-          }
-        } else {
-          coerced = null;
-        }
-        projMap.get(o.rowNumber)!.set(fieldName, coerced);
-      }
-
-      const allPlanTasks = rawPlanTasks
-        .filter(row => {
-          if (!row.rowNumber) return true;
-          return !deletedKeys.has(`${row.projectName}::${row.rowNumber}`);
-        })
-        .map(row => {
-          const projOverrides = overrideMap.get(row.projectName);
-          if (!projOverrides || !row.rowNumber || !projOverrides.has(row.rowNumber)) return row;
-          const fieldOverrides = projOverrides.get(row.rowNumber)!;
-          const updated = { ...row };
-          fieldOverrides.forEach((value, fieldName) => {
-            (updated as any)[fieldName] = value;
-          });
-          return updated;
-        });
+      const allPlanTasks = rawPlanTasks;
 
       const trackerProjectNames = new Set<string>();
-      const expenseNames = await db.selectDistinct({ projectName: normalizedCostLines.projectName }).from(normalizedCostLines);
+      const expenseNames = await db.selectDistinct({ projectName: normalizedCostLines.projectName }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
       for (const e of expenseNames) {
         if (e.projectName) trackerProjectNames.add(normalizeName(e.projectName));
       }
-      const inflowNames = await db.selectDistinct({ projectName: normalizedRevenueLines.projectName }).from(normalizedRevenueLines);
+      const inflowNames = await db.selectDistinct({ projectName: normalizedRevenueLines.projectName }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
       for (const i of inflowNames) {
         if (i.projectName) trackerProjectNames.add(normalizeName(i.projectName));
       }
@@ -399,7 +363,7 @@ export function registerLifecycleRoutes(app: Express) {
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
-      }).from(normalizedRevenueLines);
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       const allCostLines = await db.select({
         projectId: normalizedCostLines.projectId,
@@ -409,7 +373,7 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
         poNumber: normalizedCostLines.poNumber,
         paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
-      }).from(normalizedCostLines);
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       // Canonical reporting preference: aggregate finance by projectId first,
       // then use normalized projectName only as compatibility fallback.
@@ -498,21 +462,6 @@ export function registerLifecycleRoutes(app: Express) {
       const todayDate = new Date().toISOString().split("T")[0];
 
       const milestoneKeys = new Set<string>();
-      for (const o of allPlanOverrides) {
-        if (o.fieldName === "parentRowNumber" && o.overrideValue && o.overrideValue !== "" && o.overrideValue !== "0") {
-          milestoneKeys.add(`${o.projectName}::${o.overrideValue}`);
-        }
-      }
-      for (const o of allPlanOverrides) {
-        if (o.fieldName === "indentLevel" && o.overrideValue === "0" && milestoneKeys.has(`${o.projectName}::${o.rowNumber}`)) {
-          milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
-        }
-      }
-      for (const o of allPlanOverrides) {
-        if (o.rowNumber < 0) {
-          milestoneKeys.add(`${o.projectName}::${o.rowNumber}`);
-        }
-      }
 
       const planByNorm = new Map<string, { total: number; weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number }>();
       for (const p of allPlanTasks) {
@@ -702,15 +651,23 @@ export function registerLifecycleRoutes(app: Express) {
   app.get("/api/lifecycle-board/execution-dashboard", requireAuth, async (_req: Request, res: Response) => {
     try {
       const fy = getCurrentFinancialYearBounds();
+      const today = new Date().toISOString().slice(0, 10);
       const activeProjects = await db.select({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
         pm: projectInfo.pm,
         pd: projectInfo.pd,
-        executionPhase: projectInfo.executionPhase,
-        ragStatus: projectInfo.ragStatus,
-        archivedStatus: projectInfo.archivedStatus,
-      }).from(projectInfo).where(eq(projectInfo.archivedStatus, "ACTIVE"));
+        executionPhase: projectExecutionState.executionPhase,
+        ragStatus: projectExecutionState.ragStatus,
+        archivedStatus: projectExecutionState.archivedStatus,
+        phase: projectExecutionState.phase,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectExecutionState.archivedStatus, "ACTIVE"));
+
+      // Helpers matching program-dashboard logic
+      const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
+      const isBlack = (v: any) => { const s = String(v || '').toLowerCase(); return s.includes('000000') || s.includes('black'); };
 
       const rawPlanTasks = await getAllPMWorkItemsAsProjectPlan();
       const planByNorm = new Map<string, { weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number; fyItems: number }>();
@@ -721,14 +678,29 @@ export function registerLifecycleRoutes(app: Express) {
         const entry = planByNorm.get(norm)!;
         const duration = Number(wi.durationDays || 1);
         const weight = Number.isFinite(duration) && duration > 0 ? duration : 1;
-        if (wi.actualPctComplete !== null && wi.actualPctComplete !== undefined) {
-          entry.weightedPct += Number(wi.actualPctComplete) * weight;
-          entry.totalWeight += weight;
-        }
+
+        // Actual % — use value if available, else 0
+        const actualPct = wi.actualPctComplete !== null && wi.actualPctComplete !== undefined
+          ? Number(wi.actualPctComplete) : 0;
+        entry.weightedPct += actualPct * weight;
+        entry.totalWeight += weight;
+
+        // Expected % — use value if available, else calculate from task dates (matching program-dashboard)
+        let expectedPct: number;
         if (wi.expectedPctComplete !== null && wi.expectedPctComplete !== undefined) {
-          entry.weightedExpPct += Number(wi.expectedPctComplete) * weight;
-          entry.totalExpWeight += weight;
+          expectedPct = Number(wi.expectedPctComplete);
+        } else {
+          const wiStart = (wi.actualStart || wi.startDate || '').slice(0, 10);
+          const wiEnd = (wi.actualEnd || wi.endDate || '').slice(0, 10);
+          if (wiStart && wiEnd && wiStart < wiEnd) {
+            expectedPct = today <= wiStart ? 0 : today >= wiEnd ? 1 : Math.max(0, Math.min(1, (new Date(today).getTime() - new Date(wiStart).getTime()) / (new Date(wiEnd).getTime() - new Date(wiStart).getTime())));
+          } else {
+            expectedPct = 0;
+          }
         }
+        entry.weightedExpPct += expectedPct * weight;
+        entry.totalExpWeight += weight;
+
         const planMembershipDate = pickFirstPopulatedDate(wi, [
           "plannedStart",
           "plannedEnd",
@@ -749,10 +721,12 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
         paidDate: normalizedRevenueLines.paidDate,
+        paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
         inBankDate: normalizedRevenueLines.inBankDate,
         invoiceDate: normalizedRevenueLines.invoiceDate,
         expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
-      }).from(normalizedRevenueLines);
+        sourceRow: normalizedRevenueLines.sourceRow,
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       const costLines = await db.select({
         projectId: normalizedCostLines.projectId,
@@ -761,57 +735,82 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceNumber: normalizedCostLines.invoiceNumber,
         paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
         paidDate: normalizedCostLines.paidDate,
+        paidDateFontColor: normalizedCostLines.paidDateFontColor,
         invoiceDate: normalizedCostLines.invoiceDate,
         approvedDate: normalizedCostLines.approvedDate,
-      }).from(normalizedCostLines);
+        cosRealised: normalizedCostLines.cosRealised,
+        sourceRow: normalizedCostLines.sourceRow,
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
-      const finByProjectId = new Map<number, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number }>();
-      const finByNorm = new Map<string, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number }>();
-      const emptyFin = () => ({ plannedRevenue: 0, receivedInflow: 0, plannedExpenditure: 0, paidExpenditure: 0, fyRevenueItems: 0, fyCostItems: 0 });
+      // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
+      // inBank and COS status overrides are applied directly to base rows.
+      // Keep empty structures for backward-compatible code paths below.
+      const inBankOverrideSet = new Set<string>();
+      const cosOverrideByKey = new Map<string, string>();
+
+      const finByProjectId = new Map<number, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number; inflowRisk: number; outflowRisk: number }>();
+      const finByNorm = new Map<string, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number; inflowRisk: number; outflowRisk: number }>();
+      const emptyFin = () => ({ plannedRevenue: 0, receivedInflow: 0, plannedExpenditure: 0, paidExpenditure: 0, fyRevenueItems: 0, fyCostItems: 0, inflowRisk: 0, outflowRisk: 0 });
 
       for (const row of revenueLines) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
-        const lineDate = pickFirstPopulatedDate(row as any, ["invoiceDate", "expectedPaymentDate", "paidDate", "inBankDate"]);
-        if (!isDateInRange(lineDate, fy.start, fy.end)) continue;
-        const received = Boolean(row.invoiceNumber) && (Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate));
-        if (row.projectId) {
-          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
-          const entry = finByProjectId.get(row.projectId)!;
+        const dateKey = pickFirstPopulatedDate(row as any, ["expectedPaymentDate", "invoiceDate", "paidDate", "inBankDate"]);
+        if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
+        // Unified "received" logic: font-color black + paid date, OR paidDateConfirmed, OR inBankDate, OR manual override
+        const baseReceived = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
+        const confirmedReceived = Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate);
+        const overrideInBank = inBankOverrideSet.has(`${row.projectName}::${row.sourceRow}`);
+        const received = baseReceived || (hasText(row.invoiceNumber) && confirmedReceived) || overrideInBank;
+
+        const addTo = (entry: ReturnType<typeof emptyFin>) => {
           entry.plannedRevenue += amount;
           if (received) entry.receivedInflow += amount;
+          else if (dateKey && dateKey < today) entry.inflowRisk += amount;
           entry.fyRevenueItems += 1;
+        };
+        if (row.projectId) {
+          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
+          addTo(finByProjectId.get(row.projectId)!);
         } else if (row.projectName) {
           const norm = normalizeName(row.projectName);
           if (!finByNorm.has(norm)) finByNorm.set(norm, emptyFin());
-          const entry = finByNorm.get(norm)!;
-          entry.plannedRevenue += amount;
-          if (received) entry.receivedInflow += amount;
-          entry.fyRevenueItems += 1;
+          addTo(finByNorm.get(norm)!);
         }
       }
 
       for (const row of costLines) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
-        const lineDate = pickFirstPopulatedDate(row as any, ["invoiceDate", "approvedDate", "paidDate"]);
-        if (!isDateInRange(lineDate, fy.start, fy.end)) continue;
-        const paid = Boolean(row.invoiceNumber) && Boolean(row.paidDateConfirmed);
-        if (row.projectId) {
-          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
-          const entry = finByProjectId.get(row.projectId)!;
+        const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
+        if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
+        // Unified "paid" logic: font-color + paid date, OR paidDateConfirmed, OR cosRealised, OR COS override
+        const basePaid = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
+        const confirmedPaid = Boolean(row.paidDateConfirmed);
+        const cosOverrideStatus = cosOverrideByKey.get(`${row.projectName}::${row.sourceRow}`);
+        const isRealised = cosOverrideStatus ? cosOverrideStatus === 'COS Realised' : (row as any).cosRealised === true;
+        const paid = basePaid || (hasText(row.invoiceNumber) && confirmedPaid) || isRealised;
+
+        const addTo = (entry: ReturnType<typeof emptyFin>) => {
           entry.plannedExpenditure += amount;
           if (paid) entry.paidExpenditure += amount;
+          else if (dateKey && dateKey < today) entry.outflowRisk += amount;
           entry.fyCostItems += 1;
+        };
+        if (row.projectId) {
+          if (!finByProjectId.has(row.projectId)) finByProjectId.set(row.projectId, emptyFin());
+          addTo(finByProjectId.get(row.projectId)!);
         } else if (row.projectName) {
           const norm = normalizeName(row.projectName);
           if (!finByNorm.has(norm)) finByNorm.set(norm, emptyFin());
-          const entry = finByNorm.get(norm)!;
-          entry.plannedExpenditure += amount;
-          if (paid) entry.paidExpenditure += amount;
-          entry.fyCostItems += 1;
+          addTo(finByNorm.get(norm)!);
         }
       }
 
-      const engTasks = await db.select({ projectId: operationalTasks.projectId, projectName: operationalTasks.projectName, status: operationalTasks.status, dueDate: operationalTasks.dueDate, blockerReason: operationalTasks.blockerReason, priority: operationalTasks.priority, ownerUserId: operationalTasks.ownerUserId, title: operationalTasks.title }).from(operationalTasks).where(isNull(operationalTasks.deletedAt));
+      const engTasks: any[] = await db.execute(sql`
+        SELECT wi.project_id AS "projectId", pi.project_name AS "projectName", wi.status, wi.end_date AS "dueDate",
+               wi.blocker_reason AS "blockerReason", wi.priority, wi.owner_user_id AS "ownerUserId", wi.title
+        FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id
+        WHERE wi.deleted_at IS NULL
+      `).then((r: any) => r.rows || r);
       const qualityRows = await db.select({ projectName: qcWarning.projectName, status: qcWarning.status, severity: qcWarning.severity, title: qcWarning.title, dueDate: qcWarning.dueDate, ownerUserId: qcWarning.ownerUserId }).from(qcWarning);
       const approvalRows = await db.select({ projectId: approvals.projectId, status: approvals.status, title: approvals.title, dueDate: approvals.dueDate, assignedApprover: approvals.assignedApprover }).from(approvals);
       const importRuns = await db.select({ projectId: smartImportRuns.projectId, projectName: smartImportRuns.projectName, uploadedAt: smartImportRuns.uploadedAt }).from(smartImportRuns);
@@ -844,7 +843,7 @@ export function registerLifecycleRoutes(app: Express) {
 
       const actionRows: any[] = [];
       const projectRows: any[] = [];
-      const today = new Date();
+      const todayDt = new Date();
 
       for (const project of activeProjects) {
         const norm = normalizeName(project.projectName);
@@ -858,6 +857,19 @@ export function registerLifecycleRoutes(app: Express) {
         const expectedProgressPct = plan.totalExpWeight > 0 ? Number(((plan.weightedExpPct / plan.totalExpWeight) * 100).toFixed(1)) : null;
         const scheduleVariancePct = actualProgressPct !== null && expectedProgressPct !== null ? Number((actualProgressPct - expectedProgressPct).toFixed(1)) : null;
         const behindPlan = actualProgressPct !== null && expectedProgressPct !== null && actualProgressPct < expectedProgressPct - 5;
+
+        // Compute RAG from progress delta (matching projects-summary logic)
+        // Uses manual ragStatus if set, otherwise computes from schedule variance
+        let computedRag: string;
+        if (project.ragStatus) {
+          computedRag = project.ragStatus;
+        } else if (scheduleVariancePct !== null) {
+          // scheduleVariancePct is in percentage points (e.g., -5 means 5% behind)
+          // Thresholds: >= -5 is Green, >= -15 is Amber, < -15 is Red
+          computedRag = scheduleVariancePct >= -5 ? "Green" : scheduleVariancePct >= -15 ? "Amber" : "Red";
+        } else {
+          computedRag = "Unknown";
+        }
 
         const plannedRevenueFy = fin.plannedRevenue;
         const receivedInflowFy = fin.receivedInflow;
@@ -879,13 +891,13 @@ export function registerLifecycleRoutes(app: Express) {
         const projectApprovals = approvalRows.filter((a) => a.projectId === project.id && a.status === "pending");
 
         const latestImport = latestImportByProjectId.get(project.id) || latestImportByNorm.get(norm) || null;
-        const staleDays = latestImport ? Math.floor((today.getTime() - latestImport.getTime()) / (1000 * 60 * 60 * 24)) : null;
+        const staleDays = latestImport ? Math.floor((todayDt.getTime() - latestImport.getTime()) / (1000 * 60 * 60 * 24)) : null;
         const importFreshness = staleDays === null ? "Critical" : staleDays >= 14 ? "Critical" : staleDays >= 7 ? "Warning" : "Fresh";
 
-        const engineeringStatus = engBlockers.length > 0 ? "Blocked" : openEng.some((t) => t.dueDate && t.dueDate < today.toISOString().slice(0, 10)) ? "At Risk" : "On Track";
+        const engineeringStatus = engBlockers.length > 0 ? "Blocked" : openEng.some((t) => t.dueDate && t.dueDate < todayDt.toISOString().slice(0, 10)) ? "At Risk" : "On Track";
         const qualityStatus = criticalQuality.length > 0 ? "Blocked" : openQuality.length > 0 ? "At Risk" : "On Track";
-        const inflowRisk = openInflowFy > 0 && plannedRevenueFy > 0 && (openInflowFy / plannedRevenueFy) > 0.35;
-        const outflowRisk = openExpenditureFy > 0 && plannedExpenditureFy > 0 && (openExpenditureFy / plannedExpenditureFy) > 0.35;
+        const inflowRisk = fin.inflowRisk > 0 || (openInflowFy > 0 && plannedRevenueFy > 0 && (openInflowFy / plannedRevenueFy) > 0.35);
+        const outflowRisk = fin.outflowRisk > 0 || (openExpenditureFy > 0 && plannedExpenditureFy > 0 && (openExpenditureFy / plannedExpenditureFy) > 0.35);
         const criticalActionCount = [behindPlan, inflowRisk, outflowRisk, engBlockers.length > 0, criticalQuality.length > 0, projectApprovals.length > 0].filter(Boolean).length;
 
         if (behindPlan) actionRows.push({ projectId: project.id, projectName: project.projectName, queue: "Projects Behind Plan", issueTitle: `Actual ${actualProgressPct}% vs Expected ${expectedProgressPct}%`, severity: (expectedProgressPct! - actualProgressPct!) > 15 ? "Critical" : "High", owner: project.pm || project.pd || "Unassigned", dueDate: null, link: `/project/${encodeURIComponent(project.projectName)}?tab=plan` });
@@ -907,8 +919,8 @@ export function registerLifecycleRoutes(app: Express) {
           portfolio: "—",
           pm: project.pm,
           pd: project.pd,
-          executionPhase: project.executionPhase,
-          rag: project.ragStatus || "Unknown",
+          executionPhase: project.executionPhase || project.phase || null,
+          rag: computedRag,
           actualProgressPct,
           expectedProgressPct,
           scheduleVariancePct,
@@ -973,6 +985,20 @@ export function registerLifecycleRoutes(app: Express) {
           ],
           rows: actionRows,
         },
+        dataFreshness: {
+          generatedAt: new Date().toISOString(),
+          recordCounts: {
+            activeProjects: activeProjects.length,
+            dashboardProjects: projectRows.length,
+            planTasks: rawPlanTasks.length,
+            revenueLines: revenueLines.length,
+            costLines: costLines.length,
+            engineeringTasks: engTasks.length,
+            qualityWarnings: qualityRows.length,
+            approvals: approvalRows.length,
+            importRuns: importRuns.length,
+          },
+        },
       });
     } catch (err: any) {
       console.error("[lifecycle-board] GET execution-dashboard error:", err);
@@ -990,9 +1016,13 @@ export function registerLifecycleRoutes(app: Express) {
       const [target] = await db.select().from(projectInfo).where(eq(projectInfo.id, targetProjectId));
       if (!target) return res.status(404).json({ error: "Target project not found" });
 
-      const updated = await db.update(operationalTasks)
-        .set({ projectName: target.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ") })
-        .where(eq(operationalTasks.projectName, engineeringProjectName))
+      // Link engineering work_items to the target project
+      const updated = await db.update(workItems)
+        .set({ projectId: target.id, updatedAt: new Date() })
+        .where(and(
+          sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND REPLACE(REPLACE(pi.project_name, '_Tracker', ''), '_', ' ') = ${engineeringProjectName})`,
+          isNull(workItems.deletedAt)
+        ))
         .returning();
 
       logAuditFromReq(req, { entityType: "lifecycle", entityId: String(targetProjectId), action: "update", projectName: target.projectName, changesJson: { description: "Engineering tasks linked", engineeringProjectName, linkedCount: updated.length } });
@@ -1025,9 +1055,10 @@ export function registerLifecycleRoutes(app: Express) {
         const sourceClean = source.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
         const targetClean = target.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
 
-        const movedTasks = await tx.update(operationalTasks)
-          .set({ projectName: targetClean })
-          .where(eq(operationalTasks.projectName, sourceClean))
+        // Move work_items from source to target project
+        const movedTasks = await tx.update(workItems)
+          .set({ projectId: targetProjectId, updatedAt: new Date() })
+          .where(and(eq(workItems.projectId, sourceProjectId), isNull(workItems.deletedAt)))
           .returning();
 
         const movedPlanResult = await tx.update(workItems)
@@ -1051,14 +1082,17 @@ export function registerLifecycleRoutes(app: Express) {
         if (Object.keys(fillFields).length > 0) {
           fillFields.updatedAt = new Date();
           await tx.update(projectInfo).set(fillFields).where(eq(projectInfo.id, targetProjectId));
+          await syncProjectSplitTables(targetProjectId, fillFields, tx);
         }
 
-        await tx.update(projectInfo).set({
+        const archiveFields = {
           archivedStatus: 'ARCHIVED_MERGED',
           canonicalProjectId: targetProjectId,
           isActive: false,
           updatedAt: new Date(),
-        }).where(eq(projectInfo.id, sourceProjectId));
+        };
+        await tx.update(projectInfo).set(archiveFields).where(eq(projectInfo.id, sourceProjectId));
+        await syncProjectSplitTables(sourceProjectId, archiveFields, tx);
 
         await tx.insert(mergeAuditLog).values({
           primaryProjectId: targetProjectId,
@@ -1110,12 +1144,14 @@ export function registerLifecycleRoutes(app: Express) {
       const existing = allProjects.find((p: any) => normalizeName(p.projectName) === normTarget);
       if (existing) {
         const targetPhase = phase || "First Assessment";
-        await db.update(projectInfo).set({
+        const promoteFields = {
           phase: targetPhase,
           isActive: true,
           phaseUpdatedAt: new Date(),
           phaseUpdatedByUserId: userId,
-        }).where(eq(projectInfo.id, existing.id));
+        };
+        await db.update(projectInfo).set(promoteFields).where(eq(projectInfo.id, existing.id));
+        await syncProjectSplitTables(existing.id, promoteFields);
 
         const promoteStageNames = PHASE_TO_ENG_STAGES[targetPhase];
         if (promoteStageNames && promoteStageNames.length > 0 && userId) {
@@ -1146,13 +1182,15 @@ export function registerLifecycleRoutes(app: Express) {
         return res.json(updated);
       }
 
-      const [created] = await db.insert(projectInfo).values({
+      const promoteInsertFields = {
         projectName: cleanName,
         phase: phase || "First Assessment",
         isActive: true,
         phaseUpdatedAt: new Date(),
         phaseUpdatedByUserId: userId,
-      }).returning();
+      };
+      const [created] = await db.insert(projectInfo).values(promoteInsertFields).returning();
+      await syncProjectSplitTablesAfterInsert(created.id, promoteInsertFields);
 
       const targetPhase = phase || "First Assessment";
       const stageNames = PHASE_TO_ENG_STAGES[targetPhase];
@@ -1217,6 +1255,7 @@ export function registerLifecycleRoutes(app: Express) {
       }
 
       const [updated] = await db.update(projectInfo).set(updates).where(eq(projectInfo.id, id)).returning();
+      await syncProjectSplitTables(id, updates);
       logAuditFromReq(req, { entityType: "lifecycle", entityId: String(id), action: "update", projectName: updated.projectName, changesJson: { description: "Project details updated", phase, escalationLevel, ragStatus } });
       res.json(updated);
     } catch (err: any) {
@@ -1353,12 +1392,23 @@ export function registerLifecycleRoutes(app: Express) {
         });
       }
 
-      const [updated] = await db.update(projectInfo).set({
+      const stageTransitionFields = {
         phase: phase.trim(),
         phaseUpdatedAt: new Date(),
         phaseUpdatedByUserId: userId,
         updatedAt: new Date(),
-      }).where(eq(projectInfo.id, id)).returning();
+      };
+      const [updated] = await db.update(projectInfo).set(stageTransitionFields).where(eq(projectInfo.id, id)).returning();
+      await syncProjectSplitTables(id, stageTransitionFields);
+
+      // Record phase transition in dedicated history table
+      await db.insert(projectPhaseHistory).values({
+        projectId: id,
+        fromPhase: existing.phase || null,
+        toPhase: phase.trim(),
+        changedByUserId: userId,
+        reason: `Phase changed from ${existing.phase || "unknown"} to ${phase.trim()}`,
+      });
 
       let engStagesResult: any = null;
       const stageNames = PHASE_TO_ENG_STAGES[phase.trim()];
@@ -1386,6 +1436,9 @@ export function registerLifecycleRoutes(app: Express) {
         idempotencyKey: `phase:${id}:${existing.phase || ""}:${phase.trim()}`,
       });
       res.json({ ...updated, engStagesResult });
+
+      // Prompt 12: Refresh materialized dashboard metrics after phase change
+      refreshProjectMetricsAsync(id);
     } catch (err: any) {
       console.error("[lifecycle-board] PATCH phase error:", err);
       res.status(500).json({ error: err.message });
@@ -1483,6 +1536,7 @@ export function registerLifecycleRoutes(app: Express) {
       const previousStatus = project.executionGateStatus;
 
       const [updated] = await db.update(projectInfo).set(updates).where(eq(projectInfo.id, id)).returning();
+      await syncProjectSplitTables(id, updates);
 
       const user = (req as any).user as any;
       await db.insert(executionGateLog).values({
@@ -1550,10 +1604,11 @@ export function registerLifecycleRoutes(app: Express) {
       const primaryClean = primary.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
       const secondaryClean = secondary.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ");
 
-      const allTasks = await db.select({ projectName: operationalTasks.projectName }).from(operationalTasks);
-      const allPlansRaw = await db.select({ projectId: workItems.projectId }).from(workItems).where(and(eq(workItems.workstream, 'PM'), eq(workItems.source, 'SMART_IMPORT'), isNull(workItems.deletedAt)));
       const piRows = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
       const piNameMap = new Map<number, string>(piRows.map((p: any) => [p.id, p.projectName]));
+      const allTasksRaw = await db.select({ projectId: workItems.projectId }).from(workItems).where(isNull(workItems.deletedAt));
+      const allTasks = allTasksRaw.map((wi: any) => ({ projectName: wi.projectId ? piNameMap.get(wi.projectId) || null : null }));
+      const allPlansRaw = await db.select({ projectId: workItems.projectId }).from(workItems).where(and(eq(workItems.workstream, 'PM'), eq(workItems.source, 'SMART_IMPORT'), isNull(workItems.deletedAt)));
       const allPlans = allPlansRaw.map((wi: any) => ({ projectName: wi.projectId ? piNameMap.get(wi.projectId) || null : null }));
 
       const primaryNorm = normalizeName(primary.projectName);
@@ -1640,10 +1695,12 @@ export function registerLifecycleRoutes(app: Express) {
       const user = (req as any).user as any;
       const restoredBy = user?.email || user?.name || "unknown";
 
+      const restoreFields = { archivedStatus: "ACTIVE", updatedAt: new Date() };
       const [updated] = await db.update(projectInfo)
-        .set({ archivedStatus: "ACTIVE", updatedAt: new Date() })
+        .set(restoreFields)
         .where(eq(projectInfo.id, projectId))
         .returning();
+      await syncProjectSplitTables(projectId, restoreFields);
 
       logAuditFromReq(req, {
         entityType: "lifecycle",
@@ -1686,109 +1743,109 @@ export function registerLifecycleRoutes(app: Express) {
       await db.transaction(async (tx) => {
         const pId = projectId;
         const pN = pName;
+        // Safe delete helper — uses SAVEPOINTs so a failed statement
+        // (e.g. missing table) doesn't abort the whole PG transaction.
+        let spIdx = 0;
+        const safeDel = async (query: ReturnType<typeof sql>) => {
+          const sp = `sp_del_${spIdx++}`;
+          try {
+            await tx.execute(sql.raw(`SAVEPOINT ${sp}`));
+            await tx.execute(query);
+            await tx.execute(sql.raw(`RELEASE SAVEPOINT ${sp}`));
+          } catch (_e) {
+            await tx.execute(sql.raw(`ROLLBACK TO SAVEPOINT ${sp}`));
+          }
+        };
 
-        await tx.execute(sql`DELETE FROM project_eng_deliverables WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM project_eng_approvals WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM project_eng_tasks WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM engineering_task_attachments WHERE engineering_task_id IN (SELECT id FROM engineering_tasks WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM deliverable_events WHERE deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM deliverable_files WHERE deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM deliverable_versions WHERE deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM task_activity_log WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM task_deliverables WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM task_attachments WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM task_checklist_items WHERE checklist_id IN (SELECT tc.id FROM task_checklists tc JOIN operational_tasks ot ON tc.task_id = ot.id WHERE ot.project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM task_checklists WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM task_comments WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM task_watchers WHERE task_id IN (SELECT id FROM operational_tasks WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM qc_item_evidence WHERE item_instance_id IN (SELECT qi.id FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id WHERE qc.project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM qc_risk_answer WHERE checklist_id IN (SELECT id FROM qc_checklist WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM qc_item_instance WHERE checklist_id IN (SELECT id FROM qc_checklist WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM qc_plan_link WHERE checklist_id IN (SELECT id FROM qc_checklist WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM qc_warning_event WHERE warning_id IN (SELECT id FROM qc_warning WHERE project_name = ${pN})`);
-        await tx.execute(sql`DELETE FROM qc_warning WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM qc_postmortem_metric_value WHERE postmortem_id IN (SELECT id FROM qc_postmortem WHERE project_name = ${pN})`);
-        await tx.execute(sql`DELETE FROM qc_postmortem_summary WHERE postmortem_id IN (SELECT id FROM qc_postmortem WHERE project_name = ${pN})`);
-        await tx.execute(sql`DELETE FROM qc_postmortem WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM qc_access_challenge WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM import_issues WHERE import_run_id IN (SELECT id FROM smart_import_runs WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM teams_chat_messages WHERE group_id IN (SELECT id FROM teams_chat_groups WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM teams_chat_members WHERE group_id IN (SELECT id FROM teams_chat_groups WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM working_plan_task_override WHERE scenario_id IN (SELECT id FROM working_plan_scenario WHERE project_name = ${pN})`);
-        await tx.execute(sql`DELETE FROM working_plan_dependency_override WHERE scenario_id IN (SELECT id FROM working_plan_scenario WHERE project_name = ${pN})`);
-        try { await tx.execute(sql`DELETE FROM project_plan_dependency WHERE project_name = ${pN}`); } catch(_e) {}
-        await tx.execute(sql`DELETE FROM field_changes WHERE change_set_id IN (SELECT id FROM change_sets WHERE project_name = ${pN})`);
-        await tx.execute(sql`DELETE FROM intake_tasks WHERE intake_request_id IN (SELECT id FROM intake_requests WHERE project_id = ${pId})`);
-        await tx.execute(sql`DELETE FROM project_links WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM project_eng_deliverables WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM project_eng_approvals WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM project_eng_tasks WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM engineering_task_attachments WHERE engineering_task_id IN (SELECT legacy_id FROM work_items WHERE legacy_table = 'engineering_tasks' AND project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM deliverable_events WHERE deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM deliverable_files WHERE deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM deliverable_versions WHERE deliverable_id IN (SELECT id FROM deliverables WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_activity_log WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_deliverables WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_attachments WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_checklist_items WHERE checklist_id IN (SELECT tc.id FROM task_checklists tc WHERE tc.work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId}))`);
+        await safeDel(sql`DELETE FROM task_checklists WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_comments WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM task_watchers WHERE work_item_id IN (SELECT id FROM work_items WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM qc_item_evidence WHERE item_instance_id IN (SELECT qi.id FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id WHERE qc.project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM qc_risk_answer WHERE checklist_id IN (SELECT id FROM qc_checklist WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM qc_item_instance WHERE checklist_id IN (SELECT id FROM qc_checklist WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM qc_plan_link WHERE checklist_id IN (SELECT id FROM qc_checklist WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM qc_warning_event WHERE warning_id IN (SELECT id FROM qc_warning WHERE project_name = ${pN})`);
+        await safeDel(sql`DELETE FROM qc_warning WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM qc_postmortem_metric_value WHERE postmortem_id IN (SELECT id FROM qc_postmortem WHERE project_name = ${pN})`);
+        await safeDel(sql`DELETE FROM qc_postmortem_summary WHERE postmortem_id IN (SELECT id FROM qc_postmortem WHERE project_name = ${pN})`);
+        await safeDel(sql`DELETE FROM qc_postmortem WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM qc_access_challenge WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM import_issues WHERE import_run_id IN (SELECT id FROM smart_import_runs WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM teams_chat_messages WHERE group_id IN (SELECT id FROM teams_chat_groups WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM teams_chat_members WHERE group_id IN (SELECT id FROM teams_chat_groups WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM working_plan_dependency_override WHERE scenario_id IN (SELECT id FROM working_plan_scenario WHERE project_name = ${pN})`);
+        await safeDel(sql`DELETE FROM project_plan_dependency WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM field_changes WHERE change_set_id IN (SELECT id FROM change_sets WHERE project_name = ${pN})`);
+        await safeDel(sql`DELETE FROM intake_tasks WHERE intake_request_id IN (SELECT id FROM intake_requests WHERE project_id = ${pId})`);
+        await safeDel(sql`DELETE FROM project_links WHERE project_id = ${pId}`);
 
-        await tx.execute(sql`DELETE FROM project_eng_stages WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM engineering_tasks WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM deliverables WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM operational_tasks WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM qc_checklist WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM project_phase_history WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM pd_tickets WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM phase_template_application WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM execution_gate_log WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM smart_import_runs WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM project_portfolio_assignments WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM teams_chat_groups WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM intake_requests WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM work_items WHERE workstream = 'PM' AND source = 'SMART_IMPORT' AND (project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'})`);
-        await tx.execute(sql`DELETE FROM normalized_revenue_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM normalized_cost_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM normalized_execution_phases WHERE project_id = ${pId} OR project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM pm_site_visits WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM pm_on_the_go_actions WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM pm_compliance_tracking WHERE project_id = ${pId}`);
-        await tx.execute(sql`UPDATE ms_objects SET linked_project_id = NULL, linked_task_id = NULL WHERE linked_project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM invoice_pattern_matches WHERE project_id = ${pId}`);
-        await tx.execute(sql`DELETE FROM tr_item_project_links WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM project_eng_stages WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM deliverables WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM qc_checklist WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM project_phase_history WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM pd_tickets WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM phase_template_application WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM execution_gate_log WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM smart_import_runs WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM project_portfolio_assignments WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM teams_chat_groups WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM intake_requests WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM work_items WHERE workstream = 'PM' AND source = 'SMART_IMPORT' AND (project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'})`);
+        await safeDel(sql`DELETE FROM normalized_revenue_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM normalized_cost_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM normalized_execution_phases WHERE project_id = ${pId} OR project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM pm_site_visits WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM pm_on_the_go_actions WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM pm_compliance_tracking WHERE project_id = ${pId}`);
+        await safeDel(sql`UPDATE ms_objects SET linked_project_id = NULL, linked_task_id = NULL WHERE linked_project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM invoice_pattern_matches WHERE project_id = ${pId}`);
+        await safeDel(sql`DELETE FROM tr_item_project_links WHERE project_id = ${pId}`);
 
-        await tx.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, pN));
-        await tx.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, pN));
-        await tx.execute(sql`DELETE FROM project_revenue_summary WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM finance_revenue_monthly WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM finance_cos_monthly WHERE project_name = ${pN}`);
-        try { await tx.execute(sql`DELETE FROM project_plan WHERE project_name = ${pN}`); } catch(_e) {}
-        await tx.execute(sql`DELETE FROM project_notes WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM cashflow_points WHERE project_name = ${pN}`);
-        try { await tx.execute(sql`DELETE FROM project_plan_overrides WHERE project_name = ${pN}`); } catch(_e) {}
-        await tx.execute(sql`DELETE FROM revenue_tracking_overrides WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM expenditure_overrides WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM cashflow_planning_overrides WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM cos_status_overrides WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM finance_revenue_overrides WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM finance_cos_overrides WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM milestone_task_links WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM expense_task_links WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM key_date_mappings WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM writeback_mappings WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM financial_edit_requests WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM financial_integration_rules WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM schedule_change_notice WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM notifications WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM project_team_members WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM project_editable_fields WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM company_projects WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM sp_file_pointers WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM working_plan_scenario WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM revenue_milestone_manual WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM cashflow_weekly_manual WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM cashflow_balance_history WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM available_payment_overrides WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM available_payment_history WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM tracker_monthly_manual WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM planning_overrides WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM line_item_overrides WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM change_sets WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM weekly_reviews WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM derived_project_kpis WHERE project_name = ${pN}`);
-        await tx.execute(sql`DELETE FROM merge_audit_log WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM normalized_cost_lines WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM normalized_revenue_lines WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM project_revenue_summary WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM finance_revenue_monthly WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM finance_cos_monthly WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM project_plan WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM project_notes WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM cashflow_points WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM milestone_task_links WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM expense_task_links WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM key_date_mappings WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM writeback_mappings WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM financial_edit_requests WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM financial_integration_rules WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM schedule_change_notice WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM project_team_members WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM project_editable_fields WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM company_projects WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM sp_file_pointers WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM working_plan_scenario WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM revenue_milestone_manual WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM cashflow_weekly_manual WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM cashflow_balance_history WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM available_payment_overrides WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM available_payment_history WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM tracker_monthly_manual WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM change_sets WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM weekly_reviews WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM derived_project_kpis WHERE project_name = ${pN}`);
+        await safeDel(sql`DELETE FROM merge_audit_log WHERE project_name = ${pN}`);
 
-        await tx.execute(sql`UPDATE mytool_tasks SET project_name = NULL WHERE project_name = ${pN}`);
-        await tx.execute(sql`UPDATE priority_links SET project_name = NULL WHERE project_name = ${pN}`);
-        await tx.execute(sql`UPDATE audit_events SET project_name = ${pName + ' [DELETED]'} WHERE project_name = ${pN}`);
+        await safeDel(sql`UPDATE mytool_tasks SET project_name = NULL WHERE project_name = ${pN}`);
+        await safeDel(sql`UPDATE priority_links SET project_name = NULL WHERE project_name = ${pN}`);
+        await safeDel(sql`UPDATE audit_events SET project_name = ${pName + ' [DELETED]'} WHERE project_name = ${pN}`);
 
         await tx.execute(sql`DELETE FROM project_info WHERE id = ${pId}`);
       });

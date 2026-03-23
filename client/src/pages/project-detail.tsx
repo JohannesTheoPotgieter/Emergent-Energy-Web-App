@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useRoute, useLocation, useSearch } from "wouter";
+import { useRoute, useLocation, useSearch, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +17,7 @@ import {
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
-  MessageSquare, FolderOpen, Bell, FileCheck,
+  MessageSquare, FolderOpen, FileCheck, Search, X,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -38,19 +38,21 @@ import { ProjectChatTab } from "@/components/tabs/ProjectChatTab";
 import { LocalFolderTab } from "@/components/tabs/LocalFolderTab";
 import { ProjectApprovalsTab } from "@/components/tabs/ProjectApprovalsTab";
 import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
-import { ProjectNotificationsTab } from "@/components/tabs/ProjectNotificationsTab";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
 import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
-import { useProgramData } from "@/hooks/use-program-data";
+import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
 import { PageShell } from "@/components/layout/page-shell";
 import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
+import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
 import { type NextMilestoneSummary } from "@/lib/next-milestone";
+import { useProjectDetail, useProjectFinance, useProjectPlan, useProjectQuality, useProjectEngineering } from "@/hooks/use-project-v2";
+import type { ProjectPermissions } from "@shared/api-types/project-v2";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
@@ -79,6 +81,43 @@ function PhaseBadge({ phase }: { phase: string | null }) {
     >
       {getPhaseLabel(phase)}
     </span>
+  );
+}
+
+function ProjectPriorityBadges({ projectId }: { projectId: number | null }) {
+  const { data: priorities } = useQuery<any[]>({
+    queryKey: [`/api/projects/${projectId}/priorities`],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const res = await fetch(`/api/projects/${projectId}/priorities`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  if (!priorities || priorities.length === 0) return null;
+
+  const healthColors: Record<string, string> = {
+    critical: "bg-red-100 text-red-700 border-red-200",
+    at_risk: "bg-amber-100 text-amber-700 border-amber-200",
+    healthy: "bg-blue-100 text-blue-700 border-blue-200",
+  };
+
+  return (
+    <div className="flex items-center gap-2 mt-1 mb-2 flex-wrap">
+      <span className="text-xs text-muted-foreground">Priorities:</span>
+      {priorities.map((p: any) => (
+        <Link key={p.id} href={`/priorities/${p.id}`} className="no-underline">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border cursor-pointer hover:shadow-sm ${healthColors[p.effectiveHealth] || healthColors.healthy}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${p.effectiveHealth === "critical" ? "bg-red-500" : p.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-blue-500"}`} />
+            {p.title}
+          </span>
+        </Link>
+      ))}
+    </div>
   );
 }
 
@@ -266,9 +305,15 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   const [, setLocation] = useLocation();
   const [showAddForm, setShowAddForm] = useState(false);
   const [newTitle, setNewTitle] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [newPriority, setNewPriority] = useState("Med");
+  const [newDueDate, setNewDueDate] = useState("");
+  const [newAssigneeUserId, setNewAssigneeUserId] = useState<string>("");
   const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
   const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const { allowed: canEdit } = usePermission('pd_eng_tasks', 'edit');
   const { allowed: canDelete } = usePermission('pd_eng_tasks', 'delete');
 
@@ -292,10 +337,19 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   });
 
   const createMutation = useMutation({
-    mutationFn: async (title: string) => {
+    mutationFn: async (taskData: { title: string; description?: string; priority?: string; dueDate?: string; ownerUserId?: number | null }) => {
       const res = await engFetch("/api/eng/tasks", {
         method: "POST",
-        body: JSON.stringify({ title, projectName, status: "TO DO", taskTypeTag: "PROJECT" }),
+        body: JSON.stringify({
+          title: taskData.title,
+          description: taskData.description || null,
+          priority: taskData.priority || "Med",
+          dueDate: taskData.dueDate || null,
+          ownerUserId: taskData.ownerUserId || null,
+          projectId: projectInfoId,
+          status: "TO DO",
+          taskTypeTag: "PROJECT",
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -307,6 +361,10 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
       toast({ title: "Task created" });
       qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
       setNewTitle("");
+      setNewDescription("");
+      setNewPriority("Med");
+      setNewDueDate("");
+      setNewAssigneeUserId("");
       setShowAddForm(false);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -372,13 +430,37 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     return <div className="flex justify-center py-12"><EnergyLoader size="md" label="Loading project..." /></div>;
   }
 
-  const tasks = engData?.tasks || [];
-  const openTasks = tasks.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
-  const completedTasks = tasks.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
-  const overdue = tasks.filter((t: any) => {
+  const allTasks = engData?.tasks || [];
+  const openTasks = allTasks.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
+  const completedTasks = allTasks.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
+  const overdue = allTasks.filter((t: any) => {
     const due = t.dueDate || t.endDate;
     return due && due < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE" && t.status !== "Complete";
   });
+
+  // Apply status filter and search
+  const tasks = useMemo(() => {
+    let filtered = allTasks;
+    if (statusFilter === "open") {
+      filtered = filtered.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
+    } else if (statusFilter === "completed") {
+      filtered = filtered.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
+    } else if (statusFilter === "overdue") {
+      const today = new Date().toISOString().split("T")[0];
+      filtered = filtered.filter((t: any) => {
+        const due = t.dueDate || t.endDate;
+        return due && due < today && t.status !== "COMPLETE" && t.status !== "Complete";
+      });
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((t: any) =>
+        (t.title || "").toLowerCase().includes(q) ||
+        (t.description || "").toLowerCase().includes(q)
+      );
+    }
+    return filtered;
+  }, [allTasks, statusFilter, searchQuery]);
 
   const phaseGroups = new Map<string, any[]>();
   for (const t of tasks) {
@@ -389,12 +471,23 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
 
   const getTaskId = (task: any) => task.id;
 
+  const handleCreateTask = () => {
+    if (!newTitle.trim()) return;
+    createMutation.mutate({
+      title: newTitle.trim(),
+      description: newDescription.trim() || undefined,
+      priority: newPriority,
+      dueDate: newDueDate || undefined,
+      ownerUserId: newAssigneeUserId ? parseInt(newAssigneeUserId) : null,
+    });
+  };
+
   return (
     <div className="space-y-4" data-testid="eng-tasks-tab">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h3 className="text-sm font-semibold">Engineering Tasks</h3>
         <div className="flex gap-2">
-          {tasks.length === 0 && isAdmin && (
+          {allTasks.length === 0 && isAdmin && (
             <Button size="sm" variant="outline" onClick={() => setShowGenerateConfirm(true)} disabled={generateMutation.isPending} className="h-7 text-xs gap-1" data-testid="button-generate-eng-tasks">
               {generateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlusCircle className="h-3 w-3" />}
               Generate from Template
@@ -409,20 +502,70 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
       </div>
 
       {showAddForm && (
-        <Card className="p-3">
-          <div className="flex gap-2">
+        <Card className="p-3 space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-[10px] uppercase text-muted-foreground">Title</Label>
             <Input
               placeholder="Task title..."
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
               className="h-8 text-sm"
-              onKeyDown={(e) => { if (e.key === "Enter" && newTitle.trim()) createMutation.mutate(newTitle.trim()); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && newTitle.trim()) handleCreateTask(); }}
               data-testid="input-new-eng-task"
             />
-            <Button size="sm" className="h-8" onClick={() => { if (newTitle.trim()) createMutation.mutate(newTitle.trim()); }} disabled={!newTitle.trim() || createMutation.isPending} data-testid="button-save-eng-task">
-              {createMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Add"}
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-[10px] uppercase text-muted-foreground">Description</Label>
+            <Textarea
+              placeholder="Task description..."
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              className="text-sm min-h-[60px]"
+              data-testid="input-new-eng-task-desc"
+            />
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase text-muted-foreground">Priority</Label>
+              <SearchableSelect
+                value={newPriority}
+                onValueChange={setNewPriority}
+                triggerClassName="h-8 text-sm"
+                options={ALL_PRIORITIES.map(p => ({ value: p, label: p }))}
+                data-testid="select-new-eng-task-priority"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-[10px] uppercase text-muted-foreground">Due Date</Label>
+              <Input
+                type="date"
+                value={newDueDate}
+                onChange={(e) => setNewDueDate(e.target.value)}
+                className="h-8 text-sm"
+                data-testid="input-new-eng-task-due"
+              />
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <Label className="text-[10px] uppercase text-muted-foreground">Assignee</Label>
+              <SearchableSelect
+                value={newAssigneeUserId}
+                onValueChange={setNewAssigneeUserId}
+                triggerClassName="h-8 text-sm"
+                placeholder="Unassigned"
+                options={[
+                  { value: "", label: "Unassigned" },
+                  ...(allUsers || []).map((u: any) => ({ value: String(u.id), label: u.name })),
+                ]}
+                data-testid="select-new-eng-task-assignee"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button size="sm" className="h-8" onClick={handleCreateTask} disabled={!newTitle.trim() || createMutation.isPending} data-testid="button-save-eng-task">
+              {createMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+              Create Task
             </Button>
-            <Button size="sm" variant="ghost" className="h-8" onClick={() => { setShowAddForm(false); setNewTitle(""); }} data-testid="button-cancel-eng-task">Cancel</Button>
+            <Button size="sm" variant="ghost" className="h-8" onClick={() => { setShowAddForm(false); setNewTitle(""); setNewDescription(""); setNewPriority("Med"); setNewDueDate(""); setNewAssigneeUserId(""); }} data-testid="button-cancel-eng-task">Cancel</Button>
           </div>
         </Card>
       )}
@@ -452,35 +595,53 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
         </DialogContent>
       </Dialog>
 
-      {tasks.length === 0 && !showAddForm ? (
+      {allTasks.length === 0 && !showAddForm ? (
         <div className="text-center py-12 space-y-2">
           <Wrench className="h-12 w-12 mx-auto text-muted-foreground/30" />
           <p className="text-lg font-medium text-muted-foreground">No engineering tasks yet</p>
           <p className="text-sm text-muted-foreground/70">Add tasks manually or generate from templates.</p>
         </div>
-      ) : tasks.length > 0 && (
+      ) : allTasks.length > 0 && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Card className="p-3">
+            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "all" ? "ring-2 ring-primary" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("all")}>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Total</p>
-              <p className="text-xl font-bold mt-1">{tasks.length}</p>
+              <p className="text-xl font-bold mt-1">{allTasks.length}</p>
             </Card>
-            <Card className="p-3">
+            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "open" ? "ring-2 ring-blue-500" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("open")}>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Open</p>
               <p className="text-xl font-bold mt-1 text-blue-600">{openTasks.length}</p>
             </Card>
-            <Card className="p-3">
+            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "completed" ? "ring-2 ring-emerald-500" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("completed")}>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Completed</p>
               <p className="text-xl font-bold mt-1 text-emerald-600">{completedTasks.length}</p>
             </Card>
-            <Card className={`p-3 ${overdue.length > 0 ? "border-red-200" : ""}`}>
+            <Card className={`p-3 cursor-pointer transition-all ${statusFilter === "overdue" ? "ring-2 ring-red-500" : ""} ${overdue.length > 0 ? "border-red-200 hover:bg-red-50/30" : "hover:bg-muted/30"}`} onClick={() => setStatusFilter("overdue")}>
               <p className={`text-[10px] uppercase tracking-wider ${overdue.length > 0 ? "text-red-600" : "text-muted-foreground"}`}>Overdue</p>
               <p className={`text-xl font-bold mt-1 ${overdue.length > 0 ? "text-red-600" : ""}`}>{overdue.length}</p>
             </Card>
           </div>
 
           <div className="w-full h-2.5 bg-muted rounded-full overflow-hidden">
-            <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${(completedTasks.length / tasks.length) * 100}%` }} />
+            <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${(completedTasks.length / allTasks.length) * 100}%` }} />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search tasks..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-8 text-sm pl-8"
+                data-testid="eng-tasks-search"
+              />
+            </div>
+            {(statusFilter !== "all" || searchQuery) && (
+              <Button size="sm" variant="ghost" className="h-8 text-xs" onClick={() => { setStatusFilter("all"); setSearchQuery(""); }} data-testid="eng-tasks-clear-filter">
+                <X className="h-3 w-3 mr-1" /> Clear
+              </Button>
+            )}
           </div>
 
           {Array.from(phaseGroups.entries()).map(([phase, phaseTasks]) => (
@@ -714,7 +875,6 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "sharepoint": { section: "collaboration", subTab: "sharepoint" },
   "local-files": { section: "collaboration", subTab: "local-files" },
   "approvals": { section: "collaboration", subTab: "approvals" },
-  "notifications": { section: "collaboration", subTab: "notifications" },
   "collaboration": { section: "collaboration", subTab: "chat" },
 };
 
@@ -738,7 +898,7 @@ export default function ProjectDetailPage() {
   const [, setLocation] = useLocation();
   const searchString = useSearch();
   const projectName = params?.projectName ? decodeURIComponent(params.projectName) : "";
-  const { projectsSummary } = useProgramData();
+  const { projectsSummary, isLoading: programDataLoading } = useProjectsSummary();
   const { user } = useAuth();
 
   useEffect(() => {
@@ -850,6 +1010,16 @@ export default function ProjectDetailPage() {
   const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
   const projectInfoId = projectInfo?.project_info_id;
 
+  // ─── V2 Consolidated project query ─────────────────────────────
+  const { data: v2Detail } = useProjectDetail(projectInfoId);
+  const v2Perms: ProjectPermissions | null = v2Detail?.permissions ?? null;
+
+  // V2 lazy-load hooks — each tab domain loads on demand
+  const { data: v2Finance } = useProjectFinance(projectInfoId, activeSection === "commercial");
+  const { data: v2Plan } = useProjectPlan(projectInfoId, activeSection === "delivery");
+  const { data: v2Quality } = useProjectQuality(projectInfoId, activeSection === "quality");
+  const { data: v2Engineering } = useProjectEngineering(projectInfoId, activeSection === "engineering");
+
   const { data: pmAssignableUsers } = useQuery<{ id: number; name: string; username: string; role: string }[]>({
     queryKey: ["/api/pm-assignable-users"],
     queryFn: async () => {
@@ -873,16 +1043,6 @@ export default function ProjectDetailPage() {
     setDrawerOpen(true);
   };
 
-  const { data: engStagesData } = useQuery({
-    queryKey: ["project-eng-stages-overview", projectInfoId],
-    queryFn: async () => {
-      const res = await engFetch(`/api/projects/${projectInfoId}/eng-stages`);
-      if (!res.ok) return { stages: [] };
-      return res.json();
-    },
-    enabled: !!projectInfoId,
-  });
-
   const { data: pdTicketsData = [] } = useQuery<any[]>({
     queryKey: ["pd-tickets-project", projectInfoId],
     queryFn: async () => {
@@ -900,6 +1060,17 @@ export default function ProjectDetailPage() {
           priority: t.ticket?.priority,
           taskCount: { total: t.taskTotal || 0, completed: t.taskCompleted || 0 },
         }));
+    },
+    enabled: !!projectInfoId,
+  });
+
+
+  const { data: engStagesData } = useQuery({
+    queryKey: ["project-eng-stages-overview", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectInfoId}/eng-stages`);
+      if (!res.ok) return { stages: [] };
+      return res.json();
     },
     enabled: !!projectInfoId,
   });
@@ -985,16 +1156,6 @@ export default function ProjectDetailPage() {
     enabled: !!projectInfo?.project_info_id,
   });
 
-  const { data: projectExceptions } = useQuery<{ items: Array<{ id: string; title: string; severity: string; sourceLink: string; reason: string }>; summary?: { total: number; bySeverity: Record<string, number> } }>({
-    queryKey: ["project-exceptions", projectInfoId],
-    queryFn: async () => {
-      const res = await engFetch(`/api/exceptions?projectId=${projectInfoId}`);
-      if (!res.ok) return { items: [], summary: { total: 0, bySeverity: {} } };
-      return res.json();
-    },
-    enabled: !!projectInfoId,
-  });
-
   const { data: qualityData } = useQuery({
     queryKey: ["quality-summary", projectName],
     queryFn: async () => {
@@ -1005,79 +1166,39 @@ export default function ProjectDetailPage() {
     enabled: !!projectName,
   });
 
-  if (!projectName) {
-    return (
-      <div className="space-y-6">
-        <h2 className="text-3xl font-heading font-bold text-foreground">Project Not Found</h2>
-        <p className="text-muted-foreground">No project specified.</p>
-      </div>
-    );
-  }
-
-  const displayName = projectName.replace("_Tracker", "");
-  const phase = projectInfo?.phase || null;
-  const executionPhase = projectInfo?.execution_phase || phase || null;
-  const pd = projectInfo?.pd || "—";
-  const pm = projectInfo?.pm || "—";
-  const sizeKwp = projectInfo?.size_kwp ? `${projectInfo.size_kwp.toFixed(0)} kWp` : "—";
-  const completion = projectInfo?.project_pct_complete != null
-    ? `${(projectInfo.project_pct_complete * 100).toFixed(0)}%`
-    : "—";
-  const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
-  const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
-  const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
-  const ragStatus = projectInfo?.rag_status || null;
-  const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
-  const contractValue = projectInfo?.contract_value || totalRevenueActual || 0;
-  const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
-  const budgetTotal = projectInfo?.budget_total || totalBudgetFromExpenses || 0;
-
-  const planTasks = projectPlanData as any[];
-  const today = new Date().toISOString().split("T")[0];
-  const overduePlanTasks = planTasks.filter((t: any) => {
-    const endDate = t.actualEndDate || t.dueDate || t.actualEnd || t.endDate;
-    const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
-    const pctNorm = pct > 1 ? pct : pct * 100;
-    return endDate && endDate.substring(0, 10) < today && pctNorm < 100;
+  const { data: projectExceptions } = useQuery<{ items: Array<{ id: string; title: string; severity: string; sourceLink: string; reason: string }>; summary?: { total: number; bySeverity: Record<string, number> } }>({
+    queryKey: ["project-exceptions", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/exceptions?projectId=${projectInfoId}`);
+      if (!res.ok) return { items: [], summary: { total: 0, bySeverity: {} } };
+      return res.json();
+    },
+    enabled: !!projectInfoId,
   });
-  const completedPlanTasks = planTasks.filter((t: any) => {
-    const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
-    const pctNorm = pct > 1 ? pct : pct * 100;
-    return pctNorm >= 100;
+
+  // GC-003: Server-side KPI health summary — single source of truth
+  const { data: healthSummary } = useQuery<{
+    schedule: { rag: string; overdueTasks: number; completionPct: number };
+    cost: { rag: string; ratio: number; totalExpenses: number; budgetTotal: number };
+    quality: { rag: string; gatesTotal: number; gatesPassed: number; totalItems: number; approvedItems: number; progressPct: number };
+    revenue: { contractValue: number; realisedPct: number; totalPaidInflows: number };
+    cos: { realisedPct: number; totalRealised: number };
+    engineering: { progressPct: number; totalTasks: number; completedTasks: number };
+    overall: { rag: string };
+    alerts: { overduePlanTasks: number; overdueEngineeringTasks: number; pendingQualityApprovals: number };
+  }>({
+    queryKey: ["health-summary", projectName],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${encodeURIComponent(projectName)}/health-summary`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!projectName,
+    staleTime: 30_000,
   });
-  const planCompletionPct = planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0;
-  const scheduleRag: "green" | "amber" | "red" = overduePlanTasks.length === 0 ? "green" : overduePlanTasks.length <= 3 ? "amber" : "red";
 
-  const totalExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
-  const costRatio = budgetTotal > 0 ? totalExpenses / budgetTotal : 0;
-  const costRag: "green" | "amber" | "red" = costRatio < 0.9 ? "green" : costRatio <= 1 ? "amber" : "red";
-
-  const qualitySummary = qualityData as any;
-  const qualityPhases = qualitySummary?.phases || [];
-  const qualityGatesTotal = qualityPhases.length;
-  const qualityGatesPassed = qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
-  const qualityTotalItems = qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
-  const qualityApprovedItems = qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
-  const qualityProgressPct = qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0;
-  const qualityRag: "green" | "amber" | "red" = qualitySummary?.hasChecklist
-    ? (qualityGatesPassed === qualityGatesTotal && qualityGatesTotal > 0 ? "green" : qualityApprovedItems > 0 ? "amber" : "red")
-    : "red";
-
+  // Revenue milestones (from revenue-tab endpoint — provides milestone-level detail not in V2)
   const revTabMilestones: any[] = revenueTrustData?.milestones || [];
-
-  const isExpensePaid = (e: any): boolean => {
-    const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
-    const hasInvoiceNumber = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
-    if (!hasInvoiceNumber || !hasPaymentDate) return false;
-    const paymentDateConfirmed = e.paymentDateFontColor === 'red' ? false : (e.paymentDateFontColor === 'black' ? true : e.paymentDateConfirmed === true);
-    return paymentDateConfirmed;
-  };
-
-  const isCosRealised = (e: any): boolean => {
-    const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
-    const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
-    return hasInvoice && hasInvDate;
-  };
 
   const nextMilestone = useMemo<NextMilestoneSummary | null>(() => {
     const milestones = revTabMilestones;
@@ -1094,21 +1215,131 @@ export default function ProjectDetailPage() {
     return null;
   }, [revTabMilestones]);
 
-  const totalPaidInflows = revTabMilestones
+  if (!projectName) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-3xl font-heading font-bold text-foreground">Project Not Found</h2>
+        <p className="text-muted-foreground">No project specified.</p>
+      </div>
+    );
+  }
+
+  if (programDataLoading) {
+    return (
+      <PageShell className="p-3 md:p-4">
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading project data...</p>
+        </div>
+      </PageShell>
+    );
+  }
+
+  if (projectsSummary && !projectInfo) {
+    return (
+      <PageShell className="p-3 md:p-4">
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center">
+            <AlertCircle className="w-8 h-8 text-muted-foreground" />
+          </div>
+          <div className="text-center space-y-1">
+            <h3 className="text-lg font-semibold text-foreground">Project Not Found</h3>
+            <p className="text-sm text-muted-foreground max-w-md">
+              The project "{projectName.replace(/_Tracker$/i, "").replace(/_/g, " ")}" was not found in the project list. It may not have been imported yet, or the URL may be incorrect.
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => setLocation("/projects")} className="mt-2">
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back to Project List
+          </Button>
+        </div>
+      </PageShell>
+    );
+  }
+
+  const displayName = projectName.replace("_Tracker", "");
+  const phase = v2Detail?.executionState?.phase ?? projectInfo?.phase ?? null;
+  const executionPhase = projectInfo?.execution_phase || phase || null;
+  const pd = projectInfo?.pd || "—";
+  const pm = projectInfo?.pm || "—";
+  const sizeKwp = projectInfo?.size_kwp ? `${projectInfo.size_kwp.toFixed(0)} kWp` : "—";
+  const completion = projectInfo?.project_pct_complete != null
+    ? `${(projectInfo.project_pct_complete * 100).toFixed(0)}%`
+    : "—";
+  const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
+  const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
+  const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
+  const ragStatus = v2Detail?.executionState?.ragStatus ?? projectInfo?.rag_status ?? null;
+
+  // ─── KPI computation: V2 detail → healthSummary → client-side fallback ───
+  const v2ContractValue = v2Detail?.financeSummary?.contractValue;
+  const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+  const contractValue = v2ContractValue ?? healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? totalRevenueActual ?? 0;
+  const totalBudgetFromExpenses = (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
+  const budgetTotal = healthSummary?.cost.budgetTotal ?? projectInfo?.budget_total ?? totalBudgetFromExpenses ?? 0;
+
+  // Schedule KPIs
+  const planTasks = projectPlanData as any[];
+  const today = new Date().toISOString().split("T")[0];
+  const overduePlanTasks = planTasks.filter((t: any) => {
+    const endDate = t.actualEndDate || t.dueDate || t.actualEnd || t.endDate;
+    const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+    const pctNorm = pct > 1 ? pct : pct * 100;
+    return endDate && endDate.substring(0, 10) < today && pctNorm < 100;
+  });
+  const completedPlanTasks = planTasks.filter((t: any) => {
+    const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+    const pctNorm = pct > 1 ? pct : pct * 100;
+    return pctNorm >= 100;
+  });
+  const planCompletionPct = v2Detail?.planSummary?.completionPct ?? healthSummary?.schedule.completionPct ?? (planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0);
+  const scheduleRag: "green" | "amber" | "red" = (healthSummary?.schedule.rag as any) ?? computeScheduleRag(v2Detail?.planSummary?.tasksOverdue ?? overduePlanTasks.length);
+
+  // Cost KPIs
+  const totalExpenses = healthSummary?.cost.totalExpenses ?? (expenseData as any[]).reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
+  const costRatio = healthSummary?.cost.ratio ?? (budgetTotal > 0 ? totalExpenses / budgetTotal : 0);
+  const costRag: "green" | "amber" | "red" = (healthSummary?.cost.rag as any) ?? computeCostRag(costRatio);
+
+  // Quality KPIs
+  const qualitySummaryLegacy = qualityData as any;
+  const qualityPhases = qualitySummaryLegacy?.phases || [];
+  const qualityGatesTotal = healthSummary?.quality.gatesTotal ?? qualityPhases.length;
+  const qualityGatesPassed = healthSummary?.quality.gatesPassed ?? qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
+  const qualityTotalItems = healthSummary?.quality.totalItems ?? qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
+  const qualityApprovedItems = healthSummary?.quality.approvedItems ?? qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
+  const qualityProgressPct = healthSummary?.quality.progressPct ?? (qualityTotalItems > 0 ? (qualityApprovedItems / qualityTotalItems) * 100 : 0);
+  const qualityRag: "green" | "amber" | "red" = (healthSummary?.quality.rag as any) ?? computeQualityRag(!!qualitySummaryLegacy?.hasChecklist, qualityGatesPassed, qualityGatesTotal, qualityApprovedItems);
+
+  // Revenue realisation
+  const totalPaidInflows = healthSummary?.revenue.totalPaidInflows ?? v2Detail?.financeSummary?.receivedRevenue ?? revTabMilestones
     .filter((m: any) => m.status === 'inBank')
     .reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-  const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
+  const revenueRealisedPct = healthSummary?.revenue.realisedPct ?? (contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0);
 
-  const totalRealisedCos = (expenseData as any[]).reduce((s: number, e: any) => {
+  const isExpensePaid = (e: any): boolean => {
+    const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
+    const hasInvoiceNumber = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
+    if (!hasInvoiceNumber || !hasPaymentDate) return false;
+    const paymentDateConfirmed = e.paymentDateFontColor === 'red' ? false : (e.paymentDateFontColor === 'black' ? true : e.paymentDateConfirmed === true);
+    return paymentDateConfirmed;
+  };
+
+  const isCosRealised = (e: any): boolean => {
+    const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
+    const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
+    return hasInvoice && hasInvDate;
+  };
+
+  // COS realisation
+  const totalRealisedCos = healthSummary?.cos.totalRealised ?? (expenseData as any[]).reduce((s: number, e: any) => {
     if (isCosRealised(e)) return s + (Number(e.expenseActualTotal) || 0);
     return s;
   }, 0);
   const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
-  const cosRealisedPct = cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0;
+  const cosRealisedPct = healthSummary?.cos.realisedPct ?? (cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0);
   const marginDelta = revenueRealisedPct - cosRealisedPct;
 
-  const hasRedRag = scheduleRag === "red" || costRag === "red" || qualityRag === "red";
-  const overallRag: "green" | "amber" | "red" = hasRedRag ? "red" : (scheduleRag === "amber" || costRag === "amber" || qualityRag === "amber") ? "amber" : "green";
+  const overallRag: "green" | "amber" | "red" = (healthSummary?.overall.rag as any) ?? computeOverallRag(scheduleRag, costRag, qualityRag);
   const commercialPendingCount = Math.max(revTabMilestones.filter((m: any) => m.status !== 'inBank').length, 0);
   const unpaidExpenseCount = Math.max((expenseData as any[]).filter((e: any) => !isExpensePaid(e)).length, 0);
   const revenueReconciliation = revenueTrustData?.reconciliation;
@@ -1130,7 +1361,8 @@ export default function ProjectDetailPage() {
     ...((expenditureTrustData?.riskSignals || []) as any[]),
   ].slice(0, 6);
   const dependencyCount = pdTicketsData.length;
-  const overdueEngineeringCount = (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "COMPLETE").length;
+  // GC-010: Normalize engineering status casing for overdue count
+  const overdueEngineeringCount = healthSummary?.alerts.overdueEngineeringTasks ?? (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && String(t.status).toUpperCase() !== "COMPLETE").length;
   const topAlerts = [
     { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => openExecutionArea("delivery", "task-grid") },
     { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => openExecutionArea("engineering", "eng-tasks") },
@@ -1144,18 +1376,18 @@ export default function ProjectDetailPage() {
   };
 
   const engStages = engStagesData?.stages || [];
+  // GC-010: Normalize engineering status casing — compare case-insensitively
   const engStageTotalTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.length || 0), 0);
-  const engStageCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => t.status === "complete").length || 0), 0);
-  const engCompletedStages = engStages.filter((s: any) => s.status === "complete").length;
-  const engActiveStage = engStages.find((s: any) => s.status === "in_progress") || engStages.find((s: any) => s.status === "not_started");
+  const engStageCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => String(t.status).toLowerCase() === "complete").length || 0), 0);
 
   const engBoardTasks = engDataForAlerts?.tasks || [];
   const engBoardTotal = engBoardTasks.length;
-  const engBoardCompleted = engBoardTasks.filter((t: any) => t.status === "COMPLETE").length;
+  // GC-010: Normalize engineering status casing
+  const engBoardCompleted = engBoardTasks.filter((t: any) => String(t.status).toUpperCase() === "COMPLETE").length;
 
   const engTotalTasks = engStageTotalTasks + engBoardTotal;
   const engCompletedTasks = engStageCompletedTasks + engBoardCompleted;
-  const engStagePct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
+  const engStagePct = healthSummary?.engineering.progressPct ?? (engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0);
 
 
 
@@ -1189,6 +1421,27 @@ export default function ProjectDetailPage() {
         onPhaseChangeClick={() => setPhaseModalOpen(true)}
       />
 
+      {/* Priority badges */}
+      <ProjectPriorityBadges projectId={projectInfoId ?? null} />
+
+      {/* GC-012: Contract value reconciliation warning — uses V2 finance summary */}
+      {(() => {
+        const projectContractValue = Number(projectInfo?.contract_value) || 0;
+        const revenueMilestoneTotal = totalRevenueActual;
+        const hasContractMismatch = projectContractValue > 0 && revenueMilestoneTotal > 0
+          && Math.abs(projectContractValue - revenueMilestoneTotal) / projectContractValue > 0.01;
+        return hasContractMismatch ? (
+          <div className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs text-orange-800" data-testid="contract-value-mismatch">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+            <span>
+              Contract value mismatch: Project info shows <strong>R{projectContractValue.toLocaleString()}</strong> but
+              revenue milestones total <strong>R{revenueMilestoneTotal.toLocaleString()}</strong>
+              {` (${((revenueMilestoneTotal - projectContractValue) / projectContractValue * 100).toFixed(1)}% difference)`}
+            </span>
+          </div>
+        ) : null;
+      })()}
+
       {topAlerts.length > 0 && (
         <div className="flex flex-wrap gap-1.5" data-testid="cockpit-exception-strip">
           {topAlerts.map((alert) => (
@@ -1213,8 +1466,11 @@ export default function ProjectDetailPage() {
             <button
               key={tab.key}
               onClick={() => navigateToSection(tab.key)}
-              style={isActive ? { backgroundColor: "#16A34A", color: "#fff", borderColor: "#16A34A", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" } : { backgroundColor: "#fff", color: "#6b7280", borderColor: "#e5e7eb" }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 transition-all border hover:opacity-90"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 transition-all border hover:opacity-90 ${
+                isActive
+                  ? "bg-primary text-primary-foreground border-primary shadow-sm"
+                  : "bg-background text-muted-foreground border-border hover:text-foreground hover:bg-muted/50"
+              }`}
               data-testid={`major-tab-${tab.key}`}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -1249,15 +1505,39 @@ export default function ProjectDetailPage() {
 
       {activeSection === "commercial" && canViewTab.finance && (
         <div className="space-y-2" data-testid="commercial-section">
+          {urlTab && ["expenditure", "revenue-tracking", "monthly-realisation", "revenue-tracker", "gp-tracker"].includes(urlTab) && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="tracker-breadcrumb">
+              <button
+                type="button"
+                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+                onClick={() => {
+                  const trackerMap: Record<string, string> = {
+                    "expenditure": "/cos-tracker",
+                    "monthly-realisation": "/cos-tracker",
+                    "revenue-tracking": "/revenue-tracker",
+                    "revenue-tracker": "/revenue-tracker",
+                    "gp-tracker": "/gp-tracker",
+                  };
+                  setLocation(trackerMap[urlTab] || "/cos-tracker");
+                }}
+                aria-label="Navigate back to portfolio tracker"
+              >
+                <ArrowLeft className="h-3 w-3" />
+                <span>Back to {urlTab === "gp-tracker" ? "GP Tracker" : urlTab === "revenue-tracking" || urlTab === "revenue-tracker" ? "Revenue Tracker" : "COS Tracker"}</span>
+              </button>
+              <span className="text-muted-foreground/40">/</span>
+              <span className="font-medium text-foreground">{projectName}</span>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
             {[
-              { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "revenue-tracking", label: "Inflows", icon: DollarSign, visible: canViewSubTab.revenue },
               { key: "expenditure", label: "COS / Costs", icon: CreditCard, visible: canViewSubTab.expenditure },
               { key: "monthly-realisation", label: "COS Tracker", icon: TrendingUp, visible: canViewSubTab.cosTracker },
               { key: "revenue-tracker", label: "Revenue", icon: TrendingUp, visible: canViewSubTab.cosTracker },
               { key: "gp-tracker", label: "GP", icon: BarChart3, visible: canViewSubTab.cosTracker },
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
+              { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "change-control", label: "Changes", icon: FileCheck, visible: true },
               { key: "subcontractors", label: "Subs", icon: Users, visible: canViewSubTab.subcontractors },
             ].filter(st => st.visible).map(st => (
@@ -1296,7 +1576,6 @@ export default function ProjectDetailPage() {
             {[
               { key: "chat", label: "Comms", icon: MessageSquare, visible: true },
               { key: "approvals", label: "Approvals", icon: FileCheck, visible: true },
-              { key: "notifications", label: "Alerts", icon: Bell, visible: true },
               { key: "local-files", label: "Docs", icon: FolderOpen, visible: true },
               { key: "timeline", label: "Timeline", icon: History, visible: canViewTab.history },
               { key: "history", label: "Audit", icon: History, visible: canViewTab.history },
@@ -1308,7 +1587,6 @@ export default function ProjectDetailPage() {
           </div>
           {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
-          {activeSubTab === "notifications" && <ProjectNotificationsTab projectName={projectName} />}
           {activeSubTab === "local-files" && <LocalFolderTab projectName={projectName} />}
           {activeSubTab === "timeline" && canViewTab.history && <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "history" && canViewTab.history && (
@@ -1321,7 +1599,7 @@ export default function ProjectDetailPage() {
                   totalRevenue: totalPaidInflows,
                   totalExpenses,
                   margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
-                  overdueCount: (engDataForAlerts as any[])?.filter?.((t: any) => t.dueDate && t.dueDate < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE")?.length || 0,
+                  overdueCount: overdueEngineeringCount,
                 }}
               />
               <ProjectHistoryTab projectName={projectName} />
@@ -1351,7 +1629,7 @@ export default function ProjectDetailPage() {
         pageName="Project Detail"
         dataSources={[
           { endpoint: "/api/projects-summary", tables: ["project_info", "normalized_cost_lines", "normalized_revenue_lines", "normalized_plan_tasks"], description: "Project summary data" },
-          { endpoint: `/api/projects/${projectInfoId}/eng-tasks`, tables: ["engineering_tasks"], description: "Engineering tasks for this project" },
+          { endpoint: `/api/projects/${projectInfoId}/eng-tasks`, tables: ["work_items"], description: "Engineering tasks for this project" },
           { endpoint: `/api/projects/${projectInfoId}/phase-history`, tables: ["phase_history"], description: "Phase transition history" },
           { endpoint: "/api/normalized-plan-tasks", tables: ["normalized_plan_tasks"], description: "Gantt / project plan tasks" },
           { endpoint: "/api/normalized-cost-lines", tables: ["normalized_cost_lines"], description: "Expenditure line items" },

@@ -9,7 +9,7 @@ import { getStartupModes } from "./startup-modes";
 import { applySecurityAndParsingMiddleware } from "./bootstrap/security-middleware";
 import { configureSession } from "./bootstrap/session";
 import { configurePassportAuth } from "./bootstrap/auth";
-import { jwtAuth } from "./auth-context";
+import { jwtAuth, requireAuth } from "./auth-context";
 import { enforceRuntimeEnvironmentGuards } from "./bootstrap/env-guard";
 import { applyRequestLogging } from "./bootstrap/http-observability";
 import { registerGlobalErrorHandler } from "./bootstrap/error-handling";
@@ -89,7 +89,7 @@ async function bootstrap() {
   app.use(jwtAuth);
   applyRequestLogging(app, log);
 
-  app.get("/api/environment/status", async (_req, res) => res.status(200).json(getEnvironmentStatus()));
+  app.get("/api/environment/status", requireAuth, async (_req, res) => res.status(200).json(getEnvironmentStatus()));
 
   const runtimeMutationPolicy = getRuntimeMutationPolicy(startupModes);
   const report = createStartupReport(dbMode, {
@@ -118,27 +118,73 @@ async function bootstrap() {
 
   registerGlobalErrorHandler(app);
 
-  if (process.env.NODE_ENV === "production") {
-    serveStatic(app);
-  } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
+  // Guard: any /api/* request that reaches here was not handled by a registered route.
+  // Return JSON 404 so the SPA catch-all (Vite/static) never serves HTML for API calls.
+  app.use("/api/{*path}", (_req, res) => {
+    res.status(404).json({ error: "Not found", message: `No API route matches ${_req.method} ${_req.originalUrl}` });
+  });
+
+  try {
+    if (process.env.NODE_ENV === "production") {
+      serveStatic(app);
+    } else {
+      const { setupVite } = await import("./vite");
+      await setupVite(httpServer, app);
+    }
+  } catch (err) {
+    console.error("[Bootstrap] Failed to set up frontend serving:", err);
+    app.use("/{*path}", (_req, res) => {
+      res.status(503).json({ error: "Frontend failed to initialize", detail: String(err) });
+    });
   }
 
   logStartupSummary(report, log);
 
   const port = parseInt(process.env.PORT || "5000", 10);
-  const listenOptions: { port: number; host: string; reusePort?: boolean } = {
-    port,
-    host: "0.0.0.0",
-  };
-  if (process.platform !== "win32") {
-    listenOptions.reusePort = true;
-  }
 
-  httpServer.listen(listenOptions, () => {
+  let listenRetries = 0;
+  httpServer.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EADDRINUSE" && listenRetries < 3) {
+      listenRetries++;
+      console.error(`[Bootstrap] Port ${port} is already in use. Retry ${listenRetries}/3 in 2s...`);
+      setTimeout(() => {
+        httpServer.close();
+        httpServer.listen(port, "0.0.0.0");
+      }, 2000);
+    } else {
+      console.error("[Bootstrap] Server error:", err);
+    }
+  });
+
+  httpServer.listen(port, "0.0.0.0", () => {
     log(`serving on port ${port}`, "Startup");
   });
 }
 
-bootstrap();
+bootstrap().catch((err) => {
+  console.error("[Bootstrap] Fatal error:", err);
+  process.exit(1);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("[Process] Uncaught exception:", err);
+  console.error("[Process] Stack:", err?.stack);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[Process] Unhandled rejection:", reason);
+  if (reason instanceof Error) {
+    console.error("[Process] Stack:", reason.stack);
+  }
+});
+process.on("beforeExit", (code) => {
+  console.error("[Process] beforeExit with code:", code);
+});
+process.on("exit", (code) => {
+  console.error("[Process] exit with code:", code);
+});
+process.on("SIGTERM", () => {
+  console.error("[Process] Received SIGTERM");
+});
+process.on("SIGINT", () => {
+  console.error("[Process] Received SIGINT");
+});

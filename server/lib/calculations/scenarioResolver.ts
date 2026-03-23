@@ -1,4 +1,3 @@
-import type { DateOverride } from "@shared/schema";
 import type { CashflowLineItem } from "./cashflow";
 import type { COSLineItem } from "./cosAggregator";
 
@@ -6,99 +5,35 @@ export interface EffectiveDateMap {
   [entityKey: string]: { [fieldName: string]: string };
 }
 
-export function buildOverrideMap(overrides: DateOverride[]): EffectiveDateMap {
-  const map: EffectiveDateMap = {};
-  for (const ov of overrides) {
-    const key = `${ov.entityType}::${ov.entityId}`;
-    if (!map[key]) map[key] = {};
-    map[key][ov.fieldName] = ov.overrideDate;
-  }
-  return map;
+// DEPRECATED: Override tables have been dropped (Cleanup Prompt 4).
+// These functions are stubs that return inputs unchanged.
+
+export function buildOverrideMap(_overrides: any[]): EffectiveDateMap {
+  return {};
 }
 
 export function getEffectiveDate(
-  overrideMap: EffectiveDateMap,
-  entityType: string,
-  entityId: string,
-  fieldName: string,
+  _overrideMap: EffectiveDateMap,
+  _entityType: string,
+  _entityId: string,
+  _fieldName: string,
   importedDate: string | null,
 ): string | null {
-  const key = `${entityType}::${entityId}`;
-  const overrideDate = overrideMap[key]?.[fieldName];
-  return overrideDate ?? importedDate;
+  return importedDate;
 }
 
 export function applyOverridesToCashflowLines(
   lines: CashflowLineItem[],
-  overrideMap: EffectiveDateMap,
+  _overrideMap: EffectiveDateMap,
 ): CashflowLineItem[] {
-  return lines.map(line => {
-    const entityType = line.type === 'inflow' ? 'inflow_line' : 'expense_line';
-    const entityId = String(line.id);
-    const key = `${entityType}::${entityId}`;
-
-    if (!overrideMap[key]) return line;
-
-    const result = { ...line };
-
-    if (line.type === 'outflow') {
-      const paymentOverride = overrideMap[key]?.['payment_date'];
-      if (paymentOverride) {
-        if (line.actualDate) {
-          result.actualDate = paymentOverride;
-        } else {
-          result.forecastDate = paymentOverride;
-        }
-      }
-      const invoiceOverride = overrideMap[key]?.['invoice_date'];
-      if (invoiceOverride && !paymentOverride) {
-        if (!result.actualDate) {
-          result.forecastDate = invoiceOverride;
-        }
-      }
-    } else {
-      const receiptOverride = overrideMap[key]?.['receipt_date'];
-      if (receiptOverride) {
-        if (line.actualDate) {
-          result.actualDate = receiptOverride;
-        } else {
-          result.forecastDate = receiptOverride;
-        }
-      }
-    }
-
-    return result;
-  });
+  return lines;
 }
 
 export function applyOverridesToCOSLines(
   lines: COSLineItem[],
-  overrideMap: EffectiveDateMap,
+  _overrideMap: EffectiveDateMap,
 ): COSLineItem[] {
-  return lines.map(line => {
-    const entityId = String(line.id);
-    const key = `expense_line::${entityId}`;
-
-    if (!overrideMap[key]) return line;
-
-    const result = { ...line };
-
-    const paymentOverride = overrideMap[key]?.['payment_date'];
-    if (paymentOverride) {
-      result.paymentDate = paymentOverride;
-      result.forecastPaymentDate = paymentOverride;
-    }
-
-    const invoiceOverride = overrideMap[key]?.['invoice_date'];
-    if (invoiceOverride) {
-      result.invoicedDate = invoiceOverride;
-      if (!paymentOverride && !result.paymentDate) {
-        result.forecastPaymentDate = invoiceOverride;
-      }
-    }
-
-    return result;
-  });
+  return lines;
 }
 
 export function computeMonthlyBuckets(

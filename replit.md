@@ -47,6 +47,8 @@ All dropdowns across the app must be searchable (use Popover + Command combobox 
 -   **Integrations**: MS Object Sync periodically syncs user-scoped calendar, email, and Teams data from Microsoft Graph API. Email/Message to Task functionality.
 -   **Security**: Parameterized SQL queries, generic error messages, permission checks, NaN guards, and soft-delete implementation.
 -   **Error Handling**: Centralized `ApiError` class with typed error codes.
+-   **Schema Management**: Schema split into domain files in `shared/schema/` (finance, projects, engineering, tasks, quality, mytool, imports, legacy, collaboration, users) with barrel re-export. `drizzle-kit push` is NOT used — replaced by SQL-based schema sync: `script/pre-push-enums.sql` creates all enums + stub tables, `script/full-schema-alignment.sql` adds all columns, and startup additive alignments handle edge cases.
+-   **DB Migration Rule**: NEVER use `drizzle-kit push` — it hangs on interactive prompts. When adding new pgEnum, pgTable, or columns, regenerate `pre-push-enums.sql` (enums + stub tables) and `full-schema-alignment.sql` (all columns) using `npx tsx script/generate-full-schema-sql.ts`.
 -   **Admin Functionality**: Server-side support for admin recovery, KPI traceability, import control, and detailed audit logging.
 
 ### Database Architecture

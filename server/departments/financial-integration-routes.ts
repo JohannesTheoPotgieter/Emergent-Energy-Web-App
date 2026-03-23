@@ -3,12 +3,12 @@ import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAdmin } from "./shared-middleware";
 import { storage } from "../storage";
 import { db } from "../db";
-import { financialEditRequests, financialIntegrationRules, notifications, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
+import { financialEditRequests, financialIntegrationRules, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
 import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
 
 const router = Router();
 
-const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
+const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 const FINANCIAL_EDITOR_ROLES = [...FINANCIAL_APPROVER_ROLES, "PROJECT_MANAGER_SITE"];
 
 function isApproverRole(role: string | undefined): boolean {
@@ -83,79 +83,26 @@ async function detectExpenditureImpact(projectName: string, taskIds: number[]): 
   return false;
 }
 
+// Notifications feature removed - sendFinancialWarningNotifications is now a no-op
 async function sendFinancialWarningNotifications(
-  projectName: string,
-  editSummary: string,
-  flags: { isCriticalPath: boolean; affectsRevenue: boolean; affectsExpenditure: boolean; affectsQuality: boolean },
-  requestedByUserId: number,
-  requestId: number
+  _projectName: string,
+  _editSummary: string,
+  _flags: { isCriticalPath: boolean; affectsRevenue: boolean; affectsExpenditure: boolean; affectsQuality: boolean },
+  _requestedByUserId: number,
+  _requestId: number
 ) {
-  try {
-    const recipients = await db.select({ id: users.id, name: users.name, role: users.role })
-      .from(users)
-      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
-
-    const [requestor] = await db.select({ name: users.name }).from(users).where(eq(users.id, requestedByUserId));
-
-    const flagLabels: string[] = [];
-    if (flags.isCriticalPath) flagLabels.push("Critical Path");
-    if (flags.affectsRevenue) flagLabels.push("Revenue Impact");
-    if (flags.affectsExpenditure) flagLabels.push("Expenditure Impact");
-    if (flags.affectsQuality) flagLabels.push("Quality Impact");
-
-    const severity = flags.isCriticalPath ? "CRITICAL" : flagLabels.length > 1 ? "HIGH" : "MEDIUM";
-
-    for (const recipient of recipients) {
-      if (recipient.id === requestedByUserId) continue;
-      await db.insert(notifications).values({
-        recipientUserId: recipient.id,
-        eventType: "financial.edit_request",
-        title: `[${severity}] Edit Request: ${projectName}`,
-        body: `${requestor?.name || "Someone"} submitted an edit requiring approval. ${editSummary}${flagLabels.length > 0 ? ` Flags: ${flagLabels.join(", ")}` : ""}`,
-        projectName,
-        requiresConfirmation: true,
-        changeDetails: JSON.stringify({
-          requestId,
-          projectName,
-          flags,
-          severity,
-          editSummary,
-          requestedBy: requestor?.name,
-          timestamp: new Date().toISOString(),
-        }),
-      });
-    }
-  } catch (err: any) {
-    console.warn("[fin-integration] Failed to send warning notifications:", err.message);
-  }
+  // no-op: notifications feature removed
 }
 
+// Notifications feature removed - sendIntegrationWarningNotifications is now a no-op
 async function sendIntegrationWarningNotifications(
-  projectName: string,
-  warningType: string,
-  title: string,
-  body: string,
-  linkedTaskId?: number
+  _projectName: string,
+  _warningType: string,
+  _title: string,
+  _body: string,
+  _linkedTaskId?: number
 ) {
-  try {
-    const recipients = await db.select({ id: users.id })
-      .from(users)
-      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
-
-    for (const r of recipients) {
-      await db.insert(notifications).values({
-        recipientUserId: r.id,
-        eventType: `financial.warning.${warningType}`,
-        title,
-        body,
-        projectName,
-        linkedPlanItemId: linkedTaskId || null,
-        isRead: false,
-      });
-    }
-  } catch (err: any) {
-    console.warn("[fin-integration] Warning notification failed:", err.message);
-  }
+  // no-op: notifications feature removed
 }
 
 router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor, async (req: Request, res: Response) => {
@@ -310,17 +257,73 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
       .where(eq(financialEditRequests.id, requestId))
       .returning();
 
-    const [reviewer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-    await db.insert(notifications).values({
-      recipientUserId: existing.requestedByUserId,
-      eventType: "financial.edit_approved",
-      title: `Edit Approved: ${existing.projectName}`,
-      body: `${reviewer?.name || "A reviewer"} approved your edit request. ${existing.editSummary}${comment ? ` Comment: ${comment}` : ""}`,
-      projectName: existing.projectName,
-      isRead: false,
-    });
+    // Apply the overrides now that they've been approved
+    if (existing.editType === "expenditure_override") {
+      try {
+        const payload = typeof existing.editPayload === "string" ? JSON.parse(existing.editPayload) : existing.editPayload;
+        const overrides = payload.overrides;
+        if (Array.isArray(overrides)) {
+          const fieldToColumnMap: Record<string, string> = {
+            expenseInvoicedDate: "expenseInvoicedDate",
+            expensePaymentDate: "expensePaymentDate",
+            expensePoNumber: "expensePoNumber",
+            expenseInvoiceNumber: "expenseInvoiceNumber",
+            expenseLineItem: "expenseLineItem",
+            expenseActualTotal: "expenseActualTotal",
+            budgetTotal: "budgetTotal",
+            forecastPaymentDate: "forecastPaymentDate",
+            expenseQty: "expenseQty",
+            expenseRateUnit: "expenseRateUnit",
+            budgetQty: "budgetQty",
+            budgetRateUnit: "budgetRateUnit",
+            invoiceDateFontColor: "invoiceDateFontColor",
+            paymentDateFontColor: "paymentDateFontColor",
+            supplierName: "supplierName",
+          };
 
-    res.json({ message: "Edit request approved", request: updated });
+          const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+          for (const pn of projectNames) {
+            const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+            const expenses = await storage.getProgramExpensesByProject(pn as string);
+            const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
+
+            const rowGroups = new Map<number, Record<string, any>>();
+            for (const ov of projectOverrides) {
+              const colName = fieldToColumnMap[ov.fieldName];
+              if (!colName) continue;
+              const expense = rowMap.get(ov.rowNumber);
+              if (!expense) continue;
+              if (!rowGroups.has(expense.id)) rowGroups.set(expense.id, {});
+              const fields = rowGroups.get(expense.id)!;
+              const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+              fields[colName] = effectiveValue;
+              if (ov.fieldName === 'expenseInvoicedDate' && !effectiveValue) {
+                fields.invoiceDateConfirmed = false;
+              }
+              if (ov.fieldName === 'expensePaymentDate' && !effectiveValue) {
+                fields.paymentDateConfirmed = false;
+              }
+            }
+
+            for (const [expenseId, fields] of rowGroups.entries()) {
+              if (Object.keys(fields).length > 0) {
+                await storage.updateProgramExpenseFields(expenseId, fields);
+              }
+            }
+          }
+          console.log(`[fin-edit-request] Applied ${overrides.length} expenditure override(s) after approval of request #${requestId}`);
+        }
+      } catch (applyErr: any) {
+        console.error(`[fin-edit-request] Failed to apply overrides for request #${requestId}:`, applyErr.message);
+        // Mark as approved but flag the application failure
+        await db.update(financialEditRequests)
+          .set({ reviewComment: `${comment || ""} [WARNING: Overrides approved but failed to apply: ${applyErr.message}]`.trim() })
+          .where(eq(financialEditRequests.id, requestId));
+        return res.status(500).json({ error: "Approved but failed to apply overrides", message: applyErr.message });
+      }
+    }
+
+    res.json({ message: "Edit request approved and applied", request: updated });
   } catch (error: any) {
     console.error("[fin-edit-request] Approve error:", error);
     res.status(500).json({ error: "Failed to approve request" });
@@ -352,15 +355,7 @@ router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinan
       .where(eq(financialEditRequests.id, requestId))
       .returning();
 
-    const [reviewer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-    await db.insert(notifications).values({
-      recipientUserId: existing.requestedByUserId,
-      eventType: "financial.edit_rejected",
-      title: `Edit Rejected: ${existing.projectName}`,
-      body: `${reviewer?.name || "A reviewer"} rejected your edit request. Reason: ${comment.trim()}`,
-      projectName: existing.projectName,
-      isRead: false,
-    });
+    // Notifications feature removed - rejection notification is now a no-op
 
     res.json({ message: "Edit request rejected", request: updated });
   } catch (error: any) {

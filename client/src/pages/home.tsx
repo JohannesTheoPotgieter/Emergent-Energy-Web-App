@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
+import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -18,17 +19,13 @@ import {
   Briefcase,
   BarChart3,
   Clock,
-  Target,
-  Zap,
   ArrowRight,
-  Star,
-  Quote,
   Flame,
   ClipboardCheck,
   Receipt,
-  Shield,
   Truck,
   Building2,
+  FileText,
 } from "lucide-react";
 
 const token = () => localStorage.getItem("auth_token") || "";
@@ -177,13 +174,6 @@ function getDailyQuote(category: RoleCategory): string {
   return quotes[dayOfYear % quotes.length];
 }
 
-const PRIORITY_SEVERITY_ICONS: Record<string, { icon: any; color: string }> = {
-  critical: { icon: Shield, color: "bg-red-100 text-red-700" },
-  high: { icon: Target, color: "bg-amber-100 text-amber-700" },
-  important: { icon: Target, color: "bg-amber-100 text-amber-700" },
-  normal: { icon: TrendingUp, color: "bg-emerald-100 text-emerald-700" },
-  low: { icon: Zap, color: "bg-blue-100 text-blue-700" },
-};
 
 function QuickLink({
   href,
@@ -201,18 +191,18 @@ function QuickLink({
   return (
     <Link href={href}>
       <Card
-        className="hover:shadow-md transition-all cursor-pointer border-border/60 h-full group"
+        className="hover:border-primary/30 transition-colors cursor-pointer border-border/50 h-full group"
         data-testid={`link-${label.toLowerCase().replace(/\s+/g, "-")}`}
       >
-        <CardContent className="p-4 flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-lg ${color} flex items-center justify-center shrink-0`}>
+        <CardContent className="p-3.5 flex items-center gap-3">
+          <div className={`w-9 h-9 rounded-md ${color} flex items-center justify-center shrink-0`}>
             {icon}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-foreground">{label}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+            <p className="text-sm font-medium text-foreground">{label}</p>
+            <p className="text-xs text-muted-foreground">{description}</p>
           </div>
-          <ArrowRight className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+          <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
         </CardContent>
       </Card>
     </Link>
@@ -233,16 +223,16 @@ function StatCard({
   testId: string;
 }) {
   return (
-    <Card className="border-border/60">
-      <CardContent className="p-4 text-center">
+    <Card className="border-border/50">
+      <CardContent className="p-3.5 text-center">
         {loading ? (
-          <Skeleton className="h-8 w-12 mx-auto" />
+          <Skeleton className="h-7 w-10 mx-auto" />
         ) : (
-          <p className={`text-2xl font-bold ${color || "text-foreground"}`} data-testid={testId}>
+          <p className={`text-xl font-semibold font-mono ${color || "text-foreground"}`} data-testid={testId}>
             {value}
           </p>
         )}
-        <p className="text-xs text-muted-foreground mt-1">{label}</p>
+        <p className="text-[11px] text-muted-foreground mt-1 uppercase tracking-wide">{label}</p>
       </CardContent>
     </Card>
   );
@@ -262,16 +252,16 @@ function KpiCard({
   testId: string;
 }) {
   return (
-    <Card className="border-border/60">
-      <CardContent className="p-4">
-        <div className="flex items-center gap-2 text-muted-foreground mb-1">
+    <Card className="border-border/50">
+      <CardContent className="p-3.5">
+        <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
           {icon}
-          <span className="text-xs">{label}</span>
+          <span className="text-[11px] uppercase tracking-wide">{label}</span>
         </div>
         {loading ? (
-          <Skeleton className="h-6 w-20" />
+          <Skeleton className="h-5 w-20" />
         ) : (
-          <p className="text-lg font-bold text-foreground" data-testid={testId}>
+          <p className="text-base font-semibold font-mono text-foreground" data-testid={testId}>
             {value}
           </p>
         )}
@@ -297,7 +287,7 @@ function getQuickLinksForRole(category: RoleCategory) {
       color: "bg-blue-100",
     },
     pm: {
-      href: "/pm-dashboard",
+      href: "/execution-board",
       icon: <Briefcase className="w-5 h-5 text-violet-600" />,
       label: "Project Management",
       description: "Execution overview & controls",
@@ -381,33 +371,31 @@ function getRoleKpis(
   switch (category) {
     case "executive":
       return (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
             <StatCard value={stats.totalProjects} label="Total Projects" loading={isLoading} testId="text-total-projects" />
             <StatCard value={stats.inConstruction} label="In Construction" color="text-emerald-600" loading={isLoading} testId="text-in-construction" />
             <StatCard value={stats.inCompany} label="In Company" color="text-blue-600" loading={isLoading} testId="text-in-company" />
             <StatCard value={stats.inPipeline} label="Pipeline" color="text-violet-600" loading={isLoading} testId="text-in-pipeline" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-3">
             <StatCard value={stats.greenProjects} label="Green RAG" color="text-emerald-600" loading={isLoading} testId="text-green-projects" />
             <StatCard value={stats.amberProjects} label="Amber RAG" color="text-amber-600" loading={isLoading} testId="text-amber-projects" />
             <StatCard value={stats.redProjects} label="Red RAG" color="text-red-600" loading={isLoading} testId="text-red-projects" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Inflow Received (FY)" value={money(kpis.receivedInflowFy)} loading={isLoading} testId="text-inflow-received" />
-            <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${(Number(kpis.grossMarginPctFy) * 100).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
+            <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
             <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Gross Profit (FY)" value={money(kpis.grossProfitFy)} loading={isLoading} testId="text-gross-profit" />
             <KpiCard icon={<Clock className="w-4 h-4" />} label="Behind Plan" value={kpis.projectsBehindPlan ?? "—"} loading={isLoading} testId="text-behind-plan" />
           </div>
-        </>
+        </div>
       );
 
     case "finance":
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Inflow Received (FY)" value={money(kpis.receivedInflowFy)} loading={isLoading} testId="text-inflow-received" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Open Inflow (FY)" value={money(kpis.openInflowFy)} loading={isLoading} testId="text-open-inflow" />
-          <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${(Number(kpis.grossMarginPctFy) * 100).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
+          <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Gross Profit (FY)" value={money(kpis.grossProfitFy)} loading={isLoading} testId="text-gross-profit" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Planned Revenue (FY)" value={money(kpis.plannedRevenueFy)} loading={isLoading} testId="text-planned-revenue" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Paid Expenditure (FY)" value={money(kpis.paidExpenditureFy)} loading={isLoading} testId="text-paid-expenditure" />
@@ -418,26 +406,26 @@ function getRoleKpis(
 
     case "project":
       return (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="space-y-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
             <StatCard value={stats.inConstruction} label="In Construction" color="text-emerald-600" loading={isLoading} testId="text-in-construction" />
             <StatCard value={stats.greenProjects} label="Green RAG" color="text-emerald-600" loading={isLoading} testId="text-green-projects" />
             <StatCard value={stats.amberProjects} label="Amber RAG" color="text-amber-600" loading={isLoading} testId="text-amber-projects" />
             <StatCard value={stats.redProjects} label="Red RAG" color="text-red-600" loading={isLoading} testId="text-red-projects" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <KpiCard icon={<BarChart3 className="w-4 h-4" />} label="Avg Progress" value={kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—"} loading={isLoading} testId="text-avg-progress" />
             <KpiCard icon={<Clock className="w-4 h-4" />} label="Behind Plan" value={kpis.projectsBehindPlan ?? "—"} loading={isLoading} testId="text-behind-plan" />
             <KpiCard icon={<CheckCircle2 className="w-4 h-4" />} label="Pending Approvals" value={kpis.pendingApprovals ?? "—"} loading={isLoading} testId="text-pending-approvals" />
             <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Open Expenditure (FY)" value={money(kpis.openExpenditureFy)} loading={isLoading} testId="text-open-expenditure" />
           </div>
-        </>
+        </div>
       );
 
     case "engineering":
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
           <KpiCard icon={<BarChart3 className="w-4 h-4" />} label="Avg Progress" value={kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—"} loading={isLoading} testId="text-avg-progress" />
           <KpiCard icon={<AlertTriangle className="w-4 h-4" />} label="Eng. Blockers" value={kpis.openEngineeringBlockers ?? "—"} loading={isLoading} testId="text-eng-blockers" />
@@ -447,7 +435,7 @@ function getRoleKpis(
 
     case "quality":
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
           <KpiCard icon={<AlertTriangle className="w-4 h-4" />} label="Quality Warnings" value={kpis.openQualityWarnings ?? "—"} loading={isLoading} testId="text-quality-warnings" />
           <KpiCard icon={<CheckCircle2 className="w-4 h-4" />} label="Pending Approvals" value={kpis.pendingApprovals ?? "—"} loading={isLoading} testId="text-pending-approvals" />
@@ -457,7 +445,7 @@ function getRoleKpis(
 
     case "business":
       return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           <StatCard value={stats.totalProjects} label="Total Projects" loading={isLoading} testId="text-total-projects" />
           <StatCard value={stats.activeProjects} label="Active" loading={isLoading} testId="text-active-projects" />
           <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Planned Revenue (FY)" value={money(kpis.plannedRevenueFy)} loading={isLoading} testId="text-planned-revenue" />
@@ -473,21 +461,12 @@ function getRoleKpis(
 export default function HomePage() {
   const { user } = useAuth();
 
-  const { data: summaryData, isLoading: summaryLoading } = useQuery<any>({
-    queryKey: ["/api/projects-summary"],
-    queryFn: async () => {
-      const res = await fetch("/api/projects-summary", {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (!res.ok) return null;
-      return res.json();
-    },
-  });
-
+  // Single source of truth: use execution-dashboard for ALL KPIs and stats
+  // This ensures Home page numbers match the Execution Dashboard exactly
   const { data: dashData, isLoading: dashLoading } = useQuery<any>({
-    queryKey: ["/api/program-dashboard"],
+    queryKey: ["/api/lifecycle-board/execution-dashboard"],
     queryFn: async () => {
-      const res = await fetch("/api/program-dashboard", {
+      const res = await fetch("/api/lifecycle-board/execution-dashboard", {
         headers: { Authorization: `Bearer ${token()}` },
       });
       if (!res.ok) return null;
@@ -496,12 +475,23 @@ export default function HomePage() {
   });
 
   const { data: companyPriorities, isLoading: prioritiesLoading } = useQuery<any[]>({
-    queryKey: ["/api/mytool/company-priorities"],
+    queryKey: ["/api/priorities"],
     queryFn: async () => {
-      const res = await fetch("/api/mytool/company-priorities", {
+      const res = await fetch("/api/priorities", {
         headers: { Authorization: `Bearer ${token()}` },
       });
       if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const { data: myWorkData } = useQuery<any>({
+    queryKey: ["/api/my-work/all-tasks"],
+    queryFn: async () => {
+      const res = await fetch("/api/my-work/all-tasks", {
+        headers: { Authorization: `Bearer ${token()}` },
+      });
+      if (!res.ok) return null;
       return res.json();
     },
   });
@@ -510,11 +500,12 @@ export default function HomePage() {
   const roleCategory = getRoleCategory(userRole);
   const roleLabel = getRoleLabel(userRole);
 
+  // Single source of truth: derive ALL stats from the execution-dashboard endpoint
+  // This ensures Home page KPIs match the Execution Dashboard exactly
   const stats = useMemo(() => {
-    const projects = Array.isArray(summaryData) ? summaryData : summaryData?.projects || [];
-    const active = projects.filter((p: any) => p.is_active === true);
+    const projects: any[] = dashData?.projects || [];
     const totalProjects = projects.length;
-    const activeProjects = active.length;
+    const activeProjects = totalProjects; // all projects from execution-dashboard are already active
 
     const constructionPhases = new Set(["construction", "qa"]);
     const companyPhases = new Set(["compliance handover", "handover", "financial close", "commercial close out", "dlp"]);
@@ -526,18 +517,18 @@ export default function HomePage() {
       return "pipeline";
     };
 
-    const inConstruction = active.filter((p: any) => getCategory(p.phase) === "construction").length;
-    const inCompany = active.filter((p: any) => getCategory(p.phase) === "company").length;
-    const inPipeline = active.filter((p: any) => getCategory(p.phase) === "pipeline").length;
+    const inConstruction = projects.filter((p: any) => getCategory(p.executionPhase) === "construction").length;
+    const inCompany = projects.filter((p: any) => getCategory(p.executionPhase) === "company").length;
+    const inPipeline = projects.filter((p: any) => getCategory(p.executionPhase) === "pipeline").length;
 
-    const greenProjects = active.filter((p: any) => p.rag_status === "Green").length;
-    const amberProjects = active.filter((p: any) => p.rag_status === "Amber").length;
-    const redProjects = active.filter((p: any) => p.rag_status === "Red").length;
+    const greenProjects = projects.filter((p: any) => p.rag === "Green").length;
+    const amberProjects = projects.filter((p: any) => p.rag === "Amber").length;
+    const redProjects = projects.filter((p: any) => p.rag === "Red").length;
     return { totalProjects, activeProjects, inConstruction, inCompany, inPipeline, greenProjects, amberProjects, redProjects };
-  }, [summaryData]);
+  }, [dashData]);
 
   const kpis = dashData?.kpis || {};
-  const isLoading = summaryLoading || dashLoading;
+  const isLoading = dashLoading;
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -553,96 +544,170 @@ export default function HomePage() {
   const dailyQuote = useMemo(() => getDailyQuote(roleCategory), [roleCategory]);
   const quickLinks = useMemo(() => getQuickLinksForRole(roleCategory), [roleCategory]);
 
+  const myPendingActions = useMemo(() => {
+    if (!myWorkData) return 0;
+    const items: any[] = myWorkData.items || myWorkData.tasks || [];
+    return items.filter((t: any) => {
+      if (!t.dueDate) return false;
+      const isOverdue = new Date(t.dueDate) < new Date();
+      const isOpen = !["complete", "done", "closed", "cancelled"].includes(
+        String(t.status || "").toLowerCase()
+      );
+      return isOverdue && isOpen;
+    }).length;
+  }, [myWorkData]);
+
+  const attentionItems = useMemo((): AttentionItem[] => {
+    const items: AttentionItem[] = [];
+    if (stats.redProjects > 0) items.push({ label: "Red RAG Projects", value: stats.redProjects, color: "text-red-600 bg-red-50 border-red-200", href: "/projects" });
+    if (Number(kpis.projectsBehindPlan) > 0) items.push({ label: "Behind Plan", value: Number(kpis.projectsBehindPlan), color: "text-amber-700 bg-amber-50 border-amber-200", href: "/execution-board" });
+    if (Number(kpis.pendingApprovals) > 0) items.push({ label: "Pending Approvals", value: Number(kpis.pendingApprovals), color: "text-blue-700 bg-blue-50 border-blue-200", href: "/approvals" });
+    if (Number(kpis.openEngineeringBlockers) > 0) items.push({ label: "Eng. Blockers", value: Number(kpis.openEngineeringBlockers), color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering" });
+    if (Number(kpis.openQualityWarnings) > 0) items.push({ label: "Quality Warnings", value: Number(kpis.openQualityWarnings), color: "text-orange-700 bg-orange-50 border-orange-200", href: "/quality" });
+    if (myPendingActions > 0) items.push({ label: "My Overdue Actions", value: myPendingActions, color: "text-rose-700 bg-rose-50 border-rose-200", href: "/my-work/tasks" });
+    return items;
+  }, [stats, kpis, myPendingActions]);
+
   return (
     <PageShell data-testid="home-page">
       <div className="mb-6">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 shadow-sm">
-            <LayoutDashboard className="w-6 h-6" />
-          </div>
-          <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between">
+          <div>
             <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
               {greeting}, {displayName}
             </h1>
-            <div className="flex items-center gap-2 mt-1">
-              <Badge variant="secondary" className="text-xs font-medium bg-emerald-50 text-emerald-700 border-emerald-200" data-testid="text-role-badge">
-                {roleLabel}
-              </Badge>
-            </div>
+            <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
           </div>
-        </div>
-
-        <div className="mt-4 flex items-start gap-2 bg-emerald-50/60 border border-emerald-100 rounded-lg p-3" data-testid="text-daily-quote">
-          <Quote className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
-          <p className="text-sm text-emerald-800 italic leading-relaxed">{dailyQuote}</p>
+          <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground/60 italic max-w-xs text-right" data-testid="text-daily-quote">
+            <p className="leading-relaxed">{dailyQuote}</p>
+          </div>
         </div>
       </div>
 
+      {/* Company Priorities — Enriched Cards */}
       {(companyPriorities && companyPriorities.length > 0) && (
-        <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6" data-testid="card-company-priorities">
+        <Card className="border-border/60 mb-6" data-testid="card-company-priorities">
           <CardContent className="p-5">
             <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center">
-                  <Flame className="w-4 h-4" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-foreground uppercase tracking-wide">Company Priorities</h2>
-                  <p className="text-xs text-muted-foreground">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active priorities</p>
-                </div>
+              <div className="flex items-center gap-2.5">
+                <Flame className="w-4 h-4 text-primary" />
+                <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
+                <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
               </div>
-              <Link href="/project-lifecycle">
-                <span className="text-xs text-emerald-600 hover:text-emerald-700 font-medium cursor-pointer">Manage</span>
+              <Link href="/priorities">
+                <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
               </Link>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6).map((priority: any, i: number) => {
-                const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
-                const Icon = sev.icon;
+            <p className="text-xs text-muted-foreground mb-3">Showing {Math.min(companyPriorities.length, 6)} priorities for your role</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {companyPriorities.slice(0, 6).map((priority: any, i: number) => {
+                const healthDot = priority.effectiveHealth === "critical" ? "bg-red-500" : priority.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-emerald-500";
+                const healthBorder = priority.effectiveHealth === "critical" ? "border-l-red-500" : priority.effectiveHealth === "at_risk" ? "border-l-amber-500" : "border-l-emerald-500";
+                const sevBadge = priority.severity === "critical" ? "bg-red-100 text-red-700" : priority.severity === "important" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-600";
+                const sevLabel = priority.severity === "critical" ? "Critical" : priority.severity === "important" ? "High" : "Normal";
+                const days = priority.dueDate ? Math.ceil((new Date(priority.dueDate).getTime() - Date.now()) / 86400000) : null;
+
                 return (
-                  <div key={priority.id || i} className="flex items-center gap-3 bg-white rounded-lg border border-border/50 p-3" data-testid={`text-priority-${i}`}>
-                    <div className={`w-8 h-8 rounded-lg ${sev.color} flex items-center justify-center shrink-0`}>
-                      <Icon className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-foreground font-medium leading-snug truncate">{priority.title}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {[priority.department, priority.assignedTo ? `Owner: ${priority.assignedTo}` : null].filter(Boolean).join(" · ")}
-                      </p>
-                    </div>
-                  </div>
+                  <Card key={priority.id || i} className={`border-l-4 ${healthBorder} hover:shadow-sm transition-all`}>
+                    <CardContent className="p-3" data-testid={`text-priority-${i}`}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className={`w-2 h-2 rounded-full ${healthDot} shrink-0`} />
+                        <Link href={`/priorities/${priority.id}`}>
+                          <span className="text-sm text-foreground font-medium leading-snug truncate hover:text-primary hover:underline cursor-pointer">{priority.title}</span>
+                        </Link>
+                        <Badge variant="secondary" className={`text-[10px] ml-auto shrink-0 ${sevBadge}`}>{sevLabel}</Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1.5">
+                        {priority.owner && <span>{priority.owner.name}</span>}
+                        {priority.assignedTo && !priority.owner && <span>{priority.assignedTo}</span>}
+                        {days != null && (
+                          <span className={days <= 7 ? "text-red-600 font-medium" : days <= 14 ? "text-amber-600" : ""}>
+                            {days < 0 ? `${Math.abs(days)}d overdue` : `${days}d`}
+                          </span>
+                        )}
+                        {priority.blockerCount > 0 && <span className="text-red-600 font-medium">{priority.blockerCount} blocker{priority.blockerCount > 1 ? "s" : ""}</span>}
+                      </div>
+                      <div className="h-1 bg-muted rounded-full overflow-hidden mb-1">
+                        <div className={`h-full rounded-full ${priority.effectiveHealth === "critical" ? "bg-red-500" : priority.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(priority.effectiveProgress || 0, 100)}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>{priority.effectiveProgress || 0}%{!priority.hasProjects && " (manual)"}</span>
+                        <span>{priority.hasProjects ? `${priority.projectCount} project${priority.projectCount !== 1 ? "s" : ""}` : "Standalone"}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
               })}
             </div>
           </CardContent>
         </Card>
       )}
-      {prioritiesLoading && (
-        <Card className="border-emerald-200 bg-gradient-to-r from-emerald-50 to-white mb-6">
-          <CardContent className="p-5">
-            <Skeleton className="h-6 w-48 mb-4" />
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <Skeleton className="h-14 w-full" />
-              <Skeleton className="h-14 w-full" />
-            </div>
+      {!companyPriorities && prioritiesLoading && (
+        <div>
+          <Skeleton className="h-5 w-48 mb-2.5" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <Skeleton className="h-24 w-full rounded-lg" />
+            <Skeleton className="h-24 w-full rounded-lg" />
+          </div>
+        </div>
+      )}
+      {companyPriorities && companyPriorities.length === 0 && !prioritiesLoading && (
+        <Card className="border-border/60 mb-6">
+          <CardContent className="p-5 text-center">
+            <p className="text-sm text-muted-foreground">No priorities assigned to your projects</p>
           </CardContent>
         </Card>
       )}
 
+      {!isLoading && (
+        <AttentionBadges items={attentionItems} threshold={5} />
+      )}
+
       <div className="mb-6">
-        <h2 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-          <Star className="w-4 h-4 text-emerald-600" />
-          Your Key Metrics
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+          Key Metrics
         </h2>
         {getRoleKpis(roleCategory, kpis, stats, isLoading)}
       </div>
 
+      {/* Monthly Reporting — COO only */}
+      {userRole?.toUpperCase() === "COO_ADMIN" && (
+        <div className="mb-6">
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+            Monthly Reporting
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <QuickLink
+              href="/reports/pm/monthly"
+              icon={<FileText className="w-5 h-5 text-blue-600" />}
+              label="PM Monthly Report"
+              description="Project management monthly overview"
+              color="bg-blue-100"
+            />
+            <QuickLink
+              href="/reports/engineering/monthly"
+              icon={<FileText className="w-5 h-5 text-orange-600" />}
+              label="Engineering Monthly Report"
+              description="Engineering progress & metrics"
+              color="bg-orange-100"
+            />
+            <QuickLink
+              href="/reports/programme"
+              icon={<FileText className="w-5 h-5 text-violet-600" />}
+              label="Programme Reports"
+              description="Cross-programme reporting & analysis"
+              color="bg-violet-100"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Quick Access */}
       <div>
-        <h2 className="text-sm font-bold text-foreground uppercase tracking-wide mb-3 flex items-center gap-2">
-          <Zap className="w-4 h-4 text-emerald-600" />
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
           Quick Access
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {quickLinks.map((link) => (
             <QuickLink key={link.href} {...link} />
           ))}

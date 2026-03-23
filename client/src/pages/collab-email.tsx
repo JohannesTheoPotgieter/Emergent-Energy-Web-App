@@ -69,8 +69,8 @@ export default function CollabEmailPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    staleTime: 0,
-    gcTime: 0,
+    staleTime: 10_000,
+    gcTime: 60_000,
   });
 
   useEffect(() => {

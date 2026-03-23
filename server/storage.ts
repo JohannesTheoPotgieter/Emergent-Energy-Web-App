@@ -1,23 +1,19 @@
 // @ts-nocheck
 import { db, getDbMode } from "./db";
-import { safeLegacyQuery, safeLegacyWrite } from "./legacy-table-guard";
+import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { UsersRepository } from "./repositories/users-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
+import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
-  users, projects, expenses, revenues, tasks, budgets, uploadMetadata, refreshLogs,
-  projectInfo, normalizedCostLines, normalizedRevenueLines, workItems, programExpense,
+  users, uploadMetadata, refreshLogs,
+  projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
-  cashflowPlanningOverrides, projectPlanOverrides, revenueTrackingOverrides,
-  expenditureOverrides, financeRevenueOverrides, financeCosOverrides,
-  workingPlanScenario, workingPlanTaskOverride, projectPlanDependency,
+  workingPlanScenario, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
   projectRevenueSummary, homeNotes,
   projectEditableFields, cashflowWeeklyManual, cashflowBalanceHistory, opexBudgetMonthly, trackerMonthlyManual,
-  scenarios, dateOverrides,
-  operationalTasks, taskComments, taskChecklists, taskChecklistItems, taskAttachments, taskActivityLog, writebackMappings, writebackAuditLog,
-  type Scenario, type InsertScenario,
-  type DateOverride, type InsertDateOverride,
+  taskComments, taskChecklists, taskChecklistItems, taskAttachments, taskActivityLog, writebackMappings, writebackAuditLog,
   type User, type InsertUser,
   type Project, type InsertProject,
   type Expense, type InsertExpense,
@@ -33,14 +29,7 @@ import {
   type CashflowPoint, type InsertCashflowPoint,
   type FinanceRevenueMonthly, type InsertFinanceRevenueMonthly,
   type FinanceCosMonthly, type InsertFinanceCosMonthly,
-  type CashflowPlanningOverride, type InsertCashflowPlanningOverride,
-  type ProjectPlanOverride, type InsertProjectPlanOverride,
-  type RevenueTrackingOverride, type InsertRevenueTrackingOverride,
-  type ExpenditureOverride, type InsertExpenditureOverride,
-  type FinanceRevenueOverride, type InsertFinanceRevenueOverride,
-  type FinanceCosOverride, type InsertFinanceCosOverride,
   type WorkingPlanScenario, type InsertWorkingPlanScenario,
-  type WorkingPlanTaskOverride, type InsertWorkingPlanTaskOverride,
   type ProjectPlanDependency, type InsertProjectPlanDependency,
   type WorkingPlanDependencyOverride, type InsertWorkingPlanDependencyOverride,
   type ScheduleChangeNotice, type InsertScheduleChangeNotice,
@@ -56,7 +45,6 @@ import {
   type AvailablePaymentOverride, type InsertAvailablePaymentOverride,
   type AvailablePaymentHistory, type InsertAvailablePaymentHistory,
   type TrackerMonthlyManual, type InsertTrackerMonthlyManual,
-  type OperationalTask, type InsertOperationalTask,
   type TaskComment, type InsertTaskComment,
   type TaskChecklist, type InsertTaskChecklist,
   type TaskChecklistItem, type InsertTaskChecklistItem,
@@ -144,7 +132,7 @@ export interface IStorage {
   // Project Info (new)
   getProjectInfo(projectName: string): Promise<ProjectInfo | undefined>;
   getProjectInfoById(id: number): Promise<ProjectInfo | undefined>;
-  getAllProjectInfo(): Promise<ProjectInfo[]>;
+  getAllProjectInfo(): Promise<any[]>;
   upsertProjectInfo(info: InsertProjectInfo): Promise<ProjectInfo>;
   updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined>;
   deleteProjectInfo(projectName: string): Promise<void>;
@@ -157,6 +145,7 @@ export interface IStorage {
   createManyProgramExpenses(expenses: InsertProgramExpense[]): Promise<ProgramExpense[]>;
   deleteProgramExpensesByProject(projectName: string): Promise<void>;
   updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined>;
+  updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined>;
 
   // Program Inflows (new)
   getAllProgramInflows(): Promise<ProgramInflows[]>;
@@ -187,45 +176,6 @@ export interface IStorage {
   getFinanceCosMonthlyByProject(projectName: string): Promise<FinanceCosMonthly[]>;
   createManyFinanceCosMonthly(data: InsertFinanceCosMonthly[]): Promise<FinanceCosMonthly[]>;
   deleteFinanceCosMonthlyByProject(projectName: string): Promise<void>;
-
-  // Cashflow Planning Overrides (user edits)
-  getAllPlanningOverrides(): Promise<CashflowPlanningOverride[]>;
-  getPlanningOverridesByProject(projectName: string): Promise<CashflowPlanningOverride[]>;
-  upsertPlanningOverride(override: InsertCashflowPlanningOverride): Promise<CashflowPlanningOverride>;
-  upsertManyPlanningOverrides(overrides: InsertCashflowPlanningOverride[]): Promise<CashflowPlanningOverride[]>;
-  deletePlanningOverridesByProject(projectName: string): Promise<void>;
-
-  // Project Plan Overrides (user edits for tasks/milestones)
-  getProjectPlanOverridesByProject(projectName: string): Promise<ProjectPlanOverride[]>;
-  getAllProjectPlanOverrides(): Promise<ProjectPlanOverride[]>;
-  upsertProjectPlanOverride(override: InsertProjectPlanOverride): Promise<ProjectPlanOverride>;
-  upsertManyProjectPlanOverrides(overrides: InsertProjectPlanOverride[]): Promise<ProjectPlanOverride[]>;
-  deleteProjectPlanOverridesByProject(projectName: string): Promise<void>;
-
-  // Revenue Tracking Overrides (user edits for revenue milestones)
-  getRevenueTrackingOverridesByProject(projectName: string): Promise<RevenueTrackingOverride[]>;
-  upsertRevenueTrackingOverride(override: InsertRevenueTrackingOverride): Promise<RevenueTrackingOverride>;
-  upsertManyRevenueTrackingOverrides(overrides: InsertRevenueTrackingOverride[]): Promise<RevenueTrackingOverride[]>;
-  deleteRevenueTrackingOverridesByProject(projectName: string): Promise<void>;
-
-  // Expenditure Overrides (user edits for expenses)
-  getExpenditureOverridesByProject(projectName: string): Promise<ExpenditureOverride[]>;
-  getAllExpenditureOverrides(): Promise<ExpenditureOverride[]>;
-  upsertExpenditureOverride(override: InsertExpenditureOverride): Promise<ExpenditureOverride>;
-  upsertManyExpenditureOverrides(overrides: InsertExpenditureOverride[]): Promise<ExpenditureOverride[]>;
-  deleteExpenditureOverridesByProject(projectName: string): Promise<void>;
-
-  // Finance Revenue Overrides (user edits for monthly revenue)
-  getFinanceRevenueOverridesByProject(projectName: string): Promise<FinanceRevenueOverride[]>;
-  upsertFinanceRevenueOverride(override: InsertFinanceRevenueOverride): Promise<FinanceRevenueOverride>;
-  upsertManyFinanceRevenueOverrides(overrides: InsertFinanceRevenueOverride[]): Promise<FinanceRevenueOverride[]>;
-  deleteFinanceRevenueOverridesByProject(projectName: string): Promise<void>;
-
-  // Finance COS Overrides (user edits for monthly COS)
-  getFinanceCosOverridesByProject(projectName: string): Promise<FinanceCosOverride[]>;
-  upsertFinanceCosOverride(override: InsertFinanceCosOverride): Promise<FinanceCosOverride>;
-  upsertManyFinanceCosOverrides(overrides: InsertFinanceCosOverride[]): Promise<FinanceCosOverride[]>;
-  deleteFinanceCosOverridesByProject(projectName: string): Promise<void>;
 
   // Working Plan Scenarios
   getActiveScenario(projectName: string): Promise<WorkingPlanScenario | undefined>;
@@ -316,25 +266,12 @@ export interface IStorage {
   getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]>;
   upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual>;
 
-  // Scenarios
-  getAllScenarios(): Promise<Scenario[]>;
-  getScenario(id: number): Promise<Scenario | undefined>;
-  createScenario(scenario: InsertScenario): Promise<Scenario>;
-  deleteScenario(id: number): Promise<void>;
-  duplicateScenario(id: number, newName: string): Promise<Scenario>;
-
-  // Date Overrides
-  getDateOverridesByScenario(scenarioId: number): Promise<DateOverride[]>;
-  createDateOverride(override: InsertDateOverride): Promise<DateOverride>;
-  deleteDateOverride(id: number): Promise<void>;
-  clearDateOverrides(scenarioId: number): Promise<void>;
-
-  // Operational Tasks
-  getAllOperationalTasks(): Promise<OperationalTask[]>;
-  getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]>;
-  getOperationalTask(id: number): Promise<OperationalTask | undefined>;
-  createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask>;
-  updateOperationalTask(id: number, data: Partial<InsertOperationalTask>): Promise<OperationalTask>;
+  // Operational Tasks (now backed by work_items)
+  getAllOperationalTasks(): Promise<any[]>;
+  getOperationalTasksByProject(projectName: string): Promise<any[]>;
+  getOperationalTask(id: number): Promise<any | undefined>;
+  createOperationalTask(data: any): Promise<any>;
+  updateOperationalTask(id: number, data: any): Promise<any>;
   deleteOperationalTask(id: number): Promise<void>;
 
   // Task Comments
@@ -586,8 +523,16 @@ export class DatabaseStorage implements IStorage {
 
   // Projects (legacy)
   async getAllProjects(): Promise<Project[]> {
-    const rows = await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
-    return rows.map((p) => this.mapProjectInfoToLegacyProject(p));
+    try {
+      const rows = await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
+      return rows.map((p) => this.mapProjectInfoToLegacyProject(p));
+    } catch (error) {
+      if (this.shouldUseLegacyProjectInfoReadFallback(error)) {
+        const rows = await this.listLegacyCompatibleProjectInfo();
+        return rows.map((p) => this.mapProjectInfoToLegacyProject(p));
+      }
+      throw error;
+    }
   }
 
   async getProject(id: number): Promise<Project | undefined> {
@@ -603,7 +548,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createProject(project: InsertProject): Promise<Project> {
-    const [created] = await this.dbInstance.insert(projectInfo).values({
+    const insertFields = {
       projectName: project.name,
       pd: project.manager,
       phase: project.status,
@@ -612,7 +557,9 @@ export class DatabaseStorage implements IStorage {
       clientHandoverDate: project.completionDate,
       contractValue: String(project.budget),
       updatedAt: new Date(),
-    } as any).returning();
+    };
+    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields as any).returning();
+    await syncProjectSplitTablesAfterInsert(created.id, insertFields, this.dbInstance);
     return this.mapProjectInfoToLegacyProject(created);
   }
 
@@ -631,21 +578,28 @@ export class DatabaseStorage implements IStorage {
       .set(payload as any)
       .where(eq(projectInfo.id, id))
       .returning();
+    if (updated) {
+      await syncProjectSplitTables(id, payload, this.dbInstance);
+    }
     return updated ? this.mapProjectInfoToLegacyProject(updated) : undefined;
   }
 
   async deleteProject(id: number): Promise<boolean> {
+    const fields = { isActive: false, archivedStatus: "ARCHIVED", updatedAt: new Date() };
     const result = await this.dbInstance
       .update(projectInfo)
-      .set({ isActive: false, archivedStatus: "ARCHIVED", updatedAt: new Date() })
+      .set(fields)
       .where(eq(projectInfo.id, id))
       .returning();
+    if (result.length > 0) {
+      await syncProjectSplitTables(id, fields, this.dbInstance);
+    }
     return result.length > 0;
   }
 
   // Expenses (legacy)
   async getAllExpenses(): Promise<Expense[]> {
-    const lines = await this.dbInstance.select().from(normalizedCostLines).orderBy(desc(normalizedCostLines.id));
+    const lines = await this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)).orderBy(desc(normalizedCostLines.id));
     const projectMap = new Map((await this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)).map((p) => [p.projectName, p.id]));
     return lines.map((line) => this.mapCostLineToLegacyExpense(line, projectMap.get(line.projectName) ?? line.projectId ?? 0));
   }
@@ -653,7 +607,7 @@ export class DatabaseStorage implements IStorage {
   async getExpensesByProject(projectId: number): Promise<Expense[]> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return [];
-    const lines = await this.dbInstance.select().from(normalizedCostLines).where(eq(normalizedCostLines.projectName, project.projectName)).orderBy(desc(normalizedCostLines.id));
+    const lines = await this.dbInstance.select().from(normalizedCostLines).where(and(eq(normalizedCostLines.projectName, project.projectName), isNull(normalizedCostLines.effectiveTo))).orderBy(desc(normalizedCostLines.id));
     return lines.map((line) => this.mapCostLineToLegacyExpense(line, projectId));
   }
 
@@ -689,12 +643,13 @@ export class DatabaseStorage implements IStorage {
   async deleteExpensesByProject(projectId: number): Promise<void> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return;
-    await this.dbInstance.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, project.projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", project.projectName);
   }
 
   // Revenues (legacy)
   async getAllRevenues(): Promise<Revenue[]> {
-    const lines = await this.dbInstance.select().from(normalizedRevenueLines).orderBy(desc(normalizedRevenueLines.id));
+    const lines = await this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)).orderBy(desc(normalizedRevenueLines.id));
     const projectMap = new Map((await this.dbInstance.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)).map((p) => [p.projectName, p.id]));
     return lines.map((line) => this.mapRevenueLineToLegacyRevenue(line, projectMap.get(line.projectName) ?? line.projectId ?? 0));
   }
@@ -702,7 +657,7 @@ export class DatabaseStorage implements IStorage {
   async getRevenuesByProject(projectId: number): Promise<Revenue[]> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return [];
-    const lines = await this.dbInstance.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, project.projectName)).orderBy(desc(normalizedRevenueLines.id));
+    const lines = await this.dbInstance.select().from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, project.projectName), isNull(normalizedRevenueLines.effectiveTo))).orderBy(desc(normalizedRevenueLines.id));
     return lines.map((line) => this.mapRevenueLineToLegacyRevenue(line, projectId));
   }
 
@@ -736,7 +691,8 @@ export class DatabaseStorage implements IStorage {
   async deleteRevenuesByProject(projectId: number): Promise<void> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return;
-    await this.dbInstance.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, project.projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", project.projectName);
   }
 
   // Tasks (legacy)
@@ -788,27 +744,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Budgets
-  async getAllBudgets(): Promise<Budget[]> {
-    return this.dbInstance.select().from(budgets).orderBy(desc(budgets.createdAt));
-  }
-
-  async getBudgetsByProject(projectId: number): Promise<Budget[]> {
-    return this.dbInstance.select().from(budgets).where(eq(budgets.projectId, projectId)).orderBy(desc(budgets.createdAt));
-  }
-
-  async createBudget(budget: InsertBudget): Promise<Budget> {
-    // Explicitly provide timestamp for SQLite compatibility
-    const [created] = await this.dbInstance.insert(budgets).values({
-      ...budget,
-      createdAt: new Date(),
-    }).returning();
-    return created;
-  }
-
-  async deleteBudget(id: number): Promise<boolean> {
-    const result = await this.dbInstance.delete(budgets).where(eq(budgets.id, id)).returning();
-    return result.length > 0;
-  }
+  // budgets table dropped — return empty (no client consumers)
+  async getAllBudgets(): Promise<Budget[]> { return []; }
+  async getBudgetsByProject(_projectId: number): Promise<Budget[]> { return []; }
+  async createBudget(_budget: InsertBudget): Promise<Budget> { return {} as Budget; }
+  async deleteBudget(_id: number): Promise<boolean> { return false; }
 
   // Upload Metadata
   async getAllUploads(): Promise<UploadMetadata[]> {
@@ -872,12 +812,26 @@ export class DatabaseStorage implements IStorage {
       .set({ ...fields, updatedAt: new Date() })
       .where(eq(projectInfo.id, id))
       .returning();
+    if (updated) {
+      await syncProjectSplitTables(id, fields, this.dbInstance);
+    }
     return updated;
   }
 
-  async getAllProjectInfo(): Promise<ProjectInfo[]> {
+  async getAllProjectInfo(): Promise<any[]> {
     try {
-      return await this.dbInstance.select().from(projectInfo).orderBy(desc(projectInfo.updatedAt));
+      const rows = await this.dbInstance
+        .select()
+        .from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .orderBy(desc(projectInfo.updatedAt));
+      return rows.map(r => ({
+        ...r.project_info,
+        ...r.project_execution_state,
+        // Preserve identity id (not execution state id)
+        id: r.project_info.id,
+        updatedAt: r.project_info.updatedAt,
+      }));
     } catch (error) {
       if (this.shouldUseLegacyProjectInfoReadFallback(error)) {
         return this.listLegacyCompatibleProjectInfo();
@@ -887,44 +841,115 @@ export class DatabaseStorage implements IStorage {
   }
 
   private shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean {
-    if (getDbMode() !== "sqlite") {
-      return false;
+    const mode = getDbMode();
+    const message = error instanceof Error ? error.message : String(error ?? "");
+    const code = (error as any)?.code;
+
+    const missingColumnNames = [
+      "phase_updated_at",
+      "phase_updated_by_user_id",
+      "phase_notes",
+      "execution_phase",
+      "client_id",
+      "archived_status",
+      "pm_user_id",
+      "pd_user_id",
+      "cp_signed",
+      "cp_signed_date",
+      "cp_signed_by_user_id",
+      "cp_evidence_type",
+      "cp_evidence_ref",
+      "pm_task_pack_created",
+      "eng_post_cp_task_pack_created",
+    ];
+
+    if (mode === "sqlite") {
+      if (message.includes("no such table")) return true;
+      return message.includes("no such column")
+        && missingColumnNames.some((col) => message.includes(col));
     }
 
-    const message = error instanceof Error ? error.message : String(error ?? "");
-    return message.includes("no such column")
-      && [
-        "phase_updated_at",
-        "phase_updated_by_user_id",
-        "phase_notes",
-        "execution_phase",
-        "client_id",
-        "archived_status",
-        "pm_user_id",
-        "pd_user_id",
-      ].some((column) => message.includes(column));
+    // PostgreSQL: error code 42P01 = undefined_table
+    if (code === "42P01") return true;
+    // PostgreSQL: error code 42703 = undefined_column
+    if (code === "42703") {
+      return missingColumnNames.some((col) => message.includes(col));
+    }
+
+    return false;
   }
 
   private async listLegacyCompatibleProjectInfo(filters?: {
     projectName?: string;
     id?: number;
   }): Promise<ProjectInfo[]> {
-    const baseQuery = this.dbInstance.select({
-      id: projectInfo.id,
-      projectName: projectInfo.projectName,
-      sizeKwp: projectInfo.sizeKwp,
-      pd: projectInfo.pd,
-      pm: projectInfo.pm,
-      contractValue: projectInfo.contractValue,
-      phase: projectInfo.phase,
-      updatedAt: projectInfo.updatedAt,
-    }).from(projectInfo);
+    let rows: any[];
+    try {
+      const baseQuery = this.dbInstance.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        sizeKwp: projectInfo.sizeKwp,
+        pd: projectInfo.pd,
+        pm: projectInfo.pm,
+        contractValue: projectInfo.contractValue,
+        phase: projectExecutionState.phase,
+        updatedAt: projectInfo.updatedAt,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
-    const rows = filters?.projectName
-      ? await baseQuery.where(eq(projectInfo.projectName, filters.projectName))
-      : filters?.id != null
-        ? await baseQuery.where(eq(projectInfo.id, filters.id))
-        : await baseQuery.orderBy(desc(projectInfo.updatedAt));
+      rows = filters?.projectName
+        ? await baseQuery.where(eq(projectInfo.projectName, filters.projectName))
+        : filters?.id != null
+          ? await baseQuery.where(eq(projectInfo.id, filters.id))
+          : await baseQuery.orderBy(desc(projectInfo.updatedAt));
+    } catch (joinErr: any) {
+      // project_execution_state table may not exist — try reading phase from project_info directly
+      console.warn("[storage] project_execution_state join failed, falling back to project_info:", joinErr.message);
+      try {
+        // project_info may still have a phase column from legacy schema
+        const fallbackRows = await this.dbInstance.execute(
+          sql`SELECT id, project_name, size_kwp, pd, pm, contract_value, updated_at,
+                     CASE WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_info' AND column_name='phase')
+                          THEN (SELECT phase FROM project_info pi2 WHERE pi2.id = project_info.id)
+                          ELSE NULL END as phase
+              FROM project_info
+              ORDER BY updated_at DESC`
+        );
+        rows = (fallbackRows.rows as any[]).map(r => ({
+          id: r.id,
+          projectName: r.project_name,
+          sizeKwp: r.size_kwp,
+          pd: r.pd,
+          pm: r.pm,
+          contractValue: r.contract_value,
+          phase: r.phase,
+          updatedAt: r.updated_at,
+        }));
+        if (filters?.projectName) {
+          rows = rows.filter(r => r.projectName === filters.projectName);
+        } else if (filters?.id != null) {
+          rows = rows.filter(r => r.id === filters.id);
+        }
+      } catch {
+        // Last resort: no phase data available
+        const simpleQuery = this.dbInstance.select({
+          id: projectInfo.id,
+          projectName: projectInfo.projectName,
+          sizeKwp: projectInfo.sizeKwp,
+          pd: projectInfo.pd,
+          pm: projectInfo.pm,
+          contractValue: projectInfo.contractValue,
+          updatedAt: projectInfo.updatedAt,
+        }).from(projectInfo);
+
+        const simpleRows = filters?.projectName
+          ? await simpleQuery.where(eq(projectInfo.projectName, filters.projectName))
+          : filters?.id != null
+            ? await simpleQuery.where(eq(projectInfo.id, filters.id))
+            : await simpleQuery.orderBy(desc(projectInfo.updatedAt));
+        rows = simpleRows.map(r => ({ ...r, phase: null }));
+      }
+    }
 
     return rows.map((row) => ({
       ...row,
@@ -959,6 +984,13 @@ export class DatabaseStorage implements IStorage {
       archivedStatus: "ACTIVE",
       pmUserId: null,
       pdUserId: null,
+      cpSigned: false,
+      cpSignedDate: null,
+      cpSignedByUserId: null,
+      cpEvidenceType: null,
+      cpEvidenceRef: null,
+      pmTaskPackCreated: false,
+      engPostCpTaskPackCreated: false,
     })) as ProjectInfo[];
   }
 
@@ -971,13 +1003,12 @@ export class DatabaseStorage implements IStorage {
         .set({ ...updateFields, updatedAt: new Date() })
         .where(eq(projectInfo.projectName, info.projectName))
         .returning();
+      await syncProjectSplitTables(updated.id, updateFields, this.dbInstance);
       return updated;
     }
-    const [created] = await this.dbInstance.insert(projectInfo).values({
-      ...info,
-      executionEnabled: false,
-      updatedAt: new Date(),
-    }).returning();
+    const insertFields = { ...info, executionEnabled: false, updatedAt: new Date() };
+    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields).returning();
+    await syncProjectSplitTablesAfterInsert(created.id, insertFields as any, this.dbInstance);
     return created;
   }
 
@@ -995,13 +1026,24 @@ export class DatabaseStorage implements IStorage {
       .update(projectInfo)
       .set({ isActive: false })
       .where(not(inArray(projectInfo.projectName, activeNames)));
+
+    // Dual-write: sync isActive to project_execution_state via raw SQL for bulk operation
+    await this.dbInstance.execute(sql`
+      UPDATE project_execution_state SET is_active = true, updated_at = NOW()
+      WHERE project_id IN (SELECT id FROM project_info WHERE project_name = ANY(${activeNames}))
+    `);
+    await this.dbInstance.execute(sql`
+      UPDATE project_execution_state SET is_active = false, updated_at = NOW()
+      WHERE project_id IN (SELECT id FROM project_info WHERE project_name != ALL(${activeNames}))
+    `);
   }
 
   async getProjectCounts(): Promise<{ active: number; historical: number; total: number }> {
     const [activeResult] = await this.dbInstance
       .select({ count: count() })
       .from(projectInfo)
-      .where(eq(projectInfo.isActive, true));
+      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+      .where(eq(projectExecutionState.isActive, true));
     const [totalResult] = await this.dbInstance
       .select({ count: count() })
       .from(projectInfo);
@@ -1012,22 +1054,48 @@ export class DatabaseStorage implements IStorage {
 
   async getAllProgramExpenses(): Promise<any[]> {
     const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
-    const [costLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedCostLines),
+    const [costLines, piRows, peRows] = await Promise.all([
+      this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+      this.dbInstance.select().from(programExpense).where(isNull(programExpense.effectiveTo)),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    return costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+    const adapted = costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+
+    // Enrich with programExpense data (budget totals, forecast dates) — matching
+    // getProgramExpensesByProject() so portfolio reads from project-detail level up
+    if (peRows.length > 0) {
+      const budgetByKey = new Map<string, any>();
+      for (const pe of peRows) {
+        if (pe.rowNumber != null) {
+          budgetByKey.set(`${pe.projectName}::${pe.rowNumber}`, pe);
+        }
+      }
+
+      for (const item of adapted) {
+        const pe = budgetByKey.get(`${item.projectName}::${item.rowNumber}`);
+        if (pe) {
+          if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
+          if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
+          if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
+          if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
+          if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+          if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
+        }
+      }
+    }
+
+    return adapted;
   }
 
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
     const { adaptCostToExpense } = await import("./lib/data-merge");
     const costLines = await this.dbInstance.select().from(normalizedCostLines)
-      .where(eq(normalizedCostLines.projectName, projectName));
+      .where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
     const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
 
     const peRows = await this.dbInstance.select().from(programExpense)
-      .where(eq(programExpense.projectName, projectName));
+      .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
     if (peRows.length === 0) return adapted;
 
     const budgetByRow = new Map<number, any>();
@@ -1043,6 +1111,7 @@ export class DatabaseStorage implements IStorage {
         if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
         if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
         if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+        if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
       }
     }
     return adapted;
@@ -1072,10 +1141,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProgramExpensesByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", projectName);
   }
 
-  async updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined> {
+  async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<ProgramExpense | undefined> {
     const mappedFields: Record<string, any> = {};
     const fieldMap: Record<string, string> = {
       expenseCategory: 'costCategory',
@@ -1103,6 +1173,25 @@ export class DatabaseStorage implements IStorage {
       return undefined;
     }
     const canonicalId = id >= 900000 ? id - 900000 : id;
+
+    // Optimistic locking: if caller provides expectedUpdatedAt, verify row hasn't changed
+    if (expectedUpdatedAt) {
+      const [current] = await this.dbInstance
+        .select({ updatedAt: normalizedCostLines.updatedAt })
+        .from(normalizedCostLines)
+        .where(eq(normalizedCostLines.id, canonicalId))
+        .limit(1);
+      if (current?.updatedAt) {
+        const currentTs = new Date(current.updatedAt).getTime();
+        const expectedTs = new Date(expectedUpdatedAt).getTime();
+        if (currentTs !== expectedTs) {
+          const err = new Error("Row was modified by another user. Please refresh and try again.");
+          (err as any).status = 409;
+          throw err;
+        }
+      }
+    }
+
     const result = await this.dbInstance
       .update(normalizedCostLines)
       .set(mappedFields)
@@ -1113,10 +1202,42 @@ export class DatabaseStorage implements IStorage {
     return adaptCostToExpense(result[0], result[0].projectName) as any;
   }
 
+  async updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined> {
+    const fieldMap: Record<string, string> = {
+      milestoneInvoiceNumber: 'invoiceNumber',
+      invoiceRaisedDate: 'invoiceDate',
+      paymentReceivedDate: 'paidDate',
+      plannedPaymentDate: 'expectedPaymentDate',
+      milestoneAmount: 'amountExVat',
+      milestoneName: 'milestoneName',
+      milestoneNotes: 'description',
+      invoiceDateFontColor: 'invoiceDateFontColor',
+      invoiceDateConfirmed: 'invoiceDateConfirmed',
+      paidDateFontColor: 'paidDateFontColor',
+      paidDateConfirmed: 'paidDateConfirmed',
+      inBankDate: 'inBankDate',
+    };
+    const mappedFields: Record<string, any> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      const mapped = fieldMap[key] || key;
+      mappedFields[mapped] = value;
+    }
+    if (Object.keys(mappedFields).length === 0) return undefined;
+    const canonicalId = id >= 900000 ? id - 900000 : id;
+    const result = await this.dbInstance
+      .update(normalizedRevenueLines)
+      .set(mappedFields)
+      .where(eq(normalizedRevenueLines.id, canonicalId))
+      .returning();
+    if (!result[0]) return undefined;
+    const { adaptRevenueToInflow } = await import("./lib/data-merge");
+    return adaptRevenueToInflow(result[0], result[0].projectName);
+  }
+
   async getAllProgramInflows(): Promise<any[]> {
     const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
     const [revLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedRevenueLines),
+      this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
       this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
@@ -1126,7 +1247,7 @@ export class DatabaseStorage implements IStorage {
   async getProgramInflowsByProject(projectName: string): Promise<any[]> {
     const { adaptRevenueToInflow } = await import("./lib/data-merge");
     const revLines = await this.dbInstance.select().from(normalizedRevenueLines)
-      .where(eq(normalizedRevenueLines.projectName, projectName));
+      .where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo)));
     return revLines.map(r => adaptRevenueToInflow(r, projectName));
   }
 
@@ -1150,7 +1271,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProgramInflowsByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", projectName);
   }
 
   // Project Plan — reads from work_items (PM workstream, SMART_IMPORT source)
@@ -1235,9 +1357,6 @@ export class DatabaseStorage implements IStorage {
       .where(eq(workingPlanScenario.projectName, projectName));
     if (scenarioIds.length > 0) {
       const sIds = scenarioIds.map(s => s.id);
-      await this.dbInstance.update(workingPlanTaskOverride)
-        .set({ importedTaskId: null })
-        .where(inArray(workingPlanTaskOverride.scenarioId, sIds));
       await this.dbInstance.update(workingPlanDependencyOverride)
         .set({ importedDependencyId: null })
         .where(inArray(workingPlanDependencyOverride.scenarioId, sIds));
@@ -1259,11 +1378,11 @@ export class DatabaseStorage implements IStorage {
 
   // Cashflow Points (new)
   async getAllCashflowPoints(): Promise<CashflowPoint[]> {
-    return this.dbInstance.select().from(cashflowPoints).orderBy(desc(cashflowPoints.createdAt));
+    return this.dbInstance.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)).orderBy(desc(cashflowPoints.createdAt));
   }
 
   async getCashflowPointsByProject(projectName: string): Promise<CashflowPoint[]> {
-    return this.dbInstance.select().from(cashflowPoints).where(eq(cashflowPoints.projectName, projectName));
+    return this.dbInstance.select().from(cashflowPoints).where(and(eq(cashflowPoints.projectName, projectName), isNull(cashflowPoints.effectiveTo)));
   }
 
   async createManyCashflowPoints(pointList: InsertCashflowPoint[]): Promise<CashflowPoint[]> {
@@ -1284,16 +1403,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteCashflowPointsByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(cashflowPoints).where(eq(cashflowPoints.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "cashflow_points", projectName);
   }
 
   // Finance Revenue Monthly (new)
   async getAllFinanceRevenueMonthly(): Promise<FinanceRevenueMonthly[]> {
-    return this.dbInstance.select().from(financeRevenueMonthly).orderBy(desc(financeRevenueMonthly.createdAt));
+    return this.dbInstance.select().from(financeRevenueMonthly).where(isNull(financeRevenueMonthly.effectiveTo)).orderBy(desc(financeRevenueMonthly.createdAt));
   }
 
   async getFinanceRevenueMonthlyByProject(projectName: string): Promise<FinanceRevenueMonthly[]> {
-    return this.dbInstance.select().from(financeRevenueMonthly).where(eq(financeRevenueMonthly.projectName, projectName));
+    return this.dbInstance.select().from(financeRevenueMonthly).where(and(eq(financeRevenueMonthly.projectName, projectName), isNull(financeRevenueMonthly.effectiveTo)));
   }
 
   async createManyFinanceRevenueMonthly(dataList: InsertFinanceRevenueMonthly[]): Promise<FinanceRevenueMonthly[]> {
@@ -1314,16 +1434,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteFinanceRevenueMonthlyByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(financeRevenueMonthly).where(eq(financeRevenueMonthly.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "finance_revenue_monthly", projectName);
   }
 
   // Finance COS Monthly (new)
   async getAllFinanceCosMonthly(): Promise<FinanceCosMonthly[]> {
-    return this.dbInstance.select().from(financeCosMonthly).orderBy(desc(financeCosMonthly.createdAt));
+    return this.dbInstance.select().from(financeCosMonthly).where(isNull(financeCosMonthly.effectiveTo)).orderBy(desc(financeCosMonthly.createdAt));
   }
 
   async getFinanceCosMonthlyByProject(projectName: string): Promise<FinanceCosMonthly[]> {
-    return this.dbInstance.select().from(financeCosMonthly).where(eq(financeCosMonthly.projectName, projectName));
+    return this.dbInstance.select().from(financeCosMonthly).where(and(eq(financeCosMonthly.projectName, projectName), isNull(financeCosMonthly.effectiveTo)));
   }
 
   async createManyFinanceCosMonthly(dataList: InsertFinanceCosMonthly[]): Promise<FinanceCosMonthly[]> {
@@ -1344,343 +1465,34 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteFinanceCosMonthlyByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(financeCosMonthly).where(eq(financeCosMonthly.projectName, projectName));
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "finance_cos_monthly", projectName);
   }
 
-  // Cashflow Planning Overrides (user edits)
-  async getAllPlanningOverrides(): Promise<CashflowPlanningOverride[]> {
-    return this.dbInstance.select().from(cashflowPlanningOverrides).orderBy(desc(cashflowPlanningOverrides.updatedAt));
+  // ===================== INLINE EDIT METHODS (replaces override tables) =====================
+  // These methods edit base table rows directly with snapshot/source tracking.
+
+  async editBaseRowInline(
+    tableName: string, rowId: number, fields: Record<string, any>, userId: number | null,
+  ): Promise<void> {
+    const { inlineEdit } = await import("./lib/inline-edit-helper");
+    await inlineEdit(tableName, rowId, fields, userId, this.dbInstance);
   }
 
-  async getPlanningOverridesByProject(projectName: string): Promise<CashflowPlanningOverride[]> {
-    return this.dbInstance.select()
-      .from(cashflowPlanningOverrides)
-      .where(eq(cashflowPlanningOverrides.projectName, projectName))
-      .orderBy(cashflowPlanningOverrides.weekStartDate);
+  async revertBaseRowToImported(tableName: string, rowId: number): Promise<boolean> {
+    const { revertToImported } = await import("./lib/inline-edit-helper");
+    return revertToImported(tableName, rowId, this.dbInstance);
   }
 
-  async upsertPlanningOverride(override: InsertCashflowPlanningOverride): Promise<CashflowPlanningOverride> {
-    const now = new Date();
-    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
-    // Check if override already exists
-    const existing = await this.dbInstance.select()
-      .from(cashflowPlanningOverrides)
-      .where(and(
-        eq(cashflowPlanningOverrides.projectName, override.projectName),
-        eq(cashflowPlanningOverrides.weekStartDate, override.weekStartDate),
-        eq(cashflowPlanningOverrides.seriesName, override.seriesName)
-      ))
-      .limit(1);
-
-    if (existing.length > 0) {
-      // Update existing
-      const updated = await this.dbInstance
-        .update(cashflowPlanningOverrides)
-        .set({ overrideValue: override.overrideValue, updatedAt: now })
-        .where(eq(cashflowPlanningOverrides.id, existing[0].id))
-        .returning();
-      return updated[0];
-    } else {
-      // Insert new
-      const inserted = await this.dbInstance
-        .insert(cashflowPlanningOverrides)
-        .values(withTimestamps)
-        .returning();
-      return inserted[0];
-    }
+  async applyFieldOverridesInline(
+    tableName: string, rowId: number,
+    overrides: Array<{ fieldName: string; overrideValue: string | null }>,
+    userId: number | null,
+  ): Promise<void> {
+    const { applyFieldOverrides } = await import("./lib/inline-edit-helper");
+    await applyFieldOverrides(tableName, rowId, overrides, userId, this.dbInstance);
   }
 
-  async upsertManyPlanningOverrides(overrides: InsertCashflowPlanningOverride[]): Promise<CashflowPlanningOverride[]> {
-    if (overrides.length === 0) return [];
-    
-    // Process one at a time to ensure upsert logic
-    const results: CashflowPlanningOverride[] = [];
-    for (const override of overrides) {
-      const result = await this.upsertPlanningOverride(override);
-      results.push(result);
-    }
-    return results;
-  }
-
-  async deletePlanningOverridesByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(cashflowPlanningOverrides).where(eq(cashflowPlanningOverrides.projectName, projectName));
-  }
-
-  // Project Plan Overrides (user edits for tasks/milestones)
-  async getProjectPlanOverridesByProject(projectName: string): Promise<ProjectPlanOverride[]> {
-    return safeLegacyQuery(
-      () =>
-        this.dbInstance.select()
-          .from(projectPlanOverrides)
-          .where(eq(projectPlanOverrides.projectName, projectName))
-          .orderBy(projectPlanOverrides.rowNumber),
-      [],
-    );
-  }
-
-  async getAllProjectPlanOverrides(): Promise<ProjectPlanOverride[]> {
-    return safeLegacyQuery(
-      () =>
-        this.dbInstance.select()
-          .from(projectPlanOverrides)
-          .orderBy(projectPlanOverrides.projectName, projectPlanOverrides.rowNumber),
-      [],
-    );
-  }
-
-  async upsertProjectPlanOverride(override: InsertProjectPlanOverride): Promise<ProjectPlanOverride> {
-    const now = new Date();
-    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
-    const existing = await this.dbInstance.select()
-      .from(projectPlanOverrides)
-      .where(and(
-        eq(projectPlanOverrides.projectName, override.projectName),
-        eq(projectPlanOverrides.rowNumber, override.rowNumber),
-        eq(projectPlanOverrides.fieldName, override.fieldName)
-      ))
-      .limit(1);
-
-    if (existing.length > 0) {
-      const updated = await this.dbInstance
-        .update(projectPlanOverrides)
-        .set({ overrideValue: override.overrideValue, updatedAt: now })
-        .where(eq(projectPlanOverrides.id, existing[0].id))
-        .returning();
-      return updated[0];
-    } else {
-      const inserted = await this.dbInstance
-        .insert(projectPlanOverrides)
-        .values(withTimestamps)
-        .returning();
-      return inserted[0];
-    }
-  }
-
-  async upsertManyProjectPlanOverrides(overrides: InsertProjectPlanOverride[]): Promise<ProjectPlanOverride[]> {
-    if (overrides.length === 0) return [];
-    const results: ProjectPlanOverride[] = [];
-    for (const override of overrides) {
-      const result = await this.upsertProjectPlanOverride(override);
-      results.push(result);
-    }
-    return results;
-  }
-
-  async deleteProjectPlanOverridesByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(projectPlanOverrides).where(eq(projectPlanOverrides.projectName, projectName));
-  }
-
-  // Revenue Tracking Overrides (user edits for revenue milestones)
-  async getRevenueTrackingOverridesByProject(projectName: string): Promise<RevenueTrackingOverride[]> {
-    return this.dbInstance.select()
-      .from(revenueTrackingOverrides)
-      .where(eq(revenueTrackingOverrides.projectName, projectName))
-      .orderBy(revenueTrackingOverrides.rowNumber);
-  }
-
-  async upsertRevenueTrackingOverride(override: InsertRevenueTrackingOverride): Promise<RevenueTrackingOverride> {
-    const now = new Date();
-    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
-    const existing = await this.dbInstance.select()
-      .from(revenueTrackingOverrides)
-      .where(and(
-        eq(revenueTrackingOverrides.projectName, override.projectName),
-        eq(revenueTrackingOverrides.rowNumber, override.rowNumber),
-        eq(revenueTrackingOverrides.fieldName, override.fieldName)
-      ))
-      .limit(1);
-
-    if (existing.length > 0) {
-      const updated = await this.dbInstance
-        .update(revenueTrackingOverrides)
-        .set({ overrideValue: override.overrideValue, updatedAt: now })
-        .where(eq(revenueTrackingOverrides.id, existing[0].id))
-        .returning();
-      return updated[0];
-    } else {
-      const inserted = await this.dbInstance
-        .insert(revenueTrackingOverrides)
-        .values(withTimestamps)
-        .returning();
-      return inserted[0];
-    }
-  }
-
-  async upsertManyRevenueTrackingOverrides(overrides: InsertRevenueTrackingOverride[]): Promise<RevenueTrackingOverride[]> {
-    if (overrides.length === 0) return [];
-    const results: RevenueTrackingOverride[] = [];
-    for (const override of overrides) {
-      const result = await this.upsertRevenueTrackingOverride(override);
-      results.push(result);
-    }
-    return results;
-  }
-
-  async deleteRevenueTrackingOverridesByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.projectName, projectName));
-  }
-
-  // Expenditure Overrides (user edits for expenses)
-  async getExpenditureOverridesByProject(projectName: string): Promise<ExpenditureOverride[]> {
-    return this.dbInstance.select()
-      .from(expenditureOverrides)
-      .where(eq(expenditureOverrides.projectName, projectName))
-      .orderBy(expenditureOverrides.rowNumber);
-  }
-
-  async getAllExpenditureOverrides(): Promise<ExpenditureOverride[]> {
-    return this.dbInstance.select()
-      .from(expenditureOverrides)
-      .orderBy(expenditureOverrides.projectName, expenditureOverrides.rowNumber);
-  }
-
-  async upsertExpenditureOverride(override: InsertExpenditureOverride): Promise<ExpenditureOverride> {
-    const now = new Date();
-    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
-    const existing = await this.dbInstance.select()
-      .from(expenditureOverrides)
-      .where(and(
-        eq(expenditureOverrides.projectName, override.projectName),
-        eq(expenditureOverrides.rowNumber, override.rowNumber),
-        eq(expenditureOverrides.fieldName, override.fieldName)
-      ))
-      .limit(1);
-
-    if (existing.length > 0) {
-      const updated = await this.dbInstance
-        .update(expenditureOverrides)
-        .set({ overrideValue: override.overrideValue, updatedAt: now })
-        .where(eq(expenditureOverrides.id, existing[0].id))
-        .returning();
-      return updated[0];
-    } else {
-      const inserted = await this.dbInstance
-        .insert(expenditureOverrides)
-        .values(withTimestamps)
-        .returning();
-      return inserted[0];
-    }
-  }
-
-  async upsertManyExpenditureOverrides(overrides: InsertExpenditureOverride[]): Promise<ExpenditureOverride[]> {
-    if (overrides.length === 0) return [];
-    const results: ExpenditureOverride[] = [];
-    for (const override of overrides) {
-      const result = await this.upsertExpenditureOverride(override);
-      results.push(result);
-    }
-    return results;
-  }
-
-  async deleteExpenditureOverridesByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(expenditureOverrides).where(eq(expenditureOverrides.projectName, projectName));
-  }
-
-  // Finance Revenue Overrides (user edits for monthly revenue)
-  async getFinanceRevenueOverridesByProject(projectName: string): Promise<FinanceRevenueOverride[]> {
-    return this.dbInstance.select()
-      .from(financeRevenueOverrides)
-      .where(eq(financeRevenueOverrides.projectName, projectName))
-      .orderBy(financeRevenueOverrides.monthEndDate, financeRevenueOverrides.category);
-  }
-
-  async upsertFinanceRevenueOverride(override: InsertFinanceRevenueOverride): Promise<FinanceRevenueOverride> {
-    const now = new Date();
-    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
-    const existing = await this.dbInstance.select()
-      .from(financeRevenueOverrides)
-      .where(and(
-        eq(financeRevenueOverrides.projectName, override.projectName),
-        eq(financeRevenueOverrides.category, override.category),
-        eq(financeRevenueOverrides.monthEndDate, override.monthEndDate)
-      ))
-      .limit(1);
-
-    if (existing.length > 0) {
-      const updated = await this.dbInstance
-        .update(financeRevenueOverrides)
-        .set({ overrideValue: override.overrideValue, updatedAt: now })
-        .where(eq(financeRevenueOverrides.id, existing[0].id))
-        .returning();
-      return updated[0];
-    } else {
-      const inserted = await this.dbInstance
-        .insert(financeRevenueOverrides)
-        .values(withTimestamps)
-        .returning();
-      return inserted[0];
-    }
-  }
-
-  async upsertManyFinanceRevenueOverrides(overrides: InsertFinanceRevenueOverride[]): Promise<FinanceRevenueOverride[]> {
-    if (overrides.length === 0) return [];
-    const results: FinanceRevenueOverride[] = [];
-    for (const override of overrides) {
-      const result = await this.upsertFinanceRevenueOverride(override);
-      results.push(result);
-    }
-    return results;
-  }
-
-  async deleteFinanceRevenueOverridesByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(financeRevenueOverrides).where(eq(financeRevenueOverrides.projectName, projectName));
-  }
-
-  // Finance COS Overrides (user edits for monthly COS)
-  async getFinanceCosOverridesByProject(projectName: string): Promise<FinanceCosOverride[]> {
-    return this.dbInstance.select()
-      .from(financeCosOverrides)
-      .where(eq(financeCosOverrides.projectName, projectName))
-      .orderBy(financeCosOverrides.monthEndDate, financeCosOverrides.category);
-  }
-
-  async upsertFinanceCosOverride(override: InsertFinanceCosOverride): Promise<FinanceCosOverride> {
-    const now = new Date();
-    const withTimestamps = { ...override, createdAt: now, updatedAt: now };
-    
-    const existing = await this.dbInstance.select()
-      .from(financeCosOverrides)
-      .where(and(
-        eq(financeCosOverrides.projectName, override.projectName),
-        eq(financeCosOverrides.category, override.category),
-        eq(financeCosOverrides.monthEndDate, override.monthEndDate)
-      ))
-      .limit(1);
-
-    if (existing.length > 0) {
-      const updated = await this.dbInstance
-        .update(financeCosOverrides)
-        .set({ overrideValue: override.overrideValue, updatedAt: now })
-        .where(eq(financeCosOverrides.id, existing[0].id))
-        .returning();
-      return updated[0];
-    } else {
-      const inserted = await this.dbInstance
-        .insert(financeCosOverrides)
-        .values(withTimestamps)
-        .returning();
-      return inserted[0];
-    }
-  }
-
-  async upsertManyFinanceCosOverrides(overrides: InsertFinanceCosOverride[]): Promise<FinanceCosOverride[]> {
-    if (overrides.length === 0) return [];
-    const results: FinanceCosOverride[] = [];
-    for (const override of overrides) {
-      const result = await this.upsertFinanceCosOverride(override);
-      results.push(result);
-    }
-    return results;
-  }
-
-  async deleteFinanceCosOverridesByProject(projectName: string): Promise<void> {
-    await this.dbInstance.delete(financeCosOverrides).where(eq(financeCosOverrides.projectName, projectName));
-  }
 
   // Working Plan Scenarios
   async getActiveScenario(projectName: string): Promise<WorkingPlanScenario | undefined> {
@@ -1712,41 +1524,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async resetScenario(scenarioId: number): Promise<void> {
-    await this.dbInstance.delete(workingPlanTaskOverride)
-      .where(eq(workingPlanTaskOverride.scenarioId, scenarioId));
     await this.dbInstance.delete(workingPlanDependencyOverride)
       .where(eq(workingPlanDependencyOverride.scenarioId, scenarioId));
   }
 
-  // Working Plan Task Overrides
-  async getTaskOverridesByScenario(scenarioId: number): Promise<WorkingPlanTaskOverride[]> {
-    return await this.dbInstance.select()
-      .from(workingPlanTaskOverride)
-      .where(eq(workingPlanTaskOverride.scenarioId, scenarioId));
-  }
-
-  async createTaskOverride(override: InsertWorkingPlanTaskOverride): Promise<WorkingPlanTaskOverride> {
-    const now = new Date();
-    const [created] = await this.dbInstance.insert(workingPlanTaskOverride)
-      .values({ ...override, createdAt: now, updatedAt: now })
-      .returning();
-    return created;
-  }
-
-  async updateTaskOverride(id: number, data: Partial<InsertWorkingPlanTaskOverride>): Promise<WorkingPlanTaskOverride | undefined> {
-    const now = new Date();
-    const [updated] = await this.dbInstance.update(workingPlanTaskOverride)
-      .set({ ...data, updatedAt: now })
-      .where(eq(workingPlanTaskOverride.id, id))
-      .returning();
-    return updated;
-  }
-
-  async softDeleteTaskOverride(id: number): Promise<void> {
-    await this.dbInstance.update(workingPlanTaskOverride)
-      .set({ deletedFlag: 1, updatedAt: new Date() })
-      .where(eq(workingPlanTaskOverride.id, id));
-  }
+  // Working Plan Task Overrides — table dropped (Cleanup Prompt 4)
+  async getTaskOverridesByScenario(_scenarioId: number): Promise<any[]> { return []; }
+  async createTaskOverride(_override: any): Promise<any> { return {}; }
+  async updateTaskOverride(_id: number, _data: any): Promise<any> { return undefined; }
+  async softDeleteTaskOverride(_id: number): Promise<void> {}
 
   // Project Plan Dependencies
   async getDependenciesByProject(projectName: string): Promise<ProjectPlanDependency[]> {
@@ -1839,14 +1625,7 @@ export class DatabaseStorage implements IStorage {
     await safeDelete(scheduleChangeNotice, "scheduleChangeNotice");
     await safeDelete(workingPlanDependencyOverride, "workingPlanDependencyOverride");
     await safeDelete(projectPlanDependency, "projectPlanDependency");
-    await safeDelete(workingPlanTaskOverride, "workingPlanTaskOverride");
     await safeDelete(workingPlanScenario, "workingPlanScenario");
-    await safeDelete(financeCosOverrides, "financeCosOverrides");
-    await safeDelete(financeRevenueOverrides, "financeRevenueOverrides");
-    await safeDelete(expenditureOverrides, "expenditureOverrides");
-    await safeDelete(revenueTrackingOverrides, "revenueTrackingOverrides");
-    await safeDelete(projectPlanOverrides, "projectPlanOverrides");
-    await safeDelete(cashflowPlanningOverrides, "cashflowPlanningOverrides");
     await safeDelete(financeCosMonthly, "financeCosMonthly");
     await safeDelete(financeRevenueMonthly, "financeRevenueMonthly");
     await safeDelete(cashflowPoints, "cashflowPoints");
@@ -1856,11 +1635,8 @@ export class DatabaseStorage implements IStorage {
     await safeDelete(projectInfo, "projectInfo");
     await safeDelete(refreshLogs, "refreshLogs");
     await safeDelete(uploadMetadata, "uploadMetadata");
-    await safeDelete(budgets, "budgets");
-    await safeDelete(tasks, "tasks");
-    await safeDelete(revenues, "revenues");
-    await safeDelete(expenses, "expenses");
-    await safeDelete(projects, "projects");
+    // Legacy tables (projects, expenses, revenues, budgets, tasks) dropped
+    // Data lives in project_info, normalized_cost_lines, normalized_revenue_lines, work_items
 
     // Delete uploaded files
     const fs = await import("fs");
@@ -1882,24 +1658,27 @@ export class DatabaseStorage implements IStorage {
 
   // Project Revenue Summary
   async getAllProjectRevenueSummaries(): Promise<ProjectRevenueSummary[]> {
-    return this.dbInstance.select().from(projectRevenueSummary);
+    return this.dbInstance.select().from(projectRevenueSummary).where(isNull(projectRevenueSummary.effectiveTo));
   }
 
   async getProjectRevenueSummary(projectName: string): Promise<ProjectRevenueSummary | undefined> {
-    const results = await this.dbInstance.select().from(projectRevenueSummary).where(eq(projectRevenueSummary.projectName, projectName));
+    const results = await this.dbInstance.select().from(projectRevenueSummary).where(and(eq(projectRevenueSummary.projectName, projectName), isNull(projectRevenueSummary.effectiveTo)));
     return results[0];
   }
 
   async upsertProjectRevenueSummary(data: InsertProjectRevenueSummary): Promise<ProjectRevenueSummary> {
     const existing = await this.getProjectRevenueSummary(data.projectName);
     if (existing) {
-      const updated = await this.dbInstance.update(projectRevenueSummary)
-        .set({ ...data, capturedAt: new Date() })
-        .where(eq(projectRevenueSummary.projectName, data.projectName))
+      // Temporal: soft-close old row, insert new version (Prompt 10)
+      await softCloseByProjectName(this.dbInstance, "project_revenue_summary", data.projectName);
+      const inserted = await this.dbInstance.insert(projectRevenueSummary)
+        .values(addTemporalColumns({ ...data, capturedAt: new Date() }) as any)
         .returning();
-      return updated[0];
+      return inserted[0];
     } else {
-      const inserted = await this.dbInstance.insert(projectRevenueSummary).values(data).returning();
+      const inserted = await this.dbInstance.insert(projectRevenueSummary)
+        .values(addTemporalColumns(data) as any)
+        .returning();
       return inserted[0];
     }
   }
@@ -2173,67 +1952,12 @@ export class DatabaseStorage implements IStorage {
     return inserted[0];
   }
 
-  async getAllScenarios(): Promise<Scenario[]> {
-    return this.dbInstance.select().from(scenarios).orderBy(desc(scenarios.createdAt));
-  }
-
-  async getScenario(id: number): Promise<Scenario | undefined> {
-    const rows = await this.dbInstance.select().from(scenarios).where(eq(scenarios.id, id));
-    return rows[0];
-  }
-
-  async createScenario(scenario: InsertScenario): Promise<Scenario> {
-    const inserted = await this.dbInstance.insert(scenarios).values(scenario).returning();
-    return inserted[0];
-  }
-
-  async deleteScenario(id: number): Promise<void> {
-    await this.dbInstance.delete(scenarios).where(eq(scenarios.id, id));
-  }
-
-  async duplicateScenario(id: number, newName: string): Promise<Scenario> {
-    const source = await this.getScenario(id);
-    if (!source) throw new Error('Scenario not found');
-    const newScenario = await this.createScenario({ name: newName, description: source.description, createdBy: source.createdBy, isDefault: false });
-    const overrides = await this.getDateOverridesByScenario(id);
-    for (const ov of overrides) {
-      await this.createDateOverride({
-        scenarioId: newScenario.id,
-        entityType: ov.entityType,
-        entityId: ov.entityId,
-        fieldName: ov.fieldName,
-        originalDate: ov.originalDate,
-        overrideDate: ov.overrideDate,
-        reason: ov.reason,
-        createdBy: ov.createdBy,
-      });
-    }
-    return newScenario;
-  }
-
-  async getDateOverridesByScenario(scenarioId: number): Promise<DateOverride[]> {
-    return this.dbInstance.select().from(dateOverrides).where(eq(dateOverrides.scenarioId, scenarioId));
-  }
-
-  async createDateOverride(override: InsertDateOverride): Promise<DateOverride> {
-    const inserted = await this.dbInstance.insert(dateOverrides).values(override).returning();
-    return inserted[0];
-  }
-
-  async deleteDateOverride(id: number): Promise<void> {
-    await this.dbInstance.delete(dateOverrides).where(eq(dateOverrides.id, id));
-  }
-
-  async clearDateOverrides(scenarioId: number): Promise<void> {
-    await this.dbInstance.delete(dateOverrides).where(eq(dateOverrides.scenarioId, scenarioId));
-  }
-
   // Operational and work-management domains (repository extracted)
-  async getAllOperationalTasks(): Promise<OperationalTask[]> { return this.workManagementRepository.getAllOperationalTasks(); }
-  async getOperationalTasksByProject(projectName: string): Promise<OperationalTask[]> { return this.workManagementRepository.getOperationalTasksByProject(projectName); }
-  async getOperationalTask(id: number): Promise<OperationalTask | undefined> { return this.workManagementRepository.getOperationalTask(id); }
-  async createOperationalTask(data: InsertOperationalTask): Promise<OperationalTask> { return this.workManagementRepository.createOperationalTask(data); }
-  async updateOperationalTask(id: number, data: Partial<InsertOperationalTask>): Promise<OperationalTask> { return this.workManagementRepository.updateOperationalTask(id, data); }
+  async getAllOperationalTasks(): Promise<any[]> { return this.workManagementRepository.getAllOperationalTasks(); }
+  async getOperationalTasksByProject(projectName: string): Promise<any[]> { return this.workManagementRepository.getOperationalTasksByProject(projectName); }
+  async getOperationalTask(id: number): Promise<any | undefined> { return this.workManagementRepository.getOperationalTask(id); }
+  async createOperationalTask(data: any): Promise<any> { return this.workManagementRepository.createOperationalTask(data); }
+  async updateOperationalTask(id: number, data: any): Promise<any> { return this.workManagementRepository.updateOperationalTask(id, data); }
   async deleteOperationalTask(id: number): Promise<void> { return this.workManagementRepository.deleteOperationalTask(id); }
 
   async getTaskComments(taskId: number): Promise<TaskComment[]> { return this.workManagementRepository.getTaskComments(taskId); }

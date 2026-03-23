@@ -9,6 +9,8 @@ export async function registerCoreRoutes(app: Express) {
   registerEngineeringRoutes(app);
   const { registerEngStageRoutes } = await import("../eng-stage-routes");
   registerEngStageRoutes(app);
+  const { registerEngineeringIntakeRoutes } = await import("../engineering-intake-routes");
+  registerEngineeringIntakeRoutes(app);
   const { registerLifecycleRoutes } = await import("../lifecycle-routes");
   registerLifecycleRoutes(app);
   const { registerReportRoutes } = await import("../report-routes");
@@ -17,4 +19,20 @@ export async function registerCoreRoutes(app: Express) {
   registerTemplateRoutes(app);
   const { registerApiV2Routes } = await import("../api/v2/routes/v2-routes");
   registerApiV2Routes(app);
+  const { registerTaskManagementRoutes } = await import("../task-management-routes");
+  registerTaskManagementRoutes(app);
+  const { registerStandupRoutes } = await import("../standup-routes");
+  registerStandupRoutes(app);
+  try {
+    const { registerPmMonthlyReportRoutes } = await import("./pm-monthly-report-routes");
+    registerPmMonthlyReportRoutes(app);
+  } catch (err: any) {
+    console.error("[Startup:Routes] Failed to register PM monthly report routes:", err.message);
+  }
+  try {
+    const { registerEngineeringMonthlyReportRoutes } = await import("./engineering-monthly-report-routes");
+    registerEngineeringMonthlyReportRoutes(app);
+  } catch (err: any) {
+    console.error("[Startup:Routes] Failed to register Engineering monthly report routes:", err.message);
+  }
 }

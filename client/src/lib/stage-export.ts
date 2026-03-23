@@ -78,7 +78,7 @@ ${approvals.length ? `<h2>Approvals</h2>
 <table>
 <tr><th>Role</th><th>Status</th><th>Comments</th></tr>
 ${approvals.map((a: any) => `<tr>
-<td>${a.approverRole === "QA_REVIEW" ? "QA Review (Dean)" : "Technical Signoff (Tanaka)"}</td>
+<td>${a.approverRole === "QA_REVIEW" ? "QA Review" : "Technical Signoff"}${a.approverUserName ? ` (${a.approverUserName})` : ""}</td>
 <td><span class="badge ${a.status}">${a.status}</span></td>
 <td>${a.comments || ""}</td>
 </tr>`).join("")}

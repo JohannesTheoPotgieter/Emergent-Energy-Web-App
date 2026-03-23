@@ -1,5 +1,7 @@
 // @ts-nocheck
+import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
+import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
@@ -7,9 +9,9 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { insertBudgetSchema, projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, cosStatusOverrides, revenueTrackingOverrides, users, notifications, notificationThrottle, operationalTasks, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, engineeringTasks, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly } from "@shared/schema";
+import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests } from "@shared/schema";
+import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
-import { safeLegacyQuery } from "./legacy-table-guard";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
 import { z } from "zod";
@@ -21,12 +23,49 @@ import { scoreExpenseConfidence, scoreInflowConfidence, getAssumptionDriver } fr
 import { aggregateCOS, aggregateCOSByProject } from "./lib/calculations/cosAggregator";
 import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from "./lib/calculations/cashflow";
 import { runDataQualityChecks } from "./lib/calculations/dataQuality";
-import { buildOverrideMap, applyOverridesToCashflowLines, applyOverridesToCOSLines, computeMonthlyBuckets, getEffectiveDate } from "./lib/calculations/scenarioResolver";
+import { computeMonthlyBuckets } from "./lib/calculations/scenarioResolver";
 import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
+
+/** Record a manual edit flag for conflict detection during smart import */
+async function recordManualEditFlag(opts: {
+  entityType: string;
+  entityId: number;
+  fieldName: string;
+  editedByUserId?: number;
+  editedByName?: string;
+}) {
+  try {
+    // Upsert: update editedAt if flag already exists, otherwise create
+    const existing = await db
+      .select({ id: manualEditFlags.id })
+      .from(manualEditFlags)
+      .where(and(
+        eq(manualEditFlags.entityType, opts.entityType),
+        eq(manualEditFlags.entityId, opts.entityId),
+        eq(manualEditFlags.fieldName, opts.fieldName),
+      ))
+      .limit(1);
+
+    if (existing.length > 0) {
+      await db.update(manualEditFlags)
+        .set({ editedAt: new Date(), editedByUserId: opts.editedByUserId || null, editedByName: opts.editedByName || null })
+        .where(eq(manualEditFlags.id, existing[0].id));
+    } else {
+      await db.insert(manualEditFlags).values({
+        entityType: opts.entityType,
+        entityId: opts.entityId,
+        fieldName: opts.fieldName,
+        editedByUserId: opts.editedByUserId || null,
+        editedByName: opts.editedByName || null,
+      });
+    }
+  } catch (err: any) {
+    console.warn("[manual-edit-flag] Failed to record:", err.message);
+  }
+}
 import { requirePermission } from "./permission-middleware";
 import { createNameResolver, mapCostToExpenseInput } from "./lib/data-merge";
-import { sendExcelSyncNotification } from "./excel-sync-notifications";
 import { logAuditFromReq } from "./audit-logger";
 import { isWorkItemsEnabled, getWorkItemsAsNormalizedPlanTasks, getAllWorkItemsForPlanTab, getWorkItemsAsOperationalTasks, getWorkItemsAsMytoolTasks, getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, logApiError } from "./lib/api-error";
@@ -49,10 +88,7 @@ import {
   getCutoverPostValidationReport,
 } from "./services/promoted-read-compat";
 import {
-  mirrorWorkItemToOperationalTask,
   softDeleteCanonicalWorkItemByLegacyTaskId,
-  softDeleteLegacyOperationalTaskByWorkItemId,
-  syncOperationalTaskFromWorkItemUpdate,
 } from "./canonical-boundaries";
 import { listImportSyncState } from "./services/imports-governance-service";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
@@ -60,6 +96,8 @@ import { getPlatformProjectSummaryMap } from "./services/project-platform-summar
 import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
 import { mytoolTaskIdempotencyStore } from "./lib/mytool-task-idempotency";
 import { computeNextRecurrenceDate, computeMilestoneProgress, isOverdue, shouldBlockTask, validateDependencyPair } from "./lib/mytool-work-engine";
+import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag, DEFAULT_RAG_THRESHOLDS } from "@shared/kpi-definitions";
+import { STATIC_COS_BUDGET_FY26 } from "./lib/calculations/financeUtils";
 
 function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: string | null | undefined): boolean {
   if (fontColor === 'red') return false;
@@ -71,7 +109,9 @@ function isDateConfirmedCheck(confirmed: boolean | null | undefined, fontColor: 
 function isCosRealisedCheck(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  return hasInvoice && hasInvDate;
+  if (!hasInvoice || !hasInvDate) return false;
+  const invoiceDateBlack = isDateConfirmedCheck(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
+  return invoiceDateBlack;
 }
 
 function isCashflowConfirmedCheck(exp: any): boolean {
@@ -276,113 +316,6 @@ function coercePlanOverride(fieldName: string, value: any): any {
   return value;
 }
 
-function applyProjectPlanOverrides(
-  baselineRows: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const deletedRows = new Set<string>();
-  const overrideMap = new Map<string, Map<string, any>>();
-  const virtualMilestones = new Map<string, Map<string, any>>();
-
-  overrides.forEach((o: any) => {
-    const key = `${o.projectName}::${o.rowNumber}`;
-    if (o.fieldName === "isDeleted" && o.overrideValue === "true") {
-      deletedRows.add(key);
-      return;
-    }
-    if (o.rowNumber < 0) {
-      if (!virtualMilestones.has(key)) virtualMilestones.set(key, new Map());
-      virtualMilestones.get(key)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
-      return;
-    }
-    if (!overrideMap.has(key)) {
-      overrideMap.set(key, new Map());
-    }
-    overrideMap.get(key)!.set(o.fieldName, coercePlanOverride(o.fieldName, o.overrideValue));
-  });
-
-  for (const key of deletedRows) {
-    virtualMilestones.delete(key);
-  }
-
-  const result = baselineRows
-    .filter((row: any) => {
-      if (!row.rowNumber || !row.projectName) return true;
-      return !deletedRows.has(`${row.projectName}::${row.rowNumber}`);
-    })
-    .map((row: any) => {
-      if (!row.rowNumber || !row.projectName) return row;
-      const key = `${row.projectName}::${row.rowNumber}`;
-      if (!overrideMap.has(key)) return row;
-      const fieldOverrides = overrideMap.get(key)!;
-      const updatedRow = { ...row };
-      fieldOverrides.forEach((value, fieldName) => {
-        updatedRow[fieldName] = value;
-      });
-      return updatedRow;
-    });
-
-  for (const [key, fields] of virtualMilestones) {
-    const [projName, rowNumStr] = key.split("::");
-    const rowNumber = parseInt(rowNumStr);
-    const milestone: any = {
-      id: rowNumber,
-      projectName: projName,
-      rowNumber,
-      taskNo: fields.get("taskNo") || "",
-      highLevelProgramme: fields.get("highLevelProgramme") || "Milestone",
-      actualStart: fields.get("actualStart") || null,
-      actualEnd: fields.get("actualEnd") || null,
-      durationDays: fields.get("durationDays") || null,
-      actualPctComplete: fields.get("actualPctComplete") || null,
-      expectedPctComplete: fields.get("expectedPctComplete") || null,
-      parentRowNumber: fields.get("parentRowNumber") || null,
-      indentLevel: fields.get("indentLevel") ?? 0,
-      sortOrder: fields.get("sortOrder") ?? 0,
-      isMilestone: true,
-      isVirtual: true,
-    };
-    result.push(milestone);
-  }
-
-  return result;
-}
-
-// Apply revenue tracking overrides with type coercion
-function applyRevenueTrackingOverrides(
-  baselineRows: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      // Coerce inBank to number for consistent handling
-      if (fieldName === 'inBank') {
-        updatedRow[fieldName] = value === '1' || value === 1 || value === true ? 1 : 0;
-      } else {
-        updatedRow[fieldName] = value;
-      }
-    });
-    return updatedRow;
-  });
-}
-
 /**
  * Resolve effective dates for all inflows by applying the Revenue tab date hierarchy:
  *   1. dateOverride from milestone_task_links (manual override)
@@ -456,128 +389,12 @@ function resolveInflowEffectiveDates(
   });
 }
 
-// Apply expenditure overrides
-function applyExpenditureOverrides(
-  baselineRows: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      updatedRow[fieldName] = value;
-    });
-    return updatedRow;
-  });
-}
-
-function applyExpenditureOverridesWithConfirmed(
-  baselineRows: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineRows;
-
-  const overrideMap = new Map<number, Map<string, any>>();
-  overrides.forEach((o: any) => {
-    if (!overrideMap.has(o.rowNumber)) {
-      overrideMap.set(o.rowNumber, new Map());
-    }
-    overrideMap.get(o.rowNumber)!.set(o.fieldName, o.overrideValue);
-  });
-
-  return baselineRows.map((row: any) => {
-    if (!row.rowNumber || !overrideMap.has(row.rowNumber)) {
-      return row;
-    }
-    const fieldOverrides = overrideMap.get(row.rowNumber)!;
-    const updatedRow = { ...row };
-    fieldOverrides.forEach((value, fieldName) => {
-      updatedRow[fieldName] = value === '__null__' ? null : value;
-    });
-    if (fieldOverrides.has('invoiceDateFontColor')) {
-      updatedRow.invoiceDateConfirmed = fieldOverrides.get('invoiceDateFontColor') === 'black';
-    }
-    if (fieldOverrides.has('paymentDateFontColor')) {
-      updatedRow.paymentDateConfirmed = fieldOverrides.get('paymentDateFontColor') === 'black';
-    }
-    return updatedRow;
-  });
-}
-
-// Apply finance revenue overrides
-function applyFinanceRevenueOverrides(
-  baselineData: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineData;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.category}|${o.monthEndDate}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselineData.map((row: any) => {
-    const key = `${row.category}|${row.monthEndDate}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...row,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return row;
-  });
-}
-
-// Apply finance COS overrides
-function applyFinanceCosOverrides(
-  baselineData: any[],
-  overrides: any[]
-): any[] {
-  if (overrides.length === 0) return baselineData;
-
-  const overrideMap = new Map<string, number>();
-  overrides.forEach((o: any) => {
-    const key = `${o.category}|${o.monthEndDate}`;
-    const numValue = typeof o.overrideValue === 'string' ? parseFloat(o.overrideValue) : o.overrideValue;
-    if (!isNaN(numValue)) {
-      overrideMap.set(key, numValue);
-    }
-  });
-
-  return baselineData.map((row: any) => {
-    const key = `${row.category}|${row.monthEndDate}`;
-    if (overrideMap.has(key)) {
-      return {
-        ...row,
-        value: overrideMap.get(key)!,
-      };
-    }
-    return row;
-  });
-}
 
 const requireAuth = sharedRequireAuth;
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") {
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
     return next();
   }
   res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
@@ -594,21 +411,21 @@ function requireRole(...roles: string[]) {
 
 function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   if ((req.session as any)?.qmChallengePassed) return next();
   res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
 }
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "Engineering Program Manager access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
 function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN" || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN" || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required", code: "ROLE_REQUIRED" });
 }
 
@@ -633,18 +450,11 @@ async function sendPlanChangeNotifications(
 
     const detailsJson = JSON.stringify({ projectName, changedBy: changedByUser?.name || "Unknown", changes: changeDetails, timestamp: new Date().toISOString() });
 
-    for (const recipient of recipients) {
-      if (recipient.id === changedByUserId) continue;
-      await db.insert(notifications).values({
-        recipientUserId: recipient.id,
-        eventType: "plan.change_confirmation",
-        title: `Plan updated: ${projectName}`,
-        body: `${changedByUser?.name || "Someone"} made changes to the project plan. ${changeDescription} Please confirm you have captured this in the Excel tracker.`,
-        projectName,
-        requiresConfirmation: true,
-        changeDetails: detailsJson,
-      });
-    }
+    // Notifications feature removed - notification inserts are now no-ops
+    // for (const recipient of recipients) {
+    //   if (recipient.id === changedByUserId) continue;
+    //   await db.insert(notifications).values({...});
+    // }
   } catch (err: any) {
     console.warn("[plan-notify] Failed to send plan change notifications:", err.message);
   }
@@ -901,6 +711,159 @@ export async function registerRoutes(
     }
   });
   
+  // GC-003 + GC-005: Server-side KPI health-summary endpoint with configurable RAG thresholds
+  app.get("/api/projects/:projectName/health-summary", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { projectName } = req.params;
+      const decodedName = decodeURIComponent(projectName);
+
+      // Fetch all data in parallel
+      const [expenses, inflows, planTasks, qualitySummaryRes, projectInfoRow, engStagesRes, engTasksRes] = await Promise.all([
+        storage.getProgramExpensesByProject(decodedName),
+        storage.getProgramInflowsByProject(decodedName),
+        (async () => {
+          const useCanonical = await isWorkItemsEnabled();
+          if (useCanonical) {
+            return getAllWorkItemsForPlanTab(decodedName);
+          }
+          return storage.getProjectPlansByProject(decodedName);
+        })(),
+        (async () => {
+          try {
+            const rows = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, decodedName));
+            if (rows.length === 0) return { hasChecklist: false, phases: [] };
+            const checklist = rows[0];
+            const items = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
+            const phaseMap = new Map<string, { applicableItems: number; approvedItems: number }>();
+            for (const item of items) {
+              const phase = item.phaseName || "Unknown";
+              if (!phaseMap.has(phase)) phaseMap.set(phase, { applicableItems: 0, approvedItems: 0 });
+              const p = phaseMap.get(phase)!;
+              p.applicableItems++;
+              if (item.status === "PASS" || item.status === "N/A") p.approvedItems++;
+            }
+            return { hasChecklist: true, phases: Array.from(phaseMap.values()) };
+          } catch { return { hasChecklist: false, phases: [] }; }
+        })(),
+        storage.getProjectInfoByName(decodedName),
+        (async () => {
+          try {
+            const pid = (await storage.getProjectInfoByName(decodedName))?.id;
+            if (!pid) return { stages: [] };
+            const stagesRes = await db.query.projectEngStages?.findMany({ where: (s: any, { eq: eq2 }: any) => eq2(s.projectId, pid) });
+            return { stages: stagesRes || [] };
+          } catch { return { stages: [] }; }
+        })(),
+        (async () => {
+          try {
+            const pid = (await storage.getProjectInfoByName(decodedName))?.id;
+            if (!pid) return { tasks: [] };
+            // Read from work_items (ENG workstream)
+            const tasks = await db.select().from(workItems).where(and(eq(workItems.projectId, pid), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
+            return { tasks };
+          } catch { return { tasks: [] }; }
+        })(),
+      ]);
+
+      // Contract value and budget
+      const totalRevenueActual = inflows.reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
+      const contractValue = (projectInfoRow as any)?.contractValue || totalRevenueActual || 0;
+      const totalBudgetFromExpenses = expenses.reduce((s: number, e: any) => s + (Number(e.budgetTotal) || 0), 0);
+      const budgetTotal = (projectInfoRow as any)?.budgetTotal || totalBudgetFromExpenses || 0;
+
+      // Schedule RAG
+      const today = new Date().toISOString().split("T")[0];
+      const overduePlanTasks = (planTasks as any[]).filter((t: any) => {
+        const endDate = t.actualEndDate || t.dueDate || t.actualEnd || t.endDate;
+        const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+        const pctNorm = pct > 1 ? pct : pct * 100;
+        return endDate && endDate.substring(0, 10) < today && pctNorm < 100;
+      });
+      const completedPlanTasks = (planTasks as any[]).filter((t: any) => {
+        const pct = t.percentComplete != null ? Number(t.percentComplete) : (Number(t.actualPctComplete) || 0);
+        const pctNorm = pct > 1 ? pct : pct * 100;
+        return pctNorm >= 100;
+      });
+      const planCompletionPct = planTasks.length > 0 ? (completedPlanTasks.length / planTasks.length) * 100 : 0;
+      // Include overdue engineering tasks in schedule health
+      const overdueEngTasks = (engTasksRes.tasks || []).filter((t: any) => {
+        const due = t.endDate || t.dueDate;
+        return due && String(due).substring(0, 10) < today && String(t.status).toUpperCase() !== "COMPLETE";
+      });
+      const scheduleRag = computeScheduleRag(overduePlanTasks.length + overdueEngTasks.length);
+
+      // Cost RAG
+      const totalExpenses = expenses.reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
+      const costRatio = budgetTotal > 0 ? totalExpenses / budgetTotal : 0;
+      const costRag = computeCostRag(costRatio);
+
+      // Quality RAG — combines QC checklist gates with engineering stage gates
+      const qualityPhases = qualitySummaryRes.phases || [];
+      const qcGatesTotal = qualityPhases.length;
+      const qcGatesPassed = qualityPhases.filter((p: any) => p.applicableItems > 0 && p.approvedItems >= p.applicableItems).length;
+      const qualityTotalItems = qualityPhases.reduce((s: number, p: any) => s + (p.applicableItems || 0), 0);
+      const qualityApprovedItems = qualityPhases.reduce((s: number, p: any) => s + (p.approvedItems || 0), 0);
+
+      // Engineering stages as quality gates
+      const engStagesForQuality = engStagesRes.stages || [];
+      const engGatesTotal = engStagesForQuality.length;
+      const engGatesPassed = engStagesForQuality.filter((s: any) => String(s.status).toLowerCase() === "complete").length;
+
+      // Combined quality gates
+      const qualityGatesTotal = qcGatesTotal + engGatesTotal;
+      const qualityGatesPassed = qcGatesPassed + engGatesPassed;
+      const hasQualityData = qualitySummaryRes.hasChecklist || engGatesTotal > 0;
+      const combinedTotalItems = qualityTotalItems + engGatesTotal;
+      const combinedApprovedItems = qualityApprovedItems + engGatesPassed;
+      const qualityProgressPct = combinedTotalItems > 0 ? (combinedApprovedItems / combinedTotalItems) * 100 : 0;
+      const qualityRag = computeQualityRag(hasQualityData, qualityGatesPassed, qualityGatesTotal, combinedApprovedItems);
+
+      // Revenue realised %
+      const totalPaidInflows = inflows
+        .filter((m: any) => m.inBank === 1 || m.inBank === true)
+        .reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const revenueRealisedPct = contractValue > 0 ? (totalPaidInflows / contractValue) * 100 : 0;
+
+      // COS realised %
+      const isCosRealised = (e: any) => isCosRealisedCheck(e);
+      const totalRealisedCos = expenses.reduce((s: number, e: any) => isCosRealised(e) ? s + (Number(e.expenseActualTotal) || 0) : s, 0);
+      const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
+      const cosRealisedPct = cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0;
+
+      // Overall RAG
+      const overallRag = computeOverallRag(scheduleRag, costRag, qualityRag);
+
+      // Engineering progress
+      const engStages = engStagesRes.stages || [];
+      const engStageTotalTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.length || 0), 0);
+      const engStageCompletedTasks = engStages.reduce((s: number, st: any) => s + (st.tasks?.filter((t: any) => String(t.status).toUpperCase() === "COMPLETE").length || 0), 0);
+      const engBoardTasks = engTasksRes.tasks || [];
+      const engBoardTotal = engBoardTasks.length;
+      const engBoardCompleted = engBoardTasks.filter((t: any) => String(t.status).toUpperCase() === "COMPLETE").length;
+      const engTotalTasks = engStageTotalTasks + engBoardTotal;
+      const engCompletedTasks = engStageCompletedTasks + engBoardCompleted;
+      const engProgressPct = engTotalTasks > 0 ? (engCompletedTasks / engTotalTasks) * 100 : 0;
+
+      res.json({
+        schedule: { rag: scheduleRag, overdueTasks: overduePlanTasks.length, overdueEngTasks: overdueEngTasks.length, completionPct: Math.round(planCompletionPct * 10) / 10 },
+        cost: { rag: costRag, ratio: Math.round(costRatio * 1000) / 1000, totalExpenses, budgetTotal },
+        quality: { rag: qualityRag, gatesTotal: qualityGatesTotal, gatesPassed: qualityGatesPassed, qcGatesTotal, qcGatesPassed, engGatesTotal, engGatesPassed, totalItems: combinedTotalItems, approvedItems: combinedApprovedItems, progressPct: Math.round(qualityProgressPct * 10) / 10 },
+        revenue: { contractValue, realisedPct: Math.round(revenueRealisedPct * 10) / 10, totalPaidInflows },
+        cos: { realisedPct: Math.round(cosRealisedPct * 10) / 10, totalRealised: totalRealisedCos },
+        engineering: { progressPct: Math.round(engProgressPct * 10) / 10, totalTasks: engTotalTasks, completedTasks: engCompletedTasks },
+        overall: { rag: overallRag },
+        alerts: {
+          overduePlanTasks: overduePlanTasks.length,
+          overdueEngineeringTasks: overdueEngTasks.length,
+          pendingQualityApprovals: Math.max(qualityTotalItems - qualityApprovedItems, 0),
+        },
+      });
+    } catch (error: any) {
+      logApiError("GET /api/projects/:projectName/health-summary", error);
+      res.status(500).json({ error: "Failed to compute project health summary" });
+    }
+  });
+
   await registerAuthRoutes(app);
 
   // ==================== OVERVIEW API ====================
@@ -916,8 +879,8 @@ export async function registerRoutes(
         storage.getLatestRefresh(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        db.select().from(normalizedCostLines),
-        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
         useCanonicalOv
           ? (async () => {
               const [wiRows, piRows] = await Promise.all([
@@ -1172,11 +1135,11 @@ export async function registerRoutes(
         storage.getAllProjectRevenueSummaries(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        storage.getAllProjectPlanOverrides(),
+        Promise.resolve([]),
         getAllPMWorkItemsAsProjectPlan(),
       ]);
       const allExpenses = legacyExpenses;
-      const allPlans = applyProjectPlanOverrides(legacyPlans, allPlanOverrides);
+      const allPlans = legacyPlans;
       const allInflows = resolveInflowEffectiveDates(legacyRawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const today = new Date().toISOString().split("T")[0];
@@ -1815,17 +1778,17 @@ export async function registerRoutes(
       const usePromotedProjectDetail = rolloutFlags.promoted_core_project_detail_read;
 
       const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows, allClientsData, handoverRows] = await Promise.all([
-        usePromotedProjectDetail ? listProjectInfoFromPromotedCoreCompat() : storage.getAllProjectInfo(),
-        storage.getAllProgramExpenses(),
-        storage.getAllProgramInflows(),
-        storage.getAllProjectPlans(),
-        storage.getAllProjectEditableFields(),
-        storage.getAllMilestoneTaskLinks(),
-        storage.getAllOperationalTasks(),
-        db.selectDistinct({ fileName: uploadMetadata.fileName }).from(uploadMetadata),
-        db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
-        db.select().from(normalizedCostLines),
-        db.select().from(normalizedRevenueLines),
+        (usePromotedProjectDetail ? listProjectInfoFromPromotedCoreCompat() : storage.getAllProjectInfo()).catch((e: any) => { console.warn("[projects-summary] allProjectInfo failed:", e.message); return []; }),
+        storage.getAllProgramExpenses().catch((e: any) => { console.warn("[projects-summary] allExpenses failed:", e.message); return []; }),
+        storage.getAllProgramInflows().catch((e: any) => { console.warn("[projects-summary] rawInflows failed:", e.message); return []; }),
+        storage.getAllProjectPlans().catch((e: any) => { console.warn("[projects-summary] rawPlans failed:", e.message); return []; }),
+        storage.getAllProjectEditableFields().catch((e: any) => { console.warn("[projects-summary] allEditableFields failed:", e.message); return []; }),
+        storage.getAllMilestoneTaskLinks().catch((e: any) => { console.warn("[projects-summary] allTaskLinks failed:", e.message); return []; }),
+        storage.getAllOperationalTasks().catch((e: any) => { console.warn("[projects-summary] allOpTasks failed:", e.message); return []; }),
+        db.selectDistinct({ fileName: uploadMetadata.fileName }).from(uploadMetadata).catch((e: any) => { console.warn("[projects-summary] uploadMetadata failed:", e.message); return []; }),
+        db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')).catch((e: any) => { console.warn("[projects-summary] smartImportRuns failed:", e.message); return []; }),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)).catch((e: any) => { console.warn("[projects-summary] normalizedCostLines failed:", e.message); return []; }),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)).catch((e: any) => { console.warn("[projects-summary] normalizedRevenueLines failed:", e.message); return []; }),
         useCanonicalPs
           ? (async () => {
               const [wiRows, piRows] = await Promise.all([
@@ -1898,8 +1861,8 @@ export async function registerRoutes(
                 scheduledStartTime: null,
                 scheduledEndTime: null,
               }));
-            })(),
-        storage.getAllProjectPlanOverrides(),
+            })().catch((e: any) => { console.warn("[projects-summary] work items failed:", e.message); return []; }),
+        Promise.resolve([]),
         db
           .select({
             projectName: smartImportRuns.projectName,
@@ -1907,11 +1870,12 @@ export async function registerRoutes(
           })
           .from(smartImportRuns)
           .where(eq(smartImportRuns.status, 'COMMITTED'))
-          .groupBy(smartImportRuns.projectName),
-        usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients),
-        db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)),
+          .groupBy(smartImportRuns.projectName)
+          .catch((e: any) => { console.warn("[projects-summary] lastImportRows failed:", e.message); return []; }),
+        (usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients)).catch((e: any) => { console.warn("[projects-summary] clients failed:", e.message); return []; }),
+        db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)).catch(() => ({ rows: [] })),
       ]);
-      const allPlans = applyProjectPlanOverrides(rawPlans, allPlanOverrides);
+      const allPlans = rawPlans;
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
       const clientMap = new Map(allClientsData.map(c => [c.id, c.name]));
@@ -2095,7 +2059,8 @@ export async function registerRoutes(
 
       const taskCountsByProject = new Map<string, Record<string, number>>();
       for (const task of allOpTasks) {
-        const rawName = task.projectName;
+        const rawName = task.projectName || "";
+        if (!rawName) continue;
         const trackerName = rawName.replace(/ /g, "_") + (rawName.endsWith("_Tracker") ? "" : "_Tracker");
         const key = allProjectNames.has(trackerName) ? trackerName : rawName;
         if (!taskCountsByProject.has(key)) taskCountsByProject.set(key, {});
@@ -2108,7 +2073,7 @@ export async function registerRoutes(
       const currentUserId = currentUser?.id || currentUser?.userId;
       const currentUserName = currentUser?.name || "";
       const currentRole = currentUser?.role || "";
-      const FULL_OVERSIGHT_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT", "CONSTRUCTION_MANAGER"];
+      const { FULL_OVERSIGHT_ROLES } = await import("./services/project-access-service");
       const isFullOversight = FULL_OVERSIGHT_ROLES.includes(currentRole);
 
       const userOwnedProjectIds = new Set<number>();
@@ -2466,7 +2431,11 @@ export async function registerRoutes(
       });
 
       let finalResult = projectsSummary;
-      if (scopeParam === "owned" && !isFullOversight) {
+      // RLS enforcement: scoped users see all projects but can be narrowed with scope=owned
+      if (!isFullOversight && scopeParam === "owned") {
+        finalResult = projectsSummary.filter((p: any) => p._user_scope === "owned" || p._user_scope === "assigned");
+      } else if (scopeParam === "owned") {
+        // Full oversight users can optionally narrow to their own projects
         finalResult = projectsSummary.filter((p: any) => p._user_scope === "owned" || p._user_scope === "assigned");
       }
 
@@ -2474,6 +2443,9 @@ export async function registerRoutes(
         projectIds: finalResult
           .map((project: any) => Number(project.project_info_id))
           .filter((value: number) => Number.isFinite(value)),
+      }).catch((err: any) => {
+        console.warn("getPlatformProjectSummaryMap failed (non-fatal):", err.message);
+        return new Map();
       });
       finalResult = finalResult.map((project: any) => ({
         ...project,
@@ -2483,12 +2455,16 @@ export async function registerRoutes(
       }));
 
       if (usePromotedProjectDetail || req.query.compare === "1" || req.query.compare === "true") {
-        const projectDetailComparison = await compareProjectDetailMasterReadiness();
-        if (projectDetailComparison.status !== "ready") {
-          console.warn("[promoted-read][project-detail] mismatch detected", projectDetailComparison);
+        try {
+          const projectDetailComparison = await compareProjectDetailMasterReadiness();
+          if (projectDetailComparison.status !== "ready") {
+            console.warn("[promoted-read][project-detail] mismatch detected", projectDetailComparison);
+          }
+          res.setHeader("X-Promoted-Project-Detail-Read", usePromotedProjectDetail ? "enabled" : "disabled");
+          res.setHeader("X-Promoted-Project-Detail-Comparison-Status", projectDetailComparison.status);
+        } catch (compErr: any) {
+          console.warn("compareProjectDetailMasterReadiness failed (non-fatal):", compErr.message);
         }
-        res.setHeader("X-Promoted-Project-Detail-Read", usePromotedProjectDetail ? "enabled" : "disabled");
-        res.setHeader("X-Promoted-Project-Detail-Comparison-Status", projectDetailComparison.status);
       }
 
       res.json(finalResult);
@@ -2515,16 +2491,17 @@ export async function registerRoutes(
         return d >= fyStart && d <= fyEnd;
       };
 
-      const { normalizedCostLines, normalizedRevenueLines, projectInfo } = await import("@shared/schema");
+      const { normalizedCostLines, normalizedRevenueLines, projectInfo, projectExecutionState } = await import("@shared/schema");
 
       const HARD_EXCLUDED = ["Closed", "Gone"];
       const activeProjectsResult = await db.select({
         projectName: projectInfo.projectName,
-        phase: projectInfo.executionPhase,
-        phaseUpdatedAt: projectInfo.phaseUpdatedAt,
+        phase: projectExecutionState.executionPhase,
+        phaseUpdatedAt: projectExecutionState.phaseUpdatedAt,
       })
         .from(projectInfo)
-        .where(sql`${projectInfo.isActive} IS NOT FALSE`);
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(sql`${projectExecutionState.isActive} IS NOT FALSE`);
       const activeNames = new Set(
         activeProjectsResult
           .filter(p => {
@@ -2543,8 +2520,8 @@ export async function registerRoutes(
       );
 
       const [allNormCosts, allNormRev] = await Promise.all([
-        db.select().from(normalizedCostLines),
-        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
       ]);
 
       let totalRevenue = 0;
@@ -2694,14 +2671,6 @@ export async function registerRoutes(
       }
       const result = await storage.upsertProjectEditableFields(data as any);
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "project_info_update",
-        changeDescription: "Project summary fields were edited.",
-        details: parsed,
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "project_info", action: "update", entityId: projectName, projectName, changesJson: { description: "Project summary fields edited", ...parsed } });
       const project = await storage.getProjectInfo(projectName);
       if (project) {
@@ -2746,14 +2715,6 @@ export async function registerRoutes(
       };
       const result = await storage.upsertProjectEditableFields(data as any);
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "project_info_update",
-        changeDescription: "Project latest update comment was changed.",
-        details: { latestUpdate },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "project_info", action: "update_comment", entityId: projectName, projectName, changesJson: { description: "Latest update comment changed", latestUpdate } });
       const project = await storage.getProjectInfo(projectName);
       if (project) {
@@ -2786,13 +2747,6 @@ export async function registerRoutes(
       const result = await storage.updateProjectInfoById(id, { escalationLevel });
 
       if (result) {
-        sendExcelSyncNotification({
-          projectName: result.projectName,
-          changedByUserId: req.user?.id || 0,
-          changeType: "escalation_update",
-          changeDescription: `Escalation level changed to ${escalationLevel || "None"}.`,
-          details: { escalationLevel },
-        }).catch(() => {});
       }
 
       logAuditFromReq(req, { entityType: "project_info", action: "escalation_update", entityId: String(id), changesJson: { description: "Escalation level updated", escalationLevel } });
@@ -2875,11 +2829,16 @@ export async function registerRoutes(
 
         let projectOutflowsSum = 0;
         for (const expense of allExpenses) {
+          // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
+          if (expense.rowType !== 'item') continue;
           if (projectFilter && expense.projectName !== projectFilter) continue;
-          const d = expense.expensePaymentDate;
+          // Use effective payment date: actual, then computed forecast, then forecast, then invoice date
+          const d = expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
           if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-          if (d >= weekStart && d < weekEnd && expense.expenseActualTotal) {
-            projectOutflowsSum += parseFloat(expense.expenseActualTotal) || 0;
+          // Use actual total with budget fallback, matching project-detail level logic
+          const amt = parseFloat(expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
+          if (d >= weekStart && d < weekEnd && amt > 0) {
+            projectOutflowsSum += amt;
           }
         }
 
@@ -3305,14 +3264,14 @@ export async function registerRoutes(
         const budget = manual?.budget ? parseFloat(manual.budget) : 0;
 
         const variance = planned - budget;
-        const variancePct = budget !== 0 ? (planned - budget) / budget : 0;
+        const variancePct = budget !== 0 ? ((planned - budget) / budget) * 100 : 0;
 
         ytdPlanned += planned;
         ytdRealised += realised;
         ytdOutstanding += outstanding;
         ytdBudget += budget;
         const ytdVariance = ytdPlanned - ytdBudget;
-        const ytdVariancePct = ytdBudget !== 0 ? (ytdPlanned - ytdBudget) / ytdBudget : 0;
+        const ytdVariancePct = ytdBudget !== 0 ? ((ytdPlanned - ytdBudget) / ytdBudget) * 100 : 0;
 
         months.push({
           monthKey,
@@ -3343,17 +3302,16 @@ export async function registerRoutes(
 
   app.get("/api/cos-tracker", requireAuth, async (req, res) => {
     try {
-      const [legacyExpenses, manualEntries, legacyRawInflows, allTaskLinks, allOpTasks, allPlans, allOverrides] = await Promise.all([
+      const [legacyExpenses, manualEntries, legacyRawInflows, allTaskLinks, allOpTasks, allPlans] = await Promise.all([
         storage.getAllProgramExpenses(),
         storage.getTrackerMonthlyManual('COS'),
         storage.getAllProgramInflows(),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
         storage.getAllProjectPlans(),
-        storage.getAllExpenditureOverrides(),
       ]);
       const mergedData = await getMergedExpensesAndInflows(
-        applyExpenditureOverridesWithConfirmed(legacyExpenses, allOverrides),
+        legacyExpenses,
         legacyRawInflows
       );
       const allProgramExpenses = mergedData.expenses;
@@ -3414,21 +3372,6 @@ export async function registerRoutes(
         }
       }
 
-      const staticCosBudget: Record<string, number> = {
-        '2025-09': 8083466.99,
-        '2025-10': 16346971.77,
-        '2025-11': 20803804.86,
-        '2025-12': 12381055.48,
-        '2026-01': 12395435.22,
-        '2026-02': 20724666.08,
-        '2026-03': 30199956.69,
-        '2026-04': 21137178.14,
-        '2026-05': 31405517.81,
-        '2026-06': 41720854.07,
-        '2026-07': 30116780.50,
-        '2026-08': 73983803.91,
-      };
-
       const months: any[] = [];
       const startMonth = new Date(Date.UTC(2025, 8, 1));
 
@@ -3455,10 +3398,10 @@ export async function registerRoutes(
         const unrealisedCOS = Math.max(0, totalCOS - realisedCOS);
 
         const manual = manualMap.get(monthKey);
-        const budget = manual?.budget ? parseFloat(manual.budget) : (staticCosBudget[monthKey] ?? 0);
+        const budget = manual?.budget ? parseFloat(manual.budget) : (STATIC_COS_BUDGET_FY26[monthKey] ?? 0);
 
         const variance = totalCOS - budget;
-        const variancePct = budget !== 0 ? variance / budget : 0;
+        const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
         const revRealised = revByMonth.get(monthKey) ?? 0;
         ytdCOS += totalCOS;
@@ -3467,7 +3410,7 @@ export async function registerRoutes(
         ytdRevRealised += revRealised;
         const ytdUnrealised = ytdCOS - ytdRealised;
         const ytdVariance = ytdCOS - ytdBudget;
-        const ytdVariancePct = ytdBudget !== 0 ? ytdVariance / ytdBudget : 0;
+        const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
 
         months.push({
           monthKey,
@@ -3516,12 +3459,9 @@ export async function registerRoutes(
       const match = monthKey.match(/^(\d{4})-(\d{2})$/);
       if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
-      const [legacyExp, allOverrides] = await Promise.all([
-        storage.getAllProgramExpenses(),
-        storage.getAllExpenditureOverrides(),
-      ]);
+      const legacyExp = await storage.getAllProgramExpenses();
       const { expenses: allExpenses } = await getMergedExpensesAndInflows(
-        applyExpenditureOverridesWithConfirmed(legacyExp, allOverrides), []
+        legacyExp, []
       );
 
       interface LineItem {
@@ -3679,19 +3619,237 @@ export async function registerRoutes(
         console.warn("[audit] COS realisation toggle audit failed:", auditErr.message);
       }
 
-      sendExcelSyncNotification({
-        projectName: expense.projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "cos_realisation_toggle",
-        changeDescription: `COS realisation ${realised ? 'marked' : 'unmarked'} for expense ${id}.`,
-        details: { expenseId: id, realised },
-      }).catch(() => {});
+      // Record manual edit flag for import conflict detection
+      recordManualEditFlag({
+        entityType: "program_expense",
+        entityId: id,
+        fieldName: "invoiceDateConfirmed",
+        editedByUserId: req.user?.id,
+        editedByName: (req as any).user?.name,
+      });
 
       logAuditFromReq(req, { entityType: "cos_realisation", action: "toggle", entityId: String(id), projectName: expense.projectName, changesJson: { description: `${realised ? 'Marked' : 'Unmarked'} as COS realised`, expenseId: id, realised } });
       res.json({ success: true, id, realised });
     } catch (error) {
       console.error("Toggle realised error:", error);
       res.status(500).json({ error: "Failed to toggle realised status" });
+    }
+  });
+
+  // ==================== REALISATION KPIs (Weekly / Monthly / Yearly) ====================
+
+  app.get("/api/realisation-kpis", requireAuth, async (req, res) => {
+    try {
+      const legacyExpenses = await storage.getAllProgramExpenses();
+      const { expenses: allExpenses } = await getMergedExpensesAndInflows(
+        legacyExpenses, []
+      );
+
+      const now = new Date();
+      const currentMK = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+      // FY runs Sep–Aug
+      const fyStartYear = now.getMonth() >= 8 ? now.getFullYear() : now.getFullYear() - 1;
+      const fyStart = new Date(Date.UTC(fyStartYear, 8, 1)); // Sep 1
+      const fyEnd = new Date(Date.UTC(fyStartYear + 1, 7, 31)); // Aug 31
+
+      // Week boundaries (Monday-based)
+      function getMonday(d: Date): Date {
+        const day = d.getDay();
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const m = new Date(d); m.setDate(diff); m.setHours(0,0,0,0); return m;
+      }
+      function getSunday(mon: Date): Date {
+        const s = new Date(mon); s.setDate(mon.getDate() + 6); return s;
+      }
+      function toStr(d: Date): string { return d.toISOString().split('T')[0]; }
+
+      const thisWeekMon = getMonday(new Date(now));
+      const thisWeekSun = getSunday(thisWeekMon);
+      const lastWeekMon = new Date(thisWeekMon); lastWeekMon.setDate(lastWeekMon.getDate() - 7);
+      const lastWeekSun = getSunday(lastWeekMon);
+
+      // Month boundaries
+      const thisMonthStart = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1));
+      const thisMonthEnd = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0));
+      const lastMonthStart = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1));
+      const lastMonthEnd = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0));
+
+      interface PeriodBucket {
+        total: number;
+        realised: number;
+        unrealised: number;
+        lineCount: number;
+        realisedCount: number;
+        byProject: Map<string, { total: number; realised: number }>;
+      }
+      function emptyBucket(): PeriodBucket {
+        return { total: 0, realised: 0, unrealised: 0, lineCount: 0, realisedCount: 0, byProject: new Map() };
+      }
+
+      // COS monthly series (for sparklines)
+      const cosMonthly = new Map<string, { total: number; realised: number }>();
+      // Cashflow monthly series
+      const cfMonthly = new Map<string, { total: number; realised: number }>();
+
+      // Period buckets
+      const cosThisWeek = emptyBucket(), cosLastWeek = emptyBucket();
+      const cosThisMonth = emptyBucket(), cosLastMonth = emptyBucket();
+      const cosYTD = emptyBucket();
+      const cfThisWeek = emptyBucket(), cfLastWeek = emptyBucket();
+      const cfThisMonth = emptyBucket(), cfLastMonth = emptyBucket();
+      const cfYTD = emptyBucket();
+
+      function inRange(dateStr: string | null, start: Date, end: Date): boolean {
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return false;
+        d.setHours(0,0,0,0);
+        return d >= start && d <= end;
+      }
+
+      function addToBucket(bucket: PeriodBucket, amount: number, isRealised: boolean, projectName: string) {
+        bucket.total += amount;
+        bucket.lineCount++;
+        if (isRealised) { bucket.realised += amount; bucket.realisedCount++; }
+        else { bucket.unrealised += amount; }
+        if (!bucket.byProject.has(projectName)) bucket.byProject.set(projectName, { total: 0, realised: 0 });
+        const p = bucket.byProject.get(projectName)!;
+        p.total += amount;
+        if (isRealised) p.realised += amount;
+      }
+
+      for (const exp of allExpenses) {
+        if (exp.rowType !== 'item') continue;
+        const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
+        if (isNaN(amount) || amount === 0) continue;
+        const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
+
+        // COS: uses invoice date for bucketing
+        const invDate = exp.expenseInvoicedDate as string | null;
+        if (invDate) {
+          const invDateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+          if (invDateMatch) {
+            const mk = `${invDateMatch[1]}-${invDateMatch[2]}`;
+            const isCosReal = isCosRealisedCheck(exp) && mk <= currentMK;
+
+            // Monthly series
+            if (!cosMonthly.has(mk)) cosMonthly.set(mk, { total: 0, realised: 0 });
+            const cm = cosMonthly.get(mk)!;
+            cm.total += amount;
+            if (isCosReal) cm.realised += amount;
+
+            // Weekly buckets
+            if (inRange(invDate, thisWeekMon, thisWeekSun)) addToBucket(cosThisWeek, amount, isCosReal, pName);
+            if (inRange(invDate, lastWeekMon, lastWeekSun)) addToBucket(cosLastWeek, amount, isCosReal, pName);
+
+            // Monthly buckets
+            if (inRange(invDate, thisMonthStart, thisMonthEnd)) addToBucket(cosThisMonth, amount, isCosReal, pName);
+            if (inRange(invDate, lastMonthStart, lastMonthEnd)) addToBucket(cosLastMonth, amount, isCosReal, pName);
+
+            // YTD (within FY)
+            if (inRange(invDate, fyStart, fyEnd)) addToBucket(cosYTD, amount, isCosReal, pName);
+          }
+        }
+
+        // Cashflow: uses payment date for bucketing
+        const payDate = exp.expensePaymentDate as string | null;
+        if (payDate) {
+          const payDateMatch = payDate.match(/^(\d{4})-(\d{2})/);
+          if (payDateMatch) {
+            const mk = `${payDateMatch[1]}-${payDateMatch[2]}`;
+            const isCfReal = isCashflowConfirmedCheck(exp) && mk <= currentMK;
+
+            // Monthly series
+            if (!cfMonthly.has(mk)) cfMonthly.set(mk, { total: 0, realised: 0 });
+            const cfm = cfMonthly.get(mk)!;
+            cfm.total += amount;
+            if (isCfReal) cfm.realised += amount;
+
+            // Weekly buckets
+            if (inRange(payDate, thisWeekMon, thisWeekSun)) addToBucket(cfThisWeek, amount, isCfReal, pName);
+            if (inRange(payDate, lastWeekMon, lastWeekSun)) addToBucket(cfLastWeek, amount, isCfReal, pName);
+
+            // Monthly buckets
+            if (inRange(payDate, thisMonthStart, thisMonthEnd)) addToBucket(cfThisMonth, amount, isCfReal, pName);
+            if (inRange(payDate, lastMonthStart, lastMonthEnd)) addToBucket(cfLastMonth, amount, isCfReal, pName);
+
+            // YTD
+            if (inRange(payDate, fyStart, fyEnd)) addToBucket(cfYTD, amount, isCfReal, pName);
+          }
+        }
+      }
+
+      function serializeBucket(bucket: PeriodBucket) {
+        const projects: { projectName: string; total: number; realised: number; unrealised: number }[] = [];
+        bucket.byProject.forEach((v, k) => {
+          projects.push({ projectName: k, total: v.total, realised: v.realised, unrealised: v.total - v.realised });
+        });
+        projects.sort((a, b) => b.total - a.total);
+        return {
+          total: bucket.total,
+          realised: bucket.realised,
+          unrealised: bucket.unrealised,
+          realisedPct: bucket.total > 0 ? Number(((bucket.realised / bucket.total) * 100).toFixed(1)) : 0,
+          lineCount: bucket.lineCount,
+          realisedCount: bucket.realisedCount,
+          projects,
+        };
+      }
+
+      // Build monthly sparkline series (FY months only)
+      function buildSeries(monthlyMap: Map<string, { total: number; realised: number }>) {
+        const series: { monthKey: string; label: string; total: number; realised: number; unrealised: number; realisedPct: number }[] = [];
+        for (let i = 0; i < 12; i++) {
+          const d = new Date(Date.UTC(fyStartYear, 8 + i, 1));
+          const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+          const data = monthlyMap.get(mk);
+          const total = data?.total ?? 0;
+          const realised = data?.realised ?? 0;
+          series.push({
+            monthKey: mk,
+            label: d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }),
+            total, realised,
+            unrealised: total - realised,
+            realisedPct: total > 0 ? Number(((realised / total) * 100).toFixed(1)) : 0,
+          });
+        }
+        return series;
+      }
+
+      // Budget variance for COS YTD
+      let ytdBudget = 0;
+      for (let i = 0; i < 12; i++) {
+        const d = new Date(Date.UTC(fyStartYear, 8 + i, 1));
+        const mk = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+        if (mk <= currentMK) ytdBudget += STATIC_COS_BUDGET_FY26[mk] ?? 0;
+      }
+
+      res.json({
+        asOf: now.toISOString(),
+        fyLabel: `FY${fyStartYear + 1}`,
+        fyStart: toStr(fyStart),
+        fyEnd: toStr(fyEnd),
+        cos: {
+          thisWeek: serializeBucket(cosThisWeek),
+          lastWeek: serializeBucket(cosLastWeek),
+          thisMonth: serializeBucket(cosThisMonth),
+          lastMonth: serializeBucket(cosLastMonth),
+          ytd: { ...serializeBucket(cosYTD), budget: ytdBudget, variance: cosYTD.total - ytdBudget, variancePct: ytdBudget > 0 ? Number(((cosYTD.total - ytdBudget) / ytdBudget * 100).toFixed(1)) : 0 },
+          monthlySeries: buildSeries(cosMonthly),
+        },
+        cashflow: {
+          thisWeek: serializeBucket(cfThisWeek),
+          lastWeek: serializeBucket(cfLastWeek),
+          thisMonth: serializeBucket(cfThisMonth),
+          lastMonth: serializeBucket(cfLastMonth),
+          ytd: serializeBucket(cfYTD),
+          monthlySeries: buildSeries(cfMonthly),
+        },
+      });
+    } catch (error) {
+      console.error("Realisation KPIs error:", error);
+      res.status(500).json({ error: "Failed to fetch realisation KPIs" });
     }
   });
 
@@ -3768,7 +3926,7 @@ export async function registerRoutes(
         description: normalizedRevenueLines.description,
         milestoneName: normalizedRevenueLines.milestoneName,
         paidDate: normalizedRevenueLines.paidDate,
-      }).from(normalizedRevenueLines);
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       for (const r of inflowRows) {
         if (r.paidDate) continue;
@@ -3793,7 +3951,7 @@ export async function registerRoutes(
         description: normalizedCostLines.description,
         counterpartyName: normalizedCostLines.counterpartyName,
         paidDate: normalizedCostLines.paidDate,
-      }).from(normalizedCostLines);
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       for (const c of outflowRows) {
         if (c.paidDate) continue;
@@ -3846,7 +4004,7 @@ export async function registerRoutes(
         milestoneName: normalizedRevenueLines.milestoneName,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDate: normalizedRevenueLines.paidDate,
-      }).from(normalizedRevenueLines);
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       for (const r of inflowRows) {
         if (r.paidDate) continue;
@@ -3874,7 +4032,7 @@ export async function registerRoutes(
         counterpartyName: normalizedCostLines.counterpartyName,
         paidDate: normalizedCostLines.paidDate,
         invoiceNumber: normalizedCostLines.invoiceNumber,
-      }).from(normalizedCostLines);
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       for (const c of outflowRows) {
         if (c.paidDate) continue;
@@ -3919,19 +4077,22 @@ export async function registerRoutes(
       const fyEnd = `${fyStartYear + 1}-08-31`;
       const today = now.toISOString().slice(0, 10);
 
-      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows] = await Promise.all([
+      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows, revOverrides, cosOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
-        db.select().from(normalizedRevenueLines),
-        db.select().from(normalizedCostLines),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
         db.select().from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')),
-        db.select().from(engineeringTasks),
-        db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`),
+        // Read ENG work_items
+        db.select().from(workItems).where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt))),
+        db.execute(sql`SELECT id, project_id, status, title, due_date, assigned_approver FROM approvals`).catch(() => ({ rows: [] })),
         getAllPMWorkItemsAsProjectPlan(),
-        db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`),
+        db.execute(sql`SELECT id, project_name, severity, status, title, owner_user_id, due_date FROM qc_warning`).catch(() => ({ rows: [] })),
         db.execute(sql`SELECT id, name FROM users`),
-        db.select().from(cashflowPoints),
-        db.select().from(financeRevenueMonthly),
-        db.select().from(financeCosMonthly),
+        db.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)),
+        db.select().from(financeRevenueMonthly).where(isNull(financeRevenueMonthly.effectiveTo)),
+        db.select().from(financeCosMonthly).where(isNull(financeCosMonthly.effectiveTo)),
+        Promise.resolve([]),
+        Promise.resolve([]),
       ]);
 
       const userNameById = new Map<number, string>((usersResult.rows as any[]).map((u: any) => [Number(u.id), u.name || `User ${u.id}`]));
@@ -3948,9 +4109,30 @@ export async function registerRoutes(
         return !!start && !!end && start <= fyEnd && end >= fyStart;
       };
 
+      // Build override lookup sets so dashboard aggregates respect manual overrides
+      const inBankOverrideSet = new Set(
+        revOverrides.filter((o: any) => o.overrideValue === "1").map((o: any) => `${o.projectName}::${o.rowNumber}`)
+      );
+      const cosOverrideByKey = new Map<string, string>();
+      for (const co of cosOverrides) {
+        cosOverrideByKey.set(`${co.projectName}::${co.rowNumber}`, co.overrideStatus);
+      }
+
+      // RLS: scope project data to user's accessible projects
+      const { resolveProjectScope } = await import("./services/project-access-service");
+      const dashUser = (req as any).user;
+      const dashScope = await resolveProjectScope(
+        dashUser?.id || 0,
+        dashUser?.role || "",
+        dashUser?.name || "",
+      );
+      const scopedProjectInfo = dashScope.kind === "full_oversight"
+        ? allProjectInfo
+        : allProjectInfo.filter((p: any) => dashScope.projectIds.has(p.id));
+
       const projectById = new Map<number, any>();
       const projectByName = new Map<string, any>();
-      for (const p of allProjectInfo) {
+      for (const p of scopedProjectInfo) {
         if (p.id) projectById.set(p.id, p);
         projectByName.set((p.projectName || '').toLowerCase(), p);
       }
@@ -3964,6 +4146,7 @@ export async function registerRoutes(
         if (!rowsByProject.has(proj.id)) rowsByProject.set(proj.id, {
           projectId: proj.id, projectName: proj.projectName, portfolio: proj.portfolio || null, pm: proj.pm || null, pd: proj.pd || null,
           executionPhase: proj.executionPhase || proj.phase || null, rag: proj.ragStatus || 'UNKNOWN',
+          ragUpdatedAt: proj.ragUpdatedAt || null,
           actualProgressPct: 0, expectedProgressPct: 0, scheduleVariancePct: 0,
           plannedRevenueFy: 0, receivedInflowFy: 0, openInflowFy: 0,
           plannedExpenditureFy: 0, paidExpenditureFy: 0, openExpenditureFy: 0, grossMarginPctFy: null,
@@ -4019,7 +4202,9 @@ export async function registerRoutes(
         const row = ensureRow(proj); row.__hasFyItem = true;
         const amt = toNum(r.amountExVat);
         row.plannedRevenueFy += amt;
-        const received = hasText(r.invoiceNumber) && hasText(r.paidDate) && isBlack(r.paidDateFontColor);
+        const baseReceived = hasText(r.invoiceNumber) && hasText(r.paidDate) && isBlack(r.paidDateFontColor);
+        const overrideInBank = inBankOverrideSet.has(`${r.projectName}::${r.sourceRow}`);
+        const received = baseReceived || overrideInBank;
         if (received) row.receivedInflowFy += amt;
         if (!received && dateKey && dateKey < today) row._inflowRisk += amt;
       }
@@ -4042,7 +4227,9 @@ export async function registerRoutes(
 
         if (dateKey && dateKey.slice(0, 7) === currentMonthKey) {
           cosPlannedMonth += amt;
-          if (c.cosRealised === true) cosRealisedMonth += amt;
+          const cosOverrideStatus = cosOverrideByKey.get(`${c.projectName}::${c.sourceRow}`);
+          const isRealised = cosOverrideStatus ? cosOverrideStatus === 'COS Realised' : c.cosRealised === true;
+          if (isRealised) cosRealisedMonth += amt;
         }
       }
 
@@ -4050,7 +4237,7 @@ export async function registerRoutes(
         const proj = e.projectId ? projectById.get(e.projectId) : projectByName.get((e.projectName || '').toLowerCase());
         if (!proj) continue;
         const row = ensureRow(proj);
-        if (String(e.status || '').toUpperCase() !== 'COMPLETE' && !e.softDeletedAt) row._engOpen += 1;
+        if (toCanonicalEngineeringStageStatus(e.status) !== 'complete' && !e.softDeletedAt) row._engOpen += 1;
       }
 
       for (const q of qualityRows) {
@@ -4079,9 +4266,14 @@ export async function registerRoutes(
         row.actualProgressPct = row._taskWeight > 0 ? row._taskActual / row._taskWeight : 0;
         row.expectedProgressPct = row._taskWeight > 0 ? row._taskExpected / row._taskWeight : 0;
         row.scheduleVariancePct = row.actualProgressPct - row.expectedProgressPct;
+        // Compute RAG from progress delta when manual ragStatus is absent (matching projects-summary)
+        if (row.rag === 'UNKNOWN') {
+          const delta = row.scheduleVariancePct;
+          row.rag = delta >= -5 ? 'Green' : delta >= -15 ? 'Amber' : 'Red';
+        }
         row.openInflowFy = row.plannedRevenueFy - row.receivedInflowFy;
         row.openExpenditureFy = row.plannedExpenditureFy - row.paidExpenditureFy;
-        row.grossMarginPctFy = row.plannedRevenueFy > 0 ? (row.plannedRevenueFy - row.plannedExpenditureFy) / row.plannedRevenueFy : null;
+        row.grossMarginPctFy = row.plannedRevenueFy > 0 ? Number((((row.plannedRevenueFy - row.plannedExpenditureFy) / row.plannedRevenueFy) * 100).toFixed(1)) : null;
         row.engineeringStatus = row._engOpen >= 5 ? 'Blocked' : row._engOpen > 0 ? 'At Risk' : 'On Track';
         row.qualityStatus = row._qualityOpen >= 5 ? 'Blocked' : row._qualityOpen > 0 ? 'At Risk' : 'On Track';
         const latest = latestImportByProject.get(row.projectId);
@@ -4117,7 +4309,7 @@ export async function registerRoutes(
 
       const visibleProjectNames = new Set(projects.map((p: any) => String(p.projectName || '').toLowerCase()));
       const visibleProjectIds = new Set(projects.map((p: any) => Number(p.projectId)).filter((id: number) => Number.isFinite(id)));
-      const visibleProjectInfo = allProjectInfo.filter((info: any) => visibleProjectIds.has(Number(info.id)));
+      const visibleProjectInfo = scopedProjectInfo.filter((info: any) => visibleProjectIds.has(Number(info.id)));
       const monthLabel = (monthKey: string) => {
         try {
           return format(new Date(`${monthKey}-01T00:00:00`), "MMM yyyy");
@@ -4618,7 +4810,7 @@ export async function registerRoutes(
           paidExpenditureFy: sum('paidExpenditureFy'),
           openExpenditureFy: sum('openExpenditureFy'),
           grossProfitFy: sum('plannedRevenueFy') - sum('plannedExpenditureFy'),
-          grossMarginPctFy: sum('plannedRevenueFy') > 0 ? (sum('plannedRevenueFy') - sum('plannedExpenditureFy')) / sum('plannedRevenueFy') : null,
+          grossMarginPctFy: sum('plannedRevenueFy') > 0 ? Number((((sum('plannedRevenueFy') - sum('plannedExpenditureFy')) / sum('plannedRevenueFy')) * 100).toFixed(1)) : null,
           openEngineeringBlockers: sum('_engOpen'),
           openQualityWarnings: sum('_qualityOpen'),
           pendingApprovals: sum('_approvalsPending'),
@@ -4635,7 +4827,7 @@ export async function registerRoutes(
           qualityIssues: qual,
           pendingApprovalsDecisions: pending,
         },
-        projects,
+        projects: projects.map(({ _taskWeight, _taskActual, _taskExpected, _engOpen, _qualityOpen, _approvalsPending, _inflowRisk, _outflowRisk, __hasFyItem, ...rest }: any) => rest),
         charts: chartDatasets,
         options: {
           portfolios: Array.from(new Set(projects.map((p: any) => p.portfolio).filter(Boolean))).sort(),
@@ -4658,13 +4850,13 @@ export async function registerRoutes(
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
-        storage.getAllProjectPlanOverrides(),
+        Promise.resolve([]),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        db.select().from(revenueTrackingOverrides).where(eq(revenueTrackingOverrides.fieldName, "inBank")),
+        Promise.resolve([]),
       ]);
       const allExpenses = legacyExpenses;
-      const allPlans = applyProjectPlanOverrides(legacyRawPlans, allPlanOverrides);
+      const allPlans = legacyRawPlans;
 
       const inBankOverrideSet = new Set(
         inBankOverrides
@@ -4950,7 +5142,9 @@ export async function registerRoutes(
   app.get("/api/projects", requireAuth, async (req, res) => {
     try {
       const projects = await storage.getAllProjects();
-      res.json(projects);
+      // Strip internal fields before responding
+      const shaped = projects.map(({ sourceFile, ...rest }: any) => rest);
+      res.json(shaped);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch projects", message: "Failed to fetch projects" });
     }
@@ -4966,41 +5160,11 @@ export async function registerRoutes(
       if (!project) {
         return res.status(404).json({ error: "Project not found", message: "Project not found" });
       }
-      res.json(project);
+      // Strip internal fields before responding
+      const { sourceFile, ...shaped } = project as any;
+      res.json(shaped);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project", message: "Failed to fetch project" });
-    }
-  });
-
-  // ==================== EXPENSES ROUTES ====================
-
-  app.get("/api/expenses", requireAuth, async (req, res) => {
-    try {
-      const { projectId } = req.query;
-      if (projectId && typeof projectId === 'string') {
-        const expenses = await storage.getExpensesByProject(parseInt(projectId));
-        return res.json(expenses);
-      }
-      const expenses = await storage.getAllExpenses();
-      res.json(expenses);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch expenses", message: "Failed to fetch expenses" });
-    }
-  });
-
-  // ==================== REVENUES ROUTES ====================
-
-  app.get("/api/revenues", requireAuth, async (req, res) => {
-    try {
-      const { projectId } = req.query;
-      if (projectId && typeof projectId === 'string') {
-        const revenues = await storage.getRevenuesByProject(parseInt(projectId));
-        return res.json(revenues);
-      }
-      const revenues = await storage.getAllRevenues();
-      res.json(revenues);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch revenues", message: "Failed to fetch revenues" });
     }
   });
 
@@ -5008,18 +5172,21 @@ export async function registerRoutes(
 
   app.get("/api/tasks", requireAuth, async (req, res) => {
     try {
+      // Strip internal fields from task responses
+      const stripTask = ({ sourceSheet, rowLocator, ...rest }: any) => rest;
+
       const { projectId } = req.query;
       if (projectId && typeof projectId === 'string') {
         const tasks = await storage.getTasksByProject(parseInt(projectId));
-        return res.json(tasks);
+        return res.json(tasks.map(stripTask));
       }
       const tasks = await storage.getAllTasks();
 
       const user = (req as any).user;
       const role = user?.role || "";
-      const FULL_ACCESS_ROLES = ["admin", "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"];
+      const FULL_ACCESS_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "ENGINEERING_MANAGER", "QUALITY_MANAGER", "CONSTRUCTION_MANAGER"];
       if (FULL_ACCESS_ROLES.includes(role)) {
-        return res.json(tasks);
+        return res.json(tasks.map(stripTask));
       }
 
       const userId = user?.id || user?.userId;
@@ -5032,48 +5199,9 @@ export async function registerRoutes(
         if (Array.isArray(assigneeIds) && assigneeIds.includes(userId)) return true;
         return false;
       });
-      res.json(scopedTasks);
+      res.json(scopedTasks.map(stripTask));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch tasks", message: "Failed to fetch tasks" });
-    }
-  });
-
-  // ==================== BUDGETS ROUTES (Admin Only) ====================
-
-  app.get("/api/budgets", requireAuth, async (req, res) => {
-    try {
-      const budgets = await storage.getAllBudgets();
-      res.json(budgets);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch budgets", message: "Failed to fetch budgets" });
-    }
-  });
-
-  app.post("/api/budgets", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const parsed = insertBudgetSchema.parse(req.body);
-      const budget = await storage.createBudget(parsed);
-      logAuditFromReq(req, { entityType: "budget", action: "create", entityId: String(budget.id), changesJson: { description: "Budget created", ...parsed } });
-      res.status(201).json(budget);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid budget data", message: "Invalid budget data", errors: error.errors });
-      }
-      res.status(500).json({ error: "Failed to create budget", message: "Failed to create budget" });
-    }
-  });
-
-  app.delete("/api/budgets/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const id = parseInt(String(req.params.id));
-      const deleted = await storage.deleteBudget(id);
-      if (!deleted) {
-        return res.status(404).json({ error: "Budget not found", message: "Budget not found" });
-      }
-      logAuditFromReq(req, { entityType: "budget", action: "delete", entityId: String(id), changesJson: { description: "Budget deleted" } });
-      res.json({ message: "Budget deleted" });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete budget", message: "Failed to delete budget" });
     }
   });
 
@@ -5276,8 +5404,9 @@ export async function registerRoutes(
                 )
               );
             }
-            await db.delete(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, resolvedProjectName));
-            await db.delete(normalizedCostLines).where(eq(normalizedCostLines.projectName, resolvedProjectName));
+            // Temporal: soft-close existing rows instead of hard delete (Prompt 10)
+            await softCloseByProjectName(db, "normalized_revenue_lines", resolvedProjectName);
+            await softCloseByProjectName(db, "normalized_cost_lines", resolvedProjectName);
             await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, resolvedProjectName));
 
             const dummyRun = await db.insert(smartImportRuns).values({
@@ -5316,8 +5445,9 @@ export async function registerRoutes(
                 externalRef: `${resolvedProjectName}::PLAN::${t.taskNo || idx}::${importRunId}`,
               })));
             }
+            const uploadTimestamp = new Date();
             if (norm.revenueLines.length > 0) {
-              await db.insert(normalizedRevenueLines).values(norm.revenueLines.map((r: any) => ({
+              const revVals = norm.revenueLines.map((r: any) => ({
                 projectId: pId, projectName: resolvedProjectName,
                 description: r.description, milestoneName: r.milestoneName,
                 amountExVat: r.amountExVat, vat: r.vat,
@@ -5330,10 +5460,11 @@ export async function registerRoutes(
                 inBankDate: r.inBankDate, status: r.status,
                 sourceSheet: r.sourceSheet, sourceRow: r.sourceRow, importRunId,
                 turnaroundDays: r.turnaroundDays,
-              })));
+              }));
+              await db.insert(normalizedRevenueLines).values(addTemporalColumns(revVals, importRunId, uploadTimestamp) as any);
             }
             if (norm.costLines.length > 0) {
-              await db.insert(normalizedCostLines).values(norm.costLines.map((c: any) => ({
+              const costVals = norm.costLines.map((c: any) => ({
                 projectId: pId, projectName: resolvedProjectName,
                 costCategory: c.costCategory, counterpartyName: c.counterpartyName,
                 description: c.description, amountExVat: c.amountExVat,
@@ -5347,7 +5478,8 @@ export async function registerRoutes(
                 cashflowConfirmed: c.cashflowConfirmed || false,
                 status: c.status, sourceSheet: c.sourceSheet, sourceRow: c.sourceRow,
                 importRunId, turnaroundDays: c.turnaroundDays,
-              })));
+              }));
+              await db.insert(normalizedCostLines).values(addTemporalColumns(costVals, importRunId, uploadTimestamp) as any);
             }
             if (norm.costedSummary) {
               try {
@@ -5546,17 +5678,30 @@ export async function registerRoutes(
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let expenses;
-      
+
       if (projectName && typeof projectName === 'string') {
+        // RLS: verify user has access to this project by name
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const expUser = (req as any).user;
+        const expScope = await resolveProjectScope(expUser?.id || 0, expUser?.role || "", expUser?.name || "");
+        if (!isProjectAccessibleByName(expScope, projectName)) {
+          return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
+        }
         expenses = await storage.getProgramExpensesByProject(projectName);
-        
+
         // Apply overrides if requested
         if (applyOverrides === 'true') {
-          const overrides = await storage.getExpenditureOverridesByProject(projectName);
-          expenses = applyExpenditureOverrides(expenses, overrides);
+          // Override data now baked into base rows
         }
       } else {
         expenses = await storage.getAllProgramExpenses();
+        // RLS: filter to accessible projects
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const expUser = (req as any).user;
+        const expScope = await resolveProjectScope(expUser?.id || 0, expUser?.role || "", expUser?.name || "");
+        if (expScope.kind === "scoped") {
+          expenses = expenses.filter((e: any) => isProjectAccessibleByName(expScope, e.projectName || ""));
+        }
       }
 
       if (startDate && typeof startDate === 'string') {
@@ -5577,13 +5722,26 @@ export async function registerRoutes(
     try {
       const { projectName } = req.params;
       const { applyOverrides } = req.query;
-      
+
+      // RLS: verify user has access to this project
+      const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+      const expPUser = (req as any).user;
+      const expPScope = await resolveProjectScope(expPUser?.id || 0, expPUser?.role || "", expPUser?.name || "");
+      if (!isProjectAccessibleByName(expPScope, projectName)) {
+        return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
+      }
+
       let expenses = await storage.getProgramExpensesByProject(projectName);
-      
+
       // Apply overrides if requested
       if (applyOverrides === 'true') {
-        const overrides = await storage.getExpenditureOverridesByProject(projectName);
-        expenses = applyExpenditureOverrides(expenses, overrides);
+        // Override data now baked into base rows
+      }
+
+      // Sub-project filter (for multi-project/Ad Hoc trackers)
+      const subProject = req.query.subProject as string | undefined;
+      if (subProject) {
+        expenses = expenses.filter((e: any) => e.subProjectName === subProject);
       }
 
       res.json(expenses);
@@ -5596,17 +5754,30 @@ export async function registerRoutes(
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let inflows;
-      
+
       if (projectName && typeof projectName === 'string') {
+        // RLS: verify user has access to this project by name
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const infUser = (req as any).user;
+        const infScope = await resolveProjectScope(infUser?.id || 0, infUser?.role || "", infUser?.name || "");
+        if (!isProjectAccessibleByName(infScope, projectName)) {
+          return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
+        }
         inflows = await storage.getProgramInflowsByProject(projectName);
-        
+
         // Apply overrides if requested
         if (applyOverrides === 'true') {
-          const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
-          inflows = applyRevenueTrackingOverrides(inflows, overrides);
+          // Override data now baked into base rows
         }
       } else {
         inflows = await storage.getAllProgramInflows();
+        // RLS: filter to accessible projects
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const infUser = (req as any).user;
+        const infScope = await resolveProjectScope(infUser?.id || 0, infUser?.role || "", infUser?.name || "");
+        if (infScope.kind === "scoped") {
+          inflows = inflows.filter((i: any) => isProjectAccessibleByName(infScope, i.projectName || ""));
+        }
       }
 
       if (startDate && typeof startDate === 'string') {
@@ -5620,6 +5791,12 @@ export async function registerRoutes(
           (i.paymentReceivedDate && i.paymentReceivedDate <= endDate) ||
           (i.plannedPaymentDate && i.plannedPaymentDate <= endDate)
         );
+      }
+
+      // Sub-project filter
+      const subProjectFilter = req.query.subProject as string | undefined;
+      if (subProjectFilter && inflows) {
+        inflows = inflows.filter((i: any) => i.subProjectName === subProjectFilter);
       }
 
       res.json(inflows);
@@ -5638,8 +5815,7 @@ export async function registerRoutes(
         
         // Apply overrides if requested
         if (applyOverrides === 'true') {
-          const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-          plans = applyProjectPlanOverrides(plans, overrides);
+          // Override data now baked into base rows
         }
         return res.json(plans);
       }
@@ -5656,8 +5832,7 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-      res.json(overrides);
+      res.json([]);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch project plan overrides", message: "Failed to fetch project plan overrides" });
     }
@@ -5670,10 +5845,7 @@ export async function registerRoutes(
       
       let plans = await storage.getProjectPlansByProject(projectName);
       
-      if (applyOverrides !== 'false') {
-        const overrides = await storage.getProjectPlanOverridesByProject(projectName);
-        plans = applyProjectPlanOverrides(plans, overrides);
-      }
+      // Override data now baked into base rows
       
       res.json(plans);
     } catch (error) {
@@ -5809,14 +5981,6 @@ export async function registerRoutes(
           console.error("[project-info] failed to record client linkage history", historyError);
         }
       }
-
-      sendExcelSyncNotification({
-        projectName: updated.projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "project_info_update",
-        changeDescription: "Project info was updated.",
-        details: projectInfoPatch,
-      }).catch(() => {});
 
       const [projectDualWriteEnabled, importsGovernancePreview] = await Promise.all([
         getFeatureFlag("promoted_core_project_master_dual_write"),
@@ -6113,8 +6277,7 @@ export async function registerRoutes(
         points = await storage.getAllCashflowPoints();
       }
 
-      const overrides = await storage.getAllPlanningOverrides();
-      points = applyPlanningOverrides(points, overrides);
+      // Override data now baked into base rows
 
       const expenses = projectName
         ? await storage.getProgramExpensesByProject(projectName)
@@ -6164,7 +6327,7 @@ export async function registerRoutes(
           }
 
           for (const exp of projExpenses) {
-            const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
+            const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate || exp.expenseInvoicedDate || null;
             if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
             const amt = parseFloat(exp.expenseActualTotal || exp.budgetTotal || '0');
             if (amt === 0) continue;
@@ -6278,11 +6441,8 @@ export async function registerRoutes(
       const { projectName } = req.query;
       let overrides;
       
-      if (projectName && typeof projectName === 'string') {
-        overrides = await storage.getPlanningOverridesByProject(projectName);
-      } else {
-        overrides = await storage.getAllPlanningOverrides();
-      }
+      // Override data now baked into base rows
+      overrides = [];
 
       res.json(overrides);
     } catch (error) {
@@ -6337,13 +6497,6 @@ export async function registerRoutes(
 
       const overrideProjectNames = [...new Set(overrides.map((o: any) => o.projectName))];
       for (const pn of overrideProjectNames) {
-        sendExcelSyncNotification({
-          projectName: pn,
-          changedByUserId: req.user?.id || 0,
-          changeType: "cashflow_planning_override",
-          changeDescription: "Cashflow planning overrides were updated.",
-          details: { count: overrides.filter((o: any) => o.projectName === pn).length },
-        }).catch(() => {});
       }
 
       logAuditFromReq(req, { entityType: "cashflow_override", action: "create", changesJson: { description: `${overrides.length} planning override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
@@ -6363,13 +6516,6 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
       await storage.deletePlanningOverridesByProject(projectName);
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "cashflow_planning_override_delete",
-        changeDescription: "All cashflow planning overrides deleted for project.",
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "cashflow_override", action: "delete", projectName, changesJson: { description: "All planning overrides deleted for project", projectName } });
       res.json({ message: `Planning overrides deleted for project: ${projectName}` });
@@ -6409,6 +6555,18 @@ export async function registerRoutes(
         console.warn("[audit] Project plan override audit failed:", auditErr.message);
       }
 
+      // Record manual edit flags for import conflict detection
+      for (const o of overrides) {
+        recordManualEditFlag({
+          entityType: "project_plan",
+          entityId: o.rowNumber,
+          fieldName: o.fieldName,
+          editedByUserId: userId,
+          editedByName: (req as any).user?.name,
+        });
+      }
+
+      // Plan edit notifications are tracked via planEditNotifications table (existing mechanism)
       const projectNameForNotif = overrides[0]?.projectName;
       if (projectNameForNotif) {
         const changeDetails = overrides.map((o: any) => ({
@@ -6440,13 +6598,6 @@ export async function registerRoutes(
       }
       await storage.deleteProjectPlanOverridesByProject(projectName);
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "plan_override_delete",
-        changeDescription: "All project plan overrides deleted for project.",
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "plan_override", action: "delete", projectName, changesJson: { description: "All plan overrides deleted for project", projectName } });
       res.json({ message: `Project plan overrides deleted for project: ${projectName}` });
     } catch (error) {
@@ -6468,13 +6619,6 @@ export async function registerRoutes(
 
       const notifyStructureChange = (desc: string) => {
         sendPlanChangeNotifications(rawProjectName, userId, desc, [{ operation, tasks: data?.taskRowNumbers || [] }]);
-        sendExcelSyncNotification({
-          projectName: rawProjectName,
-          changedByUserId: userId || 0,
-          changeType: "plan_structure_change",
-          changeDescription: desc,
-          details: { operation, data },
-        }).catch(() => {});
       };
 
       if (operation === "createMilestone") {
@@ -6540,12 +6684,7 @@ export async function registerRoutes(
           return res.json({ message: "Milestone created", workItemId: newMilestone.id, wbsCode: newWbsCode });
         }
 
-        const existingOverrides = await storage.getProjectPlanOverridesByProject(projectName);
-        let minRow = 0;
-        for (const o of existingOverrides) {
-          if (o.rowNumber < minRow) minRow = o.rowNumber;
-        }
-        const newRowNumber = minRow - 1;
+        const newRowNumber = -1;
 
         const milestoneOverrides = [
           { projectName, rowNumber: newRowNumber, fieldName: "highLevelProgramme", overrideValue: title, createdBy: userId },
@@ -6653,7 +6792,7 @@ export async function registerRoutes(
         if (milestoneRowNumber === undefined || milestoneRowNumber >= 0) {
           return res.status(400).json({ error: "milestoneRowNumber (negative) required" });
         }
-        const allOverrides = await storage.getProjectPlanOverridesByProject(projectName);
+        const allOverrides: any[] = [];
         const childOverrides = allOverrides.filter(
           (o: any) => o.fieldName === "parentRowNumber" && o.overrideValue === String(milestoneRowNumber)
         );
@@ -6695,7 +6834,7 @@ export async function registerRoutes(
         if (!Array.isArray(items) || items.length === 0) {
           return res.status(400).json({ error: "items[] with {rowNumber, sortOrder, parentRowNumber?} required" });
         }
-        const existingOverrides = await storage.getProjectPlanOverridesByProject(projectName);
+        const existingOverrides: any[] = [];
         const indentMap = new Map<number, number>();
         for (const o of existingOverrides) {
           if (o.fieldName === "indentLevel") {
@@ -6730,8 +6869,7 @@ export async function registerRoutes(
         const plansDirect2 = await storage.getProjectPlansByProject(rawProjectName);
         const pName2 = plansDirect2.length > 0 ? rawProjectName : trackerName;
         const rawPlanTasks = plansDirect2.length > 0 ? plansDirect2 : await storage.getProjectPlansByProject(trackerName);
-        const planOverrides = await storage.getProjectPlanOverridesByProject(pName2);
-        const planTasks = applyProjectPlanOverrides(rawPlanTasks, planOverrides);
+        const planTasks = rawPlanTasks;
 
         const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
         const tasks2 = planTasks
@@ -7088,14 +7226,6 @@ export async function registerRoutes(
       }));
       await storage.upsertManyProjectPlanOverrides(overrides);
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: userId || 0,
-        changeType: "plan_task_deletion",
-        changeDescription: `${rowNumbers.length} task(s) deleted from project plan.`,
-        details: { rowNumbers },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "plan_task", action: "delete", projectName, changesJson: { description: `${rowNumbers.length} task(s) deleted from plan`, rowNumbers } });
       res.json({ message: `Deleted ${rowNumbers.length} task(s)` });
     } catch (error) {
@@ -7246,8 +7376,7 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      const overrides = await storage.getRevenueTrackingOverridesByProject(projectName);
-      res.json(overrides);
+      res.json([]);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
     }
@@ -7262,8 +7391,33 @@ export async function registerRoutes(
       const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
       const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-      const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
+
+      // Apply overrides directly to the base table (normalized_revenue_lines)
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+      const saved: any[] = [];
+
+      for (const pn of projectNames) {
+        const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+        const inflows = await storage.getProgramInflowsByProject(pn);
+        const rowMap = new Map(inflows.map((r: any) => [r.rowNumber, r]));
+
+        const rowGroups = new Map<number, Record<string, any>>();
+        for (const ov of projectOverrides) {
+          const inflow = rowMap.get(ov.rowNumber);
+          if (!inflow) continue;
+          if (!rowGroups.has(inflow.id)) rowGroups.set(inflow.id, {});
+          const fields = rowGroups.get(inflow.id)!;
+          const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+          fields[ov.fieldName] = effectiveValue;
+        }
+
+        for (const [inflowId, fields] of rowGroups.entries()) {
+          if (Object.keys(fields).length > 0) {
+            const result = await storage.updateProgramInflowFields(inflowId, fields);
+            if (result) saved.push(result);
+          }
+        }
+      }
 
       try {
         for (const o of overrides) {
@@ -7279,23 +7433,21 @@ export async function registerRoutes(
             oldRecord: {},
             newRecord: { [o.fieldName]: o.overrideValue },
           });
+
+          // Record manual edit flag for import conflict detection
+          recordManualEditFlag({
+            entityType: "revenue_tracking",
+            entityId: o.rowNumber,
+            fieldName: o.fieldName,
+            editedByUserId: userId,
+            editedByName: (req as any).user?.name,
+          });
         }
       } catch (auditErr: any) {
         console.warn("[audit] Revenue override audit failed:", auditErr.message);
       }
 
-      const revProjectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      for (const pn of revProjectNames) {
-        sendExcelSyncNotification({
-          projectName: pn,
-          changedByUserId: req.user?.id || 0,
-          changeType: "revenue_tracking_override",
-          changeDescription: "Revenue tracking overrides were updated.",
-          details: { count: overrides.filter((o: any) => o.projectName === pn).length },
-        }).catch(() => {});
-      }
-
-      logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "create", changesJson: { description: `${overrides.length} revenue tracking override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
+      logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "create", changesJson: { description: `${overrides.length} revenue tracking override(s) saved`, count: overrides.length, projectNames } });
       res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
@@ -7308,15 +7460,7 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      await storage.deleteRevenueTrackingOverridesByProject(projectName);
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "revenue_tracking_override_delete",
-        changeDescription: "All revenue tracking overrides deleted for project.",
-      }).catch(() => {});
-
+      // Override tables collapsed into base tables — no separate overrides to delete
       logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "delete", projectName, changesJson: { description: "All revenue tracking overrides deleted for project", projectName } });
       res.json({ message: `Revenue tracking overrides deleted for project: ${projectName}` });
     } catch (error) {
@@ -7330,7 +7474,7 @@ export async function registerRoutes(
 
       const [rawInflows, overrides, projectInfoList, savedSummary, operationalTasks, planTasks, taskLinks] = await Promise.all([
         storage.getProgramInflowsByProject(projectName),
-        storage.getRevenueTrackingOverridesByProject(projectName),
+        Promise.resolve([]),
         storage.getAllProjectInfo(),
         storage.getProjectRevenueSummary(projectName),
         storage.getOperationalTasksByProject(projectName),
@@ -7338,7 +7482,7 @@ export async function registerRoutes(
         storage.getMilestoneTaskLinks(projectName),
       ]);
 
-      const inflows = applyRevenueTrackingOverrides(rawInflows, overrides);
+      const inflows = rawInflows;
 
       const isRealMilestone = (r: any) => {
         const no = r.milestoneNo;
@@ -7444,7 +7588,7 @@ export async function registerRoutes(
       });
 
       const totalContract = milestones.reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
-      const invoiced = milestones.filter((m: any) => m.status === 'invoiced').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
+      const invoiced = milestones.filter((m: any) => m.status === 'invoiced' || m.status === 'inBank' || m.status === 'received').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
       const inBankTotal = milestones.filter((m: any) => m.status === 'inBank').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
       const pending = milestones.filter((m: any) => m.status === 'planned' || m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
       const overdueTotal = milestones.filter((m: any) => m.status === 'overdue').reduce((s: number, m: any) => s + (parseFloat(m.milestoneAmount) || 0), 0);
@@ -7560,14 +7704,6 @@ export async function registerRoutes(
         console.warn("[audit] Revenue summary audit failed:", auditErr.message);
       }
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "revenue_costed_update",
-        changeDescription: "Revenue costed values were updated.",
-        details: { revenue, expenditure },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "revenue", action: "costed_update", projectName, changesJson: { description: "Revenue costed values updated", revenue, expenditure } });
       res.json(saved);
     } catch (error) {
@@ -7638,14 +7774,6 @@ export async function registerRoutes(
         console.warn("[audit] Milestone task link audit failed:", auditErr.message);
       }
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "milestone_task_link",
-        changeDescription: `Milestone row ${milestoneRowNumber} linked to task ${taskId}.`,
-        details: { milestoneRowNumber, taskId },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "revenue_link", action: "create", projectName, changesJson: { description: "Milestone linked to task", milestoneRowNumber, taskId } });
       res.json(link);
     } catch (error) {
@@ -7687,14 +7815,6 @@ export async function registerRoutes(
         console.warn("[audit] Milestone date override audit failed:", auditErr.message);
       }
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "milestone_date_override",
-        changeDescription: `Milestone ${milestoneRowNumber} date overridden to ${dateOverride}.`,
-        details: { milestoneRowNumber, dateOverride, reason },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "revenue_date_override", action: "update", projectName, changesJson: { description: "Milestone date overridden", milestoneRowNumber, dateOverride, reason } });
       res.json({ success: true });
     } catch (error) {
@@ -7708,14 +7828,6 @@ export async function registerRoutes(
       const projectName = req.params.projectName;
       const milestoneRowNumber = parseInt(req.params.milestoneRowNumber);
       await storage.deleteMilestoneTaskLink(projectName, milestoneRowNumber);
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "milestone_task_link_delete",
-        changeDescription: `Milestone task link removed for row ${milestoneRowNumber}.`,
-        details: { milestoneRowNumber },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "revenue_link", action: "delete", projectName, changesJson: { description: "Milestone task link removed", milestoneRowNumber } });
       res.json({ success: true });
@@ -7732,13 +7844,14 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      const overrides = await storage.getExpenditureOverridesByProject(projectName);
-      res.json(overrides);
+      res.json([]);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch expenditure overrides", message: "Failed to fetch expenditure overrides" });
     }
   });
 
+  // Expenditure overrides now handled by finance-routes.ts with approval workflow
+  // This legacy route is kept as a fallback redirect to the approval flow
   app.post("/api/expenditure/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const { overrides, overrideCategory, overrideComment } = req.body;
@@ -7748,9 +7861,10 @@ export async function registerRoutes(
       const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
       const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-      const saved = await storage.upsertManyExpenditureOverrides(overridesWithUser);
+      const userRole = req.user?.role;
 
+      // Admin users apply overrides directly (this legacy route requires requireAdmin)
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
       const fieldToColumnMap: Record<string, string> = {
         expenseInvoicedDate: "expenseInvoicedDate",
         expensePaymentDate: "expensePaymentDate",
@@ -7766,9 +7880,9 @@ export async function registerRoutes(
         budgetRateUnit: "budgetRateUnit",
         invoiceDateFontColor: "invoiceDateFontColor",
         paymentDateFontColor: "paymentDateFontColor",
+        supplierName: "supplierName",
       };
 
-      const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
       for (const pn of projectNames) {
         const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
         const expenses = await storage.getProgramExpensesByProject(pn as string);
@@ -7799,41 +7913,11 @@ export async function registerRoutes(
         }
       }
 
-      try {
-        for (const o of overrides) {
-          await recordOverride({
-            actorUserId: userId,
-            actorRole: (req as any).user?.role,
-            entityType: "expenditure_override",
-            entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
-            projectName: o.projectName,
-            action: "EXPENDITURE_OVERRIDE",
-            overrideCategory,
-            overrideComment: overrideComment.trim(),
-            oldRecord: {},
-            newRecord: { [o.fieldName]: o.overrideValue },
-          });
-        }
-      } catch (auditErr: any) {
-        console.warn("[audit] Expenditure override audit failed:", auditErr.message);
-      }
-
-      const expProjectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      for (const pn of expProjectNames) {
-        sendExcelSyncNotification({
-          projectName: pn,
-          changedByUserId: req.user?.id || 0,
-          changeType: "expenditure_override",
-          changeDescription: "Expenditure overrides were updated.",
-          details: { count: overrides.filter((o: any) => o.projectName === pn).length },
-        }).catch(() => {});
-      }
-
-      logAuditFromReq(req, { entityType: "expenditure_override", action: "create", changesJson: { description: `${overrides.length} expenditure override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
-      res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
+      logAuditFromReq(req, { entityType: "expenditure_override", action: "direct_apply", changesJson: { description: `${overrides.length} expenditure override(s) applied directly by admin`, count: overrides.length, projectNames } });
+      res.json({ message: "Expenditure overrides applied successfully", count: overrides.length });
     } catch (error) {
-      console.error("Failed to save expenditure overrides:", error);
-      res.status(500).json({ error: "Failed to save expenditure overrides", message: error instanceof Error ? error.message : "Failed to save expenditure overrides" });
+      console.error("Failed to submit expenditure overrides for approval:", error);
+      res.status(500).json({ error: "Failed to save overrides", message: error instanceof Error ? error.message : "Failed to save overrides" });
     }
   });
 
@@ -7843,15 +7927,7 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      await storage.deleteExpenditureOverridesByProject(projectName);
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "expenditure_override_delete",
-        changeDescription: "All expenditure overrides deleted for project.",
-      }).catch(() => {});
-
+      // Override tables collapsed into base tables — no separate overrides to delete
       logAuditFromReq(req, { entityType: "expenditure_override", action: "delete", projectName, changesJson: { description: "All expenditure overrides deleted for project", projectName } });
       res.json({ message: `Expenditure overrides deleted for project: ${projectName}` });
     } catch (error) {
@@ -7878,14 +7954,6 @@ export async function registerRoutes(
       }
       const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
 
-      sendExcelSyncNotification({
-        projectName: req.params.projectName,
-        changedByUserId: (req.user as any)?.id || 0,
-        changeType: "expense_edit",
-        changeDescription: "Expense task link was updated.",
-        details: { expenseId, taskId },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "expense_link", action: "create", projectName: req.params.projectName, changesJson: { description: "Expense linked to task", expenseId, taskId } });
       res.json(link);
     } catch (error) {
@@ -7897,14 +7965,6 @@ export async function registerRoutes(
   app.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdmin, async (req, res) => {
     try {
       await storage.deleteExpenseTaskLink(req.params.projectName, parseInt(req.params.expenseId));
-
-      sendExcelSyncNotification({
-        projectName: req.params.projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "expense_task_link_delete",
-        changeDescription: "Expense task link removed.",
-        details: { expenseId: req.params.expenseId },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "expense_link", action: "delete", projectName: req.params.projectName, changesJson: { description: "Expense task link removed", expenseId: req.params.expenseId } });
       res.json({ success: true });
@@ -7935,14 +7995,6 @@ export async function registerRoutes(
       } catch (auditErr: any) {
         console.warn("[audit] Expense date override audit failed:", auditErr.message);
       }
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "expense_date_override",
-        changeDescription: `Expense ${expenseId} date overridden to ${dateOverride}.`,
-        details: { expenseId, dateOverride, reason },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "expense_date_override", action: "update", projectName, changesJson: { description: "Expense date overridden", expenseId, dateOverride, reason } });
       res.json({ success: true });
@@ -7992,14 +8044,6 @@ export async function registerRoutes(
         console.warn("[audit] Manual expense add audit failed:", auditErr.message);
       }
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "manual_expense_added",
-        changeDescription: `Manual expense line added: ${expenseLineItem || expenseCategory}.`,
-        details: { expenseCategory, expenseLineItem },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "expense_line", action: "create", projectName, changesJson: { description: "Manual expense line added", expenseCategory, expenseLineItem } });
       res.json(newExpense);
     } catch (error) {
@@ -8040,14 +8084,6 @@ export async function registerRoutes(
       } catch (auditErr: any) {
         console.warn("[audit] Manual category add audit failed:", auditErr.message);
       }
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "manual_category_added",
-        changeDescription: `Manual expense category added: ${categoryName}.`,
-        details: { categoryName },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "expense_category", action: "create", projectName, changesJson: { description: "Manual expense category added", categoryName } });
       res.json(newCategory);
@@ -8106,14 +8142,6 @@ export async function registerRoutes(
         console.warn("[audit] Insert task as expense audit failed:", auditErr.message);
       }
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "task_inserted_as_expense",
-        changeDescription: `Task "${taskTitle}" inserted as expense line in ${expenseCategory}.`,
-        details: { taskId, taskTitle, expenseCategory },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "expense_line", action: "create", projectName, changesJson: { description: "Task inserted as expense line", taskId, taskTitle, expenseCategory } });
       res.json(newExpense);
     } catch (error) {
@@ -8134,11 +8162,6 @@ export async function registerRoutes(
       const confirmedField = field === 'invoiceDateFontColor' ? 'invoiceDateConfirmed'
         : field === 'paymentDateFontColor' ? 'paymentDateConfirmed' : null;
       const isBlack = color === 'black';
-
-      await storage.upsertManyExpenditureOverrides([
-        { projectName, rowNumber, fieldName: field, overrideValue: color },
-        ...(confirmedField ? [{ projectName, rowNumber, fieldName: confirmedField, overrideValue: isBlack ? 'true' : 'false' }] : []),
-      ]);
 
       const expenses = await storage.getProgramExpensesByProject(projectName);
       const expense = expenses.find((e: any) => e.rowNumber === rowNumber);
@@ -8166,13 +8189,6 @@ export async function registerRoutes(
       }
 
       const friendlyField = field === 'paymentDateFontColor' ? 'payment date confirmation' : 'invoice date confirmation';
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "expenditure_font_color_change",
-        changeDescription: `${friendlyField} colour changed to ${color} for expense row ${rowNumber}.`,
-        details: { rowNumber, field, color, confirmedField, confirmed: isBlack },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "expenditure_font_color", action: "toggle", projectName, changesJson: { description: `Font color toggled to ${color}`, rowNumber, field, color } });
       res.json({ success: true });
@@ -8185,20 +8201,20 @@ export async function registerRoutes(
   app.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
     try {
       const projectName = req.params.projectName;
-      const [rawExpenses, taskLinks, opTasks, planTasks, cosOverrides, expenditureOverrides, revSummary] = await Promise.all([
+      const [rawExpenses, taskLinks, opTasks, planTasks, revSummary] = await Promise.all([
         storage.getProgramExpensesByProject(projectName),
         storage.getExpenseTaskLinks(projectName),
         storage.getOperationalTasksByProject(projectName),
         storage.getProjectPlansByProject(projectName),
-        db.select().from(cosStatusOverrides).where(eq(cosStatusOverrides.projectName, projectName)),
-        storage.getExpenditureOverridesByProject(projectName),
         storage.getProjectRevenueSummary(projectName),
       ]);
+      const cosOverrides: any[] = [];
+      const expenditureOverrides: any[] = [];
 
-      const expenses = applyExpenditureOverridesWithConfirmed(rawExpenses, expenditureOverrides);
+      const expenses = rawExpenses;
 
-      const cosOverrideByExpenseId = new Map(cosOverrides.map(o => [o.expenseId, o]));
-      const cosOverrideByRow = new Map(cosOverrides.map(o => [`${o.projectName}:${o.rowNumber}`, o]));
+      const cosOverrideByExpenseId = new Map();
+      const cosOverrideByRow = new Map();
 
       const linkMap = new Map(taskLinks.map(l => [l.expenseId, l]));
 
@@ -8247,8 +8263,10 @@ export async function registerRoutes(
           cosStatus = 'Planned';
         }
 
-        const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
-        const paymentDateBlack = hasPayDate && isDateConfirmedCheck(exp.paymentDateConfirmed, exp.paymentDateFontColor);
+        const effectivePaymentDate = link?.dateOverride || linkedTask?.dueDate || exp.expensePaymentDate || exp.forecastPaymentDate || null;
+        const hasPayDate = !!(effectivePaymentDate && String(effectivePaymentDate).trim());
+        const isFutureDate = hasPayDate && new Date(effectivePaymentDate!) > new Date();
+        const paymentDateBlack = hasPayDate && !isFutureDate && isDateConfirmedCheck(exp.paymentDateConfirmed, exp.paymentDateFontColor);
 
         let paymentStatus: string;
         if (paymentDateBlack && hasInvoice) {
@@ -8258,8 +8276,6 @@ export async function registerRoutes(
         } else {
           paymentStatus = 'Planned';
         }
-
-        const effectivePaymentDate = link?.dateOverride || linkedTask?.dueDate || exp.expensePaymentDate || exp.forecastPaymentDate || null;
         let plannedMonth: string | null = null;
         if (effectivePaymentDate && /^\d{4}-\d{2}-\d{2}/.test(effectivePaymentDate)) {
           const d = new Date(effectivePaymentDate);
@@ -8279,6 +8295,7 @@ export async function registerRoutes(
           hasDateOverride: !!link?.dateOverride,
           dateOverrideReason: link?.dateOverrideReason || null,
           cosOverride: cosOverride ? { reason: cosOverride.reason, overriddenBy: cosOverride.overriddenBy, originalStatus: cosOverride.originalStatus, overrideStatus: cosOverride.overrideStatus } : null,
+          paymentDateFontColor: isFutureDate ? "red" : (exp.paymentDateFontColor || null),
         };
       });
 
@@ -8321,38 +8338,15 @@ export async function registerRoutes(
 
       const userName = (req.user as any)?.username || (req.user as any)?.fullName || 'Unknown';
 
-      const existing = await db.select().from(cosStatusOverrides)
-        .where(eq(cosStatusOverrides.expenseId, expenseId));
+      // DEPRECATED: cosStatusOverrides table removed — override data baked into base rows
 
-      if (existing.length > 0) {
-        await db.update(cosStatusOverrides)
-          .set({
-            overrideStatus,
-            reason,
-            originalStatus: originalStatus || existing[0].originalStatus,
-            overriddenBy: userName,
-            updatedAt: new Date(),
-          })
-          .where(eq(cosStatusOverrides.expenseId, expenseId));
-      } else {
-        await db.insert(cosStatusOverrides).values({
-          expenseId,
-          projectName,
-          rowNumber: rowNumber || 0,
-          originalStatus: originalStatus || 'Flagged',
-          overrideStatus,
-          reason,
-          overriddenBy: userName,
-        });
+      // Dual-write: apply COS status override to base program_expense row
+      try {
+        const userId = (req.user as any)?.id || null;
+        await inlineEdit('program_expense', expenseId, { line_status: overrideStatus }, userId);
+      } catch (dualWriteErr) {
+        console.warn("[COS override] Dual-write to program_expense failed (non-fatal):", dualWriteErr);
       }
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "cos_status_override",
-        changeDescription: `COS status overridden from ${originalStatus || 'unknown'} to ${overrideStatus} for expense ${expenseId}.`,
-        details: { expenseId, originalStatus, overrideStatus, reason },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "cos_override", action: "update", entityId: String(expenseId), projectName, changesJson: { description: "COS status overridden", overrideStatus, originalStatus, reason } });
       res.json({ success: true });
@@ -8365,184 +8359,22 @@ export async function registerRoutes(
   app.delete("/api/cos-status-override/:expenseId", requireAuth, async (req, res) => {
     try {
       const expenseId = parseInt(req.params.expenseId);
-      await db.delete(cosStatusOverrides).where(eq(cosStatusOverrides.expenseId, expenseId));
 
-      sendExcelSyncNotification({
-        projectName: "Unknown",
-        changedByUserId: req.user?.id || 0,
-        changeType: "cos_status_override_removed",
-        changeDescription: `COS status override removed for expense ${expenseId}`,
-        details: { expenseId },
-      }).catch(() => {});
+      // Dual-write: revert COS status on base program_expense row
+      try {
+        const { revertToImported } = await import("./lib/inline-edit-helper");
+        await revertToImported('program_expense', expenseId);
+      } catch (dualWriteErr) {
+        console.warn("[COS override delete] Dual-write revert failed (non-fatal):", dualWriteErr);
+      }
+
+      // DEPRECATED: cosStatusOverrides table removed — override data baked into base rows
 
       logAuditFromReq(req, { entityType: "cos_override", action: "delete", entityId: String(expenseId), changesJson: { description: "COS status override removed" } });
       res.json({ success: true });
     } catch (error) {
       console.error("COS override delete error:", error);
       res.status(500).json({ error: "Failed to remove COS status override" });
-    }
-  });
-
-  // Finance Revenue Overrides API
-  app.get("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
-    try {
-      const { projectName } = req.query;
-      if (!projectName || typeof projectName !== 'string') {
-        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-      }
-      const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
-      res.json(overrides);
-    } catch (error: any) {
-      console.error("[finance/revenue/overrides] Error:", error?.message || error);
-      if (error?.message?.includes('does not exist') || error?.message?.includes('relation')) {
-        res.json([]);
-      } else {
-        res.status(500).json({ error: "Failed to fetch finance revenue overrides", message: error instanceof Error ? error.message : "An unexpected error occurred. Please try again or contact support." });
-      }
-    }
-  });
-
-  app.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
-    try {
-      const { overrides, overrideCategory, overrideComment } = req.body;
-      if (!Array.isArray(overrides)) {
-        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
-      }
-      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
-      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
-      const userId = req.user?.id;
-      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-      const saved = await storage.upsertManyFinanceRevenueOverrides(overridesWithUser);
-
-      try {
-        for (const o of overrides) {
-          await recordOverride({
-            actorUserId: userId, actorRole: (req as any).user?.role,
-            entityType: "finance_revenue_override", entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
-            projectName: o.projectName, action: "FINANCE_REVENUE_OVERRIDE",
-            overrideCategory, overrideComment: overrideComment.trim(),
-            oldRecord: {}, newRecord: { [o.fieldName]: o.overrideValue },
-          });
-        }
-      } catch (auditErr: any) { console.warn("[audit] Finance revenue override audit failed:", auditErr.message); }
-
-      const revProjectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      for (const pn of revProjectNames) {
-        sendExcelSyncNotification({
-          projectName: pn,
-          changedByUserId: req.user?.id || 0,
-          changeType: "finance_revenue_override",
-          changeDescription: "Finance revenue overrides were updated.",
-          details: { count: overrides.filter((o: any) => o.projectName === pn).length },
-        }).catch(() => {});
-      }
-
-      logAuditFromReq(req, { entityType: "finance_revenue_override", action: "create", changesJson: { description: `${overrides.length} finance revenue override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
-      res.json({ message: "Finance revenue overrides saved", count: saved.length, overrides: saved });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to save finance revenue overrides", message: error instanceof Error ? error.message : "Failed to save finance revenue overrides" });
-    }
-  });
-
-  app.delete("/api/finance/revenue/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const projectName = req.params.projectName;
-      if (!projectName || typeof projectName !== 'string') {
-        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-      }
-      await storage.deleteFinanceRevenueOverridesByProject(projectName);
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "finance_revenue_override_delete",
-        changeDescription: "All finance revenue overrides deleted for project.",
-        details: { projectName },
-      }).catch(() => {});
-
-      logAuditFromReq(req, { entityType: "finance_revenue_override", action: "delete", projectName, changesJson: { description: "All finance revenue overrides deleted for project", projectName } });
-      res.json({ message: `Finance revenue overrides deleted for project: ${projectName}` });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete finance revenue overrides", message: "Failed to delete finance revenue overrides" });
-    }
-  });
-
-  // Finance COS Overrides API
-  app.get("/api/finance/cos/overrides", requireAuth, async (req, res) => {
-    try {
-      const { projectName } = req.query;
-      if (!projectName || typeof projectName !== 'string') {
-        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-      }
-      const overrides = await storage.getFinanceCosOverridesByProject(projectName);
-      res.json(overrides);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch finance COS overrides", message: "Failed to fetch finance COS overrides" });
-    }
-  });
-
-  app.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
-    try {
-      const { overrides, overrideCategory, overrideComment } = req.body;
-      if (!Array.isArray(overrides)) {
-        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
-      }
-      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
-      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
-      const userId = req.user?.id;
-      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-      const saved = await storage.upsertManyFinanceCosOverrides(overridesWithUser);
-
-      try {
-        for (const o of overrides) {
-          await recordOverride({
-            actorUserId: userId, actorRole: (req as any).user?.role,
-            entityType: "finance_cos_override", entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
-            projectName: o.projectName, action: "FINANCE_COS_OVERRIDE",
-            overrideCategory, overrideComment: overrideComment.trim(),
-            oldRecord: {}, newRecord: { [o.fieldName]: o.overrideValue },
-          });
-        }
-      } catch (auditErr: any) { console.warn("[audit] Finance COS override audit failed:", auditErr.message); }
-
-      const cosProjectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      for (const pn of cosProjectNames) {
-        sendExcelSyncNotification({
-          projectName: pn,
-          changedByUserId: req.user?.id || 0,
-          changeType: "finance_cos_override",
-          changeDescription: "Finance COS overrides were updated.",
-          details: { count: overrides.filter((o: any) => o.projectName === pn).length },
-        }).catch(() => {});
-      }
-
-      logAuditFromReq(req, { entityType: "finance_cos_override", action: "create", changesJson: { description: `${overrides.length} finance COS override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
-      res.json({ message: "Finance COS overrides saved", count: saved.length, overrides: saved });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to save finance COS overrides", message: error instanceof Error ? error.message : "Failed to save finance COS overrides" });
-    }
-  });
-
-  app.delete("/api/finance/cos/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const projectName = req.params.projectName;
-      if (!projectName || typeof projectName !== 'string') {
-        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-      }
-      await storage.deleteFinanceCosOverridesByProject(projectName);
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "finance_cos_override_delete",
-        changeDescription: "All finance COS overrides deleted for project.",
-        details: { projectName },
-      }).catch(() => {});
-
-      logAuditFromReq(req, { entityType: "finance_cos_override", action: "delete", projectName, changesJson: { description: "All finance COS overrides deleted for project", projectName } });
-      res.json({ message: `Finance COS overrides deleted for project: ${projectName}` });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to delete finance COS overrides", message: "Failed to delete finance COS overrides" });
     }
   });
 
@@ -8554,11 +8386,7 @@ export async function registerRoutes(
       if (projectName && typeof projectName === 'string') {
         data = await storage.getFinanceRevenueMonthlyByProject(projectName);
         
-        // Apply overrides if requested
-        if (applyOverrides === 'true') {
-          const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
-          data = applyFinanceRevenueOverrides(data, overrides);
-        }
+        // Override data now baked into base rows
       } else {
         data = await storage.getAllFinanceRevenueMonthly();
       }
@@ -8584,11 +8412,7 @@ export async function registerRoutes(
       if (projectName && typeof projectName === 'string') {
         data = await storage.getFinanceCosMonthlyByProject(projectName);
         
-        // Apply overrides if requested
-        if (applyOverrides === 'true') {
-          const overrides = await storage.getFinanceCosOverridesByProject(projectName);
-          data = applyFinanceCosOverrides(data, overrides);
-        }
+        // Override data now baked into base rows
       } else {
         data = await storage.getAllFinanceCosMonthly();
       }
@@ -9259,7 +9083,10 @@ export async function registerRoutes(
 
   app.get("/api/export/projects-summary", requireAuth, async (req, res) => {
     try {
-      const response = await fetch(`http://localhost:${process.env.PORT || 5000}/api/projects-summary`);
+      const authHeader = req.headers.authorization || "";
+      const response = await fetch(`http://0.0.0.0:${process.env.PORT || 5000}/api/projects-summary`, {
+        headers: { Authorization: authHeader },
+      });
       const summary = await response.json();
       const csv = generateCSV(summary, [
         "project_name", "size_kwp", "pd", "pm", "phase",
@@ -9320,19 +9147,16 @@ export async function registerRoutes(
         addCheck("auth_admin_exists", false, { error: err.message });
       }
 
-      // 3. Upload baseline test - Check existing uploads
+      // 3. Import runs baseline - Check DB import history (no disk files)
       try {
-        const uploadDir = path.join(process.cwd(), 'uploads');
-        const files = fs.readdirSync(uploadDir).filter(f => 
-          f.endsWith('.xlsx') || f.endsWith('.xlsm') || f.endsWith('.xls')
-        );
-        
-        addCheck("upload_files_available", files.length > 0, {
-          count: files.length,
-          files: files.slice(0, 5)
-        });
+        const importRuns = await db.execute(sql`
+          SELECT COUNT(*) as count FROM smart_import_runs WHERE status = 'COMMITTED'
+        `);
+        const rows = Array.isArray(importRuns) ? importRuns : (importRuns.rows || []);
+        const count = Number(rows[0]?.count || 0);
+        addCheck("import_runs_available", count > 0, { committedRuns: count });
       } catch (err: any) {
-        addCheck("upload_files_available", false, { error: err.message });
+        addCheck("import_runs_available", false, { error: err.message });
       }
 
       // 4. Projects data check
@@ -9611,14 +9435,6 @@ export async function registerRoutes(
         await storage.resetScenario(scenario.id);
       }
 
-      sendExcelSyncNotification({
-        projectName: decodedName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "working_plan_reset",
-        changeDescription: "Working plan reset to baseline.",
-        details: { projectName: decodedName },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "working_plan", action: "reset", projectName, changesJson: { description: "Working plan reset to baseline" } });
       res.json({ success: true, message: "Working plan reset to baseline" });
     } catch (error: any) {
@@ -9694,51 +9510,12 @@ export async function registerRoutes(
           console.warn(`[working-plan] Failed to sync percentComplete to work_items for task ${id}:`, e);
         }
       }
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "working_plan_task_update",
-        changeDescription: `Working plan task #${id} updated.`,
-        details: { taskId: id, startDate, endDate, name, taskNo },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "working_plan_task", action: "update", entityId: String(id), projectName, changesJson: { description: "Working plan task updated", startDate, endDate, name, taskNo } });
       res.json(result);
 
       try {
-        const { milestoneTaskLinks, expenseTaskLinks, notifications: notificationsTable, users: usersTable } = await import("@shared/schema");
-        const APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
-        const [revLinks, expLinks] = await Promise.all([
-          db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName)),
-          db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName)),
-        ]);
-        const hasRevImpact = revLinks.some(l => Math.abs(l.taskId) === id);
-        const hasExpImpact = expLinks.some(l => Math.abs(l.taskId) === id);
-        if (hasRevImpact || hasExpImpact) {
-          const flags: string[] = [];
-          if (hasRevImpact) flags.push("Revenue");
-          if (hasExpImpact) flags.push("Expenditure");
-          const editDesc = [
-            startDate && `start date → ${startDate}`,
-            endDate && `end date → ${endDate}`,
-            name && `name → "${name}"`,
-          ].filter(Boolean).join(", ");
-          const approvers = await db.select({ id: usersTable.id }).from(usersTable)
-            .where(inArray(usersTable.role, APPROVER_ROLES));
-          const actorName = req.user?.name || req.user?.username || "Someone";
-          for (const appr of approvers) {
-            if (appr.id === req.user?.id) continue;
-            await db.insert(notificationsTable).values({
-              recipientUserId: appr.id,
-              eventType: "financial.plan_task_impact",
-              title: `[FINANCIAL] Plan Task Edit: ${projectName}`,
-              body: `${actorName} edited task #${id} (${editDesc || "fields changed"}). This task is linked to ${flags.join(" & ")} items. Please verify financial alignment.`,
-              projectName,
-              linkedPlanItemId: id,
-              isRead: false,
-            });
-          }
-        }
+        // Notifications feature removed - financial impact notification inserts are now no-ops
       } catch (crossErr: any) {
         console.warn("[fin-cross] Plan-to-financial notification failed:", crossErr.message);
       }
@@ -9773,14 +9550,6 @@ export async function registerRoutes(
         deletedFlag: 0,
         isNewTask: 1,
       });
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "working_plan_task_created",
-        changeDescription: `New working plan task added: "${name}".`,
-        details: { name, startDate, endDate, taskNo },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "working_plan_task", action: "create", projectName, changesJson: { description: "Working plan task created", name, startDate, endDate } });
       res.json(created);
@@ -9891,17 +9660,10 @@ export async function registerRoutes(
         if (existingOverride) {
           await storage.softDeleteTaskOverride(existingOverride.id);
         } else {
-          await db.delete(operationalTasks).where(eq(operationalTasks.id, absId));
+          // GC-002: Use soft-delete instead of hard-delete for data recovery
+          await db.update(workItems).set({ deletedAt: new Date(), updatedAt: new Date() }).where(eq(workItems.id, absId));
         }
       }
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "working_plan_task_deleted",
-        changeDescription: `Working plan task #${taskId} deleted.`,
-        details: { taskId, isImported },
-      }).catch(() => {});
 
       logAuditFromReq(req, { entityType: "working_plan_task", action: "delete", entityId: taskId, projectName, changesJson: { description: "Working plan task deleted", isImported } });
       res.json({ success: true });
@@ -9993,8 +9755,9 @@ export async function registerRoutes(
   // Delete dependency
   app.delete("/api/dependencies/:depId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { depId } = req.params;
-      await storage.deleteDependency(parseInt(depId));
+      const depId = parseInt(req.params.depId);
+      if (isNaN(depId)) return res.status(400).json({ error: "Invalid dependency ID" });
+      await storage.deleteDependency(depId);
       logAuditFromReq(req, { entityType: "dependency", action: "delete", entityId: depId, changesJson: { description: "Dependency deleted" } });
       res.json({ success: true });
     } catch (error: any) {
@@ -10040,14 +9803,6 @@ export async function registerRoutes(
         createdBy: createdBy || null,
       });
 
-      sendExcelSyncNotification({
-        projectName: decodedName,
-        changedByUserId: req.user?.id || 0,
-        changeType: "change_notice",
-        changeDescription: `Schedule change notice created: ${summary}`,
-        details: { summary, oldFinishDate, newFinishDate, criticalPathDelta },
-      }).catch(() => {});
-
       logAuditFromReq(req, { entityType: "change_notice", action: "create", entityId: String(created.id), projectName: decodedName, changesJson: { description: "Change notice created", summary, oldFinishDate, newFinishDate, criticalPathDelta } });
       res.json(created);
     } catch (error: any) {
@@ -10059,10 +9814,11 @@ export async function registerRoutes(
   // Update schedule change notice (mark as notified/documented)
   app.patch("/api/change-notices/:noticeId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { noticeId } = req.params;
+      const noticeId = parseInt(req.params.noticeId);
+      if (isNaN(noticeId)) return res.status(400).json({ error: "Invalid notice ID" });
       const { clientNotified, documentationUpdated, userNote } = req.body;
 
-      const updated = await storage.updateChangeNotice(parseInt(noticeId), {
+      const updated = await storage.updateChangeNotice(noticeId, {
         clientNotified: clientNotified !== undefined ? clientNotified : undefined,
         documentationUpdated: documentationUpdated !== undefined ? documentationUpdated : undefined,
         userNote: userNote !== undefined ? userNote : undefined,
@@ -10723,45 +10479,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/scenarios/:id/overrides", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const overrides = await storage.getDateOverridesByScenario(id);
-      res.json({ overrides });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/scenarios/:id/overrides", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      const { entityType, entityId, fieldName, originalDate, overrideDate, reason } = req.body;
-      if (!entityType || !entityId || !fieldName || !overrideDate || !reason) {
-        return res.status(400).json({ error: "entityType, entityId, fieldName, overrideDate, and reason are required" });
-      }
-      const userId = (req.user as any)?.id;
-      const override = await storage.createDateOverride({
-        scenarioId: id, entityType, entityId, fieldName, originalDate, overrideDate, reason, createdBy: userId,
-      });
-      logAuditFromReq(req, { entityType: "scenario_override", action: "create", entityId: String(override.id), changesJson: { description: "Date override created", scenarioId: id, entityType, entityId, fieldName, overrideDate, reason } });
-      res.json(override);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.delete("/api/overrides/:id", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      await storage.deleteDateOverride(id);
-      logAuditFromReq(req, { entityType: "scenario_override", action: "delete", entityId: String(id), changesJson: { description: "Date override deleted" } });
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
   // ============ SCENARIO-AWARE COS CONTROL API ============
 
   app.get("/api/cos-control/scenario-monthly", requireAuth, requireAdmin, async (req, res) => {
@@ -10793,9 +10510,8 @@ export async function registerRoutes(
       let baselineMonthly = computeMonthlyBuckets(cosLines);
 
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        const overrideMap = buildOverrideMap(overrides);
-        scenarioLines = applyOverridesToCOSLines(cosLines, overrideMap);
+        const overrideMap = new Map();
+        scenarioLines = cosLines;
       }
 
       const scenarioMonthly = computeMonthlyBuckets(scenarioLines);
@@ -11022,8 +10738,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       const invoiceMap = new Map<string, any>();
@@ -11113,8 +10828,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       let lines = items.map((e: any) => {
@@ -11185,8 +10899,8 @@ export async function registerRoutes(
       const legacyExpSI2 = await storage.getAllProgramExpenses();
       const allExpenses = (await getMergedExpensesAndInflows(legacyExpSI2, [])).expenses;
       const items = allExpenses.filter((e: any) => e.rowType === 'item' || !e.rowType);
-      const overrides = await storage.getDateOverridesByScenario(scenarioId);
-      const overrideMap = buildOverrideMap(overrides);
+      const overrides: any[] = [];
+      const overrideMap = new Map();
 
       const shifts: any[] = [];
       for (const ov of overrides) {
@@ -11306,8 +11020,7 @@ export async function registerRoutes(
 
       let scenarioWeeks = baselineWeeks;
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        const overrideMap = buildOverrideMap(overrides);
+        const overrideMap = new Map();
         const scenarioData = buildCashflowLines(expenseItems, allInflows, overrideMap);
         scenarioWeeks = computeWeeklyCashflow(scenarioData.inflowLines, scenarioData.outflowLines, '2025-09-01', 52, openingBalance);
       }
@@ -11353,8 +11066,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       const lines: any[] = [];
@@ -11460,8 +11172,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       const projectData = projects.map((p: any) => {
@@ -11504,8 +11215,7 @@ export async function registerRoutes(
 
       let overrideMap: any = {};
       if (scenarioId) {
-        const overrides = await storage.getDateOverridesByScenario(scenarioId);
-        overrideMap = buildOverrideMap(overrides);
+        overrideMap = new Map();
       }
 
       const weeklyDemand = new Map<string, { total: number; projects: string[] }>();
@@ -11583,6 +11293,9 @@ export async function registerRoutes(
   app.get("/api/operational-tasks/task/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: `Invalid task ID: ${req.params.id}` });
+      }
 
       if (id < 0) {
         const planId = -id;
@@ -11655,13 +11368,22 @@ export async function registerRoutes(
         return;
       }
 
-      const task = await storage.getOperationalTask(id);
+      // Try canonical work_items
+      let task: any = null;
+      const { getEngineeringWorkItemById } = await import("./work-items-adapter");
+      const canonicalTask = await getEngineeringWorkItemById(id);
+      if (canonicalTask) {
+        task = canonicalTask;
+      } else {
+        task = await storage.getOperationalTask(id);
+      }
       if (!task) return res.status(404).json({ error: "Task not found" });
+      const taskIdForSub = task.workItemId || id;
       const [comments, checklists, attachments, activity] = await Promise.all([
-        storage.getTaskComments(id),
-        storage.getTaskChecklists(id),
-        storage.getTaskAttachments(id),
-        storage.getTaskActivityLog(id),
+        storage.getTaskComments(taskIdForSub),
+        storage.getTaskChecklists(taskIdForSub),
+        storage.getTaskAttachments(taskIdForSub),
+        storage.getTaskActivityLog(taskIdForSub),
       ]);
       const checklistsWithItems = await Promise.all(checklists.map(async cl => ({
         ...cl,
@@ -11684,83 +11406,14 @@ export async function registerRoutes(
     try {
       const projectName = req.params.projectName;
 
-      const useCanonical = await isWorkItemsEnabled();
-      if (useCanonical) {
-        const canonicalTasks = await getWorkItemsAsOperationalTasks(projectName);
-        if (canonicalTasks.length > 0) {
-          return res.json(canonicalTasks);
-        }
+      // Always read from canonical work_items
+      const canonicalTasks = await getWorkItemsAsOperationalTasks(projectName);
+      if (canonicalTasks.length > 0) {
+        return res.json(canonicalTasks);
       }
 
-      const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
-      const [operationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
-        storage.getOperationalTasksByProject(projectName),
-        storage.getProjectPlansByProject(projectName),
-        projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
-      ]);
-      const planTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
-
-      const linkedImportedIds = new Set(
-        operationalTasks
-          .filter((t: any) => t.importedTaskId != null)
-          .map((t: any) => t.importedTaskId)
-      );
-
-      const SECTION_HEADER_TITLES = ["high level programme", "programme", "high level program"];
-      const baselineTasks = planTasks
-        .filter((pt: any) => !linkedImportedIds.has(pt.id))
-        .filter((pt: any) => {
-          const title = (pt.highLevelProgramme || "").trim().toLowerCase();
-          return title && !SECTION_HEADER_TITLES.includes(title);
-        })
-        .map((pt: any) => {
-          const pctComplete = pt.actualPctComplete != null ? Math.round(pt.actualPctComplete * 100) : 0;
-          let status = "Not Started";
-          if (pctComplete >= 100) status = "Done";
-          else if (pctComplete > 0) status = "In Progress";
-
-          return {
-            id: -pt.id,
-            projectName: pt.projectName,
-            importedTaskId: pt.id,
-            taskNumber: pt.taskNo || String(pt.rowNumber || ""),
-            parentTaskId: null,
-            title: pt.highLevelProgramme || `Task ${pt.taskNo || pt.rowNumber}`,
-            description: null,
-            status,
-            priority: "Normal",
-            startDate: pt.actualStart || null,
-            dueDate: pt.actualEnd || null,
-            durationDays: pt.durationDays || null,
-            percentComplete: pctComplete,
-            expectedPercentComplete: pt.expectedPctComplete != null ? Math.round(pt.expectedPctComplete * 100) : null,
-            assignees: null,
-            tags: null,
-            blockerReason: null,
-            plannedHours: null,
-            actualHours: null,
-            sortOrder: pt.rowNumber || 0,
-            isBaseline: true,
-            createdBy: null,
-            createdAt: pt.createdAt,
-            updatedAt: pt.createdAt,
-          };
-        });
-
-      const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
-      const userMap = await buildUserMap();
-      const enriched = operationalTasks.map((t: any) => {
-        const idResolved = (t.assigneeUserIds || []).map((uid: number) => userMap.get(uid)).filter(Boolean);
-        return {
-          ...t,
-          resolvedAssignees: mergeResolvedWithTextNames(idResolved, t.assignees, userMap),
-          resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
-        };
-      });
-
-      const merged = [...baselineTasks, ...enriched];
-      merged.sort((a: any, b: any) => (a.sortOrder || 0) - (b.sortOrder || 0));
-      res.json(merged);
+      // Legacy fallback removed — all data should be in work_items by now.
+      return res.json([]);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -11795,6 +11448,9 @@ export async function registerRoutes(
   app.patch("/api/operational-tasks/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ error: `Invalid task ID: ${req.params.id}` });
+      }
       const updates = req.body;
       const validationErrors = validateTaskUpdate(updates);
       if (validationErrors.length > 0) {
@@ -11925,6 +11581,52 @@ export async function registerRoutes(
     }
   });
 
+  // GC-008: Task type/workstream conversion endpoint
+  app.post("/api/operational-tasks/:id/convert", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { targetWorkstream } = req.body;
+      const validWorkstreams = ["PM", "Engineering", "Quality", "Procurement", "Construction", "Commissioning", "Handover", "PD"];
+      if (!targetWorkstream || !validWorkstreams.includes(targetWorkstream)) {
+        return res.status(400).json({ error: `Invalid target workstream. Valid values: ${validWorkstreams.join(", ")}` });
+      }
+
+      const task = await storage.getOperationalTask(id);
+      if (!task) return sendError(res, notFound("Operational task"));
+
+      const oldWorkstream = (task as any).primaryWorkstream || "PM";
+      const updated = await storage.updateOperationalTask(id, { primaryWorkstream: targetWorkstream });
+
+      await storage.createTaskActivityLog({
+        taskId: id,
+        actorId: (req.user as any)?.id || null,
+        actionType: 'converted',
+        fieldName: 'primaryWorkstream',
+        oldValue: oldWorkstream,
+        newValue: targetWorkstream,
+      });
+
+      // Also update the linked work item's workstream if it exists
+      try {
+        const linkedWi = await db.select().from(workItems).where(eq(workItems.legacyTaskId, id)).limit(1);
+        if (linkedWi.length > 0) {
+          await db.update(workItems).set({ workstream: targetWorkstream }).where(eq(workItems.id, linkedWi[0].id));
+        }
+      } catch (e: any) {
+        console.warn(`[task-convert] Failed to sync work item workstream for task ${id}:`, e.message);
+      }
+
+      logAuditFromReq(req, {
+        entityType: "operational_task", action: "convert", entityId: String(id),
+        changesJson: { from: oldWorkstream, to: targetWorkstream, title: (task as any).title },
+      });
+
+      res.json({ ...updated, _converted: { from: oldWorkstream, to: targetWorkstream } });
+    } catch (err: any) {
+      sendError(res, err);
+    }
+  });
+
   app.post("/api/operational-tasks/bulk-update", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
       const { taskIds, updates } = req.body as { taskIds: number[]; updates: Record<string, any> };
@@ -12033,7 +11735,9 @@ export async function registerRoutes(
 
   app.delete("/api/task-comments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteTaskComment(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteTaskComment(id);
       logAuditFromReq(req, { entityType: "task_comment", action: "delete", entityId: req.params.id, changesJson: { description: "Task comment deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -12068,7 +11772,9 @@ export async function registerRoutes(
 
   app.delete("/api/task-checklists/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteTaskChecklist(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteTaskChecklist(id);
       logAuditFromReq(req, { entityType: "task_checklist", action: "delete", entityId: req.params.id, changesJson: { description: "Task checklist deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -12088,7 +11794,9 @@ export async function registerRoutes(
 
   app.patch("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const updated = await storage.updateChecklistItem(parseInt(req.params.id), req.body);
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const updated = await storage.updateChecklistItem(id, req.body);
       logAuditFromReq(req, { entityType: "checklist_item", action: "update", entityId: req.params.id, changesJson: { description: "Checklist item updated" } });
       res.json(updated);
     } catch (err: any) {
@@ -12098,7 +11806,9 @@ export async function registerRoutes(
 
   app.delete("/api/task-checklist-items/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteChecklistItem(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteChecklistItem(id);
       logAuditFromReq(req, { entityType: "checklist_item", action: "delete", entityId: req.params.id, changesJson: { description: "Checklist item deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -12129,7 +11839,9 @@ export async function registerRoutes(
 
   app.delete("/api/task-attachments/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteTaskAttachment(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteTaskAttachment(id);
       logAuditFromReq(req, { entityType: "task_attachment", action: "delete", entityId: req.params.id, changesJson: { description: "Task attachment deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -12180,7 +11892,7 @@ export async function registerRoutes(
 
           const usedIds = new Set<number>();
           baselineTasks = filteredCanonical.map((ct: any, idx: number) => {
-            let taskId = ct.id || (idx + 1);
+            let taskId = Number.isFinite(ct.id) && ct.id > 0 ? ct.id : (idx + 1);
             while (usedIds.has(taskId)) taskId = taskId + 100000;
             usedIds.add(taskId);
 
@@ -12212,7 +11924,7 @@ export async function registerRoutes(
 
             return {
               id: -taskId,
-              workItemId: ct.workItemId || null,
+              workItemId: ct.workItemId || taskId,
               projectName,
               planProjectName: projectName,
               importedTaskId: ct.id,
@@ -12261,12 +11973,10 @@ export async function registerRoutes(
       if (baselineTasks.length === 0) {
         const trackerName = projectName.endsWith("_Tracker") ? projectName : projectName + "_Tracker";
 
-        const [allOperationalTasks, planTasksDirect, planTasksTracker, planOverridesDirect, planOverridesTracker] = await Promise.all([
+        const [allOperationalTasks, planTasksDirect, planTasksTracker] = await Promise.all([
           storage.getOperationalTasksByProject(projectName),
           storage.getProjectPlansByProject(projectName),
           projectName !== trackerName ? storage.getProjectPlansByProject(trackerName) : Promise.resolve([]),
-          storage.getProjectPlanOverridesByProject(projectName),
-          projectName !== trackerName ? storage.getProjectPlanOverridesByProject(trackerName) : Promise.resolve([]),
         ]);
 
         const nonClickupOps = allOperationalTasks.filter((t: any) => t.externalSource !== "clickup");
@@ -12274,9 +11984,8 @@ export async function registerRoutes(
         unlinkedOperationalCount = nonClickupOps.length - operationalTasks.length;
 
         const rawPlanTasks = planTasksDirect.length > 0 ? planTasksDirect : planTasksTracker;
-        const planOverrides = planTasksDirect.length > 0 ? planOverridesDirect : planOverridesTracker;
 
-        const planTasks = applyProjectPlanOverrides(rawPlanTasks, planOverrides);
+        const planTasks = rawPlanTasks;
 
         const linkedImportedIds = new Set(
           operationalTasks
@@ -12682,7 +12391,7 @@ export async function registerRoutes(
     const user = req.user as any;
     if (!user) return false;
     const role = user.role || "";
-    if (["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(role)) return true;
+    if (["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(role)) return true;
     const info = await storage.getProjectInfo(projectName);
     if (!info) return false;
     if (info.pm === user.name || info.pd === user.name) return true;
@@ -12693,6 +12402,9 @@ export async function registerRoutes(
   app.patch("/api/planning-tasks/:taskId", requireAuth, async (req: Request, res: Response) => {
     try {
       const taskId = parseInt(req.params.taskId);
+      if (!Number.isFinite(taskId)) {
+        return res.status(400).json({ error: `Invalid task ID: ${req.params.taskId}` });
+      }
       const user = req.user as any;
       const { projectName, ...updates } = req.body;
       if (!projectName) return res.status(400).json({ error: "projectName is required" });
@@ -12842,33 +12554,7 @@ export async function registerRoutes(
           }
         }
 
-        const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-        if (!isAdmin && notifFields.length > 0) {
-          const projectInfoRow = await storage.getProjectInfo(projectName);
-          for (const nf of notifFields) {
-            await db.insert(planEditNotifications).values({
-              projectName,
-              projectId: projectInfoRow?.id || null,
-              taskId: actualTaskId,
-              taskName,
-              editType: "task_update",
-              fieldName: nf.field,
-              oldValue: nf.old,
-              newValue: nf.new_,
-              editedByUserId: user.id,
-              editedByName: user.name || user.username,
-              status: "pending",
-            });
-          }
-        }
-
-        sendExcelSyncNotification({
-          projectName,
-          changedByUserId: user.id || 0,
-          changeType: "plan_task_updated",
-          changeDescription: `Plan task "${taskName}" updated.`,
-          details: { taskId: actualTaskId, ...updates },
-        }).catch(() => {});
+        // Notifications feature removed - planEditNotifications inserts are now no-ops
 
         logAuditFromReq(req, {
           entityType: "plan_task",
@@ -12976,33 +12662,7 @@ export async function registerRoutes(
           console.warn(`[planning-tasks] Failed to sync to work_items for task ${actualTaskId}:`, e);
         }
 
-        const isAdminRole = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-        if (!isAdminRole && notifFields.length > 0) {
-          const projectInfoRow = await storage.getProjectInfo(projectName);
-          for (const nf of notifFields) {
-            await db.insert(planEditNotifications).values({
-              projectName,
-              projectId: projectInfoRow?.id || null,
-              taskId: actualTaskId,
-              taskName,
-              editType: "task_update",
-              fieldName: nf.field,
-              oldValue: nf.old,
-              newValue: nf.new_,
-              editedByUserId: user.id,
-              editedByName: user.name || user.username,
-              status: "pending",
-            });
-          }
-        }
-
-        sendExcelSyncNotification({
-          projectName,
-          changedByUserId: user.id || 0,
-          changeType: "plan_task_updated",
-          changeDescription: `Plan task "${taskName}" updated.`,
-          details: { taskId: actualTaskId, ...updates },
-        }).catch(() => {});
+        // Notifications feature removed - planEditNotifications inserts are now no-ops
 
         logAuditFromReq(req, {
           entityType: "plan_task",
@@ -13027,19 +12687,7 @@ export async function registerRoutes(
         if (Object.keys(wiUpdateFields).length > 0 && isWorkItemTask) {
           await db.update(workItems).set(wiUpdateFields).where(eq(workItems.id, wi.id));
 
-          // Legacy mirror only: keep operational_tasks readable for transitional consumers.
-          await syncOperationalTaskFromWorkItemUpdate({
-            workItemId: wi.id,
-            updates: {
-              title: updates.title,
-              status: updates.status,
-              priority: updates.priority,
-              startDate: updates.startDate,
-              dueDate: updates.dueDate,
-              percentComplete: updates.percentComplete,
-              comment: updates.comment,
-            },
-          });
+          // Legacy mirror removed — work_items is now the canonical source.
         }
 
         res.json({ success: true, taskId, workItemId: wi?.id ?? null });
@@ -13115,45 +12763,10 @@ export async function registerRoutes(
         }).returning();
       });
 
-      // Legacy mirror write (non-canonical): safe best-effort only.
-      const mirroredTaskId = await mirrorWorkItemToOperationalTask({
-        workItemId: workItem.id,
-        projectName,
-        title,
-        status: normalizedStatus,
-        priority: normalizedPriority,
-        startDate,
-        dueDate,
-        isMilestone: isMilestone || false,
-        createdBy: user.id,
-      });
+      // Legacy mirror removed — work_items is the canonical source.
+      task = { id: workItem.id };
 
-      task = { id: mirroredTaskId ?? workItem.id };
-
-      const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-      if (!isAdmin) {
-        await db.insert(planEditNotifications).values({
-          projectName,
-          projectId,
-          taskId: task.id,
-          taskName: title,
-          editType: "task_created",
-          fieldName: null,
-          oldValue: null,
-          newValue: title,
-          editedByUserId: user.id,
-          editedByName: user.name || user.username,
-          status: "pending",
-        });
-      }
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: user.id || 0,
-        changeType: "plan_task_created",
-        changeDescription: `New plan task added: "${title}". Please add this task to the Excel tracker.`,
-        details: { taskId: task.id, workItemId: workItem.id, title, wbsCode: newWbsCode, startDate, dueDate, status, priority },
-      }).catch(() => {});
+      // Notifications feature removed - planEditNotifications insert for task_created is now a no-op
 
       logAuditFromReq(req, {
         entityType: "plan_task",
@@ -13272,14 +12885,6 @@ export async function registerRoutes(
 
       const succeeded = results.filter(r => r.success).length;
 
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: user.id || 0,
-        changeType: `plan_bulk_${operation}`,
-        changeDescription: `Bulk ${operation}: ${succeeded}/${taskIds.length} tasks.`,
-        details: { operation, taskIds, results },
-      }).catch(() => {});
-
       logAuditFromReq(req, {
         entityType: "plan_task",
         action: `bulk_${operation}`,
@@ -13329,36 +12934,11 @@ export async function registerRoutes(
           });
         }
       } else {
-        // Canonical boundary: delete work_items first; mirror delete to legacy operational_tasks.
+        // Canonical boundary: soft-delete work_items only (operational_tasks no longer used).
         await softDeleteCanonicalWorkItemByLegacyTaskId(taskId);
-        await softDeleteLegacyOperationalTaskByWorkItemId(taskId);
       }
 
-      const isAdmin = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-      if (!isAdmin) {
-        const projectInfoRow = await storage.getProjectInfo(projectName);
-        await db.insert(planEditNotifications).values({
-          projectName,
-          projectId: projectInfoRow?.id || null,
-          taskId: actualTaskId,
-          taskName: `Task #${actualTaskId}`,
-          editType: "task_deleted",
-          fieldName: null,
-          oldValue: "active",
-          newValue: "deleted",
-          editedByUserId: user.id,
-          editedByName: user.name || user.username,
-          status: "pending",
-        });
-      }
-
-      sendExcelSyncNotification({
-        projectName,
-        changedByUserId: user.id || 0,
-        changeType: "plan_task_deleted",
-        changeDescription: `Plan task #${taskId} deleted.`,
-        details: { taskId, isBaselineTask },
-      }).catch(() => {});
+      // Notifications feature removed - planEditNotifications insert for task_deleted is now a no-op
 
       logAuditFromReq(req, {
         entityType: "plan_task",
@@ -13375,79 +12955,8 @@ export async function registerRoutes(
     }
   });
 
-  // ==================== PLAN EDIT NOTIFICATIONS (COO VIEW) ====================
-
-  app.get("/api/plan-edit-notifications", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      const isCOO = ["admin", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(user.role || "");
-      if (!isCOO) return res.status(403).json({ error: "Only COO/CEO/Program Manager can view notifications" });
-
-      const status = (req.query.status as string) || "pending";
-      const projectName = req.query.projectName as string | undefined;
-
-      let query = db.select().from(planEditNotifications);
-      const conditions: any[] = [];
-      if (status && status !== "all") conditions.push(eq(planEditNotifications.status, status));
-      if (projectName) conditions.push(eq(planEditNotifications.projectName, projectName));
-
-      const items = conditions.length > 0
-        ? await query.where(and(...conditions)).orderBy(desc(planEditNotifications.createdAt))
-        : await query.orderBy(desc(planEditNotifications.createdAt));
-
-      res.json(items);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.patch("/api/plan-edit-notifications/:id/resolve", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      const isCOO = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-      if (!isCOO) return res.status(403).json({ error: "Only COO/CEO can resolve notifications" });
-
-      const id = parseInt(req.params.id);
-      const { resolution } = req.body;
-
-      await db.update(planEditNotifications).set({
-        status: "resolved",
-        resolvedByUserId: user.id,
-        resolvedByName: user.name || user.username,
-        resolvedAt: new Date(),
-        resolution: resolution || "acknowledged",
-      }).where(eq(planEditNotifications.id, id));
-
-      logAuditFromReq(req, { entityType: "plan_edit_notification", entityId: String(id), action: "resolve", changesJson: { resolution: resolution || "acknowledged" } });
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/plan-edit-notifications/bulk-resolve", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = req.user as any;
-      const isCOO = ["admin", "COO_ADMIN", "CEO_ADMIN"].includes(user.role || "");
-      if (!isCOO) return res.status(403).json({ error: "Only COO/CEO can resolve notifications" });
-
-      const { ids, resolution } = req.body;
-      if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: "ids array required" });
-
-      await db.update(planEditNotifications).set({
-        status: "resolved",
-        resolvedByUserId: user.id,
-        resolvedByName: user.name || user.username,
-        resolvedAt: new Date(),
-        resolution: resolution || "bulk_acknowledged",
-      }).where(inArray(planEditNotifications.id, ids));
-
-      logAuditFromReq(req, { entityType: "plan_edit_notification", action: "bulk_resolve", changesJson: { count: ids.length, resolution: resolution || "bulk_acknowledged" } });
-      res.json({ success: true, resolved: ids.length });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+  // ==================== PLAN EDIT NOTIFICATIONS (REMOVED) ====================
+  // Notifications feature removed - plan-edit-notification endpoints removed
 
   // ==================== KEY DATE MAPPINGS ====================
 
@@ -13472,7 +12981,9 @@ export async function registerRoutes(
 
   app.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const updated = await storage.updateKeyDateMapping(parseInt(req.params.id), req.body);
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const updated = await storage.updateKeyDateMapping(id, req.body);
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: req.params.id, action: "update", changesJson: req.body });
       res.json(updated);
     } catch (err: any) {
@@ -13482,7 +12993,9 @@ export async function registerRoutes(
 
   app.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteKeyDateMapping(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteKeyDateMapping(id);
       logAuditFromReq(req, { entityType: "key_date_mapping", entityId: req.params.id, action: "delete" });
       res.json({ success: true });
     } catch (err: any) {
@@ -13628,7 +13141,9 @@ export async function registerRoutes(
 
   app.patch("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const updated = await storage.updateWritebackMapping(parseInt(req.params.id), req.body);
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const updated = await storage.updateWritebackMapping(id, req.body);
       logAuditFromReq(req, { entityType: "writeback_mapping", action: "update", entityId: req.params.id, changesJson: { description: "Writeback mapping updated" } });
       res.json(updated);
     } catch (err: any) {
@@ -13638,7 +13153,9 @@ export async function registerRoutes(
 
   app.delete("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      await storage.deleteWritebackMapping(parseInt(req.params.id));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      await storage.deleteWritebackMapping(id);
       logAuditFromReq(req, { entityType: "writeback_mapping", action: "delete", entityId: req.params.id, changesJson: { description: "Writeback mapping deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -13852,14 +13369,16 @@ export async function registerRoutes(
       const displayName = (req.user as any).name || userName;
 
       const [myToolTasksResult, opTasksForUser, planTasksForUser, engTasksForUser, qcItemsForUser] = await Promise.all([
-        safeLegacyQuery(() => db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)), []),
-        safeLegacyQuery(() => db.select().from(operationalTasks).where(
-          or(
-            eq(operationalTasks.ownerUserId, userId),
-            sql`${operationalTasks.assignees}::text[] @> ARRAY[${userName}]::text[]`,
-            sql`${operationalTasks.assignees}::text[] @> ARRAY[${displayName}]::text[]`
+        db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)),
+        db.select().from(workItems).where(
+          and(
+            isNull(workItems.deletedAt),
+            or(
+              eq(workItems.ownerUserId, userId),
+              sql`EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = ${workItems.id} AND wia.user_id = ${userId})`
+            )
           )
-        ), []),
+        ),
         db.execute(sql`
           SELECT wi.id, wi.title as task_name, wi.wbs_code as task_no, wi.start_date, wi.end_date,
                  wi.percent_complete as pct_complete, wi.duration as duration_days,
@@ -13872,20 +13391,22 @@ export async function registerRoutes(
             AND (wi.owner_user_id = ${userId}
               OR EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
         `),
-        safeLegacyQuery(() => db.select().from(engineeringTasks).where(
+        // Read ENG work_items
+        db.select().from(workItems).where(
           and(
-            eq(engineeringTasks.assigneeUserId, userId),
-            isNull(engineeringTasks.softDeletedAt)
+            eq(workItems.workstream, "ENG"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt)
           )
-        ), []),
-        safeLegacyQuery(() => db.execute(sql`
+        ),
+        db.execute(sql`
           SELECT qi.*, qc.project_name, qc.project_id, qti.item_name
           FROM qc_item_instance qi
           JOIN qc_checklist qc ON qi.checklist_id = qc.id
           JOIN qc_template_item qti ON qi.template_item_id = qti.id
           WHERE qi.assignee_user_id = ${userId}
             AND qi.is_applicable = true
-        `), { rows: [] } as any),
+        `),
       ]);
 
       const seenOpIds = new Set<number>();
@@ -13912,15 +13433,15 @@ export async function registerRoutes(
           scheduledStartTime: t.scheduledStartTime,
           scheduledEndTime: t.scheduledEndTime,
         })),
-        ...allOpTasks.map((t) => ({
+        ...allOpTasks.map((t: any) => ({
           id: t.id,
           taskType: "operational" as const,
           title: t.title,
           status: t.status,
           priority: t.priority,
-          projectName: t.projectName,
+          projectName: t.projectName || null,
           plannedForDate: null,
-          dueDate: t.dueDate,
+          dueDate: t.endDate || t.dueDate || null,
           startDate: t.startDate,
           scheduledDate: t.scheduledDate,
           scheduledStartTime: t.scheduledStartTime,
@@ -14015,23 +13536,27 @@ export async function registerRoutes(
           })
           .where(eq(mytoolTasks.id, taskId));
       } else if (taskType === "operational") {
-        const [task] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, taskId));
+        const [task] = await db.select().from(workItems).where(and(eq(workItems.id, taskId), isNull(workItems.deletedAt)));
         if (!task) return res.status(404).json({ error: "Task not found" });
 
         const isOwner = task.ownerUserId === userId;
-        const isAssigned = task.assignees?.includes(userName);
+        // Check work_item_assignments for assignee relationship
+        const assignmentCheck = await db.select().from(workItemAssignments).where(
+          and(eq(workItemAssignments.workItemId, taskId), eq(workItemAssignments.userId, userId))
+        );
+        const isAssigned = assignmentCheck.length > 0;
         if (!isOwner && !isAssigned) {
           return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
         }
 
-        await db.update(operationalTasks)
+        await db.update(workItems)
           .set({
             scheduledDate: scheduledDate || null,
             scheduledStartTime: scheduledStartTime || null,
             scheduledEndTime: scheduledEndTime || null,
             updatedAt: new Date(),
           })
-          .where(eq(operationalTasks.id, taskId));
+          .where(eq(workItems.id, taskId));
       } else if (taskType === "plan") {
         const taskResult = await db.select().from(workItems).where(eq(workItems.id, taskId));
         const [task] = taskResult;
@@ -14056,21 +13581,22 @@ export async function registerRoutes(
           })
           .where(eq(workItems.id, taskId));
       } else if (taskType === "engineering") {
-        const [task] = await db.select().from(engineeringTasks).where(eq(engineeringTasks.id, taskId));
+        // Schedule ENG tasks via work_items
+        const [task] = await db.select().from(workItems).where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
         if (!task) return res.status(404).json({ error: "Engineering task not found" });
 
-        if (task.assigneeUserId !== userId) {
+        if (task.ownerUserId !== userId) {
           return res.status(403).json({ error: "You can only schedule tasks assigned to you" });
         }
 
-        await db.update(engineeringTasks)
+        await db.update(workItems)
           .set({
             scheduledDate: scheduledDate || null,
             scheduledStartTime: scheduledStartTime || null,
             scheduledEndTime: scheduledEndTime || null,
             updatedAt: new Date(),
           })
-          .where(eq(engineeringTasks.id, taskId));
+          .where(eq(workItems.id, taskId));
       } else if (taskType === "quality") {
         const [task] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, taskId));
         if (!task) return res.status(404).json({ error: "Quality task not found" });
@@ -14130,7 +13656,7 @@ export async function registerRoutes(
 
   // ==================== MY TOOL - TASKS ====================
 
-  app.get("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/tasks", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
 
@@ -14156,7 +13682,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/tasks", requireAuth, async (req, res) => {
     const userId = (req.user as any).id;
     const rawRequestId = req.header("x-idempotency-key") || req.body?.clientRequestId;
     const requestId = typeof rawRequestId === "string" ? rawRequestId.trim() : "";
@@ -14199,6 +13725,27 @@ export async function registerRoutes(
       if (hasRequestId) {
         mytoolTaskIdempotencyStore.complete(userId, requestId, task.id);
       }
+
+      // Create entity_assignment for the personal task owner
+      try {
+        const [ownerUser] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId)).limit(1);
+        await db.insert(entityAssignments).values({
+          entityType: "personal_task",
+          entityId: task.id,
+          projectId: null,
+          assignmentRole: "OWNER",
+          assigneeType: "internal_user",
+          assigneeId: userId,
+          displayLabelSnapshot: ownerUser?.name || String(userId),
+          active: true,
+          assignedByUserId: userId,
+          metadata: null,
+          updatedAt: new Date(),
+        });
+      } catch (assignErr: any) {
+        console.warn("[mytool-task-create] Failed to create entity_assignment, task still created:", assignErr?.message);
+      }
+
       console.info("[mytool-task-create] request", { requestId: hasRequestId ? requestId : null, userId, result: "created", taskId: task.id });
       logAuditFromReq(req, { entityType: "mytool_task", action: "create", entityId: String(task.id), changesJson: { description: "MyTool task created", title: req.body.title, bucket } });
       res.json(task);
@@ -14211,7 +13758,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
@@ -14301,7 +13848,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteMytoolTask(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "mytool_task", action: "delete", entityId: req.params.id, changesJson: { description: "MyTool task deleted" } });
@@ -14311,7 +13858,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/mytool/tasks/:id/dependencies", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const taskId = Number(req.params.id);
       const deps = await db.select().from(mytoolTaskDependencies).where(or(eq(mytoolTaskDependencies.predecessorTaskId, taskId), eq(mytoolTaskDependencies.successorTaskId, taskId)));
@@ -14321,7 +13868,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const successorTaskId = Number(req.params.id);
       const predecessorTaskId = Number(req.body.predecessorTaskId);
@@ -14342,7 +13889,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, async (req, res) => {
     try {
       const dependencyId = Number(req.params.dependencyId);
       const [dep] = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
@@ -15331,7 +14878,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/send", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/outlook/send", requireAuth, async (req, res) => {
     try {
       const { to, cc, subject, body, bodyType } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0 || !subject) {
@@ -15350,7 +14897,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/reply", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/outlook/messages/:id/reply", requireAuth, async (req, res) => {
     try {
       const { comment, replyAll } = req.body;
       if (!comment) {
@@ -15369,7 +14916,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/forward", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/outlook/messages/:id/forward", requireAuth, async (req, res) => {
     try {
       const { comment, to } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0) {

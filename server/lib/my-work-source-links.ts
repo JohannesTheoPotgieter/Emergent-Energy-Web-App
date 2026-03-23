@@ -7,7 +7,6 @@ type MyWorkSource =
   | "approvals"
   | "deliverables"
   | "tr_register"
-  | "notifications"
   | "microsoft";
 
 type ProjectSubTab =
@@ -15,7 +14,6 @@ type ProjectSubTab =
   | "eng-tasks"
   | "quality"
   | "approvals"
-  | "notifications"
   | "chat"
   | "local-files";
 
@@ -201,26 +199,6 @@ export function buildMyWorkSourceLinks(input: MyWorkSourceLinkInput): MyWorkSour
             : "General Approval",
       projectHref,
       externalHref: null,
-    };
-  }
-
-  if (input.source === "notifications") {
-    if (input.projectName) {
-      const context = buildProjectContext(input.projectName, "notifications", "Open project notifications");
-      return {
-        ...context,
-        sourceTypeLabel: "Notification",
-        projectHref,
-        externalHref: input.webLink || null,
-      };
-    }
-
-    return {
-      sourceHref: input.webLink || buildMyWorkItemHref(itemKey),
-      sourceContextLabel: input.webLink ? "Open original notification" : "Open notification detail",
-      sourceTypeLabel: "Notification",
-      projectHref,
-      externalHref: input.webLink || null,
     };
   }
 

@@ -3,16 +3,16 @@ export const PLAN_SYNONYMS: Record<string, string[]> = {
   task_no: ["no.", "no", "item", "#", "ref", "task no", "wbs", "wbs no", "task #", "item no", "item #", "task number", "id"],
   start_date: ["planned start", "start date", "start", "baseline start", "plan start", "planned start date", "target start"],
   end_date: ["planned end", "end date", "end", "finish date", "baseline end", "plan end", "planned end date", "planned finish", "target end", "target finish"],
-  duration: ["duration", "days", "duration (days)", "planned duration", "total days", "calendar days"],
+  duration: ["duration", "days", "duration (days)", "duration (work days)", "planned duration", "total days", "calendar days"],
   actual_start: ["actual start", "actual start date", "act start", "real start"],
   actual_end: ["actual end", "actual end date", "actual finish", "act end", "act finish", "real end"],
-  actual_duration: ["actual duration", "actual days", "act duration"],
+  actual_duration: ["actual duration", "actual days", "act duration", "work days"],
   pct_complete: ["status", "% complete", "progress", "completion", "actual %", "actual status", "% done", "done", "complete %", "percentage complete"],
   expected_pct: ["expected", "expected %", "planned %", "expected status", "baseline %", "% forecasted", "forecasted", "target %", "planned progress"],
-  owner: ["owner", "responsible", "assigned to", "resource", "person", "lead", "project manager", "pm", "responsible person"],
+  owner: ["owner", "responsible", "assigned to", "resource", "person", "lead", "project manager", "pm", "responsible person", "resource 1"],
   predecessor: ["predecessor", "predecessors", "depends on", "dependency", "dependencies"],
   phase: ["phase", "stage", "section", "work package", "category"],
-  comment: ["comment", "comments", "notes", "remarks", "note", "remark"],
+  comment: ["comment", "comments", "notes", "remarks", "note", "remark", "resource 2"],
 };
 
 export const REVENUE_SYNONYMS: Record<string, string[]> = {
@@ -43,8 +43,8 @@ export const EXPENDITURE_SYNONYMS: Record<string, string[]> = {
   invoice_number: ["invoice number", "invoice no", "inv no", "invoice #"],
   invoice_date: ["invoice raised date", "invoice date", "date invoiced"],
   approved_date: ["approved date", "approval date", "date approved"],
-  payment_date: ["finance payment date", "payment date", "paid date", "date paid"],
-  forecast_payment_date: ["forecasted payment date", "forecast payment date", "forecast pay date"],
+  payment_date: ["payment date", "paid date", "date paid"],
+  forecast_payment_date: ["finance payment date", "forecasted payment date", "forecast payment date", "forecast pay date"],
   budget_cos: ["budget cos", "budget cost of sales"],
   actual_cos: ["actual cos", "total cos", "cost of sales"],
   revenue_recognition_amount: ["revenue recognition amount", "revenue recognition", "rev recognition"],
@@ -53,7 +53,7 @@ export const EXPENDITURE_SYNONYMS: Record<string, string[]> = {
 export const SECTION_ANCHORS: Record<string, { sheetNames: string[]; anchorPhrases: string[]; requiredFields: string[] }> = {
   PLAN: {
     sheetNames: ["project plan", "plan", "programme", "schedule", "project programme", "project schedule", "construction programme", "master programme", "master plan", "project tracker"],
-    anchorPhrases: ["high level programme", "actual start", "actual end", "programme", "milestone", "planned start", "planned end", "status", "% complete", "wbs", "task name", "duration", "baseline start", "baseline end", "task no"],
+    anchorPhrases: ["high level programme", "actual start", "actual end", "programme", "milestone", "planned start", "planned end", "status", "% complete", "% done", "% forecasted", "wbs", "task", "task name", "duration", "baseline start", "baseline end", "task no", "owner"],
     requiredFields: ["task_name"],
   },
   REVENUE: {

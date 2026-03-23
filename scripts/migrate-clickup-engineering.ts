@@ -251,12 +251,12 @@ async function main() {
         const existingComments = await db
           .select()
           .from(schema.taskComments)
-          .where(eq(schema.taskComments.taskId, insertedId));
+          .where(eq(schema.taskComments.workItemId, insertedId));
 
         const alreadyImported = existingComments.some((c) => c.body.startsWith("[Imported from ClickUp]"));
         if (!alreadyImported) {
           await db.insert(schema.taskComments).values({
-            taskId: insertedId,
+            workItemId: insertedId,
             authorId: null,
             body: commentBody,
           });

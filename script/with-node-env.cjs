@@ -16,6 +16,7 @@ const child = spawn(command, args, {
     ...process.env,
     NODE_ENV: envValue,
     JWT_SECRET: process.env.JWT_SECRET || (isStrictRuntime ? undefined : "local-dev-jwt-secret"),
+    SESSION_SECRET: process.env.SESSION_SECRET || (isStrictRuntime ? undefined : "local-dev-session-secret"),
   },
 });
 

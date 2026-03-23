@@ -52,7 +52,7 @@ function requireCOO(req: Request, res: Response, next: NextFunction) {
     if (!req.user) return res.status(401).json({ error: "auth_required" });
   }
   const role = (req.user as any).role || (req.user as any).companyRole;
-  if (role === "COO_ADMIN" || role === "admin" || role === "CEO_ADMIN") {
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
     return next();
   }
   return res.status(403).json({ error: "forbidden", message: "COO access required" });
@@ -433,7 +433,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.get("/api/ee-info/assets/:filename", async (req, res) => {
+  app.get("/api/ee-info/assets/:filename", requireAuth, async (req, res) => {
     try {
       const { filename } = req.params;
       const assetPath = path.join(ASSETS_DIR, filename);
@@ -1341,7 +1341,7 @@ export function registerEeInfoRoutes(app: Express) {
 
   const isCOORole = (user: any): boolean => {
     const role = user?.role || user?.companyRole;
-    return role === "COO_ADMIN" || role === "admin" || role === "CEO_ADMIN";
+    return role === "COO_ADMIN" || role === "CEO_ADMIN";
   };
 
   app.get("/api/ee-info/nodes/:nodeId/details", requireAuth, async (req, res) => {

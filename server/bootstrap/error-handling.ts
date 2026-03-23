@@ -5,12 +5,16 @@ export function registerGlobalErrorHandler(app: Express): void {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    console.error("Internal Server Error:", err.message, err.stack?.split("\n").slice(0, 5).join("\n"));
 
     if (res.headersSent) {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    const body: Record<string, any> = { error: message, _globalHandler: true };
+    if (process.env.NODE_ENV !== "production") {
+      body._stack = err.stack?.split("\n").slice(0, 8);
+    }
+    return res.status(status).json(body);
   });
 }

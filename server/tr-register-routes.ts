@@ -4,9 +4,11 @@ import { eq, and, desc, sql, inArray, count, isNull, ne } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
   trItems, trItemProjectLinks, trItemSuggestionDecisions,
-  insertTrItemSchema, projectInfo, operationalTasks,
+  insertTrItemSchema, projectInfo, workItems, entityAssignments,
   type TrItemProjectLink, type TrSuggestionDecision, type ProjectInfo,
 } from "@shared/schema";
+import { resolveNameToUserId } from "./user-resolver";
+import { requirePermission } from "./permission-middleware";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -35,14 +37,14 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 function requireManager(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as AppUser)?.role || "";
-  const allowed = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "admin"];
+  const allowed = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
   if (allowed.includes(role)) return next();
   res.status(403).json({ error: "forbidden", message: "Manager access required" });
 }
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as AppUser)?.role || "";
-  const allowed = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+  const allowed = ["COO_ADMIN", "CEO_ADMIN"];
   if (allowed.includes(role)) return next();
   res.status(403).json({ error: "forbidden", message: "Admin access required" });
 }
@@ -157,7 +159,7 @@ export async function seedTrRegisterData() {
 export function registerTrRegisterRoutes(app: Express) {
   app.use("/api/tr-register", jwtAuth);
 
-  app.get("/api/tr-register", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/tr-register", requireAuth, requirePermission("tr_register", "view"), async (req: Request, res: Response) => {
     try {
       const status = req.query.status as string | undefined;
       const ragStatus = req.query.ragStatus as string | undefined;
@@ -243,7 +245,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.get("/api/tr-register/:id", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/tr-register/:id", requireAuth, requirePermission("tr_register", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const [item] = await db.select().from(trItems).where(eq(trItems.id, id));
@@ -271,28 +273,118 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tr-register", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.post("/api/tr-register", requireAuth, requirePermission("tr_register", "create"), async (req: Request, res: Response) => {
     try {
+      const userId = getUser(req).id;
+
+      // Resolve ownerUserIds: prefer explicit IDs from client, fall back to name resolution
+      let ownerUserIds: number[] = [];
+      if (Array.isArray(req.body.ownerUserIds) && req.body.ownerUserIds.length > 0) {
+        ownerUserIds = req.body.ownerUserIds.filter((id: unknown) => Number.isFinite(Number(id)) && Number(id) > 0).map(Number);
+      } else if (Array.isArray(req.body.owners) && req.body.owners.length > 0) {
+        for (const name of req.body.owners) {
+          if (typeof name === "string" && name.trim()) {
+            const resolved = await resolveNameToUserId(name);
+            if (resolved) ownerUserIds.push(resolved);
+          }
+        }
+      }
+
       const parsed = insertTrItemSchema.parse({
         ...req.body,
+        ownerUserIds: ownerUserIds.length > 0 ? ownerUserIds : undefined,
         createdBy: getUser(req).email,
         updatedBy: getUser(req).email,
       });
       const [item] = await db.insert(trItems).values(parsed).returning();
+
+      // Create entity_assignments for each owner
+      const ownerNames: string[] = Array.isArray(req.body.owners) ? req.body.owners : [];
+      for (let i = 0; i < ownerUserIds.length; i++) {
+        const ownerId = ownerUserIds[i];
+        const displayLabel = ownerNames[i] || String(ownerId);
+        await db.insert(entityAssignments).values({
+          entityType: "tr_item",
+          entityId: item.id,
+          projectId: null,
+          assignmentRole: "OWNER",
+          assigneeType: "internal_user",
+          assigneeId: ownerId,
+          displayLabelSnapshot: displayLabel,
+          active: true,
+          assignedByUserId: userId,
+          metadata: null,
+          updatedAt: new Date(),
+        });
+      }
+
       res.json(item);
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
   });
 
-  app.patch("/api/tr-register/:id", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.patch("/api/tr-register/:id", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
+      const userId = getUser(req).id;
       const [existing] = await db.select().from(trItems).where(eq(trItems.id, id));
       if (!existing) return res.status(404).json({ error: "TR item not found" });
 
+      // Resolve ownerUserIds if owners changed but ownerUserIds not provided
+      if (Array.isArray(req.body.owners) && !Array.isArray(req.body.ownerUserIds)) {
+        const resolvedIds: number[] = [];
+        for (const name of req.body.owners) {
+          if (typeof name === "string" && name.trim() && !name.startsWith("counterparty:") && !name.startsWith("contact:")) {
+            const resolved = await resolveNameToUserId(name);
+            if (resolved) resolvedIds.push(resolved);
+          }
+        }
+        if (resolvedIds.length > 0) {
+          req.body.ownerUserIds = resolvedIds;
+        }
+      }
+
       const updates = { ...req.body, updatedAt: new Date(), updatedBy: getUser(req).email };
       const [updated] = await db.update(trItems).set(updates).where(eq(trItems.id, id)).returning();
+
+      // Sync entity_assignments when owners/ownerUserIds change
+      if (req.body.owners !== undefined || req.body.ownerUserIds !== undefined) {
+        const newOwnerIds: number[] = Array.isArray(updated.ownerUserIds) ? updated.ownerUserIds.filter((id): id is number => id != null) : [];
+        const ownerNames: string[] = Array.isArray(updated.owners) ? (updated.owners as string[]) : [];
+
+        // Deactivate existing OWNER assignments
+        await db.update(entityAssignments).set({
+          active: false,
+          clearedAt: new Date(),
+          clearedByUserId: userId,
+          updatedAt: new Date(),
+        }).where(and(
+          eq(entityAssignments.entityType, "tr_item"),
+          eq(entityAssignments.entityId, id),
+          eq(entityAssignments.assignmentRole, "OWNER"),
+          eq(entityAssignments.active, true),
+        ));
+
+        // Create new OWNER assignments
+        for (let i = 0; i < newOwnerIds.length; i++) {
+          const ownerId = newOwnerIds[i];
+          const displayLabel = ownerNames[i] || String(ownerId);
+          await db.insert(entityAssignments).values({
+            entityType: "tr_item",
+            entityId: id,
+            projectId: null,
+            assignmentRole: "OWNER",
+            assigneeType: "internal_user",
+            assigneeId: ownerId,
+            displayLabelSnapshot: displayLabel,
+            active: true,
+            assignedByUserId: userId,
+            metadata: null,
+            updatedAt: new Date(),
+          });
+        }
+      }
 
       if (req.body.dueDate && String(req.body.dueDate) !== String(existing.dueDate)) {
         const links: TrItemProjectLink[] = await db.select().from(trItemProjectLinks).where(eq(trItemProjectLinks.trItemId, id));
@@ -303,9 +395,9 @@ export function registerTrRegisterRoutes(app: Express) {
           const newDueStr = typeof req.body.dueDate === "string"
             ? req.body.dueDate
             : new Date(req.body.dueDate).toISOString().split("T")[0];
-          await db.update(operationalTasks)
-            .set({ dueDate: newDueStr, updatedAt: new Date() })
-            .where(inArray(operationalTasks.id, taskIds));
+          await db.update(workItems)
+            .set({ endDate: newDueStr, updatedAt: new Date() })
+            .where(inArray(workItems.id, taskIds));
         }
       }
 
@@ -315,7 +407,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/tr-register/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.delete("/api/tr-register/:id", requireAuth, requirePermission("tr_register", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const [existing] = await db.select().from(trItems).where(eq(trItems.id, id));
@@ -327,7 +419,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tr-register/:id/link", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.post("/api/tr-register/:id/link", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const { projectId } = req.body;
@@ -353,14 +445,15 @@ export function registerTrRegisterRoutes(app: Express) {
         ? new Date(trItem.dueDate).toISOString().split("T")[0]
         : null;
 
-      const [task] = await db.insert(operationalTasks).values({
+      const [task] = await db.insert(workItems).values({
+        projectId: project.id,
         title: `[${trItem.trId}] ${trItem.actionDescription}`,
-        projectName: project.projectName,
         priority: "HIGH",
-        dueDate: dueDateStr,
+        endDate: dueDateStr,
         status: "TO DO",
         description: `TR Register item: ${trItem.trId}\n${trItem.actionDescription}\n\nDepartment: ${trItem.department}\nDeep link: /tr-register/${trItem.id}`,
-        tags: ["Program Register"],
+        workstream: 'ENG' as any,
+        source: 'UI' as any,
         createdBy: getUser(req).id,
       }).returning();
 
@@ -375,14 +468,15 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/tr-register/:id/link/:linkId", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.delete("/api/tr-register/:id/link/:linkId", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const linkId = parseInt(req.params.linkId as string);
       const [link] = await db.select().from(trItemProjectLinks).where(eq(trItemProjectLinks.id, linkId));
       if (!link) return res.status(404).json({ error: "Link not found" });
 
       if (link.autoCreatedPmTaskId) {
-        await db.delete(operationalTasks).where(eq(operationalTasks.id, link.autoCreatedPmTaskId));
+        // GC-002: Use soft-delete instead of hard-delete for data recovery
+        await db.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, link.autoCreatedPmTaskId));
       }
 
       await db.delete(trItemProjectLinks).where(eq(trItemProjectLinks.id, linkId));
@@ -392,7 +486,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/tr-register/:id/complete", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.patch("/api/tr-register/:id/complete", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const [trItem] = await db.select().from(trItems).where(eq(trItems.id, id));
@@ -406,11 +500,11 @@ export function registerTrRegisterRoutes(app: Express) {
       const taskIds = links.filter((l: TrItemProjectLink) => l.autoCreatedPmTaskId != null).map((l: TrItemProjectLink) => l.autoCreatedPmTaskId!);
 
       if (taskIds.length > 0) {
-        const incompleteTasks = await db.select({ id: operationalTasks.id })
-          .from(operationalTasks)
+        const incompleteTasks = await db.select({ id: workItems.id })
+          .from(workItems)
           .where(and(
-            inArray(operationalTasks.id, taskIds),
-            ne(operationalTasks.status, "COMPLETE"),
+            inArray(workItems.id, taskIds),
+            ne(workItems.status, "COMPLETE"),
           ));
         if (incompleteTasks.length > 0) {
           return res.status(400).json({
@@ -525,7 +619,7 @@ export function registerTrRegisterRoutes(app: Express) {
     }
   });
 
-  app.post("/api/tr-register/:id/suggestion-decision", requireAuth, requireManager, async (req: Request, res: Response) => {
+  app.post("/api/tr-register/:id/suggestion-decision", requireAuth, requirePermission("tr_register", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const { projectId, decision } = req.body;
@@ -571,14 +665,15 @@ export function registerTrRegisterRoutes(app: Express) {
             ? new Date(trItem.dueDate).toISOString().split("T")[0]
             : null;
 
-          const [task] = await db.insert(operationalTasks).values({
+          const [task] = await db.insert(workItems).values({
+            projectId: project.id,
             title: `[${trItem.trId}] ${trItem.actionDescription}`,
-            projectName: project.projectName,
             priority: "HIGH",
-            dueDate: dueDateStr,
+            endDate: dueDateStr,
             status: "TO DO",
             description: `TR Register item: ${trItem.trId}\n${trItem.actionDescription}\n\nDepartment: ${trItem.department}\nDeep link: /tr-register/${trItem.id}`,
-            tags: ["Program Register"],
+            workstream: 'ENG' as any,
+            source: 'UI' as any,
             createdBy: getUser(req).id,
           }).returning();
 

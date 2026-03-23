@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -456,7 +457,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
               </tbody>
             </table>
           ) : (
-            <div className="p-6 text-center text-sm text-slate-500">No tasks found</div>
+            <EmptyState title="No tasks found" className="my-4" />
           )}
         </div>
         {hasEdits && (
@@ -967,7 +968,20 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
 }
 
 function getNextKeyDate(project: ProjectSummary): string | null {
-  return project.client_handover_date || project.om_handover_date || project.commissioning_date || project.construction_start_date || project.pd_handover_date || null;
+  const today = new Date().toISOString().split("T")[0];
+  const dates = [
+    project.client_handover_date,
+    project.om_handover_date,
+    project.commissioning_date,
+    project.construction_start_date,
+    project.pd_handover_date,
+  ].filter((d): d is string => !!d);
+
+  // Prefer the nearest future date; fall back to the most recent past date
+  const futureDates = dates.filter(d => d >= today).sort();
+  if (futureDates.length > 0) return futureDates[0];
+  const pastDates = dates.sort().reverse();
+  return pastDates[0] || null;
 }
 
 function formatDateTime(val: string | null | undefined): string {
@@ -1323,6 +1337,7 @@ export default function ProjectsSummary() {
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("phase");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const { isAdmin, user } = useAuth();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canSuperAdmin = isSuperAdmin(user?.role, companyRole);
@@ -1382,6 +1397,35 @@ export default function ProjectsSummary() {
     },
   });
 
+  // Fetch priorities for filter dropdown
+  const { data: allPriorities = [] } = useQuery<any[]>({
+    queryKey: ["/api/priorities"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/priorities", { credentials: "include", headers });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  // Fetch linked project IDs for priority filter
+  const { data: priorityProjectIds } = useQuery<number[]>({
+    queryKey: [`/api/priorities/${priorityFilter}/detail`],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/priorities/${priorityFilter}`, { credentials: "include", headers });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.linkedProjects || []).map((p: any) => p.id);
+    },
+    enabled: priorityFilter !== "all",
+  });
+
   const { data: projects = [], isLoading, isError, error, refetch } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
@@ -1393,7 +1437,7 @@ export default function ProjectsSummary() {
       return res.json();
     },
     refetchOnMount: "always",
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const activeProjects = useMemo(() => projects.filter(p => p.is_active && p.has_tracker_import), [projects]);
@@ -1434,8 +1478,12 @@ export default function ProjectsSummary() {
     if (phaseFilter !== "all") {
       result = result.filter((p) => p.phase === phaseFilter);
     }
+    if (priorityFilter !== "all" && priorityProjectIds) {
+      const idSet = new Set(priorityProjectIds);
+      result = result.filter((p) => p.project_info_id != null && idSet.has(p.project_info_id));
+    }
     return result;
-  }, [currentProjects, searchTerm, pmFilter, phaseFilter]);
+  }, [currentProjects, searchTerm, pmFilter, phaseFilter, priorityFilter, priorityProjectIds]);
 
   const currentUserName = (() => { try { const u = localStorage.getItem("user"); if (u) { const p = JSON.parse(u); return p.name || ""; } } catch {} return ""; })();
 
@@ -1650,17 +1698,11 @@ export default function ProjectsSummary() {
           title="Project List"
           description="Execution project management list"
         />
-        <Card className="border-2 border-dashed border-border">
-          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4">
-              <AlertCircle className="w-8 h-8 text-slate-500" />
-            </div>
-            <h3 className="text-lg font-semibold text-foreground mb-2">No projects available</h3>
-            <p className="text-sm text-muted-foreground max-w-md">
-              Upload tracker files to populate the execution project list with trusted tracker-linked dates, latest updates, and operational signals.
-            </p>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={<AlertCircle className="w-6 h-6 text-muted-foreground" />}
+          title="No projects available"
+          description="Upload tracker files to populate the execution project list with trusted tracker-linked dates, latest updates, and operational signals."
+        />
       </PageShell>
     );
   }
@@ -2128,7 +2170,7 @@ export default function ProjectsSummary() {
         actions={
           <>
             <Button asChild variant="outline" size="sm">
-              <Link href="/pm-dashboard">Execution Overview</Link>
+              <Link href="/execution-board">Execution Overview</Link>
             </Button>
             <Button asChild variant="ghost" size="sm">
               <Link href="/execution-board">Open Work Plan / Board</Link>
@@ -2260,6 +2302,19 @@ export default function ProjectsSummary() {
           ]}
         />
 
+        {allPriorities.length > 0 && (
+          <SearchableSelect
+            value={priorityFilter}
+            onValueChange={setPriorityFilter}
+            placeholder="All Priorities"
+            triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border"
+            options={[
+              { value: "all", label: "All Priorities" },
+              ...allPriorities.map((p: any) => ({ value: String(p.id), label: p.title })),
+            ]}
+          />
+        )}
+
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm border-border" data-interactive="true" onClick={(e) => e.stopPropagation()} data-testid="btn-column-toggle">
@@ -2366,11 +2421,11 @@ export default function ProjectsSummary() {
           </Button>
         )}
 
-        {(searchTerm || pmFilter !== "all" || phaseFilter !== "all") && (
+        {(searchTerm || pmFilter !== "all" || phaseFilter !== "all" || priorityFilter !== "all") && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); }}
+            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); setPriorityFilter("all"); }}
             className="h-9 text-xs text-muted-foreground hover:text-foreground"
           >
             <X className="w-3 h-3 mr-1" />

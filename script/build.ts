@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile, writeFile } from "fs/promises";
+import { rm, readFile, writeFile, mkdir, copyFile } from "fs/promises";
 import crypto from "crypto";
 import { execSync } from "child_process";
 
@@ -135,6 +135,14 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  console.log("copying schema SQL files...");
+  await mkdir("dist/script", { recursive: true });
+  for (const f of ["pre-push-enums.sql", "full-schema-alignment.sql"]) {
+    try {
+      await copyFile(`script/${f}`, `dist/script/${f}`);
+    } catch {}
+  }
 }
 
 buildAll().catch((err) => {

@@ -264,7 +264,7 @@ export default function PdPmHandoverPage() {
   }
 
   const status = data.handover?.status || "DRAFT";
-  const pdCanEdit = user?.role === "PROJECT_DEVELOPER" || user?.role === "admin";
+  const pdCanEdit = user?.role === "PROJECT_DEVELOPER" || user?.role === "COO_ADMIN" || user?.role === "CEO_ADMIN";
   const pmCanReview = isPmRole(user?.role);
   const blockersText = (data.blockers || []).join(", ");
   const deliverablesComplete = DELIVERABLES.filter((item) => form.deliverables?.[item.key]?.reference).length;
@@ -401,7 +401,7 @@ export default function PdPmHandoverPage() {
             <Input placeholder="Reference or URL" value={newEvidence.valueRef} onChange={(e) => setNewEvidence({ ...newEvidence, valueRef: e.target.value })} />
           </div>
           <Button variant="outline" onClick={() => addEvidence.mutate()} disabled={addEvidence.isPending}>{addEvidence.isPending ? "Attaching..." : "Attach evidence"}</Button>
-          {["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"].includes(user?.role || "") ? <Textarea value={evidenceOverrideReason} onChange={(e) => setEvidenceOverrideReason(e.target.value)} placeholder="Override reason if evidence is below threshold" rows={3} /> : null}
+          {["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"].includes(user?.role || "") ? <Textarea value={evidenceOverrideReason} onChange={(e) => setEvidenceOverrideReason(e.target.value)} placeholder="Override reason if evidence is below threshold" rows={3} /> : null}
           {DELIVERABLES.map((item) => {
             const current = form.deliverables?.[item.key] || {};
             return (

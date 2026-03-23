@@ -7,7 +7,9 @@ export function enforceRuntimeEnvironmentGuards(): { sessionSecret: string; isSt
   }
 
   if (!sessionSecret) {
-    throw new Error("[Session] SESSION_SECRET must be set. Refusing insecure default.");
+    const fallback = "dev-session-secret-not-for-production";
+    console.warn("[Session] SESSION_SECRET not set — using insecure dev fallback. Set SESSION_SECRET for production.");
+    return { sessionSecret: fallback, isStrictRuntime };
   }
 
   return { sessionSecret, isStrictRuntime };

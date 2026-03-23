@@ -490,7 +490,7 @@ export default function SubcontractorDashboardPage() {
       if (!res.ok) throw new Error("Failed to load");
       return res.json();
     },
-    staleTime: 0,
+    staleTime: 10_000,
     refetchOnWindowFocus: true,
   });
 
@@ -502,7 +502,7 @@ export default function SubcontractorDashboardPage() {
       return res.json();
     },
     enabled: showOverdue,
-    staleTime: 0,
+    staleTime: 10_000,
   });
 
   const { data: detailData, isLoading: detailLoading } = useQuery({

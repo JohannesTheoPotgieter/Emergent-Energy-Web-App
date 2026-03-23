@@ -28,14 +28,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "cos", path: "/cos", label: "COS Tracker", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker", labels: { redesigned: "COS Control" } },
   { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue Tracker", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage", labels: { redesigned: "Revenue Control" } },
   { id: "gpTracker", path: "/gp-tracker", label: "GP Tracker", iconKey: "Activity", navGroup: "FINANCE", permissionEntity: "gp_tracker", showInSidebar: true, routeComponentKey: "GpTrackerPage", labels: { redesigned: "Gross Profit Control" } },
-  { id: "myTool", path: "/my-tool", label: "My Work", iconKey: "Briefcase", navGroup: "EXCO", permissionEntity: "my_tool", showInSidebar: false, routeComponentKey: "MyToolTodayPage", matchSubRoutes: true, labels: { legacy: "My Work" } },
-  { id: "myToolWeek", path: "/my-tool/week", label: "My Work Week", routeComponentKey: "MyToolWeekPage" },
-  { id: "myToolBacklog", path: "/my-tool/backlog", label: "My Work Backlog", routeComponentKey: "MyToolBacklogPage" },
-  { id: "myToolSettings", path: "/my-tool/settings", label: "My Work Settings", routeComponentKey: "MyToolSettingsPage" },
   { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", iconKey: "Flag", navGroup: "EXCO", permissionEntity: "company_priorities", showInSidebar: true, routeComponentKey: "MyToolPrioritiesPage" },
-  { id: "myToolHelp", path: "/my-tool/help", label: "My Work Help", routeComponentKey: "MyToolHelpPage" },
   { id: "admin", path: "/admin", label: "Admin Control Center", permissionEntity: "admin", redirectTo: "/admin/control-center" },
-  { id: "adminLegacyUtilities", path: "/admin/legacy-utilities", label: "Legacy Admin Utilities", permissionEntity: "admin", routeComponentKey: "AdminPage" },
   { id: "adminMyTool", path: "/admin/my-tool-settings", label: "Admin My Work Settings", permissionEntity: "admin", routeComponentKey: "MyToolAdminSettingsPage" },
   { id: "quality", path: "/quality", label: "Quality Dashboard", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage" },
   { id: "engineering", path: "/engineering", label: "Eng Overview", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", labels: { legacy: "Eng Standup" } },
@@ -59,9 +53,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "knowledgeGame", path: "/knowledge-game", label: "Knowledge Game", iconKey: "Gamepad2", navGroup: "KNOWLEDGE", permissionEntity: "knowledge_game", showInSidebar: true, routeComponentKey: "KnowledgeGamePage" },
   { id: "departmentScores", path: "/department-scores", label: "Department Scores", iconKey: "BarChart3", navGroup: "KNOWLEDGE", permissionEntity: "department_scores", showInSidebar: true, routeComponentKey: "DepartmentScoresPage" },
   { id: "pmDashboard", path: "/pm-dashboard", label: "PM Dashboard", iconKey: "Briefcase", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_dashboard", showInSidebar: true, routeComponentKey: "PMDashboard", roleLandingEligibility: ["PROJECT_MANAGER_SITE"] },
-  { id: "excelUpdates", path: "/admin/excel-updates", label: "Excel Updates", iconKey: "ClipboardCheck", navGroup: "SYSTEM", permissionEntity: "excel_updates", showInSidebar: false, routeComponentKey: "ExcelUpdatesPage" },
   { id: "smartImportLegacyRedirect", path: "/smart-import", label: "Smart Import Legacy Redirect", redirectTo: "/admin/smart-import" },
-  { id: "excelUpdatesLegacyRedirect", path: "/excel-updates", label: "Excel Updates Legacy Redirect", redirectTo: "/admin/excel-updates" },
   { id: "portfolios", path: "/portfolios", label: "Portfolios", iconKey: "FolderOpen", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolios", showInSidebar: true, routeComponentKey: "PortfoliosPage" },
   { id: "portfolioDetail", path: "/portfolios/:id", label: "Portfolio Detail", routeComponentKey: "PortfolioDetailPage" },
   { id: "pdDashboard", path: "/pd", label: "PD Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdDashboardPage", aliases: ["/pd/dashboard"] },
@@ -96,6 +88,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pdPmHandover", path: "/pd/handover/:projectId", label: "PD to PM Handover", routeComponentKey: "PdPmHandoverPage" },
   { id: "pmHandoverReview", path: "/pm/handover-review", label: "PM Handover Review", routeComponentKey: "PmHandoverReviewPage" },
   { id: "handoverControl", path: "/handover-control", label: "Handover Control", iconKey: "Handshake", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
+  { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY

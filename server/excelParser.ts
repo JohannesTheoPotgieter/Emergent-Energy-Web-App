@@ -1157,7 +1157,7 @@ export async function applyFontColors(expenses: InsertProgramExpense[], buffer: 
         (exp as any).invoiceDateFontColor = colors.invoiceColor;
         (exp as any).invoiceDateConfirmed = colors.invoiceColor !== "red";
       }
-      if (colors.paymentColor && exp.expensePaymentDate) {
+      if (colors.paymentColor && (exp.expensePaymentDate || (exp as any).forecastPaymentDate)) {
         (exp as any).paymentDateFontColor = colors.paymentColor;
         (exp as any).paymentDateConfirmed = colors.paymentColor !== "red";
       }

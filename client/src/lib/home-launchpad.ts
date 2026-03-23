@@ -1,4 +1,5 @@
 import { differenceInCalendarDays, parseISO, startOfDay } from "date-fns";
+import { normalizeToUniversalStatus } from "@shared/task-status";
 
 export type CompanyPriorityLink = {
   id: number;
@@ -144,13 +145,12 @@ function normalizePriority(value?: string | null) {
   return normalized || "normal";
 }
 
+// GC-009: Delegate to shared universal status normalizer
 function normalizeStatus(value?: string | null) {
-  const normalized = normalizeText(value);
-  if (["done", "complete", "completed", "closed", "cancelled", "canceled", "resolved", "approved"].includes(normalized)) return "complete";
-  if (["blocked", "on-hold", "hold", "waiting"].includes(normalized)) return "blocked";
-  if (["review", "in-review", "qa-review", "needs-review"].includes(normalized)) return "review";
-  if (["in-progress", "active", "pending"].includes(normalized)) return "in-progress";
-  return normalized || "todo";
+  const universal = normalizeToUniversalStatus(value);
+  // Map to the hyphenated format used by this module
+  if (universal === "in_progress") return "in-progress";
+  return universal;
 }
 
 function isClosedStatus(status?: string | null) {
