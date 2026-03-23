@@ -9,7 +9,7 @@ import { getStartupModes } from "./startup-modes";
 import { applySecurityAndParsingMiddleware } from "./bootstrap/security-middleware";
 import { configureSession } from "./bootstrap/session";
 import { configurePassportAuth } from "./bootstrap/auth";
-import { jwtAuth } from "./auth-context";
+import { jwtAuth, requireAuth } from "./auth-context";
 import { enforceRuntimeEnvironmentGuards } from "./bootstrap/env-guard";
 import { applyRequestLogging } from "./bootstrap/http-observability";
 import { registerGlobalErrorHandler } from "./bootstrap/error-handling";
@@ -89,7 +89,7 @@ async function bootstrap() {
   app.use(jwtAuth);
   applyRequestLogging(app, log);
 
-  app.get("/api/environment/status", async (_req, res) => res.status(200).json(getEnvironmentStatus()));
+  app.get("/api/environment/status", requireAuth, async (_req, res) => res.status(200).json(getEnvironmentStatus()));
 
   const runtimeMutationPolicy = getRuntimeMutationPolicy(startupModes);
   const report = createStartupReport(dbMode, {
