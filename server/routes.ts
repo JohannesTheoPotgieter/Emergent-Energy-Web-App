@@ -2418,8 +2418,8 @@ export async function registerRoutes(
       });
 
       let finalResult = projectsSummary;
-      // RLS enforcement: scoped users only see owned/assigned projects
-      if (!isFullOversight) {
+      // RLS enforcement: scoped users see all projects but can be narrowed with scope=owned
+      if (!isFullOversight && scopeParam === "owned") {
         finalResult = projectsSummary.filter((p: any) => p._user_scope === "owned" || p._user_scope === "assigned");
       } else if (scopeParam === "owned") {
         // Full oversight users can optionally narrow to their own projects
