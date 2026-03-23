@@ -233,6 +233,7 @@ export const projectEditableFields = pgTable("project_editable_fields", {
   epcContractType: text("epc_contract_type"),
   epcContractLink: text("epc_contract_link"),
   epcContractNaReason: text("epc_contract_na_reason"),
+  province: text("province"),
   currentVoTotal: decimal("current_vo_total", { precision: 15, scale: 2 }),
   comments: text("comments"),
   latestUpdate: text("latest_update"),
