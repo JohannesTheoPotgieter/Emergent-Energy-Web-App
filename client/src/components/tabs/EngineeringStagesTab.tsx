@@ -35,14 +35,7 @@ import {
   Mail,
 } from "lucide-react";
 import { exportStagePack, exportAllStagesPack } from "@/lib/stage-export";
-
-function engFetch(url: string, options?: RequestInit) {
-  const token = localStorage.getItem("auth_token");
-  const headers: Record<string, string> = { ...(options?.headers as any || {}) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (options?.body && typeof options.body === "string") headers["Content-Type"] = "application/json";
-  return fetch(url, { ...options, headers, credentials: "include" });
-}
+import { engFetchRaw as engFetch } from "@/lib/eng-fetch";
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
   not_started: { label: "Not Started", color: "bg-muted text-foreground", icon: Circle },
