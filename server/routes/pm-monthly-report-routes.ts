@@ -158,7 +158,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
   });
 
   // POST publish
-  app.post("/api/reports/pm/monthly/:id/publish", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
+  app.post("/api/reports/pm/monthly/:id/publish", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
@@ -181,7 +181,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
   });
 
   // POST revert to draft
-  app.post("/api/reports/pm/monthly/:id/revert", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
+  app.post("/api/reports/pm/monthly/:id/revert", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
