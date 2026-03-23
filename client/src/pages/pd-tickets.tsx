@@ -9,6 +9,8 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Loader2, Plus, Search, FileEdit, Filter, AlertTriangle, AlertCircle, ArrowRight } from "lucide-react";
 import { useLocation } from "wouter";
 import { usePermission } from "@/hooks/use-permissions";
+import { useTablePagination } from "@/hooks/use-table-pagination";
+import { TablePagination } from "@/components/ui/table-pagination";
 
 function pdFetch(url: string) {
   return fetch(url, { credentials: "include" }).then(r => { if (!r.ok) throw new Error("Failed"); return r.json(); });
@@ -55,6 +57,8 @@ export default function PdTicketsPage() {
     if (!aOverdue && bOverdue) return 1;
     return 0;
   });
+
+  const pagination = useTablePagination(filtered);
 
   if (!permLoading && !canView) {
     return (
@@ -159,7 +163,7 @@ export default function PdTicketsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((row: any) => {
+              {pagination.paginatedItems.map((row: any) => {
                 const t = row.ticket;
                 const today = new Date();
                 const created = t.createdAt ? new Date(t.createdAt) : null;
@@ -170,8 +174,8 @@ export default function PdTicketsPage() {
                 const daysOverdue = overdue ? Math.floor((today.getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
                 return (
                   <tr key={t.id} className={`border-b hover:bg-muted/10 cursor-pointer transition-colors ${overdue ? "border-l-4 border-l-red-500 bg-red-50/30" : ""}`} onClick={() => navigate(`/pd/tickets/${t.id}`)} data-testid={`pd-ticket-row-${t.id}`}>
-                    <td className="p-2.5 pl-3 font-medium">{t.projectSiteName}</td>
-                    <td className="p-2.5 text-muted-foreground">{row.clientName || "—"}</td>
+                    <td className="p-2.5 pl-3 font-medium max-w-[200px] truncate" title={t.projectSiteName || ""}>{t.projectSiteName}</td>
+                    <td className="p-2.5 text-muted-foreground max-w-[150px] truncate" title={row.clientName || ""}>{row.clientName || "—"}</td>
                     <td className="p-2.5"><Badge variant="outline" className="text-[10px]">{t.requestType}</Badge></td>
                     <td className="p-2.5"><Badge className={`text-[10px] ${priorityColorClasses(t.priority)}`}>{t.priority}</Badge></td>
                     <td className="p-2.5"><Badge className={`text-[10px] ${statusColorClasses(t.status)}`}>{t.status}</Badge></td>
@@ -219,6 +223,7 @@ export default function PdTicketsPage() {
               })}
             </tbody>
           </table>
+          <TablePagination {...pagination} />
         </div>
       )}
     </div>
