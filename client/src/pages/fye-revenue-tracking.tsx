@@ -25,6 +25,7 @@ interface MonthMetric {
   budget: number;
   actualForecast: number;
   actual: number | null;
+  pipeline?: number;
 }
 
 interface DashboardMonth {
@@ -175,25 +176,28 @@ function DashboardSection({
   metricKey: "revenue" | "cos" | "gp";
   isRunning: boolean;
 }) {
-  const rows = [
+  const hasPipeline = metricKey === "revenue" && months[0]?.[metricKey]?.pipeline !== undefined;
+  const rows: { key: string; label: string; color: string }[] = [
     { key: "budget", label: "Budget", color: "text-blue-700 bg-blue-50" },
     { key: "actualForecast", label: "Actual + Forecast", color: "text-emerald-700 bg-emerald-50" },
     { key: "actual", label: "Actual", color: "text-amber-700 bg-amber-50" },
-  ] as const;
+    ...(hasPipeline ? [{ key: "pipeline", label: "Pipeline (95%+)", color: "text-violet-700 bg-violet-50" }] : []),
+  ];
 
   const data = useMemo(() => {
     if (!isRunning) return months;
     // Cumulative
-    let cumBudget = 0, cumAF = 0, cumActual: number | null = 0;
+    let cumBudget = 0, cumAF = 0, cumActual: number | null = 0, cumPipeline = 0;
     return months.map((m) => {
       const metric = m[metricKey];
       cumBudget += metric.budget;
       cumAF += metric.actualForecast;
       if (metric.actual !== null) cumActual = (cumActual || 0) + metric.actual;
       else cumActual = cumActual || null;
+      cumPipeline += metric.pipeline || 0;
       return {
         ...m,
-        [metricKey]: { budget: cumBudget, actualForecast: cumAF, actual: cumActual },
+        [metricKey]: { budget: cumBudget, actualForecast: cumAF, actual: cumActual, pipeline: cumPipeline },
       };
     });
   }, [months, metricKey, isRunning]);
@@ -255,12 +259,20 @@ function DashboardChart({
   months: DashboardMonth[];
   metricKey: "revenue" | "gp";
 }) {
-  const chartData = months.map((m) => ({
-    label: m.label,
-    Budget: (m[metricKey] as MonthMetric).budget,
-    "Actual + Forecast": (m[metricKey] as MonthMetric).actualForecast,
-    Actual: (m[metricKey] as MonthMetric).actual,
-  }));
+  const metric0 = months[0]?.[metricKey] as MonthMetric | undefined;
+  const hasPipeline = metricKey === "revenue" && metric0?.pipeline !== undefined;
+
+  const chartData = months.map((m) => {
+    const metric = m[metricKey] as MonthMetric;
+    const point: Record<string, any> = {
+      label: m.label,
+      Budget: metric.budget,
+      "Actual + Forecast": metric.actualForecast,
+      Actual: metric.actual,
+    };
+    if (hasPipeline) point["Pipeline (95%+)"] = metric.pipeline || 0;
+    return point;
+  });
 
   return (
     <Card className="mb-4">
@@ -278,6 +290,7 @@ function DashboardChart({
             <Area type="monotone" dataKey="Budget" fill="#3b82f6" stroke="#3b82f6" fillOpacity={0.15} strokeWidth={1} />
             <Line type="monotone" dataKey="Actual + Forecast" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
             <Line type="monotone" dataKey="Actual" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
+            {hasPipeline && <Line type="monotone" dataKey="Pipeline (95%+)" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 5" dot={false} />}
           </ComposedChart>
         </ResponsiveContainer>
       </CardContent>

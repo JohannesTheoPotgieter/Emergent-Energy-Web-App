@@ -66,7 +66,7 @@ import {
   fyeReportSnapshots,
   projectPlan,
 } from "@shared/schema";
-import { eq, and, sql, desc, isNull } from "drizzle-orm";
+import { eq, and, sql, desc, isNull, gte } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { extractMonthKey, normalizeProjectName, isCosRealised, currentMonthKey } from "../lib/calculations/financeUtils";
 
@@ -441,6 +441,44 @@ router.get(
         }
       }
 
+      // 7. Pipeline (95%+) revenue spread using historical COS realization curve
+      const pipelineRevByMonth: Record<string, number> = {};
+      try {
+        const pipelineDeals = await db.select({
+          solarRevenue: forecastPipeline.solarRevenue,
+          bessRevenue: forecastPipeline.bessRevenue,
+        }).from(forecastPipeline)
+          .where(and(
+            eq(forecastPipeline.fyeYear, fye),
+            gte(forecastPipeline.dealProbabilityPct, 95),
+            eq(forecastPipeline.status, "active"),
+          ));
+
+        const totalPipelineRev = pipelineDeals.reduce(
+          (sum, d) => sum + safeNum(d.solarRevenue) + safeNum(d.bessRevenue), 0
+        );
+
+        if (totalPipelineRev > 0) {
+          // Build COS realization curve from historical actuals (what % of total COS fell in each month)
+          const totalActualCos = monthKeys.reduce((s, mk) => s + (actualCosByMonth[mk] || 0), 0);
+          if (totalActualCos > 0) {
+            // Distribute pipeline revenue proportionally to how COS was realised per month
+            for (const mk of monthKeys) {
+              const cosPct = (actualCosByMonth[mk] || 0) / totalActualCos;
+              pipelineRevByMonth[mk] = totalPipelineRev * cosPct;
+            }
+          } else {
+            // No COS history yet — spread evenly across all FYE months
+            const perMonth = totalPipelineRev / monthKeys.length;
+            for (const mk of monthKeys) {
+              pipelineRevByMonth[mk] = perMonth;
+            }
+          }
+        }
+      } catch {
+        // forecastPipeline may not exist yet
+      }
+
       // Build monthly dashboard data
       const months = monthKeys.map((mk) => {
         const budgetRev = budgetRevByMonth[mk] || 0;
@@ -469,6 +507,8 @@ router.get(
           actualForecastCos = 0;
         }
 
+        const pipelineRev = pipelineRevByMonth[mk] || 0;
+
         return {
           monthKey: mk,
           label: monthKeyToLabel(mk),
@@ -476,6 +516,7 @@ router.get(
             budget: budgetRev,
             actualForecast: actualForecastRev,
             actual: actualRev,
+            pipeline: pipelineRev,
           },
           cos: {
             budget: budgetCos,
