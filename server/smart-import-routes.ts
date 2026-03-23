@@ -2286,11 +2286,13 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           if (cs.actualProfit != null) vals.actualProfit = String(cs.actualProfit);
           if (cs.actualMargin != null) vals.actualMargin = String(cs.actualMargin);
           if (existing) {
-            // Temporal: soft-close old row, insert new version (Prompt 10)
-            await softCloseByProjectName(tx, "project_revenue_summary", projectName);
-            await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, ...vals }, runId, commitTimestamp) as any);
+            // Update existing row in-place (project_revenue_summary has a UNIQUE
+            // constraint on project_name, so soft-close + insert would violate it).
+            await tx.update(projectRevenueSummary)
+              .set({ ...vals, snapshotRunId: runId, effectiveFrom: commitTimestamp })
+              .where(eq(projectRevenueSummary.id, existing.id));
           } else {
-            await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, ...vals }, runId, commitTimestamp) as any);
+            await tx.insert(projectRevenueSummary).values(addTemporalColumns({ projectName, projectId, ...vals }, runId, commitTimestamp) as any);
           }
           console.log(`[SmartImport] Saved costedSummary for "${projectName}":`, JSON.stringify(vals));
         }
