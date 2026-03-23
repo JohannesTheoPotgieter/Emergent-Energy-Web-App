@@ -378,7 +378,6 @@ export async function generateReportPdf(reportType: string, data: any, month: st
           tableY += 16;
         }
       }
-    }
 
       // Engineering: Stage Gate Progress
       if (data.stageGates?.length > 0) {
