@@ -120,6 +120,12 @@ const emptyForm = {
   severity: "normal" as string,
   status: "in_progress" as string,
   priorityRank: "",
+  targetStartDate: "",
+  targetOutcome: "",
+  manualHealth: "" as string,
+  manualProgress: "",
+  ownerUserId: "",
+  accountableExecId: "",
 };
 
 export default function MyToolPrioritiesPage() {
@@ -278,6 +284,12 @@ export default function MyToolPrioritiesPage() {
       severity: p.severity,
       status: p.status,
       priorityRank: p.priorityRank?.toString() || "",
+      targetStartDate: (p as any).targetStartDate || "",
+      targetOutcome: (p as any).targetOutcome || "",
+      manualHealth: (p as any).manualHealth || "",
+      manualProgress: (p as any).manualProgress?.toString() || "",
+      ownerUserId: (p as any).ownerUserId?.toString() || "",
+      accountableExecId: (p as any).accountableExecId?.toString() || "",
     });
     setExistingLinks(p.links || []);
     setPendingLinks([]);
@@ -357,6 +369,12 @@ export default function MyToolPrioritiesPage() {
       severity: form.severity,
       status: form.status,
       priorityRank: form.priorityRank ? parseInt(form.priorityRank) : null,
+      targetStartDate: form.targetStartDate.trim() || null,
+      targetOutcome: form.targetOutcome.trim() || null,
+      manualHealth: form.manualHealth || null,
+      manualProgress: form.manualProgress ? parseInt(form.manualProgress) : null,
+      ownerUserId: form.ownerUserId ? parseInt(form.ownerUserId) : null,
+      accountableExecId: form.accountableExecId ? parseInt(form.accountableExecId) : null,
     };
     try {
       if (editingPriority) {
@@ -836,6 +854,76 @@ export default function MyToolPrioritiesPage() {
                   className="mt-1 h-16"
                   data-testid="input-dialog-description"
                 />
+              </div>
+
+              {/* Strategic fields */}
+              <div className="border-t pt-4">
+                <Label className="text-xs font-medium text-muted-foreground mb-2 block">Strategic Details</Label>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-xs font-medium">Target Outcome</Label>
+                    <Textarea
+                      value={form.targetOutcome}
+                      onChange={(e) => setForm({ ...form, targetOutcome: e.target.value })}
+                      placeholder="Measurable success criteria..."
+                      className="mt-1 h-16"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs font-medium">Target Start Date</Label>
+                      <Input
+                        type="date"
+                        value={form.targetStartDate}
+                        onChange={(e) => setForm({ ...form, targetStartDate: e.target.value })}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Severity</Label>
+                      <SearchableSelect
+                        value={form.severity}
+                        onValueChange={(v) => setForm({ ...form, severity: v })}
+                        triggerClassName="mt-1"
+                        options={[
+                          { value: "critical", label: "Critical" },
+                          { value: "important", label: "High" },
+                          { value: "normal", label: "Normal" },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs font-medium">Manual Health</Label>
+                      <SearchableSelect
+                        value={form.manualHealth || "_none"}
+                        onValueChange={(v) => setForm({ ...form, manualHealth: v === "_none" ? "" : v })}
+                        triggerClassName="mt-1"
+                        options={[
+                          { value: "_none", label: "Not set" },
+                          { value: "healthy", label: "Healthy" },
+                          { value: "at_risk", label: "At risk" },
+                          { value: "critical", label: "Critical" },
+                        ]}
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-0.5">For standalone priorities without linked projects</p>
+                    </div>
+                    <div>
+                      <Label className="text-xs font-medium">Manual Progress</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={form.manualProgress}
+                        onChange={(e) => setForm({ ...form, manualProgress: e.target.value })}
+                        placeholder="0-100"
+                        className="mt-1"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-0.5">Overridden by project data when linked</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="border-t pt-4">

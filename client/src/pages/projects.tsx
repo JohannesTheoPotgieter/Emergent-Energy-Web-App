@@ -1324,6 +1324,7 @@ export default function ProjectsSummary() {
   const [phaseFilter, setPhaseFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("phase");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+  const [priorityFilter, setPriorityFilter] = useState("all");
   const { isAdmin, user } = useAuth();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canSuperAdmin = isSuperAdmin(user?.role, companyRole);
@@ -1383,6 +1384,35 @@ export default function ProjectsSummary() {
     },
   });
 
+  // Fetch priorities for filter dropdown
+  const { data: allPriorities = [] } = useQuery<any[]>({
+    queryKey: ["/api/priorities"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/priorities", { credentials: "include", headers });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  // Fetch linked project IDs for priority filter
+  const { data: priorityProjectIds } = useQuery<number[]>({
+    queryKey: [`/api/priorities/${priorityFilter}/detail`],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/priorities/${priorityFilter}`, { credentials: "include", headers });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return (data.linkedProjects || []).map((p: any) => p.id);
+    },
+    enabled: priorityFilter !== "all",
+  });
+
   const { data: projects = [], isLoading, isError, error, refetch } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
@@ -1435,8 +1465,12 @@ export default function ProjectsSummary() {
     if (phaseFilter !== "all") {
       result = result.filter((p) => p.phase === phaseFilter);
     }
+    if (priorityFilter !== "all" && priorityProjectIds) {
+      const idSet = new Set(priorityProjectIds);
+      result = result.filter((p) => idSet.has(p.project_info_id));
+    }
     return result;
-  }, [currentProjects, searchTerm, pmFilter, phaseFilter]);
+  }, [currentProjects, searchTerm, pmFilter, phaseFilter, priorityFilter, priorityProjectIds]);
 
   const currentUserName = (() => { try { const u = localStorage.getItem("user"); if (u) { const p = JSON.parse(u); return p.name || ""; } } catch {} return ""; })();
 
@@ -2255,6 +2289,19 @@ export default function ProjectsSummary() {
           ]}
         />
 
+        {allPriorities.length > 0 && (
+          <SearchableSelect
+            value={priorityFilter}
+            onValueChange={setPriorityFilter}
+            placeholder="All Priorities"
+            triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border"
+            options={[
+              { value: "all", label: "All Priorities" },
+              ...allPriorities.map((p: any) => ({ value: String(p.id), label: p.title })),
+            ]}
+          />
+        )}
+
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="sm" className="h-9 gap-1.5 text-sm border-border" data-interactive="true" onClick={(e) => e.stopPropagation()} data-testid="btn-column-toggle">
@@ -2361,11 +2408,11 @@ export default function ProjectsSummary() {
           </Button>
         )}
 
-        {(searchTerm || pmFilter !== "all" || phaseFilter !== "all") && (
+        {(searchTerm || pmFilter !== "all" || phaseFilter !== "all" || priorityFilter !== "all") && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); }}
+            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); setPriorityFilter("all"); }}
             className="h-9 text-xs text-muted-foreground hover:text-foreground"
           >
             <X className="w-3 h-3 mr-1" />

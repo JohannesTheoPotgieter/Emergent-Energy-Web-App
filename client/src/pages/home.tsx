@@ -484,9 +484,9 @@ export default function HomePage() {
   });
 
   const { data: companyPriorities, isLoading: prioritiesLoading } = useQuery<any[]>({
-    queryKey: ["/api/mytool/company-priorities"],
+    queryKey: ["/api/priorities"],
     queryFn: async () => {
-      const res = await fetch("/api/mytool/company-priorities", {
+      const res = await fetch("/api/priorities", {
         headers: { Authorization: `Bearer ${token()}` },
       });
       if (!res.ok) return [];
@@ -593,7 +593,7 @@ export default function HomePage() {
         </div>
       </div>
 
-      {/* Company Priorities */}
+      {/* Company Priorities — Enriched Cards */}
       {(companyPriorities && companyPriorities.length > 0) && (
         <Card className="border-border/60 mb-6" data-testid="card-company-priorities">
           <CardContent className="p-5">
@@ -601,27 +601,47 @@ export default function HomePage() {
               <div className="flex items-center gap-2.5">
                 <Flame className="w-4 h-4 text-primary" />
                 <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
-                <Badge variant="secondary" className="text-[11px]">{companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").length} active</Badge>
+                <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
               </div>
-              <Link href="/project-lifecycle">
-                <span className="text-xs text-primary hover:underline font-medium cursor-pointer">Manage</span>
+              <Link href="/priorities">
+                <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
               </Link>
             </div>
+            <p className="text-xs text-muted-foreground mb-3">Showing {Math.min(companyPriorities.length, 6)} priorities for your role</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {companyPriorities.filter((p: any) => p.status === "active" || p.status === "in_progress").slice(0, 6).map((priority: any, i: number) => {
-                const sev = PRIORITY_SEVERITY_ICONS[priority.severity] || PRIORITY_SEVERITY_ICONS.normal;
-                const Icon = sev.icon;
+              {companyPriorities.slice(0, 6).map((priority: any, i: number) => {
+                const healthDot = priority.effectiveHealth === "critical" ? "bg-red-500" : priority.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-emerald-500";
+                const healthBorder = priority.effectiveHealth === "critical" ? "border-l-red-500" : priority.effectiveHealth === "at_risk" ? "border-l-amber-500" : "border-l-emerald-500";
+                const sevBadge = priority.severity === "critical" ? "bg-red-100 text-red-700" : priority.severity === "important" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-600";
+                const sevLabel = priority.severity === "critical" ? "Critical" : priority.severity === "important" ? "High" : "Normal";
+                const days = priority.dueDate ? Math.ceil((new Date(priority.dueDate).getTime() - Date.now()) / 86400000) : null;
+
                 return (
-                  <Card key={priority.id || i} className="border-border/50 hover:border-primary/20 transition-colors">
-                    <CardContent className="p-3 flex items-center gap-3" data-testid={`text-priority-${i}`}>
-                      <div className={`w-7 h-7 rounded-md ${sev.color} flex items-center justify-center shrink-0`}>
-                        <Icon className="w-3.5 h-3.5" />
+                  <Card key={priority.id || i} className={`border-l-4 ${healthBorder} hover:shadow-sm transition-all`}>
+                    <CardContent className="p-3" data-testid={`text-priority-${i}`}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className={`w-2 h-2 rounded-full ${healthDot} shrink-0`} />
+                        <Link href={`/priorities/${priority.id}`}>
+                          <span className="text-sm text-foreground font-medium leading-snug truncate hover:text-primary hover:underline cursor-pointer">{priority.title}</span>
+                        </Link>
+                        <Badge variant="secondary" className={`text-[10px] ml-auto shrink-0 ${sevBadge}`}>{sevLabel}</Badge>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm text-foreground font-medium leading-snug truncate">{priority.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {[priority.department, priority.assignedTo ? `Owner: ${priority.assignedTo}` : null].filter(Boolean).join(" · ")}
-                        </p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1.5">
+                        {priority.owner && <span>{priority.owner.name}</span>}
+                        {priority.assignedTo && !priority.owner && <span>{priority.assignedTo}</span>}
+                        {days != null && (
+                          <span className={days <= 7 ? "text-red-600 font-medium" : days <= 14 ? "text-amber-600" : ""}>
+                            {days < 0 ? `${Math.abs(days)}d overdue` : `${days}d`}
+                          </span>
+                        )}
+                        {priority.blockerCount > 0 && <span className="text-red-600 font-medium">{priority.blockerCount} blocker{priority.blockerCount > 1 ? "s" : ""}</span>}
+                      </div>
+                      <div className="h-1 bg-muted rounded-full overflow-hidden mb-1">
+                        <div className={`h-full rounded-full ${priority.effectiveHealth === "critical" ? "bg-red-500" : priority.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(priority.effectiveProgress || 0, 100)}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>{priority.effectiveProgress || 0}%{!priority.hasProjects && " (manual)"}</span>
+                        <span>{priority.hasProjects ? `${priority.projectCount} project${priority.projectCount !== 1 ? "s" : ""}` : "Standalone"}</span>
                       </div>
                     </CardContent>
                   </Card>
@@ -631,14 +651,21 @@ export default function HomePage() {
           </CardContent>
         </Card>
       )}
-      {prioritiesLoading && (
+      {!companyPriorities && prioritiesLoading && (
         <div>
           <Skeleton className="h-5 w-48 mb-2.5" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <Skeleton className="h-14 w-full rounded-lg" />
-            <Skeleton className="h-14 w-full rounded-lg" />
+            <Skeleton className="h-24 w-full rounded-lg" />
+            <Skeleton className="h-24 w-full rounded-lg" />
           </div>
         </div>
+      )}
+      {companyPriorities && companyPriorities.length === 0 && !prioritiesLoading && (
+        <Card className="border-border/60 mb-6">
+          <CardContent className="p-5 text-center">
+            <p className="text-sm text-muted-foreground">No priorities assigned to your projects</p>
+          </CardContent>
+        </Card>
       )}
 
       {!isLoading && (
