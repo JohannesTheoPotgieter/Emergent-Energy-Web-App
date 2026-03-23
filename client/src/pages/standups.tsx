@@ -131,6 +131,14 @@ function StandupForm({ scheduleId, existing, onSubmitted }: {
   const [mood, setMood] = useState(existing?.mood || "");
   const { toast } = useToast();
 
+  // Reset form when schedule or existing entry changes
+  useEffect(() => {
+    setWhatIDid(existing?.whatIDid || "");
+    setWhatImDoing(existing?.whatImDoing || "");
+    setBlockers(existing?.blockers || "");
+    setMood(existing?.mood || "");
+  }, [scheduleId, existing?.id]);
+
   const { data: suggestions } = useQuery<Suggestions>({
     queryKey: ["standup-suggestions"],
     queryFn: () => apiFetch("/api/standups/suggestions"),

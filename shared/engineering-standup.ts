@@ -73,8 +73,18 @@ export function bucketEngineeringStandupTasks<TTask extends StandupTaskLike>(
 
   const assigneeCounts = Object.fromEntries(
     (Object.keys(groups) as StandupGroupKey[]).map((key) => {
-      const labels = new Set(groups[key].map((task) => (isUnassignedTask(task) ? "Unassigned" : "Assigned")));
-      return [key, labels.size === 0 ? 0 : labels.size];
+      const assigneeIds = new Set<string>();
+      for (const task of groups[key]) {
+        if (isUnassignedTask(task)) {
+          assigneeIds.add("__unassigned__");
+        } else {
+          if (task.ownerUserId) assigneeIds.add(String(task.ownerUserId));
+          for (const id of task.assigneeUserIds || []) assigneeIds.add(String(id));
+          for (const a of task.resolvedAssignees || []) if (a?.id) assigneeIds.add(String(a.id));
+          if (task.resolvedOwner?.id) assigneeIds.add(String(task.resolvedOwner.id));
+        }
+      }
+      return [key, assigneeIds.size];
     }),
   ) as Record<StandupGroupKey, number>;
 

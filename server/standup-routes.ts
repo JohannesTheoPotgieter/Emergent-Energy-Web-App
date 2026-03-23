@@ -15,12 +15,12 @@ function getUser(req: Request): AppUser {
   return getEffectiveUser(req) as AppUser;
 }
 
-/** Check if today is a standup day for a given schedule */
+/** Check if today is a standup day for a given schedule (uses UTC to avoid DST issues) */
 function isStandupDay(anchorDate: string, cadenceDays: number, checkDate: string): boolean {
-  const anchor = new Date(anchorDate);
-  const check = new Date(checkDate);
+  const anchor = new Date(`${anchorDate}T00:00:00Z`);
+  const check = new Date(`${checkDate}T00:00:00Z`);
   const diffMs = check.getTime() - anchor.getTime();
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
   return diffDays >= 0 && diffDays % cadenceDays === 0;
 }
 
@@ -82,6 +82,10 @@ export function registerStandupRoutes(app: Express) {
     try {
       const user = getUser(req);
       const { name, teamLabel, projectId, cadence, cadenceDays, anchorDate, deadlineTime } = req.body;
+
+      if (!name || typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "Schedule name is required" });
+      }
 
       const [schedule] = await db.insert(standupSchedules).values({
         name,
@@ -169,7 +173,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Add participant to schedule */
-  app.post("/api/standups/schedules/:id/participants", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/standups/schedules/:id/participants", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const scheduleId = parseInt(req.params.id as string);
       const { userId, isRequired } = req.body;
@@ -187,7 +191,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Remove participant from schedule */
-  app.delete("/api/standups/schedules/:scheduleId/participants/:userId", requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/standups/schedules/:scheduleId/participants/:userId", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const scheduleId = parseInt(req.params.scheduleId as string);
       const userId = parseInt(req.params.userId as string);
@@ -261,6 +265,10 @@ export function registerStandupRoutes(app: Express) {
       const user = getUser(req);
       const { scheduleId, standupDate, whatIDid, whatImDoing, blockers, mood } = req.body;
 
+      if (!scheduleId || typeof scheduleId !== "number") {
+        return res.status(400).json({ error: "scheduleId is required and must be a number" });
+      }
+
       const dateStr = standupDate || today();
 
       // Check if already submitted for this schedule+date
@@ -331,7 +339,7 @@ export function registerStandupRoutes(app: Express) {
         .update(standupEntries)
         .set({
           whatIDid, whatImDoing, blockers,
-          mood: mood || undefined,
+          mood: mood || null,
           updatedAt: new Date(),
         })
         .where(eq(standupEntries.id, id))
@@ -386,7 +394,17 @@ export function registerStandupRoutes(app: Express) {
       const offset = parseInt(req.query.offset as string) || 0;
       const search = req.query.search as string;
 
-      let query = db
+      const conditions = [eq(standupEntries.scheduleId, scheduleId)];
+      if (search) {
+        const pattern = `%${search}%`;
+        conditions.push(sql`(
+          ${standupEntries.whatIDid} ILIKE ${pattern} OR
+          ${standupEntries.whatImDoing} ILIKE ${pattern} OR
+          ${standupEntries.blockers} ILIKE ${pattern}
+        )`);
+      }
+
+      const entries = await db
         .select({
           id: standupEntries.id,
           userId: standupEntries.userId,
@@ -401,12 +419,10 @@ export function registerStandupRoutes(app: Express) {
         })
         .from(standupEntries)
         .leftJoin(users, eq(standupEntries.userId, users.id))
-        .where(eq(standupEntries.scheduleId, scheduleId))
+        .where(and(...conditions))
         .orderBy(desc(standupEntries.standupDate), asc(standupEntries.submittedAt))
         .limit(limit)
         .offset(offset);
-
-      const entries = await query;
 
       // Group by date
       const grouped: Record<string, typeof entries> = {};
@@ -477,15 +493,24 @@ export function registerStandupRoutes(app: Express) {
         .from(standupParticipants)
         .where(eq(standupParticipants.scheduleId, scheduleId));
 
+      // Count unique standup dates to compute average per-standup participation
+      const [dateCountResult] = await db
+        .select({ count: sql<number>`COUNT(DISTINCT ${standupEntries.standupDate})` })
+        .from(standupEntries)
+        .where(eq(standupEntries.scheduleId, scheduleId));
+
+      const uniqueDates = Number(dateCountResult.count) || 0;
+      const avgParticipation = (uniqueDates > 0 && participantsResult.count > 0)
+        ? Math.round(((totalResult.count / uniqueDates) / participantsResult.count) * 100)
+        : 0;
+
       res.json({
         totalEntries: totalResult.count,
         lateEntries: lateResult.count,
         totalParticipants: participantsResult.count,
         recentBlockers: blockerEntries,
         moodDistribution: moodDist,
-        participationRate: participantsResult.count > 0
-          ? Math.round((totalResult.count / participantsResult.count) * 100) / 100
-          : 0,
+        participationRate: avgParticipation,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
