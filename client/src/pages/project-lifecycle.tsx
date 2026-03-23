@@ -804,6 +804,7 @@ function CompanyPrioritiesManager() {
     },
     onSuccess: ({ isEdit }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       resetForm();
       toast({ title: isEdit ? "Priority updated" : "Priority created" });
     },
@@ -818,6 +819,7 @@ function CompanyPrioritiesManager() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
       toast({ title: "Priority deleted" });
     },
     onError: () => toast({ title: "Delete failed", variant: "destructive" }),
