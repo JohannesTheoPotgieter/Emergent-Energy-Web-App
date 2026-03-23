@@ -3655,6 +3655,21 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='updated_at') THEN
     ALTER TABLE "pd_tickets" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_project_value') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_project_value" DECIMAL(14, 2);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_cost') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_cost" DECIMAL(14, 2);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_margin') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_margin" DECIMAL(14, 2);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_margin_percent') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_margin_percent" DECIMAL(6, 2);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='financial_notes') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "financial_notes" TEXT;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='permission_audit_log' AND column_name='event_type') THEN
     ALTER TABLE "permission_audit_log" ADD COLUMN "event_type" TEXT;
   END IF;
@@ -6969,6 +6984,9 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='blocker_reason') THEN
     ALTER TABLE "work_items" ADD COLUMN "blocker_reason" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='pd_ticket_id') THEN
+    ALTER TABLE "work_items" ADD COLUMN "pd_ticket_id" INTEGER REFERENCES pd_tickets(id);
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_dependency_override' AND column_name='scenario_id') THEN
     ALTER TABLE "working_plan_dependency_override" ADD COLUMN "scenario_id" INTEGER;
