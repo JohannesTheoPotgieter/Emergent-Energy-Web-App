@@ -17,6 +17,8 @@ import {
   projectInfo,
   users,
   workItems,
+  notifications,
+  projectTeamMembers,
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
 import { sendError } from "./lib/api-error";
@@ -940,6 +942,30 @@ export function registerEngStageRoutes(app: Express) {
       }
 
       logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(stageId), action: "approve", changesJson: { description: "Stage completed", stageName: stage.templateName } });
+
+      // Notify project team members about stage completion
+      try {
+        const [stageProject] = await db.select({ projectId: projectEngStages.projectId })
+          .from(projectEngStages).where(eq(projectEngStages.id, stageId));
+        if (stageProject) {
+          const teamMembers = await db.select({ userId: projectTeamMembers.userId })
+            .from(projectTeamMembers)
+            .where(eq(projectTeamMembers.projectId, stageProject.projectId));
+          const currentUser = getUser(req);
+          for (const m of teamMembers) {
+            if (m.userId && m.userId !== currentUser.id) {
+              await db.insert(notifications).values({
+                recipientUserId: m.userId,
+                eventType: "stage.completed",
+                title: `Stage completed: ${stage.templateName}`,
+                body: `Engineering stage "${stage.templateName}" has been marked complete.`,
+                projectId: stageProject.projectId,
+                linkedTaskId: null,
+              }).catch(() => {});
+            }
+          }
+        }
+      } catch (_) { /* notification is best-effort */ }
 
       // If this is the Handover Pack stage, log commissioning unlock
       if (stage.templateName && /handover\s*pack/i.test(stage.templateName)) {
