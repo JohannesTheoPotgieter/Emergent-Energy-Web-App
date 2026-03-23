@@ -227,6 +227,16 @@ function buildCosByMonth(
 }
 
 /**
+ * Return the month key for the month before the given month key.
+ * E.g. "2026-03" → "2026-02", "2026-01" → "2025-12"
+ */
+function getPreviousMonthKey(mk: string): string {
+  const [y, m] = mk.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
  * Compute the 3 month keys immediately following a given month key.
  * E.g. "2026-03" → ["2026-04", "2026-05", "2026-06"]
  */
@@ -407,11 +417,15 @@ router.get(
       const actualCosByMonth = buildCosByMonth(allExpenses as any, monthKeys);
 
       // Determine current month key for actual vs forecast split
+      // Actuals are only available for completed months (before current month).
+      // The current in-progress month is treated as forecast.
       const now = new Date();
       const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const lastActualMk = getPreviousMonthKey(currentMk);
 
       // 6. Build 3-month forecast from planned data in the system (milestones/expenses, NOT budget)
-      const forecastWindow = getNext3MonthKeys(currentMk);
+      // Forecast window starts from the current month (since it's incomplete)
+      const forecastWindow = getNext3MonthKeys(lastActualMk);
 
       // Forecast Revenue: use planned inflow milestones with plannedPaymentDate in the forecast window
       // (only milestones not yet received — i.e. no paymentReceivedDate)
@@ -523,7 +537,7 @@ router.get(
       const months = monthKeys.map((mk) => {
         const budgetRev = budgetRevByMonth[mk] || 0;
         const budgetCos = budgetCosByMonth[mk] || 0;
-        const isPastOrCurrent = mk <= currentMk;
+        const isPastOrCurrent = mk < currentMk;
         const isForecastMonth = forecastWindow.includes(mk);
 
         // Actual values - only for past/current months, null for future
@@ -1272,6 +1286,7 @@ async function collectSnapshotData(fye: number) {
   const fyeEnd = `${fye}-08`;
   const now = new Date();
   const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const lastActualMk = getPreviousMonthKey(currentMk);
 
   // Budget
   const budgetRevByMonth: Record<string, number> = {};
@@ -1296,7 +1311,8 @@ async function collectSnapshotData(fye: number) {
   const actualCosByMonth = buildCosByMonth(allExpenses as any, monthKeys);
 
   // Build 3-month forecast from planned/scheduled expense data (same as dashboard)
-  const forecastWindow = getNext3MonthKeys(currentMk);
+  // Forecast window starts from current month (since it's incomplete)
+  const forecastWindow = getNext3MonthKeys(lastActualMk);
   const forecastExpenses: { projectName: string; rowType: any; budgetTotal: any; forecastMonth: string }[] = [];
   for (const exp of allExpenses) {
     if (exp.rowType !== "item" && exp.rowType != null) continue;
@@ -1315,7 +1331,7 @@ async function collectSnapshotData(fye: number) {
   // Dashboard months
   const dashboardMonths = monthKeys.map((mk) => {
     const bRev = budgetRevByMonth[mk] || 0, bCos = budgetCosByMonth[mk] || 0;
-    const isPast = mk <= currentMk;
+    const isPast = mk < currentMk;
     const isForecast = forecastWindow.includes(mk);
     const aRev = isPast ? (actualRevByMonth[mk] || 0) : null;
     const aCos = isPast ? (actualCosByMonth[mk] || 0) : null;
