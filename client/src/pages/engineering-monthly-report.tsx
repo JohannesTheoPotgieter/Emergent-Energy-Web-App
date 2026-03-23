@@ -55,8 +55,18 @@ export default function EngineeringMonthlyReport() {
     queryKey: ["/api/reports/engineering/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/engineering/monthly?month=${month}`, { headers: getAuthHeaders() });
-      if (!res.ok) throw new Error("Failed to load report");
-      return res.json();
+      if (!res.ok) {
+        const text = await res.text();
+        let msg = "Failed to load report";
+        try { msg = JSON.parse(text).error || msg; } catch { /* response was not JSON */ }
+        throw new Error(msg);
+      }
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        throw new Error("Server returned an invalid response. The report API may not be available.");
+      }
     },
   });
 
@@ -82,7 +92,7 @@ export default function EngineeringMonthlyReport() {
   const kpiTiles: KPITile[] = [
     { label: "Eng Tasks", value: kpis.totalEngineeringTasks ?? 0 },
     { label: "Done This Month", value: kpis.tasksCompletedThisMonth ?? 0 },
-    { label: "Completion Rate", value: `${(kpis.completionRate ?? 0).toFixed(0)}%` },
+    { label: "Completion Rate", value: `${(kpis.cumulativeCompletionRate ?? 0).toFixed(0)}%` },
     { label: "Approved", value: kpis.deliverablesApproved ?? 0 },
     { label: "Submitted", value: kpis.deliverablesSubmitted ?? 0 },
     { label: "Blockers", value: kpis.openBlockers ?? 0, color: (kpis.openBlockers ?? 0) > 0 ? "red" as const : "default" as const },

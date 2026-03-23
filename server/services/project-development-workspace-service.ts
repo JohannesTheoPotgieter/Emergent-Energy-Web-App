@@ -623,10 +623,10 @@ export function computePdPmSubmitBlockers(params: {
   workspace: ProjectDevelopmentWorkspacePayload;
 }): string[] {
   const deliverables = normalizeDeliverables(params.handover?.deliverables);
-  const engineeringStatus = String(params.handover?.engineeringStatus ?? params.handover?.engineering_status || "").trim();
-  const qualityStatus = String(params.handover?.qualityStatus ?? params.handover?.quality_status || "").trim();
-  const feasibilityStatus = String(params.handover?.feasibilityStatus ?? params.handover?.feasibility_status || "").trim();
-  const readinessStatus = String(params.handover?.handoverReadinessStatus ?? params.handover?.handover_readiness_status || "").trim();
+  const engineeringStatus = String(params.handover?.engineeringStatus ?? (params.handover?.engineering_status || "")).trim();
+  const qualityStatus = String(params.handover?.qualityStatus ?? (params.handover?.quality_status || "")).trim();
+  const feasibilityStatus = String(params.handover?.feasibilityStatus ?? (params.handover?.feasibility_status || "")).trim();
+  const readinessStatus = String(params.handover?.handoverReadinessStatus ?? (params.handover?.handover_readiness_status || "")).trim();
 
   const missingItems: string[] = [];
   const need = (ok: boolean, label: string) => {
@@ -639,7 +639,7 @@ export function computePdPmSubmitBlockers(params: {
   need(!!textOrNull(params.project.pm), "PM assignment");
   need(!!textOrNull(params.handover?.summary), "Scope summary");
   need(!!params.project.clientId, "Linked master project/client");
-  need(!!textOrNull(params.handover?.pdOwner ?? params.handover?.pd_owner || params.project.pd), "PD owner");
+  need(!!textOrNull(params.handover?.pdOwner ?? (params.handover?.pd_owner || params.project.pd)), "PD owner");
   need(!!engineeringStatus, "Engineering status");
   need(!!textOrNull(params.handover?.risks), "Risk summary");
   need(!!textOrNull(params.handover?.assumptions), "Assumptions");
