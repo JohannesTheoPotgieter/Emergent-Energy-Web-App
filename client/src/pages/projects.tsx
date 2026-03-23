@@ -968,7 +968,20 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
 }
 
 function getNextKeyDate(project: ProjectSummary): string | null {
-  return project.client_handover_date || project.om_handover_date || project.commissioning_date || project.construction_start_date || project.pd_handover_date || null;
+  const today = new Date().toISOString().split("T")[0];
+  const dates = [
+    project.client_handover_date,
+    project.om_handover_date,
+    project.commissioning_date,
+    project.construction_start_date,
+    project.pd_handover_date,
+  ].filter((d): d is string => !!d);
+
+  // Prefer the nearest future date; fall back to the most recent past date
+  const futureDates = dates.filter(d => d >= today).sort();
+  if (futureDates.length > 0) return futureDates[0];
+  const pastDates = dates.sort().reverse();
+  return pastDates[0] || null;
 }
 
 function formatDateTime(val: string | null | undefined): string {

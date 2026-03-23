@@ -388,7 +388,25 @@ export default function PrioritiesPage() {
       ) : filtered.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Flag className="w-8 h-8 mx-auto mb-2 opacity-50" />
-          <p className="text-sm">No priorities match your filters</p>
+          {priorities.length === 0 ? (
+            <>
+              <p className="text-sm font-medium text-foreground mb-1">No priorities yet</p>
+              <p className="text-xs mb-3">Create your first priority to start tracking what matters most.</p>
+              {isAdmin && (
+                <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-1" /> Create Priority
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-sm mb-1">No priorities match your filters</p>
+              <p className="text-xs mb-3">Try adjusting your criteria or clear all filters.</p>
+              <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setLevelFilter("all"); setHealthFilter("all"); setCategoryFilter("all"); }}>
+                Clear all filters
+              </Button>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

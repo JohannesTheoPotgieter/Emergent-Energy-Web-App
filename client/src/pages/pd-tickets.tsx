@@ -162,8 +162,10 @@ export default function PdTicketsPage() {
               {filtered.map((row: any) => {
                 const t = row.ticket;
                 const today = new Date();
-                const created = new Date(t.createdAt);
-                const daysInProgress = Math.max(0, Math.floor((today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
+                const created = t.createdAt ? new Date(t.createdAt) : null;
+                const daysInProgress = created && !isNaN(created.getTime())
+                  ? Math.max(0, Math.floor((today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)))
+                  : null;
                 const overdue = t.dueDate && t.dueDate < today.toISOString().split("T")[0] && t.status !== "Completed" && t.status !== "Cancelled";
                 const daysOverdue = overdue ? Math.floor((today.getTime() - new Date(t.dueDate).getTime()) / (1000 * 60 * 60 * 24)) : 0;
                 return (
@@ -179,7 +181,9 @@ export default function PdTicketsPage() {
                         {overdue && <Badge variant="destructive" className="text-[9px] px-1 py-0" data-testid={`overdue-badge-${t.id}`}>{daysOverdue}d overdue</Badge>}
                       </div>
                     </td>
-                    <td className="p-2.5 text-muted-foreground">{daysInProgress}d</td>
+                    <td className="p-2.5 text-muted-foreground" title={created ? `Created: ${created.toLocaleDateString()}` : "No creation date"}>
+                      {daysInProgress != null ? `${daysInProgress}d` : "—"}
+                    </td>
                     <td className="p-2.5 text-muted-foreground">{row.developerName || "—"}</td>
                     <td className="p-2.5">
                       {row.taskTotal > 0 ? (
@@ -192,8 +196,10 @@ export default function PdTicketsPage() {
                           </div>
                           <span className="text-[10px] text-muted-foreground">{row.taskCompleted}/{row.taskTotal}</span>
                         </div>
+                      ) : t.tasksSpawnedAt ? (
+                        <span className="text-[10px] text-muted-foreground" title="Tasks spawned but none found">0 tasks</span>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground">—</span>
+                        <span className="text-[10px] text-muted-foreground italic" title="Spawn tasks from the ticket detail page">Not spawned</span>
                       )}
                     </td>
                     <td className="p-2.5">
