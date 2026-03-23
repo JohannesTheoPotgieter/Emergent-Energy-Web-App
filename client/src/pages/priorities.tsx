@@ -261,6 +261,21 @@ export default function PrioritiesPage() {
 
   const { data: priorities = [], isLoading, isError, error, refetch } = useQuery<Priority[]>({
     queryKey: ["/api/priorities"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/priorities", { credentials: "include", headers });
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        throw new Error(`Server returned ${res.status} with non-JSON response. The priorities API route may not be registered.`);
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || body.error || `Failed to load priorities (${res.status})`);
+      }
+      return res.json();
+    },
   });
 
   const categories = useMemo(() => {

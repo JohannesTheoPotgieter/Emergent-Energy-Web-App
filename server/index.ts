@@ -118,6 +118,12 @@ async function bootstrap() {
 
   registerGlobalErrorHandler(app);
 
+  // Guard: any /api/* request that reaches here was not handled by a registered route.
+  // Return JSON 404 so the SPA catch-all (Vite/static) never serves HTML for API calls.
+  app.use("/api/{*path}", (_req, res) => {
+    res.status(404).json({ error: "Not found", message: `No API route matches ${_req.method} ${_req.originalUrl}` });
+  });
+
   try {
     if (process.env.NODE_ENV === "production") {
       serveStatic(app);
@@ -127,11 +133,7 @@ async function bootstrap() {
     }
   } catch (err) {
     console.error("[Bootstrap] Failed to set up frontend serving:", err);
-    // Only serve 503 for non-API routes so the API still works
     app.use("/{*path}", (_req, res) => {
-      if (_req.path.startsWith("/api/")) {
-        return res.status(404).json({ error: "Not found" });
-      }
       res.status(503).json({ error: "Frontend failed to initialize", detail: String(err) });
     });
   }
