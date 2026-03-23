@@ -66,7 +66,7 @@ import {
   fyeReportSnapshots,
   projectPlan,
 } from "@shared/schema";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, isNull } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { extractMonthKey, normalizeProjectName } from "../lib/calculations/financeUtils";
 
@@ -377,7 +377,7 @@ router.get(
         db.select({
           projectName: programInflows.projectName,
           milestoneAmount: programInflows.milestoneAmount,
-        }).from(programInflows),
+        }).from(programInflows).where(isNull(programInflows.effectiveTo)),
         db.select({
           projectName: programExpense.projectName,
           rowType: programExpense.rowType,
@@ -389,7 +389,7 @@ router.get(
           budgetTotal: programExpense.budgetTotal,
           forecastPaymentDate: programExpense.forecastPaymentDate,
           computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
-        }).from(programExpense),
+        }).from(programExpense).where(isNull(programExpense.effectiveTo)),
         loadCosOverrides(),
       ]);
       enrichWithOverrides(allExpenses, cosOverrideMap);
@@ -518,7 +518,7 @@ router.get(
       try {
         const revSummaries = await db.select({
           projectName: projectRevenueSummary.projectName,
-        }).from(projectRevenueSummary);
+        }).from(projectRevenueSummary).where(isNull(projectRevenueSummary.effectiveTo));
         for (const r of revSummaries) trackerSet.add(r.projectName);
       } catch {
         // Table may not exist
@@ -580,7 +580,7 @@ router.get(
           plannedPaymentDate: programInflows.plannedPaymentDate,
           paymentReceivedDate: programInflows.paymentReceivedDate,
           invoiceRaisedDate: programInflows.invoiceRaisedDate,
-        }).from(programInflows),
+        }).from(programInflows).where(isNull(programInflows.effectiveTo)),
         db.select({
           projectName: programExpense.projectName,
           rowType: programExpense.rowType,
@@ -589,7 +589,7 @@ router.get(
           expenseInvoicedDate: programExpense.expenseInvoicedDate,
           forecastPaymentDate: programExpense.forecastPaymentDate,
           computedForecastPaymentDate: programExpense.computedForecastPaymentDate,
-        }).from(programExpense),
+        }).from(programExpense).where(isNull(programExpense.effectiveTo)),
       ]);
 
       // ── Budget COS per project (FYE-specific) ──
@@ -1168,8 +1168,8 @@ async function collectSnapshotData(fye: number) {
 
   // Actual Revenue + COS via COS-ratio allocation (matches Revenue Tracker)
   const [allInflows, allExpenses, snapCosOverrides] = await Promise.all([
-    db.select({ projectName: programInflows.projectName, milestoneAmount: programInflows.milestoneAmount }).from(programInflows),
-    db.select({ projectName: programExpense.projectName, rowType: programExpense.rowType, expenseActualTotal: programExpense.expenseActualTotal, expenseInvoicedDate: programExpense.expenseInvoicedDate, expenseInvoiceNumber: programExpense.expenseInvoiceNumber, expensePoNumber: programExpense.expensePoNumber, rowNumber: programExpense.rowNumber, budgetTotal: programExpense.budgetTotal, forecastPaymentDate: programExpense.forecastPaymentDate, computedForecastPaymentDate: programExpense.computedForecastPaymentDate }).from(programExpense),
+    db.select({ projectName: programInflows.projectName, milestoneAmount: programInflows.milestoneAmount }).from(programInflows).where(isNull(programInflows.effectiveTo)),
+    db.select({ projectName: programExpense.projectName, rowType: programExpense.rowType, expenseActualTotal: programExpense.expenseActualTotal, expenseInvoicedDate: programExpense.expenseInvoicedDate, expenseInvoiceNumber: programExpense.expenseInvoiceNumber, expensePoNumber: programExpense.expensePoNumber, rowNumber: programExpense.rowNumber, budgetTotal: programExpense.budgetTotal, forecastPaymentDate: programExpense.forecastPaymentDate, computedForecastPaymentDate: programExpense.computedForecastPaymentDate }).from(programExpense).where(isNull(programExpense.effectiveTo)),
     loadCosOverrides(),
   ]);
   enrichWithOverrides(allExpenses, snapCosOverrides);
