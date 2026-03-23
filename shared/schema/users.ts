@@ -369,12 +369,12 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'lifecycle',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ENGINEERING_MANAGER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    view_roles: ['COO_ADMIN'],
+    create_roles: ['COO_ADMIN'],
+    edit_roles: ['COO_ADMIN'],
+    approve_roles: ['COO_ADMIN'],
+    override_roles: ['COO_ADMIN'],
+    delete_roles: ['COO_ADMIN'],
   },
   {
     entity: 'create_project',
