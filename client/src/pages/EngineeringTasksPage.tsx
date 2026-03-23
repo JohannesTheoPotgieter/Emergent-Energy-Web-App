@@ -2545,6 +2545,12 @@ function ProjectKanbanView({
                           : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
                         }
                         <span className="font-medium text-sm flex-1 truncate">{group.displayName}</span>
+                        <a
+                          href={`/projects/${encodeURIComponent(group.projectName)}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-[10px] text-primary hover:underline shrink-0"
+                          data-testid={`link-project-detail-${group.projectName}`}
+                        >View project</a>
                         <div className="flex items-center gap-3 shrink-0">
                           {group.overdueTasks > 0 && (
                             <span className="flex items-center gap-1 text-[10px] text-red-600 font-bold">
@@ -2907,40 +2913,111 @@ function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClick: (tas
   );
 }
 
-function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }: {
+function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange, onBulkStatusChange, onBulkPriorityChange }: {
   tasks: Task[];
   onCardClick: (task: Task) => void;
   onStatusChange: (id: number, status: string) => void;
   onPriorityChange: (id: number, priority: string) => void;
+  onBulkStatusChange?: (taskIds: number[], status: string) => void;
+  onBulkPriorityChange?: (taskIds: number[], priority: string) => void;
 }) {
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [visibleCount, setVisibleCount] = useState(100);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }, []);
+  const toggleAll = useCallback(() => {
+    setSelectedIds(prev => prev.size === tasks.length ? new Set() : new Set(tasks.map(t => t.id)));
+  }, [tasks]);
+
+  const toggleSort = useCallback((col: string) => {
+    if (sortCol === col) { setSortDir(d => d === "asc" ? "desc" : "asc"); }
+    else { setSortCol(col); setSortDir("asc"); }
+  }, [sortCol]);
+
+  const PRIORITY_ORDER: Record<string, number> = { Critical: 0, Urgent: 1, High: 2, Med: 3, Low: 4 };
+  const sorted = useMemo(() => {
+    if (!sortCol) return tasks;
+    const arr = [...tasks];
+    const dir = sortDir === "asc" ? 1 : -1;
+    arr.sort((a, b) => {
+      switch (sortCol) {
+        case "title": return dir * (a.title || "").localeCompare(b.title || "");
+        case "project": return dir * (a.projectName || "").localeCompare(b.projectName || "");
+        case "status": return dir * (a.status || "").localeCompare(b.status || "");
+        case "priority": return dir * ((PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9));
+        case "assignee": return dir * ((a.assignees?.[0] || "zzz").localeCompare(b.assignees?.[0] || "zzz"));
+        case "dueDate": {
+          const da = a.dueDate ? new Date(a.dueDate).getTime() : Infinity;
+          const db_ = b.dueDate ? new Date(b.dueDate).getTime() : Infinity;
+          return dir * (da - db_);
+        }
+        default: return 0;
+      }
+    });
+    return arr;
+  }, [tasks, sortCol, sortDir]);
+
+  const visible = sorted.slice(0, visibleCount);
+  const SortHeader = ({ col, children, align }: { col: string; children: React.ReactNode; align?: string }) => (
+    <th className={`${align === "center" ? "text-center" : "text-left"} p-2 ${col === "title" ? "pl-3" : ""} cursor-pointer select-none hover:text-foreground transition-colors`} onClick={() => toggleSort(col)}>
+      <span className="inline-flex items-center gap-1">{children}{sortCol === col && <span className="text-[9px]">{sortDir === "asc" ? "▲" : "▼"}</span>}</span>
+    </th>
+  );
+
   return (
     <Card>
       <CardContent className="p-0">
+        {selectedIds.size > 0 && onBulkStatusChange && (
+          <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border-b border-blue-200" data-testid="list-bulk-bar">
+            <span className="text-xs font-semibold text-blue-800">{selectedIds.size} selected</span>
+            <div className="h-4 w-px bg-blue-200" />
+            <SearchableSelect value="" onValueChange={(s) => { onBulkStatusChange(Array.from(selectedIds), s); setSelectedIds(new Set()); }}
+              placeholder="Set status..." triggerClassName="h-7 text-[10px] min-w-[100px]"
+              options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))} />
+            {onBulkPriorityChange && (
+              <SearchableSelect value="" onValueChange={(p) => { onBulkPriorityChange(Array.from(selectedIds), p); setSelectedIds(new Set()); }}
+                placeholder="Set priority..." triggerClassName="h-7 text-[10px] min-w-[90px]"
+                options={PRIORITIES.map(p => ({ value: p, label: p }))} />
+            )}
+            <Button variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground" onClick={() => setSelectedIds(new Set())}>
+              <X className="h-3 w-3 mr-1" /> Clear
+            </Button>
+          </div>
+        )}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[860px]">
+          <table className="w-full text-sm min-w-[900px]">
             <thead>
               <tr className="border-b bg-muted/30 text-[11px] text-muted-foreground">
-                <th className="text-left p-2 pl-3">Title</th>
-                <th className="text-left p-2">Project</th>
-                <th className="text-left p-2">Status</th>
-                <th className="text-left p-2">Priority</th>
-                <th className="text-left p-2">Assignee</th>
+                <th className="w-8 p-2 text-center">
+                  <input type="checkbox" checked={selectedIds.size === tasks.length && tasks.length > 0} onChange={toggleAll} className="h-3 w-3" />
+                </th>
+                <SortHeader col="title">Title</SortHeader>
+                <SortHeader col="project">Project</SortHeader>
+                <SortHeader col="status">Status</SortHeader>
+                <SortHeader col="priority">Priority</SortHeader>
+                <SortHeader col="assignee">Assignee</SortHeader>
                 <th className="text-left p-2">Context</th>
-                <th className="text-left p-2">Due Date</th>
+                <SortHeader col="dueDate">Due Date</SortHeader>
                 <th className="text-center p-2">RAG</th>
               </tr>
             </thead>
             <tbody>
-              {tasks.map(task => {
+              {visible.map(task => {
                 const assigneeNames = task.assignees || task.resolvedAssignees?.map((user) => user.name) || [];
                 const contextBadges = getTaskContextBadges(task);
 
                 return (
                   <tr
                     key={task.id}
-                    className="border-b hover:bg-muted/10 transition-colors"
+                    className={`border-b hover:bg-muted/10 transition-colors ${selectedIds.has(task.id) ? "bg-blue-50/50" : ""}`}
                     data-testid={`row-task-${task.id}`}
                   >
+                    <td className="w-8 p-2 text-center" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds.has(task.id)} onChange={() => toggleSelect(task.id)} className="h-3 w-3" />
+                    </td>
                     <td
                       className="p-2 pl-3 font-medium max-w-[250px] truncate cursor-pointer hover:text-blue-600"
                       onClick={() => onCardClick(task)}
@@ -3007,6 +3084,13 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange }
               })}
             </tbody>
           </table>
+          {visible.length < sorted.length && (
+            <div className="text-center py-3 border-t">
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setVisibleCount(c => c + 100)}>
+                Show more ({sorted.length - visible.length} remaining)
+              </Button>
+            </div>
+          )}
           {tasks.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
               <ListTodo className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -3493,7 +3577,11 @@ export default function EngineeringTasksPage() {
   const isMobile = useIsMobile();
   const savedDefaults = useMemo(() => getSavedEngDefaultView(user?.id), [user?.id]);
   const initialUrlParams = useMemo(() => new URLSearchParams(window.location.search), []);
-  const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks" | "timeline">(savedDefaults?.viewMode || "board");
+  const [viewMode, setViewMode] = useState<"board" | "list" | "projects" | "mytasks" | "timeline">(() => {
+    const urlView = initialUrlParams.get("view") as any;
+    if (urlView && ["board", "list", "projects", "mytasks", "timeline"].includes(urlView)) return urlView;
+    return savedDefaults?.viewMode || "board";
+  });
   const [myTasksOnly, setMyTasksOnly] = useState(false);
   const [myName, setMyName] = useState(() => {
     const saved = getSavedMyName();
@@ -3519,6 +3607,23 @@ export default function EngineeringTasksPage() {
   const [searchTerm, setSearchTerm] = useState(() => {
     return initialUrlParams.get("project") || "";
   });
+
+  // Sync key state to URL for shareable links (without full page reload)
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (viewMode !== "board") params.set("view", viewMode);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (priorityFilter !== "all") params.set("priority", priorityFilter);
+    if (assigneeFilter !== "all") params.set("assignee", assigneeFilter);
+    if (dueDateFilter !== "all") params.set("dueDate", dueDateFilter);
+    if (searchTerm) params.set("project", searchTerm);
+    const qs = params.toString();
+    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    if (url !== window.location.pathname + window.location.search) {
+      window.history.replaceState(null, "", url);
+    }
+  }, [viewMode, statusFilter, priorityFilter, assigneeFilter, dueDateFilter, searchTerm]);
+
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newTask, setNewTask] = useState({
@@ -3588,6 +3693,7 @@ export default function EngineeringTasksPage() {
     queryFn: () => engFetch("/api/eng/tasks"),
     refetchOnMount: "always",
     staleTime: 10_000,
+    refetchInterval: 60_000,
   });
 
   const { data: pageTeamMembers = [] } = useQuery<TeamMember[]>({
@@ -4590,6 +4696,8 @@ export default function EngineeringTasksPage() {
           onCardClick={setSelectedTask}
           onStatusChange={handleStatusChange}
           onPriorityChange={handlePriorityChange}
+          onBulkStatusChange={(ids, status) => bulkStatusMutation.mutate({ taskIds: ids, status })}
+          onBulkPriorityChange={(ids, priority) => bulkPriorityMutation.mutate({ taskIds: ids, priority })}
         />
       )}
 

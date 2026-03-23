@@ -176,7 +176,7 @@ function DashboardSection({
   metricKey: "revenue" | "cos" | "gp";
   isRunning: boolean;
 }) {
-  const hasPipeline = metricKey === "revenue" && months[0]?.[metricKey]?.pipeline !== undefined;
+  const hasPipeline = months[0]?.[metricKey]?.pipeline !== undefined;
   const rows: { key: string; label: string; color: string }[] = [
     { key: "budget", label: "Budget", color: "text-blue-700 bg-blue-50" },
     { key: "actualForecast", label: "Actual + Forecast", color: "text-emerald-700 bg-emerald-50" },
@@ -260,7 +260,7 @@ function DashboardChart({
   metricKey: "revenue" | "gp";
 }) {
   const metric0 = months[0]?.[metricKey] as MonthMetric | undefined;
-  const hasPipeline = metricKey === "revenue" && metric0?.pipeline !== undefined;
+  const hasPipeline = metric0?.pipeline !== undefined;
 
   const chartData = months.map((m) => {
     const metric = m[metricKey] as MonthMetric;
