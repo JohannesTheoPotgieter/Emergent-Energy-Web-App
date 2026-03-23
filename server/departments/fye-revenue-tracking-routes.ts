@@ -493,6 +493,10 @@ router.get(
       const fyeStart = `${fye - 1}-09`;
       const fyeEnd = `${fye}-08`;
 
+      // Optional cutoff month filter: only include data up to this month (e.g. "2026-02" for end of Feb)
+      const cutoffMonth = req.query.cutoffMonth ? String(req.query.cutoffMonth) : null;
+      const effectiveEnd = cutoffMonth && cutoffMonth >= fyeStart && cutoffMonth <= fyeEnd ? cutoffMonth : fyeEnd;
+
       // Get all projects (isActive may not exist in SQLite — treat null as true)
       const projects = await db
         .select({
@@ -616,7 +620,7 @@ router.get(
         if (budgetAmt === 0) continue;
         const budgetDate = exp.expenseInvoicedDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate;
         const budgetMk = extractMonthKey(budgetDate);
-        if (budgetMk && budgetMk >= fyeStart && budgetMk <= fyeEnd) {
+        if (budgetMk && budgetMk >= fyeStart && budgetMk <= effectiveEnd) {
           budgetCosByProject.set(pn, (budgetCosByProject.get(pn) || 0) + budgetAmt);
         }
       }
@@ -637,7 +641,7 @@ router.get(
         // FYE-specific budget revenue
         const revDate = inf.plannedPaymentDate || inf.invoiceRaisedDate || inf.paymentReceivedDate;
         const revMk = extractMonthKey(revDate);
-        if (revMk && revMk >= fyeStart && revMk <= fyeEnd) {
+        if (revMk && revMk >= fyeStart && revMk <= effectiveEnd) {
           budgetRevByProject.set(pn, (budgetRevByProject.get(pn) || 0) + amt);
         }
       }
@@ -651,7 +655,7 @@ router.get(
         if (amt === 0) continue;
         if (!exp.expenseInvoicedDate) continue;
         const mk = extractMonthKey(exp.expenseInvoicedDate);
-        if (!mk || mk < fyeStart || mk > fyeEnd) continue;
+        if (!mk || mk < fyeStart || mk > effectiveEnd) continue;
 
         const pn = normalizeProjectName(exp.projectName);
 
@@ -734,6 +738,7 @@ router.get(
 
       res.json({
         fye,
+        cutoffMonth: cutoffMonth || null,
         projects: projectRows,
         totals: {
           ...totals,
