@@ -145,6 +145,7 @@ export interface IStorage {
   createManyProgramExpenses(expenses: InsertProgramExpense[]): Promise<ProgramExpense[]>;
   deleteProgramExpensesByProject(projectName: string): Promise<void>;
   updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined>;
+  updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined>;
 
   // Program Inflows (new)
   getAllProgramInflows(): Promise<ProgramInflows[]>;
@@ -1199,6 +1200,38 @@ export class DatabaseStorage implements IStorage {
     if (!result[0]) return undefined;
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return adaptCostToExpense(result[0], result[0].projectName) as any;
+  }
+
+  async updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined> {
+    const fieldMap: Record<string, string> = {
+      milestoneInvoiceNumber: 'invoiceNumber',
+      invoiceRaisedDate: 'invoiceDate',
+      paymentReceivedDate: 'paidDate',
+      plannedPaymentDate: 'expectedPaymentDate',
+      milestoneAmount: 'amountExVat',
+      milestoneName: 'milestoneName',
+      milestoneNotes: 'description',
+      invoiceDateFontColor: 'invoiceDateFontColor',
+      invoiceDateConfirmed: 'invoiceDateConfirmed',
+      paidDateFontColor: 'paidDateFontColor',
+      paidDateConfirmed: 'paidDateConfirmed',
+      inBankDate: 'inBankDate',
+    };
+    const mappedFields: Record<string, any> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      const mapped = fieldMap[key] || key;
+      mappedFields[mapped] = value;
+    }
+    if (Object.keys(mappedFields).length === 0) return undefined;
+    const canonicalId = id >= 900000 ? id - 900000 : id;
+    const result = await this.dbInstance
+      .update(normalizedRevenueLines)
+      .set(mappedFields)
+      .where(eq(normalizedRevenueLines.id, canonicalId))
+      .returning();
+    if (!result[0]) return undefined;
+    const { adaptRevenueToInflow } = await import("./lib/data-merge");
+    return adaptRevenueToInflow(result[0], result[0].projectName);
   }
 
   async getAllProgramInflows(): Promise<any[]> {
