@@ -8,6 +8,11 @@ export async function runStartupSeeds(options: {
   log: (message: string, source?: string) => void;
 }) {
   const { startupDataSeedEnabled, allowStartupMutations, log } = options;
+
+  // PD ticket seed is self-gating (only inserts if table is empty) — always run it
+  const { runPdTicketSeed } = await import("../seed-pd-tickets");
+  await runPdTicketSeed().catch((err) => log(`[PD-Seed] PD ticket import error: ${err}`, "Startup"));
+
   if (!startupDataSeedEnabled) return;
 
   const { seedQualityTemplate } = await import("../seed-quality-template");
@@ -70,7 +75,4 @@ export async function runStartupSeeds(options: {
 
   const { seedEeInfoUpdates } = await import("../seed-ee-info-updates");
   await seedEeInfoUpdates().catch((err) => log(`[EE-Info-Update] Seed error: ${err}`, "Startup"));
-
-  const { runPdTicketSeed } = await import("../seed-pd-tickets");
-  await runPdTicketSeed().catch((err) => log(`[PD-Seed] PD ticket import error: ${err}`, "Startup"));
 }
