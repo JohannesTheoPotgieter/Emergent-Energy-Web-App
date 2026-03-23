@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import ReportHeader from "@/components/reports/ReportHeader";
@@ -140,6 +141,27 @@ export default function PmMonthlyReport() {
         </div>
       ) : !error && (
         <>
+          {/* No meaningful data fallback */}
+          {!kpis.activeProjects && !kpis.totalRevenue && !kpis.constructionStarts && (
+            <Card>
+              <CardContent className="p-8 text-center">
+                <AlertTriangle className="w-8 h-8 mx-auto mb-2 text-amber-500" />
+                <p className="text-sm font-medium mb-1">Limited data for {month}</p>
+                <p className="text-xs text-muted-foreground mb-3">
+                  No project activity was recorded for this period. Try selecting a different month, or ensure data has been imported.
+                </p>
+                <div className="flex justify-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const d = new Date();
+                    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+                  }}>
+                    Try current month
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {reportData.meta?.isStale && (
             <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
               <AlertTriangle className="w-4 h-4 shrink-0" />
