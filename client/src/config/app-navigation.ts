@@ -69,6 +69,7 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Overview", path: "/engineering" },
       { label: "Requests & Tasks", path: "/engineering/tasks" },
+      { label: "Audit Log", path: "/engineering/audit" },
     ],
   },
   {
