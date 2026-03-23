@@ -15,6 +15,64 @@ function requireAuth(req: Request, res: Response, next: () => void) {
 
 import { isPdRole, canCreatePdTicket, canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 
+/**
+ * Filter an array of PD ticket rows by the requesting user's role.
+ * Accepts any object with a `.createdBy` and `.projectDeveloperUserId` at the
+ * top level **or** nested under a `.ticket` property.
+ *
+ * For roles listed in PD_VIEW_ALL_ROLES the full list is returned unchanged.
+ * PROJECT_DEVELOPER users only see tickets they created or are assigned to.
+ * Engineers see tickets with engineering request types or where they are the designer.
+ * All other roles receive the full list (guarded by route-level auth).
+ *
+ * `engineerAssignedTicketIds` is an optional pre-fetched set of ticket IDs
+ * the engineer user owns via work-items (avoids an extra query when not needed).
+ */
+async function filterTicketsByRole<T extends Record<string, any>>(
+  tickets: T[],
+  user: any,
+  role: string,
+  engineerAssignedTicketIds?: Set<number>,
+): Promise<T[]> {
+  if (canViewAllTickets(role)) return tickets;
+
+  // Helper to read a field from either the top-level object or a nested `.ticket`
+  const field = (row: T, key: string) => (row as any).ticket?.[key] ?? (row as any)[key];
+
+  if (role === "PROJECT_DEVELOPER") {
+    return tickets.filter(
+      r => field(r, "createdBy") === user?.id || field(r, "projectDeveloperUserId") === user?.id,
+    );
+  }
+
+  if (role === "ENGINEER") {
+    const engineeringRequestTypes = new Set<string>(ENGINEERING_REQUEST_TYPES as readonly string[]);
+    let assignedIds = engineerAssignedTicketIds;
+    if (!assignedIds) {
+      const rows = await db
+        .select({ pdTicketId: workItems.pdTicketId })
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.ownerUserId, user?.id),
+            sql`${workItems.pdTicketId} IS NOT NULL`,
+            sql`${workItems.deletedAt} IS NULL`,
+          ),
+        );
+      assignedIds = new Set(rows.map(r => r.pdTicketId).filter(Boolean) as number[]);
+    }
+    return tickets.filter(
+      r =>
+        assignedIds!.has(field(r, "id")) ||
+        field(r, "designerUserId") === user?.id ||
+        engineeringRequestTypes.has(field(r, "requestType")),
+    );
+  }
+
+  // Other authenticated roles – return all (route-level auth already gates access)
+  return tickets;
+}
+
 export function registerPdRoutes(app: Express) {
 
   app.get("/api/pd/clients", requireAuth, async (req: Request, res: Response) => {
@@ -185,31 +243,7 @@ export function registerPdRoutes(app: Express) {
         taskCompleted: taskCounts[r.ticket.id]?.completed || 0,
       }));
 
-      let result;
-      if (canViewAllTickets(role)) {
-        result = enriched;
-      } else if (role === "PROJECT_DEVELOPER") {
-        result = enriched.filter(r => r.ticket.createdBy === user?.id || r.ticket.projectDeveloperUserId === user?.id);
-      } else if (role === "ENGINEER") {
-        const engineeringRequestTypes = new Set(ENGINEERING_REQUEST_TYPES as readonly string[]);
-        // Engineers see tickets where they are assigned to spawned work items or the ticket is engineering-related
-        const engineerWorkItemTicketIds = await db
-          .select({ pdTicketId: workItems.pdTicketId })
-          .from(workItems)
-          .where(and(
-            eq(workItems.ownerUserId, user?.id),
-            sql`${workItems.pdTicketId} IS NOT NULL`,
-            sql`${workItems.deletedAt} IS NULL`,
-          ));
-        const assignedTicketIds = new Set(engineerWorkItemTicketIds.map(r => r.pdTicketId));
-        result = enriched.filter(r =>
-          assignedTicketIds.has(r.ticket.id) ||
-          r.ticket.designerUserId === user?.id ||
-          engineeringRequestTypes.has(r.ticket.requestType)
-        );
-      } else {
-        result = enriched;
-      }
+      const result = await filterTicketsByRole(enriched, user, role);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -416,7 +450,11 @@ export function registerPdRoutes(app: Express) {
 
   app.get("/api/pd/dashboard", requireAuth, async (req: Request, res: Response) => {
     try {
-      const allTickets = await db.select().from(pdTickets);
+      const user = req.user as any;
+      const role = user?.companyRole || user?.role || "";
+
+      const allTicketsRaw = await db.select().from(pdTickets);
+      const allTickets = await filterTicketsByRole(allTicketsRaw, user, role);
       const today = new Date().toISOString().split("T")[0];
 
       const total = allTickets.length;
@@ -441,7 +479,10 @@ export function registerPdRoutes(app: Express) {
 
   app.get("/api/pd/pipeline", requireAuth, async (req: Request, res: Response) => {
     try {
-      const allTickets = await db
+      const user = req.user as any;
+      const role = user?.companyRole || user?.role || "";
+
+      const allTicketsRaw = await db
         .select({
           ticket: pdTickets,
           clientName: clients.name,
@@ -452,6 +493,8 @@ export function registerPdRoutes(app: Express) {
         .leftJoin(clients, eq(pdTickets.clientId, clients.id))
         .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
         .orderBy(desc(pdTickets.createdAt));
+
+      const allTickets = await filterTicketsByRole(allTicketsRaw, user, role);
 
       const handoverRows = await db
         .select({
