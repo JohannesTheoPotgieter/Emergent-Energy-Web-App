@@ -206,8 +206,7 @@ export const workItems = pgTable("work_items", {
   trackingRag: text("tracking_rag"),
   taskTypeTag: text("task_type_tag"),
   blockerReason: text("blocker_reason"),
-  plannedHours: real("planned_hours"),
-  actualHours: real("actual_hours").default(0),
+  pdTicketId: integer("pd_ticket_id"),
 });
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;

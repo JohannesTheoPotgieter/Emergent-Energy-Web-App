@@ -1,7 +1,7 @@
 // @ts-nocheck
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
-import { clients, pdTickets, workItems, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState } from "@shared/schema";
+import { clients, pdTickets, workItems, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory } from "@shared/schema";
 import { eq, ilike, sql, and, desc, asc, or, count } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
@@ -13,17 +13,7 @@ function requireAuth(req: Request, res: Response, next: () => void) {
   next();
 }
 
-function isPdRole(role: string): boolean {
-  return ["PROJECT_DEVELOPER", "KEY_ACCOUNTS_MANAGER", "COO_ADMIN", "CEO_ADMIN", "CCO", "admin"].includes(role);
-}
-
-function canCreatePdTicket(role: string): boolean {
-  return ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "admin"].includes(role);
-}
-
-function canViewAllTickets(role: string): boolean {
-  return ["COO_ADMIN", "CEO_ADMIN", "CCO", "admin"].includes(role);
-}
+import { isPdRole, canCreatePdTicket, canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 
 export function registerPdRoutes(app: Express) {
 
@@ -169,9 +159,23 @@ export function registerPdRoutes(app: Express) {
         .orderBy(desc(pdTickets.createdAt));
 
       const ticketIds = rows.map(r => r.ticket.id);
-      // PD ticket task counts: pdTicketId was on operational_tasks which is being dropped.
-      // Work items don't carry pdTicketId; returning empty counts until PD-ticket linkage is re-modelled.
       let taskCounts: Record<number, { total: number; completed: number }> = {};
+      if (ticketIds.length > 0) {
+        const taskCountRows = await db
+          .select({
+            pdTicketId: workItems.pdTicketId,
+            total: sql<number>`count(*)::int`,
+            completed: sql<number>`count(*) FILTER (WHERE ${workItems.status} IN ('Completed', 'DONE', 'Done'))::int`,
+          })
+          .from(workItems)
+          .where(sql`${workItems.pdTicketId} IS NOT NULL AND ${workItems.deletedAt} IS NULL`)
+          .groupBy(workItems.pdTicketId);
+        for (const row of taskCountRows) {
+          if (row.pdTicketId) {
+            taskCounts[row.pdTicketId] = { total: row.total, completed: row.completed };
+          }
+        }
+      }
 
       const enriched = rows.map(r => ({
         ...r,
@@ -187,9 +191,22 @@ export function registerPdRoutes(app: Express) {
       } else if (role === "PROJECT_DEVELOPER") {
         result = enriched.filter(r => r.ticket.createdBy === user?.id || r.ticket.projectDeveloperUserId === user?.id);
       } else if (role === "ENGINEER") {
-        // PD ticket → task linkage via pdTicketId no longer available (operational_tasks dropped).
-        // Engineers see no PD tickets until linkage is re-modelled on work_items.
-        result = [];
+        const engineeringRequestTypes = new Set(ENGINEERING_REQUEST_TYPES as readonly string[]);
+        // Engineers see tickets where they are assigned to spawned work items or the ticket is engineering-related
+        const engineerWorkItemTicketIds = await db
+          .select({ pdTicketId: workItems.pdTicketId })
+          .from(workItems)
+          .where(and(
+            eq(workItems.ownerUserId, user?.id),
+            sql`${workItems.pdTicketId} IS NOT NULL`,
+            sql`${workItems.deletedAt} IS NULL`,
+          ));
+        const assignedTicketIds = new Set(engineerWorkItemTicketIds.map(r => r.pdTicketId));
+        result = enriched.filter(r =>
+          assignedTicketIds.has(r.ticket.id) ||
+          r.ticket.designerUserId === user?.id ||
+          engineeringRequestTypes.has(r.ticket.requestType)
+        );
       } else {
         result = enriched;
       }
@@ -220,9 +237,23 @@ export function registerPdRoutes(app: Express) {
 
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
 
-      // PD ticket → task linkage via pdTicketId no longer available (operational_tasks dropped).
-      // Returning empty task list until PD-ticket linkage is re-modelled on work_items.
-      const tasks: any[] = [];
+      const tasks = await db
+        .select({
+          id: workItems.id,
+          title: workItems.title,
+          status: workItems.status,
+          priority: workItems.priority,
+          endDate: workItems.endDate,
+          percentComplete: workItems.percentComplete,
+          ownerUserId: workItems.ownerUserId,
+          ownerName: workItems.ownerName,
+          holdReason: workItems.holdReason,
+          blockedType: workItems.blockedType,
+          updatedAt: workItems.updatedAt,
+        })
+        .from(workItems)
+        .where(and(eq(workItems.pdTicketId, id), sql`${workItems.deletedAt} IS NULL`))
+        .orderBy(asc(workItems.sortOrder));
 
       const taskIds = tasks.map(t => t.id);
       let recentActivity: any[] = [];
@@ -303,6 +334,11 @@ export function registerPdRoutes(app: Express) {
         roofReplacementNeeded: body.roofReplacementNeeded || false,
         hseDiscussed: body.hseDiscussed || false,
         comments: body.comments || null,
+        estimatedProjectValue: body.estimatedProjectValue || null,
+        estimatedCost: body.estimatedCost || null,
+        estimatedMargin: body.estimatedMargin || null,
+        estimatedMarginPercent: body.estimatedMarginPercent || null,
+        financialNotes: body.financialNotes || null,
         createdBy: user?.id || null,
       }).returning();
 
@@ -338,6 +374,8 @@ export function registerPdRoutes(app: Express) {
         "siteInspectionForm", "siteInspectionLink", "workingSchedule",
         "batteriesNeeded", "batterySize", "dieselGenIntegration",
         "roofReplacementNeeded", "hseDiscussed", "comments",
+        "estimatedProjectValue", "estimatedCost", "estimatedMargin",
+        "estimatedMarginPercent", "financialNotes",
       ];
 
       for (const field of allowedFields) {
@@ -401,12 +439,295 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
+  app.get("/api/pd/pipeline", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const allTickets = await db
+        .select({
+          ticket: pdTickets,
+          clientName: clients.name,
+          projectName: projectInfo.projectName,
+          developerName: sql<string>`(SELECT name FROM users WHERE id = ${pdTickets.projectDeveloperUserId})`,
+        })
+        .from(pdTickets)
+        .leftJoin(clients, eq(pdTickets.clientId, clients.id))
+        .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
+        .orderBy(desc(pdTickets.createdAt));
+
+      const handoverRows = await db
+        .select({
+          projectId: projectPdPmHandover.projectId,
+          status: projectPdPmHandover.status,
+          handoverReadinessStatus: projectPdPmHandover.handoverReadinessStatus,
+        })
+        .from(projectPdPmHandover);
+      const handoverMap = new Map(handoverRows.map(h => [h.projectId, h]));
+
+      const taskCountRows = await db
+        .select({
+          pdTicketId: workItems.pdTicketId,
+          total: sql<number>`count(*)::int`,
+          completed: sql<number>`count(*) FILTER (WHERE ${workItems.status} IN ('Completed', 'DONE', 'Done'))::int`,
+        })
+        .from(workItems)
+        .where(sql`${workItems.pdTicketId} IS NOT NULL AND ${workItems.deletedAt} IS NULL`)
+        .groupBy(workItems.pdTicketId);
+      const taskCountMap = new Map(taskCountRows.map(r => [r.pdTicketId!, { total: r.total, completed: r.completed }]));
+
+      const today = new Date().toISOString().split("T")[0];
+      const oneWeekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
+      const twoWeeksAgo = new Date(Date.now() - 14 * 86400000).toISOString().split("T")[0];
+      const oneMonthAgo = new Date(Date.now() - 30 * 86400000).toISOString().split("T")[0];
+
+      // By ticket status
+      const byStatus: Record<string, { count: number; tickets: any[] }> = {};
+      // By request type
+      const byRequestType: Record<string, number> = {};
+      // Overdue severity
+      const overdue = { week: [] as any[], twoWeeks: [] as any[], month: [] as any[] };
+
+      const enrichedTickets = allTickets.map(row => {
+        const t = row.ticket;
+        const handover = t.projectId ? handoverMap.get(t.projectId) : null;
+        const tasks = taskCountMap.get(t.id) || { total: 0, completed: 0 };
+        // Map to Kanban column
+        let kanbanColumn = "New";
+        if (t.status === "Draft") kanbanColumn = "New";
+        else if (t.status === "In Progress") kanbanColumn = "In Progress";
+        else if (t.status === "On Hold") kanbanColumn = "In Progress";
+        else if (t.status === "Completed" || t.status === "Cancelled") {
+          kanbanColumn = handover?.status === "ACCEPTED" ? "Handed Over" : "Handed Over";
+          if (t.status === "Completed" && !handover) kanbanColumn = "Handed Over";
+        }
+        if (handover?.status === "SUBMITTED_FOR_PM_REVIEW") kanbanColumn = "Under Review";
+        if (handover?.handoverReadinessStatus === "READY_FOR_HANDOVER" && handover?.status === "DRAFT") kanbanColumn = "Ready for Handover";
+        if (handover?.status === "ACCEPTED") kanbanColumn = "Handed Over";
+
+        const daysInStage = Math.max(0, Math.floor((Date.now() - new Date(t.updatedAt).getTime()) / 86400000));
+        const isOverdue = t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled";
+
+        const enriched = {
+          id: t.id,
+          projectSiteName: t.projectSiteName,
+          clientName: row.clientName || t.clientNameSnapshot || null,
+          projectName: row.projectName || t.projectSiteName,
+          requestType: t.requestType,
+          priority: t.priority,
+          status: t.status,
+          dueDate: t.dueDate,
+          developerName: row.developerName,
+          kanbanColumn,
+          daysInStage,
+          isOverdue,
+          taskTotal: tasks.total,
+          taskCompleted: tasks.completed,
+          handoverStatus: handover?.status || null,
+          createdAt: t.createdAt,
+        };
+
+        // Aggregate by status
+        if (!byStatus[kanbanColumn]) byStatus[kanbanColumn] = { count: 0, tickets: [] };
+        byStatus[kanbanColumn].count++;
+        byStatus[kanbanColumn].tickets.push(enriched);
+
+        // Aggregate by request type
+        byRequestType[t.requestType] = (byRequestType[t.requestType] || 0) + (t.status !== "Completed" && t.status !== "Cancelled" ? 1 : 0);
+
+        // Overdue buckets
+        if (isOverdue) {
+          if (t.dueDate! >= oneWeekAgo) overdue.week.push(enriched);
+          else if (t.dueDate! >= twoWeeksAgo) overdue.twoWeeks.push(enriched);
+          else overdue.month.push(enriched);
+        }
+
+        return enriched;
+      });
+
+      // Handover status summary
+      const handoverSummary = {
+        notStarted: handoverRows.filter(h => !h.status || h.status === "DRAFT").length,
+        draft: handoverRows.filter(h => h.status === "DRAFT").length,
+        submitted: handoverRows.filter(h => h.status === "SUBMITTED_FOR_PM_REVIEW").length,
+        accepted: handoverRows.filter(h => h.status === "ACCEPTED").length,
+        rejected: handoverRows.filter(h => h.status === "REJECTED").length,
+      };
+
+      // Pipeline value from financial estimates
+      const activeTicketsRaw = allTickets.map(r => r.ticket);
+      const totalPipelineValue = activeTicketsRaw
+        .filter(t => t.status !== "Completed" && t.status !== "Cancelled" && t.estimatedProjectValue)
+        .reduce((sum, t) => sum + parseFloat(t.estimatedProjectValue as string || "0"), 0);
+
+      res.json({
+        tickets: enrichedTickets,
+        byStatus,
+        byRequestType,
+        overdue,
+        handoverSummary,
+        totalPipelineValue,
+        kanbanColumns: ["New", "In Progress", "Under Review", "Ready for Handover", "Handed Over"],
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/pd/users", requireAuth, async (_req: Request, res: Response) => {
     try {
       const allUsers = await db.select({ id: users.id, name: users.name, role: users.companyRole })
         .from(users)
         .orderBy(asc(users.name));
       res.json(allUsers);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/pd/reports", requireAuth, async (req: Request, res: Response) => {
+    try {
+      // FY boundaries: Sep-Aug. FY2026 = 1 Sep 2025 → 31 Aug 2026
+      const fyParam = req.query.fy ? parseInt(req.query.fy as string) : null;
+      const now = new Date();
+      const currentFY = now.getMonth() >= 8 ? now.getFullYear() + 1 : now.getFullYear(); // Month 8 = Sep
+      const fy = fyParam || currentFY;
+      const fyStart = new Date(`${fy - 1}-09-01T00:00:00Z`);
+      const fyEnd = new Date(`${fy}-08-31T23:59:59Z`);
+
+      // Quarter boundaries within FY (Sep-Nov, Dec-Feb, Mar-May, Jun-Aug)
+      const quarters = [
+        { label: "Q1", start: new Date(`${fy - 1}-09-01`), end: new Date(`${fy - 1}-11-30`) },
+        { label: "Q2", start: new Date(`${fy - 1}-12-01`), end: new Date(`${fy}-02-28`) },
+        { label: "Q3", start: new Date(`${fy}-03-01`), end: new Date(`${fy}-05-31`) },
+        { label: "Q4", start: new Date(`${fy}-06-01`), end: new Date(`${fy}-08-31`) },
+      ];
+
+      const currentMonth = now.toISOString().slice(0, 7); // YYYY-MM
+
+      // Get all tickets
+      const allTickets = await db.select().from(pdTickets);
+      const fyTickets = allTickets.filter(t => t.createdAt >= fyStart && t.createdAt <= fyEnd);
+
+      // Get all handovers
+      const allHandovers = await db.select().from(projectPdPmHandover);
+      const fyHandovers = allHandovers.filter(h => h.createdAt >= fyStart && h.createdAt <= fyEnd);
+
+      // Get handover history for rejection reasons
+      const handoverHistory = await db.select().from(projectHandoverHistory)
+        .where(sql`${projectHandoverHistory.gateId} = 'PD_PM_HANDOVER'`);
+
+      // Get users for workload
+      const pdUsers = await db.select({ id: users.id, name: users.name }).from(users);
+      const userMap = new Map(pdUsers.map(u => [u.id, u.name]));
+
+      // --- Throughput Metrics ---
+      const thisMonthTickets = fyTickets.filter(t => t.createdAt.toISOString().slice(0, 7) === currentMonth);
+      const completedFy = fyTickets.filter(t => t.status === "Completed");
+      const completedThisMonth = completedFy.filter(t => t.updatedAt.toISOString().slice(0, 7) === currentMonth);
+
+      // Average cycle time by request type
+      const cycleTimeByType: Record<string, { total: number; count: number }> = {};
+      for (const t of completedFy) {
+        const days = Math.max(0, Math.floor((t.updatedAt.getTime() - t.createdAt.getTime()) / 86400000));
+        if (!cycleTimeByType[t.requestType]) cycleTimeByType[t.requestType] = { total: 0, count: 0 };
+        cycleTimeByType[t.requestType].total += days;
+        cycleTimeByType[t.requestType].count++;
+      }
+      const avgCycleTimeByType = Object.fromEntries(
+        Object.entries(cycleTimeByType).map(([k, v]) => [k, Math.round(v.total / v.count)])
+      );
+
+      // Average handover cycle time (draft → accepted)
+      const acceptedHandovers = allHandovers.filter(h => h.status === "ACCEPTED" && h.acceptedAt && h.createdAt);
+      const avgHandoverCycleTime = acceptedHandovers.length > 0
+        ? Math.round(acceptedHandovers.reduce((sum, h) => sum + Math.max(0, Math.floor((h.acceptedAt!.getTime() - h.createdAt.getTime()) / 86400000)), 0) / acceptedHandovers.length)
+        : null;
+
+      // Quarterly breakdown
+      const quarterlyData = quarters.map(q => {
+        const created = fyTickets.filter(t => t.createdAt >= q.start && t.createdAt <= q.end).length;
+        const completed = completedFy.filter(t => t.updatedAt >= q.start && t.updatedAt <= q.end).length;
+        const submitted = fyHandovers.filter(h => h.submittedAt && h.submittedAt >= q.start && h.submittedAt <= q.end).length;
+        return { quarter: q.label, created, completed, submitted };
+      });
+
+      // --- Pipeline Health ---
+      const activeByStatus: Record<string, number> = {};
+      const activeByType: Record<string, number> = {};
+      for (const t of allTickets) {
+        if (t.status !== "Completed" && t.status !== "Cancelled") {
+          activeByStatus[t.status] = (activeByStatus[t.status] || 0) + 1;
+          activeByType[t.requestType] = (activeByType[t.requestType] || 0) + 1;
+        }
+      }
+
+      const today = new Date().toISOString().split("T")[0];
+      const overdueCount = allTickets.filter(t => t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled").length;
+
+      // Tickets per PD team member
+      const ticketsPerMember: Record<string, number> = {};
+      for (const t of allTickets.filter(t => t.status !== "Completed" && t.status !== "Cancelled")) {
+        const name = t.projectDeveloperUserId ? (userMap.get(t.projectDeveloperUserId) || "Unassigned") : "Unassigned";
+        ticketsPerMember[name] = (ticketsPerMember[name] || 0) + 1;
+      }
+
+      // --- Handover Metrics ---
+      const submittedHandovers = allHandovers.filter(h => h.submittedAt);
+      const accepted = allHandovers.filter(h => h.status === "ACCEPTED").length;
+      const rejected = allHandovers.filter(h => h.status === "REJECTED").length;
+      const rejectionRate = (accepted + rejected) > 0 ? Math.round((rejected / (accepted + rejected)) * 100) : 0;
+
+      // Average time from submission to decision
+      const decidedHandovers = allHandovers.filter(h => h.submittedAt && (h.acceptedAt || h.rejectedAt));
+      const avgDecisionTime = decidedHandovers.length > 0
+        ? Math.round(decidedHandovers.reduce((sum, h) => {
+            const decisionDate = h.acceptedAt || h.rejectedAt!;
+            return sum + Math.max(0, Math.floor((decisionDate.getTime() - h.submittedAt!.getTime()) / 86400000));
+          }, 0) / decidedHandovers.length)
+        : null;
+
+      // Top rejection reasons
+      const rejectionReasons: Record<string, number> = {};
+      const rejectedHistory = handoverHistory.filter(h => h.action === "PD_PM_HANDOVER_REJECTED");
+      for (const h of rejectedHistory) {
+        const details = h.details as any;
+        const reason = details?.reason || "No reason specified";
+        const shortReason = reason.length > 80 ? reason.slice(0, 80) + "..." : reason;
+        rejectionReasons[shortReason] = (rejectionReasons[shortReason] || 0) + 1;
+      }
+
+      // --- Cross-functional demand ---
+      const engineeringTypes = new Set(["Feasibility Study", "Design Review", "IFC Planning", "Grid Application", "Battery Assessment", "Site Assessment", "Full EPC"]);
+      const engineeringTickets = allTickets.filter(t => engineeringTypes.has(t.requestType) && t.status !== "Cancelled").length;
+
+      res.json({
+        fy,
+        fyLabel: `FY${fy} (Sep ${fy - 1} – Aug ${fy})`,
+        throughput: {
+          createdThisMonth: thisMonthTickets.length,
+          createdFY: fyTickets.length,
+          completedThisMonth: completedThisMonth.length,
+          completedFY: completedFy.length,
+          avgCycleTimeByType,
+          avgHandoverCycleTimeDays: avgHandoverCycleTime,
+          quarterly: quarterlyData,
+        },
+        pipelineHealth: {
+          activeByStatus,
+          activeByType,
+          overdueCount,
+          ticketsPerMember,
+        },
+        handover: {
+          submitted: submittedHandovers.length,
+          accepted,
+          rejected,
+          rejectionRate,
+          avgDecisionTimeDays: avgDecisionTime,
+          topRejectionReasons: Object.entries(rejectionReasons).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([reason, count]) => ({ reason, count })),
+        },
+        crossFunctional: {
+          engineeringRequests: engineeringTickets,
+        },
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -484,6 +805,7 @@ async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: strin
       priority: tmpl.priority === "High" ? "High" : "Medium",
       endDate: ticket.dueDate || null,
       sortOrder: i,
+      pdTicketId: ticket.id,
       createdBy: user?.id || null,
     }).returning();
 

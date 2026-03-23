@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PD Module Training Guide — Part 3 | Emergent Energy</title>
+<link rel="stylesheet" href="ee-styles.css">
+</head>
+<body>
+<div class="page">
+
+<div class="doc-header">
+  <img src="assets/emergent-logo.png" alt="Emergent Energy">
+  <div class="doc-meta">
+    <strong>Training &amp; SOP Guide</strong>
+    EE-SOP-PD-001 | Version 1.0<br>
+    Part 3 of 4 — Handover, Reports &amp; Notifications
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h1 id="handover">8. The Handover Workflow</h1>
+<!-- ============================================================ -->
+
+<p>The handover is how a project moves from PD into PM execution. It's a <strong>structured checklist</strong> ensuring nothing falls through the cracks.</p>
+
+<h2>8.1 The Handover Lifecycle</h2>
+
+<div class="wireframe">
+                       PD fills in                PD clicks            PM reviews
+                       all fields                "Submit"             handover
+                           │                        │                     │
+   ┌────────┐         ┌────▼───┐         ┌──────────▼─────┐        ┌─────▼─────┐
+   │  NEW   │────────▶│ DRAFT  │────────▶│  SUBMITTED FOR │───┬───▶│ ACCEPTED  │
+   │        │         │        │         │   PM REVIEW    │   │    │           │
+   └────────┘         └────┬───┘         └────────────────┘   │    └───────────┘
+                           ▲                                  │     Project goes
+                           │              ┌──────────┐        │     to "PM Active"
+                           └──────────────│ REJECTED │◀───────┘     phase
+                            PD fixes &amp;    │          │    PM rejects
+                            resubmits     └──────────┘    with reason
+</div>
+
+<h2>8.2 What PD Needs to Fill In</h2>
+
+<p>The handover page is divided into sections. Here's what each section requires:</p>
+
+<h3>Handover Fields</h3>
+<table>
+  <thead><tr><th>Field</th><th>Required?</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>PD Owner</td><td>Yes</td><td>Who in PD is responsible for this project</td></tr>
+    <tr><td>PM Owner</td><td>Yes</td><td>Which PM will take over</td></tr>
+    <tr><td>Scope Summary</td><td>Yes</td><td>What the project involves</td></tr>
+    <tr><td>Risk Summary</td><td>Yes</td><td>Known risks and mitigations</td></tr>
+    <tr><td>Assumptions</td><td>Yes</td><td>What assumptions were made</td></tr>
+    <tr><td>Engineering Status</td><td>Yes</td><td>Current state of engineering work</td></tr>
+    <tr><td>Quality Status</td><td>Sometimes</td><td>Required if engineering status needs it</td></tr>
+    <tr><td>Notes to PM</td><td>No</td><td>Any additional context for the PM</td></tr>
+  </tbody>
+</table>
+
+<h3>Readiness Assessment</h3>
+<table>
+  <thead><tr><th>Field</th><th>Required?</th><th>Options</th></tr></thead>
+  <tbody>
+    <tr><td>Feasibility Status</td><td>Yes (not "Not Assessed")</td><td>Not Assessed, Under Review, Feasible, Conditional, Not Feasible</td></tr>
+    <tr><td>Feasibility Notes</td><td>Yes</td><td>Free text explaining the assessment</td></tr>
+    <tr><td>Dependency Summary</td><td>Yes</td><td>What this project depends on</td></tr>
+    <tr><td>Handover Readiness</td><td>Must be "Ready for Handover"</td><td>Not Ready, Ready with Actions, Ready for Handover</td></tr>
+    <tr><td>Readiness Notes</td><td>Yes</td><td>Explanation of readiness status</td></tr>
+  </tbody>
+</table>
+
+<h3>Deliverables (3 Required Documents)</h3>
+<table>
+  <thead><tr><th>Document</th><th>What to Provide</th></tr></thead>
+  <tbody>
+    <tr><td>Handover Charter</td><td>Reference link/number + upload date</td></tr>
+    <tr><td>Site Visit Report</td><td>Reference link/number + upload date</td></tr>
+    <tr><td>Signed Cost Proposal</td><td>Reference link/number + upload date</td></tr>
+  </tbody>
+</table>
+
+<div class="callout callout-danger">
+  <span class="icon">&#x1F6D1;</span>
+  <div><strong>All 15+ blockers must be cleared before you can submit</strong>
+  The system checks every field and deliverable. Missing items are shown in a red blocker list at the top of the page. You must fix ALL of them before the Submit button works.</div>
+</div>
+
+<h2>8.3 Step-by-Step: PD Submitting a Handover</h2>
+
+<div class="wireframe">
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  🤝 Project Development Workspace                               │
+ │  Status: DRAFT  |  Project ID: 42                               │
+ │                                                                  │
+ │  [Save Draft]  [Submit for PM Review]  [Accept] [Reject]        │
+ │                                         ↑ greyed   ↑ greyed     │
+ │                                         out for PD  out for PD  │
+ │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+ │  │ Blockers │ │  Intake  │ │  Depend. │ │Microsoft │           │
+ │  │    3     │ │  2 / 0   │ │  5 / 1   │ │    4     │           │
+ │  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
+ │                                                                  │
+ │  ⛔ Handover cannot be submitted yet                            │
+ │  Missing: Feasibility notes, Site Visit Report, PM assignment   │
+ │                                                                  │
+ │  ┌─ Handover Fields ──────────────┬─ Readiness ────────────┐    │
+ │  │ PD Owner:  [Jane Doe       ]   │ Feasibility: [▾ Feas.] │    │
+ │  │ PM Owner:  [              ]    │ Feas. Notes: [       ] │    │
+ │  │ Scope:     [              ]    │ Dep. Summary:[       ] │    │
+ │  │ Risks:     [              ]    │ Readiness:   [▾ Ready] │    │
+ │  │ Assumptions:[             ]    │ Ready Notes: [       ] │    │
+ │  │ Eng Status: [             ]    │                         │    │
+ │  │ Quality:    [             ]    │ Latest Update:          │    │
+ │  │ Notes to PM:[             ]    │ [                     ] │    │
+ │  └────────────────────────────────┴─────────────────────────┘    │
+ │                                                                  │
+ │  ┌─ Deliverables ────────────────────────────────────────────┐  │
+ │  │ Handover Charter:      [ref link] [by] [date]  ✓ Complete │  │
+ │  │ Site Visit Report:     [        ] [  ] [    ]  ✗ Missing  │  │
+ │  │ Signed Cost Proposal:  [ref link] [by] [date]  ✓ Complete │  │
+ │  │                                           2/3 complete    │  │
+ │  └───────────────────────────────────────────────────────────┘  │
+ └──────────────────────────────────────────────────────────────────┘
+</div>
+
+<div class="step-box">
+  <div class="step-number">1</div>
+  <div class="step-content">
+    <h4>Fill in all handover fields</h4>
+    <p>Complete PD Owner, PM Owner, Scope Summary, Risks, Assumptions, Engineering Status, and all readiness fields.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">2</div>
+  <div class="step-content">
+    <h4>Upload all 3 deliverables</h4>
+    <p>Add reference links and dates for Handover Charter, Site Visit Report, and Signed Cost Proposal. All 3 must be marked complete.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">3</div>
+  <div class="step-content">
+    <h4>Save Draft regularly</h4>
+    <p>Click <strong>"Save Draft"</strong> to save your progress. You can come back and continue later.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">4</div>
+  <div class="step-content">
+    <h4>Clear all blockers</h4>
+    <p>Check the red blocker list at the top. Fix each missing item until the list is empty.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">5</div>
+  <div class="step-content">
+    <h4>Click "Submit for PM Review"</h4>
+    <p>Once all blockers are cleared, this button activates. Click it to send the handover to PM for review. <strong>PM reviewers are automatically notified.</strong></p>
+  </div>
+</div>
+
+<h2>8.4 Step-by-Step: PM Reviewing a Handover</h2>
+
+<div class="callout callout-info">
+  <span class="icon">&#x2139;&#xFE0F;</span>
+  <div><strong>Who can review?</strong>
+  <span class="role-tag role-pm">Project Manager</span>
+  <span class="role-tag role-admin">Program Manager</span>
+  <span class="role-tag role-admin">COO / CEO / Admin</span></div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">1</div>
+  <div class="step-content">
+    <h4>Open the handover</h4>
+    <p>You'll receive a notification when a handover is submitted. Click the notification or navigate to the handover page.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">2</div>
+  <div class="step-content">
+    <h4>Review everything</h4>
+    <p>Check all handover fields, deliverables, evidence score, dependencies, and risks.</p>
+  </div>
+</div>
+
+<div class="step-box">
+  <div class="step-number">3</div>
+  <div class="step-content">
+    <h4>Accept or Reject</h4>
+    <p><strong>Accept:</strong> Click "Accept Handover". The project moves to "PM Active" phase and execution is enabled.<br>
+    <strong>Reject:</strong> Click "Reject Handover", provide a clear reason, and click "Submit Rejection". PD is notified and can fix issues and resubmit.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h1 id="reports">9. Reports &amp; Metrics</h1>
+<!-- ============================================================ -->
+
+<p>The Reports page (<code>/pd/reports</code>) gives leadership and PD managers the data they need for planning, board packs, and performance tracking.</p>
+
+<div class="wireframe">
+ ┌──────────────────────────────────────────────────────────────────┐
+ │  ← Back    📊 PD Reports                          [Copy Metrics]│
+ │            FY2026 (Sep 2025 – Aug 2026)                         │
+ │                                                                  │
+ │  📈 Throughput                                                   │
+ │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐       │
+ │  │Created │ │Created │ │Compltd │ │Compltd │ │Avg H/O │       │
+ │  │Month: 5│ │FY: 42  │ │Month: 3│ │FY: 17  │ │Cycle:12d│       │
+ │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘       │
+ │                                                                  │
+ │  ┌─────────────────────────────────────────────────┐            │
+ │  │ Quarter │ Created │ Completed │ H/O Submitted   │            │
+ │  │ Q1      │    12   │     8     │       3         │            │
+ │  │ Q2      │    15   │     5     │       2         │            │
+ │  │ Q3      │    10   │     3     │       1         │            │
+ │  │ Q4      │     5   │     1     │       0         │            │
+ │  └─────────────────────────────────────────────────┘            │
+ │                                                                  │
+ │  Pipeline Health                                                 │
+ │  ┌─ By Status ──────────┐  ┌─ By Type ─────────────┐           │
+ │  │ Draft     ████    8  │  │ Cost Prop.  ████   5   │           │
+ │  │ In Prog.  ██████ 12  │  │ IFC Plan.   ███    3   │           │
+ │  │ On Hold   ██      2  │  │ Feasibility ████   4   │           │
+ │  └──────────────────────┘  └────────────────────────┘           │
+ │                                                                  │
+ │  ┌─ Overdue ────────────┐  ┌─ Workload ────────────┐           │
+ │  │       5              │  │ Jane    ██████   8     │           │
+ │  │ (red if > 0)         │  │ Thabo   ████     5     │           │
+ │  └──────────────────────┘  │ Sarah   ███      3     │           │
+ │                             └────────────────────────┘           │
+ │                                                                  │
+ │  Handover Metrics                                                │
+ │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐       │
+ │  │Submit  │ │Accepted│ │Rejected│ │Rej Rate│ │Avg Dec.│       │
+ │  │  12    │ │   8    │ │   2    │ │  20%   │ │  3d    │       │
+ │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘       │
+ │                                                                  │
+ │  Top Rejection Reasons                                           │
+ │  ✗ Missing site visit documentation           3x                │
+ │  ✗ Incomplete financial model                  2x                │
+ └──────────────────────────────────────────────────────────────────┘
+</div>
+
+<h2>9.1 Understanding the Financial Year</h2>
+<div class="callout callout-warning">
+  <span class="icon">&#x26A0;&#xFE0F;</span>
+  <div><strong>FY runs September to August</strong>
+  FY2026 = 1 September 2025 to 31 August 2026.<br>
+  Quarters: Q1 Sep-Nov, Q2 Dec-Feb, Q3 Mar-May, Q4 Jun-Aug.</div>
+</div>
+
+<h2>9.2 Copy Metrics for Board Packs</h2>
+<p>Click the <strong>"Copy Metrics"</strong> button (top-right). This copies a formatted text summary of all metrics to your clipboard. Paste it into your board pack document, email, or presentation.</p>
+
+<!-- ============================================================ -->
+<h1 id="notifications">10. Notifications</h1>
+<!-- ============================================================ -->
+
+<p>The app notifies you when important PD events happen. Look for the <strong>bell icon</strong> in the top-right corner of the screen.</p>
+
+<div class="wireframe">
+ ┌─────────────────────────────────────────────────────────┐
+ │  [Emergent Logo]  Dashboard  ...  PD  ...    🔔(3)  👤 │
+ │                                                ▼        │
+ │                                   ┌─────────────────┐   │
+ │                                   │ Notifications   │   │
+ │                                   │ [Mark all read] │   │
+ │                                   ├─────────────────┤   │
+ │                                   │ ● Handover sub- │   │
+ │                                   │   mitted: Alpha │   │
+ │                                   │   Mar 23, 10:30 │   │
+ │                                   ├─────────────────┤   │
+ │                                   │ ● Task assigned │   │
+ │                                   │   to you: Feas. │   │
+ │                                   │   Mar 22, 15:45 │   │
+ │                                   ├─────────────────┤   │
+ │                                   │   Handover acc- │   │
+ │                                   │   epted: Beta   │   │
+ │                                   │   Mar 21, 09:00 │   │
+ │                                   └─────────────────┘   │
+ └─────────────────────────────────────────────────────────┘
+   ● = unread (blue dot)     No dot = already read
+</div>
+
+<h2>10.1 What Triggers a Notification?</h2>
+<table>
+  <thead><tr><th>Event</th><th>Who Gets Notified</th></tr></thead>
+  <tbody>
+    <tr><td>Handover submitted for review</td><td><span class="role-tag role-pm">All PM reviewers</span></td></tr>
+    <tr><td>Handover accepted</td><td><span class="role-tag role-pd">PD owner</span></td></tr>
+    <tr><td>Handover rejected</td><td><span class="role-tag role-pd">PD owner</span> (includes rejection reason)</td></tr>
+    <tr><td>Engineering task assigned</td><td><span class="role-tag role-eng">Assigned engineer</span></td></tr>
+  </tbody>
+</table>
+
+<h2>10.2 How to Use Notifications</h2>
+<ul>
+  <li><strong>Red badge on bell</strong> = you have unread notifications (number shown)</li>
+  <li><strong>Click the bell</strong> to open the notification panel</li>
+  <li><strong>Click a notification</strong> to navigate to the relevant page (ticket, handover, or task)</li>
+  <li><strong>"Mark all read"</strong> clears the unread count</li>
+  <li>Notifications auto-refresh every 30 seconds</li>
+</ul>
+
+<div class="doc-footer">
+  <span>Emergent Energy (Pty) Ltd | Confidential</span>
+  <span>EE-SOP-PD-001 v1.0 — Part 3 of 4</span>
+</div>
+</div>
+</body>
+</html>

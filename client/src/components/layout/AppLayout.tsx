@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { Link, useLocation } from "wouter";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 
 import { Button } from "@/components/ui/button";
@@ -8,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor } from "lucide-react";
+import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Bell } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
@@ -367,6 +368,109 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <main id="main-content" className="px-4 lg:px-6 py-5">{children}</main>
       <GlobalCommandPalette />
+    </div>
+  );
+}
+
+function NotificationBell() {
+  const [, navigate] = useLocation();
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const ref = useRef<HTMLDivElement>(null);
+
+  const { data } = useQuery<{ notifications: any[]; unreadCount: number }>({
+    queryKey: ["/api/notifications"],
+    queryFn: () => fetch("/api/notifications", { credentials: "include" }).then(r => r.ok ? r.json() : { notifications: [], unreadCount: 0 }),
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+
+  const markAllRead = useMutation({
+    mutationFn: () => fetch("/api/notifications/read-all", { method: "PATCH", credentials: "include" }).then(r => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] }),
+  });
+
+  const markRead = useMutation({
+    mutationFn: (id: number) => fetch(`/api/notifications/${id}/read`, { method: "PATCH", credentials: "include" }).then(r => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/notifications"] }),
+  });
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const unread = data?.unreadCount || 0;
+  const items = data?.notifications || [];
+
+  const handleNotificationClick = (n: any) => {
+    if (!n.isRead) markRead.mutate(n.id);
+    setOpen(false);
+    // Navigate based on notification type
+    const details = n.changeDetails ? JSON.parse(n.changeDetails) : null;
+    if (details?.entityType === "pd_ticket" && details?.entityId) {
+      navigate(`/pd/tickets/${details.entityId}`);
+    } else if ((details?.entityType === "handover" || n.eventType?.includes("handover")) && n.projectId) {
+      navigate(`/pd/handover/${n.projectId}`);
+    } else if (details?.entityType === "work_item" && n.linkedTaskId) {
+      navigate(`/engineering/tasks?taskId=${n.linkedTaskId}`);
+    } else if (n.projectId) {
+      navigate(`/pd/handover/${n.projectId}`);
+    }
+  };
+
+  return (
+    <div className="relative" ref={ref}>
+      <Button variant="ghost" size="sm" className="relative" onClick={() => setOpen(!open)} data-testid="notification-bell">
+        <Bell className="h-4.5 w-4.5" />
+        {unread > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[9px] rounded-full h-4 min-w-[16px] flex items-center justify-center px-1 font-medium">
+            {unread > 99 ? "99+" : unread}
+          </span>
+        )}
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-80 bg-background border rounded-lg shadow-lg z-50 max-h-[400px] overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between p-3 border-b">
+            <span className="text-sm font-semibold">Notifications</span>
+            {unread > 0 && (
+              <button className="text-[10px] text-primary hover:underline" onClick={() => markAllRead.mutate()}>
+                Mark all read
+              </button>
+            )}
+          </div>
+          <div className="overflow-y-auto flex-1">
+            {items.length === 0 ? (
+              <p className="p-4 text-xs text-muted-foreground text-center">No notifications</p>
+            ) : (
+              items.slice(0, 20).map((n: any) => (
+                <div
+                  key={n.id}
+                  className={cn(
+                    "p-3 border-b cursor-pointer hover:bg-muted/50 transition-colors",
+                    !n.isRead && "bg-primary/5"
+                  )}
+                  onClick={() => handleNotificationClick(n)}
+                >
+                  <div className="flex items-start gap-2">
+                    {!n.isRead && <div className="w-2 h-2 rounded-full bg-primary mt-1.5 shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{n.title}</p>
+                      {n.body && <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-2">{n.body}</p>}
+                      <p className="text-[9px] text-muted-foreground mt-1">
+                        {new Date(n.createdAt).toLocaleDateString()} {new Date(n.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
