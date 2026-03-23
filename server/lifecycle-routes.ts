@@ -1743,9 +1743,18 @@ export function registerLifecycleRoutes(app: Express) {
       await db.transaction(async (tx) => {
         const pId = projectId;
         const pN = pName;
-        // Safe delete helper — skips missing tables instead of aborting the transaction
+        // Safe delete helper — uses SAVEPOINTs so a failed statement
+        // (e.g. missing table) doesn't abort the whole PG transaction.
+        let spIdx = 0;
         const safeDel = async (query: ReturnType<typeof sql>) => {
-          try { await tx.execute(query); } catch (_e) {}
+          const sp = `sp_del_${spIdx++}`;
+          try {
+            await tx.execute(sql.raw(`SAVEPOINT ${sp}`));
+            await tx.execute(query);
+            await tx.execute(sql.raw(`RELEASE SAVEPOINT ${sp}`));
+          } catch (_e) {
+            await tx.execute(sql.raw(`ROLLBACK TO SAVEPOINT ${sp}`));
+          }
         };
 
         await safeDel(sql`DELETE FROM project_eng_deliverables WHERE project_eng_stage_id IN (SELECT id FROM project_eng_stages WHERE project_id = ${pId})`);
