@@ -3573,24 +3573,81 @@ router.post("/api/expenditure/overrides", requireAuth, requireAdminOrFinancialEd
     const userId = req.user?.id;
     const userRole = req.user?.role;
 
-    // All cost corrections require approval before being applied
     const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-    const hasHighExpense = overrides.some((o: any) => o.fieldName === "expenseActualTotal" && Number(o.overrideValue) > 50000);
-    const hasBudgetChange = overrides.some((o: any) => o.fieldName === "budgetTotal");
-    const editSummary = `Expenditure override: ${overrides.length} field(s). Category: ${overrideCategory}. Comment: ${overrideComment.trim()}${hasHighExpense ? " [HIGH EXPENSE]" : ""}${hasBudgetChange ? " [BUDGET CHANGE]" : ""} [Submitted by ${userRole || "unknown"}]`;
-    const saved = await createPendingEditRequest(
-      userId!,
-      projectNames[0] || "Unknown",
-      "expenditure_override",
-      "expenditure_tracking",
-      { overrides, overrideCategory, overrideComment },
-      editSummary
-    );
-    return res.json({
-      message: "Your cost correction has been submitted for approval",
-      status: "pending_approval",
-      requestId: saved.id,
-    });
+
+    // PM-only roles require approval; admins and financial approvers apply directly
+    if (isPmOnlyRole(userRole)) {
+      const hasHighExpense = overrides.some((o: any) => o.fieldName === "expenseActualTotal" && Number(o.overrideValue) > 50000);
+      const hasBudgetChange = overrides.some((o: any) => o.fieldName === "budgetTotal");
+      const editSummary = `Expenditure override: ${overrides.length} field(s). Category: ${overrideCategory}. Comment: ${overrideComment.trim()}${hasHighExpense ? " [HIGH EXPENSE]" : ""}${hasBudgetChange ? " [BUDGET CHANGE]" : ""} [Submitted by ${userRole || "unknown"}]`;
+      const saved = await createPendingEditRequest(
+        userId!,
+        projectNames[0] || "Unknown",
+        "expenditure_override",
+        "expenditure_tracking",
+        { overrides, overrideCategory, overrideComment },
+        editSummary
+      );
+      return res.json({
+        message: "Your cost correction has been submitted for approval",
+        status: "pending_approval",
+        requestId: saved.id,
+      });
+    }
+
+    // Admin/approver: apply overrides directly
+    const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
+    await storage.upsertManyExpenditureOverrides(overridesWithUser);
+
+    const fieldToColumnMap: Record<string, string> = {
+      expenseInvoicedDate: "expenseInvoicedDate",
+      expensePaymentDate: "expensePaymentDate",
+      expensePoNumber: "expensePoNumber",
+      expenseInvoiceNumber: "expenseInvoiceNumber",
+      expenseLineItem: "expenseLineItem",
+      expenseActualTotal: "expenseActualTotal",
+      budgetTotal: "budgetTotal",
+      forecastPaymentDate: "forecastPaymentDate",
+      expenseQty: "expenseQty",
+      expenseRateUnit: "expenseRateUnit",
+      budgetQty: "budgetQty",
+      budgetRateUnit: "budgetRateUnit",
+      invoiceDateFontColor: "invoiceDateFontColor",
+      paymentDateFontColor: "paymentDateFontColor",
+      supplierName: "supplierName",
+    };
+
+    for (const pn of projectNames) {
+      const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+      const expenses = await storage.getProgramExpensesByProject(pn as string);
+      const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
+
+      const rowGroups = new Map<number, Record<string, any>>();
+      for (const ov of projectOverrides) {
+        const colName = fieldToColumnMap[ov.fieldName];
+        if (!colName) continue;
+        const expense = rowMap.get(ov.rowNumber);
+        if (!expense) continue;
+        if (!rowGroups.has(expense.id)) rowGroups.set(expense.id, {});
+        const fields = rowGroups.get(expense.id)!;
+        const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+        fields[colName] = effectiveValue;
+        if (ov.fieldName === 'expenseInvoicedDate' && !effectiveValue) {
+          fields.invoiceDateConfirmed = false;
+        }
+        if (ov.fieldName === 'expensePaymentDate' && !effectiveValue) {
+          fields.paymentDateConfirmed = false;
+        }
+      }
+
+      for (const [expenseId, fields] of rowGroups.entries()) {
+        if (Object.keys(fields).length > 0) {
+          await storage.updateProgramExpenseFields(expenseId, fields);
+        }
+      }
+    }
+
+    res.json({ message: "Expenditure overrides applied successfully", count: overrides.length });
 
     // Refresh dashboard metrics for affected projects
     try {
