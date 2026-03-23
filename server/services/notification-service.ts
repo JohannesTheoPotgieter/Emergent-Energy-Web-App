@@ -35,11 +35,11 @@ export async function createNotification(params: CreateNotificationParams) {
 
     if (recent.length > 0) return null; // throttled
 
-    // Upsert throttle record
+    // Upsert throttle record using the composite unique constraint
     await db.execute(sql`
       INSERT INTO notification_throttle (recipient_user_id, event_type, entity_type, entity_id, last_sent_at)
       VALUES (${params.recipientUserId}, ${params.eventType}, ${params.relatedEntityType}, ${params.relatedEntityId}, NOW())
-      ON CONFLICT (id) DO UPDATE SET last_sent_at = NOW()
+      ON CONFLICT (recipient_user_id, event_type, entity_type, entity_id) DO UPDATE SET last_sent_at = NOW()
     `);
   }
 

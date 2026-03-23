@@ -467,13 +467,13 @@ export function buildProjectDevelopmentWorkspaceFromSources(params: {
     ? `${blockedSuccessorIds.size} blocked work item${blockedSuccessorIds.size === 1 ? "" : "s"} across ${dependencyItems.length} mapped dependenc${dependencyItems.length === 1 ? "y" : "ies"}`
     : null;
 
-  const feasibilityStatus = textOrNull(params.handover?.feasibility_status);
-  const feasibilityNotes = textOrNull(params.handover?.feasibility_notes);
-  const dependencySummary = textOrNull(params.handover?.dependency_summary);
-  const readinessStatus = textOrNull(params.handover?.handover_readiness_status);
-  const readinessNotes = textOrNull(params.handover?.handover_readiness_notes);
-  const engineeringStatus = textOrNull(params.handover?.engineering_status) || "";
-  const qualityStatus = textOrNull(params.handover?.quality_status);
+  const feasibilityStatus = textOrNull(params.handover?.feasibilityStatus ?? params.handover?.feasibility_status);
+  const feasibilityNotes = textOrNull(params.handover?.feasibilityNotes ?? params.handover?.feasibility_notes);
+  const dependencySummary = textOrNull(params.handover?.dependencySummary ?? params.handover?.dependency_summary);
+  const readinessStatus = textOrNull(params.handover?.handoverReadinessStatus ?? params.handover?.handover_readiness_status);
+  const readinessNotes = textOrNull(params.handover?.handoverReadinessNotes ?? params.handover?.handover_readiness_notes);
+  const engineeringStatus = textOrNull(params.handover?.engineeringStatus ?? params.handover?.engineering_status) || "";
+  const qualityStatus = textOrNull(params.handover?.qualityStatus ?? params.handover?.quality_status);
 
   const platformSummary = params.platformSummary;
   const deliverablesComplete = countCompletedDeliverables(deliverables);
@@ -581,14 +581,14 @@ export function buildProjectDevelopmentWorkspaceFromSources(params: {
     },
     downstream: {
       engineering: {
-        status: textOrNull(params.handover?.engineering_status),
+        status: textOrNull(params.handover?.engineeringStatus ?? params.handover?.engineering_status),
         openDependencies: blockedSuccessorIds.size,
         openRisks: openRiskItems.length,
         activeWorkItems: getKpiValue(platformSummary, "tasks_active"),
         pendingApprovals: platformSummary?.workflow.approvals.pending ?? 0,
       },
       projectManagement: {
-        pmOwner: textOrNull(params.handover?.pm_owner),
+        pmOwner: textOrNull(params.handover?.pmOwner ?? params.handover?.pm_owner),
         deliverablesComplete,
         readinessStatus,
         latestUpdateAt,
@@ -623,10 +623,10 @@ export function computePdPmSubmitBlockers(params: {
   workspace: ProjectDevelopmentWorkspacePayload;
 }): string[] {
   const deliverables = normalizeDeliverables(params.handover?.deliverables);
-  const engineeringStatus = String(params.handover?.engineering_status || "").trim();
-  const qualityStatus = String(params.handover?.quality_status || "").trim();
-  const feasibilityStatus = String(params.handover?.feasibility_status || "").trim();
-  const readinessStatus = String(params.handover?.handover_readiness_status || "").trim();
+  const engineeringStatus = String(params.handover?.engineeringStatus ?? params.handover?.engineering_status || "").trim();
+  const qualityStatus = String(params.handover?.qualityStatus ?? params.handover?.quality_status || "").trim();
+  const feasibilityStatus = String(params.handover?.feasibilityStatus ?? params.handover?.feasibility_status || "").trim();
+  const readinessStatus = String(params.handover?.handoverReadinessStatus ?? params.handover?.handover_readiness_status || "").trim();
 
   const missingItems: string[] = [];
   const need = (ok: boolean, label: string) => {
@@ -639,15 +639,15 @@ export function computePdPmSubmitBlockers(params: {
   need(!!textOrNull(params.project.pm), "PM assignment");
   need(!!textOrNull(params.handover?.summary), "Scope summary");
   need(!!params.project.clientId, "Linked master project/client");
-  need(!!textOrNull(params.handover?.pd_owner || params.project.pd), "PD owner");
+  need(!!textOrNull(params.handover?.pdOwner ?? params.handover?.pd_owner || params.project.pd), "PD owner");
   need(!!engineeringStatus, "Engineering status");
   need(!!textOrNull(params.handover?.risks), "Risk summary");
   need(!!textOrNull(params.handover?.assumptions), "Assumptions");
   need(!!feasibilityStatus && feasibilityStatus !== "NOT_ASSESSED", "Feasibility status");
-  need(!!textOrNull(params.handover?.feasibility_notes), "Feasibility notes");
-  need(!!textOrNull(params.handover?.dependency_summary), "Dependency summary");
+  need(!!textOrNull(params.handover?.feasibilityNotes ?? params.handover?.feasibility_notes), "Feasibility notes");
+  need(!!textOrNull(params.handover?.dependencySummary ?? params.handover?.dependency_summary), "Dependency summary");
   need(readinessStatus === "READY_FOR_HANDOVER", "Readiness status set to Ready for handover");
-  need(!!textOrNull(params.handover?.handover_readiness_notes), "Handover readiness notes");
+  need(!!textOrNull(params.handover?.handoverReadinessNotes ?? params.handover?.handover_readiness_notes), "Handover readiness notes");
   need(params.workspace.latestUpdate.isPresent, "Canonical latest update");
 
   if (requiresQualityStatus(engineeringStatus)) {
