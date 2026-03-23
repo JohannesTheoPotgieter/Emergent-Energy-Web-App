@@ -408,7 +408,7 @@ router.get(
       const now = new Date();
       const currentMk = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-      // 6. Build 3-month forecast from planned data in the system
+      // 6. Build 3-month forecast from planned data in the system (milestones/expenses, NOT budget)
       const forecastWindow = getNext3MonthKeys(currentMk);
 
       // Forecast Revenue: use planned inflow milestones with plannedPaymentDate in the forecast window
@@ -456,13 +456,15 @@ router.get(
         }
       }
 
-      // 7. Pipeline (95%+) revenue spread using historical COS realization curve
-      //    Only shown from current month onwards (pipeline is future revenue)
+      // 7. Pipeline (95%+) revenue allocated by expected sign date
+      //    Each deal's revenue is placed in its forecastSignatureDate month.
+      //    Deals without a sign date are spread evenly across future months.
       const pipelineRevByMonth: Record<string, number> = {};
       try {
         const pipelineDeals = await db.select({
           solarRevenue: forecastPipeline.solarRevenue,
           bessRevenue: forecastPipeline.bessRevenue,
+          forecastSignatureDate: forecastPipeline.forecastSignatureDate,
         }).from(forecastPipeline)
           .where(and(
             eq(forecastPipeline.fyeYear, fye),
@@ -471,40 +473,37 @@ router.get(
           ));
 
         console.log(`[FYE Dashboard] Pipeline deals (95%+, FYE ${fye}): ${pipelineDeals.length} found`);
-        const totalPipelineRev = pipelineDeals.reduce(
-          (sum, d) => sum + safeNum(d.solarRevenue) + safeNum(d.bessRevenue), 0
-        );
-        console.log(`[FYE Dashboard] Total pipeline revenue: R${totalPipelineRev.toLocaleString()}, future months: ${monthKeys.filter(mk => mk > currentMk).length}`);
 
-        if (totalPipelineRev > 0) {
-          // Build COS realization curve from historical actuals for future months only
-          // Use the proportion of COS invoiced per month to predict how pipeline revenue would realise
-          const futureMonths = monthKeys.filter(mk => mk > currentMk);
-          const pastMonths = monthKeys.filter(mk => mk <= currentMk);
-          const totalActualCos = pastMonths.reduce((s, mk) => s + (actualCosByMonth[mk] || 0), 0);
+        const futureMonths = monthKeys.filter(mk => mk > currentMk);
+        let undatedPipelineRev = 0;
 
-          if (totalActualCos > 0 && pastMonths.length > 0) {
-            // Use historical COS realization pattern scaled to future months
-            // Calculate average monthly COS proportion and apply it to future months
-            const avgMonthlyCos = totalActualCos / pastMonths.length;
-            const totalProjectedCos = avgMonthlyCos * futureMonths.length;
+        for (const deal of pipelineDeals) {
+          const dealRev = safeNum(deal.solarRevenue) + safeNum(deal.bessRevenue);
+          if (dealRev === 0) continue;
 
-            if (totalProjectedCos > 0) {
-              for (const mk of futureMonths) {
-                // Spread evenly based on average monthly COS proportion
-                pipelineRevByMonth[mk] = totalPipelineRev / futureMonths.length;
-              }
-            }
+          const signMk = extractMonthKey(deal.forecastSignatureDate);
+          if (signMk && futureMonths.includes(signMk)) {
+            // Allocate to the expected sign date month
+            pipelineRevByMonth[signMk] = (pipelineRevByMonth[signMk] || 0) + dealRev;
+          } else if (signMk && monthKeys.includes(signMk) && signMk > currentMk) {
+            // Sign date is in FYE range and future — allocate there
+            pipelineRevByMonth[signMk] = (pipelineRevByMonth[signMk] || 0) + dealRev;
           } else {
-            // No COS history yet — spread evenly across future FYE months
-            if (futureMonths.length > 0) {
-              const perMonth = totalPipelineRev / futureMonths.length;
-              for (const mk of futureMonths) {
-                pipelineRevByMonth[mk] = perMonth;
-              }
-            }
+            // No valid future sign date — accumulate for even spreading
+            undatedPipelineRev += dealRev;
           }
         }
+
+        // Spread undated pipeline revenue evenly across future months
+        if (undatedPipelineRev > 0 && futureMonths.length > 0) {
+          const perMonth = undatedPipelineRev / futureMonths.length;
+          for (const mk of futureMonths) {
+            pipelineRevByMonth[mk] = (pipelineRevByMonth[mk] || 0) + perMonth;
+          }
+        }
+
+        const totalPipelineRev = Object.values(pipelineRevByMonth).reduce((s, v) => s + v, 0);
+        console.log(`[FYE Dashboard] Total pipeline revenue: R${totalPipelineRev.toLocaleString()}, future months: ${futureMonths.length}`);
       } catch {
         // forecastPipeline may not exist yet
       }
