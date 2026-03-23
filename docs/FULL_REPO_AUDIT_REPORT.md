@@ -211,6 +211,21 @@ Schema files in `shared/schema/` organized by domain:
 | 13 | Audit tables | Comprehensive audit trail via `auditEvents`, `taskActivityLog`, `changesets`, `fieldChanges`, `projectPhaseHistory`, `projectRagAudit`, `workItemStatusHistory`. Good coverage. | [CONFIRMED] | `shared/schema/collaboration.ts`, `tasks.ts`, `projects.ts` |
 | 14 | Multi-tenancy | `organizations` table exists with `slug` unique constraint, but `organizationId` FK is not present on most tables. Multi-tenancy is schema-ready but not enforced. | [PLACEHOLDER] | `shared/schema/users.ts` |
 
+### 2.X Database BUGS (from deep audit)
+
+| # | Finding | Tag | Detail |
+|---|---------|-----|--------|
+| 1 | `project_info.pm_user_id` and `pd_user_id` have NO FK to `users.id` | [BUG] | The most important assignment columns for a PM/EPC app have zero referential integrity. Orphan user IDs will go undetected. File: `shared/schema/projects.ts` |
+| 2 | `work_items.parent_id` has no self-referential FK | [BUG] | Task hierarchy has no FK enforcement. Deleting a parent task leaves orphan children with dangling `parent_id`. File: `shared/schema/tasks.ts` |
+| 3 | `role_credentials.last_password_plain` stores plaintext password | [BUG] | Column explicitly stores and retains the last plaintext password. Security risk. File: `shared/schema/users.ts` |
+| 4 | `users.email` has no UNIQUE constraint | [BUG] | Two users can share the same email address. File: `shared/schema/users.ts` |
+| 5 | **25 integer columns missing FK references** | [BUG] | Including: `project_subcontractor_assignments.counterparty_id`, `qc_item_instance.approved_by_user_id`, `ms_accounts.user_id`, `notifications.linked_task_id`, `procurement_items.po_id`, `invoice_captures.linked_po_id`, all `pm_site_visits` columns, etc. See full list in deep audit. |
+| 6 | Dates stored as TEXT across 40+ tables | [DEBT] | `start_date`, `end_date`, `due_date`, `scheduled_date`, `baseline_start`, `actual_start`, `planned_payment_date`, etc. are all `text` not `date`/`timestamp`. Prevents DB-level date queries, validation, and indexing. |
+| 7 | Duplicate migration sequence numbers | [CONFLICT] | `20260341_*` has 2 files, `20260342_*` has 3 files, `20260343_*` has 2 files. Execution order within same prefix is unpredictable. File: `migrations/` |
+| 8 | `working_plan_scenario.is_active` is `integer` (0/1) not `boolean` | [BUG] | Inconsistent with every other `is_active` column in the schema. File: `shared/schema/finance.ts` |
+| 9 | No unique constraint on `(work_item_id, user_id, role)` in `work_item_assignments` | [GAP] | A user can be assigned as ASSIGNEE to the same work item multiple times. File: `shared/schema/tasks.ts` |
+| 10 | `fye_report_snapshots.snapshot_data` is `text` not `jsonb` | [DEBT] | Stores structured report data as string. Should be `jsonb` for queryability. Compare `monthly_report_snapshots.data` which is `jsonb`. |
+
 ### 2.2 Missing Tables (Business Logic Implies)
 
 | # | Expected Table | Reason | Tag |
@@ -697,6 +712,11 @@ Schema files in `shared/schema/` organized by domain:
 | 4 | No CSP header | [GAP] | `server/bootstrap/security-middleware.ts` | Add Content-Security-Policy header with strict source whitelist. |
 | 5 | Shared role passwords | [DEBT] | `roleCredentials` table | Migrate to per-user authentication only. Deprecate shared role passwords. |
 | 6 | Finance dual-key (projectName + projectId) | [CONFLICT] | `shared/schema/finance.ts` | Standardize on `projectId` FK only. Backfill and remove `projectName` lookups. |
+| 7 | 25 missing FK references across schema | [BUG] | `shared/schema/*.ts` | Add FK constraints on all identified integer columns. Requires backfill to fix any existing orphans first. |
+| 8 | `project_info.pm_user_id`/`pd_user_id` missing FK | [BUG] | `shared/schema/projects.ts` | Add `.references(() => users.id)` with `ON DELETE SET NULL`. |
+| 9 | `role_credentials.last_password_plain` stores plaintext | [BUG] | `shared/schema/users.ts` | Remove column entirely. Password should never be stored in plaintext. |
+| 10 | `users.email` has no UNIQUE constraint | [BUG] | `shared/schema/users.ts` | Add UNIQUE constraint after deduplicating any existing duplicates. |
+| 11 | Dates stored as TEXT across 40+ tables | [DEBT] | Multiple schema files | Migrate to proper `date`/`timestamp` types. Requires data migration. |
 
 ### B. Data Integrity Fixes
 
@@ -815,6 +835,9 @@ Schema files in `shared/schema/` organized by domain:
 
 | # | Area | Finding | Tag | Priority | Effort | Recommended Action |
 |---|------|---------|-----|----------|--------|-------------------|
+| 0p | Database | 25 FK references missing — orphan data risk across schema | [BUG] | Critical | Medium | Add FK constraints after backfilling orphans |
+| 0q | Database | `role_credentials.last_password_plain` stores plaintext passwords | [BUG] | Critical | Low | Drop the column entirely |
+| 0r | Database | `users.email` has no UNIQUE constraint | [BUG] | High | Low | Add UNIQUE after dedup |
 | 0s | Security | SQL injection risk via `sql.raw()` with string interpolation | [BUG] | Critical | Low | Replace with parameterized queries in `auth-routes.ts:45`, `migration-finalize-routes.ts:224` |
 | 0t | Security | File uploads missing type filter (invoice, eng, quality) | [GAP] | Critical | Low | Add `fileFilter` to multer config in all upload routes |
 | 0u | Security | Unsanitized filename in upload → path traversal | [BUG] | Critical | Low | Sanitize `originalname` in `invoice-capture-routes.ts:20` |
