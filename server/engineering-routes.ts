@@ -6,14 +6,13 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import {
-  operationalTasks, taskComments, taskActivityLog, taskWatchers, taskDeliverables,
+  taskComments, taskActivityLog, taskWatchers, taskDeliverables,
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
-  notifications, notificationThrottle, spFilePointers,
+  spFilePointers,
   projectTeamMembers, projectPlan, qcWarning, qcWarningEvent,
-  qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory,
-  projectEngApprovals, projectEngStages, engStageTemplates,
-  dashboardWidgetConfig, DEFAULT_WIDGET_ORDER,
-  workItems,
+  qcItemInstance, qcChecklist, qcTemplateItem, users, projectInfo, projectPhaseHistory, projectExecutionState,
+  projectEngApprovals, projectEngStages, projectEngTasks, engStageTemplates,
+  workItems, workItemAssignments, notifications, notificationThrottle,
   msObjects,
   phaseTemplate as phaseTemplateTbl,
   uploadMetadata, refreshLogs, writebackAuditLog, phaseTemplateApplication, appSettings,
@@ -22,13 +21,15 @@ import {
   type ProjectPhase,
 } from "@shared/schema";
 import { applyTemplate } from "./template-routes";
-import { requireAuthority, requirePermission } from "./permission-middleware";
+import { syncProjectSplitTables } from "./lib/project-info-sync";
+import { requireAuthority, requirePermission, evaluateAuthorityForRequest } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-import { listEngineeringWorkItems, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject } from "./work-items-adapter";
+import { ApiError, sendError, badRequest, notFound, forbidden, serverError } from "./lib/api-error";
+import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineeringWorkItem, updateEngineeringWorkItem, deleteEngineeringWorkItem, generateDefaultEngineeringWorkItemsForProject, mapToOpsStatus } from "./work-items-adapter";
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
-import { getAssignmentsForEntity, listAssignableDirectory } from "./services/assignment-service";
+import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
@@ -55,7 +56,7 @@ const BLOCKED_STATUSES = new Set(["HOLD", "ON HOLD"]);
 const REVIEW_NEEDED_STATUSES = new Set(["PROVIDE FEEDBACK"]);
 const APPROVAL_PENDING_STATUSES = new Set(["NEEDS APPROVAL", "OPERATIONAL APPROVAL"]);
 const COMPLETE_LIKE_STATUSES = new Set(["COMPLETE", "COMPLETED", "DONE"]);
-const MICROSOFT_ADMIN_ROLES = new Set(["admin", "COO_ADMIN", "CEO_ADMIN"]);
+const MICROSOFT_ADMIN_ROLES = new Set(["COO_ADMIN", "CEO_ADMIN"]);
 
 function normalizeStatus(status?: string | null): string {
   return (status || "").trim().toUpperCase();
@@ -122,63 +123,253 @@ async function getFallbackPreferenceForUser(userId: number): Promise<"download" 
 function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   const role = getUserRole(req);
   const allowed = [
-    "admin", "eng_program_manager",
+    "eng_program_manager",
     "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO",
     "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "PROGRAM_FINANCE_MANAGER",
     "ENGINEERING_PROGRAM_MANAGER", "QUALITY_MANAGER", "HEAD_OF_DESIGN",
   ];
   if (allowed.includes(role)) return next();
-  res.status(403).json({ error: "forbidden", message: "Admin or EPM access required" });
+  sendError(res, forbidden("Admin or EPM access required"));
 }
 
 function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
-  if (["admin", "COO_ADMIN", "CEO_ADMIN"].includes(getUserRole(req))) return next();
+  if (["COO_ADMIN", "CEO_ADMIN"].includes(getUserRole(req))) return next();
   if ((req.session as any)?.epmChallengePassed) return next();
   res.status(403).json({ error: "epm_challenge_required", message: "EPM access code required", code: "EPM_CHALLENGE_REQUIRED" });
 }
 
+/** Insert an in-app notification row with throttle deduplication. Silently no-ops on error. */
 async function createNotification(recipientUserId: number, eventType: string, title: string, body: string | null, opts: {
-  projectName?: string; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
+  projectName?: string; projectId?: number; linkedTaskId?: number; linkedDeliverableId?: number; linkedWarningId?: number; linkedPlanItemId?: number;
 } = {}) {
-  const throttleKey = `${eventType}:${opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0}`;
-  const existing = await db.select().from(notificationThrottle)
-    .where(and(
-      eq(notificationThrottle.recipientUserId, recipientUserId),
-      eq(notificationThrottle.eventType, eventType),
-      eq(notificationThrottle.entityType, throttleKey.split(':')[0] || 'generic'),
-      eq(notificationThrottle.entityId, opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0),
-      gt(notificationThrottle.lastSentAt, new Date(Date.now() - 24 * 60 * 60 * 1000))
-    ));
+  try {
+    // Throttle: skip if same recipient+event+entity was notified in last 5 minutes
+    const entityId = opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0;
+    const entityType = opts.linkedTaskId ? "task" : opts.linkedDeliverableId ? "deliverable" : "other";
+    if (entityId) {
+      const [recent] = await db.select({ id: notificationThrottle.id })
+        .from(notificationThrottle)
+        .where(and(
+          eq(notificationThrottle.recipientUserId, recipientUserId),
+          eq(notificationThrottle.eventType, eventType),
+          eq(notificationThrottle.entityType, entityType),
+          eq(notificationThrottle.entityId, entityId),
+          gt(notificationThrottle.lastSentAt, new Date(Date.now() - 5 * 60_000)),
+        ));
+      if (recent) return null; // Throttled — skip duplicate
+      await db.insert(notificationThrottle).values({ recipientUserId, eventType, entityType, entityId })
+        .onConflictDoNothing();
+    }
 
-  if (existing.length > 0) return null;
+    const [row] = await db.insert(notifications).values({
+      recipientUserId,
+      eventType,
+      title,
+      body,
+      projectName: opts.projectName ?? null,
+      projectId: opts.projectId ?? null,
+      linkedTaskId: opts.linkedTaskId ?? null,
+      linkedDeliverableId: opts.linkedDeliverableId ?? null,
+      linkedWarningId: opts.linkedWarningId ?? null,
+      linkedPlanItemId: opts.linkedPlanItemId ?? null,
+    }).returning();
+    return row;
+  } catch (err) {
+    console.error("[Notifications] Failed to create notification:", err);
+    return null;
+  }
+}
 
-  const [notif] = await db.insert(notifications).values({
-    recipientUserId,
-    eventType,
-    title,
-    body,
-    projectName: opts.projectName || null,
-    linkedTaskId: opts.linkedTaskId || null,
-    linkedDeliverableId: opts.linkedDeliverableId || null,
-    linkedWarningId: opts.linkedWarningId || null,
-    linkedPlanItemId: opts.linkedPlanItemId || null,
-  }).returning();
+/**
+ * Enrich engineering tasks with resolved assignees, deliverables context,
+ * Microsoft items, stage context, and computed flags.
+ * Used by both the task list and task detail endpoints.
+ */
+async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]> {
+  if (tasks.length === 0) return [];
 
-  await db.insert(notificationThrottle).values({
-    recipientUserId,
-    eventType,
-    entityType: throttleKey.split(':')[0] || 'generic',
-    entityId: opts.linkedTaskId || opts.linkedDeliverableId || opts.linkedWarningId || 0,
-  }).onConflictDoNothing();
+  const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
+  const userMap = await buildUserMap();
+  const visibleProjectIds = Array.from(
+    new Set(
+      tasks
+        .map((task: any) => (typeof task.projectId === "number" ? task.projectId : null))
+        .filter((value): value is number => Number.isInteger(value) && value > 0),
+    ),
+  );
+  const canViewAllMicrosoftContext = MICROSOFT_ADMIN_ROLES.has(getUserRole(req));
+  const currentUserId = getUser(req).id;
 
-  return notif;
+  let deliverableRows: any[] = [];
+  let microsoftRows: any[] = [];
+  try {
+    [deliverableRows, microsoftRows] = await Promise.all([
+      visibleProjectIds.length > 0
+        ? db.select({
+            id: deliverables.id,
+            projectId: deliverables.projectId,
+            title: deliverables.title,
+            status: deliverables.status,
+            updatedAt: deliverables.updatedAt,
+          })
+          .from(deliverables)
+          .where(inArray(deliverables.projectId, visibleProjectIds))
+          .orderBy(desc(deliverables.updatedAt))
+        : Promise.resolve([]),
+      visibleProjectIds.length > 0
+        ? db.select({
+            id: msObjects.id,
+            userId: msObjects.userId,
+            linkedProjectId: msObjects.linkedProjectId,
+            linkedTaskId: msObjects.linkedTaskId,
+            type: msObjects.type,
+            subjectOrTitle: msObjects.subjectOrTitle,
+            webLink: msObjects.webLink,
+            actionRequired: msObjects.actionRequired,
+            receivedOrStartDatetime: msObjects.receivedOrStartDatetime,
+          })
+          .from(msObjects)
+          .where(and(
+            inArray(msObjects.linkedProjectId, visibleProjectIds),
+            ne(msObjects.dismissed, true),
+            ...(canViewAllMicrosoftContext ? [] : [eq(msObjects.userId, currentUserId)]),
+          ))
+          .orderBy(desc(msObjects.receivedOrStartDatetime))
+        : Promise.resolve([]),
+    ]);
+  } catch (enrichErr: any) {
+    console.warn("[Engineering] Non-fatal enrichment error (deliverables/microsoft):", enrichErr.message);
+  }
+
+  const deliverablesByProject = new Map<number, Array<{
+    id: number;
+    title: string;
+    status: string;
+    updatedAt: Date | null;
+  }>>();
+  for (const row of deliverableRows) {
+    const list = deliverablesByProject.get(row.projectId) || [];
+    list.push({ id: row.id, title: row.title, status: row.status, updatedAt: row.updatedAt });
+    deliverablesByProject.set(row.projectId, list);
+  }
+
+  const microsoftByProject = new Map<number, Array<{
+    id: number;
+    linkedTaskId: number | null;
+    type: string;
+    title: string | null;
+    webLink: string | null;
+    actionRequired: boolean;
+    receivedOrStartDatetime: Date | null;
+  }>>();
+  for (const row of microsoftRows) {
+    const projectKey = typeof row.linkedProjectId === "number" ? row.linkedProjectId : null;
+    if (!projectKey) continue;
+    const list = microsoftByProject.get(projectKey) || [];
+    list.push({
+      id: row.id,
+      linkedTaskId: row.linkedTaskId,
+      type: row.type,
+      title: row.subjectOrTitle,
+      webLink: row.webLink,
+      actionRequired: row.actionRequired === true,
+      receivedOrStartDatetime: row.receivedOrStartDatetime,
+    });
+    microsoftByProject.set(projectKey, list);
+  }
+
+  const allWorkItemIds = tasks.map((t: any) => t.workItemId || t.id).filter(Boolean);
+  const stageContextMap = new Map<number, string>();
+  try {
+    const stageLinks = allWorkItemIds.length > 0
+      ? await db.select({
+          workItemId: projectEngTasks.workItemId,
+          stageName: engStageTemplates.name,
+        })
+        .from(projectEngTasks)
+        .innerJoin(projectEngStages, eq(projectEngTasks.projectEngStageId, projectEngStages.id))
+        .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+        .where(sql`${projectEngTasks.workItemId} IN (${sql.join(allWorkItemIds.map((id: number) => sql`${id}`), sql`, `)})`)
+      : [];
+    for (const sl of stageLinks) {
+      if (sl.workItemId) stageContextMap.set(sl.workItemId, sl.stageName);
+    }
+  } catch (stageErr: any) {
+    console.warn("[Engineering] Non-fatal stage context error:", stageErr.message);
+  }
+
+  return tasks.map((t: any) => {
+    const resolvedAssigneeIds = Array.from(
+      new Set([
+        ...((t.assigneeUserIds || []).filter((uid: number) => Number.isInteger(uid)) as number[]),
+        ...(typeof t.ownerUserId === "number" ? [t.ownerUserId] : []),
+      ]),
+    );
+    const idResolved = resolvedAssigneeIds.map((uid: number) => userMap.get(uid)).filter(Boolean);
+    const mergedAssignees = mergeResolvedWithTextNames(idResolved, t.assignees, userMap);
+    const projectDeliverables = typeof t.projectId === "number" ? (deliverablesByProject.get(t.projectId) || []) : [];
+    const rawMicrosoftItems = typeof t.projectId === "number" ? (microsoftByProject.get(t.projectId) || []) : [];
+    const projectLinks = t.projectName
+      ? buildMyWorkSourceLinks({ source: "engineering_task", rawId: t.id, projectName: t.projectName })
+      : null;
+    const deliverableLinks = t.projectName
+      ? buildMyWorkSourceLinks({ source: "deliverables", rawId: t.id, projectName: t.projectName })
+      : null;
+    const relatedMicrosoftItems = rawMicrosoftItems.slice(0, 3).map((item) => {
+      const msLinks = buildMyWorkSourceLinks({
+        source: "microsoft",
+        rawId: item.id,
+        projectName: t.projectName || null,
+        sourceType: item.type,
+        webLink: item.webLink,
+      });
+      return {
+        id: item.id, linkedTaskId: item.linkedTaskId, type: item.type,
+        title: item.title, webLink: item.webLink, actionRequired: item.actionRequired,
+        receivedOrStartDatetime: item.receivedOrStartDatetime,
+        sourceHref: msLinks.sourceHref, sourceContextLabel: msLinks.sourceContextLabel,
+        externalHref: msLinks.externalHref,
+      };
+    });
+    const microsoftActionRequiredCount = rawMicrosoftItems.filter((item) => item.actionRequired).length;
+    const approvalPendingDeliverableCount = projectDeliverables.filter((item) =>
+      isDeliverableApprovalPendingStatus(item.status),
+    ).length;
+
+    return {
+      ...t,
+      assignees: mergedAssignees.map((user: any) => user.name),
+      assigneeUserIds: resolvedAssigneeIds,
+      assigneeUserId: resolvedAssigneeIds[0] || null,
+      resolvedAssignees: mergedAssignees,
+      resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
+      isUnassigned: mergedAssignees.length === 0 && !t.ownerUserId,
+      isBlocked: isBlockedStatus(t.status) || !!t.holdReason || !!t.blockedType,
+      isReviewNeeded: isReviewNeededStatus(t.status),
+      isApprovalPending: isApprovalPendingStatus(t.status),
+      projectLinkedDeliverableCount: projectDeliverables.length,
+      approvalPendingDeliverableCount,
+      projectLinkedDeliverables: projectDeliverables.slice(0, 3),
+      deliverableContextHref: deliverableLinks?.sourceHref || null,
+      deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
+      projectHref: projectLinks?.projectHref || null,
+      sourceHref: projectLinks?.sourceHref || null,
+      sourceContextLabel: stageContextMap.has(t.workItemId || t.id)
+        ? `Engineering Stage: ${stageContextMap.get(t.workItemId || t.id)}`
+        : (projectLinks?.sourceContextLabel || null),
+      externalHref: projectLinks?.externalHref || null,
+      hasMicrosoftContext: rawMicrosoftItems.length > 0,
+      microsoftActionRequiredCount,
+      relatedMicrosoftItems,
+      stageContext: stageContextMap.get(t.workItemId || t.id) || null,
+    };
+  });
 }
 
 export function registerEngineeringRoutes(app: Express) {
 
   app.use("/api/eng", jwtAuth);
   app.use("/api/deliverables", jwtAuth);
-  app.use("/api/notifications", jwtAuth);
   app.use("/api/project-team", jwtAuth);
   app.use("/api/home", jwtAuth);
   app.use("/api/dashboard", jwtAuth);
@@ -193,7 +384,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ enabled, mappedPath, fallbackPreference });
     } catch (err: any) {
-      res.status(500).json({ error: "Failed to load local synced save config" });
+      sendError(res, serverError("Failed to load local synced save config"));
     }
   });
 
@@ -232,13 +423,13 @@ export function registerEngineeringRoutes(app: Express) {
 
       res.json({ ok: true, mappedPath, fallbackPreference });
     } catch (err: any) {
-      res.status(500).json({ error: "Failed to save local synced save config" });
+      sendError(res, serverError("Failed to save local synced save config"));
     }
   });
 
   // ========== PROJECT TEAM MEMBERSHIP ==========
 
-  app.get("/api/project-team/:projectName", requireAuth, async (req, res) => {
+  app.get("/api/project-team/:projectName", requireAuth, requirePermission("engineering", "view"), async (req, res) => {
     try {
       const members = await db.select({
         id: projectTeamMembers.id,
@@ -256,7 +447,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(members);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -268,18 +459,20 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(member);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
   app.delete("/api/project-team/:id", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
-      await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, parseInt(req.params.id)));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
+      await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, id));
       logAuditFromReq(req, { entityType: "project_team", entityId: req.params.id, action: "delete", changesJson: { description: "Team member removed" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -297,7 +490,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(allUsers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -315,14 +508,15 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(allUsers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
   app.post("/api/eng/backfill-assignees", requireAuth, requireAdminOrEpm, async (_req, res) => {
     try {
       const allUsers = await db.select({ id: users.id, name: users.name }).from(users);
-      const allTasks = await db.select().from(operationalTasks);
+      const engItems = await db.select().from(workItems)
+        .where(and(eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
 
       const nameMap: Record<string, { id: number; name: string }> = {};
       for (const u of allUsers) {
@@ -332,53 +526,40 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       let updated = 0;
-      let assigneesFixed = 0;
+      let assignmentsCreated = 0;
 
-      for (const task of allTasks) {
-        const assignees = (task.assignees as string[]) || [];
-        if (assignees.length === 0) continue;
-
-        let newAssignees = [...assignees];
-        let ownerUserId = task.ownerUserId;
-        let changed = false;
-
-        for (let i = 0; i < newAssignees.length; i++) {
-          const a = newAssignees[i];
-          const lower = a.toLowerCase();
+      for (const wi of engItems) {
+        if (!wi.ownerUserId && wi.ownerName) {
+          const lower = wi.ownerName.toLowerCase();
           const first = lower.split(/\s+/)[0];
-
           const match = nameMap[lower] || nameMap[first];
           if (match) {
-            if (newAssignees[i] !== match.name) {
-              newAssignees[i] = match.name;
-              changed = true;
-              assigneesFixed++;
-            }
-            if (i === 0 && !ownerUserId) {
-              ownerUserId = match.id;
-              changed = true;
-            }
-          }
-        }
+            await db.update(workItems)
+              .set({ ownerUserId: match.id, updatedAt: new Date() })
+              .where(eq(workItems.id, wi.id));
 
-        if (changed) {
-          await db.update(operationalTasks)
-            .set({ assignees: newAssignees, ownerUserId })
-            .where(eq(operationalTasks.id, task.id));
-          updated++;
+            await db.insert(workItemAssignments).values({
+              workItemId: wi.id,
+              userId: match.id,
+              role: "OWNER" as any,
+            }).onConflictDoNothing();
+
+            updated++;
+            assignmentsCreated++;
+          }
         }
       }
 
-      res.json({ message: `Backfill complete: ${updated} tasks updated, ${assigneesFixed} assignee names normalized` });
+      res.json({ message: `Backfill complete: ${updated} work items updated, ${assignmentsCreated} assignments created` });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
   // ========== ENHANCED TASK OPERATIONS ==========
 
-  app.get("/api/eng/tasks", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const { projectName, status, phase, ownerUserId, projectId } = req.query;
       const tasks = await listEngineeringWorkItems({
@@ -389,184 +570,29 @@ export function registerEngineeringRoutes(app: Express) {
         projectId: projectId ? parseInt(projectId as string) : undefined,
       });
 
-      const { buildUserMap, mergeResolvedWithTextNames } = await import("./user-resolver");
-      const userMap = await buildUserMap();
-      const visibleProjectIds = Array.from(
-        new Set(
-          tasks
-            .map((task: any) => (typeof task.projectId === "number" ? task.projectId : null))
-            .filter((value): value is number => Number.isInteger(value) && value > 0),
-        ),
-      );
-      const canViewAllMicrosoftContext = MICROSOFT_ADMIN_ROLES.has(getUserRole(req));
-      const currentUserId = getUser(req).id;
-
-      const [deliverableRows, microsoftRows] = await Promise.all([
-        visibleProjectIds.length > 0
-          ? db.select({
-              id: deliverables.id,
-              projectId: deliverables.projectId,
-              title: deliverables.title,
-              status: deliverables.status,
-              updatedAt: deliverables.updatedAt,
-            })
-            .from(deliverables)
-            .where(inArray(deliverables.projectId, visibleProjectIds))
-            .orderBy(desc(deliverables.updatedAt))
-          : Promise.resolve([]),
-        visibleProjectIds.length > 0
-          ? db.select({
-              id: msObjects.id,
-              userId: msObjects.userId,
-              linkedProjectId: msObjects.linkedProjectId,
-              linkedTaskId: msObjects.linkedTaskId,
-              type: msObjects.type,
-              subjectOrTitle: msObjects.subjectOrTitle,
-              webLink: msObjects.webLink,
-              actionRequired: msObjects.actionRequired,
-              receivedOrStartDatetime: msObjects.receivedOrStartDatetime,
-            })
-            .from(msObjects)
-            .where(and(
-              inArray(msObjects.linkedProjectId, visibleProjectIds),
-              ne(msObjects.dismissed, true),
-              ...(canViewAllMicrosoftContext ? [] : [eq(msObjects.userId, currentUserId)]),
-            ))
-            .orderBy(desc(msObjects.receivedOrStartDatetime))
-          : Promise.resolve([]),
-      ]);
-
-      const deliverablesByProject = new Map<number, Array<{
-        id: number;
-        title: string;
-        status: string;
-        updatedAt: Date | null;
-      }>>();
-      for (const row of deliverableRows) {
-        const list = deliverablesByProject.get(row.projectId) || [];
-        list.push({
-          id: row.id,
-          title: row.title,
-          status: row.status,
-          updatedAt: row.updatedAt,
-        });
-        deliverablesByProject.set(row.projectId, list);
-      }
-
-      const microsoftByProject = new Map<number, Array<{
-        id: number;
-        linkedTaskId: number | null;
-        type: string;
-        title: string | null;
-        webLink: string | null;
-        actionRequired: boolean;
-        receivedOrStartDatetime: Date | null;
-      }>>();
-      for (const row of microsoftRows) {
-        const projectKey = typeof row.linkedProjectId === "number" ? row.linkedProjectId : null;
-        if (!projectKey) continue;
-        const list = microsoftByProject.get(projectKey) || [];
-        list.push({
-          id: row.id,
-          linkedTaskId: row.linkedTaskId,
-          type: row.type,
-          title: row.subjectOrTitle,
-          webLink: row.webLink,
-          actionRequired: row.actionRequired === true,
-          receivedOrStartDatetime: row.receivedOrStartDatetime,
-        });
-        microsoftByProject.set(projectKey, list);
-      }
-
-      const enriched = tasks.map((t: any) => {
-        const resolvedAssigneeIds = Array.from(
-          new Set([
-            ...((t.assigneeUserIds || []).filter((uid: number) => Number.isInteger(uid)) as number[]),
-            ...(typeof t.ownerUserId === "number" ? [t.ownerUserId] : []),
-          ]),
-        );
-        const idResolved = resolvedAssigneeIds.map((uid: number) => userMap.get(uid)).filter(Boolean);
-        const mergedAssignees = mergeResolvedWithTextNames(idResolved, t.assignees, userMap);
-        const projectDeliverables = typeof t.projectId === "number" ? (deliverablesByProject.get(t.projectId) || []) : [];
-        const rawMicrosoftItems = typeof t.projectId === "number" ? (microsoftByProject.get(t.projectId) || []) : [];
-        const projectLinks = t.projectName
-          ? buildMyWorkSourceLinks({
-              source: "engineering_task",
-              rawId: t.id,
-              projectName: t.projectName,
-            })
-          : null;
-        const deliverableLinks = t.projectName
-          ? buildMyWorkSourceLinks({
-              source: "deliverables",
-              rawId: t.id,
-              projectName: t.projectName,
-            })
-          : null;
-        const relatedMicrosoftItems = rawMicrosoftItems.slice(0, 3).map((item) => {
-          const msLinks = buildMyWorkSourceLinks({
-            source: "microsoft",
-            rawId: item.id,
-            projectName: t.projectName || null,
-            sourceType: item.type,
-            webLink: item.webLink,
-          });
-          return {
-            id: item.id,
-            linkedTaskId: item.linkedTaskId,
-            type: item.type,
-            title: item.title,
-            webLink: item.webLink,
-            actionRequired: item.actionRequired,
-            receivedOrStartDatetime: item.receivedOrStartDatetime,
-            sourceHref: msLinks.sourceHref,
-            sourceContextLabel: msLinks.sourceContextLabel,
-            externalHref: msLinks.externalHref,
-          };
-        });
-        const microsoftActionRequiredCount = rawMicrosoftItems.filter((item) => item.actionRequired).length;
-        const approvalPendingDeliverableCount = projectDeliverables.filter((item) =>
-          isDeliverableApprovalPendingStatus(item.status),
-        ).length;
-
-        return {
-          ...t,
-          assignees: mergedAssignees.map((user: any) => user.name),
-          assigneeUserIds: resolvedAssigneeIds,
-          assigneeUserId: resolvedAssigneeIds[0] || null,
-          resolvedAssignees: mergedAssignees,
-          resolvedOwner: t.ownerUserId ? userMap.get(t.ownerUserId) || null : null,
-          isUnassigned: mergedAssignees.length === 0 && !t.ownerUserId,
-          isBlocked: isBlockedStatus(t.status) || !!t.holdReason || !!t.blockedType,
-          isReviewNeeded: isReviewNeededStatus(t.status),
-          isApprovalPending: isApprovalPendingStatus(t.status),
-          projectLinkedDeliverableCount: projectDeliverables.length,
-          approvalPendingDeliverableCount,
-          projectLinkedDeliverables: projectDeliverables.slice(0, 3),
-          deliverableContextHref: deliverableLinks?.sourceHref || null,
-          deliverableContextLabel: deliverableLinks?.sourceContextLabel || null,
-          projectHref: projectLinks?.projectHref || null,
-          sourceHref: projectLinks?.sourceHref || null,
-          sourceContextLabel: projectLinks?.sourceContextLabel || null,
-          externalHref: projectLinks?.externalHref || null,
-          hasMicrosoftContext: rawMicrosoftItems.length > 0,
-          microsoftActionRequiredCount,
-          relatedMicrosoftItems,
-        };
-      });
+      const enriched = await enrichEngineeringTasks(tasks, req);
       res.json(enriched);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.post("/api/eng/tasks", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
     try {
       const data = req.body;
       if (!TASK_STATUSES.includes(data.status)) {
         data.status = "TO DO";
       }
+
+      // Resolve projectName to projectId if projectId is not provided
+      let resolvedProjectId = data.projectId || null;
+      if (!resolvedProjectId && data.projectName) {
+        const [project] = await db.select({ id: projectInfo.id }).from(projectInfo)
+          .where(eq(projectInfo.projectName, data.projectName)).limit(1);
+        if (project) resolvedProjectId = project.id;
+      }
+
       if (data.assignees?.length > 0) {
         const { resolveNameToUserId } = await import("./user-resolver");
         const resolvedIds: number[] = [];
@@ -581,7 +607,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       const task = await createEngineeringWorkItem({
-        projectId: data.projectId || null,
+        projectId: resolvedProjectId,
         title: data.title,
         description: data.description || null,
         status: data.status || "TO DO",
@@ -591,6 +617,7 @@ export function registerEngineeringRoutes(app: Express) {
         dueDate: data.dueDate || null,
         ownerUserId: data.ownerUserId || null,
         createdBy: getUser(req).id,
+        plannedHours: data.plannedHours ? parseFloat(data.plannedHours) : null,
       });
 
       if (task.ownerUserId && task.ownerUserId !== getUser(req).id) {
@@ -619,20 +646,20 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(createdPayload);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.patch("/api/eng/tasks/:id", requireAuth, async (req, res) => {
+  app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
-      if (!existing) return res.status(404).json({ error: "Task not found" });
+      if (!existing) return sendError(res, notFound("Task"));
 
       const updates = { ...req.body, updatedAt: new Date() };
 
       if (updates.status && !TASK_STATUSES.includes(updates.status)) {
-        return res.status(400).json({ error: `Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}` });
+        return sendError(res, badRequest(`Invalid status. Must be one of: ${TASK_STATUSES.join(", ")}`));
       }
 
       if (updates.status) {
@@ -641,19 +668,33 @@ export function registerEngineeringRoutes(app: Express) {
           assertTaskWorkflowTransition(context, updates.status, "status_update");
         } catch (err: any) {
           if (err instanceof TaskWorkflowGuardError) {
-            return res.status(err.statusCode).json({ error: err.message });
+            return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message));
           }
           throw err;
         }
       }
 
       if (updates.status === "HOLD" && !updates.holdReason) {
-        return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
+        return sendError(res, badRequest("Hold reason required when setting status to HOLD"));
       }
       if (updates.status === "HOLD") {
         const bt = updates.blockedType;
         if (!bt || !["Internal", "External"].includes(bt)) {
-          return res.status(400).json({ error: "Blocked type (Internal or External) required when setting status to HOLD" });
+          return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to HOLD"));
+        }
+      }
+
+      // Resolve projectName → projectId when frontend sends a project link
+      let resolvedProjectId: number | null | undefined = updates.projectId;
+      if (updates.projectName !== undefined) {
+        if (updates.projectName === null || updates.projectName === "") {
+          resolvedProjectId = null;
+        } else {
+          const [proj] = await db.select({ id: projectInfo.id }).from(projectInfo)
+            .where(eq(projectInfo.projectName, updates.projectName));
+          if (proj) {
+            resolvedProjectId = proj.id;
+          }
         }
       }
 
@@ -667,8 +708,19 @@ export function registerEngineeringRoutes(app: Express) {
         dueDate: updates.dueDate,
         percentComplete: updates.percentComplete !== undefined ? updates.percentComplete / 100 : undefined,
         ownerUserId: updates.ownerUserId,
+        projectId: resolvedProjectId,
+        holdReason: updates.holdReason,
+        blockedType: updates.blockedType,
+        completedAt: updates.status === "COMPLETE" ? new Date() : undefined,
+        linkedPlanItemId: updates.linkedPlanItemId,
+        linkedDeliverableId: updates.linkedDeliverableId,
+        linkedQualityItemInstanceId: updates.linkedQualityItemInstanceId,
+        trackingRag: updates.trackingRag,
+        taskTypeTag: updates.taskTypeTag,
+        blockerReason: updates.blockerReason,
+        plannedHours: updates.plannedHours !== undefined ? parseFloat(updates.plannedHours) || null : undefined,
       });
-      if (!updated) return res.status(404).json({ error: "Task not found" });
+      if (!updated) return sendError(res, notFound("Task"));
 
       if (updates.status && updates.status !== "") {
         if (updated.ownerUserId) {
@@ -684,7 +736,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(payload);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -708,15 +760,15 @@ export function registerEngineeringRoutes(app: Express) {
     const routeOverrideReason = typeof req.body?.routeOverrideReason === "string" ? req.body.routeOverrideReason.trim() : "";
 
     try {
-      const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
-      if (!existing) return res.status(404).json({ error: "Task not found" });
+      const existing = await getEngineeringWorkItemById(id);
+      if (!existing) return sendError(res, notFound("Task"));
 
       try {
         const context = await buildTaskWorkflowContext(id, existing.status);
         assertTaskWorkflowTransition(context, "NEEDS APPROVAL", "send_for_approval");
       } catch (err: any) {
         if (err instanceof TaskWorkflowGuardError) {
-          return res.status(err.statusCode).json({ error: err.message });
+          return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message));
         }
         throw err;
       }
@@ -744,7 +796,7 @@ export function registerEngineeringRoutes(app: Express) {
       for (const check of suggestionChecks) {
         if (check.suggestion && check.final && check.suggestion !== check.final) {
           if (!check.reason) {
-            return res.status(400).json({ error: `${check.field} override reason is required` });
+            return sendError(res, badRequest(`${check.field} override reason is required`));
           }
           logAuditFromReq(req, {
             entityType: "approval_send_flow",
@@ -778,13 +830,11 @@ export function registerEngineeringRoutes(app: Express) {
         projectName: existing.projectName || undefined,
       });
 
-      const [updated] = await db.update(operationalTasks).set({
-        status: "NEEDS APPROVAL",
-        updatedAt: new Date(),
-      }).where(eq(operationalTasks.id, id)).returning();
+      const updated = await updateEngineeringWorkItem(id, { status: "NEEDS APPROVAL" });
+      if (!updated) return sendError(res, notFound("Task"));
 
       await db.insert(taskActivityLog).values({
-        taskId: id,
+        workItemId: id,
         actorId: user.id,
         actionType: "field_changed",
         fieldName: "status",
@@ -795,15 +845,15 @@ export function registerEngineeringRoutes(app: Express) {
       if (note.trim()) {
         const fileInfo = file ? ` [Attachment: ${file.originalname}]` : "";
         await db.insert(taskComments).values({
-          taskId: id,
-          userId: user.id,
-          text: `[Sent for Approval] ${note.trim()}${fileInfo}`,
+          workItemId: id,
+          authorId: user.id,
+          body: `[Sent for Approval] ${note.trim()}${fileInfo}`,
         });
       } else if (file) {
         await db.insert(taskComments).values({
-          taskId: id,
-          userId: user.id,
-          text: `[Sent for Approval] Attachment: ${file.originalname}`,
+          workItemId: id,
+          authorId: user.id,
+          body: `[Sent for Approval] Attachment: ${file.originalname}`,
         });
       }
 
@@ -818,7 +868,7 @@ export function registerEngineeringRoutes(app: Express) {
         await createNotification(updated.ownerUserId, "deliverable.submitted_for_approval",
           `Approval needed: ${updated.title}`,
           `Task "${updated.title}" has been sent for approval${file ? ` with attachment: ${file.originalname}` : ""}`,
-          { projectName: updated.projectName, linkedTaskId: id }
+          { projectName: existing.projectName, linkedTaskId: id }
         );
       }
 
@@ -917,8 +967,9 @@ export function registerEngineeringRoutes(app: Express) {
         changesJson: { canonicalSaved: true, localSaved: localResult.saved },
       });
 
+      const mappedTask = await getEngineeringWorkItemById(id);
       res.json({
-        ...updated,
+        ...(mappedTask || { id, title: updated.title, status: mapToOpsStatus(updated.status) }),
         uploadedFile: file ? { filename: file.filename, originalName: file.originalname, size: file.size } : null,
         sendResult: {
           canonicalSystemRecord: { saved: true },
@@ -939,7 +990,7 @@ export function registerEngineeringRoutes(app: Express) {
         changesJson: { error: err?.message || "unknown" },
       });
       console.error("[Eng] Send for approval error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -948,11 +999,11 @@ export function registerEngineeringRoutes(app: Express) {
     const user = getUser(req);
 
     try {
-      const [existing] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
-      if (!existing) return res.status(404).json({ error: "Task not found" });
+      const existing = await getEngineeringWorkItemById(id);
+      if (!existing) return sendError(res, notFound("Task"));
 
       const recipientUserId = parseInt(req.body.recipientUserId);
-      if (!recipientUserId) return res.status(400).json({ error: "Recipient is required" });
+      if (!recipientUserId || isNaN(recipientUserId)) return sendError(res, badRequest("A valid recipient is required"));
 
       const recipientSuggestion = req.body?.recipientSuggestion || null;
       const recipientFinal = req.body?.recipientFinal || String(recipientUserId);
@@ -984,7 +1035,7 @@ export function registerEngineeringRoutes(app: Express) {
       for (const check of overrideChecks) {
         if (check.suggestion && check.final && check.suggestion !== check.final) {
           if (!check.reason) {
-            return res.status(400).json({ error: `${check.field} override reason is required` });
+            return sendError(res, badRequest(`${check.field} override reason is required`));
           }
           logAuditFromReq(req, {
             entityType: "deliverable_send_flow",
@@ -1012,7 +1063,7 @@ export function registerEngineeringRoutes(app: Express) {
       }
 
       const file = req.file;
-      if (!file) return res.status(400).json({ error: "A file attachment is required" });
+      if (!file) return sendError(res, badRequest("A file attachment is required"));
       const note = req.body.note || "";
       let localSave: any = null;
     if (typeof req.body?.localSave === "string") {
@@ -1029,7 +1080,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
 
       const [deliverable] = await db.insert(taskDeliverables).values({
-        taskId: id,
+        workItemId: id,
         filename: file.filename,
         originalName: file.originalname,
         fileSize: file.size,
@@ -1040,13 +1091,13 @@ export function registerEngineeringRoutes(app: Express) {
 
       const fileInfo = note.trim() ? ` — ${note.trim()}` : "";
       await db.insert(taskComments).values({
-        taskId: id,
-        userId: user.id,
-        text: `[Deliverable Sent] ${file.originalname} → ${(await db.select({ name: users.name }).from(users).where(eq(users.id, recipientUserId)))[0]?.name || "recipient"}${fileInfo}`,
+        workItemId: id,
+        authorId: user.id,
+        body: `[Deliverable Sent] ${file.originalname} → ${(await db.select({ name: users.name }).from(users).where(eq(users.id, recipientUserId)))[0]?.name || "recipient"}${fileInfo}`,
       });
 
       await db.insert(taskActivityLog).values({
-        taskId: id,
+        workItemId: id,
         actorId: user.id,
         actionType: "deliverable_sent",
         fieldName: "deliverable",
@@ -1185,16 +1236,16 @@ export function registerEngineeringRoutes(app: Express) {
         changesJson: { error: err?.message || "unknown" },
       });
       console.error("[Eng] Send deliverable error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/deliverables", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/deliverables", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const deliverables = await db.select({
         id: taskDeliverables.id,
-        taskId: taskDeliverables.taskId,
+        taskId: taskDeliverables.workItemId,
         filename: taskDeliverables.filename,
         originalName: taskDeliverables.originalName,
         fileSize: taskDeliverables.fileSize,
@@ -1208,7 +1259,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
         .from(taskDeliverables)
         .leftJoin(users, eq(users.id, taskDeliverables.sentByUserId))
-        .where(eq(taskDeliverables.taskId, id))
+        .where(eq(taskDeliverables.workItemId, id))
         .orderBy(desc(taskDeliverables.createdAt));
 
       const recipientIds = [...new Set(deliverables.map(d => d.recipientUserId))];
@@ -1225,19 +1276,19 @@ export function registerEngineeringRoutes(app: Express) {
       })));
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.patch("/api/eng/deliverables/:id/acknowledge", requireAuth, async (req, res) => {
+  app.patch("/api/eng/deliverables/:id/acknowledge", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
-      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+      if (!deliverable) return sendError(res, notFound("Deliverable"));
 
       const user = getUser(req);
       if (deliverable.recipientUserId !== user.id) {
-        return res.status(403).json({ error: "Only the recipient can acknowledge this deliverable" });
+        return sendError(res, forbidden("Only the recipient can acknowledge this deliverable"));
       }
 
       const [updated] = await db.update(taskDeliverables).set({
@@ -1246,13 +1297,13 @@ export function registerEngineeringRoutes(app: Express) {
       }).where(eq(taskDeliverables.id, id)).returning();
 
       await db.insert(taskComments).values({
-        taskId: deliverable.taskId,
-        userId: user.id,
-        text: `[Acknowledged] Deliverable "${deliverable.originalName}" received and acknowledged`,
+        workItemId: deliverable.taskId,
+        authorId: user.id,
+        body: `[Acknowledged] Deliverable "${deliverable.originalName}" received and acknowledged`,
       });
 
       await db.insert(taskActivityLog).values({
-        taskId: deliverable.taskId,
+        workItemId: deliverable.taskId,
         actorId: user.id,
         actionType: "deliverable_acknowledged",
         fieldName: "deliverable",
@@ -1268,24 +1319,24 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.get("/api/eng/deliverables/:id/download", requireAuth, async (req, res) => {
+  app.get("/api/eng/deliverables/:id/download", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
-      if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
+      if (!deliverable) return sendError(res, notFound("Deliverable"));
 
       const filePath = path.join(approvalUploadsDir, deliverable.filename);
-      if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found on disk" });
+      if (!fs.existsSync(filePath)) return sendError(res, notFound("File"));
 
       res.setHeader("Content-Disposition", `attachment; filename="${deliverable.originalName}"`);
       res.sendFile(filePath);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -1293,15 +1344,15 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
-      if (!existing) return res.status(404).json({ error: "Task not found" });
+      if (!existing) return sendError(res, notFound("Task"));
 
       const deleted = await deleteEngineeringWorkItem(id);
-      if (!deleted) return res.status(404).json({ error: "Task not found" });
+      if (!deleted) return sendError(res, notFound("Task"));
 
       res.json({ success: true, message: `Task "${existing.title}" deleted` });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -1309,80 +1360,107 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const { taskIds, updates } = req.body;
       if (!Array.isArray(taskIds) || taskIds.length === 0) {
-        return res.status(400).json({ error: "taskIds array required" });
+        return sendError(res, badRequest("taskIds array required"));
       }
       if (updates.status === "HOLD" && !updates.holdReason) {
-        return res.status(400).json({ error: "Hold reason required when setting status to HOLD" });
+        return sendError(res, badRequest("Hold reason required when setting status to HOLD"));
       }
       if (updates.status === "HOLD" && !updates.blockedType) {
-        return res.status(400).json({ error: "Blocked type (Internal or External) required when setting status to HOLD" });
+        return sendError(res, badRequest("Blocked type (Internal or External) required when setting status to HOLD"));
       }
-      const updatedTasks = [];
-      for (const taskId of taskIds) {
-        if (updates.status) {
-          const [task] = await db.select({ id: operationalTasks.id, status: operationalTasks.status })
-            .from(operationalTasks)
-            .where(eq(operationalTasks.id, taskId));
+      // Validate ALL tasks before updating any (fail-fast)
+      if (updates.status) {
+        for (const taskId of taskIds) {
+          const task = await getEngineeringWorkItemById(taskId);
           if (!task) continue;
           try {
             const context = await buildTaskWorkflowContext(taskId, task.status);
             assertTaskWorkflowTransition(context, updates.status, "bulk_status_update");
           } catch (err: any) {
             if (err instanceof TaskWorkflowGuardError) {
-              return res.status(err.statusCode).json({ error: err.message, taskId });
+              return sendError(res, new ApiError(err.statusCode, "WORKFLOW_ERROR", err.message, { taskId: String(taskId) }));
             }
             throw err;
           }
         }
+      }
 
-        const bulkSet: Record<string, any> = { ...updates, updatedAt: new Date() };
-        if (updates.status === "COMPLETE") bulkSet.completedAt = new Date();
-        const [updated] = await db.update(operationalTasks)
-          .set(bulkSet)
-          .where(eq(operationalTasks.id, taskId))
-          .returning();
-        if (updated) {
-          updatedTasks.push(updated);
-          await db.insert(taskActivityLog).values({
-            taskId, actorId: getUser(req).id,
-            actionType: "bulk_updated",
-            newValue: JSON.stringify(updates),
-          });
+      // All validations passed — apply updates atomically
+      const updatedTaskIds: number[] = [];
+      await db.transaction(async (tx) => {
+        for (const taskId of taskIds) {
+          const adapterUpdates: any = {};
+          if (updates.status) adapterUpdates.status = updates.status;
+          if (updates.holdReason !== undefined) adapterUpdates.holdReason = updates.holdReason;
+          if (updates.blockedType !== undefined) adapterUpdates.blockedType = updates.blockedType;
+          if (updates.priority !== undefined) adapterUpdates.priority = updates.priority;
+          if (updates.ownerUserId !== undefined) adapterUpdates.ownerUserId = updates.ownerUserId;
+          if (updates.status === "COMPLETE") adapterUpdates.completedAt = new Date();
+
+          const setData: any = { updatedAt: new Date() };
+          if (adapterUpdates.status !== undefined) setData.status = adapterUpdates.status;
+          if (adapterUpdates.holdReason !== undefined) setData.holdReason = adapterUpdates.holdReason;
+          if (adapterUpdates.blockedType !== undefined) setData.blockedType = adapterUpdates.blockedType;
+          if (adapterUpdates.priority !== undefined) setData.priority = adapterUpdates.priority;
+          if (adapterUpdates.ownerUserId !== undefined) setData.ownerUserId = adapterUpdates.ownerUserId;
+          if (adapterUpdates.completedAt !== undefined) setData.completedAt = adapterUpdates.completedAt;
+
+          const [updated] = await tx.update(workItems)
+            .set(setData)
+            .where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)))
+            .returning({ id: workItems.id });
+
+          if (updated) {
+            updatedTaskIds.push(taskId);
+            await tx.insert(taskActivityLog).values({
+              workItemId: taskId, actorId: getUser(req).id,
+              actionType: "bulk_updated",
+              newValue: JSON.stringify(updates),
+            });
+          }
         }
+      });
+
+      // Fetch enriched results outside the transaction
+      const updatedTasks = [];
+      for (const taskId of updatedTaskIds) {
+        const mapped = await getEngineeringWorkItemById(taskId);
+        if (mapped) updatedTasks.push(mapped);
       }
 
       res.json({ updated: updatedTasks.length, tasks: updatedTasks });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.post("/api/eng/tasks/:id/link", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const { linkedPlanItemId, linkedDeliverableId, linkedQualityItemInstanceId } = req.body;
-      const updates: any = { updatedAt: new Date() };
-      if (linkedPlanItemId !== undefined) updates.linkedPlanItemId = linkedPlanItemId;
-      if (linkedDeliverableId !== undefined) updates.linkedDeliverableId = linkedDeliverableId;
-      if (linkedQualityItemInstanceId !== undefined) updates.linkedQualityItemInstanceId = linkedQualityItemInstanceId;
 
-      const [updated] = await db.update(operationalTasks).set(updates).where(eq(operationalTasks.id, id)).returning();
-      if (!updated) return res.status(404).json({ error: "Task not found" });
+      const updated = await updateEngineeringWorkItem(id, {
+        linkedPlanItemId: linkedPlanItemId !== undefined ? linkedPlanItemId : undefined,
+        linkedDeliverableId: linkedDeliverableId !== undefined ? linkedDeliverableId : undefined,
+        linkedQualityItemInstanceId: linkedQualityItemInstanceId !== undefined ? linkedQualityItemInstanceId : undefined,
+      });
+      if (!updated) return sendError(res, notFound("Task"));
 
       await db.insert(taskActivityLog).values({
-        taskId: id, actorId: getUser(req).id,
+        workItemId: id, actorId: getUser(req).id,
         actionType: "linked", newValue: JSON.stringify(req.body),
       });
 
-      res.json(updated);
+      const mapped = await getEngineeringWorkItemById(id);
+      res.json(mapped || { id: updated.id, workItemId: updated.id });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/watchers", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const watchers = await db.select({
         id: taskWatchers.id, userId: taskWatchers.userId,
@@ -1390,59 +1468,102 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskWatchers)
       .leftJoin(users, eq(taskWatchers.userId, users.id))
-      .where(eq(taskWatchers.taskId, parseInt(req.params.id)));
+      .where(eq(taskWatchers.workItemId, parseInt(req.params.id)));
       res.json(watchers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.post("/api/eng/tasks/:id/watchers", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
+      const taskId = parseInt(req.params.id);
+      const userId = parseInt(req.body.userId);
+      if (isNaN(taskId) || isNaN(userId)) {
+        return sendError(res, badRequest("Valid taskId and userId are required"));
+      }
+
+      // Verify task exists
+      const [task] = await db.select({ id: workItems.id }).from(workItems)
+        .where(and(eq(workItems.id, taskId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
+      if (!task) return sendError(res, notFound("Task"));
+
+      // Prevent duplicate watchers
+      const [existing] = await db.select({ id: taskWatchers.id }).from(taskWatchers)
+        .where(and(eq(taskWatchers.workItemId, taskId), eq(taskWatchers.userId, userId)));
+      if (existing) return res.json(existing);
+
       const [watcher] = await db.insert(taskWatchers).values({
-        taskId: parseInt(req.params.id),
-        userId: req.body.userId,
+        workItemId: taskId,
+        userId,
       }).returning();
+
+      // Log watcher addition to activity
+      await db.insert(taskActivityLog).values({
+        workItemId: taskId,
+        actorId: getUser(req).id,
+        actionType: "watcher_added",
+        fieldName: "watchers",
+        newValue: String(userId),
+      });
+
       res.json(watcher);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, async (req, res) => {
+  app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
+      const taskId = parseInt(req.params.taskId);
+      const userId = parseInt(req.params.userId);
+      if (isNaN(taskId) || isNaN(userId)) {
+        return sendError(res, badRequest("Valid taskId and userId are required"));
+      }
+
       await db.delete(taskWatchers).where(
-        and(eq(taskWatchers.taskId, parseInt(req.params.taskId)),
-            eq(taskWatchers.userId, parseInt(req.params.userId)))
+        and(eq(taskWatchers.workItemId, taskId),
+            eq(taskWatchers.userId, userId))
       );
+
+      // Log watcher removal to activity
+      await db.insert(taskActivityLog).values({
+        workItemId: taskId,
+        actorId: getUser(req).id,
+        actionType: "watcher_removed",
+        fieldName: "watchers",
+        oldValue: String(userId),
+      });
+
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
   // ========== TASK DETAIL ENDPOINTS ==========
 
-  app.get("/api/eng/tasks/:id", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const [task] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, id));
-      if (!task) return res.status(404).json({ error: "Task not found" });
-      res.json(task);
+      const task = await getEngineeringWorkItemById(id);
+      if (!task) return sendError(res, notFound("Task"));
+      const [enriched] = await enrichEngineeringTasks([task], req);
+      res.json(enriched);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/comments", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const comments = await db.select({
         id: taskComments.id,
-        taskId: taskComments.taskId,
+        taskId: taskComments.workItemId,
         authorId: taskComments.authorId,
         body: taskComments.body,
         createdAt: taskComments.createdAt,
@@ -1450,47 +1571,56 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskComments)
       .leftJoin(users, eq(taskComments.authorId, users.id))
-      .where(eq(taskComments.taskId, parseInt(req.params.id)))
+      .where(eq(taskComments.workItemId, parseInt(req.params.id)))
       .orderBy(asc(taskComments.createdAt));
       res.json(comments);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.post("/api/eng/tasks/:id/comments", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const { body } = req.body;
       if (!body || !body.trim()) {
-        return res.status(400).json({ error: "Comment body is required" });
+        return sendError(res, badRequest("Comment body is required"));
       }
       const [comment] = await db.insert(taskComments).values({
-        taskId,
+        workItemId: taskId,
         authorId: getUser(req).id,
         body: body.trim(),
       }).returning();
 
       await db.insert(taskActivityLog).values({
-        taskId,
+        workItemId: taskId,
         actorId: getUser(req).id,
         actionType: "comment_added",
         newValue: body.trim(),
       });
 
+      // Notify task owner about new comment
+      const [commentTask] = await db.select({ ownerUserId: workItems.ownerUserId, title: workItems.title, projectName: workItems.subProjectName })
+        .from(workItems).where(eq(workItems.id, taskId));
+      if (commentTask?.ownerUserId && commentTask.ownerUserId !== getUser(req).id) {
+        createNotification(commentTask.ownerUserId, "task.comment_added", `New comment on: ${commentTask.title}`,
+          `${getUser(req).name || "Someone"} commented on "${commentTask.title}"`,
+          { linkedTaskId: taskId, projectName: commentTask.projectName ?? undefined });
+      }
+
       res.json(comment);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/activity", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/activity", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const activity = await db.select({
         id: taskActivityLog.id,
-        taskId: taskActivityLog.taskId,
+        taskId: taskActivityLog.workItemId,
         actorId: taskActivityLog.actorId,
         actionType: taskActivityLog.actionType,
         fieldName: taskActivityLog.fieldName,
@@ -1501,58 +1631,66 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskActivityLog)
       .leftJoin(users, eq(taskActivityLog.actorId, users.id))
-      .where(eq(taskActivityLog.taskId, parseInt(req.params.id)))
+      .where(eq(taskActivityLog.workItemId, parseInt(req.params.id)))
       .orderBy(desc(taskActivityLog.createdAt));
       res.json(activity);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.get("/api/eng/tasks/:id/subtasks", requireAuth, async (req, res) => {
+  app.get("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const subtasks = await db.select().from(operationalTasks)
-        .where(eq(operationalTasks.parentTaskId, parseInt(req.params.id)))
-        .orderBy(asc(operationalTasks.sortOrder));
+      const parentId = parseInt(req.params.id);
+      const allItems = await listEngineeringWorkItems({});
+      const subtasks = allItems.filter((item) => item.parentTaskId === parentId);
       res.json(subtasks);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.post("/api/eng/tasks/:id/subtasks", requireAuth, async (req, res) => {
+  app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
     try {
       const parentId = parseInt(req.params.id);
-      const [parent] = await db.select().from(operationalTasks).where(eq(operationalTasks.id, parentId));
-      if (!parent) return res.status(404).json({ error: "Parent task not found" });
+      const parent = await getEngineeringWorkItemById(parentId);
+      if (!parent) return sendError(res, notFound("Parent task"));
 
       const data = req.body;
       if (!data.title) {
-        return res.status(400).json({ error: "Subtask title is required" });
+        return sendError(res, badRequest("Subtask title is required"));
       }
 
-      const [subtask] = await db.insert(operationalTasks).values({
-        ...data,
-        parentTaskId: parentId,
-        projectName: data.projectName || parent.projectName,
+      const subtaskWorkItem = await createEngineeringWorkItem({
+        title: data.title,
+        description: data.description || null,
         status: data.status || "TO DO",
         priority: data.priority || "Med",
+        projectId: parent.projectId || null,
+        phase: data.phase || parent.phase || null,
+        ownerUserId: data.ownerUserId || null,
         createdBy: getUser(req).id,
-      }).returning();
-
-      await db.insert(taskActivityLog).values({
-        taskId: parentId,
-        actorId: getUser(req).id,
-        actionType: "subtask_created",
-        newValue: subtask.title,
       });
 
-      res.json(subtask);
+      // Set parentId on the newly created work item
+      await db.update(workItems)
+        .set({ parentId: parentId })
+        .where(eq(workItems.id, subtaskWorkItem.id));
+
+      await db.insert(taskActivityLog).values({
+        workItemId: parentId,
+        actorId: getUser(req).id,
+        actionType: "subtask_created",
+        newValue: data.title,
+      });
+
+      const mapped = await getEngineeringWorkItemById(subtaskWorkItem.id);
+      res.json(mapped || { id: subtaskWorkItem.id, title: data.title, status: "TO DO" });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -1569,10 +1707,7 @@ export function registerEngineeringRoutes(app: Express) {
       const result = conditions.length > 0
         ? await db.select().from(deliverables).where(and(...conditions)).orderBy(desc(deliverables.updatedAt))
         : await db.select().from(deliverables).orderBy(desc(deliverables.updatedAt));
-      const assignmentEntries = await Promise.all(
-        result.map(async (deliverable) => [deliverable.id, await getAssignmentsForEntity("deliverable", deliverable.id)] as const),
-      );
-      const assignmentMap = new Map(assignmentEntries);
+      const assignmentMap = await getAssignmentsForEntities("deliverable", result.map((d) => d.id));
       res.json(result.map((deliverable) => ({
         ...deliverable,
         assignments: assignmentMap.get(deliverable.id) || [],
@@ -1580,7 +1715,7 @@ export function registerEngineeringRoutes(app: Express) {
       })));
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -1588,7 +1723,7 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id);
       const [del] = await db.select().from(deliverables).where(eq(deliverables.id, id));
-      if (!del) return res.status(404).json({ error: "Deliverable not found" });
+      if (!del) return sendError(res, notFound("Deliverable"));
 
       const versions = await db.select().from(deliverableVersions)
         .where(eq(deliverableVersions.deliverableId, id))
@@ -1613,7 +1748,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -1622,7 +1757,7 @@ export function registerEngineeringRoutes(app: Express) {
       const data = req.body;
       const projectId = Number(data.projectId);
       if (!Number.isInteger(projectId) || projectId <= 0) {
-        return res.status(400).json({ error: "projectId is required" });
+        return sendError(res, badRequest("projectId is required"));
       }
       const [del] = await db.insert(deliverables).values({
         ...data,
@@ -1649,15 +1784,15 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(del);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.patch("/api/deliverables/:id", requireAuth, async (req, res) => {
+  app.patch("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
-      if (!existing) return res.status(404).json({ error: "Deliverable not found" });
+      if (!existing) return sendError(res, notFound("Deliverable"));
 
       const nextStatus = req.body?.status;
       const approvalStatuses = new Set(["COMPLETE", "QC APPROVED", "OPERATIONAL APPROVAL", "PROVIDE FEEDBACK"]);
@@ -1698,7 +1833,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -1730,7 +1865,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -1740,7 +1875,7 @@ export function registerEngineeringRoutes(app: Express) {
       const { changeReason, impactJson } = req.body;
 
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
-      if (!existing) return res.status(404).json({ error: "Deliverable not found" });
+      if (!existing) return sendError(res, notFound("Deliverable"));
 
       const newVersion = existing.currentVersion + 1;
 
@@ -1770,7 +1905,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ deliverable: updated, version });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -1785,286 +1920,29 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(file);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
   app.patch("/api/deliverables/files/:fileId/approve", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
+      const fileId = parseInt(req.params.fileId);
+      if (isNaN(fileId)) return sendError(res, badRequest("Invalid file ID"));
       const [file] = await db.update(deliverableFiles)
         .set({ isApproved: true })
-        .where(eq(deliverableFiles.id, parseInt(req.params.fileId)))
+        .where(eq(deliverableFiles.id, fileId))
         .returning();
       logAuditFromReq(req, { entityType: "deliverable", entityId: req.params.fileId, action: "approve", changesJson: { description: "Deliverable file approved" } });
       res.json(file);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  // ========== NOTIFICATIONS ==========
-
-  app.get("/api/notifications", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const { unreadOnly, eventType, search, limit: rawLimit, offset: rawOffset } = req.query;
-      const conditions = [eq(notifications.recipientUserId, userId)];
-      if (unreadOnly === "true") conditions.push(eq(notifications.isRead, false));
-      if (typeof eventType === "string" && eventType) conditions.push(eq(notifications.eventType, eventType));
-      if (typeof search === "string" && search.trim()) {
-        const term = `%${search.trim().toLowerCase()}%`;
-        conditions.push(sql`(LOWER(${notifications.title}) LIKE ${term} OR LOWER(COALESCE(${notifications.body},'')) LIKE ${term} OR LOWER(COALESCE(${notifications.projectName},'')) LIKE ${term})`);
-      }
-
-      const pageLimit = Math.min(parseInt(rawLimit as string) || 100, 200);
-      const pageOffset = parseInt(rawOffset as string) || 0;
-
-      const result = await db.select().from(notifications)
-        .where(and(...conditions))
-        .orderBy(desc(notifications.createdAt))
-        .limit(pageLimit)
-        .offset(pageOffset);
-
-      const [countResult] = await db.select({ total: sql<number>`count(*)::int` })
-        .from(notifications)
-        .where(and(...conditions));
-
-      res.json({ items: result, total: countResult?.total || 0 });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/notifications/event-types", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const result = await db.selectDistinct({ eventType: notifications.eventType })
-        .from(notifications)
-        .where(eq(notifications.recipientUserId, userId))
-        .orderBy(notifications.eventType);
-      res.json(result.map(r => r.eventType).filter(Boolean));
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/notifications/unread-count", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const [result] = await db.select({ count: sql<number>`count(*)::int` })
-        .from(notifications)
-        .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false)));
-      res.json({ count: result?.count || 0 });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/notifications/mark-read", requireAuth, async (req, res) => {
-    try {
-      const { notificationIds } = req.body;
-      if (Array.isArray(notificationIds) && notificationIds.length > 0) {
-        await db.update(notifications)
-          .set({ isRead: true, readAt: new Date() })
-          .where(and(
-            inArray(notifications.id, notificationIds),
-            eq(notifications.recipientUserId, getUser(req).id)
-          ));
-      }
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/notifications/mark-all-read", requireAuth, async (req, res) => {
-    try {
-      await db.update(notifications)
-        .set({ isRead: true, readAt: new Date() })
-        .where(and(
-          eq(notifications.recipientUserId, getUser(req).id),
-          eq(notifications.isRead, false)
-        ));
-      res.json({ success: true });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/notifications/:id/confirm", requireAuth, async (req, res) => {
-    try {
-      const notifId = parseInt(req.params.id);
-      const userId = getUser(req).id;
-      if (isNaN(notifId)) return res.status(400).json({ error: "Invalid notification ID" });
-
-      const [notif] = await db.select().from(notifications).where(eq(notifications.id, notifId));
-      if (!notif) return res.status(404).json({ error: "Notification not found" });
-      if (notif.recipientUserId !== userId) return res.status(403).json({ error: "You can only confirm your own notifications" });
-      if (!notif.requiresConfirmation) return res.status(400).json({ error: "This notification does not require confirmation" });
-      if (notif.confirmedAt) return res.status(400).json({ error: "Already confirmed" });
-
-      const [confirmer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-
-      await db.update(notifications)
-        .set({ confirmedByUserId: userId, confirmedAt: new Date(), isRead: true, readAt: new Date() })
-        .where(eq(notifications.id, notifId));
-
-      const relatedNotifs = await db.select().from(notifications)
-        .where(and(
-          eq(notifications.eventType, notif.eventType),
-          eq(notifications.requiresConfirmation, true),
-          isNull(notifications.confirmedAt),
-          eq(notifications.changeDetails, notif.changeDetails!),
-          ne(notifications.id, notifId)
-        ));
-
-      for (const related of relatedNotifs) {
-        await db.update(notifications)
-          .set({ confirmedByUserId: userId, confirmedAt: new Date(), isRead: true, readAt: new Date() })
-          .where(eq(notifications.id, related.id));
-      }
-
-      logAuditFromReq(req, { entityType: "notification", entityId: String(notifId), action: "update", changesJson: { description: "Notification confirmed", eventType: notif.eventType, relatedCount: relatedNotifs.length } });
-      res.json({ success: true, confirmedBy: confirmer?.name || "Unknown", confirmedAt: new Date() });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/excel-updates", requireAuth, async (req, res) => {
-    try {
-      const user = getUser(req);
-      const userId = user.id;
-      const userRole = user.role;
-      const { status, search, limit: rawLimit, offset: rawOffset } = req.query;
-      const pageLimit = Math.min(parseInt(rawLimit as string) || 50, 200);
-      const pageOffset = parseInt(rawOffset as string) || 0;
-
-      const excelEventTypes = ["excel_sync_confirmation", "plan.change_confirmation"];
-      const adminRoles = ["COO_ADMIN", "CEO_ADMIN"];
-      const isAdmin = adminRoles.includes(userRole);
-
-      const conditions: any[] = [
-        inArray(notifications.eventType, excelEventTypes),
-      ];
-      if (!isAdmin) {
-        conditions.push(eq(notifications.recipientUserId, userId));
-      }
-
-      if (status === "pending") conditions.push(isNull(notifications.confirmedAt));
-      if (status === "confirmed") conditions.push(sql`${notifications.confirmedAt} IS NOT NULL`);
-      if (typeof search === "string" && search.trim()) {
-        const term = `%${search.trim().toLowerCase()}%`;
-        conditions.push(sql`(LOWER(${notifications.title}) LIKE ${term} OR LOWER(COALESCE(${notifications.body},'')) LIKE ${term} OR LOWER(COALESCE(${notifications.projectName},'')) LIKE ${term})`);
-      }
-
-      const whereClause = and(...conditions);
-
-      const baseConditions: any[] = [
-        inArray(notifications.eventType, excelEventTypes),
-      ];
-      if (!isAdmin) {
-        baseConditions.push(eq(notifications.recipientUserId, userId));
-      }
-
-      const [items, [countResult], [pendingCountResult], [confirmedCountResult], projectsResult] = await Promise.all([
-        db.select().from(notifications)
-          .where(whereClause)
-          .orderBy(desc(notifications.createdAt))
-          .limit(pageLimit)
-          .offset(pageOffset),
-        db.select({ total: sql<number>`count(*)::int` })
-          .from(notifications).where(whereClause),
-        db.select({ count: sql<number>`count(*)::int` })
-          .from(notifications)
-          .where(and(
-            ...baseConditions,
-            isNull(notifications.confirmedAt)
-          )),
-        db.select({ count: sql<number>`count(*)::int` })
-          .from(notifications)
-          .where(and(
-            ...baseConditions,
-            sql`${notifications.confirmedAt} IS NOT NULL`
-          )),
-        db.selectDistinct({ projectName: notifications.projectName })
-          .from(notifications)
-          .where(and(...baseConditions))
-          .orderBy(notifications.projectName),
-      ]);
-
-      res.json({
-        items,
-        total: countResult?.total || 0,
-        pendingCount: pendingCountResult?.count || 0,
-        confirmedCount: confirmedCountResult?.count || 0,
-        projects: projectsResult.map(p => p.projectName).filter(Boolean),
-      });
-    } catch (err: any) {
-      console.error("[ExcelUpdates] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.post("/api/excel-updates/bulk-confirm", requireAuth, async (req, res) => {
-    try {
-      const userId = getUser(req).id;
-      const { notificationIds } = req.body;
-
-      if (!Array.isArray(notificationIds) || notificationIds.length === 0) {
-        return res.status(400).json({ error: "notificationIds array is required" });
-      }
-
-      const [confirmer] = await db.select({ name: users.name }).from(users).where(eq(users.id, userId));
-      const now = new Date();
-
-      const toConfirm = await db.select().from(notifications)
-        .where(and(
-          inArray(notifications.id, notificationIds),
-          eq(notifications.recipientUserId, userId),
-          eq(notifications.requiresConfirmation, true),
-          isNull(notifications.confirmedAt)
-        ));
-
-      if (toConfirm.length === 0) {
-        return res.json({ success: true, confirmedCount: 0 });
-      }
-
-      await db.update(notifications)
-        .set({ confirmedByUserId: userId, confirmedAt: now, isRead: true, readAt: now })
-        .where(and(
-          inArray(notifications.id, toConfirm.map(n => n.id)),
-          eq(notifications.recipientUserId, userId)
-        ));
-
-      logAuditFromReq(req, {
-        entityType: "notification",
-        action: "bulk_confirm",
-        changesJson: { description: "Bulk Excel update confirmation", count: toConfirm.length, ids: toConfirm.map(n => n.id) },
-      });
-
-      res.json({
-        success: true,
-        confirmedCount: toConfirm.length,
-        confirmedBy: confirmer?.name || "Unknown",
-        confirmedAt: now,
-      });
-    } catch (err: any) {
-      console.error("[ExcelUpdates] Bulk confirm error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
   // ========== SHAREPOINT FILE POINTERS ==========
 
-  app.get("/api/eng/file-pointers/:entityType/:entityId", requireAuth, async (req, res) => {
+  app.get("/api/eng/file-pointers/:entityType/:entityId", requireAuth, requirePermission("engineering", "view"), async (req, res) => {
     try {
       const result = await db.select().from(spFilePointers)
         .where(and(
@@ -2075,11 +1953,11 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.post("/api/eng/file-pointers", requireAuth, async (req, res) => {
+  app.post("/api/eng/file-pointers", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const { entityType, entityId, spSiteId, spDriveId, spFileItemId, fileName, label, siteId, driveId, fileItemId, webUrl } = req.body;
       const [pointer] = await db.insert(spFilePointers).values({
@@ -2096,18 +1974,20 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(pointer);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.delete("/api/eng/file-pointers/:id", requireAuth, async (req, res) => {
+  app.delete("/api/eng/file-pointers/:id", requireAuth, requirePermission("engineering", "delete"), async (req, res) => {
     try {
-      await db.delete(spFilePointers).where(eq(spFilePointers.id, parseInt(req.params.id)));
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
+      await db.delete(spFilePointers).where(eq(spFilePointers.id, id));
       logAuditFromReq(req, { entityType: "file_pointer", entityId: req.params.id, action: "delete", changesJson: { description: "File pointer deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -2119,10 +1999,10 @@ export function registerEngineeringRoutes(app: Express) {
       const newWarnings: any[] = [];
       const today = new Date().toISOString().split('T')[0];
 
-      const taskConditions: any[] = [ne(operationalTasks.status, "COMPLETE")];
-      if (projectName) taskConditions.push(eq(operationalTasks.projectName, projectName));
-
-      const allTasks = await db.select().from(operationalTasks).where(and(...taskConditions));
+      const canonicalTasks = await listEngineeringWorkItems(
+        projectName ? { projectName } : {}
+      );
+      const allTasks = canonicalTasks.filter((t: any) => t.status !== "COMPLETE");
 
       for (const task of allTasks) {
         if (task.dueDate && task.dueDate < today && task.status !== "COMPLETE") {
@@ -2201,11 +2081,11 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ scanned: allTasks.length + allDeliverables.length, warningsCreated: newWarnings.length, warnings: newWarnings });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.get("/api/eng/warnings", requireAuth, async (req, res) => {
+  app.get("/api/eng/warnings", requireAuth, requirePermission("engineering", "view"), async (req, res) => {
     try {
       const { projectName, severity, status, warningType } = req.query;
       const conditions: any[] = [];
@@ -2220,13 +2100,14 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(result);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.patch("/api/eng/warnings/:id", requireAuth, async (req, res) => {
+  app.patch("/api/eng/warnings/:id", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       const updates = { ...req.body, updatedAt: new Date() };
       const [updated] = await db.update(qcWarning).set(updates).where(eq(qcWarning.id, id)).returning();
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(id), action: "update", changesJson: { description: "Warning updated", status: req.body.status } });
@@ -2243,11 +2124,11 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(updated);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.post("/api/eng/warnings/:id/acknowledge", requireAuth, async (req, res) => {
+  app.post("/api/eng/warnings/:id/acknowledge", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       await db.insert(qcWarningEvent).values({
@@ -2260,7 +2141,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -2269,7 +2150,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/eng/dashboard/standup", requireAuth, async (req, res) => {
     try {
       const role = getUserRole(req);
-      const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
+      const managerRoles = ["eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
       const isManager = managerRoles.includes(role);
       const userName = getUser(req).name || "";
       const userFirstName = userName.split(/\s+/)[0];
@@ -2287,18 +2168,28 @@ export function registerEngineeringRoutes(app: Express) {
       sevenDaysOut.setDate(sevenDaysOut.getDate() + 7);
       const weekEndStr = sevenDaysOut.toISOString().split('T')[0];
 
-      const [rawTasks, allProjectInfoRows] = await Promise.all([
-        db.select().from(operationalTasks)
-          .orderBy(asc(operationalTasks.projectName), asc(operationalTasks.sortOrder)),
-        db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
-          .from(projectInfo),
+      const [rawCanonicalTasks, allProjectInfoRows] = await Promise.all([
+        listEngineeringWorkItems({}),
+        db.select({ projectName: projectInfo.projectName, phase: projectExecutionState.phase })
+          .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
       ]);
 
+      // Resolve assignee names from assigneeUserIds for standup filtering/workload
+      const { buildUserMap } = await import("./user-resolver");
+      const userMap = await buildUserMap();
+      const rawTasks = rawCanonicalTasks.map((t: any) => {
+        const assigneeNames = (t.assigneeUserIds || [])
+          .map((uid: number) => userMap.get(uid)?.name)
+          .filter(Boolean);
+        return { ...t, assignees: assigneeNames.length > 0 ? assigneeNames : null };
+      });
+
       const allTasks = assigneeFilter
-        ? rawTasks.filter(t => {
+        ? rawTasks.filter((t: any) => {
             if (!t.assignees || !Array.isArray(t.assignees)) return false;
-            const filterLower = assigneeFilter.toLowerCase();
-            return t.assignees.some(a => a && a.toLowerCase().startsWith(filterLower));
+            const filterLower = assigneeFilter!.toLowerCase();
+            return t.assignees.some((a: string) => a && a.toLowerCase().startsWith(filterLower));
           })
         : rawTasks;
 
@@ -2427,6 +2318,18 @@ export function registerEngineeringRoutes(app: Express) {
         taskTypeTag: t.taskTypeTag,
       });
 
+      // Collect IDs of tasks already shown in a named section
+      const shownIds = new Set<number>();
+      for (const t of overdueItems) shownIds.add(t.id);
+      for (const t of holdItems) shownIds.add(t.id);
+      for (const t of upcomingThisWeek) shownIds.add(t.id);
+      for (const t of needsApproval) shownIds.add(t.id);
+      for (const t of inProgress) shownIds.add(t.id);
+      for (const t of recentlyCompleted) shownIds.add(t.id);
+
+      // Catch-all: active tasks not covered by any section above
+      const otherActive = allTasks.filter(t => openStatuses.has(t.status) && !shownIds.has(t.id));
+
       res.json({
         date: todayStr,
         summary: {
@@ -2440,21 +2343,22 @@ export function registerEngineeringRoutes(app: Express) {
           upcomingThisWeekCount: upcomingThisWeek.length,
           needsApprovalCount: needsApproval.length,
         },
-        recentlyCompleted: recentlyCompleted.slice(0, 20).map(mapTask),
+        recentlyCompleted: recentlyCompleted.map(mapTask),
         blockers: {
-          hold: holdItems.slice(0, 20).map(mapTask),
-          overdue: overdueItems.slice(0, 20).map(mapTask),
+          hold: holdItems.map(mapTask),
+          overdue: overdueItems.map(mapTask),
         },
-        upcomingThisWeek: upcomingThisWeek.slice(0, 30).map(mapTask),
-        needsApproval: needsApproval.slice(0, 15).map(mapTask),
-        inProgressHighlights: inProgress.slice(0, 15).map(mapTask),
+        upcomingThisWeek: upcomingThisWeek.map(mapTask),
+        needsApproval: needsApproval.map(mapTask),
+        inProgressHighlights: inProgress.map(mapTask),
+        otherActive: otherActive.map(mapTask),
         workload,
         projectHealth,
         statusPipeline,
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -2463,10 +2367,10 @@ export function registerEngineeringRoutes(app: Express) {
   app.get("/api/eng/dashboard/projects", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
       const [allTasks, allProjectInfoRows] = await Promise.all([
-        db.select().from(operationalTasks)
-          .orderBy(asc(operationalTasks.projectName), asc(operationalTasks.sortOrder)),
-        db.select({ projectName: projectInfo.projectName, phase: projectInfo.phase })
-          .from(projectInfo),
+        listEngineeringWorkItems({}),
+        db.select({ projectName: projectInfo.projectName, phase: projectExecutionState.phase })
+          .from(projectInfo)
+          .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
       ]);
 
       const normalizeKey = (n: string) => n.replace(/_Tracker.*$/i, "").replace(/_/g, " ").toLowerCase().trim();
@@ -2489,218 +2393,26 @@ export function registerEngineeringRoutes(app: Express) {
         return "P0_FIRST_ASSESSMENT";
       }
 
-      const projectMap = new Map<string, {
-        projectName: string;
-        phase: string;
-        tasks: typeof allTasks;
-      }>();
+      const projectMap = new Map<string, { projectName: string; phase: string }>();
 
       for (const t of allTasks) {
         const key = t.projectName || "Unassigned";
         if (!projectMap.has(key)) {
-          const phase = lookupPhase(key);
-          projectMap.set(key, { projectName: key, phase, tasks: [] });
-        }
-        projectMap.get(key)!.tasks.push(t);
-      }
-
-      const todayStr = new Date().toISOString().split('T')[0];
-      const openStatuses = new Set(["TO DO", "IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK", "PROJECTS ASSISTANCE"]);
-
-      const result = Array.from(projectMap.values()).map(p => {
-        const openTasks = p.tasks.filter(t => openStatuses.has(t.status));
-        const holdTasks = p.tasks.filter(t => t.status === "HOLD");
-        const completedTasks = p.tasks.filter(t => t.status === "COMPLETE");
-        const allActive = p.tasks.filter(t => t.status !== "COMPLETE");
-        const overdueTasks = allActive.filter(t => t.dueDate && t.dueDate < todayStr);
-
-        return {
-          projectName: p.projectName,
-          displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
-          phase: p.phase,
-          phaseLabel: PROJECT_PHASE_LABELS[p.phase as ProjectPhase] || p.phase,
-          totalTasks: p.tasks.length,
-          activeTasks: allActive.length,
-          completedTasks: completedTasks.length,
-          overdueTasks: overdueTasks.length,
-          holdTasks: holdTasks.length,
-          tasks: [...openTasks, ...holdTasks].map(t => ({
-            id: t.id,
-            title: t.title,
-            status: t.status,
-            priority: t.priority,
-            dueDate: t.dueDate,
-            assignees: t.assignees,
-            trackingRag: t.trackingRag,
-          })),
-        };
-      }).sort((a, b) => {
-        if (a.overdueTasks !== b.overdueTasks) return b.overdueTasks - a.overdueTasks;
-        return b.activeTasks - a.activeTasks;
-      });
-
-      res.json({
-        projects: result,
-        lifecyclePhases: PROJECT_PHASES,
-        phaseLabels: PROJECT_PHASE_LABELS,
-      });
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/eng/dashboard/workload", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const allUsers = await db.select().from(users);
-      const allTasks = await db.select().from(operationalTasks)
-        .where(ne(operationalTasks.status, "COMPLETE"));
-
-      const today = new Date().toISOString().split('T')[0];
-      const endOfWeek = new Date();
-      endOfWeek.setDate(endOfWeek.getDate() + 7);
-      const weekEnd = endOfWeek.toISOString().split('T')[0];
-
-      const assigneeSet = new Set<string>();
-      for (const t of allTasks) {
-        if (t.assignees && Array.isArray(t.assignees)) {
-          for (const a of t.assignees) if (a) assigneeSet.add(a);
+          projectMap.set(key, { projectName: key, phase: lookupPhase(key) });
         }
       }
 
-      const workload: any[] = [];
-      if (assigneeSet.size > 0) {
-        for (const name of assigneeSet) {
-          const userTasks = allTasks.filter(t => t.assignees && t.assignees.includes(name));
-          workload.push({
-            name,
-            activeTasks: userTasks.length,
-            dueThisWeek: userTasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd).length,
-            overdue: userTasks.filter(t => t.dueDate && t.dueDate < today).length,
-            onHold: userTasks.filter(t => t.status === "HOLD").length,
-            needsApproval: userTasks.filter(t => t.status === "NEEDS APPROVAL").length,
-            provideFeedback: userTasks.filter(t => t.status === "PROVIDE FEEDBACK").length,
-          });
-        }
-      } else {
-        const userWorkload = allUsers.map(u => {
-          const userTasks = allTasks.filter(t => t.ownerUserId === u.id);
-          return {
-            name: u.name,
-            activeTasks: userTasks.length,
-            dueThisWeek: userTasks.filter(t => t.dueDate && t.dueDate >= today && t.dueDate <= weekEnd).length,
-            overdue: userTasks.filter(t => t.dueDate && t.dueDate < today).length,
-            onHold: userTasks.filter(t => t.status === "HOLD").length,
-            needsApproval: userTasks.filter(t => t.status === "NEEDS APPROVAL").length,
-            provideFeedback: userTasks.filter(t => t.status === "PROVIDE FEEDBACK").length,
-          };
-        }).filter(w => w.activeTasks > 0);
-        workload.push(...userWorkload);
-      }
-      workload.sort((a, b) => b.activeTasks - a.activeTasks);
+      const result = Array.from(projectMap.values()).map(p => ({
+        projectName: p.projectName,
+        displayName: p.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+        phase: p.phase,
+        phaseLabel: PROJECT_PHASE_LABELS[p.phase as ProjectPhase] || p.phase,
+      }));
 
-      res.json(workload);
+      res.json({ projects: result });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/eng/dashboard/milestones-at-risk", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const twoWeeks = new Date();
-      twoWeeks.setDate(twoWeeks.getDate() + 14);
-      const twoWeeksStr = twoWeeks.toISOString().split('T')[0];
-
-      const atRiskTasks = await db.select().from(operationalTasks)
-        .where(and(
-          ne(operationalTasks.status, "COMPLETE"),
-          sql`(${operationalTasks.dueDate} IS NOT NULL AND ${operationalTasks.dueDate} <= ${twoWeeksStr})`
-        ))
-        .orderBy(asc(operationalTasks.dueDate));
-
-      const grouped = new Map<string, typeof atRiskTasks>();
-      for (const t of atRiskTasks) {
-        const key = t.projectName || "Unassigned";
-        if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key)!.push(t);
-      }
-
-      const result = Array.from(grouped.entries()).map(([projectName, tasks]) => {
-        const overdue = tasks.filter(t => t.dueDate && t.dueDate < todayStr);
-        const onHold = tasks.filter(t => t.status === "HOLD");
-        return {
-          id: projectName,
-          projectName: projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
-          milestoneName: `${tasks.length} task${tasks.length !== 1 ? "s" : ""} due within 14 days`,
-          dueDate: tasks[0]?.dueDate || null,
-          linkedTasks: tasks.length,
-          incompleteTasks: tasks.length,
-          highWarnings: overdue.length + onHold.length,
-          deliverableStatuses: tasks.slice(0, 4).map(t => ({
-            name: t.title.substring(0, 40),
-            status: t.status,
-          })),
-        };
-      }).sort((a, b) => b.highWarnings - a.highWarnings);
-
-      res.json(result);
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/eng/dashboard/deliverables-pipeline", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const taskStatuses = [
-        "TO DO", "IN PROGRESS", "HOLD", "PROJECTS ASSISTANCE", "NEEDS APPROVAL",
-        "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "COMPLETE"
-      ];
-      const pipeline: Record<string, number> = {};
-      for (const s of taskStatuses) {
-        const [result] = await db.select({ count: sql<number>`count(*)::int` })
-          .from(operationalTasks)
-          .where(eq(operationalTasks.status, s));
-        pipeline[s] = result?.count || 0;
-      }
-      res.json(pipeline);
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/eng/dashboard/orphan-tasks", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const orphans = await db.select().from(operationalTasks)
-        .where(and(
-          isNull(operationalTasks.linkedPlanItemId),
-          isNull(operationalTasks.linkedDeliverableId),
-          isNull(operationalTasks.linkedQualityItemInstanceId),
-          ne(operationalTasks.status, "COMPLETE")
-        ))
-        .orderBy(desc(operationalTasks.createdAt));
-      res.json(orphans);
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.get("/api/eng/dashboard/warning-tower", requireAuth, requireAdminOrEpm, async (req, res) => {
-    try {
-      const highWarnings = await db.select().from(qcWarning)
-        .where(and(
-          eq(qcWarning.status, "open"),
-          eq(qcWarning.severity, "HIGH" as any)
-        ))
-        .orderBy(asc(qcWarning.createdAt));
-      res.json(highWarnings);
-    } catch (err: any) {
-      console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -2714,7 +2426,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(allUsers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -2722,8 +2434,8 @@ export function registerEngineeringRoutes(app: Express) {
 
   function requireAdmin(req: Request, res: Response, next: NextFunction) {
     const role = getUserRole(req);
-    if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-    res.status(403).json({ error: "forbidden", message: "Admin access required" });
+    if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+    sendError(res, forbidden("Admin access required"));
   }
 
   app.get("/api/eng/unified-audit", requireAuth, requireAdmin, async (req, res) => {
@@ -2754,15 +2466,16 @@ export function registerEngineeringRoutes(app: Express) {
               WHEN tal.action_type = 'field_changed'
                 THEN coalesce(tal.old_value, '—') || ' → ' || coalesce(tal.new_value, '—')
               WHEN tal.action_type = 'created'
-                THEN coalesce(tal.new_value, ot.title)
-              ELSE ot.title
+                THEN coalesce(tal.new_value, wi.title)
+              ELSE wi.title
             END AS detail,
             u.name AS actor_name,
-            replace(ot.project_name, '_', ' ') AS project_name,
+            coalesce(pi.project_name, '') AS project_name,
             tal.created_at AS timestamp
           FROM task_activity_log tal
           LEFT JOIN users u ON tal.actor_id = u.id
-          LEFT JOIN operational_tasks ot ON tal.task_id = ot.id
+          LEFT JOIN work_items wi ON tal.task_id = wi.id
+          LEFT JOIN project_info pi ON wi.project_id = pi.id
         `);
       }
 
@@ -2893,7 +2606,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ entries, total, categoryCounts });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -2905,7 +2618,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       const conditions: any[] = [];
       if (projectName) {
-        conditions.push(eq(operationalTasks.projectName, projectName as string));
+        conditions.push(sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${projectName as string})`);
       }
       if (actorId) {
         conditions.push(eq(taskActivityLog.actorId, parseInt(actorId as string)));
@@ -2922,7 +2635,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       const baseQuery = db.select({
         id: taskActivityLog.id,
-        taskId: taskActivityLog.taskId,
+        taskId: taskActivityLog.workItemId,
         actionType: taskActivityLog.actionType,
         fieldName: taskActivityLog.fieldName,
         oldValue: taskActivityLog.oldValue,
@@ -2930,16 +2643,18 @@ export function registerEngineeringRoutes(app: Express) {
         createdAt: taskActivityLog.createdAt,
         actorName: users.name,
         actorEmail: users.email,
-        taskTitle: operationalTasks.title,
-        projectName: operationalTasks.projectName,
+        taskTitle: workItems.title,
+        projectName: projectInfo.projectName,
       })
       .from(taskActivityLog)
       .leftJoin(users, eq(taskActivityLog.actorId, users.id))
-      .leftJoin(operationalTasks, eq(taskActivityLog.taskId, operationalTasks.id));
+      .leftJoin(workItems, eq(taskActivityLog.workItemId, workItems.id))
+      .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id));
 
       const countResult = await db.select({ count: sql<number>`count(*)` })
         .from(taskActivityLog)
-        .leftJoin(operationalTasks, eq(taskActivityLog.taskId, operationalTasks.id))
+        .leftJoin(workItems, eq(taskActivityLog.workItemId, workItems.id))
+        .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
         .where(conditions.length > 0 ? and(...conditions) : undefined);
 
       const rows = await baseQuery
@@ -2950,10 +2665,11 @@ export function registerEngineeringRoutes(app: Express) {
 
       const allActions = await db.selectDistinct({ actionType: taskActivityLog.actionType })
         .from(taskActivityLog);
-      const allProjects = await db.selectDistinct({ projectName: operationalTasks.projectName })
+      const allProjects = await db.selectDistinct({ projectName: projectInfo.projectName })
         .from(taskActivityLog)
-        .leftJoin(operationalTasks, eq(taskActivityLog.taskId, operationalTasks.id))
-        .where(sql`${operationalTasks.projectName} IS NOT NULL`);
+        .leftJoin(workItems, eq(taskActivityLog.workItemId, workItems.id))
+        .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+        .where(sql`${projectInfo.projectName} IS NOT NULL`);
       const allActors = await db.select({ id: users.id, name: users.name })
         .from(users)
         .orderBy(asc(users.name));
@@ -2971,7 +2687,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -3013,7 +2729,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -3036,46 +2752,207 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(history);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
+    }
+  });
+
+  // ========== CP SIGNED GATE ==========
+
+  const PM_DEFAULT_TASK_PACK = [
+    { title: "Contract Administration Setup", priority: "High", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Project Kick-off Meeting", priority: "High", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Resource Allocation Plan", priority: "Med", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Schedule Baseline", priority: "High", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Risk Register Initialization", priority: "Med", phase: "P2_PD_PM_HANDOVER" },
+    { title: "Communication Plan", priority: "Med", phase: "P2_PD_PM_HANDOVER" },
+  ];
+
+  const ENG_POST_CP_TASK_PACK = [
+    { title: "Detailed Design Initiation", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+    { title: "Equipment Procurement List", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
+    { title: "Installation Methodology", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
+    { title: "Testing & Commissioning Plan", priority: "Med", phase: "P5_COMMISSIONING_TESTING" },
+  ];
+
+  app.post("/api/projects/:projectId/mark-cp-signed", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      const user = getUser(req);
+      const { evidenceType, emailSubject, emailDate, fileId } = req.body;
+
+      const [project] = await db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        cpSigned: projectExecutionState.cpSigned,
+        cpSignedDate: projectExecutionState.cpSignedDate,
+        pmTaskPackCreated: projectExecutionState.pmTaskPackCreated,
+        engPostCpTaskPackCreated: projectExecutionState.engPostCpTaskPackCreated,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.id, projectId));
+      if (!project) return sendError(res, notFound("Project"));
+
+      // Idempotency: already signed
+      if (project.cpSigned) {
+        return res.json({
+          success: true,
+          alreadySigned: true,
+          cpSignedDate: project.cpSignedDate,
+          message: "CP already marked as signed. No duplicates created.",
+        });
+      }
+
+      // Validate evidence
+      if (!evidenceType || !["file_upload", "email_reference"].includes(evidenceType)) {
+        return sendError(res, badRequest("evidenceType must be 'file_upload' or 'email_reference'"));
+      }
+      if (evidenceType === "email_reference" && !emailSubject) {
+        return sendError(res, badRequest("emailSubject required for email_reference evidence"));
+      }
+
+      const evidenceRef = evidenceType === "file_upload"
+        ? (fileId ? String(fileId) : null)
+        : JSON.stringify({ emailSubject, emailDate: emailDate || new Date().toISOString().split("T")[0] });
+
+      // Mark CP signed
+      const cpSignedFields = {
+        cpSigned: true,
+        cpSignedDate: new Date().toISOString().split("T")[0],
+        cpSignedByUserId: user.id,
+        cpEvidenceType: evidenceType,
+        cpEvidenceRef: evidenceRef,
+        updatedAt: new Date(),
+      };
+      await db.update(projectInfo).set(cpSignedFields).where(eq(projectInfo.id, projectId));
+      await syncProjectSplitTables(projectId, cpSignedFields);
+
+      let pmTasksCreated = 0;
+      let engTasksCreated = 0;
+
+      // Create PM task pack (idempotent)
+      if (!project.pmTaskPackCreated) {
+        for (let i = 0; i < PM_DEFAULT_TASK_PACK.length; i++) {
+          const t = PM_DEFAULT_TASK_PACK[i];
+          await createEngineeringWorkItem({
+            projectId,
+            title: `[PM] ${t.title}`,
+            status: "TO DO",
+            priority: t.priority,
+            phase: t.phase,
+            createdBy: user.id,
+          });
+          pmTasksCreated++;
+        }
+        await db.update(projectInfo).set({ pmTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, { pmTaskPackCreated: true });
+      }
+
+      // Create Engineering post-CP task pack (idempotent)
+      if (!project.engPostCpTaskPackCreated) {
+        for (let i = 0; i < ENG_POST_CP_TASK_PACK.length; i++) {
+          const t = ENG_POST_CP_TASK_PACK[i];
+          await createEngineeringWorkItem({
+            projectId,
+            title: `[Eng Post-CP] ${t.title}`,
+            status: "TO DO",
+            priority: t.priority,
+            phase: t.phase,
+            createdBy: user.id,
+          });
+          engTasksCreated++;
+        }
+        await db.update(projectInfo).set({ engPostCpTaskPackCreated: true }).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, { engPostCpTaskPackCreated: true });
+      }
+
+      logAuditFromReq(req, {
+        entityType: "cp_signed_gate",
+        entityId: String(projectId),
+        action: "cp_signed",
+        projectName: project.projectName,
+        changesJson: { evidenceType, pmTasksCreated, engTasksCreated },
+      });
+
+      res.json({
+        success: true,
+        alreadySigned: false,
+        cpSignedDate: new Date().toISOString().split("T")[0],
+        pmTasksCreated,
+        engTasksCreated,
+        totalTasksCreated: pmTasksCreated + engTasksCreated,
+      });
+    } catch (err: any) {
+      console.error("[Engineering] CP Signed Error:", err);
+      sendError(res, err);
+    }
+  });
+
+  app.get("/api/projects/:projectId/cp-status", jwtAuth, requireAuth, async (req, res) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      const [project] = await db.select({
+        cpSigned: projectExecutionState.cpSigned,
+        cpSignedDate: projectExecutionState.cpSignedDate,
+        cpSignedByUserId: projectExecutionState.cpSignedByUserId,
+        cpEvidenceType: projectExecutionState.cpEvidenceType,
+        cpEvidenceRef: projectExecutionState.cpEvidenceRef,
+        pmTaskPackCreated: projectExecutionState.pmTaskPackCreated,
+        engPostCpTaskPackCreated: projectExecutionState.engPostCpTaskPackCreated,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.id, projectId));
+
+      if (!project) return sendError(res, notFound("Project"));
+
+      let signedByName: string | null = null;
+      if (project.cpSignedByUserId) {
+        const [signer] = await db.select({ name: users.name }).from(users).where(eq(users.id, project.cpSignedByUserId));
+        signedByName = signer?.name || null;
+      }
+
+      res.json({
+        ...project,
+        cpSignedByName: signedByName,
+      });
+    } catch (err: any) {
+      console.error("[Engineering] Error:", err);
+      sendError(res, err);
     }
   });
 
   // ========== PROJECT PHASE MANAGEMENT ==========
 
-  app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, async (req, res) => {
+  app.patch("/api/projects/:projectId/phase", jwtAuth, requireAuth, requirePermission("lifecycle", "edit"), async (req, res) => {
     try {
       const user = getUser(req);
-      if (user.role !== "admin") {
-        return res.status(403).json({ error: "forbidden", message: "Only admins can change project phases" });
+      if (user.role !== "COO_ADMIN" && user.role !== "CEO_ADMIN") {
+        return sendError(res, forbidden("Only admins can change project phases"));
       }
 
       const projectId = parseInt(req.params.projectId);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const { toPhase, reason, overrideSequence } = req.body;
       if (!toPhase || !reason || typeof reason !== "string" || reason.trim().length === 0) {
-        return res.status(400).json({ error: "toPhase and reason are required" });
+        return sendError(res, badRequest("toPhase and reason are required"));
       }
       if (!PROJECT_PHASES.includes(toPhase as any)) {
-        return res.status(400).json({ error: "Invalid phase value", validPhases: PROJECT_PHASES });
+        return sendError(res, badRequest("Invalid phase value", { validPhases: PROJECT_PHASES.join(", ") }));
       }
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       const fromPhase = project.phase;
 
       if (fromPhase === toPhase) {
-        return res.status(400).json({ error: "Project is already in this phase" });
+        return sendError(res, badRequest("Project is already in this phase"));
       }
 
       const fromIdx = PROJECT_PHASES.indexOf(fromPhase as any);
       const toIdx = PROJECT_PHASES.indexOf(toPhase as any);
       if (fromIdx >= 0 && toIdx >= 0 && Math.abs(toIdx - fromIdx) > 1 && !overrideSequence) {
-        return res.status(400).json({
-          error: "sequential_required",
-          message: `Phase can only move one step at a time (${PROJECT_PHASE_LABELS[fromPhase as ProjectPhase] || fromPhase} → next). Set overrideSequence=true to skip.`,
-        });
+        return sendError(res, badRequest(`Phase can only move one step at a time (${PROJECT_PHASE_LABELS[fromPhase as ProjectPhase] || fromPhase} → next). Set overrideSequence=true to skip.`));
       }
 
       let tasksCreated = 0;
@@ -3083,15 +2960,17 @@ export function registerEngineeringRoutes(app: Express) {
       let templateResult: any = null;
 
       await db.transaction(async (tx) => {
+        const phaseFields = {
+          phase: toPhase,
+          phaseUpdatedAt: new Date(),
+          phaseUpdatedByUserId: user.id,
+          phaseNotes: reason.trim(),
+          updatedAt: new Date(),
+        };
         await tx.update(projectInfo)
-          .set({
-            phase: toPhase,
-            phaseUpdatedAt: new Date(),
-            phaseUpdatedByUserId: user.id,
-            phaseNotes: reason.trim(),
-            updatedAt: new Date(),
-          })
+          .set(phaseFields)
           .where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, phaseFields, tx);
 
         await tx.insert(projectPhaseHistory).values({
           projectId,
@@ -3120,52 +2999,15 @@ export function registerEngineeringRoutes(app: Express) {
         const toP2OrBeyond = PROJECT_PHASES.indexOf(toPhase as any) >= 2;
 
         if (fromP1OrBefore && toP2OrBeyond) {
-          const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
-          const existing = await db.select({ id: operationalTasks.id })
-            .from(operationalTasks)
-            .where(eq(operationalTasks.projectName, cleanName))
-            .limit(1);
+          const generated = await generateDefaultEngineeringWorkItemsForProject(projectId, user.id);
+          tasksCreated = generated.length;
 
-          if (existing.length === 0) {
-            const DEFAULT_ENG_TASKS = [
-              { title: "PD/PM Handover", workstream: "PD", priority: "High", phase: "P2_PD_PM_HANDOVER" },
-              { title: "Detailed Design Package", workstream: "Engineering", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
-              { title: "Structural Design Review", workstream: "Engineering", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
-              { title: "Electrical Design Review", workstream: "Engineering", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
-              { title: "Equipment Procurement Release", workstream: "Procurement", priority: "High", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
-              { title: "BOM Finalisation", workstream: "Procurement", priority: "Med", phase: "P3_DETAILED_DESIGN_PROC_RELEASE" },
-              { title: "Construction Method Statement", workstream: "Construction", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
-              { title: "H&S File Preparation", workstream: "Quality", priority: "Med", phase: "P4_CONSTRUCTION_INSTALLATION" },
-              { title: "Site Mobilisation Checklist", workstream: "Construction", priority: "High", phase: "P4_CONSTRUCTION_INSTALLATION" },
-              { title: "Installation & Construction", workstream: "Construction", priority: "High", phase: "P4_CONSTRUCTION_INSTALLATION" },
-              { title: "QC Inspections", workstream: "Quality", priority: "High", phase: "P5_COMMISSIONING_TESTING" },
-              { title: "Commissioning & Testing", workstream: "Commissioning", priority: "High", phase: "P5_COMMISSIONING_TESTING" },
-              { title: "Performance Verification", workstream: "Commissioning", priority: "Med", phase: "P5_COMMISSIONING_TESTING" },
-              { title: "Client Handover Documentation", workstream: "Handover", priority: "High", phase: "P6_HANDOVER_CLIENT_MATRIARCH" },
-              { title: "O&M Handover", workstream: "Handover", priority: "Med", phase: "P6_HANDOVER_CLIENT_MATRIARCH" },
-              { title: "Close-out Report", workstream: "PM", priority: "Med", phase: "P7_CLOSEOUT_POSTMORTEM" },
-            ];
-
-            for (let i = 0; i < DEFAULT_ENG_TASKS.length; i++) {
-              const t = DEFAULT_ENG_TASKS[i];
-              await db.insert(operationalTasks).values({
-                projectName: cleanName,
-                title: t.title,
-                status: "TO DO",
-                priority: t.priority,
-                phase: t.phase,
-                primaryWorkstream: t.workstream,
-                createdBy: user.id,
-                sortOrder: (i + 1) * 10,
-              });
-            }
-            tasksCreated = DEFAULT_ENG_TASKS.length;
-
+          if (tasksCreated > 0) {
             await db.insert(taskActivityLog).values({
-              taskId: 0,
+              workItemId: 0,
               actorId: user.id,
               actionType: "auto_generated",
-              newValue: `${tasksCreated} engineering tasks auto-created for ${cleanName} on phase transition to ${PROJECT_PHASE_LABELS[toPhase as ProjectPhase]}`,
+              newValue: `${tasksCreated} engineering work items auto-created for project ${projectId} on phase transition to ${PROJECT_PHASE_LABELS[toPhase as ProjectPhase]}`,
             });
           }
         }
@@ -3182,17 +3024,17 @@ export function registerEngineeringRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Phase] Error:", err.message);
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.get("/api/projects/:projectId/phase-history", jwtAuth, requireAuth, async (req, res) => {
+  app.get("/api/projects/:projectId/phase-history", jwtAuth, requireAuth, requirePermission("lifecycle", "view"), async (req, res) => {
     try {
       const projectId = parseInt(req.params.projectId);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       const history = await db.select({
         id: projectPhaseHistory.id,
@@ -3212,19 +3054,19 @@ export function registerEngineeringRoutes(app: Express) {
     } catch (err: any) {
       console.error("[Phase] History error:", err.message);
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
   // ========== PROJECT ENGINEERING TASKS (for project detail page) ==========
 
-  app.get("/api/projects/:projectId/eng-tasks", jwtAuth, requireAuth, async (req, res) => {
+  app.get("/api/projects/:projectId/eng-tasks", jwtAuth, requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
       const projectId = parseInt(req.params.projectId);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       const cleanName = project.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ");
       const tasks = await listEngineeringWorkItems({ projectId });
@@ -3236,7 +3078,7 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -3244,14 +3086,14 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const user = getUser(req);
       const projectId = parseInt(req.params.projectId);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (!project) return sendError(res, notFound("Project"));
 
       const existing = await listEngineeringWorkItems({ projectId });
       if (existing.length > 0) {
-        return res.status(400).json({ error: "Engineering tasks already exist for this project" });
+        return sendError(res, badRequest("Engineering tasks already exist for this project"));
       }
 
       const created = await generateDefaultEngineeringWorkItemsForProject(projectId, user.id);
@@ -3260,7 +3102,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json({ tasksCreated: created.length, tasks });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -3270,7 +3112,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(report);
     } catch (err: any) {
       console.error("[Reconciliation] engineering error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -3280,7 +3122,7 @@ export function registerEngineeringRoutes(app: Express) {
       res.json(report);
     } catch (err: any) {
       console.error("[Reconciliation] projects error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
@@ -3311,13 +3153,13 @@ export function registerEngineeringRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[Reconciliation] summary error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
   // ========== CONSTANTS ==========
 
-  app.get("/api/eng/constants", (req, res) => {
+  app.get("/api/eng/constants", requireAuth, (req, res) => {
     res.json({
       taskStatuses: TASK_STATUSES,
       taskWorkstreams: TASK_WORKSTREAMS,
@@ -3345,50 +3187,28 @@ export function registerEngineeringRoutes(app: Express) {
       };
 
       const [
-        unreadNotifs,
-        actionNotifs,
-        recentNotifs,
         myTasks,
         engApprovals,
         qcItems,
         deliverableItems,
         projectsAtRisk,
       ] = await Promise.all([
-        db.select({ count: sql<number>`count(*)::int` })
-          .from(notifications)
-          .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false))),
-
-        db.select()
-          .from(notifications)
-          .where(and(
-            eq(notifications.recipientUserId, userId),
-            eq(notifications.requiresConfirmation, true),
-            isNull(notifications.confirmedAt),
-          ))
-          .orderBy(desc(notifications.createdAt))
-          .limit(10),
-
-        db.select()
-          .from(notifications)
-          .where(and(eq(notifications.recipientUserId, userId), eq(notifications.isRead, false)))
-          .orderBy(desc(notifications.createdAt))
-          .limit(8),
-
         db.select({
-          id: operationalTasks.id,
-          title: operationalTasks.title,
-          status: operationalTasks.status,
-          priority: operationalTasks.priority,
-          dueDate: operationalTasks.dueDate,
-          projectName: operationalTasks.projectName,
-          percentComplete: operationalTasks.percentComplete,
+          id: workItems.id,
+          title: workItems.title,
+          status: workItems.status,
+          priority: workItems.priority,
+          dueDate: workItems.endDate,
+          percentComplete: workItems.percentComplete,
         })
-          .from(operationalTasks)
+          .from(workItems)
           .where(and(
-            eq(operationalTasks.ownerUserId, userId),
-            sql`${operationalTasks.status} NOT IN ('COMPLETE', 'CANCELLED')`,
+            eq(workItems.workstream, "ENG"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt),
+            sql`${workItems.status} NOT IN ('Complete', 'Done')`,
           ))
-          .orderBy(asc(sql`CASE WHEN ${operationalTasks.dueDate} IS NOT NULL AND ${operationalTasks.dueDate} != '' AND ${operationalTasks.dueDate}::date < CURRENT_DATE THEN 0 ELSE 1 END`), asc(operationalTasks.dueDate))
+          .orderBy(asc(sql`CASE WHEN ${workItems.endDate} IS NOT NULL AND ${workItems.endDate} != '' AND ${workItems.endDate}::date < CURRENT_DATE THEN 0 ELSE 1 END`), asc(workItems.endDate))
           .limit(10),
 
         db.select({
@@ -3455,18 +3275,19 @@ export function registerEngineeringRoutes(app: Express) {
 
       const pendingTaskDeliverables = await db.select({
         id: taskDeliverables.id,
-        taskId: taskDeliverables.taskId,
+        taskId: taskDeliverables.workItemId,
         originalName: taskDeliverables.originalName,
         note: taskDeliverables.note,
         sentByUserId: taskDeliverables.sentByUserId,
         recipientUserId: taskDeliverables.recipientUserId,
         createdAt: taskDeliverables.createdAt,
-        taskTitle: operationalTasks.title,
-        projectName: operationalTasks.projectName,
+        taskTitle: workItems.title,
+        projectName: projectInfo.projectName,
         senderName: sql<string>`(SELECT name FROM users WHERE id = ${taskDeliverables.sentByUserId})`,
       })
         .from(taskDeliverables)
-        .innerJoin(operationalTasks, eq(taskDeliverables.taskId, operationalTasks.id))
+        .innerJoin(workItems, eq(taskDeliverables.workItemId, workItems.id))
+        .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
         .where(and(
           eq(taskDeliverables.acknowledged, false),
           isAdmin
@@ -3542,9 +3363,9 @@ export function registerEngineeringRoutes(app: Express) {
       );
 
       res.json({
-        unreadCount: (unreadNotifs[0] as any)?.count || 0,
-        actionRequired: actionNotifs,
-        recentNotifications: recentNotifs,
+        unreadCount: 0,
+        actionRequired: [],
+        recentNotifications: [],
         myTasks: myTasks,
         overdueTaskCount: overdueTasks.length,
         pendingApprovals: pendingApprovals.slice(0, 10),
@@ -3562,70 +3383,8 @@ export function registerEngineeringRoutes(app: Express) {
     } catch (err: any) {
       console.error("Home action hub error:", err);
       console.error("[Engineering] Error:", err);
-      res.status(500).json({ error: "Internal server error" });
+      sendError(res, err);
     }
   });
 
-  app.get("/api/dashboard/widget-config", requireAuth, async (req, res) => {
-    try {
-      const currentUser = getUser(req);
-      const [config] = await db
-        .select()
-        .from(dashboardWidgetConfig)
-        .where(eq(dashboardWidgetConfig.userId, currentUser.id));
-
-      if (!config) {
-        return res.json({
-          widgetOrder: [...DEFAULT_WIDGET_ORDER],
-          hiddenWidgets: [],
-        });
-      }
-
-      return res.json({
-        widgetOrder: config.widgetOrder,
-        hiddenWidgets: config.hiddenWidgets,
-      });
-    } catch (err: any) {
-      console.error("[Engineering] Widget config GET error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  app.put("/api/dashboard/widget-config", requireAuth, async (req, res) => {
-    try {
-      const currentUser = getUser(req);
-      const { widgetOrder, hiddenWidgets } = req.body;
-
-      if (!Array.isArray(widgetOrder) || !Array.isArray(hiddenWidgets)) {
-        return res.status(400).json({ error: "widgetOrder and hiddenWidgets must be arrays" });
-      }
-
-      const [existing] = await db
-        .select()
-        .from(dashboardWidgetConfig)
-        .where(eq(dashboardWidgetConfig.userId, currentUser.id));
-
-      if (existing) {
-        await db
-          .update(dashboardWidgetConfig)
-          .set({
-            widgetOrder,
-            hiddenWidgets,
-            updatedAt: new Date(),
-          })
-          .where(eq(dashboardWidgetConfig.userId, currentUser.id));
-      } else {
-        await db.insert(dashboardWidgetConfig).values({
-          userId: currentUser.id,
-          widgetOrder,
-          hiddenWidgets,
-        });
-      }
-
-      return res.json({ success: true });
-    } catch (err: any) {
-      console.error("[Engineering] Widget config PUT error:", err);
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
 }

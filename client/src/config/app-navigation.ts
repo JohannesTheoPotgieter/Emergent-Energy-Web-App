@@ -20,10 +20,18 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Home",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/my-tool"]),
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work"]),
     secondary: [
       { label: "Home", path: "/" },
       { label: "My Work", path: "/my-work" },
+    ],
+  },
+  {
+    label: "Priorities",
+    path: "/priorities",
+    match: (pathname) => startsWithAny(pathname, ["/priorities"]),
+    secondary: [
+      { label: "All Priorities", path: "/priorities" },
     ],
   },
   {
@@ -50,15 +58,16 @@ export const TOP_SECTIONS: TopSection[] = [
   },
   {
     label: "Project Management",
-    path: "/dashboard",
-    match: (pathname) => startsWithAny(pathname, ["/dashboard", "/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios"]),
+    path: "/execution-board",
+    match: (pathname) => startsWithAny(pathname, ["/dashboard", "/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios", "/exceptions"]),
     secondary: [
-      { label: "Execution Dashboard", path: "/dashboard" },
+      { label: "Execution Dashboard", path: "/execution-board" },
       { label: "Project List", path: "/projects" },
+      { label: "Portfolios", path: "/portfolios" },
+      { label: "Exceptions", path: "/exceptions" },
       { label: "Deliverables", path: "/pm/deliverables" },
       { label: "Site / Execution Controls", path: "/handover-control" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
-      { label: "Project Manager Dashboard", path: "/pm-dashboard" },
     ],
   },
   {
@@ -68,6 +77,7 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Overview", path: "/engineering" },
       { label: "Requests & Tasks", path: "/engineering/tasks" },
+      { label: "Audit Log", path: "/engineering/audit" },
     ],
   },
   {
@@ -79,12 +89,13 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Finance",
     path: "/cashflow",
-    match: (pathname) => startsWithAny(pathname, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard"]),
+    match: (pathname) => startsWithAny(pathname, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard", "/fye-revenue-tracking"]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
       { label: "Cost of Sales", path: "/cos" },
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "Gross Profit", path: "/gp-tracker" },
+      { label: "FYE Revenue", path: "/fye-revenue-tracking" },
       { label: "Procurement", path: "/subcontractor-dashboard" },
       { label: "Counterparties", path: "/counterparties" },
     ],
@@ -96,8 +107,19 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Lifecycle & SOP", path: "/ee-info" },
       { label: "Leaderboard", path: "/leaderboard" },
+      { label: "Dept Scores", path: "/department-scores" },
       { label: "Training", path: "/training" },
       { label: "Feedback", path: "/feedback" },
+    ],
+  },
+  {
+    label: "Reports",
+    path: "/reports/pm/monthly",
+    match: (pathname) => startsWithAny(pathname, ["/reports"]),
+    secondary: [
+      { label: "PM Monthly Report", path: "/reports/pm/monthly" },
+      { label: "Engineering Monthly Report", path: "/reports/engineering/monthly" },
+      { label: "Programme Reports", path: "/reports/programme" },
     ],
   },
   {
@@ -145,16 +167,28 @@ export type BreadcrumbItem = { label: string; path?: string };
 export function getBreadcrumbs(pathname: string, activeSection: TopSection): BreadcrumbItem[] {
   if (pathname === "/") return [];
 
+  // Priority detail breadcrumb
+  const priorityDetailMatch = pathname.match(/^\/priorities\/(\d+)/);
+  if (priorityDetailMatch) return [
+    { label: "Priorities", path: "/priorities" },
+    { label: `Priority #${priorityDetailMatch[1]}` },
+  ];
+
+  // Priority list breadcrumb
+  if (pathname === "/priorities") return [
+    { label: "Priorities" },
+  ];
+
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
   if (projectMatch) return [
-    { label: "Project Management", path: "/dashboard" },
+    { label: "Project Management", path: "/execution-board" },
     { label: "Project List", path: "/projects" },
     { label: decodeURIComponent(projectMatch[1]) },
   ];
 
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
   if (portfolioMatch) return [
-    { label: "Project Management", path: "/dashboard" },
+    { label: "Project Management", path: "/execution-board" },
     { label: "Portfolios", path: "/portfolios" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];

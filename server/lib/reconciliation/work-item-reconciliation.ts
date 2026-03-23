@@ -1,7 +1,9 @@
 // @ts-nocheck
+// NOTE: This reconciliation module references the legacy operational_tasks table for archive comparison.
+// It will gracefully degrade once operational_tasks is dropped — the legacy side will simply return 0 rows.
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "../../db";
-import { operationalTasks, projectInfo, users, workItems } from "@shared/schema";
+import { projectInfo, users, workItems } from "@shared/schema";
 
 type ReconciliationStatus = "pass" | "warning" | "fail";
 type TaskRecord = { id: number; projectId: number | null; projectName: string; title: string; dueDate: string | null; owner: string | null; legacyTable: string | null; legacyId: number | null; externalRef: string | null; };
@@ -68,20 +70,8 @@ const worstStatus = (statuses: ReconciliationStatus[]): ReconciliationStatus => 
 const statusRank = (status: ReconciliationStatus) => (status === "fail" ? 2 : status === "warning" ? 1 : 0);
 
 export async function generateWorkItemReconciliationReport(workstream?: "ENG"): Promise<WorkItemReconciliationReport> {
-  const legacyRows = await db
-    .select({
-      id: operationalTasks.id,
-      project_id: operationalTasks.projectId,
-      project_name: projectInfo.projectName,
-      title: operationalTasks.title,
-      due_date: operationalTasks.dueDate,
-      owner: users.name,
-      external_ref: operationalTasks.externalTaskId,
-    })
-    .from(operationalTasks)
-    .leftJoin(users, eq(users.id, operationalTasks.ownerUserId))
-    .leftJoin(projectInfo, eq(projectInfo.id, operationalTasks.projectId))
-    .where(isNull(operationalTasks.deletedAt));
+  // Legacy operational_tasks table has been dropped; legacy side returns empty.
+  const legacyRows: any[] = [];
 
   const canonicalRows = await db
     .select({

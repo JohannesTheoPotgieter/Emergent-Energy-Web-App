@@ -144,17 +144,18 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
       sql`SELECT COUNT(*)::int as cnt FROM project_eng_tasks WHERE owner_user_id = ${uid}`
     );
     const opsTasksAssigned = await execCount(
-      sql`SELECT COUNT(*)::int as cnt FROM operational_tasks WHERE owner_user_id = ${uid}`
+      sql`SELECT COUNT(*)::int as cnt FROM work_items WHERE deleted_at IS NULL AND owner_user_id = ${uid}`
     );
     const deliverablesUploaded = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM deliverable_files WHERE uploaded_by_user_id = ${uid}`
     );
 
     const overdueTasks = await execCount(
-      sql`SELECT COUNT(*)::int as cnt FROM operational_tasks 
-          WHERE owner_user_id = ${uid} 
-          AND due_date IS NOT NULL AND due_date != '' 
-          AND due_date < CURRENT_DATE::text 
+      sql`SELECT COUNT(*)::int as cnt FROM work_items
+          WHERE deleted_at IS NULL
+          AND owner_user_id = ${uid}
+          AND end_date IS NOT NULL AND end_date::text != ''
+          AND end_date::text < CURRENT_DATE::text
           AND status NOT IN ('COMPLETE', 'QC APPROVED', 'DONE')`
     );
 
@@ -198,12 +199,8 @@ async function computeUserActivities(): Promise<UserActivityCounts[]> {
           AND status NOT IN ('complete', 'skipped')`
     );
 
-    const unreadNotifications = await execCount(
-      sql`SELECT COUNT(*)::int as cnt FROM notifications 
-          WHERE recipient_user_id = ${uid} 
-          AND is_read = false 
-          AND created_at < NOW() - INTERVAL '3 days'`
-    );
+    // Notifications feature removed - always return 0
+    const unreadNotifications = 0;
 
     const overdueQmTasks = await execCount(
       sql`SELECT COUNT(*)::int as cnt FROM qc_item_instance qi
@@ -606,15 +603,15 @@ export function registerGamificationRoutes(app: Express) {
         execItems(sql`SELECT COALESCE(s.stage_name, 'Stage') as name, pi.project_name as project, s.completed_at::text as date FROM project_eng_stages s LEFT JOIN project_info pi ON s.project_id = pi.id WHERE s.created_by = ${userId} AND s.status = 'complete' ORDER BY s.completed_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(df.file_name, 'File') as name, pi.project_name as project, df.uploaded_at::text as date FROM deliverable_files df LEFT JOIN project_eng_deliverables d ON df.deliverable_id = d.id LEFT JOIN project_eng_stages s ON d.stage_id = s.id LEFT JOIN project_info pi ON s.project_id = pi.id WHERE df.uploaded_by_user_id = ${userId} ORDER BY df.uploaded_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(t.title, 'Task') as name, pi.project_name as project, '' as date FROM project_eng_tasks t LEFT JOIN project_eng_stages s ON t.stage_id = s.id LEFT JOIN project_info pi ON s.project_id = pi.id WHERE t.owner_user_id = ${userId} ORDER BY t.id DESC LIMIT 100`),
-        execItems(sql`SELECT COALESCE(title, task_name, 'Task') as name, project_name as project, '' as date FROM operational_tasks WHERE owner_user_id = ${userId} ORDER BY id DESC LIMIT 100`),
-        execItems(sql`SELECT COALESCE(title, task_name, 'Task') as name, project_name as project, due_date as date FROM operational_tasks WHERE owner_user_id = ${userId} AND due_date IS NOT NULL AND due_date != '' AND due_date < CURRENT_DATE::text AND status NOT IN ('COMPLETE', 'QC APPROVED', 'DONE') ORDER BY due_date ASC LIMIT 100`),
+        execItems(sql`SELECT COALESCE(wi.title, 'Task') as name, pi.project_name as project, '' as date FROM work_items wi LEFT JOIN project_info pi ON wi.project_id = pi.id WHERE wi.deleted_at IS NULL AND wi.owner_user_id = ${userId} ORDER BY wi.id DESC LIMIT 100`),
+        execItems(sql`SELECT COALESCE(wi.title, 'Task') as name, pi.project_name as project, wi.end_date::text as date FROM work_items wi LEFT JOIN project_info pi ON wi.project_id = pi.id WHERE wi.deleted_at IS NULL AND wi.owner_user_id = ${userId} AND wi.end_date IS NOT NULL AND wi.end_date::text != '' AND wi.end_date::text < CURRENT_DATE::text AND wi.status NOT IN ('COMPLETE', 'QC APPROVED', 'DONE') ORDER BY wi.end_date ASC LIMIT 100`),
         execItems(sql`SELECT COALESCE(wi.title, '') as name, pi.project_name as project, ROUND(wi.percent_complete::numeric * 100) || '% vs expected' as date FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.deleted_at IS NULL AND wi.percent_complete IS NOT NULL AND wi.percent_complete < 1 AND wi.start_date IS NOT NULL AND wi.end_date IS NOT NULL AND wi.end_date::date < CURRENT_DATE AND wi.percent_complete < 0.85 AND pi.pm_user_id = ${userId} ORDER BY wi.percent_complete ASC LIMIT 100`),
         execItems(sql`SELECT COALESCE(qi.item_name, 'QC Item') as name, qc.project_name as project, qi.updated_at::text as date FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id JOIN project_info pi ON qc.project_name = pi.project_name WHERE pi.pm_user_id = ${userId} AND qi.qm_status = 'fail' ORDER BY qi.updated_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(title, 'Deliverable') as name, (SELECT pi.project_name FROM project_eng_stages s JOIN project_info pi ON s.project_id = pi.id WHERE s.id = stage_id LIMIT 1) as project, updated_at::text as date FROM project_eng_deliverables WHERE uploaded_by = ${userId} AND approval_status = 'rejected' ORDER BY updated_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(description, 'Warning') as name, project_name as project, created_at::text as date FROM qc_warning WHERE owner_user_id = ${userId} AND status IN ('open', 'in_progress') ORDER BY created_at DESC NULLS LAST LIMIT 100`),
         execItems(sql`SELECT COALESCE(t.title, 'Task') as name, pi.project_name as project, t.due_date as date FROM project_eng_tasks t LEFT JOIN project_eng_stages s ON t.stage_id = s.id LEFT JOIN project_info pi ON s.project_id = pi.id WHERE t.owner_user_id = ${userId} AND t.due_date IS NOT NULL AND t.due_date != '' AND NULLIF(t.due_date, '')::date < CURRENT_DATE AND t.status NOT IN ('complete', 'skipped') ORDER BY t.due_date ASC LIMIT 100`),
         execItems(sql`SELECT COALESCE(qi.item_name, 'QM Item') as name, qc.project_name as project, qi.end_date as date FROM qc_item_instance qi JOIN qc_checklist qc ON qi.checklist_id = qc.id JOIN project_info pi ON qc.project_name = pi.project_name WHERE (pi.pm_user_id = ${userId} OR LOWER(TRIM(pi.pm)) = LOWER(TRIM(${userName}))) AND qi.end_date IS NOT NULL AND qi.end_date != '' AND NULLIF(qi.end_date, '')::date < CURRENT_DATE AND qi.approved = false AND qi.is_applicable = true ORDER BY qi.end_date ASC LIMIT 100`),
-        execItems(sql`SELECT COALESCE(title, 'Notification') as name, '' as project, created_at::text as date FROM notifications WHERE recipient_user_id = ${userId} AND is_read = false AND created_at < NOW() - INTERVAL '3 days' ORDER BY created_at ASC LIMIT 100`),
+        Promise.resolve([]), // Notifications feature removed - unread notifications query skipped
       ]);
 
       res.json({

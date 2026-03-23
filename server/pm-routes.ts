@@ -2,7 +2,7 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo } from "@shared/schema";
+import { projectInfo, projectExecutionState } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getCanonicalFinanceByProjectIds, getCanonicalTaskSummaryByProjectIds } from "./services/canonical-dashboard-kpi-service";
 
@@ -22,7 +22,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "Authentication required" });
 }
 
-const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"];
 
 function requirePmRole(req: Request, res: Response, next: NextFunction) {
   const user = (req as any).user;
@@ -36,7 +36,7 @@ function getUser(req: Request): { userId: number; name: string; role: string } {
   return (req as any).user;
 }
 
-const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
 function resolveTargetPmUserId(req: Request): number {
   const user = getUser(req);
@@ -52,24 +52,25 @@ async function getPmProjectNames(userId: number): Promise<{ projects: any[]; pgA
     .select({
       id: projectInfo.id,
       projectName: projectInfo.projectName,
-      phase: projectInfo.phase,
-      ragStatus: projectInfo.ragStatus,
+      phase: projectExecutionState.phase,
+      ragStatus: projectExecutionState.ragStatus,
       contractValue: projectInfo.contractValue,
       sizeKwp: projectInfo.sizeKwp,
       pm: projectInfo.pm,
-      pdHandoverDate: projectInfo.pdHandoverDate,
-      constructionStartDate: projectInfo.constructionStartDate,
-      commissioningDate: projectInfo.commissioningDate,
-      omHandoverDate: projectInfo.omHandoverDate,
-      clientHandoverDate: projectInfo.clientHandoverDate,
-      pdHandoverActual: projectInfo.pdHandoverActual,
-      constructionStartActual: projectInfo.constructionStartActual,
-      commissioningActual: projectInfo.commissioningActual,
-      clientHandoverActual: projectInfo.clientHandoverActual,
-      escalationLevel: projectInfo.escalationLevel,
-      isActive: projectInfo.isActive,
+      pdHandoverDate: projectExecutionState.pdHandoverDate,
+      constructionStartDate: projectExecutionState.constructionStartDate,
+      commissioningDate: projectExecutionState.commissioningDate,
+      omHandoverDate: projectExecutionState.omHandoverDate,
+      clientHandoverDate: projectExecutionState.clientHandoverDate,
+      pdHandoverActual: projectExecutionState.pdHandoverActual,
+      constructionStartActual: projectExecutionState.constructionStartActual,
+      commissioningActual: projectExecutionState.commissioningActual,
+      clientHandoverActual: projectExecutionState.clientHandoverActual,
+      escalationLevel: projectExecutionState.escalationLevel,
+      isActive: projectExecutionState.isActive,
     })
     .from(projectInfo)
+    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
     .where(eq(projectInfo.pmUserId, userId))
     .orderBy(projectInfo.projectName);
 
@@ -199,8 +200,8 @@ export function registerPmRoutes(app: Express) {
     }
   });
 
-  // Classification: COMPATIBILITY_READ_TO_BE_REROUTED
-  // Uses legacy operational_tasks for continuity; canonical target is work_items-based priority feed.
+  // Classification: CANONICAL
+  // Uses work_items for priority feed.
   app.get("/api/pm/priority-items", requireAuth, requirePmRole, async (req: Request, res: Response) => {
     try {
       const targetUserId = resolveTargetPmUserId(req);
@@ -213,45 +214,47 @@ export function registerPmRoutes(app: Express) {
 
       const overdueTasks = await db.execute(
         sql`
-          SELECT id, project_name, title, status, priority, due_date, phase, primary_workstream
-          FROM operational_tasks
-          WHERE project_name = ANY(${pgArray}::text[])
-            AND parent_task_id IS NULL
-            AND due_date IS NOT NULL
-            AND due_date < CURRENT_DATE::text
-            AND status NOT IN ('COMPLETE', 'QC APPROVED')
-          ORDER BY due_date ASC
+          SELECT wi.id, pi.project_name, wi.title, wi.status, wi.priority, wi.end_date AS due_date, wi.phase, wi.workstream
+          FROM work_items wi
+          JOIN project_info pi ON wi.project_id = pi.id
+          WHERE pi.project_name = ANY(${pgArray}::text[])
+            AND wi.deleted_at IS NULL
+            AND wi.parent_id IS NULL
+            AND wi.end_date IS NOT NULL
+            AND wi.end_date::text < CURRENT_DATE::text
+            AND wi.status NOT IN ('COMPLETE', 'QC APPROVED')
+          ORDER BY wi.end_date ASC
           LIMIT 50
         `
       );
 
       const holdTasks = await db.execute(
         sql`
-          SELECT id, project_name, title, status, priority, due_date, hold_reason, phase
-          FROM operational_tasks
-          WHERE project_name = ANY(${pgArray}::text[])
-            AND parent_task_id IS NULL
-            AND status = 'HOLD'
-          ORDER BY due_date ASC NULLS LAST
+          SELECT wi.id, pi.project_name, wi.title, wi.status, wi.priority, wi.end_date AS due_date, wi.hold_reason, wi.phase
+          FROM work_items wi
+          JOIN project_info pi ON wi.project_id = pi.id
+          WHERE pi.project_name = ANY(${pgArray}::text[])
+            AND wi.deleted_at IS NULL
+            AND wi.parent_id IS NULL
+            AND wi.status = 'HOLD'
+          ORDER BY wi.end_date ASC NULLS LAST
           LIMIT 20
         `
       );
 
       const approvalTasks = await db.execute(
         sql`
-          SELECT id, project_name, title, status, priority, due_date, phase
-          FROM operational_tasks
-          WHERE project_name = ANY(${pgArray}::text[])
-            AND parent_task_id IS NULL
-            AND status = 'NEEDS APPROVAL'
-          ORDER BY due_date ASC NULLS LAST
+          SELECT wi.id, pi.project_name, wi.title, wi.status, wi.priority, wi.end_date AS due_date, wi.phase
+          FROM work_items wi
+          JOIN project_info pi ON wi.project_id = pi.id
+          WHERE pi.project_name = ANY(${pgArray}::text[])
+            AND wi.deleted_at IS NULL
+            AND wi.parent_id IS NULL
+            AND wi.status = 'NEEDS APPROVAL'
+          ORDER BY wi.end_date ASC NULLS LAST
           LIMIT 20
         `
       );
-
-      const flaggedCos = { rows: [] as any[] };
-
-      const budgetOverruns = { rows: [] as any[] };
 
       const items: any[] = [];
 
@@ -300,31 +303,7 @@ export function registerPmRoutes(app: Express) {
         });
       }
 
-      for (const c of flaggedCos.rows as any[]) {
-        items.push({
-          type: "cos_flagged",
-          severity: "high",
-          projectName: c.project_name,
-          title: `${c.expense_category}: ${c.expense_line_item || "Unknown item"}`,
-          detail: `COS Flagged — black date but no invoice (R${(parseFloat(c.amount) || 0).toLocaleString()})`,
-          expenseId: c.id,
-          link: `/project/${encodeURIComponent(c.project_name)}?tab=money`,
-        });
-      }
 
-      for (const b of budgetOverruns.rows as any[]) {
-        const budget = parseFloat(b.total_budget) || 0;
-        const actual = parseFloat(b.total_actual) || 0;
-        const overrun = Math.round(((actual - budget) / budget) * 100);
-        items.push({
-          type: "budget_overrun",
-          severity: overrun > 20 ? "high" : "medium",
-          projectName: b.project_name,
-          title: `Cost overrun: ${overrun}%`,
-          detail: `Actual R${actual.toLocaleString()} vs Costed R${budget.toLocaleString()}`,
-          link: `/project/${encodeURIComponent(b.project_name)}?tab=money`,
-        });
-      }
 
       items.sort((a, b) => {
         const sevOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -342,8 +321,8 @@ export function registerPmRoutes(app: Express) {
     }
   });
 
-  // Classification: COMPATIBILITY_READ_TO_BE_REROUTED
-  // Uses legacy operational_tasks milestone/event scan for continuity; canonical target is work_items schedule feed.
+  // Classification: CANONICAL
+  // Uses work_items for schedule feed / calendar events.
   app.get("/api/pm/calendar-events", requireAuth, requirePmRole, async (req: Request, res: Response) => {
     try {
       const targetUserId = resolveTargetPmUserId(req);
@@ -378,13 +357,15 @@ export function registerPmRoutes(app: Express) {
       if (projectNames.length > 0) {
         const taskDates = await db.execute(
           sql`
-            SELECT id, project_name, title, status, priority, due_date, start_date
-            FROM operational_tasks
-            WHERE project_name = ANY(${pgArray}::text[])
-              AND parent_task_id IS NULL
-              AND status NOT IN ('COMPLETE', 'QC APPROVED')
-              AND (due_date IS NOT NULL OR start_date IS NOT NULL)
-            ORDER BY COALESCE(due_date, start_date)
+            SELECT wi.id, pi.project_name, wi.title, wi.status, wi.priority, wi.end_date AS due_date, wi.start_date
+            FROM work_items wi
+            JOIN project_info pi ON wi.project_id = pi.id
+            WHERE pi.project_name = ANY(${pgArray}::text[])
+              AND wi.deleted_at IS NULL
+              AND wi.parent_id IS NULL
+              AND wi.status NOT IN ('COMPLETE', 'QC APPROVED')
+              AND (wi.end_date IS NOT NULL OR wi.start_date IS NOT NULL)
+            ORDER BY COALESCE(wi.end_date, wi.start_date)
             LIMIT 200
           `
         );

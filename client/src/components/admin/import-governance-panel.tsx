@@ -141,9 +141,6 @@ export function ImportGovernancePanel({
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-medium text-foreground">Recent runs needing attention</p>
-                  <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
-                    <Link href="/admin/excel-updates">Open Excel Updates</Link>
-                  </Button>
                 </div>
 
                 {attentionRuns.length === 0 ? (

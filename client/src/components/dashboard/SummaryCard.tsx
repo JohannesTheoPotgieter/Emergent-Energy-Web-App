@@ -14,27 +14,27 @@ interface SummaryCardProps {
 
 export function SummaryCard({ title, value, subValue, trend, trendValue, icon: Icon, className }: SummaryCardProps) {
   return (
-    <Card className={cn("overflow-hidden border-l-4 border-l-primary shadow-sm hover:shadow-md transition-shadow", className)}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
+    <Card className={cn("overflow-hidden border-border/50", className)}>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1.5">
+        <CardTitle className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
           {title}
         </CardTitle>
-        {Icon && <Icon className="h-4 w-4 text-muted-foreground" />}
+        {Icon && <Icon className="h-4 w-4 text-muted-foreground/60" />}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold font-mono tracking-tight text-foreground">{value}</div>
+        <div className="text-xl font-semibold font-mono tracking-tight text-foreground">{value}</div>
         {(subValue || trend) && (
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1.5">
             {trend && (
               <span className={cn(
-                "flex items-center text-xs font-medium px-1.5 py-0.5 rounded-full",
-                trend === "up" && "bg-emerald-100 text-emerald-700",
-                trend === "down" && "bg-rose-100 text-rose-700",
-                trend === "neutral" && "bg-muted text-foreground"
+                "flex items-center text-[11px] font-medium px-1.5 py-0.5 rounded",
+                trend === "up" && "bg-emerald-50 text-emerald-700",
+                trend === "down" && "bg-rose-50 text-rose-700",
+                trend === "neutral" && "bg-muted text-muted-foreground"
               )}>
-                {trend === "up" && <ArrowUpRight className="w-3 h-3 mr-1" />}
-                {trend === "down" && <ArrowDownRight className="w-3 h-3 mr-1" />}
-                {trend === "neutral" && <Minus className="w-3 h-3 mr-1" />}
+                {trend === "up" && <ArrowUpRight className="w-3 h-3 mr-0.5" />}
+                {trend === "down" && <ArrowDownRight className="w-3 h-3 mr-0.5" />}
+                {trend === "neutral" && <Minus className="w-3 h-3 mr-0.5" />}
                 {trendValue}
               </span>
             )}

@@ -1,17 +1,34 @@
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and, inArray } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { projectInfo, projectPhaseHistory, users } from "@shared/schema";
+import { projectInfo, projectPhaseHistory, users, projectExecutionState, projectPdPmHandover, projectHandoverHistory, clients, evidenceOverrideRecords } from "@shared/schema";
+import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { logAuditFromReq } from "./audit-logger";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 import { storage } from "./storage";
 import { computePdPmSubmitBlockers, getProjectDevelopmentWorkspace } from "./services/project-development-workspace-service";
+import { requirePermission } from "./permission-middleware";
+import { notifyHandoverSubmitted, notifyHandoverAccepted, notifyHandoverRejected } from "./services/notification-service";
+import { PM_REVIEW_ROLES, canReviewHandover } from "@shared/roles/pd-roles";
+import { z } from "zod";
 
-const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+const deliverableItemSchema = z.object({
+  reference: z.string().optional(),
+  date: z.string().optional(),
+  uploadedBy: z.string().optional(),
+  uploadedAt: z.string().optional(),
+}).passthrough();
+
+const deliverablesSchema = z.object({
+  handoverCharter: deliverableItemSchema.optional().nullable(),
+  siteVisitReport: deliverableItemSchema.optional().nullable(),
+  signedCostProposal: deliverableItemSchema.optional().nullable(),
+}).passthrough();
 const PD_PM_HANDOVER_GATE_ID = "PD_PM_HANDOVER";
 
+/** @deprecated Used only by legacy gate management routes. Migrate to Drizzle query builder. */
 function escapeSqlText(value: unknown): string {
   if (value === null || value === undefined) return "NULL";
   return `'${String(value).replace(/'/g, "''")}'`;
@@ -54,12 +71,15 @@ async function insertPdPmHandoverHistory(params: {
   details?: Record<string, unknown>;
 }) {
   const user = (params.req as any).user as any;
-  await db.execute(sql.raw(`
-    INSERT INTO project_handover_history
-      (project_id, gate_id, action, performed_by_user_id, performed_by_name, performed_by_role, details)
-    VALUES
-      (${params.projectId}, '${PD_PM_HANDOVER_GATE_ID}', '${params.action}', ${escapeSqlNumber(user?.id)}, ${escapeSqlText(user?.name || "Unknown")}, ${escapeSqlText(user?.role || "unknown")}, ${escapeSqlJson(params.details || {})})
-  `));
+  await db.insert(projectHandoverHistory).values({
+    projectId: params.projectId,
+    gateId: PD_PM_HANDOVER_GATE_ID,
+    action: params.action,
+    performedByUserId: user?.id || null,
+    performedByName: user?.name || "Unknown",
+    performedByRole: user?.role || "unknown",
+    details: params.details || {},
+  });
 }
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
@@ -83,7 +103,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = (req as any).user?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   res.status(403).json({ error: "Admin access required" });
 }
 
@@ -142,7 +162,7 @@ export function registerHandoverRoutes(app: Express) {
   app.use("/api/projects/:id/handover-gates", jwtAuth);
   app.use("/api/projects/:id/handover-history", jwtAuth);
 
-  app.get("/api/projects/:id/handover-gates", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:id/handover-gates", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -150,10 +170,12 @@ export function registerHandoverRoutes(app: Express) {
       const [project] = await db.select({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
-        phase: projectInfo.phase,
+        phase: projectExecutionState.phase,
         pd: projectInfo.pd,
         pm: projectInfo.pm,
-      }).from(projectInfo).where(eq(projectInfo.id, projectId));
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectInfo.id, projectId));
 
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -168,7 +190,14 @@ export function registerHandoverRoutes(app: Express) {
 
       const gates = GATE_DEFINITIONS.map(def => {
         const dbGate = gateMap.get(def.gateId);
-        const checkedItems: string[] = dbGate?.checked_items ? (typeof dbGate.checked_items === "string" ? JSON.parse(dbGate.checked_items) : dbGate.checked_items) : [];
+        let checkedItems: string[] = [];
+        if (dbGate?.checked_items) {
+          try {
+            checkedItems = typeof dbGate.checked_items === "string" ? JSON.parse(dbGate.checked_items) : dbGate.checked_items;
+          } catch {
+            console.error(`[handover] Corrupted checked_items JSON for gate ${def.gateId}`);
+          }
+        }
         return {
           gateId: def.gateId,
           label: def.label,
@@ -190,7 +219,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:id/handover-gates/:gateId/complete", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/projects/:id/handover-gates/:gateId/complete", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       const gateId = req.params.gateId;
@@ -255,7 +284,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:id/handover-gates/:gateId/update-checklist", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/projects/:id/handover-gates/:gateId/update-checklist", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       const gateId = req.params.gateId;
@@ -292,14 +321,14 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:id/handover-gates/:gateId/reopen", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/projects/:id/handover-gates/:gateId/reopen", requireAuth, requirePermission("handover", "override"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       const gateId = req.params.gateId;
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const role = ((req as any).user as any)?.role || "";
-      const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin", "PROGRAM_MANAGER"];
+      const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
       if (!ADMIN_ROLES.includes(role)) {
         return res.status(403).json({ error: "Only admin/program manager can reopen gates" });
       }
@@ -336,7 +365,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/projects/:id/handover-history", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/projects/:id/handover-history", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -352,7 +381,7 @@ export function registerHandoverRoutes(app: Express) {
         performedByName: r.performed_by_name,
         performedByRole: r.performed_by_role,
         performedAt: r.performed_at,
-        details: typeof r.details === "string" ? JSON.parse(r.details) : r.details,
+        details: (() => { try { return typeof r.details === "string" ? JSON.parse(r.details) : r.details; } catch { return {}; } })(),
       }));
 
       res.json({ history });
@@ -362,11 +391,11 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd-pm-handover/status-map", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/pd-pm-handover/status-map", requireAuth, requirePermission("handover", "view"), async (_req: Request, res: Response) => {
     try {
-      const rows: any[] = await db.execute(sql.raw(`SELECT project_id, status FROM project_pd_pm_handover`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const rows = await db.select({ projectId: projectPdPmHandover.projectId, status: projectPdPmHandover.status }).from(projectPdPmHandover);
       const statusMap: Record<string, string> = {};
-      for (const row of rows) statusMap[String(row.project_id)] = row.status || "DRAFT";
+      for (const row of rows) statusMap[String(row.projectId)] = row.status || "DRAFT";
       res.json({ statusMap });
     } catch (err: any) {
       console.error("[handover] GET status-map error:", err);
@@ -376,15 +405,21 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd-pm-handover/submitted", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/pd-pm-handover/submitted", requireAuth, requirePermission("handover", "view"), async (_req: Request, res: Response) => {
     try {
-      const rows: any[] = await db.execute(sql.raw(`
-        SELECT h.project_id, h.status, h.updated_at, p.project_name, p.pd, p.pm
-        FROM project_pd_pm_handover h
-        JOIN project_info p ON p.id = h.project_id
-        WHERE h.status IN ('SUBMITTED_FOR_PM_REVIEW', 'REJECTED')
-        ORDER BY h.updated_at DESC
-      `)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const rows = await db
+        .select({
+          project_id: projectPdPmHandover.projectId,
+          status: projectPdPmHandover.status,
+          updated_at: projectPdPmHandover.updatedAt,
+          project_name: projectInfo.projectName,
+          pd: projectInfo.pd,
+          pm: projectInfo.pm,
+        })
+        .from(projectPdPmHandover)
+        .innerJoin(projectInfo, eq(projectInfo.id, projectPdPmHandover.projectId))
+        .where(inArray(projectPdPmHandover.status, ["SUBMITTED_FOR_PM_REVIEW", "REJECTED"]))
+        .orderBy(desc(projectPdPmHandover.updatedAt));
       res.json({ items: rows });
     } catch (err: any) {
       console.error("[handover] GET submitted error:", err);
@@ -392,35 +427,36 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd-pm-handover/control", requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/pd-pm-handover/control", requireAuth, requirePermission("handover", "view"), async (_req: Request, res: Response) => {
     try {
-      const rows: any[] = await db.execute(sql.raw(`
-        SELECT
-          p.id AS project_id,
-          p.project_name,
-          p.client_name,
-          p.pd,
-          p.pm,
-          p.excel_tracker_link,
-          p.execution_enabled,
-          h.status AS handover_status,
-          h.pd_owner,
-          h.pm_owner,
-          h.submitted_at AS submitted_date,
-          h.updated_at,
-          h.rejection_reason,
-          h.deliverables
-        FROM project_info p
-        LEFT JOIN project_pd_pm_handover h ON h.project_id = p.id
-        WHERE p.is_active = true
-        ORDER BY COALESCE(h.updated_at, p.updated_at) DESC NULLS LAST, p.project_name ASC
-      `)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const rows = await db
+        .select({
+          project_id: projectInfo.id,
+          project_name: projectInfo.projectName,
+          client_name: sql<string>`COALESCE(${clients.name}, '')`,
+          pd: projectInfo.pd,
+          pm: projectInfo.pm,
+          excel_tracker_link: projectInfo.excelTrackerLink,
+          execution_enabled: projectInfo.executionEnabled,
+          handover_status: projectPdPmHandover.status,
+          pd_owner: projectPdPmHandover.pdOwner,
+          pm_owner: projectPdPmHandover.pmOwner,
+          submitted_date: projectPdPmHandover.submittedAt,
+          updated_at: sql<Date>`COALESCE(${projectPdPmHandover.updatedAt}, ${projectInfo.updatedAt})`,
+          rejection_reason: projectPdPmHandover.rejectionReason,
+          deliverables: projectPdPmHandover.deliverables,
+        })
+        .from(projectInfo)
+        .leftJoin(clients, eq(clients.id, projectInfo.clientId))
+        .leftJoin(projectPdPmHandover, eq(projectPdPmHandover.projectId, projectInfo.id))
+        .where(eq(projectInfo.isActive, true))
+        .orderBy(sql`COALESCE(${projectPdPmHandover.updatedAt}, ${projectInfo.updatedAt}) DESC NULLS LAST`, projectInfo.projectName);
 
       const now = Date.now();
       const items = rows.map((row) => {
         const status = row.handover_status || "DRAFT";
-        const deliverables = typeof row.deliverables === "string" ? JSON.parse(row.deliverables) : (row.deliverables || {});
-        const deliverablesComplete = ["handoverCharter", "siteVisitReport", "signedCostProposal"].every((key) => Boolean(deliverables?.[key]));
+        const deliverables = normalizeDeliverables(row.deliverables);
+        const deliverablesComplete = ["handoverCharter", "siteVisitReport", "signedCostProposal"].every((key) => Boolean((deliverables as any)?.[key]));
         const trackerLinked = Boolean(row.excel_tracker_link);
         const executionEnabled = row.execution_enabled === true;
         const daysInStatus = row.updated_at ? Math.max(0, Math.floor((now - new Date(row.updated_at).getTime()) / (1000 * 60 * 60 * 24))) : 0;
@@ -456,15 +492,15 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.get("/api/pd-pm-handover/:projectId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/pd-pm-handover/:projectId", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
-      const rows: any[] = await db.execute(sql.raw(`SELECT * FROM project_pd_pm_handover WHERE project_id = ${projectId} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
-      const handover = normalizeHandoverRow(rows[0]);
+      const handoverRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      const handover = handoverRows[0] ? normalizeHandoverRow(handoverRows[0]) : null;
       const deliverables = handover?.deliverables || {
         handoverCharter: null,
         siteVisitReport: null,
@@ -495,16 +531,17 @@ export function registerHandoverRoutes(app: Express) {
         evaluatorUserId: user?.id,
         evaluatorName: user?.name,
       });
-      const historyRows: any[] = await db.execute(sql.raw(
-        `SELECT * FROM project_handover_history WHERE project_id = ${projectId} AND gate_id = '${PD_PM_HANDOVER_GATE_ID}' ORDER BY performed_at DESC LIMIT 20`
-      )).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const historyRows = await db.select().from(projectHandoverHistory)
+        .where(and(eq(projectHandoverHistory.projectId, projectId), eq(projectHandoverHistory.gateId, PD_PM_HANDOVER_GATE_ID)))
+        .orderBy(desc(projectHandoverHistory.performedAt))
+        .limit(20);
       const history = historyRows.map((row) => ({
         id: row.id,
         action: row.action,
-        performedByName: row.performed_by_name,
-        performedByRole: row.performed_by_role,
-        performedAt: row.performed_at,
-        details: typeof row.details === "string" ? JSON.parse(row.details) : row.details,
+        performedByName: row.performedByName,
+        performedByRole: row.performedByRole,
+        performedAt: row.performedAt,
+        details: (() => { try { return typeof row.details === "string" ? JSON.parse(row.details as string) : row.details; } catch { return {}; } })(),
       }));
 
       res.json({
@@ -521,7 +558,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.put("/api/pd-pm-handover/:projectId/draft", requireAuth, async (req: Request, res: Response) => {
+  app.put("/api/pd-pm-handover/:projectId/draft", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -530,51 +567,48 @@ export function registerHandoverRoutes(app: Express) {
 
       const body = req.body || {};
       const user = (req as any).user as any;
-      const existing: any[] = await db.execute(sql.raw(`SELECT id, status FROM project_pd_pm_handover WHERE project_id = ${projectId}`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
-      const safeDeliverables = JSON.stringify(body.deliverables || {});
+
+      // Validate deliverables JSONB structure if provided
+      if (body.deliverables && typeof body.deliverables === "object" && Object.keys(body.deliverables).length > 0) {
+        const parsed = deliverablesSchema.safeParse(body.deliverables);
+        if (!parsed.success) {
+          return res.status(400).json({
+            error: "Invalid deliverables format. Expected structure: { handoverCharter?: { reference, date }, siteVisitReport?: { reference, date }, signedCostProposal?: { reference, date } }",
+            details: parsed.error.issues,
+          });
+        }
+      }
+
+      const existing = await db.select({ id: projectPdPmHandover.id }).from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+
+      const handoverValues = {
+        pdOwner: body.pdOwner || null,
+        pmOwner: body.pmOwner || null,
+        summary: body.summary || null,
+        risks: body.risks || null,
+        assumptions: body.assumptions || null,
+        feasibilityStatus: body.feasibilityStatus || null,
+        feasibilityNotes: body.feasibilityNotes || null,
+        dependencySummary: body.dependencySummary || null,
+        handoverReadinessStatus: body.handoverReadinessStatus || null,
+        handoverReadinessNotes: body.handoverReadinessNotes || null,
+        engineeringStatus: body.engineeringStatus || null,
+        qualityStatus: body.qualityStatus || null,
+        notesToPm: body.notesToPm || null,
+        deliverables: body.deliverables || {},
+        handoverSummary: body.handoverSummary || null,
+        handoverStatusText: "Draft",
+        updatedAt: new Date(),
+      };
 
       if (existing.length > 0) {
-        await db.execute(sql.raw(`
-          UPDATE project_pd_pm_handover
-          SET pd_owner = ${body.pdOwner ? `'${String(body.pdOwner).replace(/'/g, "''")}'` : "NULL"},
-              pm_owner = ${body.pmOwner ? `'${String(body.pmOwner).replace(/'/g, "''")}'` : "NULL"},
-              summary = ${body.summary ? `'${String(body.summary).replace(/'/g, "''")}'` : "NULL"},
-              risks = ${body.risks ? `'${String(body.risks).replace(/'/g, "''")}'` : "NULL"},
-              assumptions = ${body.assumptions ? `'${String(body.assumptions).replace(/'/g, "''")}'` : "NULL"},
-              feasibility_status = ${body.feasibilityStatus ? `'${String(body.feasibilityStatus).replace(/'/g, "''")}'` : "NULL"},
-              feasibility_notes = ${body.feasibilityNotes ? `'${String(body.feasibilityNotes).replace(/'/g, "''")}'` : "NULL"},
-              dependency_summary = ${body.dependencySummary ? `'${String(body.dependencySummary).replace(/'/g, "''")}'` : "NULL"},
-              handover_readiness_status = ${body.handoverReadinessStatus ? `'${String(body.handoverReadinessStatus).replace(/'/g, "''")}'` : "NULL"},
-              handover_readiness_notes = ${body.handoverReadinessNotes ? `'${String(body.handoverReadinessNotes).replace(/'/g, "''")}'` : "NULL"},
-              engineering_status = ${body.engineeringStatus ? `'${String(body.engineeringStatus).replace(/'/g, "''")}'` : "NULL"},
-              quality_status = ${body.qualityStatus ? `'${String(body.qualityStatus).replace(/'/g, "''")}'` : "NULL"},
-              notes_to_pm = ${body.notesToPm ? `'${String(body.notesToPm).replace(/'/g, "''")}'` : "NULL"},
-              deliverables = '${safeDeliverables.replace(/'/g, "''")}'::jsonb,
-              handover_summary = ${body.handoverSummary ? `'${String(body.handoverSummary).replace(/'/g, "''")}'` : "NULL"},
-              handover_status_text = 'Draft',
-              updated_at = NOW()
-          WHERE project_id = ${projectId}
-        `));
+        await db.update(projectPdPmHandover).set(handoverValues).where(eq(projectPdPmHandover.projectId, projectId));
       } else {
-        await db.execute(sql.raw(`
-          INSERT INTO project_pd_pm_handover (project_id, status, pd_owner, pm_owner, summary, risks, assumptions, feasibility_status, feasibility_notes, dependency_summary, handover_readiness_status, handover_readiness_notes, engineering_status, quality_status, notes_to_pm, deliverables, handover_summary, created_at, updated_at)
-          VALUES (${projectId}, 'DRAFT',
-            ${body.pdOwner ? `'${String(body.pdOwner).replace(/'/g, "''")}'` : "NULL"},
-            ${body.pmOwner ? `'${String(body.pmOwner).replace(/'/g, "''")}'` : "NULL"},
-            ${body.summary ? `'${String(body.summary).replace(/'/g, "''")}'` : "NULL"},
-            ${body.risks ? `'${String(body.risks).replace(/'/g, "''")}'` : "NULL"},
-            ${body.assumptions ? `'${String(body.assumptions).replace(/'/g, "''")}'` : "NULL"},
-            ${body.feasibilityStatus ? `'${String(body.feasibilityStatus).replace(/'/g, "''")}'` : "NULL"},
-            ${body.feasibilityNotes ? `'${String(body.feasibilityNotes).replace(/'/g, "''")}'` : "NULL"},
-            ${body.dependencySummary ? `'${String(body.dependencySummary).replace(/'/g, "''")}'` : "NULL"},
-            ${body.handoverReadinessStatus ? `'${String(body.handoverReadinessStatus).replace(/'/g, "''")}'` : "NULL"},
-            ${body.handoverReadinessNotes ? `'${String(body.handoverReadinessNotes).replace(/'/g, "''")}'` : "NULL"},
-            ${body.engineeringStatus ? `'${String(body.engineeringStatus).replace(/'/g, "''")}'` : "NULL"},
-            ${body.qualityStatus ? `'${String(body.qualityStatus).replace(/'/g, "''")}'` : "NULL"},
-            ${body.notesToPm ? `'${String(body.notesToPm).replace(/'/g, "''")}'` : "NULL"},
-            '${safeDeliverables.replace(/'/g, "''")}'::jsonb,
-            ${body.handoverSummary ? `'${String(body.handoverSummary).replace(/'/g, "''")}'` : "NULL"}, NOW(), NOW())
-        `));
+        await db.insert(projectPdPmHandover).values({
+          projectId,
+          status: "DRAFT",
+          ...handoverValues,
+        });
       }
       if (body.latestUpdate !== undefined) {
         const latestUpdateText = String(body.latestUpdate || "").trim();
@@ -587,7 +621,9 @@ export function registerHandoverRoutes(app: Express) {
         } as any);
       }
       if (body.excelTrackerLink && body.status === "ACCEPTED") {
-        await db.update(projectInfo).set({ excelTrackerLink: body.excelTrackerLink, updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
+        const trackerFields = { excelTrackerLink: body.excelTrackerLink, updatedAt: new Date() };
+        await db.update(projectInfo).set(trackerFields).where(eq(projectInfo.id, projectId));
+        await syncProjectSplitTables(projectId, trackerFields);
       }
       logAuditFromReq(req, {
         entityType: "pd_pm_handover",
@@ -607,12 +643,12 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/submit", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/submit", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
-      const rows: any[] = await db.execute(sql.raw(`SELECT * FROM project_pd_pm_handover WHERE project_id = ${projectId} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
-      const handover = normalizeHandoverRow(rows[0]);
+      const submitRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      const handover = normalizeHandoverRow(submitRows[0]);
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project || !handover) return res.status(400).json({ error: "Could not submit handover. Likely reason: no draft exists. Save a draft and retry." });
       const workspace = await getProjectDevelopmentWorkspace({
@@ -642,12 +678,18 @@ export function registerHandoverRoutes(app: Express) {
           if (!isEvidenceOverrideAuthorized(user?.role)) {
             return res.status(403).json({ error: "Evidence override requires authorized role." });
           }
-          await db.execute(sql.raw(`
-            INSERT INTO evidence_override_records
-              (project_id, completion_type, source_type, source_ref, score_percent, threshold_percent, reason, authorized_by_user_id, authorized_by_name, authorized_by_role)
-            VALUES
-              (${projectId}, 'pd_pm_handover_submit', 'pd_pm_handover', '${projectId}', ${evidence.score}, ${evidence.threshold}, '${overrideReason.replace(/'/g, "''")}', ${user?.id || "NULL"}, ${user?.name ? `'${String(user.name).replace(/'/g, "''")}'` : "NULL"}, ${user?.role ? `'${String(user.role).replace(/'/g, "''")}'` : "NULL"})
-          `));
+          await db.insert(evidenceOverrideRecords).values({
+            projectId,
+            completionType: "pd_pm_handover_submit",
+            sourceType: "pd_pm_handover",
+            sourceRef: String(projectId),
+            scorePercent: evidence.score,
+            thresholdPercent: evidence.threshold,
+            reason: overrideReason,
+            authorizedByUserId: user?.id,
+            authorizedByName: user?.name || null,
+            authorizedByRole: user?.role || null,
+          });
         } else {
           await insertPdPmHandoverHistory({
             projectId,
@@ -667,7 +709,13 @@ export function registerHandoverRoutes(app: Express) {
           });
         }
       }
-      await db.execute(sql.raw(`UPDATE project_pd_pm_handover SET status = 'SUBMITTED_FOR_PM_REVIEW', handover_status_text = 'Submitted for PM Review', submitted_by = '${(user?.name || 'Unknown').replace(/'/g, "''")}', submitted_at = NOW(), updated_at = NOW() WHERE project_id = ${projectId}`));
+      await db.update(projectPdPmHandover).set({
+        status: "SUBMITTED_FOR_PM_REVIEW",
+        handoverStatusText: "Submitted for PM Review",
+        submittedBy: user?.name || "Unknown",
+        submittedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(projectPdPmHandover.projectId, projectId));
       await insertPdPmHandoverHistory({
         projectId,
         req,
@@ -694,6 +742,18 @@ export function registerHandoverRoutes(app: Express) {
         projectName: project.projectName,
         changesJson: { submittedBy: user?.name || "Unknown", readinessStatus: handover.handover_readiness_status || null },
       });
+      // Notify PM reviewers
+      try {
+        const pmUsers = await db.select({ id: users.id }).from(users)
+          .where(sql`${users.companyRole} IN ('PROJECT_MANAGER_SITE', 'PROGRAM_MANAGER', 'COO_ADMIN', 'CEO_ADMIN')`);
+        const pmUserIds = pmUsers.map(u => u.id);
+        if (pmUserIds.length > 0) {
+          await notifyHandoverSubmitted(projectId, project.projectName, pmUserIds);
+        }
+      } catch (notifyErr) {
+        console.warn("[handover] notification send failed (non-blocking):", notifyErr);
+      }
+
       res.json({ success: true, status: "SUBMITTED_FOR_PM_REVIEW" });
     } catch (err: any) {
       console.error("[handover] submit error:", err);
@@ -701,7 +761,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/accept", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/accept", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -709,14 +769,23 @@ export function registerHandoverRoutes(app: Express) {
       if (!PM_REVIEW_ROLES.includes(user?.role)) {
         return res.status(403).json({ error: "Could not accept handover. Likely reason: your PM permission is missing or the handover is incomplete. Refresh, verify access, and retry." });
       }
-      const rows: any[] = await db.execute(sql.raw(`SELECT * FROM project_pd_pm_handover WHERE project_id = ${projectId} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
-      const handover = rows[0];
+      const acceptRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      const handover = acceptRows[0];
       if (!handover || handover.status !== "SUBMITTED_FOR_PM_REVIEW") {
         return res.status(400).json({ error: "Cannot accept handover: no submitted handover found for PM review." });
       }
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      await db.execute(sql.raw(`UPDATE project_pd_pm_handover SET status = 'ACCEPTED', handover_status_text = 'Accepted', accepted_by = '${(user?.name || 'Unknown').replace(/'/g, "''")}', accepted_at = NOW(), updated_at = NOW(), rejection_reason = NULL WHERE project_id = ${projectId}`));
-      await db.update(projectInfo).set({ executionEnabled: true, executionGateStatus: "ENABLED", phase: "PM Active", updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
+      await db.update(projectPdPmHandover).set({
+        status: "ACCEPTED",
+        handoverStatusText: "Accepted",
+        acceptedBy: user?.name || "Unknown",
+        acceptedAt: new Date(),
+        updatedAt: new Date(),
+        rejectionReason: null,
+      }).where(eq(projectPdPmHandover.projectId, projectId));
+      const acceptFields = { executionEnabled: true, executionGateStatus: "ENABLED", phase: "PM Active", updatedAt: new Date() };
+      await db.update(projectInfo).set(acceptFields).where(eq(projectInfo.id, projectId));
+      await syncProjectSplitTables(projectId, acceptFields);
       if (project && user?.id && project.phase !== "PM Active") {
         await db.insert(projectPhaseHistory).values({
           projectId,
@@ -744,6 +813,20 @@ export function registerHandoverRoutes(app: Express) {
         projectName: project?.projectName,
         changesJson: { acceptedBy: user?.name, fromPhase: project?.phase || null, toPhase: "PM Active" },
       });
+      // Notify PD team about acceptance
+      try {
+        const pdOwnerName = handover.pdOwner ?? handover.pd_owner;
+        if (pdOwnerName) {
+          const pdOwnerUsers = await db.select({ id: users.id }).from(users)
+            .where(sql`${users.name} = ${pdOwnerName}`);
+          if (pdOwnerUsers.length > 0) {
+            await notifyHandoverAccepted(projectId, project?.projectName || "Unknown", pdOwnerUsers.map(u => u.id));
+          }
+        }
+      } catch (notifyErr) {
+        console.warn("[handover] acceptance notification failed (non-blocking):", notifyErr);
+      }
+
       res.json({ success: true, status: "ACCEPTED" });
     } catch (err: any) {
       console.error("[handover] accept error:", err);
@@ -751,7 +834,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/reject", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/reject", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       const reason = String(req.body?.reason || "").trim();
@@ -760,14 +843,23 @@ export function registerHandoverRoutes(app: Express) {
       if (!PM_REVIEW_ROLES.includes(user?.role)) {
         return res.status(403).json({ error: "Could not reject handover. Likely reason: your PM permission is missing. Refresh, verify PM access, and retry." });
       }
-      const rows: any[] = await db.execute(sql.raw(`SELECT * FROM project_pd_pm_handover WHERE project_id = ${projectId} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
-      const handover = rows[0];
+      const rejectRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      const handover = rejectRows[0];
       if (!handover || handover.status !== "SUBMITTED_FOR_PM_REVIEW") {
         return res.status(400).json({ error: "Cannot reject handover: no submitted handover found for PM review." });
       }
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
-      await db.execute(sql.raw(`UPDATE project_pd_pm_handover SET status = 'REJECTED', handover_status_text = 'Rejected', rejected_by = '${(user?.name || 'Unknown').replace(/'/g, "''")}', rejected_at = NOW(), rejection_reason = '${reason.replace(/'/g, "''")}', updated_at = NOW() WHERE project_id = ${projectId}`));
-      await db.update(projectInfo).set({ executionEnabled: false, executionGateStatus: "NOT_ELIGIBLE", updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
+      await db.update(projectPdPmHandover).set({
+        status: "REJECTED",
+        handoverStatusText: "Rejected",
+        rejectedBy: user?.name || "Unknown",
+        rejectedAt: new Date(),
+        rejectionReason: reason,
+        updatedAt: new Date(),
+      }).where(eq(projectPdPmHandover.projectId, projectId));
+      const rejectFields = { executionEnabled: false, executionGateStatus: "NOT_ELIGIBLE", updatedAt: new Date() };
+      await db.update(projectInfo).set(rejectFields).where(eq(projectInfo.id, projectId));
+      await syncProjectSplitTables(projectId, rejectFields);
       await insertPdPmHandoverHistory({
         projectId,
         req,
@@ -785,6 +877,21 @@ export function registerHandoverRoutes(app: Express) {
         projectName: project?.projectName,
         changesJson: { rejectedBy: user?.name || "Unknown", reason },
       });
+
+      // Notify PD team about rejection
+      try {
+        const pdOwnerName = handover.pdOwner ?? handover.pd_owner;
+        if (pdOwnerName) {
+          const pdOwnerUsers = await db.select({ id: users.id }).from(users)
+            .where(sql`${users.name} = ${pdOwnerName}`);
+          if (pdOwnerUsers.length > 0) {
+            await notifyHandoverRejected(projectId, project?.projectName || "Unknown", reason, pdOwnerUsers.map(u => u.id));
+          }
+        }
+      } catch (notifyErr) {
+        console.warn("[handover] rejection notification failed (non-blocking):", notifyErr);
+      }
+
       res.json({ success: true, status: "REJECTED" });
     } catch (err: any) {
       console.error("[handover] reject error:", err);
@@ -792,7 +899,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.put("/api/pd-pm-handover/:projectId/excel-tracker", requireAuth, async (req: Request, res: Response) => {
+  app.put("/api/pd-pm-handover/:projectId/excel-tracker", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -810,13 +917,15 @@ export function registerHandoverRoutes(app: Express) {
         return res.status(400).json({ error: "PM Excel Tracker Link must start with http:// or https://" });
       }
 
-      const rows: any[] = await db.execute(sql.raw(`SELECT status FROM project_pd_pm_handover WHERE project_id = ${projectId} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
-      const handover = rows[0];
+      const trackerRows = await db.select({ status: projectPdPmHandover.status }).from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      const handover = trackerRows[0];
       if (!handover || handover.status !== "ACCEPTED") {
         return res.status(400).json({ error: "Excel tracker link can only be updated after handover is accepted." });
       }
 
-      await db.update(projectInfo).set({ excelTrackerLink: trackerLink, updatedAt: new Date() }).where(eq(projectInfo.id, projectId));
+      const excelFields = { excelTrackerLink: trackerLink, updatedAt: new Date() };
+      await db.update(projectInfo).set(excelFields).where(eq(projectInfo.id, projectId));
+      await syncProjectSplitTables(projectId, excelFields);
       logAuditFromReq(req, { entityType: "pd_pm_handover", entityId: String(projectId), action: "excel_tracker.updated", changesJson: { updatedBy: user?.name || "Unknown" } });
 
       res.json({ success: true });
@@ -826,7 +935,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/pd-pm-handover/:projectId/evidence", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/pd-pm-handover/:projectId/evidence", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId, 10);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });

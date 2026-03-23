@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PD_REQUEST_TYPE_TASK_TEMPLATES } from "@shared/schema";
 import {
   Loader2, Plus, ArrowLeft, Search, CheckCircle2, Building2, FolderKanban, FileEdit,
-  ChevronRight, MapPin, Zap, Battery, HardHat, CalendarIcon, ListTodo,
+  ChevronRight, MapPin, Zap, Battery, HardHat, CalendarIcon, ListTodo, AlertTriangle,
 } from "lucide-react";
 
 function pdFetch(url: string, opts?: RequestInit) {
@@ -80,6 +80,9 @@ export default function PdTicketCreatePage() {
     hseDiscussed: false,
     comments: "",
     designerUserId: "",
+    estimatedProjectValue: "",
+    estimatedCost: "",
+    financialNotes: "",
   });
 
   const { data: clientResults = [], isLoading: clientsLoading, isError: clientsError, error: clientsQueryError, refetch: refetchClients } = useQuery<any[]>({
@@ -100,6 +103,13 @@ export default function PdTicketCreatePage() {
   });
 
   const designers = useMemo(() => allUsers.filter((u: any) => u.role === "ENGINEER" || u.role === "PROJECT_DEVELOPER"), [allUsers]);
+
+  const { data: similarProjects } = useQuery<{ matches: Array<{ id: number; projectName: string }> }>({
+    queryKey: ["/api/projects/similar-names", newProjectName.trim()],
+    queryFn: () => pdFetch(`/api/projects/similar-names?name=${encodeURIComponent(newProjectName.trim())}`),
+    enabled: createNewProject && newProjectName.trim().length >= 3,
+    staleTime: 10_000,
+  });
 
   const availableTaskTemplates = useMemo(() => PD_REQUEST_TYPE_TASK_TEMPLATES[form.requestType] || [], [form.requestType]);
 
@@ -155,6 +165,14 @@ export default function PdTicketCreatePage() {
       toast({ title: "Request Type required", variant: "destructive" });
       return;
     }
+    if (!selectedProject) {
+      toast({ title: "Project linkage required", description: "Please link this ticket to a project for lifecycle tracking.", variant: "destructive" });
+      return;
+    }
+    if (!form.dueDate) {
+      toast({ title: "Due date required", description: "A due date is required for SLA tracking.", variant: "destructive" });
+      return;
+    }
 
     const body: any = {
       ...form,
@@ -164,6 +182,13 @@ export default function PdTicketCreatePage() {
       sizeKwp: form.sizeKwp ? parseFloat(form.sizeKwp) : null,
       batterySize: form.batterySize ? parseFloat(form.batterySize) : null,
       designerUserId: form.designerUserId ? parseInt(form.designerUserId) : null,
+      estimatedProjectValue: form.estimatedProjectValue ? parseFloat(form.estimatedProjectValue) : null,
+      estimatedCost: form.estimatedCost ? parseFloat(form.estimatedCost) : null,
+      estimatedMargin: form.estimatedProjectValue && form.estimatedCost
+        ? parseFloat(form.estimatedProjectValue) - parseFloat(form.estimatedCost) : null,
+      estimatedMarginPercent: form.estimatedProjectValue && form.estimatedCost && parseFloat(form.estimatedProjectValue) > 0
+        ? Math.round(((parseFloat(form.estimatedProjectValue) - parseFloat(form.estimatedCost)) / parseFloat(form.estimatedProjectValue)) * 10000) / 100 : null,
+      financialNotes: form.financialNotes || null,
       selectedTasks: Array.from(selectedTasks),
     };
 
@@ -343,6 +368,18 @@ export default function PdTicketCreatePage() {
                   <div className="space-y-2 p-3 border rounded-lg bg-muted/20">
                     <Label className="text-xs">New Project Name</Label>
                     <Input value={newProjectName} onChange={e => setNewProjectName(e.target.value)} placeholder="Enter project name" data-testid="input-new-project-name" />
+                    {similarProjects?.matches && similarProjects.matches.length > 0 && (
+                      <div className="p-2 bg-amber-50 border border-amber-200 rounded text-xs" data-testid="similar-project-warning">
+                        <div className="flex items-start gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="font-medium text-amber-800">Similar projects exist:</p>
+                            {similarProjects.matches.map(p => <p key={p.id} className="text-amber-700">{p.projectName}</p>)}
+                            <p className="text-amber-600 mt-0.5">Consider linking to an existing project instead.</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <Button size="sm" disabled={!newProjectName.trim() || createProjectMutation.isPending} onClick={() => createProjectMutation.mutate(newProjectName.trim())} data-testid="btn-save-new-project">
                         {createProjectMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Create Project"}
@@ -352,13 +389,21 @@ export default function PdTicketCreatePage() {
                   </div>
                 )}
 
-                <p className="text-xs text-muted-foreground">You can also skip project mapping and save without linking to a project.</p>
+                {!selectedProject && (
+                  <div className="p-2 bg-red-50 border border-red-200 rounded text-xs flex items-start gap-1.5" data-testid="no-project-warning">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-red-800">Project linkage required</p>
+                      <p className="text-red-600">Every PD ticket must be linked to a project for lifecycle tracking and handover. Select or create a project above to continue.</p>
+                    </div>
+                  </div>
+                )}
               </>
             )}
 
             <div className="flex justify-between pt-2">
               <Button variant="outline" onClick={() => setStep(1)} data-testid="btn-step2-back">Back</Button>
-              <Button onClick={() => setStep(3)} data-testid="btn-step2-next">
+              <Button onClick={() => setStep(3)} disabled={!selectedProject} data-testid="btn-step2-next">
                 Next <ChevronRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
@@ -406,8 +451,9 @@ export default function PdTicketCreatePage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Due Date</Label>
+                <Label className="text-xs">Due Date *</Label>
                 <Input type="date" value={form.dueDate} onChange={e => setForm(p => ({ ...p, dueDate: e.target.value }))} data-testid="input-due-date" />
+                {!form.dueDate && <p className="text-[10px] text-red-600">Required for SLA tracking and overdue alerts.</p>}
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs">Funding Type</Label>
@@ -498,6 +544,30 @@ export default function PdTicketCreatePage() {
 
             {availableTaskTemplates.length > 0 && (
               <>
+                <Separator />
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Financial Estimates (Optional)</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Estimated Project Value (R)</Label>
+                      <Input type="number" placeholder="0.00" className="h-8 text-xs" value={form.estimatedProjectValue} onChange={e => setForm(f => ({ ...f, estimatedProjectValue: e.target.value }))} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Estimated Cost (R)</Label>
+                      <Input type="number" placeholder="0.00" className="h-8 text-xs" value={form.estimatedCost} onChange={e => setForm(f => ({ ...f, estimatedCost: e.target.value }))} />
+                    </div>
+                  </div>
+                  {form.estimatedProjectValue && form.estimatedCost && (
+                    <div className="text-xs text-muted-foreground">
+                      Margin: R {(parseFloat(form.estimatedProjectValue) - parseFloat(form.estimatedCost)).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                      {" "}({parseFloat(form.estimatedProjectValue) > 0 ? (((parseFloat(form.estimatedProjectValue) - parseFloat(form.estimatedCost)) / parseFloat(form.estimatedProjectValue)) * 100).toFixed(1) : "0"}%)
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Financial Notes</Label>
+                    <Textarea placeholder="Assumptions, caveats..." className="min-h-[50px] text-xs" rows={2} value={form.financialNotes} onChange={e => setForm(f => ({ ...f, financialNotes: e.target.value }))} />
+                  </div>
+                </div>
                 <Separator />
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">

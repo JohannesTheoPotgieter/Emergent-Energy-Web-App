@@ -1,6 +1,5 @@
 import { runBackfill } from "../lib/backfill";
 import { startScheduler } from "../importPipeline";
-import { startMilestoneChecker } from "../milestone-notifications";
 
 export async function startRuntimeServices(options: {
   startupBackfillEnabled: boolean;
@@ -15,18 +14,31 @@ export async function startRuntimeServices(options: {
     started.push("startup-backfill-loop");
   }
 
-  startScheduler();
-  started.push("import-scheduler");
+  try {
+    startScheduler();
+    started.push("import-scheduler");
+  } catch (err) {
+    log(`[Import Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+  }
 
-  startMilestoneChecker();
-  started.push("milestone-checker");
+  try {
+    const { startMonthlyReportScheduler } = await import("../services/monthly-report-scheduler");
+    startMonthlyReportScheduler();
+    started.push("monthly-report-scheduler");
+  } catch (err) {
+    log(`[Monthly Report Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+  }
 
-  const { startPeriodicSync } = await import("../ms-sync-service");
-  if (startupSyncEnabled) {
-    startPeriodicSync();
-    started.push("periodic-sync");
-  } else {
-    log("Skipped periodic sync startup due to STARTUP_ENABLE_PERIODIC_SYNC=false", "Startup:Runtime");
+  try {
+    const { startPeriodicSync } = await import("../ms-sync-service");
+    if (startupSyncEnabled) {
+      startPeriodicSync();
+      started.push("periodic-sync");
+    } else {
+      log("Skipped periodic sync startup due to STARTUP_ENABLE_PERIODIC_SYNC=false", "Startup:Runtime");
+    }
+  } catch (err) {
+    log(`[Periodic Sync] Failed to start: ${err}`, "Startup:Runtime");
   }
 
   return started;

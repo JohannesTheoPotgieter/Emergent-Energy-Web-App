@@ -55,7 +55,7 @@ async function detectCircular(predecessorId: number, successorId: number): Promi
 export function registerDependencyRoutes(app: Express) {
   app.use("/api/dependencies", jwtAuth);
 
-  app.get("/api/work-items", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/work-items", jwtAuth, requireAuth, requirePermission("work_items", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.query.projectId as string);
       if (isNaN(projectId)) return res.status(400).json({ error: "projectId query param required" });
@@ -71,7 +71,7 @@ export function registerDependencyRoutes(app: Express) {
     }
   });
 
-  app.get("/api/dependencies/project/:projectId", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/dependencies/project/:projectId", requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId as string);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
@@ -117,7 +117,7 @@ export function registerDependencyRoutes(app: Express) {
     }
   });
 
-  app.get("/api/dependencies/project-name/:projectName", requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/dependencies/project-name/:projectName", requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
       const projectName = decodeURIComponent(req.params.projectName);
       const projectTasks = await db.select({ id: workItems.id })

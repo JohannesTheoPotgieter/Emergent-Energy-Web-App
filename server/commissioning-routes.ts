@@ -1,12 +1,24 @@
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, ilike } from "drizzle-orm";
 import { verifyToken } from "./jwt";
-import { commissioningItems, projectInfo, users, approvals } from "@shared/schema";
+import { commissioningItems, projectInfo, users, approvals, projectEngStages, engStageTemplates } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
+
+/** Check whether the Handover Pack engineering stage is complete for a project. */
+async function isHandoverPackComplete(projectId: number): Promise<{ complete: boolean; stageName?: string; status?: string }> {
+  const stages = await db
+    .select({ id: projectEngStages.id, status: projectEngStages.status, name: engStageTemplates.name })
+    .from(projectEngStages)
+    .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
+    .where(and(eq(projectEngStages.projectId, projectId), ilike(engStageTemplates.name, '%Handover Pack%')));
+  if (stages.length === 0) return { complete: false, stageName: "Handover Pack", status: "not_found" };
+  const stage = stages[0];
+  return { complete: stage.status === "complete", stageName: stage.name, status: stage.status };
+}
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -36,7 +48,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 
 
 export function registerCommissioningRoutes(app: Express) {
-  app.get("/api/commissioning/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/commissioning/project/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
@@ -61,7 +73,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.get("/api/commissioning/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -80,7 +92,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.post("/api/commissioning", jwtAuth, requireAuth, requirePermission("projects", "create"), async (req: Request, res: Response) => {
+  app.post("/api/commissioning", jwtAuth, requireAuth, requirePermission("commissioning", "create"), async (req: Request, res: Response) => {
     try {
       const user = (req as any).user;
       const { projectId, itemType, title, description, ownerUserId, dueDate, gateId, category, sortOrder } = req.body;
@@ -113,7 +125,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+  app.patch("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -133,6 +145,18 @@ export function registerCommissioningRoutes(app: Express) {
         if (!allowed.includes(req.body.status)) {
           return res.status(400).json({ error: `Cannot transition from ${old.status} to ${req.body.status}` });
         }
+
+        // Gate: commissioning cannot progress until Handover Pack stage is complete
+        if (old.status === "not_started" && req.body.status === "in_progress") {
+          const hp = await isHandoverPackComplete(old.projectId);
+          if (!hp.complete) {
+            return res.status(400).json({
+              error: "Commissioning cannot start until the Engineering Handover Pack stage is complete.",
+              handoverPack: hp,
+            });
+          }
+        }
+
         updates.status = req.body.status;
 
         if (req.body.status === 'approved' || req.body.status === 'closed') {
@@ -214,7 +238,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("projects", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -237,7 +261,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.get("/api/commissioning/progress/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/commissioning/progress/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
@@ -262,7 +286,19 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.post("/api/commissioning/:id/evidence", jwtAuth, requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+  /** Check if commissioning is unlocked for a project (Handover Pack gate) */
+  app.get("/api/commissioning/gate-status/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
+      const hp = await isHandoverPackComplete(projectId);
+      res.json({ unlocked: hp.complete, handoverPack: hp });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to check gate status" });
+    }
+  });
+
+  app.post("/api/commissioning/:id/evidence", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -309,7 +345,7 @@ export function registerCommissioningRoutes(app: Express) {
     }
   });
 
-  app.get("/api/commissioning/:id/evidence-evaluation", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/commissioning/:id/evidence-evaluation", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });

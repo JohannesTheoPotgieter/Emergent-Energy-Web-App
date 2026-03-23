@@ -1,0 +1,1634 @@
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { Link, useSearch, useLocation } from "wouter";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getQueryFn, fetchQueryFn, apiRequest } from "@/lib/queryClient";
+import { usePermission } from "@/hooks/use-permissions";
+import {
+  Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, ComposedChart,
+} from "recharts";
+import {
+  DollarSign, TrendingUp, Activity, Search, Download,
+  AlertCircle, BarChart3, FileText, Camera,
+  Plus, Trash2, Pencil, RefreshCw, X, Check, Eye, Clock, FilterX, ChevronDown,
+} from "lucide-react";
+
+// ─── Types ───
+
+interface MonthMetric {
+  budget: number;
+  actualForecast: number;
+  actual: number | null;
+  pipeline?: number;
+}
+
+interface DashboardMonth {
+  monthKey: string;
+  label: string;
+  revenue: MonthMetric;
+  cos: MonthMetric;
+  gp: MonthMetric;
+}
+
+interface DashboardData {
+  fye: number;
+  months: DashboardMonth[];
+  monthKeys: string[];
+}
+
+interface ProjectRow {
+  projectId: number;
+  projectName: string;
+  businessDeveloper: string | null;
+  province: string | null;
+  sizeKwp: number;
+  projectType: string | null;
+  fundingType: string | null;
+  startDate: string | null;
+  pcDate: string | null;
+  status: string | null;
+  budgetRevenue: number;
+  budgetCos: number;
+  budgetGp: number;
+  actualRevenue: number;
+  actualExpense: number;
+  actualGp: number;
+  budgetGpPct: number | null;
+  actualGpPct: number | null;
+  signedStatus: string;
+  hasTracker: boolean;
+}
+
+interface DetailData {
+  fye: number;
+  cutoffMonth: string | null;
+  projects: ProjectRow[];
+  totals: {
+    budgetRevenue: number;
+    budgetCos: number;
+    budgetGp: number;
+    actualRevenue: number;
+    actualExpense: number;
+    actualGp: number;
+    budgetGpPct: number | null;
+    actualGpPct: number | null;
+  };
+}
+
+interface PipelineRow {
+  id: number;
+  fyeYear: number;
+  projectName: string;
+  projectDeveloper: string | null;
+  location: string | null;
+  sizeKwp: string | null;
+  dealProbabilityPct: number;
+  forecastSignatureDate: string | null;
+  solarRevenue: string | null;
+  bessRevenue: string | null;
+  forecastGpPct: string | null;
+  notes: string | null;
+  updatedAt: string | null;
+}
+
+interface LostDealRow {
+  id: number;
+  fyeYear: number;
+  dealName: string;
+  dealValue: string | null;
+  businessDeveloper: string | null;
+  lostReason: string | null;
+  lostDate: string | null;
+  notes: string | null;
+  updatedAt: string | null;
+}
+
+interface KpiData {
+  broughtIn: number;
+  signed: number;
+  total: number;
+}
+
+// ─── Helpers ───
+
+function getCurrentFye(): number {
+  const now = new Date();
+  return now.getMonth() + 1 >= 9 ? now.getFullYear() + 1 : now.getFullYear();
+}
+
+function formatRand(val: number | null | undefined): string {
+  if (val == null || isNaN(val)) return "–";
+  if (val === 0) return "R 0";
+  const sign = val < 0 ? "-" : "";
+  const abs = Math.abs(val);
+  if (abs >= 1000) return `${sign}R ${Math.round(abs).toLocaleString("en-ZA")}`;
+  return `${sign}R ${abs.toFixed(2)}`;
+}
+
+/** Abbreviated Rand format for chart Y-axis ticks (e.g. "R 9.3M", "R 450K"). */
+function formatRandShort(val: number | null | undefined): string {
+  if (val == null || isNaN(val)) return "–";
+  if (val === 0) return "R 0";
+  const sign = val < 0 ? "-" : "";
+  const abs = Math.abs(val);
+  if (abs >= 1_000_000_000) return `${sign}R ${(abs / 1_000_000_000).toFixed(1)}B`;
+  if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}R ${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}R ${abs.toFixed(0)}`;
+}
+
+function formatPct(val: number | null | undefined): string {
+  if (val == null || isNaN(val) || !isFinite(val)) return "–";
+  return `${(val * 100).toFixed(1)}%`;
+}
+
+function formatDate(d: string | null | undefined): string {
+  if (!d) return "—";
+  try {
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return d;
+    return date.toLocaleDateString("en-ZA", { day: "2-digit", month: "short", year: "numeric" });
+  } catch {
+    return d;
+  }
+}
+
+function cn(...classes: (string | false | undefined | null)[]): string {
+  return classes.filter(Boolean).join(" ");
+}
+
+// ─── Dashboard Tab ───
+
+function DashboardSection({
+  title,
+  months,
+  metricKey,
+  isRunning,
+}: {
+  title: string;
+  months: DashboardMonth[];
+  metricKey: "revenue" | "cos" | "gp";
+  isRunning: boolean;
+}) {
+  const hasPipeline = months[0]?.[metricKey]?.pipeline !== undefined;
+  const rows: { key: string; label: string; color: string }[] = [
+    { key: "budget", label: "Budget", color: "text-blue-700 bg-blue-50" },
+    { key: "actualForecast", label: "Actual + Forecast", color: "text-emerald-700 bg-emerald-50" },
+    { key: "actual", label: "Actual", color: "text-amber-700 bg-amber-50" },
+    ...(hasPipeline ? [{ key: "pipeline", label: "Pipeline (95%+)", color: "text-violet-700 bg-violet-50" }] : []),
+  ];
+
+  const data = useMemo(() => {
+    if (!isRunning) return months;
+    // Cumulative
+    let cumBudget = 0, cumAF = 0, cumActual: number | null = 0, cumPipeline = 0;
+    return months.map((m) => {
+      const metric = m[metricKey];
+      cumBudget += metric.budget;
+      cumAF += metric.actualForecast;
+      if (metric.actual !== null) cumActual = (cumActual || 0) + metric.actual;
+      else cumActual = cumActual || null;
+      cumPipeline += metric.pipeline || 0;
+      return {
+        ...m,
+        [metricKey]: { budget: cumBudget, actualForecast: cumAF, actual: cumActual, pipeline: cumPipeline },
+      };
+    });
+  }, [months, metricKey, isRunning]);
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="pb-2 pt-3 px-4">
+        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="px-0 pb-2 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b">
+              <th className="text-left px-3 py-1.5 font-medium text-muted-foreground w-32 sticky left-0 bg-white z-10">Row</th>
+              {data.map((m) => (
+                <th key={m.monthKey} className="text-right px-2 py-1.5 font-medium text-muted-foreground min-w-[80px]">
+                  {m.label}
+                </th>
+              ))}
+              <th className="text-right px-3 py-1.5 font-bold text-muted-foreground min-w-[90px]">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const vals = data.map((m) => (m[metricKey] as any)[row.key] as number | null);
+              const nonNullVals = vals.filter((v): v is number => v !== null);
+              const total = isRunning
+                ? vals[vals.length - 1]
+                : nonNullVals.length > 0 ? nonNullVals.reduce((a, b) => a + b, 0) : null;
+              return (
+                <tr key={row.key} className="border-b last:border-0 hover:bg-muted/30">
+                  <td className="px-3 py-1.5 sticky left-0 bg-white z-10">
+                    <Badge variant="outline" className={cn("text-[10px] font-medium", row.color)}>{row.label}</Badge>
+                  </td>
+                  {vals.map((v, i) => (
+                    <td key={i} className={cn("text-right px-2 py-1.5 tabular-nums", v !== null && v < 0 && "text-red-600 font-medium")}>
+                      {v === null ? "–" : formatRand(v)}
+                    </td>
+                  ))}
+                  <td className={cn("text-right px-3 py-1.5 font-bold tabular-nums", total !== null && total < 0 && "text-red-600")}>
+                    {total === null ? "–" : formatRand(total)}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DashboardChart({
+  title,
+  months,
+  metricKey,
+}: {
+  title: string;
+  months: DashboardMonth[];
+  metricKey: "revenue" | "gp";
+}) {
+  const metric0 = months[0]?.[metricKey] as MonthMetric | undefined;
+  const hasPipeline = metric0?.pipeline !== undefined;
+
+  // Find last month index that has actual data (to split solid vs dashed)
+  const lastActualIdx = months.reduce((acc, m, i) => {
+    const metric = m[metricKey] as MonthMetric;
+    return metric.actual !== null ? i : acc;
+  }, -1);
+
+  const chartData = months.map((m, i) => {
+    const metric = m[metricKey] as MonthMetric;
+    const isActual = i <= lastActualIdx;
+    const isForecastStart = i === lastActualIdx; // overlap point to connect lines
+    const isForecast = i > lastActualIdx || isForecastStart;
+
+    const point: Record<string, any> = {
+      label: m.label,
+      Budget: metric.budget,
+      "Actual + Forecast": isActual ? metric.actualForecast : null,
+      Forecast: isForecast ? metric.actualForecast : null,
+      Actual: metric.actual,
+    };
+    if (hasPipeline) point["Pipeline (95%+)"] = metric.pipeline || 0;
+    return point;
+  });
+
+  return (
+    <Card className="mb-4">
+      <CardHeader className="pb-2 pt-3 px-4">
+        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+            <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+            <YAxis tick={{ fontSize: 10 }} tickFormatter={(v: number) => formatRandShort(v)} />
+            <Tooltip formatter={(v: number, name: string) => [formatRand(v), name === "Forecast" ? "Actual + Forecast" : name]} />
+            <Legend wrapperStyle={{ fontSize: 11 }} />
+            <Area type="monotone" dataKey="Budget" fill="#3b82f6" stroke="#3b82f6" fillOpacity={0.15} strokeWidth={1} />
+            <Line type="monotone" dataKey="Actual + Forecast" stroke="#10b981" strokeWidth={2} dot={false} connectNulls={false} />
+            <Line type="monotone" dataKey="Forecast" stroke="#10b981" strokeWidth={2} strokeDasharray="6 3" dot={false} connectNulls={false} legendType="none" />
+            <Line type="monotone" dataKey="Actual" stroke="#f59e0b" strokeWidth={2} dot={{ r: 2 }} connectNulls={false} />
+            {hasPipeline && <Line type="monotone" dataKey="Pipeline (95%+)" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 5" dot={false} />}
+          </ComposedChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Budget Editor Modal ───
+
+interface BudgetRow { id?: number; projectName: string; fye: string; monthKey: string; budgetType: string; amount: string }
+
+function BudgetEditorModal({ fye, months, open, onClose }: { fye: number; months: DashboardMonth[]; open: boolean; onClose: () => void }) {
+  const qc = useQueryClient();
+  const [activeType, setActiveType] = useState<"revenue" | "cos">("revenue");
+  const [saved, setSaved] = useState(false);
+
+  const { data: budgets, isLoading: budgetsLoading } = useQuery<BudgetRow[]>({
+    queryKey: ["/api/fye-revenue-tracking/budgets", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/budgets?fye=${fye}`),
+    enabled: open,
+  });
+
+  const monthKeys = months.map((m) => m.monthKey);
+  const [revValues, setRevValues] = useState<Record<string, string>>({});
+  const [cosValues, setCosValues] = useState<Record<string, string>>({});
+
+  // Initialize values when budgets load or modal opens
+  useEffect(() => {
+    if (!open) return;
+    const rv: Record<string, string> = {};
+    const cv: Record<string, string> = {};
+    if (budgets && budgets.length > 0) {
+      for (const b of budgets) {
+        if (b.budgetType === "revenue") rv[b.monthKey] = b.amount;
+        else if (b.budgetType === "cos") cv[b.monthKey] = b.amount;
+      }
+    } else {
+      for (const m of months) {
+        rv[m.monthKey] = m.revenue.budget !== 0 ? String(m.revenue.budget) : "";
+        cv[m.monthKey] = m.cos.budget !== 0 ? String(m.cos.budget) : "";
+      }
+    }
+    setRevValues(rv);
+    setCosValues(cv);
+    setSaved(false);
+  }, [budgets, months, open]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      for (const mk of monthKeys) {
+        const revAmt = revValues[mk];
+        if (revAmt !== undefined && revAmt !== "") {
+          await apiRequest("POST", "/api/fye-revenue-tracking/budgets", {
+            projectName: "__FYE_TOTAL__", fye: String(fye), monthKey: mk, budgetType: "revenue", amount: revAmt,
+          });
+        }
+        const cosAmt = cosValues[mk];
+        if (cosAmt !== undefined && cosAmt !== "") {
+          await apiRequest("POST", "/api/fye-revenue-tracking/budgets", {
+            projectName: "__FYE_TOTAL__", fye: String(fye), monthKey: mk, budgetType: "cos", amount: cosAmt,
+          });
+        }
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/dashboard", fye] });
+      qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/budgets", fye] });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    },
+  });
+
+  const values = activeType === "revenue" ? revValues : cosValues;
+  const setValues = activeType === "revenue" ? setRevValues : setCosValues;
+
+  // Compute total for the active tab
+  const total = monthKeys.reduce((sum, mk) => sum + (parseFloat(values[mk] || "0") || 0), 0);
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-sm font-semibold">Edit Monthly Budgets — FYE {fye}</DialogTitle>
+        </DialogHeader>
+
+        {/* Tabs */}
+        <div className="flex border-b mb-3">
+          <button
+            onClick={() => setActiveType("revenue")}
+            className={cn(
+              "px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
+              activeType === "revenue" ? "border-blue-600 text-blue-600" : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >Revenue Budgets</button>
+          <button
+            onClick={() => setActiveType("cos")}
+            className={cn(
+              "px-4 py-2 text-xs font-medium border-b-2 -mb-px transition-colors",
+              activeType === "cos" ? "border-amber-600 text-amber-600" : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >COS Budgets</button>
+        </div>
+
+        {/* Month rows */}
+        <div className="max-h-[400px] overflow-y-auto">
+          {budgetsLoading ? (
+            <div className="space-y-2 py-4 px-3">{[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
+          ) : (
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-background">
+              <tr className="border-b">
+                <th className="text-left px-3 py-1.5 font-medium w-28">Month</th>
+                <th className="text-left px-3 py-1.5 font-medium">Current Value</th>
+                <th className="text-left px-3 py-1.5 font-medium">New Amount (R)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {months.map((m) => {
+                const currentVal = activeType === "revenue" ? m.revenue.budget : m.cos.budget;
+                return (
+                  <tr key={m.monthKey} className="border-b hover:bg-muted/30">
+                    <td className="px-3 py-2 font-medium">{m.label}</td>
+                    <td className="px-3 py-2 tabular-nums text-muted-foreground">{formatRand(currentVal)}</td>
+                    <td className="px-3 py-1.5">
+                      <Input
+                        type="number" step="0.01"
+                        value={values[m.monthKey] || ""}
+                        onChange={(e) => setValues((p) => ({ ...p, [m.monthKey]: e.target.value }))}
+                        className="h-7 text-xs text-right w-full max-w-[200px] tabular-nums"
+                        placeholder="0.00"
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Total row */}
+              <tr className="border-t-2 bg-muted/50 font-bold">
+                <td className="px-3 py-2">Total</td>
+                <td className="px-3 py-2"></td>
+                <td className="px-3 py-2 tabular-nums">{formatRand(total)}</td>
+              </tr>
+            </tbody>
+          </table>
+          )}
+        </div>
+
+        <DialogFooter className="flex items-center gap-2 pt-2">
+          {saveMutation.isError && <p className="text-xs text-red-500 mr-auto">{(saveMutation.error as any)?.message || "Save failed"}</p>}
+          {saved && <p className="text-xs text-emerald-600 mr-auto flex items-center gap-1"><Check className="h-3 w-3" />Saved successfully</p>}
+          <Button variant="outline" size="sm" className="h-8 text-xs" onClick={onClose}>Cancel</Button>
+          <Button size="sm" className="h-8 text-xs" disabled={saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+            {saveMutation.isPending ? "Saving..." : "Save Budgets"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DashboardTab({ fye }: { fye: number }) {
+  const [showBudgetModal, setShowBudgetModal] = useState(false);
+  const canEdit = usePermission("fye_revenue_tracking", "edit");
+  const { data, isLoading, error, refetch } = useQuery<DashboardData>({
+    queryKey: ["/api/fye-revenue-tracking/dashboard", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/dashboard?fye=${fye}`),
+  });
+
+  if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-40 w-full" />)}</div>;
+  if (error || !data) return (
+    <div className="text-center py-12">
+      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
+      <p className="text-sm font-medium text-foreground mb-1">Failed to load dashboard data</p>
+      <p className="text-xs text-muted-foreground mb-3">{(error as any)?.message || "Unknown error"}</p>
+      <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5 mr-1" />Retry</Button>
+    </div>
+  );
+
+  const { months } = data;
+
+  return (
+    <div className="space-y-2">
+      {/* Budget Edit Button (admin only) */}
+      {canEdit.allowed && (
+        <div className="flex justify-end">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowBudgetModal(true)}>
+            <Pencil className="h-3 w-3 mr-1" />Edit Budgets
+          </Button>
+        </div>
+      )}
+      {canEdit.allowed && <BudgetEditorModal fye={fye} months={months} open={showBudgetModal} onClose={() => setShowBudgetModal(false)} />}
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">
+        <DashboardChart title="Revenue Tracking" months={months} metricKey="revenue" />
+        <DashboardChart title="GP Tracking" months={months} metricKey="gp" />
+      </div>
+      <DashboardSection title="Revenue Tracking" months={months} metricKey="revenue" isRunning={false} />
+      <DashboardSection title="Running Revenue" months={months} metricKey="revenue" isRunning={true} />
+      <DashboardSection title="COS Tracking" months={months} metricKey="cos" isRunning={false} />
+      <DashboardSection title="Running COS" months={months} metricKey="cos" isRunning={true} />
+      <DashboardSection title="GP Tracking" months={months} metricKey="gp" isRunning={false} />
+      <DashboardSection title="Running GP" months={months} metricKey="gp" isRunning={true} />
+    </div>
+  );
+}
+
+// ─── FYE Detail Tab ───
+
+function SummaryCards({ totals }: { totals: DetailData["totals"] }) {
+  const cards = [
+    { label: "Budget Revenue", value: formatRand(totals.budgetRevenue), icon: DollarSign },
+    { label: "Budget COS", value: formatRand(totals.budgetCos), icon: TrendingUp },
+    { label: "Budget GP", value: formatRand(totals.budgetGp), icon: Activity, negative: totals.budgetGp < 0 },
+    { label: "Actual Revenue", value: formatRand(totals.actualRevenue), icon: DollarSign },
+    { label: "Actual Expense", value: formatRand(totals.actualExpense), icon: TrendingUp },
+    { label: "Actual GP", value: formatRand(totals.actualGp), icon: Activity, negative: totals.actualGp < 0 },
+    { label: "Budget GP%", value: formatPct(totals.budgetGpPct), icon: BarChart3 },
+    { label: "Actual GP%", value: formatPct(totals.actualGpPct), icon: BarChart3, negative: totals.actualGpPct != null && totals.actualGpPct < 0 },
+  ];
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
+      {cards.map((c) => (
+        <Card key={c.label} className="p-2">
+          <div className="text-[10px] text-muted-foreground mb-0.5 flex items-center gap-1">
+            <c.icon className="h-3 w-3" />{c.label}
+          </div>
+          <div className={cn("text-sm font-bold tabular-nums", c.negative && "text-red-600")}>{c.value}</div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ─── Editable Pipeline Section ───
+
+function PipelineSection({ pipeline, canEdit, fye }: { pipeline: PipelineRow[]; canEdit: { allowed: boolean; loading: boolean }; fye: number }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const qc = useQueryClient();
+
+  const pipelineFiltered = pipeline.filter((p) => p.dealProbabilityPct >= 75);
+
+  const emptyForm = { projectName: "", projectDeveloper: "", location: "", sizeKwp: "", dealProbabilityPct: 75, forecastSignatureDate: "", solarRevenue: "", bessRevenue: "", forecastGpPct: "", notes: "" };
+  const [form, setForm] = useState(emptyForm);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: typeof form & { id?: number }) => {
+      const payload = { ...data, fyeYear: fye, dealProbabilityPct: Number(data.dealProbabilityPct), solarRevenue: data.solarRevenue || "0", bessRevenue: data.bessRevenue || "0", forecastGpPct: data.forecastGpPct || null };
+      if (data.id) {
+        await apiRequest("PUT", `/api/fye-revenue-tracking/pipeline/${data.id}`, payload);
+      } else {
+        await apiRequest("POST", "/api/fye-revenue-tracking/pipeline", payload);
+      }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/pipeline", fye] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fye-revenue-tracking/pipeline/${id}`); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/pipeline", fye] }); },
+  });
+
+  const startEdit = (p: PipelineRow) => {
+    setForm({ projectName: p.projectName, projectDeveloper: p.projectDeveloper || "", location: p.location || "", sizeKwp: p.sizeKwp || "", dealProbabilityPct: p.dealProbabilityPct, forecastSignatureDate: p.forecastSignatureDate || "", solarRevenue: p.solarRevenue || "", bessRevenue: p.bessRevenue || "", forecastGpPct: p.forecastGpPct || "", notes: p.notes || "" });
+    setEditId(p.id);
+    setShowForm(true);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 pt-3 px-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Forecasted Pipeline — 75% Probability and Higher
+          </CardTitle>
+          {canEdit.allowed && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setForm(emptyForm); setEditId(null); setShowForm(!showForm); }}>
+              {showForm ? <><X className="h-3 w-3 mr-1" />Cancel</> : <><Plus className="h-3 w-3 mr-1" />Add Deal</>}
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      {showForm && (
+        <CardContent className="pt-0 pb-3 px-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 p-3 bg-muted/30 rounded border text-xs">
+            <Input placeholder="Project Name *" value={form.projectName} onChange={(e) => setForm({ ...form, projectName: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Developer" value={form.projectDeveloper} onChange={(e) => setForm({ ...form, projectDeveloper: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Size (kWp)" value={form.sizeKwp} onChange={(e) => setForm({ ...form, sizeKwp: e.target.value })} className="h-7 text-xs" type="number" />
+            <Input placeholder="Probability %" value={form.dealProbabilityPct} onChange={(e) => setForm({ ...form, dealProbabilityPct: Number(e.target.value) })} className="h-7 text-xs" type="number" min={0} max={100} />
+            <Input placeholder="Forecast Sign Date" value={form.forecastSignatureDate} onChange={(e) => setForm({ ...form, forecastSignatureDate: e.target.value })} className="h-7 text-xs" type="date" />
+            <Input placeholder="Solar Revenue" value={form.solarRevenue} onChange={(e) => setForm({ ...form, solarRevenue: e.target.value })} className="h-7 text-xs" type="number" />
+            <Input placeholder="BESS Revenue" value={form.bessRevenue} onChange={(e) => setForm({ ...form, bessRevenue: e.target.value })} className="h-7 text-xs" type="number" />
+            <Input placeholder="Forecast GP% (0.20 = 20%)" value={form.forecastGpPct} onChange={(e) => setForm({ ...form, forecastGpPct: e.target.value })} className="h-7 text-xs" type="number" step="0.01" />
+            <div className="flex gap-1">
+              <Button size="sm" className="h-7 text-xs flex-1" disabled={!form.projectName || saveMutation.isPending} onClick={() => saveMutation.mutate(editId ? { ...form, id: editId } : form)}>
+                {saveMutation.isPending ? "Saving..." : editId ? "Update" : "Add"}
+              </Button>
+            </div>
+          </div>
+          {saveMutation.isError && <p className="text-xs text-red-500 mt-1">{(saveMutation.error as any)?.message || "Save failed"}</p>}
+        </CardContent>
+      )}
+      <CardContent className="p-0 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th className="text-left px-3 py-2 font-medium">Project Name</th>
+              <th className="text-left px-2 py-2 font-medium">Developer</th>
+              <th className="text-left px-2 py-2 font-medium">Location</th>
+              <th className="text-right px-2 py-2 font-medium">Size (kWp)</th>
+              <th className="text-right px-2 py-2 font-medium">Probability %</th>
+              <th className="text-left px-2 py-2 font-medium">Forecast Sign Date</th>
+              <th className="text-right px-2 py-2 font-medium">Solar Revenue</th>
+              <th className="text-right px-2 py-2 font-medium">BESS Revenue</th>
+              <th className="text-right px-2 py-2 font-medium">Forecast GP%</th>
+              <th className="text-right px-2 py-2 font-medium">Forecast GP</th>
+              {canEdit.allowed && <th className="text-center px-2 py-2 font-medium w-16">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {pipelineFiltered.length === 0 ? (
+              <tr><td colSpan={canEdit.allowed ? 11 : 10} className="text-center py-6 text-muted-foreground">No pipeline deals found</td></tr>
+            ) : (
+              pipelineFiltered.map((p) => {
+                const solar = parseFloat(p.solarRevenue || "0");
+                const bess = parseFloat(p.bessRevenue || "0");
+                const gpPct = parseFloat(p.forecastGpPct || "0");
+                const forecastGp = gpPct * (solar + bess);
+                return (
+                  <tr key={p.id} className="border-b hover:bg-muted/30">
+                    <td className="px-3 py-1.5 font-medium">{p.projectName}</td>
+                    <td className="px-2 py-1.5">{p.projectDeveloper || "–"}</td>
+                    <td className="px-2 py-1.5">{p.location || "–"}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp || "–"}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{p.dealProbabilityPct}%</td>
+                    <td className="px-2 py-1.5">{formatDate(p.forecastSignatureDate)}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(solar)}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(bess)}</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums">{(gpPct * 100).toFixed(1)}%</td>
+                    <td className="text-right px-2 py-1.5 tabular-nums font-medium">{formatRand(forecastGp)}</td>
+                    {canEdit.allowed && (
+                      <td className="text-center px-2 py-1.5">
+                        <div className="flex justify-center gap-1">
+                          <button onClick={() => startEdit(p)} className="p-0.5 hover:text-blue-600" title="Edit"><Pencil className="h-3 w-3" /></button>
+                          <button onClick={() => { if (confirm("Archive this deal?")) deleteMutation.mutate(p.id); }} className="p-0.5 hover:text-red-600" title="Archive"><Trash2 className="h-3 w-3" /></button>
+                        </div>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Editable Lost Deals Section ───
+
+function LostDealsSection({ lostDeals, canEdit, fye }: { lostDeals: LostDealRow[]; canEdit: { allowed: boolean; loading: boolean }; fye: number }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const qc = useQueryClient();
+
+  const emptyForm = { dealName: "", dealValue: "", businessDeveloper: "", lostReason: "", lostDate: "", notes: "" };
+  const [form, setForm] = useState(emptyForm);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: typeof form & { id?: number }) => {
+      const payload = { ...data, fyeYear: fye };
+      if (data.id) {
+        await apiRequest("PUT", `/api/fye-revenue-tracking/lost-deals/${data.id}`, payload);
+      } else {
+        await apiRequest("POST", "/api/fye-revenue-tracking/lost-deals", payload);
+      }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/lost-deals", fye] }); setShowForm(false); setEditId(null); setForm(emptyForm); },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("DELETE", `/api/fye-revenue-tracking/lost-deals/${id}`); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/lost-deals", fye] }); },
+  });
+
+  const startEdit = (d: LostDealRow) => {
+    setForm({ dealName: d.dealName, dealValue: d.dealValue || "", businessDeveloper: d.businessDeveloper || "", lostReason: d.lostReason || "", lostDate: d.lostDate || "", notes: d.notes || "" });
+    setEditId(d.id);
+    setShowForm(true);
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-2 pt-3 px-4">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-red-500" />
+            Lost Deals
+          </CardTitle>
+          {canEdit.allowed && (
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setForm(emptyForm); setEditId(null); setShowForm(!showForm); }}>
+              {showForm ? <><X className="h-3 w-3 mr-1" />Cancel</> : <><Plus className="h-3 w-3 mr-1" />Add Deal</>}
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      {showForm && (
+        <CardContent className="pt-0 pb-3 px-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 p-3 bg-muted/30 rounded border text-xs">
+            <Input placeholder="Deal Name *" value={form.dealName} onChange={(e) => setForm({ ...form, dealName: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Deal Value" value={form.dealValue} onChange={(e) => setForm({ ...form, dealValue: e.target.value })} className="h-7 text-xs" type="number" />
+            <Input placeholder="Business Developer" value={form.businessDeveloper} onChange={(e) => setForm({ ...form, businessDeveloper: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Lost Reason" value={form.lostReason} onChange={(e) => setForm({ ...form, lostReason: e.target.value })} className="h-7 text-xs" />
+            <Input placeholder="Lost Date" value={form.lostDate} onChange={(e) => setForm({ ...form, lostDate: e.target.value })} className="h-7 text-xs" type="date" />
+            <div className="flex gap-1">
+              <Button size="sm" className="h-7 text-xs flex-1" disabled={!form.dealName || saveMutation.isPending} onClick={() => saveMutation.mutate(editId ? { ...form, id: editId } : form)}>
+                {saveMutation.isPending ? "Saving..." : editId ? "Update" : "Add"}
+              </Button>
+            </div>
+          </div>
+          {saveMutation.isError && <p className="text-xs text-red-500 mt-1">{(saveMutation.error as any)?.message || "Save failed"}</p>}
+        </CardContent>
+      )}
+      <CardContent className="p-0 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b bg-muted/40">
+              <th className="text-left px-3 py-2 font-medium">Deal Name</th>
+              <th className="text-right px-2 py-2 font-medium">Deal Value</th>
+              <th className="text-left px-2 py-2 font-medium">Business Developer</th>
+              <th className="text-left px-2 py-2 font-medium">Lost Reason</th>
+              <th className="text-left px-2 py-2 font-medium">Lost Date</th>
+              <th className="text-left px-2 py-2 font-medium">Notes</th>
+              {canEdit.allowed && <th className="text-center px-2 py-2 font-medium w-16">Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {lostDeals.length === 0 ? (
+              <tr><td colSpan={canEdit.allowed ? 7 : 6} className="text-center py-6 text-muted-foreground">No lost deals recorded</td></tr>
+            ) : (
+              lostDeals.map((d) => (
+                <tr key={d.id} className="border-b hover:bg-muted/30">
+                  <td className="px-3 py-1.5 font-medium">{d.dealName}</td>
+                  <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(parseFloat(d.dealValue || "0"))}</td>
+                  <td className="px-2 py-1.5">{d.businessDeveloper || "–"}</td>
+                  <td className="px-2 py-1.5">{d.lostReason || "–"}</td>
+                  <td className="px-2 py-1.5">{formatDate(d.lostDate)}</td>
+                  <td className="px-2 py-1.5 truncate max-w-[150px]" title={d.notes || ""}>{d.notes || "–"}</td>
+                  {canEdit.allowed && (
+                    <td className="text-center px-2 py-1.5">
+                      <div className="flex justify-center gap-1">
+                        <button onClick={() => startEdit(d)} className="p-0.5 hover:text-blue-600" title="Edit"><Pencil className="h-3 w-3" /></button>
+                        <button onClick={() => { if (confirm("Delete this lost deal?")) deleteMutation.mutate(d.id); }} className="p-0.5 hover:text-red-600" title="Delete"><Trash2 className="h-3 w-3" /></button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Debounce hook ───
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
+// ─── Multi-select filter dropdown ───
+
+function MultiSelectFilter({
+  label,
+  options,
+  selected,
+  onChange,
+}: {
+  label: string;
+  options: string[];
+  selected: Set<string>;
+  onChange: (next: Set<string>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const toggle = (val: string) => {
+    const next = new Set(selected);
+    if (next.has(val)) next.delete(val);
+    else next.add(val);
+    onChange(next);
+  };
+
+  const count = selected.size;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className={cn(
+          "h-8 text-xs border rounded px-2 bg-background flex items-center gap-1 min-w-[120px] justify-between",
+          count > 0 && "border-blue-400 bg-blue-50"
+        )}
+      >
+        <span className="truncate">{count > 0 ? `${label} (${count})` : label}</span>
+        <ChevronDown className="h-3 w-3 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute top-9 left-0 z-50 bg-background border rounded shadow-lg max-h-56 overflow-y-auto min-w-[180px]">
+          {options.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">No options</div>
+          ) : (
+            <>
+              <button
+                onClick={() => onChange(new Set())}
+                className="w-full text-left px-3 py-1.5 text-xs text-muted-foreground hover:bg-muted/50 border-b"
+              >
+                Clear all
+              </button>
+              {options.map((opt) => (
+                <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/50 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(opt)}
+                    onChange={() => toggle(opt)}
+                    className="rounded border-gray-300 h-3 w-3"
+                  />
+                  <span className="truncate">{opt}</span>
+                </label>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── URL param helpers for filter state ───
+
+function parseSetParam(params: URLSearchParams, key: string): Set<string> {
+  const val = params.get(key);
+  if (!val) return new Set();
+  return new Set(val.split(",").filter(Boolean));
+}
+
+function setToParam(s: Set<string>): string {
+  return [...s].join(",");
+}
+
+/** Inline-editable text cell for admin users. Click to edit, blur/Enter to save. */
+function InlineEditCell({
+  value,
+  projectName,
+  field,
+  canEdit,
+  onSave,
+}: {
+  value: string | null;
+  projectName: string;
+  field: "province" | "projectType" | "fundingType";
+  canEdit: boolean;
+  onSave: (projectName: string, field: string, value: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value || "");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editing]);
+
+  if (!canEdit) return <>{value || "—"}</>;
+
+  if (!editing) {
+    return (
+      <span
+        className="cursor-pointer hover:bg-blue-50 rounded px-1 -mx-1 inline-block min-w-[40px]"
+        onClick={() => { setDraft(value || ""); setEditing(true); }}
+        title="Click to edit"
+      >
+        {value || <span className="text-muted-foreground">—</span>}
+        <Pencil className="inline-block h-2.5 w-2.5 ml-1 text-muted-foreground opacity-0 group-hover:opacity-100" />
+      </span>
+    );
+  }
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    const newVal = trimmed || null;
+    if (newVal !== value) onSave(projectName, field, newVal);
+    setEditing(false);
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") setEditing(false);
+      }}
+      className="w-full bg-white border border-blue-300 rounded px-1 py-0 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+    />
+  );
+}
+
+function DetailTab({ fye }: { fye: number }) {
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const params = useMemo(() => new URLSearchParams(searchString), [searchString]);
+
+  // Initialize filter state from URL params
+  const [searchInput, setSearchInput] = useState(params.get("q") || "");
+  const debouncedSearch = useDebounce(searchInput, 300);
+  const [bdFilter, setBdFilter] = useState<Set<string>>(() => parseSetParam(params, "bd"));
+  const [provinceFilter, setProvinceFilter] = useState<Set<string>>(() => parseSetParam(params, "prov"));
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(() => parseSetParam(params, "type"));
+  const [fundingFilter, setFundingFilter] = useState<Set<string>>(() => parseSetParam(params, "fund"));
+  const [trackersOnly, setTrackersOnly] = useState(() => params.get("trackers") !== "0");
+  const [cutoffMonth, setCutoffMonth] = useState<string>(params.get("cutoff") || "");
+  const [sortKey, setSortKey] = useState<keyof ProjectRow>("projectName");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  // Generate FYE month options for the period filter
+  const fyeMonthOptions = useMemo(() => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const options: { value: string; label: string }[] = [];
+    // Sep to Dec of fye-1
+    for (let m = 9; m <= 12; m++) {
+      const mk = `${fye - 1}-${String(m).padStart(2, "0")}`;
+      options.push({ value: mk, label: `End of ${months[m - 1]} ${String(fye - 1).slice(2)}` });
+    }
+    // Jan to Aug of fye
+    for (let m = 1; m <= 8; m++) {
+      const mk = `${fye}-${String(m).padStart(2, "0")}`;
+      options.push({ value: mk, label: `End of ${months[m - 1]} ${String(fye).slice(2)}` });
+    }
+    return options;
+  }, [fye]);
+
+  // Sync filters to URL params (preserving existing params like fye)
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    // Clear filter-specific params, then re-set active ones
+    for (const key of ["q", "bd", "prov", "type", "fund", "trackers", "cutoff"]) p.delete(key);
+    if (debouncedSearch) p.set("q", debouncedSearch);
+    if (bdFilter.size > 0) p.set("bd", setToParam(bdFilter));
+    if (provinceFilter.size > 0) p.set("prov", setToParam(provinceFilter));
+    if (typeFilter.size > 0) p.set("type", setToParam(typeFilter));
+    if (fundingFilter.size > 0) p.set("fund", setToParam(fundingFilter));
+    if (!trackersOnly) p.set("trackers", "0");
+    if (cutoffMonth) p.set("cutoff", cutoffMonth);
+    const qs = p.toString();
+    const currentPath = window.location.pathname;
+    setLocation(qs ? `${currentPath}?${qs}` : currentPath, { replace: true });
+  }, [debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, trackersOnly, cutoffMonth, setLocation]);
+
+  const hasAnyFilter = debouncedSearch || bdFilter.size > 0 || provinceFilter.size > 0 || typeFilter.size > 0 || fundingFilter.size > 0 || !trackersOnly || !!cutoffMonth;
+
+  const clearAll = () => {
+    setSearchInput("");
+    setBdFilter(new Set());
+    setProvinceFilter(new Set());
+    setTypeFilter(new Set());
+    setFundingFilter(new Set());
+    setTrackersOnly(true);
+    setCutoffMonth("");
+  };
+
+  const toggleSort = (key: keyof ProjectRow) => {
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("asc"); }
+  };
+  const sortIndicator = (key: keyof ProjectRow) => sortKey === key ? (sortDir === "asc" ? " \u25B2" : " \u25BC") : "";
+
+  const detailUrl = cutoffMonth
+    ? `/api/fye-revenue-tracking/detail?fye=${fye}&cutoffMonth=${cutoffMonth}`
+    : `/api/fye-revenue-tracking/detail?fye=${fye}`;
+  const { data, isLoading, error, refetch } = useQuery<DetailData>({
+    queryKey: ["/api/fye-revenue-tracking/detail", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/detail?fye=${fye}`),
+  });
+
+  const { data: pipeline } = useQuery<PipelineRow[]>({
+    queryKey: ["/api/fye-revenue-tracking/pipeline", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/pipeline?fye=${fye}`),
+  });
+
+  const { data: lostDeals } = useQuery<LostDealRow[]>({
+    queryKey: ["/api/fye-revenue-tracking/lost-deals", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/lost-deals?fye=${fye}`),
+  });
+
+  const { data: kpis } = useQuery<KpiData>({
+    queryKey: ["/api/fye-revenue-tracking/kpis", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/kpis?fye=${fye}`),
+  });
+
+  const canEdit = usePermission("fye_revenue_tracking", "edit");
+  const queryClient = useQueryClient();
+
+  const inlineEditMutation = useMutation({
+    mutationFn: async ({ projectName, field, value }: { projectName: string; field: string; value: string | null }) => {
+      await apiRequest("PUT", "/api/fye-revenue-tracking/detail/inline-edit", { projectName, field, value });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [detailUrl] });
+    },
+  });
+
+  const handleInlineEdit = useCallback((projectName: string, field: string, value: string | null) => {
+    inlineEditMutation.mutate({ projectName, field, value });
+  }, [inlineEditMutation]);
+
+  // Extract unique filter options from data
+  const uniqueBds = useMemo(() => [...new Set(data?.projects.map((p) => p.businessDeveloper).filter(Boolean) as string[])].sort(), [data]);
+  const uniqueProvinces = useMemo(() => [...new Set(data?.projects.map((p) => p.province).filter(Boolean) as string[])].sort(), [data]);
+  const uniqueTypes = useMemo(() => [...new Set(data?.projects.map((p) => p.projectType).filter(Boolean) as string[])].sort(), [data]);
+  const uniqueFunding = useMemo(() => [...new Set(data?.projects.map((p) => p.fundingType).filter(Boolean) as string[])].sort(), [data]);
+
+  const filtered = useMemo(() => {
+    if (!data) return [];
+    const search = debouncedSearch.toLowerCase();
+    const rows = data.projects.filter((p) => {
+      if (trackersOnly && !p.hasTracker) return false;
+      if (search && !p.projectName.toLowerCase().includes(search)) return false;
+      if (bdFilter.size > 0 && (!p.businessDeveloper || !bdFilter.has(p.businessDeveloper))) return false;
+      if (provinceFilter.size > 0 && (!p.province || !provinceFilter.has(p.province))) return false;
+      if (typeFilter.size > 0 && (!p.projectType || !typeFilter.has(p.projectType))) return false;
+      if (fundingFilter.size > 0 && (!p.fundingType || !fundingFilter.has(p.fundingType))) return false;
+      return true;
+    });
+    return rows.sort((a, b) => {
+      const av = a[sortKey], bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = typeof av === "number" ? (av as number) - (bv as number) : String(av).localeCompare(String(bv));
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [data, debouncedSearch, bdFilter, provinceFilter, typeFilter, fundingFilter, trackersOnly, sortKey, sortDir]);
+
+  const filteredTotals = useMemo(() => {
+    return filtered.reduce(
+      (acc, r) => ({
+        budgetRevenue: acc.budgetRevenue + r.budgetRevenue,
+        budgetCos: acc.budgetCos + r.budgetCos,
+        budgetGp: acc.budgetGp + r.budgetGp,
+        actualRevenue: acc.actualRevenue + r.actualRevenue,
+        actualExpense: acc.actualExpense + r.actualExpense,
+        actualGp: acc.actualGp + r.actualGp,
+      }),
+      { budgetRevenue: 0, budgetCos: 0, budgetGp: 0, actualRevenue: 0, actualExpense: 0, actualGp: 0 }
+    );
+  }, [filtered]);
+
+  const handleExport = async () => {
+    try {
+      const headers = ["Project Name", "Business Developer", "Province", "Size (kWp)", "Project Type", "Funding Type", "Start Date", "PC Date", "Status", "Budget Revenue", "Budget COS", "Budget GP", "Actual Revenue", "Actual Expense", "Actual GP", "Budget GP%", "Actual GP%"];
+      const dataRows = filtered.map((p) => [
+        p.projectName, p.businessDeveloper || "", p.province || "", p.sizeKwp, p.projectType || "", p.fundingType || "",
+        p.startDate || "", p.pcDate || "", p.status || "",
+        p.budgetRevenue, p.budgetCos, p.budgetGp, p.actualRevenue, p.actualExpense, p.actualGp,
+        formatPct(p.budgetGpPct), formatPct(p.actualGpPct),
+      ]);
+      const totalsRow = [
+        `Totals (${filtered.length})`, "", "", "", "", "", "", "", "",
+        filteredTotals.budgetRevenue, filteredTotals.budgetCos, filteredTotals.budgetGp,
+        filteredTotals.actualRevenue, filteredTotals.actualExpense, filteredTotals.actualGp,
+        formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null),
+        formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : null),
+      ];
+      const csvRows = [headers, ...dataRows, totalsRow];
+      const csv = csvRows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const today = new Date().toISOString().slice(0, 10);
+      a.download = `FYE_${fye}_Revenue_Detail${cutoffMonth ? `_to_${cutoffMonth}` : ""}_${today}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {}
+  };
+
+  // Collect active filter pills
+  const pills: { label: string; onRemove: () => void }[] = [];
+  if (debouncedSearch) pills.push({ label: `Search: "${debouncedSearch}"`, onRemove: () => setSearchInput("") });
+  bdFilter.forEach((v) => pills.push({ label: `BD: ${v}`, onRemove: () => { const n = new Set(bdFilter); n.delete(v); setBdFilter(n); } }));
+  provinceFilter.forEach((v) => pills.push({ label: `Province: ${v}`, onRemove: () => { const n = new Set(provinceFilter); n.delete(v); setProvinceFilter(n); } }));
+  typeFilter.forEach((v) => pills.push({ label: `Type: ${v}`, onRemove: () => { const n = new Set(typeFilter); n.delete(v); setTypeFilter(n); } }));
+  fundingFilter.forEach((v) => pills.push({ label: `Funding: ${v}`, onRemove: () => { const n = new Set(fundingFilter); n.delete(v); setFundingFilter(n); } }));
+  if (!trackersOnly) pills.push({ label: "Showing All (incl. untracked)", onRemove: () => setTrackersOnly(true) });
+  if (cutoffMonth) {
+    const cutoffLabel = fyeMonthOptions.find((o) => o.value === cutoffMonth)?.label || cutoffMonth;
+    pills.push({ label: `Period: ${cutoffLabel}`, onRemove: () => setCutoffMonth("") });
+  }
+
+  if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>;
+  if (error || !data) return (
+    <div className="text-center py-12">
+      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
+      <p className="text-sm font-medium text-foreground mb-1">Failed to load detail data</p>
+      <p className="text-xs text-muted-foreground mb-3">{(error as any)?.message || "Unknown error"}</p>
+      <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5 mr-1" />Retry</Button>
+    </div>
+  );
+
+  const pipelineFiltered = (pipeline || []).filter((p) => p.dealProbabilityPct >= 75);
+
+  return (
+    <div className="space-y-4">
+      {/* Summary Cards */}
+      <SummaryCards totals={data.totals} />
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+          <Input placeholder="Search projects..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} className="pl-8 h-8 text-xs" />
+        </div>
+        <MultiSelectFilter label="Business Developer" options={uniqueBds} selected={bdFilter} onChange={setBdFilter} />
+        <MultiSelectFilter label="Province" options={uniqueProvinces} selected={provinceFilter} onChange={setProvinceFilter} />
+        <MultiSelectFilter label="Project Type" options={uniqueTypes} selected={typeFilter} onChange={setTypeFilter} />
+        <MultiSelectFilter label="Funding Type" options={uniqueFunding} selected={fundingFilter} onChange={setFundingFilter} />
+        <select
+          value={cutoffMonth}
+          onChange={(e) => setCutoffMonth(e.target.value)}
+          className={cn(
+            "h-8 text-xs border rounded px-2 bg-background min-w-[150px] cursor-pointer",
+            cutoffMonth && "border-blue-400 bg-blue-50"
+          )}
+        >
+          <option value="">Full FYE</option>
+          {fyeMonthOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        <Button
+          variant={trackersOnly ? "default" : "outline"}
+          size="sm"
+          className={`h-8 text-xs ${trackersOnly ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
+          onClick={() => setTrackersOnly(!trackersOnly)}
+        >
+          <Check className={`h-3.5 w-3.5 mr-1 ${trackersOnly ? "" : "opacity-0"}`} />
+          Tracked Only
+        </Button>
+        {hasAnyFilter && (
+          <Button variant="ghost" size="sm" className="h-8 text-xs text-muted-foreground hover:text-foreground" onClick={clearAll}>
+            <FilterX className="h-3.5 w-3.5 mr-1" />Clear All
+          </Button>
+        )}
+        <Button variant="outline" size="sm" className="h-8 text-xs ml-auto" onClick={handleExport}>
+          <Download className="h-3.5 w-3.5 mr-1" />Export CSV
+        </Button>
+      </div>
+
+      {/* Active filter pills */}
+      {pills.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {pills.map((pill, i) => (
+            <span key={i} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-full px-2.5 py-0.5 text-[11px]">
+              {pill.label}
+              <button onClick={pill.onRemove} className="hover:text-blue-900"><X className="h-3 w-3" /></button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Project Table */}
+      <Card>
+        <CardContent className="p-0 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 z-10 bg-muted/80 backdrop-blur">
+              <tr className="border-b">
+                {([
+                  ["projectName", "Project Name", "left", true],
+                  ["businessDeveloper", "Business Developer", "left", false],
+                  ["province", "Province", "left", false],
+                  ["sizeKwp", "Size kWp", "right", false],
+                  ["projectType", "Project Type", "left", false],
+                  ["fundingType", "Funding Type", "left", false],
+                  ["startDate", "Start Date", "left", false],
+                  ["pcDate", "PC Date", "left", false],
+                  ["status", "Status", "left", false],
+                  ["budgetRevenue", "Budget Revenue", "right", false],
+                  ["budgetCos", "Budget COS", "right", false],
+                  ["budgetGp", "Budget GP", "right", false],
+                  ["actualRevenue", "Actual Revenue", "right", false],
+                  ["actualExpense", "Actual Expense", "right", false],
+                  ["actualGp", "Actual GP", "right", false],
+                  ["budgetGpPct", "Budget GP%", "right", false],
+                  ["actualGpPct", "Actual GP%", "right", false],
+                ] as const).map(([key, label, align, sticky]) => (
+                  <th key={key} onClick={() => toggleSort(key as keyof ProjectRow)} className={cn(
+                    `text-${align} px-${sticky ? 3 : 2} py-2 font-medium cursor-pointer select-none hover:text-foreground whitespace-nowrap`,
+                    sticky && "sticky left-0 bg-muted/80 z-20 min-w-[180px]"
+                  )}>{label}{sortIndicator(key as keyof ProjectRow)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={17} className="text-center py-8 text-muted-foreground">No projects found for FYE {fye}{search ? ` matching "${search}"` : ""}</td></tr>
+              ) : (
+                <>
+                  {/* Totals Row — pinned at top */}
+                  <tr className="border-b-2 bg-muted/50 font-bold">
+                    <td className="px-3 py-2 sticky left-0 bg-muted/50 z-10">Totals ({filtered.length})</td>
+                    <td colSpan={8}></td>
+                    <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.budgetRevenue)}</td>
+                    <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.budgetCos)}</td>
+                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.budgetGp < 0 && "text-red-600")}>{formatRand(filteredTotals.budgetGp)}</td>
+                    <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualRevenue)}</td>
+                    <td className="text-right px-2 py-2 tabular-nums">{formatRand(filteredTotals.actualExpense)}</td>
+                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatRand(filteredTotals.actualGp)}</td>
+                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.budgetGp < 0 && "text-red-600")}>{formatPct(filteredTotals.budgetRevenue ? filteredTotals.budgetGp / filteredTotals.budgetRevenue : null)}</td>
+                    <td className={cn("text-right px-2 py-2 tabular-nums", filteredTotals.actualGp < 0 && "text-red-600")}>{formatPct(filteredTotals.actualRevenue ? filteredTotals.actualGp / filteredTotals.actualRevenue : null)}</td>
+                  </tr>
+                  {filtered.map((p) => (
+                    <tr key={p.projectId} className="border-b hover:bg-muted/30 group">
+                      <td className="px-3 py-1.5 font-medium sticky left-0 bg-white z-10 truncate max-w-[200px]" title={p.projectName}>
+                        <Link href={`/project/${encodeURIComponent(p.projectName)}`} className="text-blue-600 hover:underline">{p.projectName}</Link>
+                      </td>
+                      <td className="px-2 py-1.5 truncate max-w-[120px]" title={p.businessDeveloper || ""}>{p.businessDeveloper || "—"}</td>
+                      <td className="px-2 py-1.5">
+                        <InlineEditCell value={p.province} projectName={p.projectName} field="province" canEdit={canEdit} onSave={handleInlineEdit} />
+                      </td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{p.sizeKwp ? p.sizeKwp.toLocaleString() : "—"}</td>
+                      <td className="px-2 py-1.5">
+                        <InlineEditCell value={p.projectType} projectName={p.projectName} field="projectType" canEdit={canEdit} onSave={handleInlineEdit} />
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <InlineEditCell value={p.fundingType} projectName={p.projectName} field="fundingType" canEdit={canEdit} onSave={handleInlineEdit} />
+                      </td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.startDate)}</td>
+                      <td className="px-2 py-1.5 whitespace-nowrap">{formatDate(p.pcDate)}</td>
+                      <td className="px-2 py-1.5">{p.status ? <Badge variant="outline" className="text-[10px]">{p.status}</Badge> : "—"}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetRevenue)}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.budgetCos)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.budgetGp < 0 && "text-red-600")}>{formatRand(p.budgetGp)}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualRevenue)}</td>
+                      <td className="text-right px-2 py-1.5 tabular-nums">{formatRand(p.actualExpense)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGp < 0 && "text-red-600")}>{formatRand(p.actualGp)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.budgetGpPct != null && p.budgetGpPct < 0 && "text-red-600")}>{formatPct(p.budgetGpPct)}</td>
+                      <td className={cn("text-right px-2 py-1.5 tabular-nums", p.actualGpPct != null && p.actualGpPct < 0 && "text-red-600")}>{formatPct(p.actualGpPct)}</td>
+                    </tr>
+                  ))}
+                </>
+              )}
+            </tbody>
+          </table>
+        </CardContent>
+      </Card>
+
+      {/* Forecast Pipeline */}
+      <PipelineSection pipeline={pipeline || []} canEdit={canEdit} fye={fye} />
+
+      {/* Lost Deals */}
+      <LostDealsSection lostDeals={lostDeals || []} canEdit={canEdit} fye={fye} />
+
+      {/* KPI Counts */}
+      {kpis && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Card className="p-3 text-center">
+            <div className="text-xs text-muted-foreground mb-1">Brought In</div>
+            <div className="text-2xl font-bold">{kpis.broughtIn}</div>
+          </Card>
+          <Card className="p-3 text-center">
+            <div className="text-xs text-muted-foreground mb-1">Signed</div>
+            <div className="text-2xl font-bold text-emerald-600">{kpis.signed}</div>
+          </Card>
+          <Card className="p-3 text-center">
+            <div className="text-xs text-muted-foreground mb-1">Total</div>
+            <div className="text-2xl font-bold text-blue-600">{kpis.total}</div>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Snapshot Types ───
+
+interface SnapshotSummary {
+  id: number;
+  fyeYear: number;
+  snapshotMonth: number;
+  snapshotDate: string;
+  snapshotLabel: string;
+  status: string;
+  notes: string | null;
+  createdBy: number | null;
+  createdAt: string;
+  submittedAt: string | null;
+  approvedAt: string | null;
+}
+
+// ─── Snapshots Tab ───
+
+function SnapshotsTab({ fye }: { fye: number }) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [viewId, setViewId] = useState<number | null>(null);
+  const [label, setLabel] = useState("");
+  const [notes, setNotes] = useState("");
+  const qc = useQueryClient();
+  const canEdit = usePermission("fye_revenue_tracking", "edit");
+
+  const { data: snapshots, isLoading } = useQuery<SnapshotSummary[]>({
+    queryKey: ["/api/fye-revenue-tracking/snapshots", fye],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/snapshots?fye=${fye}`),
+  });
+
+  const { data: viewData, isLoading: viewLoading } = useQuery<any>({
+    queryKey: ["/api/fye-revenue-tracking/snapshots", viewId],
+    queryFn: fetchQueryFn(`/api/fye-revenue-tracking/snapshots/${viewId}`),
+    enabled: viewId !== null,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/fye-revenue-tracking/snapshots", { fyeYear: fye, snapshotLabel: label, notes: notes || undefined });
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/snapshots", fye] }); setShowCreate(false); setLabel(""); setNotes(""); },
+  });
+
+  const submitMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("PUT", `/api/fye-revenue-tracking/snapshots/${id}/submit`); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/snapshots", fye] }); },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("PUT", `/api/fye-revenue-tracking/snapshots/${id}/approve`); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/fye-revenue-tracking/snapshots", fye] }); },
+  });
+
+  // Auto-suggest label
+  const suggestedLabel = useMemo(() => {
+    const now = new Date();
+    const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    return `${monthNames[now.getMonth()]} ${now.getFullYear()} Month-End`;
+  }, []);
+
+  // Historical view — loading
+  if (viewId !== null && viewLoading) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setViewId(null)}><X className="h-3 w-3 mr-1" />Back</Button>
+          <span className="text-xs text-muted-foreground">Loading snapshot...</span>
+        </div>
+        <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>
+      </div>
+    );
+  }
+
+  // Historical view — data
+  if (viewId !== null && viewData) {
+    const sd = viewData.snapshotData;
+    return (
+      <div className="space-y-4">
+        <div className="bg-amber-50 border border-amber-200 rounded p-3 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-amber-800">Viewing snapshot: {viewData.snapshotLabel}</p>
+            <p className="text-xs text-amber-600">
+              {viewData.status === "approved" ? `Approved on ${formatDate(viewData.approvedAt)}` :
+               viewData.status === "submitted" ? `Submitted on ${formatDate(viewData.submittedAt)}` :
+               `Draft — created ${formatDate(viewData.createdAt)}`}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <a href={`/api/fye-revenue-tracking/snapshots/${viewId}/export`} target="_blank" rel="noreferrer">
+              <Button variant="outline" size="sm" className="h-7 text-xs"><Download className="h-3 w-3 mr-1" />Export Excel</Button>
+            </a>
+            <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setViewId(null)}><X className="h-3 w-3 mr-1" />Close</Button>
+          </div>
+        </div>
+
+        {/* Render dashboard from snapshot */}
+        {sd?.dashboard?.months && (
+          <>
+            <Card><CardHeader className="pb-2 pt-3 px-4"><CardTitle className="text-sm font-semibold">Revenue Tracking (Snapshot)</CardTitle></CardHeader>
+            <CardContent className="px-0 pb-2 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead><tr className="border-b"><th className="text-left px-3 py-1.5 font-medium w-32">Row</th>
+                  {sd.dashboard.months.map((m: any) => <th key={m.monthKey} className="text-right px-2 py-1.5 font-medium min-w-[80px]">{m.label}</th>)}
+                </tr></thead>
+                <tbody>
+                  {(["budget", "actualForecast", "actual"] as const).map((rk) => (
+                    <tr key={rk} className="border-b hover:bg-muted/30">
+                      <td className="px-3 py-1.5 font-medium">{rk === "actualForecast" ? "Actual + Forecast" : rk.charAt(0).toUpperCase() + rk.slice(1)}</td>
+                      {sd.dashboard.months.map((m: any, i: number) => <td key={i} className="text-right px-2 py-1.5 tabular-nums">{m.revenue?.[rk] != null ? formatRand(m.revenue[rk]) : "–"}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </CardContent></Card>
+          </>
+        )}
+
+        {/* Summary from snapshot */}
+        {sd?.detail?.totals && (
+          <Card className="p-4">
+            <p className="text-sm font-semibold mb-2">Detail Totals (Snapshot)</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 text-xs">
+              <div><span className="text-muted-foreground">Budget Rev:</span> {formatRand(sd.detail.totals.budgetRevenue)}</div>
+              <div><span className="text-muted-foreground">Budget COS:</span> {formatRand(sd.detail.totals.budgetCos)}</div>
+              <div><span className="text-muted-foreground">Budget GP:</span> {formatRand(sd.detail.totals.budgetGp)}</div>
+              <div><span className="text-muted-foreground">Actual Rev:</span> {formatRand(sd.detail.totals.actualRevenue)}</div>
+              <div><span className="text-muted-foreground">Actual Exp:</span> {formatRand(sd.detail.totals.actualExpense)}</div>
+              <div><span className="text-muted-foreground">Actual GP:</span> {formatRand(sd.detail.totals.actualGp)}</div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">{sd.detail.projects?.length || 0} projects, {sd.pipeline?.length || 0} pipeline deals, {sd.lostDeals?.length || 0} lost deals</p>
+            <p className="text-xs text-muted-foreground">KPI: Brought In {sd.kpi?.broughtIn}, Signed {sd.kpi?.signed}, Total {sd.kpi?.total}</p>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
+  const statusBadge = (status: string) => {
+    if (status === "approved") return <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">Approved</Badge>;
+    if (status === "submitted") return <Badge className="bg-amber-100 text-amber-700 text-[10px]">Submitted</Badge>;
+    return <Badge variant="outline" className="text-[10px]">Draft</Badge>;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Month-End Snapshots</h3>
+        {canEdit.allowed && (
+          <Button size="sm" className="h-7 text-xs" onClick={() => { setLabel(suggestedLabel); setShowCreate(true); }}>
+            <Camera className="h-3 w-3 mr-1" />Take Snapshot
+          </Button>
+        )}
+      </div>
+
+      {/* Create Modal */}
+      {showCreate && (
+        <Card className="p-4 border-emerald-200 bg-emerald-50/30">
+          <p className="text-sm font-semibold mb-2">Take Month-End Snapshot</p>
+          <div className="space-y-2">
+            <Input placeholder="Snapshot label" value={label} onChange={(e) => setLabel(e.target.value)} className="h-8 text-xs" />
+            <textarea placeholder="Notes for the board (optional)" value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full h-16 text-xs border rounded p-2 bg-background" />
+            <p className="text-xs text-muted-foreground">This will capture the complete report: dashboard, project detail, pipeline deals, lost deals, and KPIs.</p>
+            <div className="flex gap-2">
+              <Button size="sm" className="h-7 text-xs" disabled={!label || createMutation.isPending} onClick={() => createMutation.mutate()}>
+                {createMutation.isPending ? "Creating..." : "Create Draft Snapshot"}
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowCreate(false)}>Cancel</Button>
+            </div>
+            {createMutation.isError && <p className="text-xs text-red-500">{(createMutation.error as any)?.message || "Failed to create snapshot"}</p>}
+          </div>
+        </Card>
+      )}
+
+      {/* Snapshot List */}
+      {isLoading ? <Skeleton className="h-32 w-full" /> : (
+        <Card>
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="text-left px-3 py-2 font-medium">Label</th>
+                  <th className="text-left px-2 py-2 font-medium">Date</th>
+                  <th className="text-left px-2 py-2 font-medium">Status</th>
+                  <th className="text-left px-2 py-2 font-medium">Notes</th>
+                  <th className="text-center px-2 py-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(!snapshots || snapshots.length === 0) ? (
+                  <tr><td colSpan={5} className="text-center py-8 text-muted-foreground">No snapshots yet. Take your first month-end snapshot.</td></tr>
+                ) : snapshots.map((s) => (
+                  <tr key={s.id} className="border-b hover:bg-muted/30">
+                    <td className="px-3 py-2 font-medium">{s.snapshotLabel}</td>
+                    <td className="px-2 py-2">{formatDate(s.snapshotDate)}</td>
+                    <td className="px-2 py-2">{statusBadge(s.status)}</td>
+                    <td className="px-2 py-2 truncate max-w-[200px]" title={s.notes || ""}>{s.notes || "–"}</td>
+                    <td className="px-2 py-2">
+                      <div className="flex justify-center gap-1">
+                        <button onClick={() => setViewId(s.id)} className="p-1 hover:text-blue-600" title="View"><Eye className="h-3.5 w-3.5" /></button>
+                        <a href={`/api/fye-revenue-tracking/snapshots/${s.id}/export`} target="_blank" rel="noreferrer" className="p-1 hover:text-emerald-600" title="Export"><Download className="h-3.5 w-3.5" /></a>
+                        {s.status === "draft" && canEdit.allowed && (
+                          <button onClick={() => { if (confirm("Submit this snapshot to the board?")) submitMutation.mutate(s.id); }} className="p-1 hover:text-amber-600" title="Submit"><Check className="h-3.5 w-3.5" /></button>
+                        )}
+                        {s.status === "submitted" && canEdit.allowed && (
+                          <button onClick={() => { if (confirm("Approve this snapshot?")) approveMutation.mutate(s.id); }} className="p-1 hover:text-emerald-600" title="Approve"><Check className="h-3.5 w-3.5" /></button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Page ───
+
+export default function FyeRevenueTrackingPage() {
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
+  const params = useMemo(() => new URLSearchParams(searchString), [searchString]);
+
+  const [activeTab, setActiveTab] = useState<"dashboard" | "detail" | "snapshots">(
+    (params.get("tab") as any) || "dashboard"
+  );
+
+  // FYE year from URL param, falling back to current active year
+  const urlFye = params.get("fye");
+  const [fye, setFyeState] = useState(() => {
+    if (urlFye) { const n = parseInt(urlFye, 10); if (!isNaN(n)) return n; }
+    return getCurrentFye();
+  });
+
+  // Fetch available years from API
+  const { data: yearsData } = useQuery<{ years: number[]; currentFye: number }>({
+    queryKey: ["/api/fye-revenue-tracking/years"],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+
+  const fyeOptions = useMemo(() => {
+    if (yearsData?.years?.length) return yearsData.years;
+    const current = getCurrentFye();
+    return [current + 1, current, current - 1];
+  }, [yearsData]);
+
+  // Sync FYE and tab to URL
+  const setFye = useCallback((y: number) => {
+    setFyeState(y);
+    const p = new URLSearchParams(window.location.search);
+    p.set("fye", String(y));
+    setLocation(`${window.location.pathname}?${p.toString()}`, { replace: true });
+  }, [setLocation]);
+
+  // Initialize URL param on mount if missing
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (!p.has("fye")) {
+      p.set("fye", String(fye));
+      setLocation(`${window.location.pathname}?${p.toString()}`, { replace: true });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">FYE Revenue Tracking</h1>
+          <p className="text-xs text-muted-foreground">Financial Year End: Sep {fye - 1} – Aug {fye}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={fye}
+            onChange={(e) => setFye(parseInt(e.target.value, 10))}
+            className="h-8 text-xs border rounded px-2 bg-background"
+          >
+            {fyeOptions.map((y) => (
+              <option key={y} value={y}>FYE {y} (Sep {y - 1} – Aug {y})</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex border-b">
+        <button
+          onClick={() => setActiveTab("dashboard")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "dashboard" ? "border-emerald-600 text-emerald-600" : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <BarChart3 className="h-3.5 w-3.5 inline mr-1.5" />Dashboard
+        </button>
+        <button
+          onClick={() => setActiveTab("detail")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "detail" ? "border-emerald-600 text-emerald-600" : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <FileText className="h-3.5 w-3.5 inline mr-1.5" />FYE Detail
+        </button>
+        <button
+          onClick={() => setActiveTab("snapshots")}
+          className={cn(
+            "px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors",
+            activeTab === "snapshots" ? "border-emerald-600 text-emerald-600" : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          <Camera className="h-3.5 w-3.5 inline mr-1.5" />Snapshots
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "dashboard" ? <DashboardTab fye={fye} /> : activeTab === "detail" ? <DetailTab fye={fye} /> : <SnapshotsTab fye={fye} />}
+    </div>
+  );
+}

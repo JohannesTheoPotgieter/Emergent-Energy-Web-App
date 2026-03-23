@@ -90,7 +90,6 @@ describe("app navigation visibility", () => {
     expect(ADMIN_SURFACES.map((surface) => surface.label)).toEqual([
       "Control Center",
       "Smart Import",
-      "Excel Updates",
       "Roles & Permissions",
       "System Settings",
       "Audit Log",

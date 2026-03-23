@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import {
   Activity,
   ArrowRight,
@@ -791,24 +792,39 @@ function CompanyPrioritiesManager() {
     setEditId(p.id); setTitle(p.title); setDescription(p.description || ""); setDepartment(p.department || ""); setSeverity(p.severity || "normal"); setFormStatus(p.status || "active"); setDueDate(p.dueDate || ""); setShowForm(true);
   };
 
-  const savePriority = async () => {
-    if (!title.trim()) return toast({ title: "Title is required", variant: "destructive" });
-    const body = { title: title.trim(), description: description.trim() || null, department: department.trim() || null, severity, status, dueDate: dueDate || null };
-    const url = editId ? `/api/mytool/company-priorities/${editId}` : "/api/mytool/company-priorities";
-    const method = editId ? "PATCH" : "POST";
-    const res = await fetch(url, { method, headers: headers(), body: JSON.stringify(body) });
-    if (!res.ok) return toast({ title: "Save failed", variant: "destructive" });
-    queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-    resetForm();
-    toast({ title: editId ? "Priority updated" : "Priority created" });
-  };
+  const savePriorityMutation = useMutation({
+    mutationFn: async () => {
+      if (!title.trim()) throw new Error("Title is required");
+      const body = { title: title.trim(), description: description.trim() || null, department: department.trim() || null, severity, status, dueDate: dueDate || null };
+      const url = editId ? `/api/mytool/company-priorities/${editId}` : "/api/mytool/company-priorities";
+      const method = editId ? "PATCH" : "POST";
+      const res = await fetch(url, { method, headers: headers(), body: JSON.stringify(body) });
+      if (!res.ok) throw new Error("Save failed");
+      return { isEdit: !!editId };
+    },
+    onSuccess: ({ isEdit }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      resetForm();
+      toast({ title: isEdit ? "Priority updated" : "Priority created" });
+    },
+    onError: (err: Error) => toast({ title: err.message, variant: "destructive" }),
+  });
+  const savePriority = () => savePriorityMutation.mutate();
 
-  const deletePriority = async (id: number) => {
-    const res = await fetch(`/api/mytool/company-priorities/${id}`, { method: "DELETE", headers: headers() });
-    if (!res.ok) return toast({ title: "Delete failed", variant: "destructive" });
-    queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-    toast({ title: "Priority deleted" });
-  };
+  const deletePriorityMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/mytool/company-priorities/${id}`, { method: "DELETE", headers: headers() });
+      if (!res.ok) throw new Error("Delete failed");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      toast({ title: "Priority deleted" });
+    },
+    onError: () => toast({ title: "Delete failed", variant: "destructive" }),
+  });
+  const deletePriority = (id: number) => deletePriorityMutation.mutate(id);
 
   return (
     <Card className="border-border shadow-sm">
@@ -1081,6 +1097,14 @@ export function ProjectLifecyclePage() {
     [clients],
   );
 
+  const lifecycleAttentionItems = useMemo((): AttentionItem[] => {
+    const items: AttentionItem[] = [];
+    if (blockedGateCount > 0) items.push({ label: "Blocked Gates", value: blockedGateCount, color: "text-red-600 bg-red-50 border-red-200", href: "/project-lifecycle/stage-gates" });
+    if (pendingGateCount > 0) items.push({ label: "Pending Gates", value: pendingGateCount, color: "text-amber-700 bg-amber-50 border-amber-200", href: "/project-lifecycle/stage-gates" });
+    if (data?.summary.projectsMissingLatestUpdate && data.summary.projectsMissingLatestUpdate > 0) items.push({ label: "Missing Updates", value: data.summary.projectsMissingLatestUpdate, color: "text-blue-700 bg-blue-50 border-blue-200", href: "/project-lifecycle/latest-updates" });
+    return items;
+  }, [blockedGateCount, pendingGateCount, data?.summary.projectsMissingLatestUpdate]);
+
   const sectionSearchPlaceholder =
     currentSection === "stage-gates"
       ? "Search stage gates, projects, clients, or departments..."
@@ -1158,6 +1182,8 @@ export function ProjectLifecyclePage() {
       />
 
       <WorkspaceSubnav activeSection={currentSection} />
+
+      <AttentionBadges items={lifecycleAttentionItems} threshold={5} testId="lifecycle-attention-needed" />
 
       <Card className="border-border shadow-sm">
         <CardContent className="space-y-4 p-4">

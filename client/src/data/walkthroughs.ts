@@ -447,13 +447,13 @@ export const WALKTHROUGHS: Walkthrough[] = [
         title: "Understand the Home Screen",
         description: "The home page is your personalized command center. It shows greeting with role-specific messages, stat cards, and actionable sections. It auto-refreshes every 60 seconds.",
         targetPage: "/",
-        tryIt: "Navigate to the Home page and observe the four stat cards at the top: Unread Notifications, Open Tasks, Pending Approvals, and Overdue Tasks.",
+        tryIt: "Navigate to the Home page and observe the stat cards at the top: Open Tasks, Pending Approvals, and Overdue Tasks.",
       },
       {
         stepNumber: 2,
         title: "Review Stat Cards",
-        description: "The stat cards show real-time counts:\n• 📬 Notifications — unread items requiring your attention\n• ✅ Open Tasks — engineering tasks assigned to you\n• ⏳ Pending Approvals — items waiting for your approval (engineering gates, quality reviews, deliverables)\n• ⚠️ Overdue Tasks — tasks past their due date",
-        tip: "Click any stat card to navigate directly to the relevant section (notifications, engineering tasks, approvals, etc.).",
+        description: "The stat cards show real-time counts:\n• ✅ Open Tasks — engineering tasks assigned to you\n• ⏳ Pending Approvals — items waiting for your approval (engineering gates, quality reviews, deliverables)\n• ⚠️ Overdue Tasks — tasks past their due date",
+        tip: "Click any stat card to navigate directly to the relevant section (engineering tasks, approvals, etc.).",
         tryIt: "Click each stat card to see where it takes you. Then use the browser back button to return home.",
       },
       {
@@ -473,39 +473,6 @@ export const WALKTHROUGHS: Walkthrough[] = [
         stepNumber: 5,
         title: "Quick Navigation & Company Priorities",
         description: "The bottom sections show role-filtered quick navigation links (shortcuts to your most-used pages) and company priorities set by management.",
-      },
-    ],
-  },
-  {
-    id: "notification-center",
-    title: "Notification Centre",
-    description: "The Notification Centre aggregates all system notifications — task updates, approval requests, deliverable acknowledgments, plan changes, and more — in one organized view.",
-    category: "productivity",
-    estimatedMinutes: 5,
-    steps: [
-      {
-        stepNumber: 1,
-        title: "Open the Notification Centre",
-        description: "Click the bell icon in the top navigation bar, or navigate to Notifications from the sidebar. The bell shows a red badge with unread count.",
-        targetPage: "/notifications",
-        tryIt: "Look for the bell icon in the top bar. Click it to open your notifications.",
-      },
-      {
-        stepNumber: 2,
-        title: "Browse Notifications by Type",
-        description: "Notifications are categorized with colored badges:\n• Blue — Task assignments and updates\n• Green — Approvals completed\n• Orange — Deliverables sent for acknowledgment\n• Purple — Quality review requests\n• Red — Overdue warnings and escalations\n• Yellow — Plan change notifications",
-      },
-      {
-        stepNumber: 3,
-        title: "Take Action",
-        description: "Each notification is clickable — it navigates you directly to the relevant item (task, approval, deliverable, etc.). Click 'Mark as Read' to clear individual notifications, or 'Mark All Read' to clear everything.",
-        tryIt: "Click on any unread notification to navigate to the related item. Notice how the notification badge count decreases.",
-      },
-      {
-        stepNumber: 4,
-        title: "Filter and Search",
-        description: "Use the category filter buttons to see only specific types of notifications. The search bar lets you find notifications by content.",
-        tryIt: "Try filtering by 'Action Required' to see only notifications that need your response.",
       },
     ],
   },
@@ -552,10 +519,10 @@ export const WALKTHROUGHS: Walkthrough[] = [
     steps: [
       {
         stepNumber: 1,
-        title: "Open the PM Dashboard",
-        description: "Navigate to 'PM Dashboard' under PROJECT MANAGEMENT. This view is optimized for Project Managers to see all their assigned projects at a glance.",
-        targetPage: "/pm-dashboard",
-        tryIt: "Click 'PM Dashboard' in the sidebar to see your project overview.",
+        title: "Open the Execution Dashboard",
+        description: "Navigate to 'Execution Dashboard' under PROJECT MANAGEMENT. This consolidated view shows all your projects, KPIs, and action items at a glance.",
+        targetPage: "/execution-board",
+        tryIt: "Click 'Execution Dashboard' in the sidebar to see your project overview.",
       },
       {
         stepNumber: 2,
@@ -1300,10 +1267,10 @@ export const WALKTHROUGHS: Walkthrough[] = [
     steps: [
       {
         stepNumber: 1,
-        title: "Open the Execution Board",
-        description: "Navigate to 'Execution Board' under PROJECT MANAGEMENT. This shows the high-level executive dashboard with portfolio KPIs.",
-        targetPage: "/dashboard",
-        tryIt: "Click 'Execution Board' in the sidebar to see the executive view.",
+        title: "Open the Execution Dashboard",
+        description: "Navigate to 'Execution Dashboard' under PROJECT MANAGEMENT. This shows the consolidated execution view with portfolio KPIs and action center.",
+        targetPage: "/execution-board",
+        tryIt: "Click 'Execution Dashboard' in the sidebar to see the executive view.",
       },
       {
         stepNumber: 2,

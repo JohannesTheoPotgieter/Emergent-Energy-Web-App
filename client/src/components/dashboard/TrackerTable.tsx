@@ -56,31 +56,28 @@ export function TrackerTable<T extends { id: string | number, sourceSheet?: stri
   });
 
   return (
-    <Card className="border-none shadow-sm bg-card/50 backdrop-blur-sm">
-      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b">
-        <div>
-          <CardTitle className="text-lg font-heading tracking-wide flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-primary" />
-            {title}
-            <Badge variant="secondary" className="ml-2 font-mono text-xs">
-              {filteredData.length} records
-            </Badge>
-          </CardTitle>
-        </div>
-        
+    <Card className="border-border/50">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/50">
         <div className="flex items-center gap-2">
-          <div className="relative w-full sm:w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input 
-              placeholder="Search data..." 
-              className="pl-9 h-9 bg-background" 
+          <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+          <Badge variant="secondary" className="font-mono text-[11px]">
+            {filteredData.length}
+          </Badge>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="relative w-full sm:w-56">
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground/50" />
+            <Input
+              placeholder="Search..."
+              className="pl-8 h-8 text-sm bg-muted/30 border-transparent focus-visible:border-border"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          
-          <Button variant="outline" size="sm" className="h-9 gap-2" onClick={onExport}>
-            <Download className="w-4 h-4" />
+
+          <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" onClick={onExport}>
+            <Download className="w-3.5 h-3.5" />
             Export
           </Button>
         </div>
@@ -88,14 +85,14 @@ export function TrackerTable<T extends { id: string | number, sourceSheet?: stri
       <CardContent className="p-0">
         <div className="overflow-auto max-h-[600px]">
           <Table>
-            <TableHeader className="bg-muted/50 sticky top-0 z-10 backdrop-blur-md">
+            <TableHeader className="sticky top-0 z-10">
               <TableRow>
                 {columns.map((col, i) => (
-                  <TableHead key={i} className={cn("font-semibold text-foreground whitespace-nowrap", col.className)}>
+                  <TableHead key={i} className={cn("whitespace-nowrap", col.className)}>
                     {col.header}
                   </TableHead>
                 ))}
-                <TableHead className="w-[100px] text-right">Traceability</TableHead>
+                <TableHead className="w-[80px] text-right">Source</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -110,7 +107,7 @@ export function TrackerTable<T extends { id: string | number, sourceSheet?: stri
                     onClick={() => onRowClick?.(item)}
                   >
                     {columns.map((col, i) => (
-                      <TableCell key={i} className={cn("py-3 font-mono text-sm", col.className)}>
+                      <TableCell key={i} className={cn("py-2.5 text-sm", col.className)}>
                         {typeof col.accessorKey === 'function' 
                           ? col.accessorKey(item)
                           : String(item[col.accessorKey])}

@@ -315,7 +315,7 @@ export default function PortfolioDetailPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const isCoo = ["COO_ADMIN", "CEO_ADMIN", "admin"].includes(user?.role || "");
+  const isCoo = ["COO_ADMIN", "CEO_ADMIN"].includes(user?.role || "");
   const portfolioId = parseInt(params?.id || "0");
 
   const [editOpen, setEditOpen] = useState(false);

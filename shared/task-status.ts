@@ -7,6 +7,47 @@ import {
 
 export const TASK_STATUSES = [...SCHEMA_TASK_STATUSES] as readonly TaskStatus[];
 
+// GC-009: Universal display status type that normalizes across all task sources
+export type UniversalDisplayStatus = "todo" | "in_progress" | "blocked" | "review" | "complete" | "cancelled";
+
+export interface UniversalStatusMeta {
+  label: string;
+  badgeClass: string;
+  dotColor: string;
+}
+
+export const UNIVERSAL_STATUS_META: Record<UniversalDisplayStatus, UniversalStatusMeta> = {
+  todo: { label: "To Do", badgeClass: "bg-muted text-foreground", dotColor: "bg-gray-400" },
+  in_progress: { label: "In Progress", badgeClass: "bg-blue-100 text-blue-700", dotColor: "bg-blue-500" },
+  blocked: { label: "Blocked", badgeClass: "bg-red-100 text-red-700", dotColor: "bg-red-500" },
+  review: { label: "In Review", badgeClass: "bg-amber-100 text-amber-700", dotColor: "bg-amber-500" },
+  complete: { label: "Complete", badgeClass: "bg-green-100 text-green-700", dotColor: "bg-green-500" },
+  cancelled: { label: "Cancelled", badgeClass: "bg-gray-100 text-gray-500", dotColor: "bg-gray-300" },
+};
+
+/**
+ * GC-009: Normalizes any task status string from any source (Plan, Engineering, MyTool, Operational)
+ * to a universal display status. This is the single source of truth for status display mapping.
+ */
+export function normalizeToUniversalStatus(status: string | null | undefined): UniversalDisplayStatus {
+  const s = (status || "").toLowerCase().trim();
+  if (s === "todo" || s === "to do" || s === "to_do" || s === "not started" || s === "not_started" || s === "inbox" || s === "planned" || s === "new" || s === "open") return "todo";
+  if (s === "in progress" || s === "in_progress" || s === "active" || s === "pending" || s === "started" || s === "wip") return "in_progress";
+  if (s === "blocked" || s === "on hold" || s === "on_hold" || s === "hold" || s === "waiting" || s === "projects assistance") return "blocked";
+  if (s === "review" || s === "in review" || s === "in_review" || s === "qa_review" || s === "needs review" || s === "needs approval" || s === "provide feedback" || s === "qc approved" || s === "operational approval") return "review";
+  if (s === "done" || s === "complete" || s === "completed" || s === "closed" || s === "finished" || s === "resolved" || s === "pass" || s === "n/a") return "complete";
+  if (s === "cancelled" || s === "canceled" || s === "archived" || s === "removed") return "cancelled";
+  return "todo";
+}
+
+export function getUniversalStatusLabel(status: string | null | undefined): string {
+  return UNIVERSAL_STATUS_META[normalizeToUniversalStatus(status)].label;
+}
+
+export function getUniversalStatusBadgeClass(status: string | null | undefined): string {
+  return UNIVERSAL_STATUS_META[normalizeToUniversalStatus(status)].badgeClass;
+}
+
 export type TaskStatusViewType = "board" | "list" | "mytasks" | "approval" | "execution" | "all";
 
 interface TaskStatusMeta {

@@ -21,8 +21,6 @@ import {
   endOfWeek,
   isSameMonth,
   parseISO,
-  isPast,
-  isThisWeek,
   differenceInDays,
 } from "date-fns";
 import {
@@ -42,9 +40,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Flag,
-  Target,
   Shield,
-  CircleDot,
   ExternalLink,
   AlertCircle,
   FileWarning,
@@ -217,11 +213,6 @@ const severityColors: Record<string, string> = {
   high: "bg-red-100 text-red-800 border-red-200",
   medium: "bg-amber-100 text-amber-800 border-amber-200",
   low: "bg-blue-100 text-blue-800 border-blue-200",
-};
-
-const eventTypeColors: Record<string, string> = {
-  milestone: "bg-purple-500",
-  task_due: "bg-blue-500",
 };
 
 function KpiCard({ icon: Icon, label, value, sub, color }: {
@@ -913,9 +904,9 @@ export default function PMDashboard() {
       <DataSourceDebug
         pageName="Project Manager Dashboard"
         dataSources={[
-          { endpoint: "/api/pm/dashboard", tables: ["project_info", "normalized_cost_lines", "normalized_plan_tasks", "engineering_tasks"], description: "PM projects, financials, task counts" },
-          { endpoint: "/api/pm/priority-items", tables: ["engineering_tasks", "normalized_cost_lines", "project_info"], description: "Priority items: overdue, holds, approvals" },
-          { endpoint: "/api/pm/calendar-events", tables: ["project_info", "engineering_tasks", "normalized_plan_tasks"], description: "Milestone and task calendar events" },
+          { endpoint: "/api/pm/dashboard", tables: ["project_info", "normalized_cost_lines", "normalized_plan_tasks", "work_items"], description: "PM projects, financials, task counts" },
+          { endpoint: "/api/pm/priority-items", tables: ["work_items", "normalized_cost_lines", "project_info"], description: "Priority items: overdue, holds, approvals" },
+          { endpoint: "/api/pm/calendar-events", tables: ["project_info", "work_items", "normalized_plan_tasks"], description: "Milestone and task calendar events" },
         ]}
       />
     </PageShell>

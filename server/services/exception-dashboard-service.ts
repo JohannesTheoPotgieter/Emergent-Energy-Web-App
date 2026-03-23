@@ -1,5 +1,5 @@
 import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
-import { approvals, deliverables, invoiceCaptures, procurementItems, projectInfo, qcWarning, raidItems, users, workItems } from "@shared/schema";
+import { approvals, deliverables, invoiceCaptures, procurementItems, projectInfo, projectExecutionState, qcWarning, raidItems, users, workItems } from "@shared/schema";
 
 export type ExceptionSeverity = "critical" | "high" | "medium" | "low";
 export type ExceptionCategory =
@@ -119,7 +119,8 @@ export async function getExceptionDashboard(params: { userId: number; role?: str
   const scopedProjects = await db
     .select({ id: projectInfo.id, projectName: projectInfo.projectName, pmUserId: projectInfo.pmUserId })
     .from(projectInfo)
-    .where(eq(projectInfo.isActive, true));
+    .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+    .where(eq(projectExecutionState.isActive, true));
 
   const projectIdsByRole = (() => {
     if (["coo", "program_manager", "finance"].includes(cluster)) return scopedProjects.map((p) => p.id);
@@ -140,7 +141,7 @@ export async function getExceptionDashboard(params: { userId: number; role?: str
   const invoices = await db.select().from(invoiceCaptures).where(inArray(invoiceCaptures.projectId, finalProjectIds));
   const raids = await db.select().from(raidItems).where(and(inArray(raidItems.projectId, finalProjectIds), eq(raidItems.status, "open")));
   const warnings = await db.select().from(qcWarning).where(and(inArray(qcWarning.projectName, Array.from(new Set(finalProjectIds.map((id) => projectNameById.get(id) || "")))), ne(qcWarning.status, "resolved")));
-  const gates = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName, executionGateStatus: projectInfo.executionGateStatus, executionGateReason: projectInfo.executionGateReason, executionEnabled: projectInfo.executionEnabled }).from(projectInfo).where(inArray(projectInfo.id, finalProjectIds));
+  const gates = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName, executionGateStatus: projectExecutionState.executionGateStatus, executionGateReason: projectExecutionState.executionGateReason, executionEnabled: projectExecutionState.executionEnabled }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(inArray(projectInfo.id, finalProjectIds));
   const deliverableRows = await db.select().from(deliverables).where(inArray(deliverables.projectId, finalProjectIds));
 
   const items: ExceptionItem[] = [];

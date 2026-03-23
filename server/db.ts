@@ -83,10 +83,19 @@ async function initializeDatabase(): Promise<void> {
       
       if (isConnectable) {
         // Use Postgres
-        const pool = new pg.Pool({ 
+        const pool = new pg.Pool({
           connectionString: config.connectionString,
           connectionTimeoutMillis: 10000,
           query_timeout: 30000,
+          idleTimeoutMillis: 10000,
+          max: 10,
+          allowExitOnIdle: false,
+          keepAlive: true,
+          keepAliveInitialDelayMillis: 10000,
+        });
+        // Robust pool error handling for Replit - prevent unhandled errors from crashing
+        pool.on('error', (err) => {
+          console.error('[DB] Pool background error (non-fatal):', err.message);
         });
         db = drizzle(pool, { schema });
         dbMode = 'postgres';
@@ -99,7 +108,60 @@ async function initializeDatabase(): Promise<void> {
           message: `Connected to PostgreSQL (${config.dbHost})`,
           host: config.dbHost,
         });
-        
+
+        // Ensure engineering columns on work_items (idempotent DDL)
+        try {
+          await pool.query(`
+            ALTER TABLE work_items ADD COLUMN IF NOT EXISTS hold_reason TEXT;
+          `);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocked_type TEXT`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS approval_required BOOLEAN NOT NULL DEFAULT false`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_plan_item_id INTEGER`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_deliverable_id INTEGER`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_quality_item_instance_id INTEGER`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS tracking_rag TEXT`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_type_tag TEXT`);
+          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocker_reason TEXT`);
+          console.log('[DB] ✓ work_items engineering columns verified');
+        } catch (ddlErr: any) {
+          console.warn('[DB] work_items eng columns DDL warning (non-fatal):', ddlErr.message);
+        }
+
+        // Ensure entity_assignments table exists (idempotent DDL)
+        try {
+          await pool.query(`
+            CREATE TABLE IF NOT EXISTS public.entity_assignments (
+              id SERIAL PRIMARY KEY,
+              entity_type TEXT NOT NULL,
+              entity_id INTEGER NOT NULL,
+              project_id INTEGER REFERENCES public.project_info(id),
+              assignment_role TEXT NOT NULL DEFAULT 'ASSIGNEE',
+              assignee_type TEXT NOT NULL,
+              assignee_id INTEGER NOT NULL,
+              display_label_snapshot TEXT NOT NULL,
+              active BOOLEAN NOT NULL DEFAULT TRUE,
+              assigned_by_user_id INTEGER REFERENCES public.users(id),
+              cleared_by_user_id INTEGER REFERENCES public.users(id),
+              assigned_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              cleared_at TIMESTAMP,
+              metadata JSONB,
+              created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+          `);
+          await pool.query(`CREATE INDEX IF NOT EXISTS entity_assignments_entity_idx ON public.entity_assignments(entity_type, entity_id, active)`);
+          await pool.query(`CREATE INDEX IF NOT EXISTS entity_assignments_project_idx ON public.entity_assignments(project_id, active)`);
+          await pool.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS entity_assignments_active_unique
+            ON public.entity_assignments(entity_type, entity_id, assignment_role, assignee_type, assignee_id)
+            WHERE active = TRUE
+          `);
+          console.log('[DB] ✓ entity_assignments table verified');
+        } catch (ddlErr: any) {
+          console.warn('[DB] entity_assignments DDL warning (non-fatal):', ddlErr.message);
+        }
+
         isInitialized = true;
         return;
       }
@@ -336,95 +398,9 @@ async function ensureSqliteSchema() {
       )
     `);
     
-    // Legacy tables for backward compatibility
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS projects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE,
-        manager TEXT NOT NULL,
-        site TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'Planning',
-        stage TEXT NOT NULL DEFAULT 'Development',
-        start_date TEXT NOT NULL,
-        completion_date TEXT NOT NULL,
-        budget REAL NOT NULL,
-        source_file TEXT NOT NULL,
-        last_updated TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
+    // Legacy tables (projects, expenses, revenues, tasks, budgets) dropped.
+    // Data lives in: project_info, normalized_cost_lines, normalized_revenue_lines, work_items.
     
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS expenses (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL,
-        category TEXT NOT NULL,
-        description TEXT NOT NULL,
-        amount REAL NOT NULL,
-        date TEXT NOT NULL,
-        vendor TEXT NOT NULL,
-        invoice_number TEXT,
-        status TEXT NOT NULL DEFAULT 'Forecast',
-        source_sheet TEXT NOT NULL DEFAULT 'Expenditure Breakdown',
-        row_locator INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS revenues (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        amount REAL NOT NULL,
-        date TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'Forecast',
-        source_sheet TEXT NOT NULL DEFAULT 'Revenue Tracking',
-        row_locator INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL,
-        task_name TEXT NOT NULL,
-        start_date TEXT NOT NULL,
-        end_date TEXT NOT NULL,
-        progress INTEGER NOT NULL DEFAULT 0,
-        status TEXT NOT NULL DEFAULT 'Not Started',
-        assignee TEXT NOT NULL,
-        source_sheet TEXT NOT NULL DEFAULT 'Project Plan',
-        row_locator INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS budgets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_id INTEGER NOT NULL,
-        month TEXT NOT NULL,
-        category TEXT NOT NULL,
-        amount REAL NOT NULL,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // Cashflow Planning Overrides table (user edits)
-    await db.run(sql`
-      CREATE TABLE IF NOT EXISTS cashflow_planning_overrides (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        project_name TEXT NOT NULL,
-        week_start_date TEXT NOT NULL,
-        series_name TEXT NOT NULL,
-        override_value REAL NOT NULL,
-        created_by INTEGER,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
 
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS counterparties (
@@ -523,8 +499,38 @@ async function ensureSqliteSchema() {
         entity_permissions TEXT,
         authority_model TEXT,
         is_system INTEGER NOT NULL DEFAULT 0,
+        permission_version INTEGER NOT NULL DEFAULT 1,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS user_permission_overrides (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        entity TEXT NOT NULL,
+        action TEXT NOT NULL,
+        allowed INTEGER NOT NULL DEFAULT 1,
+        scope TEXT,
+        granted_by INTEGER REFERENCES users(id),
+        reason TEXT,
+        expires_at TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, entity, action)
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS permission_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL,
+        target_role TEXT,
+        target_user_id INTEGER,
+        changed_by_user_id INTEGER REFERENCES users(id),
+        changed_by_role TEXT,
+        change_detail TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
 
@@ -775,6 +781,19 @@ async function ensureSqliteSchema() {
     `);
     await db.run(sql`CREATE INDEX IF NOT EXISTS idx_work_items_project ON work_items(project_id, deleted_at)`);
 
+    // Engineering-specific columns for work_items (safe ALTERs)
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN hold_reason TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN blocked_type TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN approval_required INTEGER NOT NULL DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN linked_plan_item_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN linked_deliverable_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN linked_quality_item_instance_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN completed_at TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN tracking_rag TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN task_type_tag TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE work_items ADD COLUMN blocker_reason TEXT`)); } catch {}
+
+
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS work_item_assignments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -872,6 +891,314 @@ async function ensureSqliteSchema() {
       )
     `);
     await db.run(sql`CREATE INDEX IF NOT EXISTS idx_project_phase_history_project ON project_phase_history(project_id, changed_at)`);
+
+    // ── Task Management & Standup System ───────────────────────────────────
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS standup_schedules (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        team_label TEXT,
+        project_id INTEGER,
+        cadence TEXT NOT NULL DEFAULT 'EVERY_2_DAYS',
+        cadence_days INTEGER NOT NULL DEFAULT 2,
+        anchor_date TEXT NOT NULL,
+        deadline_time TEXT DEFAULT '10:00',
+        deadline_timezone TEXT NOT NULL DEFAULT 'Africa/Johannesburg',
+        is_active INTEGER NOT NULL DEFAULT 1,
+        created_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS standup_participants (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        is_required INTEGER NOT NULL DEFAULT 1,
+        added_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_standup_participants_schedule ON standup_participants(schedule_id)`);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS standup_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        schedule_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        standup_date TEXT NOT NULL,
+        what_i_did TEXT,
+        what_im_doing TEXT,
+        blockers TEXT,
+        mood TEXT,
+        is_late INTEGER NOT NULL DEFAULT 0,
+        submitted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_standup_entries_schedule_date ON standup_entries(schedule_id, standup_date)`);
+    await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_standup_entries_unique_schedule_user_date ON standup_entries(schedule_id, user_id, standup_date)`);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS task_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL DEFAULT '#6366f1',
+        category TEXT NOT NULL DEFAULT 'CUSTOM',
+        created_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS work_item_tags (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_item_id INTEGER NOT NULL,
+        tag_id INTEGER NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(work_item_id, tag_id)
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_work_item_tags_item ON work_item_tags(work_item_id)`);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS task_time_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        work_item_id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        duration_minutes INTEGER NOT NULL,
+        description TEXT,
+        date TEXT NOT NULL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`CREATE INDEX IF NOT EXISTS idx_task_time_entries_item ON task_time_entries(work_item_id)`);
+
+    // FYE Revenue Tracking tables
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS project_revenue_summary (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_name TEXT NOT NULL UNIQUE,
+        planned_revenue REAL,
+        planned_expenditure REAL,
+        planned_profit REAL,
+        planned_margin REAL,
+        actual_revenue REAL,
+        actual_expenditure REAL,
+        actual_profit REAL,
+        actual_margin REAL,
+        vo_pm_limit REAL,
+        current_vo_total REAL,
+        project_id INTEGER,
+        captured_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS fye_budgets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        project_name TEXT NOT NULL,
+        fye TEXT NOT NULL,
+        month_key TEXT NOT NULL,
+        budget_type TEXT NOT NULL,
+        amount TEXT NOT NULL DEFAULT '0',
+        updated_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS forecast_pipeline (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_name TEXT NOT NULL,
+        project_developer TEXT,
+        location TEXT,
+        size_kwp TEXT,
+        deal_probability_pct INTEGER NOT NULL DEFAULT 0,
+        forecast_signature_date TEXT,
+        solar_revenue TEXT DEFAULT '0',
+        bess_revenue TEXT DEFAULT '0',
+        forecast_gp_pct TEXT DEFAULT '0',
+        notes TEXT,
+        status TEXT NOT NULL DEFAULT 'active',
+        updated_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS lost_deals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deal_name TEXT NOT NULL,
+        deal_value TEXT,
+        business_developer TEXT,
+        lost_reason TEXT,
+        lost_date TEXT,
+        notes TEXT,
+        updated_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS pd_tickets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_site_name TEXT,
+        province TEXT,
+        ticket_number TEXT,
+        status TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS fye_kpi_counters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fye_year INTEGER NOT NULL UNIQUE,
+        brought_in INTEGER NOT NULL DEFAULT 0,
+        signed INTEGER NOT NULL DEFAULT 0,
+        updated_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS fye_report_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fye_year INTEGER NOT NULL,
+        snapshot_month INTEGER NOT NULL,
+        snapshot_date TEXT NOT NULL,
+        snapshot_label TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft',
+        snapshot_data TEXT NOT NULL,
+        notes TEXT,
+        created_by INTEGER,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        submitted_by INTEGER,
+        submitted_at TEXT,
+        approved_by INTEGER,
+        approved_at TEXT
+      )
+    `);
+
+    // Add fye_year and created_by to forecast_pipeline and lost_deals
+    try { await db.run(sql.raw(`ALTER TABLE forecast_pipeline ADD COLUMN fye_year INTEGER NOT NULL DEFAULT 2026`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE forecast_pipeline ADD COLUMN created_by INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE lost_deals ADD COLUMN fye_year INTEGER NOT NULL DEFAULT 2026`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE lost_deals ADD COLUMN created_by INTEGER`)); } catch {}
+
+    // Microsoft Sync tables (ms_accounts, ms_objects, project_links)
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS ms_accounts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        tenant_id TEXT NOT NULL,
+        ms_user_id TEXT NOT NULL,
+        email TEXT NOT NULL,
+        display_name TEXT,
+        refresh_token_encrypted TEXT,
+        sso_access_token TEXT,
+        sso_token_expires_at TEXT,
+        connected_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'active'
+      )
+    `);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS ms_objects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        ms_id TEXT NOT NULL,
+        subject_or_title TEXT,
+        preview TEXT,
+        web_link TEXT,
+        sender_or_organizer TEXT,
+        received_or_start_datetime TEXT,
+        end_datetime TEXT,
+        last_synced_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        action_required INTEGER DEFAULT 0,
+        is_read INTEGER DEFAULT 1,
+        importance TEXT,
+        linked_project_id INTEGER,
+        linked_task_id INTEGER,
+        metadata TEXT,
+        dismissed INTEGER DEFAULT 0
+      )
+    `);
+    await db.run(sql`CREATE UNIQUE INDEX IF NOT EXISTS ms_objects_user_type_msid ON ms_objects(user_id, type, ms_id)`);
+
+    await db.run(sql`
+      CREATE TABLE IF NOT EXISTS project_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ms_object_id INTEGER NOT NULL,
+        project_id INTEGER NOT NULL,
+        linked_by_user_id INTEGER NOT NULL,
+        linked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        note TEXT
+      )
+    `);
+
+    // Add missing columns to project_info (safe ALTERs — all columns from Drizzle schema)
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN signed_status TEXT NOT NULL DEFAULT 'NONE'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN construction_start_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN commissioning_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN signed_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN archived_status TEXT NOT NULL DEFAULT 'ACTIVE'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN execution_phase TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN phase_updated_at TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN phase_updated_by_user_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN phase_notes TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN pd_handover_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN om_handover_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN client_handover_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN escalation_level TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN construction_start_actual TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN pd_handover_actual TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN commissioning_actual TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN client_handover_actual TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN rag_status TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN rag_comment TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN rag_updated_at TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN rag_updated_by_user_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN execution_enabled INTEGER NOT NULL DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN execution_gate_status TEXT NOT NULL DEFAULT 'NOT_ELIGIBLE'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN execution_gate_reason TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN signed_document_link TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN excel_tracker_link TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN canonical_project_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN client_id INTEGER`)); } catch {}
+
+    // Add missing columns to program_expense (safe ALTERs)
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN row_type TEXT DEFAULT 'item'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN actual_cos_total REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_qty REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_rate_unit REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_total REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN budget_cos_total REAL`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN supplier_name TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN project_id INTEGER`)); } catch {}
+
+    // Add missing columns to program_expense (more columns from Drizzle schema)
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN forecast_payment_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN invoice_date_confirmed INTEGER DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN invoice_date_font_color TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN expense_payment_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN payment_date_confirmed INTEGER DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN payment_date_font_color TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN line_status TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN expense_line_hash TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN computed_state TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN computed_forecast_payment_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN is_manual INTEGER DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN data_source TEXT DEFAULT 'SMART_IMPORT'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN import_run_id INTEGER`)); } catch {}
+
+    // Add missing columns to program_inflows (safe ALTERs)
+    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN in_bank INTEGER DEFAULT 0`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN project_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN inflow_line_hash TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN computed_forecast_receipt_date TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN data_source TEXT DEFAULT 'SMART_IMPORT'`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN import_run_id INTEGER`)); } catch {}
 
     console.log('[DB] SQLite schema verified');
   } catch (err: any) {

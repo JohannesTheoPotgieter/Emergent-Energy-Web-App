@@ -105,7 +105,7 @@ export function fromOperational(t: any): CanonicalTask {
     created_at: t.createdAt || t.created_at || null,
     updated_at: t.updatedAt || t.updated_at || null,
     percent_complete: t.percentComplete ?? t.percent_complete ?? null,
-    source_table: "operational_tasks",
+    source_table: "work_items",
     source_id: t.id,
   };
 }
@@ -131,7 +131,7 @@ export function fromEngineering(t: any): CanonicalTask {
     created_at: t.createdAt || t.created_at || null,
     updated_at: t.updatedAt || t.updated_at || null,
     percent_complete: null,
-    source_table: "engineering_tasks",
+    source_table: "work_items",
     source_id: t.id,
   };
 }

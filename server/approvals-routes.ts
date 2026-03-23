@@ -18,7 +18,7 @@ import {
 import { evaluateAuthorityForRequest, requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
-import { getAssignmentsForEntity, setEntityAssignment } from "./services/assignment-service";
+import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
 import { badRequest, forbidden, notFound, sendError } from "./lib/api-error";
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
@@ -252,10 +252,7 @@ export function registerApprovalsRoutes(app: Express) {
         generalApproverMap = Object.fromEntries(rows.map((row) => [row.id, row.name]));
       }
 
-      const generalAssignments = await Promise.all(
-        generalApprovals.map(async (approval) => [approval.id, await getGeneralApprovalAssignments(approval.id)] as const),
-      );
-      const generalAssignmentMap = new Map(generalAssignments);
+      const generalAssignmentMap = await getAssignmentsForEntities("approval", generalApprovals.map((a) => a.id), "APPROVER");
 
       let filteredGeneralApprovals = generalApprovals;
       if (!isAdmin && !showAll) {
@@ -354,10 +351,7 @@ export function registerApprovalsRoutes(app: Express) {
         userMap = Object.fromEntries(uRows.map(u => [u.id, u.name]));
       }
 
-      const assignmentEntries = await Promise.all(
-        rows.map(async ({ approval }) => [approval.id, await getGeneralApprovalAssignments(approval.id)] as const),
-      );
-      const assignmentMap = new Map(assignmentEntries);
+      const assignmentMap = await getAssignmentsForEntities("approval", rows.map((r) => r.approval.id), "APPROVER");
 
       res.json({
         approvals: rows.map(({ approval, projectName }) => {

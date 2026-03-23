@@ -39,7 +39,7 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
 
 
 export function registerProcurementRoutes(app: Express) {
-  app.get("/api/procurement/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/procurement/project/:projectId", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
@@ -74,7 +74,7 @@ export function registerProcurementRoutes(app: Express) {
     }
   });
 
-  app.get("/api/procurement/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.get("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -248,7 +248,7 @@ export function registerProcurementRoutes(app: Express) {
     }
   });
 
-  app.get("/api/procurement/pipeline/summary", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/procurement/pipeline/summary", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (_req: Request, res: Response) => {
     try {
       const rows = await db.execute(sql.raw(`
         SELECT pi2.status, pi2.category, COUNT(*)::int as count,

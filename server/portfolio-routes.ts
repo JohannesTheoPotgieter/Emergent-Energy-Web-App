@@ -1,12 +1,13 @@
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, sql, and, inArray, desc } from "drizzle-orm";
+import { eq, sql, and, inArray, desc, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import {
   portfolios, portfolioRolloutPlans, portfolioRolloutPhases,
   projectPortfolioAssignments, projectInfo, users,
   qcChecklist, qcItemInstance, normalizedCostLines, normalizedRevenueLines,
+  projectExecutionState,
 } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
@@ -37,8 +38,8 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required", message: "Authentication required" });
 }
 
-const MANAGE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "admin"];
-const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+const MANAGE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
+const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
 function requireManageRole(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as any)?.role || "";
@@ -107,11 +108,12 @@ export function registerPortfolioRoutes(app: Express) {
           : db.select({
               id: projectInfo.id,
               projectName: projectInfo.projectName,
-              phase: projectInfo.phase,
+              phase: projectExecutionState.phase,
               sizeKwp: projectInfo.sizeKwp,
               pm: projectInfo.pm,
-              isActive: projectInfo.isActive,
-            }).from(projectInfo),
+              isActive: projectExecutionState.isActive,
+            }).from(projectInfo)
+              .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
       ]);
 
       const ownerIds = allPortfolios.map(p => p.ownerUserId).filter(Boolean) as number[];
@@ -371,8 +373,8 @@ export function registerPortfolioRoutes(app: Express) {
       const projectNames = projects.map(p => p.projectName);
 
       const { adaptCostToExpense, adaptRevenueToInflow } = await import("./lib/data-merge");
-      const rawCosts = await db.select().from(normalizedCostLines).where(inArray(normalizedCostLines.projectName, projectNames));
-      const rawRev = await db.select().from(normalizedRevenueLines).where(inArray(normalizedRevenueLines.projectName, projectNames));
+      const rawCosts = await db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectName, projectNames), isNull(normalizedCostLines.effectiveTo)));
+      const rawRev = await db.select().from(normalizedRevenueLines).where(and(inArray(normalizedRevenueLines.projectName, projectNames), isNull(normalizedRevenueLines.effectiveTo)));
       const rawExpenses = rawCosts.map(c => adaptCostToExpense(c, c.projectName));
       const rawInflows = rawRev.map(r => adaptRevenueToInflow(r, r.projectName));
       const allWorkItems = await getAllPMWorkItemsAsProjectPlan();
@@ -473,7 +475,7 @@ export function registerPortfolioRoutes(app: Express) {
           pm: p.pm,
           pd: p.pd,
           isActive: p.isActive,
-          ragStatus: comp.delta < -10 ? "RED" : comp.delta < -5 ? "AMBER" : "GREEN",
+          ragStatus: comp.delta < -15 ? "RED" : comp.delta < -5 ? "AMBER" : "GREEN",
           actualPct: comp.actualPct,
           expectedPct: comp.expectedPct,
           delta: comp.delta,
@@ -498,11 +500,12 @@ export function registerPortfolioRoutes(app: Express) {
       const allProjects = await db.select({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
-        phase: projectInfo.phase,
+        phase: projectExecutionState.phase,
         sizeKwp: projectInfo.sizeKwp,
         pm: projectInfo.pm,
-        isActive: projectInfo.isActive,
-      }).from(projectInfo);
+        isActive: projectExecutionState.isActive,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
       const allAssignments = await db.select().from(projectPortfolioAssignments);
       const assignmentMap = new Map(allAssignments.map(a => [a.projectId, a.portfolioId]));
@@ -623,8 +626,8 @@ export function registerPortfolioRoutes(app: Express) {
 
       const { adaptCostToExpense, adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
       const [allCosts, allRev, piNames] = await Promise.all([
-        db.select().from(normalizedCostLines),
-        db.select().from(normalizedRevenueLines),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
         db.select({ projectName: projectInfo.projectName }).from(projectInfo),
       ]);
       const resolve = createNameResolver(piNames.map(p => p.projectName));

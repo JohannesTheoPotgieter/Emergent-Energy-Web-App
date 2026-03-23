@@ -10,6 +10,7 @@ import {
   SP_OWNED_FIELDS, APP_OWNED_FIELDS, SHARED_FIELDS,
   type IntakeRequest, type InsertIntakeRequest,
 } from "@shared/schema";
+import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import {
   discoverSites, discoverSiteByUrl, discoverLists,
   getListColumns, getListItems, updateListItemFields,
@@ -236,11 +237,9 @@ export function registerSyncRoutes(app: Express) {
             if (existing.length > 0) {
               projectId = existing[0].id;
             } else {
-              const [newProj] = await db.insert(projectInfo).values({
-                projectName: clientName,
-                phase: "First Assessment",
-                isActive: true,
-              }).returning();
+              const syncInsertFields = { projectName: clientName, phase: "First Assessment", isActive: true };
+              const [newProj] = await db.insert(projectInfo).values(syncInsertFields).returning();
+              await syncProjectSplitTablesAfterInsert(newProj.id, syncInsertFields);
               projectId = newProj.id;
               newProjects++;
             }

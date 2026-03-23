@@ -37,21 +37,21 @@ export function SectionHeader({
   return (
     <div className="ee-page-header">
       <div className="flex items-start gap-3 min-w-0">
-        <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0 shadow-[var(--shadow-xs)]">
+        <div className="w-9 h-9 rounded-lg bg-primary/8 text-primary flex items-center justify-center shrink-0">
           {icon}
         </div>
-        <div className="min-w-0 space-y-2">
-          <div className="space-y-1">
-            {eyebrow ? <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{eyebrow}</p> : null}
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
-            {description ? <p className="ee-helper-text max-w-3xl">{description}</p> : null}
+        <div className="min-w-0 space-y-1.5">
+          <div className="space-y-0.5">
+            {eyebrow ? <p className="text-[11px] font-medium uppercase tracking-[0.15em] text-muted-foreground">{eyebrow}</p> : null}
+            <h1 className="text-lg sm:text-xl font-semibold tracking-tight text-foreground">{title}</h1>
+            {description ? <p className="text-sm text-muted-foreground max-w-2xl">{description}</p> : null}
             {meta ? <div className="text-xs text-muted-foreground">{meta}</div> : null}
           </div>
           {badges && badges.length > 0 ? (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               {badges.map((badge) => (
-                <Badge key={badge.label} variant={badge.variant || "outline"} className="gap-1.5 px-2.5 py-1">
-                  {badge.icon ? <span className="shrink-0 [&>svg]:h-3.5 [&>svg]:w-3.5">{badge.icon}</span> : null}
+                <Badge key={badge.label} variant={badge.variant || "outline"} className="gap-1 px-2 py-0.5 text-[11px]">
+                  {badge.icon ? <span className="shrink-0 [&>svg]:h-3 [&>svg]:w-3">{badge.icon}</span> : null}
                   {badge.label}
                 </Badge>
               ))}
@@ -106,7 +106,7 @@ export function WorkspaceNotice({
   children?: React.ReactNode;
 }) {
   return (
-    <div className={cn("rounded-2xl border p-4 shadow-[var(--shadow-xs)]", workspaceNoticeToneClasses[tone], className)}>
+    <div className={cn("rounded-lg border p-4", workspaceNoticeToneClasses[tone], className)}>
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 space-y-1">
           <div className="flex items-center gap-2">

@@ -333,7 +333,12 @@ async function resolveBearerUser(req: Request): Promise<AuthenticatedUser | null
     return null;
   }
 
-  const user = await fetchUserById(payload.userId);
+  const userId = Number(payload.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    authDebug("resolveBearerUser.invalidUserId", { rawUserId: payload.userId });
+    return null;
+  }
+  const user = await fetchUserById(userId);
   if (!user) {
     return null;
   }
@@ -422,6 +427,12 @@ export async function jwtAuth(req: Request, _res: Response, next: NextFunction):
   }
 }
 
+// TODO (Prompt 11): Future: scope queries by req.user.organizationId.
+// After multi-tenancy is fully enabled, this middleware should:
+// 1. Read organizationId from the JWT payload (added during login)
+// 2. Attach it to req.user.organizationId
+// 3. All downstream queries add WHERE organization_id = req.user.organizationId
+// See docs/spine-v2/08-org-scoping-plan.md for full implementation plan.
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const user = await resolveAuthenticatedUser(req);

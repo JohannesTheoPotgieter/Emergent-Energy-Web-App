@@ -8,6 +8,11 @@ export async function runStartupSeeds(options: {
   log: (message: string, source?: string) => void;
 }) {
   const { startupDataSeedEnabled, allowStartupMutations, log } = options;
+
+  // PD ticket seed is self-gating (only inserts if table is empty) — always run it
+  const { runPdTicketSeed } = await import("../seed-pd-tickets");
+  await runPdTicketSeed().catch((err) => log(`[PD-Seed] PD ticket import error: ${err}`, "Startup"));
+
   if (!startupDataSeedEnabled) return;
 
   const { seedQualityTemplate } = await import("../seed-quality-template");
@@ -27,6 +32,9 @@ export async function runStartupSeeds(options: {
 
   const { seedIntakeTaskTemplates } = await import("../seed-intake-templates");
   await seedIntakeTaskTemplates().catch((err) => log(`[Seed] Intake templates error: ${err}`, "Startup"));
+
+  const { seedMockIntakeData } = await import("../seed-mock-intake");
+  await seedMockIntakeData().catch((err) => log(`[Seed] Mock intake data error: ${err}`, "Startup"));
 
   const { seedRolePermissions } = await import("../role-management");
   await seedRolePermissions().catch((err) => log(`[Seed] Role permissions error: ${err}`, "Startup"));

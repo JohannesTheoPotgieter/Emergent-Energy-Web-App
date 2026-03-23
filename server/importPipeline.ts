@@ -419,7 +419,19 @@ export function startScheduler(): void {
     if (isRunning) return;
 
     try {
-      const settings = await storage.getSpSettings();
+      let settings: Awaited<ReturnType<typeof storage.getSpSettings>> = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          settings = await storage.getSpSettings();
+          break;
+        } catch (settingsErr: any) {
+          const isTransient = /timeout|ECONNRESET|ECONNREFUSED|ETIMEDOUT|connection terminated/i.test(settingsErr.message);
+          if (!isTransient || attempt === 3) throw settingsErr;
+          const delay = 2000 * Math.pow(2, attempt - 1);
+          console.warn(`[SharePoint] getSpSettings failed (attempt ${attempt}/3), retrying in ${delay}ms...`);
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
       if (!settings || !settings.enabled) return;
 
       const interval = settings.intervalMinutes * 60 * 1000;
@@ -428,10 +440,30 @@ export function startScheduler(): void {
 
       isRunning = true;
       console.log("[SharePoint] Scheduled import starting...");
-      const result = await runFullImport("schedule", "system");
-      console.log("[SharePoint] Scheduled import complete:", JSON.stringify(result.summary));
-    } catch (err: any) {
-      console.error("[SharePoint] Scheduled import error:", err.message);
+
+      const MAX_RETRIES = 3;
+      const BACKOFF_BASE_MS = 2000;
+      let lastError: any = null;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const result = await runFullImport("schedule", "system");
+          console.log("[SharePoint] Scheduled import complete:", JSON.stringify(result.summary));
+          lastError = null;
+          break;
+        } catch (retryErr: any) {
+          lastError = retryErr;
+          const isTransient = /timeout|ECONNRESET|ECONNREFUSED|ETIMEDOUT|connection terminated/i.test(retryErr.message);
+          if (!isTransient || attempt === MAX_RETRIES) break;
+          const delay = BACKOFF_BASE_MS * Math.pow(2, attempt - 1);
+          console.warn(`[SharePoint] Scheduled import attempt ${attempt}/${MAX_RETRIES} failed (${retryErr.message}), retrying in ${delay}ms...`);
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+
+      if (lastError) {
+        console.error("[SharePoint] Scheduled import error:", lastError.message);
+      }
     } finally {
       isRunning = false;
     }

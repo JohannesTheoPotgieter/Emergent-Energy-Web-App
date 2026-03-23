@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -67,30 +67,38 @@ function confidenceBadge(confidence: number) {
   );
 }
 
-function StepIndicator({ currentStep }: { currentStep: number }) {
+function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onStepClick?: (step: number) => void }) {
   return (
     <div className="flex items-center gap-1 mb-6" data-testid="step-indicator">
       {STEP_LABELS.map((label, idx) => {
         const stepNum = idx + 1;
         const isActive = stepNum === currentStep;
         const isComplete = stepNum < currentStep;
+        const isClickable = isComplete && onStepClick;
         return (
           <div key={label} className="flex items-center gap-1">
             {idx > 0 && (
               <div className={`h-0.5 w-4 md:w-8 ${isComplete ? "bg-blue-500" : "bg-slate-200"}`} />
             )}
-            <div className="flex items-center gap-1.5">
+            <div
+              className={`flex items-center gap-1.5 ${isClickable ? "cursor-pointer group" : ""}`}
+              onClick={() => { if (isClickable) onStepClick(stepNum); }}
+            >
               <div
-                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold ${
+                className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
                   isActive ? "bg-blue-600 text-white" :
-                  isComplete ? "bg-blue-500 text-white" :
+                  isComplete ? "bg-blue-500 text-white group-hover:bg-blue-600" :
                   "bg-slate-200 text-muted-foreground"
                 }`}
                 data-testid={`step-circle-${stepNum}`}
               >
                 {isComplete ? <Check className="w-3.5 h-3.5" /> : stepNum}
               </div>
-              <span className={`text-xs hidden md:inline ${isActive ? "font-semibold text-blue-700" : "text-muted-foreground"}`}>
+              <span className={`text-xs hidden md:inline transition-colors ${
+                isActive ? "font-semibold text-blue-700" :
+                isComplete ? "text-muted-foreground group-hover:text-blue-600" :
+                "text-muted-foreground"
+              }`}>
                 {label}
               </span>
             </div>
@@ -113,18 +121,29 @@ interface FileUploadResult {
 function UploadStep({
   onUploaded,
   onBatchUploaded,
+  onResumeBatch,
 }: {
   onUploaded: (runId: number, preview: any) => void;
   onBatchUploaded?: (results: FileUploadResult[]) => void;
+  onResumeBatch?: () => void;
 }) {
   const [files, setFiles] = useState<FileUploadResult[]>([]);
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0 });
+  const [pendingCount, setPendingCount] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const folderRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
+
+  // Check for existing pending runs on mount
+  useEffect(() => {
+    fetch("/api/smart-import/pending-runs", { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setPendingCount(Array.isArray(data) ? data.length : 0))
+      .catch(() => {});
+  }, []);
 
   const addFiles = (fileList: FileList | File[]) => {
     const newFiles: FileUploadResult[] = [];
@@ -471,6 +490,16 @@ function UploadStep({
               </>
             )}
           </Button>
+          {pendingCount > 0 && onResumeBatch && (
+            <Button
+              variant="outline"
+              onClick={onResumeBatch}
+              data-testid="btn-resume-batch"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2" />
+              Resume Previous Batch ({pendingCount})
+            </Button>
+          )}
         </div>
 
         {hasSuccessful && files.length > 1 && !uploading && (
@@ -520,6 +549,10 @@ function EditableField({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value || "");
+
+  useEffect(() => {
+    if (!editing) setDraft(value || "");
+  }, [value, editing]);
 
   function formatDisplay() {
     if (!value) return "—";
@@ -599,7 +632,7 @@ function SectionDetectionStep({
   const sections = preview?.detection?.sections || preview?.sections || [];
   const unmatchedSheets = preview?.detection?.unmatched || preview?.unmatchedSheets || [];
   const projectInfo = preview?.detection?.projectInfo || preview?.projectInfo || {};
-  const hasProjectInfo = true;
+  const hasProjectInfo = Object.values(projectInfo).some(v => v != null && v !== "");
   const { toast } = useToast();
 
   const handleFieldSave = async (key: string, value: string) => {
@@ -619,7 +652,9 @@ function SectionDetectionStep({
           onProjectInfoUpdated?.(data.projectInfo);
           toast({ title: "Saved", description: `Updated ${key}` });
         }
-      } catch {}
+      } catch {
+          toast({ title: "Error", description: "Failed to save project info", variant: "destructive" });
+        }
     }
     onProjectInfoUpdated?.(preview?.detection?.projectInfo);
   };
@@ -719,14 +754,54 @@ function SectionDetectionStep({
         ))}
       </div>
 
-      {unmatchedSheets.length > 0 && (
+      {preview?.detection?.multiProject?.isMultiProject && preview.detection.multiProject.subProjects?.length > 0 && (
+        <Card className="border-blue-200 bg-blue-50" data-testid="multi-project-summary">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-2 mb-2">
+              <span className="font-semibold text-sm text-blue-800">Multi-Project Tracker</span>
+              <span className="text-xs bg-blue-200 text-blue-800 px-2 py-0.5 rounded-full">{preview.detection.multiProject.subProjects.length} sub-projects</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {preview.detection.multiProject.subProjects.map((sp: string) => (
+                <span key={sp} className="text-xs bg-white border border-blue-200 text-blue-700 px-2 py-0.5 rounded">{sp}</span>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Purchase Order sheets — distinct section */}
+      {unmatchedSheets.filter((s: any) => s.reason?.startsWith("Purchase Order")).length > 0 && (
+        <Card className="bg-card rounded-xl shadow-sm border-blue-200" data-testid="po-sheets-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-blue-700 flex items-center gap-2">
+              <FileSpreadsheet className="w-4 h-4" />
+              Purchase Order Sheets
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1 text-xs text-muted-foreground mb-2">
+              {unmatchedSheets.filter((s: any) => s.reason?.startsWith("Purchase Order")).map((sheet: any, idx: number) => (
+                <li key={idx} className="flex items-center gap-2" data-testid={`po-sheet-${idx}`}>
+                  <FileSpreadsheet className="w-3 h-3 text-blue-500" />
+                  <span className="font-medium">{sheet.sheetName}</span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[10px] text-blue-600">These sheets are not imported by Smart Import. Use the Load Purchase Order function instead.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Other unmatched sheets */}
+      {unmatchedSheets.filter((s: any) => !s.reason?.startsWith("Purchase Order")).length > 0 && (
         <Card className="bg-card rounded-xl shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm text-muted-foreground">Unmatched Sheets</CardTitle>
           </CardHeader>
           <CardContent>
             <ul className="space-y-1 text-xs text-muted-foreground">
-              {unmatchedSheets.map((sheet: any, idx: number) => (
+              {unmatchedSheets.filter((s: any) => !s.reason?.startsWith("Purchase Order")).map((sheet: any, idx: number) => (
                 <li key={idx} className="flex items-center gap-2" data-testid={`unmatched-sheet-${idx}`}>
                   <X className="w-3 h-3 text-slate-500" />
                   <span className="font-medium">{typeof sheet === "string" ? sheet : sheet.name || sheet.sheetName}</span>
@@ -772,6 +847,13 @@ const FIELD_LABELS: Record<string, string> = {
   budget_rate: "Budget Rate", budget_total: "Budget Total", actual_total: "Actual Total", po_number: "PO #",
   approved_date: "Approved Date", payment_date: "Payment Date", forecast_payment_date: "Forecast Payment",
   budget_cos: "Budget COS", actual_cos: "Actual COS",
+  // camelCase keys from normalized data objects
+  budgetQty: "Budget Qty", budgetRate: "Budget Rate", budgetTotal: "Budget Total", budgetCos: "Budget COS",
+  actualCos: "Actual COS", revenueRecognitionAmount: "Revenue Recognition", forecastPaymentDate: "Forecast Payment",
+  subProjectName: "Sub-Project", amountExVat: "Amount (ex VAT)", costCategory: "Cost Category",
+  counterpartyName: "Counterparty", invoiceNumber: "Invoice #", invoiceDate: "Invoice Date",
+  poNumber: "PO #", paidDate: "Paid Date", taskName: "Task Name", taskNo: "Task #",
+  milestoneName: "Milestone", expectedPaymentDate: "Expected Payment",
 };
 
 const DB_TABLE_MAP: Record<string, string> = {
@@ -793,11 +875,11 @@ function ColumnMappingStep({
   onBack: () => void;
   onPreviewUpdate: (p: any) => void;
 }) {
-  const detectedSections = preview?.detection?.sections || [];
-  const mappingResults = preview?.mappings || [];
-  const normalization = preview?.normalization || {};
+  const detectedSections = useMemo(() => preview?.detection?.sections || [], [preview]);
+  const mappingResults = useMemo(() => preview?.mappings || [], [preview]);
+  const normalization = useMemo(() => preview?.normalization || {}, [preview]);
 
-  const sectionNames = detectedSections.map((s: any) => s.section).filter(Boolean);
+  const sectionNames = useMemo(() => detectedSections.map((s: any) => s.section).filter(Boolean), [detectedSections]);
   const [activeTab, setActiveTab] = useState(sectionNames[0] || "PLAN");
   const [saving, setSaving] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState<Record<string, boolean>>({});
@@ -1032,11 +1114,14 @@ function ColumnMappingStep({
                             <thead>
                               <tr className="bg-blue-50 border-b">
                                 <th className="text-left px-2 py-1.5 text-[10px] font-semibold text-blue-600 uppercase">Row</th>
-                                {Object.keys(previewData[0] || {}).filter(k => !["sourceSheet", "sourceRow"].includes(k)).slice(0, 8).map(key => (
-                                  <th key={key} className="text-left px-2 py-1.5 text-[10px] font-semibold text-blue-600 uppercase whitespace-nowrap">
-                                    {FIELD_LABELS[key] || key.replace(/([A-Z])/g, " $1").trim()}
-                                  </th>
-                                ))}
+                                {Object.keys(previewData[0] || {}).filter(k => !["sourceSheet", "sourceRow"].includes(k)).slice(0, 10).map(key => {
+                                  const isBudgetCol = key.startsWith("budget") || key === "forecastPaymentDate";
+                                  return (
+                                    <th key={key} className={`text-left px-2 py-1.5 text-[10px] font-semibold uppercase whitespace-nowrap ${isBudgetCol ? "bg-slate-100 text-slate-500" : "text-blue-600"}`}>
+                                      {FIELD_LABELS[key] || key.replace(/([A-Z])/g, " $1").trim()}
+                                    </th>
+                                  );
+                                })}
                               </tr>
                             </thead>
                             <tbody>
@@ -1046,8 +1131,10 @@ function ColumnMappingStep({
                                 return (
                                 <tr key={idx} className={`border-b border-border ${isMs ? "bg-amber-50/60 font-semibold" : "hover:bg-muted/50"}`}>
                                   <td className="px-2 py-1 text-slate-500">{row.sourceRow || idx + 1}</td>
-                                  {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow", "isMilestone", "parentTaskNo", "indentLevel"].includes(k)).slice(0, 8).map(([key, val]) => (
-                                    <td key={key} className="px-2 py-1 max-w-[120px] truncate" title={String(val ?? "")}>
+                                  {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow", "isMilestone", "parentTaskNo", "indentLevel"].includes(k)).slice(0, 10).map(([key, val]) => {
+                                    const isBudgetCell = key.startsWith("budget") || key === "forecastPaymentDate";
+                                    return (
+                                    <td key={key} className={`px-2 py-1 max-w-[120px] truncate ${isBudgetCell ? "bg-slate-50 text-slate-500" : ""}`} title={String(val ?? "")}>
                                       {key === "taskName" && indent > 0 ? (
                                         <span style={{ paddingLeft: `${indent * 12}px` }}>{isMs ? "◆ " : ""}{val != null ? String(val) : <span className="text-slate-600">—</span>}</span>
                                       ) : key === "taskName" && isMs ? (
@@ -1056,7 +1143,8 @@ function ColumnMappingStep({
                                         val != null ? String(val) : <span className="text-slate-600">—</span>
                                       )}
                                     </td>
-                                  ))}
+                                    );
+                                  })}
                                 </tr>
                                 );
                               })}
@@ -1103,7 +1191,7 @@ function ColumnMappingStep({
   );
 }
 
-function IssueRowDetail({ issue, normalization }: { issue: any; normalization: any }) {
+const IssueRowDetail = memo(function IssueRowDetail({ issue, normalization }: { issue: any; normalization: any }) {
   const payload = issue.payloadJson || {};
   const section = (issue.section || "").toUpperCase();
   const row = payload.row;
@@ -1247,7 +1335,7 @@ function IssueRowDetail({ issue, normalization }: { issue: any; normalization: a
       </div>
     </div>
   );
-}
+});
 
 function IssuesStep({
   runId,
@@ -1266,14 +1354,18 @@ function IssuesStep({
 }) {
   const [resolving, setResolving] = useState<number | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [cpName, setCpName] = useState("");
-  const [cpType, setCpType] = useState("subcontractor");
+  const [cpState, setCpState] = useState<Record<number, { name: string; type: string }>>({});
   const [creatingCp, setCreatingCp] = useState<number | null>(null);
   const [applyingPrior, setApplyingPrior] = useState(false);
   const [ignoringAll, setIgnoringAll] = useState(false);
   const [allowingAll, setAllowingAll] = useState(false);
   const [editingOverride, setEditingOverride] = useState<number | null>(null);
   const [overrideFields, setOverrideFields] = useState<Record<string, string>>({});
+  const [sectionFilter, setSectionFilter] = useState<string>("ALL");
+  const [severityFilter, setSeverityFilter] = useState<string>("ALL");
+  const [showResolved, setShowResolved] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const ISSUES_PER_PAGE = 20;
   const { toast } = useToast();
 
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
@@ -1282,11 +1374,49 @@ function IssuesStep({
   const issuesWithPriorRules = issues.filter((i: any) => i.matchedRuleId && !i.resolved && !i.autoResolved);
   const autoResolvedCount = issues.filter((i: any) => i.autoResolved).length;
 
-  const blockers = issues.filter((i) => i.severity === "BLOCKER" || i.severity === "blocker" || i.severity === "error");
-  const warnings = issues.filter((i) => i.severity === "WARNING" || i.severity === "warning" || i.severity === "warn");
-  const infos = issues.filter((i) => i.severity === "INFO" || i.severity === "info");
+  const getSeverity = (i: any) => (i.severity || "").toUpperCase();
+  const blockers = issues.filter((i) => { const s = getSeverity(i); return s === "BLOCKER" || s === "ERROR"; });
+  const warnings = issues.filter((i) => { const s = getSeverity(i); return s === "WARNING" || s === "WARN"; });
+  const infos = issues.filter((i) => { const s = getSeverity(i); return s === "INFO"; });
 
   const unresolvedBlockers = blockers.filter((i) => !i.resolved);
+
+  // Section counts for filter badges
+  const sectionCounts = issues.reduce<Record<string, number>>((acc, i) => {
+    const sec = (i.section || "OTHER").toUpperCase();
+    acc[sec] = (acc[sec] || 0) + 1;
+    return acc;
+  }, {});
+  const availableSections = Object.keys(sectionCounts).sort();
+
+  // Apply filters
+  const applyFilters = (items: any[]) => {
+    let filtered = items;
+    if (sectionFilter !== "ALL") {
+      filtered = filtered.filter(i => (i.section || "OTHER").toUpperCase() === sectionFilter);
+    }
+    if (!showResolved) {
+      filtered = filtered.filter(i => !i.resolved && !i.autoResolved);
+    }
+    return filtered;
+  };
+
+  const filteredBlockers = applyFilters(blockers);
+  const filteredWarnings = applyFilters(warnings);
+  const filteredInfos = applyFilters(infos);
+
+  // Combine all filtered issues for pagination
+  const allFilteredIssues = [...filteredBlockers, ...filteredWarnings, ...filteredInfos];
+  const totalPages = Math.max(1, Math.ceil(allFilteredIssues.length / ISSUES_PER_PAGE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedIssues = allFilteredIssues.slice((safePage - 1) * ISSUES_PER_PAGE, safePage * ISSUES_PER_PAGE);
+
+  // Split paginated issues back into severity groups for rendering
+  const paginatedBlockers = paginatedIssues.filter(i => { const s = getSeverity(i); return s === "BLOCKER" || s === "ERROR"; });
+  const paginatedWarnings = paginatedIssues.filter(i => { const s = getSeverity(i); return s === "WARNING" || s === "WARN"; });
+  const paginatedInfos = paginatedIssues.filter(i => { const s = getSeverity(i); return s === "INFO"; });
+
+  const resolvedCount = issues.filter(i => i.resolved || i.autoResolved).length;
 
   const toggleExpand = (id: number) => {
     setExpanded(prev => {
@@ -1384,18 +1514,24 @@ function IssuesStep({
     }
   };
 
+  const getCpState = (issueId: number) => cpState[issueId] || { name: "", type: "subcontractor" };
+  const setCpField = (issueId: number, field: "name" | "type", value: string) => {
+    setCpState(prev => ({ ...prev, [issueId]: { ...getCpState(issueId), [field]: value } }));
+  };
+
   const handleCreateCounterparty = async (issueId: number) => {
-    if (!cpName.trim()) return;
+    const cp = getCpState(issueId);
+    if (!cp.name.trim()) return;
     setCreatingCp(issueId);
     try {
       const res = await fetch("/api/counterparties", {
         method: "POST",
         headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
-        body: JSON.stringify({ nameCanonical: cpName.trim(), typeDefault: cpType, isCore: false }),
+        body: JSON.stringify({ nameCanonical: cp.name.trim(), typeDefault: cp.type, isCore: false }),
       });
       if (res.ok) {
-        toast({ title: "Counterparty Created", description: `${cpName} added` });
-        setCpName("");
+        toast({ title: "Counterparty Created", description: `${cp.name} added` });
+        setCpState(prev => { const next = { ...prev }; delete next[issueId]; return next; });
         await handleResolve(issueId, true, "ACCEPTED");
       } else {
         const err = await res.json().catch(() => ({ error: "Failed" }));
@@ -1443,9 +1579,16 @@ function IssuesStep({
                   <div className="flex items-start gap-2 flex-1">
                     <ChevronDown className={`w-3.5 h-3.5 mt-0.5 text-slate-500 shrink-0 transition-transform ${isExpanded ? "" : "-rotate-90"}`} />
                     <div className="flex-1">
-                      <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
-                        {issue.message}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {issue.section && (
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-medium">
+                            {(issue.section || "").toUpperCase()}
+                          </Badge>
+                        )}
+                        <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
+                          {issue.message}
+                        </p>
+                      </div>
                       {issue.autoResolved && (
                         <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded mt-0.5">
                           <CheckCircle2 className="w-2.5 h-2.5" /> Auto-resolved from prior decision
@@ -1618,8 +1761,8 @@ function IssuesStep({
                           <Label className="text-[10px]">Name</Label>
                           <Input
                             className="h-7 text-xs"
-                            value={cpName}
-                            onChange={(e) => setCpName(e.target.value)}
+                            value={getCpState(issue.id).name}
+                            onChange={(e) => setCpField(issue.id, "name", e.target.value)}
                             placeholder="Counterparty name..."
                             data-testid={`input-cp-name-${issue.id}`}
                           />
@@ -1627,8 +1770,8 @@ function IssuesStep({
                         <div className="w-[140px]">
                           <Label className="text-[10px]">Type</Label>
                           <SearchableSelect
-                            value={cpType}
-                            onValueChange={setCpType}
+                            value={getCpState(issue.id).type}
+                            onValueChange={(v) => setCpField(issue.id, "type", v)}
                             triggerClassName="h-7 text-xs"
                             data-testid={`select-trigger-cp-type-${issue.id}`}
                             options={[
@@ -1643,7 +1786,7 @@ function IssuesStep({
                         <Button
                           size="sm"
                           className="h-7 text-xs"
-                          disabled={!cpName.trim() || creatingCp === issue.id}
+                          disabled={!getCpState(issue.id).name.trim() || creatingCp === issue.id}
                           onClick={() => handleCreateCounterparty(issue.id)}
                           data-testid={`btn-create-cp-${issue.id}`}
                         >
@@ -1734,26 +1877,128 @@ function IssuesStep({
         </Card>
       ) : (
         <>
-          {renderIssueGroup(
+          {/* Filter bar */}
+          <Card className="bg-card rounded-xl shadow-sm" data-testid="issues-filter-bar">
+            <CardContent className="p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground mr-1">Section:</span>
+                <button
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${sectionFilter === "ALL" ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                  onClick={() => { setSectionFilter("ALL"); setCurrentPage(1); }}
+                  data-testid="filter-section-all"
+                >
+                  All ({issues.length})
+                </button>
+                {availableSections.map(sec => (
+                  <button
+                    key={sec}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${sectionFilter === sec ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                    onClick={() => { setSectionFilter(sec); setCurrentPage(1); }}
+                    data-testid={`filter-section-${sec}`}
+                  >
+                    {sec} ({sectionCounts[sec]})
+                  </button>
+                ))}
+
+                <div className="w-px h-5 bg-border mx-1 hidden sm:block" />
+
+                <span className="text-xs font-medium text-muted-foreground mr-1">Severity:</span>
+                {[
+                  { key: "ALL", label: "All" },
+                  { key: "BLOCKER", label: "Blockers", count: blockers.length },
+                  { key: "WARNING", label: "Warnings", count: warnings.length },
+                  { key: "INFO", label: "Info", count: infos.length },
+                ].map(opt => (
+                  <button
+                    key={opt.key}
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${severityFilter === opt.key ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                    onClick={() => { setSeverityFilter(opt.key); setCurrentPage(1); }}
+                    data-testid={`filter-severity-${opt.key}`}
+                  >
+                    {opt.label}{opt.count != null ? ` (${opt.count})` : ""}
+                  </button>
+                ))}
+
+                <div className="w-px h-5 bg-border mx-1 hidden sm:block" />
+
+                <button
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${showResolved ? "bg-emerald-600 text-white" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}
+                  onClick={() => { setShowResolved(!showResolved); setCurrentPage(1); }}
+                  data-testid="filter-show-resolved"
+                >
+                  {showResolved ? "Hide" : "Show"} Resolved ({resolvedCount})
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Issue groups (filtered + paginated) */}
+          {severityFilter === "ALL" || severityFilter === "BLOCKER" ? renderIssueGroup(
             "Blockers",
-            blockers,
+            paginatedBlockers,
             <AlertCircle className="w-4 h-4 text-red-500" />,
             "bg-red-50/50",
             "border-red-200",
-          )}
-          {renderIssueGroup(
+          ) : null}
+          {severityFilter === "ALL" || severityFilter === "WARNING" ? renderIssueGroup(
             "Warnings",
-            warnings,
+            paginatedWarnings,
             <AlertTriangle className="w-4 h-4 text-amber-500" />,
             "bg-amber-50/50",
             "border-amber-200",
-          )}
-          {renderIssueGroup(
+          ) : null}
+          {severityFilter === "ALL" || severityFilter === "INFO" ? renderIssueGroup(
             "Info",
-            infos,
+            paginatedInfos,
             <Info className="w-4 h-4 text-blue-500" />,
             "bg-blue-50/50",
             "border-blue-200",
+          ) : null}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between" data-testid="issues-pagination">
+              <span className="text-xs text-muted-foreground">
+                Showing {(safePage - 1) * ISSUES_PER_PAGE + 1}–{Math.min(safePage * ISSUES_PER_PAGE, allFilteredIssues.length)} of {allFilteredIssues.length} issues
+              </span>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  disabled={safePage <= 1}
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  data-testid="btn-prev-page"
+                >
+                  <ArrowLeft className="w-3 h-3" />
+                </Button>
+                <span className="text-xs text-muted-foreground px-2">
+                  Page {safePage} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs px-2"
+                  disabled={safePage >= totalPages}
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  data-testid="btn-next-page"
+                >
+                  <ArrowRight className="w-3 h-3" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {allFilteredIssues.length === 0 && issues.length > 0 && (
+            <Card className="bg-card rounded-xl shadow-sm">
+              <CardContent className="flex flex-col items-center justify-center py-8 gap-2">
+                <Info className="w-6 h-6 text-slate-400" />
+                <p className="text-sm text-muted-foreground">No issues match the current filters</p>
+                <Button variant="outline" size="sm" className="text-xs" onClick={() => { setSectionFilter("ALL"); setSeverityFilter("ALL"); setShowResolved(true); }}>
+                  Clear Filters
+                </Button>
+              </CardContent>
+            </Card>
           )}
         </>
       )}
@@ -1959,7 +2204,7 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
                           {reviewing === cl.sourceRow ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
                           ) : cl.outcome === "UNRESOLVED" ? (
-                            <div className="flex gap-1 items-center">
+                            <div className="flex flex-wrap gap-1 items-center">
                               {cl.confidenceScore >= 50 && (
                                 <Button size="sm" variant="outline" className="h-6 text-[10px] px-2"
                                   onClick={() => handleReview(cl.sourceRow, "confirm")}
@@ -1980,7 +2225,7 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
                               />
                               <Input
                                 placeholder="Reason..."
-                                className="h-6 text-[10px] w-28"
+                                className="h-6 text-[10px] w-28 min-w-0"
                                 value={getRowOverride(cl.sourceRow).reason}
                                 onChange={(e) => setRowOverride(cl.sourceRow, "reason", e.target.value)}
                                 data-testid={`input-reason-${cl.sourceRow}`}
@@ -2064,8 +2309,28 @@ function PreviewCommitStep({
       expected?: string | null;
     }>;
   } | null>(null);
+  const [planEditConflict, setPlanEditConflict] = useState<{
+    message: string;
+    unresolvedCount: number;
+    conflicts: Array<{ id: number; taskName: string; editType: string; fieldName: string; oldValue: string; newValue: string }>;
+  } | null>(null);
+  const [duplicateProjectWarning, setDuplicateProjectWarning] = useState<{
+    message: string;
+    matchCandidates: Array<{ projectId: number; projectName: string; confidence: number; matchReason: string }>;
+  } | null>(null);
   const [, navigate] = useLocation();
   const { toast } = useToast();
+
+  const [importDiff, setImportDiff] = useState<Record<string, { added: number; modified: number; removed: number; unchanged: number; details: any[] }> | null>(null);
+  const [diffExpanded, setDiffExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!runId) return;
+    fetch(`/api/smart-import/${runId}/diff`, { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.diff) setImportDiff(data.diff); })
+      .catch(() => {});
+  }, [runId]);
 
   const normalization = preview?.normalization || {};
   const detectedSections = preview?.detection?.sections || [];
@@ -2096,6 +2361,8 @@ function PreviewCommitStep({
         setPreviouslyDeletedWarning(null);
         setRecencyWarning(null);
         setBlockerWarning(null);
+        setPlanEditConflict(null);
+        setDuplicateProjectWarning(null);
         toast({ title: "Import Committed!", description: "Data has been imported successfully" });
       } else {
         const err = await res.json().catch(() => ({ error: "Commit failed" }));
@@ -2117,6 +2384,17 @@ function PreviewCommitStep({
             message: err.message || "Resolve the remaining blocker rows before committing.",
             unresolvedBlockers: err.unresolvedBlockers || [],
           });
+        } else if (err.error === "plan_edit_conflict_block") {
+          setPlanEditConflict({
+            message: err.message || "Unresolved front-end plan edits must be resolved before committing.",
+            unresolvedCount: err.unresolvedCount || 0,
+            conflicts: err.conflicts || [],
+          });
+        } else if (err.error === "duplicate_project_candidate") {
+          setDuplicateProjectWarning({
+            message: err.message || "A similar project already exists.",
+            matchCandidates: err.matchCandidates || [],
+          });
         } else {
           toast({ title: "Error", description: err.message || err.error || "Commit failed", variant: "destructive" });
         }
@@ -2133,6 +2411,8 @@ function PreviewCommitStep({
   const handleCommitPreserve = () => doCommit({ preserveManualEdits: true });
   const handleCommitWithResolutions = () => doCommit({ conflictResolutions });
   const handleCommitRecreate = () => doCommit({ forceRecreate: true });
+  const handleCommitConfirmNewProject = () => doCommit({ confirmNewProject: true });
+  const handleCommitSelectProject = (projectId: number) => doCommit({ projectId });
 
   const toggleTable = (key: string) => {
     setExpandedTables((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -2149,11 +2429,25 @@ function PreviewCommitStep({
           <h3 className="text-lg font-semibold text-emerald-700">Import Successful!</h3>
           {commitResult && (
             <div className="text-center text-sm text-muted-foreground space-y-1">
-              {commitResult.planTasks != null && <p>{commitResult.planTasks} plan tasks imported</p>}
-              {commitResult.revenueLines != null && <p>{commitResult.revenueLines} revenue lines imported</p>}
-              {commitResult.costLines != null && <p>{commitResult.costLines} cost lines imported</p>}
-              {commitResult.executionPhases != null && <p>{commitResult.executionPhases} execution phases</p>}
-              {commitResult.counterparties != null && <p>{commitResult.counterparties} new counterparties</p>}
+              {commitResult.summary && (
+                <div className="mb-3 p-3 rounded-lg bg-muted/50 text-left max-w-md mx-auto">
+                  <p className="font-medium text-foreground mb-1">Import Summary</p>
+                  <p>File: {commitResult.summary.fileName}</p>
+                  <p>Timestamp: {new Date(commitResult.summary.timestamp).toLocaleString()}</p>
+                  <p>Rows written: {commitResult.summary.rowsWritten}</p>
+                  {commitResult.summary.rowsSkipped > 0 && (
+                    <p className="text-amber-600">Rows skipped: {commitResult.summary.rowsSkipped}</p>
+                  )}
+                  {commitResult.summary.conflictsDetected > 0 && (
+                    <p className="text-blue-600">Conflicts detected: {commitResult.summary.conflictsDetected} (resolved: {commitResult.summary.conflictsResolved})</p>
+                  )}
+                </div>
+              )}
+              {commitResult.counts?.planTasks != null && <p>{commitResult.counts.planTasks} plan tasks imported</p>}
+              {commitResult.counts?.revenueLines != null && <p>{commitResult.counts.revenueLines} revenue lines imported</p>}
+              {commitResult.counts?.costLines != null && <p>{commitResult.counts.costLines} cost lines imported</p>}
+              {commitResult.counts?.executionPhases != null && <p>{commitResult.counts.executionPhases} execution phases</p>}
+              {commitResult.counts?.counterparties != null && <p>{commitResult.counts.counterparties} new counterparties</p>}
               {commitResult.preservedManualEdits != null && commitResult.preservedManualEdits > 0 && (
                 <p className="text-emerald-600 font-medium">{commitResult.preservedManualEdits} manual edit(s) preserved</p>
               )}
@@ -2214,6 +2508,152 @@ function PreviewCommitStep({
           </div>
         </CardContent>
       </Card>
+
+      {/* Budget vs Actual summary card */}
+      {normalization.costedSummary && (
+        <Card className="bg-card rounded-xl shadow-sm" data-testid="budget-actual-summary">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold mb-3">Costed Summary</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+              {[
+                { label: "Revenue", planned: normalization.costedSummary.plannedRevenue, actual: normalization.costedSummary.actualRevenue },
+                { label: "Expenditure", planned: normalization.costedSummary.plannedExpenditure, actual: normalization.costedSummary.actualExpenditure },
+                { label: "Profit", planned: normalization.costedSummary.plannedProfit, actual: normalization.costedSummary.actualProfit },
+                { label: "Margin", planned: normalization.costedSummary.plannedMargin, actual: normalization.costedSummary.actualMargin },
+              ].map(({ label, planned, actual }) => {
+                const isMargin = label === "Margin";
+                const fmt = (v: number | null) => {
+                  if (v == null) return "—";
+                  return isMargin ? `${(v * 100).toFixed(1)}%` : `R ${Number(v).toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                };
+                const variance = planned != null && actual != null ? actual - planned : null;
+                return (
+                  <div key={label} className="border rounded-lg p-2.5">
+                    <div className="font-medium text-muted-foreground mb-1">{label}</div>
+                    <div className="flex justify-between items-baseline">
+                      <div>
+                        <div className="text-[10px] text-slate-400">Budget</div>
+                        <div className="font-semibold text-slate-600 bg-slate-50 px-1 rounded">{fmt(planned)}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] text-slate-400">Actual</div>
+                        <div className="font-semibold">{fmt(actual)}</div>
+                      </div>
+                    </div>
+                    {variance != null && !isMargin && (
+                      <div className={`text-[10px] mt-1 text-right ${variance >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        {variance >= 0 ? "+" : ""}{fmt(variance)} variance
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Budget line totals vs actual totals */}
+      {costRows.length > 0 && costRows.some((r: any) => r.budgetTotal) && (
+        <Card className="bg-card rounded-xl shadow-sm" data-testid="budget-line-summary">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold mb-2">Expenditure: Budget vs Actual</p>
+            <div className="grid grid-cols-3 gap-3 text-xs">
+              {(() => {
+                const totalBudget = costRows.reduce((s: number, r: any) => s + (parseFloat(r.budgetTotal) || 0), 0);
+                const totalActual = costRows.reduce((s: number, r: any) => s + (parseFloat(r.amountExVat) || 0), 0);
+                const variance = totalActual - totalBudget;
+                const fmt = (v: number) => `R ${v.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                return (
+                  <>
+                    <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+                      <div className="text-[10px] text-slate-400">Total Budget</div>
+                      <div className="font-bold text-slate-600">{fmt(totalBudget)}</div>
+                    </div>
+                    <div className="bg-muted rounded-lg p-2.5 text-center">
+                      <div className="text-[10px] text-slate-400">Total Actual</div>
+                      <div className="font-bold">{fmt(totalActual)}</div>
+                    </div>
+                    <div className={`rounded-lg p-2.5 text-center ${variance >= 0 ? "bg-red-50" : "bg-emerald-50"}`}>
+                      <div className="text-[10px] text-slate-400">Variance</div>
+                      <div className={`font-bold ${variance >= 0 ? "text-red-600" : "text-emerald-600"}`}>
+                        {variance >= 0 ? "+" : ""}{fmt(variance)}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Import Diff / Changes card */}
+      {importDiff && Object.keys(importDiff).length > 0 && (
+        <Card className="bg-card rounded-xl shadow-sm" data-testid="import-diff-card">
+          <CardContent className="p-4">
+            <div
+              className="flex items-center justify-between cursor-pointer"
+              onClick={() => setDiffExpanded(!diffExpanded)}
+              data-testid="diff-toggle"
+            >
+              <p className="text-sm font-semibold">Changes vs Current Data</p>
+              {diffExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 text-xs">
+              {(() => {
+                const totals = Object.values(importDiff).reduce((acc, s) => ({
+                  added: acc.added + s.added,
+                  modified: acc.modified + s.modified,
+                  removed: acc.removed + s.removed,
+                  unchanged: acc.unchanged + s.unchanged,
+                }), { added: 0, modified: 0, removed: 0, unchanged: 0 });
+                return (
+                  <>
+                    <div className="bg-emerald-50 rounded-lg p-2.5 text-center">
+                      <div className="font-bold text-emerald-700">{totals.added}</div>
+                      <div className="text-[10px] text-emerald-600">New</div>
+                    </div>
+                    <div className="bg-blue-50 rounded-lg p-2.5 text-center">
+                      <div className="font-bold text-blue-700">{totals.modified}</div>
+                      <div className="text-[10px] text-blue-600">Modified</div>
+                    </div>
+                    <div className="bg-red-50 rounded-lg p-2.5 text-center">
+                      <div className="font-bold text-red-700">{totals.removed}</div>
+                      <div className="text-[10px] text-red-600">Removed</div>
+                    </div>
+                    <div className="bg-slate-50 rounded-lg p-2.5 text-center">
+                      <div className="font-bold text-slate-600">{totals.unchanged}</div>
+                      <div className="text-[10px] text-slate-500">Unchanged</div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+            {diffExpanded && (
+              <div className="mt-3 space-y-3">
+                {Object.entries(importDiff).map(([section, data]) => (
+                  <div key={section} className="border rounded-lg p-2.5">
+                    <p className="text-xs font-semibold capitalize mb-1.5">{section} — {data.added} new, {data.modified} modified, {data.removed} removed</p>
+                    {data.details.length > 0 && (
+                      <ul className="space-y-0.5 text-[10px] text-muted-foreground max-h-32 overflow-y-auto">
+                        {data.details.map((d: any, i: number) => (
+                          <li key={i} className="flex items-start gap-1.5">
+                            <span className={`font-medium flex-shrink-0 ${d.type === "added" ? "text-emerald-600" : d.type === "modified" ? "text-blue-600" : "text-red-600"}`}>
+                              {d.type === "added" ? "+" : d.type === "modified" ? "~" : "-"}
+                            </span>
+                            <span className="truncate">{d.name}{d.changes ? ` (${d.changes.join(", ")})` : ""}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {planRows.length > 0 && (
         <Card className="bg-card rounded-xl shadow-sm">
@@ -2404,34 +2844,55 @@ function PreviewCommitStep({
 
                 {manualEditsWarning.conflicts && manualEditsWarning.conflicts.length > 0 && (
                   <div className="mt-2 border border-amber-200 rounded-lg overflow-hidden bg-white">
-                    <div className="px-3 py-2 bg-amber-100/50 border-b border-amber-200">
-                      <p className="text-xs font-semibold text-amber-800">Manual edits detected — choose which to keep</p>
+                    <div className="px-3 py-2 bg-amber-100/50 border-b border-amber-200 flex items-center justify-between">
+                      {/* GC-006: Enhanced conflict summary with counters */}
+                      <p className="text-xs font-semibold text-amber-800">
+                        {manualEditsWarning.conflicts.length} manual edit{manualEditsWarning.conflicts.length !== 1 ? "s" : ""} detected — choose which to keep
+                      </p>
+                      <div className="flex gap-2 text-[10px]">
+                        <span className="text-emerald-700 font-medium">
+                          {Object.values(conflictResolutions).filter(v => v === "keep").length} keeping
+                        </span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-red-600 font-medium">
+                          {Object.values(conflictResolutions).filter(v => v === "import").length} overwriting
+                        </span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-slate-500 font-medium">
+                          {manualEditsWarning.conflicts.length - Object.keys(conflictResolutions).length} unresolved
+                        </span>
+                      </div>
                     </div>
-                    <div className="max-h-[240px] overflow-y-auto">
+                    <div className="max-h-[320px] overflow-y-auto">
                       <table className="w-full text-xs" data-testid="table-conflicts">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200">
                             <th className="text-left px-3 py-1.5 font-medium text-slate-600">Row</th>
                             <th className="text-left px-3 py-1.5 font-medium text-slate-600">Item</th>
                             <th className="text-left px-3 py-1.5 font-medium text-slate-600">Field</th>
-                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Current</th>
-                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Import</th>
-                            <th className="text-center px-3 py-1.5 font-medium text-slate-600">Keep?</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Manual Value</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600">Excel Value</th>
+                            <th className="text-left px-3 py-1.5 font-medium text-slate-600 hidden md:table-cell">Edited By</th>
+                            <th className="text-center px-3 py-1.5 font-medium text-slate-600">Decision</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {manualEditsWarning.conflicts.map((c, i) => {
+                          {manualEditsWarning.conflicts.map((c: any, i: number) => {
                             const key = `${c.sourceRow}::${c.field}`;
                             const isKeep = conflictResolutions[key] === "keep";
                             return (
                               <tr key={i} className={`border-b border-slate-100 ${isKeep ? "bg-emerald-50/30" : "bg-red-50/20"}`}>
                                 <td className="px-3 py-1.5 text-slate-500 font-mono">{c.sourceRow}</td>
-                                <td className="px-3 py-1.5 text-slate-700 max-w-[180px] truncate" title={`${c.costCategory}: ${c.description}`}>
+                                <td className="px-3 py-1.5 text-slate-700 max-w-[160px] truncate" title={`${c.costCategory}: ${c.description}`}>
                                   {c.description || c.costCategory}
                                 </td>
                                 <td className="px-3 py-1.5 text-slate-600">{c.field}</td>
                                 <td className="px-3 py-1.5 text-emerald-700 font-medium">{c.currentValue}</td>
                                 <td className="px-3 py-1.5 text-slate-500">{c.importValue}</td>
+                                <td className="px-3 py-1.5 text-slate-400 text-[10px] hidden md:table-cell">
+                                  {c.editedByName && <span className="block">{c.editedByName}</span>}
+                                  {c.editedAt && <span className="block">{new Date(c.editedAt).toLocaleDateString()}</span>}
+                                </td>
                                 <td className="px-3 py-1.5 text-center">
                                   <button
                                     className={`px-2 py-0.5 rounded text-[10px] font-semibold transition-colors ${
@@ -2447,7 +2908,7 @@ function PreviewCommitStep({
                                     }}
                                     data-testid={`btn-toggle-conflict-${i}`}
                                   >
-                                    {isKeep ? "Keep Manual" : "Use Import"}
+                                    {isKeep ? "Keep Manual" : "Overwrite with Excel"}
                                   </button>
                                 </td>
                               </tr>
@@ -2456,9 +2917,10 @@ function PreviewCommitStep({
                         </tbody>
                       </table>
                     </div>
-                    <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex gap-2">
+                    <div className="px-3 py-2 bg-slate-50 border-t border-slate-200 flex items-center gap-3">
+                      <span className="text-[10px] text-slate-500 font-medium">Apply to All:</span>
                       <button
-                        className="text-[10px] font-medium text-emerald-700 hover:text-emerald-800 underline underline-offset-2"
+                        className="text-[10px] font-semibold text-emerald-700 hover:text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded transition-colors"
                         onClick={() => {
                           const all: Record<string, "keep" | "import"> = {};
                           for (const c of manualEditsWarning.conflicts || []) {
@@ -2468,11 +2930,10 @@ function PreviewCommitStep({
                         }}
                         data-testid="btn-keep-all"
                       >
-                        Keep All Manual
+                        Keep All Manual Edits
                       </button>
-                      <span className="text-slate-300">|</span>
                       <button
-                        className="text-[10px] font-medium text-red-600 hover:text-red-700 underline underline-offset-2"
+                        className="text-[10px] font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded transition-colors"
                         onClick={() => {
                           const all: Record<string, "keep" | "import"> = {};
                           for (const c of manualEditsWarning.conflicts || []) {
@@ -2482,8 +2943,10 @@ function PreviewCommitStep({
                         }}
                         data-testid="btn-use-all-import"
                       >
-                        Use All Import Values
+                        Overwrite All with Excel
                       </button>
+                      {/* GC-006: Recommendation hint */}
+                      <span className="text-[10px] text-slate-400 ml-auto">Recommended: Keep manual edits unless the Excel file has newer data</span>
                     </div>
                   </div>
                 )}
@@ -2506,7 +2969,7 @@ function PreviewCommitStep({
                       data-testid="btn-commit-resolved"
                     >
                       {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
-                      Commit with Selections
+                      Confirm and Apply
                     </Button>
                   ) : (
                     <>
@@ -2534,6 +2997,122 @@ function PreviewCommitStep({
                   )}
                 </div>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {recencyWarning && (
+        <Card className="border-amber-300 bg-amber-50" data-testid="recency-warning">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm font-medium text-amber-800">{recencyWarning.message}</p>
+                <p className="text-xs text-amber-600">
+                  {recencyWarning.error === "import_equal_date"
+                    ? "The uploaded file has the same date as the existing data. You may proceed if the file contains corrections."
+                    : "The uploaded file appears older than the existing data. Proceeding may overwrite newer data with older values."}
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setRecencyWarning(null)}
+                    data-testid="btn-cancel-recency"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="bg-amber-600 hover:bg-amber-700 text-white"
+                    onClick={() => { setRecencyWarning(null); doCommit({ acknowledgeEqualDate: true, forceCommit: true }); }}
+                    disabled={committing}
+                    data-testid="btn-force-recency"
+                  >
+                    {committing ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null}
+                    Import Anyway
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {planEditConflict && (
+        <Card className="border-amber-300 bg-amber-50" data-testid="plan-edit-conflict-warning">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-amber-800">{planEditConflict.message}</p>
+                <p className="text-xs text-amber-600">{planEditConflict.unresolvedCount} unresolved plan edit(s) must be reviewed before this import can be committed.</p>
+              </div>
+            </div>
+            {planEditConflict.conflicts.length > 0 && (
+              <div className="space-y-2">
+                {planEditConflict.conflicts.map((c) => (
+                  <div key={c.id} className="rounded-lg border border-amber-200 bg-white p-3 text-xs text-slate-700">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline">{c.taskName}</Badge>
+                      <Badge variant="outline">{c.editType}</Badge>
+                      {c.fieldName && <Badge variant="outline">{c.fieldName}</Badge>}
+                    </div>
+                    {(c.oldValue || c.newValue) && (
+                      <p className="mt-2 text-slate-600">
+                        {c.oldValue && <span>Old: <strong>{c.oldValue}</strong></span>}
+                        {c.oldValue && c.newValue && " → "}
+                        {c.newValue && <span>New: <strong>{c.newValue}</strong></span>}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPlanEditConflict(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {duplicateProjectWarning && (
+        <Card className="border-amber-300 bg-amber-50" data-testid="duplicate-project-warning">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-amber-800">{duplicateProjectWarning.message}</p>
+                <p className="text-xs text-amber-600">
+                  {duplicateProjectWarning.matchCandidates?.some((m: any) => m.matchReason === "same_project_different_phase")
+                    ? "This file appears to be a different phase of an existing project. Please confirm which project to map to."
+                    : "Select an existing project to map to, or confirm creating a new one."}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {duplicateProjectWarning.matchCandidates.map((m) => (
+                <div key={m.projectId} className="rounded-lg border border-amber-200 bg-white p-3 text-xs text-slate-700 flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-slate-900">{m.projectName}</p>
+                    <p className="text-slate-500">{m.matchReason} — {Math.round(m.confidence * 100)}% match</p>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => { setDuplicateProjectWarning(null); handleCommitSelectProject(m.projectId); }}>
+                    Use This Project
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setDuplicateProjectWarning(null)}>
+                Cancel
+              </Button>
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { setDuplicateProjectWarning(null); handleCommitConfirmNewProject(); }}>
+                Create New Project
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -3104,109 +3683,164 @@ function SmartImportGovernancePanel({
   recentRunsError: string | null;
   retryRecentRuns: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const [healthData, setHealthData] = useState<any[]>([]);
+  const [healthLoading, setHealthLoading] = useState(false);
+  const [healthExpanded, setHealthExpanded] = useState(false);
+
+  useEffect(() => {
+    setHealthLoading(true);
+    fetch("/api/smart-import/health-dashboard", { headers: getAuthHeaders() })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setHealthData(Array.isArray(data) ? data : []))
+      .catch(() => setHealthData([]))
+      .finally(() => setHealthLoading(false));
+  }, []);
+
   const recentAttentionRuns = recentRuns.filter((run) => run.status !== "COMMITTED" || run.unresolvedBlockers > 0 || run.unresolvedWarnings > 0 || run.recordsFailed > 0).slice(0, 5);
 
-  return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr),minmax(0,0.9fr)]">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Zap className="w-4 h-4 text-blue-600" />
-            Import Governance Queue
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AdminQueryState
-            isLoading={pendingRunsLoading}
-            error={pendingRunsError}
-            onRetry={retryPendingRuns}
-            empty={pendingRuns.length === 0}
-            emptyTitle="No runs need review right now"
-            emptyDescription="New Excel uploads will appear here before they are committed."
-            loadingLabel="Loading pending import queue..."
-          >
-            <div className="space-y-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-border/70 bg-muted/30 p-3">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Pending Files</p>
-                  <p className="mt-1 text-2xl font-semibold text-foreground">{pendingRuns.length}</p>
-                </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <p className="text-xs uppercase tracking-wide text-amber-700">With Warnings</p>
-                  <p className="mt-1 text-2xl font-semibold text-amber-700">{pendingRuns.filter((run) => run.warningCount > 0).length}</p>
-                </div>
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3">
-                  <p className="text-xs uppercase tracking-wide text-red-700">Blocked</p>
-                  <p className="mt-1 text-2xl font-semibold text-red-700">{pendingRuns.filter((run) => run.blockerCount > 0).length}</p>
-                </div>
-              </div>
-              <div className="space-y-2">
-                {pendingRuns.slice(0, 5).map((run) => (
-                  <div key={run.id} className="flex items-start justify-between gap-3 rounded-xl border border-border/70 p-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{run.projectName}</p>
-                      <p className="text-xs text-muted-foreground truncate">{run.sourceFileName}</p>
-                      <p className="mt-1 text-[11px] text-muted-foreground">
-                        Uploaded {new Date(run.uploadedAt).toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      {run.blockerCount > 0 ? <Badge className="bg-red-50 text-red-700 border-red-200">{run.blockerCount} blockers</Badge> : null}
-                      {run.warningCount > 0 ? <Badge className="bg-amber-50 text-amber-700 border-amber-200">{run.warningCount} warnings</Badge> : null}
-                      {run.blockerCount === 0 && run.warningCount === 0 ? <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200">Ready</Badge> : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </AdminQueryState>
-        </CardContent>
-      </Card>
+  const withWarnings = pendingRuns.filter((run) => run.warningCount > 0).length;
+  const blocked = pendingRuns.filter((run) => run.blockerCount > 0).length;
+  const recentCommitted = recentRuns.filter(r => r.status === "COMMITTED").length;
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <History className="w-4 h-4 text-slate-700" />
-            Recent Import History
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AdminQueryState
-            isLoading={recentRunsLoading}
-            error={recentRunsError}
-            onRetry={retryRecentRuns}
-            empty={recentRuns.length === 0}
-            emptyTitle="No import history recorded yet"
-            emptyDescription="Completed and preview runs will appear here once files have been processed."
-            loadingLabel="Loading import history..."
-          >
-            <div className="space-y-2">
-              {(recentAttentionRuns.length > 0 ? recentAttentionRuns : recentRuns.slice(0, 5)).map((run) => (
-                <div key={run.id} className="rounded-xl border border-border/70 p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">{run.projectName}</p>
-                      <p className="text-xs text-muted-foreground truncate">{run.sourceFileName}</p>
+  const healthFresh = healthData.filter(p => p.staleness === "fresh").length;
+  const healthAging = healthData.filter(p => p.staleness === "aging").length;
+  const healthStale = healthData.filter(p => p.staleness === "stale").length;
+  const healthNever = healthData.filter(p => p.staleness === "never").length;
+
+  return (
+    <Card data-testid="governance-panel">
+      {/* Compact summary bar - always visible */}
+      <CardContent className="p-3">
+        <div
+          className="flex items-center justify-between cursor-pointer"
+          onClick={() => setExpanded(!expanded)}
+          data-testid="governance-toggle"
+        >
+          <div className="flex items-center gap-2">
+            <Zap className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-semibold">Import Governance</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge className="bg-muted text-foreground border-border text-[10px] px-2 py-0.5">
+              {pendingRuns.length} pending
+            </Badge>
+            {withWarnings > 0 && (
+              <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-2 py-0.5">
+                {withWarnings} warnings
+              </Badge>
+            )}
+            {blocked > 0 && (
+              <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-2 py-0.5">
+                {blocked} blocked
+              </Badge>
+            )}
+            <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-2 py-0.5">
+              {recentCommitted} committed
+            </Badge>
+            {expanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+          </div>
+        </div>
+
+        {/* Expanded details */}
+        {expanded && (
+          <>
+          <div className="mt-3 pt-3 border-t border-border grid gap-4 xl:grid-cols-[minmax(0,1.1fr),minmax(0,0.9fr)]">
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Pending Queue</h4>
+              <AdminQueryState
+                isLoading={pendingRunsLoading}
+                error={pendingRunsError}
+                onRetry={retryPendingRuns}
+                empty={pendingRuns.length === 0}
+                emptyTitle="No runs need review"
+                emptyDescription="New uploads appear here before commit."
+                loadingLabel="Loading..."
+              >
+                <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                  {pendingRuns.slice(0, 5).map((run) => (
+                    <div key={run.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{run.projectName}</p>
+                        <p className="text-[10px] text-muted-foreground truncate">{run.sourceFileName}</p>
+                      </div>
+                      {run.blockerCount > 0 ? <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">{run.blockerCount} blockers</Badge> :
+                       run.warningCount > 0 ? <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">{run.warningCount} warnings</Badge> :
+                       <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">Ready</Badge>}
                     </div>
-                    <Badge variant="outline" className={run.status === "COMMITTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : run.status === "FAILED" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}>
-                      {run.status.replace(/_/g, " ")}
-                    </Badge>
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                    <span>{new Date(run.uploadedAt).toLocaleString()}</span>
-                    {run.uploaderName ? <span>By {run.uploaderName}</span> : null}
-                    <span>{run.recordsSucceeded}/{run.recordsAttempted} succeeded</span>
-                    {run.recordsFailed > 0 ? <span className="text-red-600">{run.recordsFailed} failed</span> : null}
-                    {run.unresolvedBlockers > 0 ? <span className="text-red-600">{run.unresolvedBlockers} blockers</span> : null}
-                    {run.unresolvedWarnings > 0 ? <span className="text-amber-600">{run.unresolvedWarnings} warnings</span> : null}
-                  </div>
+                  ))}
                 </div>
-              ))}
+              </AdminQueryState>
             </div>
-          </AdminQueryState>
-        </CardContent>
-      </Card>
-    </div>
+
+            <div>
+              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Recent History</h4>
+              <AdminQueryState
+                isLoading={recentRunsLoading}
+                error={recentRunsError}
+                onRetry={retryRecentRuns}
+                empty={recentRuns.length === 0}
+                emptyTitle="No history yet"
+                emptyDescription="Completed runs appear here."
+                loadingLabel="Loading..."
+              >
+                <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                  {(recentAttentionRuns.length > 0 ? recentAttentionRuns : recentRuns.slice(0, 5)).map((run) => (
+                    <div key={run.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{run.projectName}</p>
+                        <p className="text-[10px] text-muted-foreground">{new Date(run.uploadedAt).toLocaleDateString()} — {run.recordsSucceeded}/{run.recordsAttempted} rows</p>
+                      </div>
+                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${run.status === "COMMITTED" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : run.status === "FAILED" ? "bg-red-50 text-red-700 border-red-200" : "bg-amber-50 text-amber-700 border-amber-200"}`}>
+                        {run.status.replace(/_/g, " ")}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              </AdminQueryState>
+            </div>
+
+            {/* Import Health Dashboard */}
+            {healthData.length > 0 && (
+            <div className="col-span-full mt-3 pt-3 border-t border-border" data-testid="health-dashboard">
+              <div className="flex items-center justify-between cursor-pointer" onClick={() => setHealthExpanded(!healthExpanded)}>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Project Health</h4>
+                <div className="flex items-center gap-1.5">
+                  {healthFresh > 0 && <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">{healthFresh} fresh</Badge>}
+                  {healthAging > 0 && <Badge className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] px-1.5 py-0">{healthAging} aging</Badge>}
+                  {healthStale > 0 && <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">{healthStale} stale</Badge>}
+                  {healthNever > 0 && <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] px-1.5 py-0">{healthNever} never</Badge>}
+                  {healthExpanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />}
+                </div>
+              </div>
+              {healthExpanded && (
+                <div className="mt-2 space-y-1 max-h-[200px] overflow-y-auto">
+                  {healthData.filter(p => p.staleness !== "fresh").map((project, idx) => (
+                    <div key={idx} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs" data-testid={`health-project-${idx}`}>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{project.projectName}</p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {project.staleness === "never" ? "Never imported" :
+                           `Last import ${project.daysSinceLastImport}d ago`}
+                          {project.unresolvedIssueCount > 0 ? ` \u2022 ${project.unresolvedIssueCount} issues` : ""}
+                        </p>
+                      </div>
+                      <Badge className={`text-[10px] px-1.5 py-0 ${
+                        project.staleness === "stale" ? "bg-red-50 text-red-700 border-red-200" :
+                        project.staleness === "aging" ? "bg-amber-50 text-amber-700 border-amber-200" :
+                        "bg-slate-100 text-slate-600 border-slate-200"
+                      }`}>{project.staleness}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -3337,7 +3971,41 @@ export default function SmartImportPage() {
         retryRecentRuns={() => { void recentRunsQuery.refetch(); }}
       />
 
-      {!bulkMode && <StepIndicator currentStep={step} />}
+      {!bulkMode && <StepIndicator currentStep={step} onStepClick={(s) => { if (s < step) setStep(s); }} />}
+
+      {/* Contextual status line */}
+      {!bulkMode && step > 1 && preview && !loadingRun && (
+        <div className="flex items-center gap-2 -mt-4 mb-2 text-xs text-muted-foreground" data-testid="step-context">
+          <Info className="w-3.5 h-3.5 shrink-0" />
+          {step === 2 && (
+            <span>
+              {(preview?.detection?.sections || []).length} section(s) found
+              {preview?.detection?.projectInfo?.name ? ` in "${preview.detection.projectInfo.name}"` : ""}
+            </span>
+          )}
+          {step === 3 && (() => {
+            const mappings = preview?.mappings || [];
+            const totalMapped = mappings.reduce((sum: number, m: any) => sum + (m.mappings?.length || 0), 0);
+            const totalUnmapped = mappings.reduce((sum: number, m: any) => sum + (m.unmappedHeaders?.length || 0), 0);
+            const total = totalMapped + totalUnmapped;
+            return <span>{totalMapped} of {total} columns mapped{total > 0 ? ` (${Math.round((totalMapped / total) * 100)}%)` : ""}</span>;
+          })()}
+          {step === 4 && (
+            <span>
+              {issues.filter(i => !i.resolved && !i.autoResolved).length} unresolved of {issues.length} total issues
+            </span>
+          )}
+          {step === 5 && (() => {
+            const n = preview?.normalization || {};
+            const parts = [
+              (n.planTasks?.length || 0) > 0 && `${n.planTasks.length} plan tasks`,
+              (n.revenueLines?.length || 0) > 0 && `${n.revenueLines.length} revenue lines`,
+              (n.costLines?.length || 0) > 0 && `${n.costLines.length} cost lines`,
+            ].filter(Boolean);
+            return <span>Ready to import: {parts.join(", ") || "no data"}</span>;
+          })()}
+        </div>
+      )}
 
       {loadingRun && step > 1 && !bulkMode && (
         <div className="flex items-center justify-center py-4">
@@ -3380,7 +4048,7 @@ export default function SmartImportPage() {
           )}
 
           {step === 1 && (
-            <UploadStep onUploaded={handleUploaded} onBatchUploaded={handleBatchUploaded} />
+            <UploadStep onUploaded={handleUploaded} onBatchUploaded={handleBatchUploaded} onResumeBatch={() => setBulkMode(true)} />
           )}
 
           {step === 2 && preview && (

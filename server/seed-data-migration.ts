@@ -53,15 +53,22 @@ export async function runDataSeedMigration() {
   const results: Record<string, number> = {};
   const skipped: Record<string, string[]> = {};
 
+  // Pre-truncate tables outside the main transaction (individual savepoints for resilience)
+  const truncateTables = [
+    "normalized_plan_tasks", "normalized_revenue_lines", "normalized_cost_lines",
+    "normalized_execution_phases", "smart_import_runs",
+    "project_plan", "program_inflows", "program_expense", "project_info",
+  ];
+  for (const t of truncateTables) {
+    try {
+      await db.execute(sql.raw(`TRUNCATE TABLE ${t} CASCADE`));
+    } catch (e: any) {
+      console.warn(`[DataSeed] TRUNCATE ${t} skipped: ${e.message}`);
+    }
+  }
+
   await db.transaction(async (tx) => {
     await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
-
-    const truncateTables = [
-      "normalized_plan_tasks", "normalized_revenue_lines", "normalized_cost_lines",
-      "normalized_execution_phases", "smart_import_runs",
-      "project_plan", "program_inflows", "program_expense", "project_info",
-    ];
-    await tx.execute(sql.raw(`TRUNCATE TABLE ${truncateTables.join(", ")} CASCADE`));
 
     for (const tableName of TABLE_ORDER) {
       const filePath = path.join(SEED_DIR, `${tableName}.json`);

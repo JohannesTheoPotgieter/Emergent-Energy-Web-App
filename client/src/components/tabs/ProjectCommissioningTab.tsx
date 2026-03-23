@@ -307,7 +307,7 @@ export function ProjectCommissioningTab({ projectId, projectName }: ProjectCommi
                     onAttachEvidence={async (payload) => {
                       const res = await fetch(`/api/commissioning/${item.id}/evidence`, { method: "POST", headers: getAuthHeaders(), credentials: "include", body: JSON.stringify(payload) });
                       if (!res.ok) throw new Error("Failed to attach evidence");
-                      invalidateAll();
+                      await invalidateAll();
                     }}
                   />
                 ))}

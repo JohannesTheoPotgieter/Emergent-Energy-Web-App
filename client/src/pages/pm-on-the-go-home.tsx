@@ -57,8 +57,6 @@ function getBudgetProgressColor(spendPercent: number): string {
 }
 
 function ProjectCard({ project, onClick }: { project: PmProject; onClick: () => void }) {
-  const isNonCompliant = false;
-
   return (
     <Card
       className="p-4 cursor-pointer hover:border-primary/40 transition-all active:scale-[0.98] touch-manipulation"
@@ -185,15 +183,6 @@ function ProjectCard({ project, onClick }: { project: PmProject; onClick: () => 
             </Badge>
           )}
 
-          {isNonCompliant && (
-            <Badge
-              variant="destructive"
-              className="text-xs"
-              data-testid={`badge-noncompliant-${project.id}`}
-            >
-              Non-Compliant
-            </Badge>
-          )}
         </div>
       </div>
     </Card>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { usePermission } from "@/hooks/use-permissions";
 import { useLocation } from "wouter";
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useToast } from "@/hooks/use-toast";
-import { Building2, CheckCircle, Loader2, Plus } from "lucide-react";
+import { AlertTriangle, Building2, CheckCircle, Loader2, Plus } from "lucide-react";
 
 const authFetch = async (url: string, opts: RequestInit = {}) => {
   const token = localStorage.getItem("auth_token");
@@ -36,6 +36,19 @@ export default function ProjectCreatePage() {
     initialPhase: "P0_FIRST_ASSESSMENT",
   });
   const [result, setResult] = useState<any>(null);
+  const [duplicateWarningDismissed, setDuplicateWarningDismissed] = useState(false);
+
+  const debouncedName = useMemo(() => form.projectName.trim(), [form.projectName]);
+  const { data: similarProjects } = useQuery<{ matches: Array<{ id: number; projectName: string }> }>({
+    queryKey: ["/api/projects/similar-names", debouncedName],
+    queryFn: async () => {
+      const response = await authFetch(`/api/projects/similar-names?name=${encodeURIComponent(debouncedName)}`);
+      if (!response.ok) return { matches: [] };
+      return response.json();
+    },
+    enabled: debouncedName.length >= 3,
+    staleTime: 10_000,
+  });
 
   useEffect(() => {
     authFetch("/api/template-constants")
@@ -183,10 +196,29 @@ export default function ProjectCreatePage() {
             <label className="text-sm font-medium">Project Name *</label>
             <Input
               value={form.projectName}
-              onChange={(event) => setForm((current) => ({ ...current, projectName: event.target.value }))}
+              onChange={(event) => { setForm((current) => ({ ...current, projectName: event.target.value })); setDuplicateWarningDismissed(false); }}
               placeholder="e.g. Acme Solar Park"
               data-testid="input-project-name"
             />
+            {similarProjects?.matches && similarProjects.matches.length > 0 && !duplicateWarningDismissed && (
+              <div className="mt-2 p-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="similar-projects-warning">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-800">Similar projects already exist</p>
+                    <ul className="mt-1 space-y-0.5">
+                      {similarProjects.matches.map((p) => (
+                        <li key={p.id} className="text-xs text-amber-700">{p.projectName}</li>
+                      ))}
+                    </ul>
+                    <p className="text-xs text-amber-600 mt-1">Please verify this is not a duplicate before creating.</p>
+                    <Button variant="ghost" size="sm" className="h-6 text-xs px-2 mt-1 text-amber-700" onClick={() => setDuplicateWarningDismissed(true)}>
+                      I've checked — proceed anyway
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <div className="flex items-center justify-between gap-3">

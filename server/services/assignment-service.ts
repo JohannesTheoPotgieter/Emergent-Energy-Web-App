@@ -1,6 +1,6 @@
 // @ts-nocheck
 import type { Request } from "express";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   approvals,
   changeRequests,
@@ -8,10 +8,8 @@ import {
   counterparties,
   counterpartyContacts,
   deliverables,
-  engineeringTasks,
   entityAssignments,
   mytoolTasks,
-  operationalTasks,
   procurementItems,
   projectEngApprovals,
   projectInfo,
@@ -103,7 +101,7 @@ const TASK_SOURCE_TO_ENTITY_TYPE: Record<string, AssignmentEntityType> = {
 
 const ENTITY_PERMISSION_BY_TYPE: Record<AssignmentEntityType, string> = {
   personal_task: "my_work",
-  operational_task: "operational_tasks",
+  operational_task: "work_items",
   tr_item: "tr_register",
   work_item: "work_items",
   engineering_task: "eng_tasks",
@@ -359,7 +357,7 @@ async function getEntityProjectId(executor: Queryable, entityType: AssignmentEnt
     case "personal_task":
       return null;
     case "operational_task": {
-      const [row] = await executor.select({ projectId: operationalTasks.projectId }).from(operationalTasks).where(eq(operationalTasks.id, entityId)).limit(1);
+      const [row] = await executor.select({ projectId: workItems.projectId }).from(workItems).where(eq(workItems.id, entityId)).limit(1);
       return toInt(row?.projectId);
     }
     case "tr_item":
@@ -369,7 +367,7 @@ async function getEntityProjectId(executor: Queryable, entityType: AssignmentEnt
       return toInt(row?.projectId);
     }
     case "engineering_task": {
-      const [row] = await executor.select({ projectId: engineeringTasks.projectId }).from(engineeringTasks).where(eq(engineeringTasks.id, entityId)).limit(1);
+      const [row] = await executor.select({ projectId: workItems.projectId }).from(workItems).where(eq(workItems.id, entityId)).limit(1);
       return toInt(row?.projectId);
     }
     case "quality_item": {
@@ -481,9 +479,10 @@ async function getLegacyAssignments(executor: Queryable, entityType: AssignmentE
       }] : [];
     }
     case "operational_task": {
-      const [task] = await executor.select().from(operationalTasks).where(eq(operationalTasks.id, entityId)).limit(1);
+      const [task] = await executor.select().from(workItems).where(eq(workItems.id, entityId)).limit(1);
       if (!task) return [];
-      const internalIds = Array.isArray(task.assigneeUserIds) ? task.assigneeUserIds : [];
+      // Assignments now via work_item_assignments; fall through to work_item logic
+      const internalIds: number[] = [];
       const assignments: ResolvedAssignment[] = [];
       for (const userId of internalIds) {
         const resolved = await resolveAssignableTarget("internal_user", userId);
@@ -614,18 +613,18 @@ async function getLegacyAssignments(executor: Queryable, entityType: AssignmentE
       }));
     }
     case "engineering_task": {
-      const [task] = await executor.select().from(engineeringTasks).where(eq(engineeringTasks.id, entityId)).limit(1);
-      if (!task?.assigneeUserId) return [];
-      const resolved = await resolveAssignableTarget("internal_user", task.assigneeUserId);
+      const [task] = await executor.select().from(workItems).where(eq(workItems.id, entityId)).limit(1);
+      if (!task?.ownerUserId) return [];
+      const resolved = await resolveAssignableTarget("internal_user", task.ownerUserId);
       return resolved ? [{
         id: null,
         entityType,
         entityId,
         assignmentRole: "ASSIGNEE",
         assigneeType: "internal_user",
-        assigneeId: task.assigneeUserId,
+        assigneeId: task.ownerUserId,
         displayLabel: resolved.displayLabel,
-        displayLabelSnapshot: task.assigneeName || resolved.displayLabel,
+        displayLabelSnapshot: task.ownerName || resolved.displayLabel,
         secondaryLabel: resolved.secondaryLabel,
         active: true,
       }] : [];
@@ -742,6 +741,85 @@ export async function getAssignmentsForEntity(
   return legacy.filter((assignment) => assignment.assignmentRole === assignmentRole);
 }
 
+/**
+ * Batch-fetch assignments for multiple entities of the same type in a single query.
+ * Eliminates N+1 patterns by fetching all canonical assignments at once.
+ */
+export async function getAssignmentsForEntities(
+  entityType: AssignmentEntityType,
+  entityIds: number[],
+  assignmentRole?: AssignmentRole,
+): Promise<Map<number, ResolvedAssignment[]>> {
+  const result = new Map<number, ResolvedAssignment[]>();
+  if (entityIds.length === 0) return result;
+
+  // Initialize all IDs with empty arrays
+  for (const id of entityIds) result.set(id, []);
+
+  const conditions = [
+    eq(entityAssignments.entityType, entityType),
+    inArray(entityAssignments.entityId, entityIds),
+    eq(entityAssignments.active, true),
+  ];
+  if (assignmentRole) {
+    conditions.push(eq(entityAssignments.assignmentRole, assignmentRole));
+  }
+
+  const rows = await db
+    .select()
+    .from(entityAssignments)
+    .where(and(...conditions))
+    .orderBy(desc(entityAssignments.assignedAt), desc(entityAssignments.id));
+
+  // Batch-resolve all unique assignee targets
+  const uniqueTargets = new Map<string, { type: AssigneeType; id: number }>();
+  for (const row of rows) {
+    const key = `${row.assigneeType}:${row.assigneeId}`;
+    if (!uniqueTargets.has(key)) {
+      uniqueTargets.set(key, { type: row.assigneeType as AssigneeType, id: row.assigneeId });
+    }
+  }
+
+  const resolvedMap = new Map<string, AssignableDirectoryEntry | null>();
+  const resolveEntries = Array.from(uniqueTargets.entries());
+  const resolvedResults = await Promise.all(
+    resolveEntries.map(([, target]) => resolveAssignableTarget(target.type, target.id)),
+  );
+  resolveEntries.forEach(([key], index) => {
+    resolvedMap.set(key, resolvedResults[index]);
+  });
+
+  // Group rows by entity ID and build resolved assignments
+  for (const row of rows) {
+    const key = `${row.assigneeType}:${row.assigneeId}`;
+    const resolved = resolvedMap.get(key);
+    const assignment: ResolvedAssignment = {
+      id: row.id,
+      entityType,
+      entityId: row.entityId,
+      assignmentRole: row.assignmentRole as AssignmentRole,
+      assigneeType: row.assigneeType as AssigneeType,
+      assigneeId: row.assigneeId,
+      displayLabel: resolved?.displayLabel || row.displayLabelSnapshot,
+      displayLabelSnapshot: row.displayLabelSnapshot,
+      secondaryLabel: resolved?.secondaryLabel || null,
+      active: Boolean(row.active),
+    };
+    result.get(row.entityId)!.push(assignment);
+  }
+
+  // For entities with no canonical assignments, fall back to legacy per-entity
+  for (const id of entityIds) {
+    if (result.get(id)!.length === 0) {
+      const legacy = await getLegacyAssignments(db, entityType, id);
+      const filtered = assignmentRole ? legacy.filter((a) => a.assignmentRole === assignmentRole) : legacy;
+      result.set(id, filtered);
+    }
+  }
+
+  return result;
+}
+
 async function canSelfManageAssignment(entityType: AssignmentEntityType, entityId: number, userId: number, role: string): Promise<boolean> {
   if (["COO_ADMIN", "CEO_ADMIN"].includes(role)) return true;
 
@@ -752,11 +830,13 @@ async function canSelfManageAssignment(entityType: AssignmentEntityType, entityI
     }
     case "operational_task": {
       const [task] = await db
-        .select({ ownerUserId: operationalTasks.ownerUserId, assigneeUserIds: operationalTasks.assigneeUserIds })
-        .from(operationalTasks)
-        .where(eq(operationalTasks.id, entityId))
+        .select({ ownerUserId: workItems.ownerUserId })
+        .from(workItems)
+        .where(eq(workItems.id, entityId))
         .limit(1);
-      return task?.ownerUserId === userId || Boolean(task?.assigneeUserIds?.includes(userId));
+      if (task?.ownerUserId === userId) return true;
+      const assignmentCheck = await db.select().from(workItemAssignments).where(and(eq(workItemAssignments.workItemId, entityId), eq(workItemAssignments.userId, userId))).limit(1);
+      return assignmentCheck.length > 0;
     }
     case "tr_item": {
       const [item] = await db.select({ ownerUserIds: trItems.ownerUserIds }).from(trItems).where(eq(trItems.id, entityId)).limit(1);
@@ -833,14 +913,11 @@ async function syncLegacyAssignments(executor: Queryable, entityType: Assignment
       }).where(eq(mytoolTasks.id, entityId));
       return;
     case "operational_task":
-      await executor.update(operationalTasks).set({
+      await executor.update(workItems).set({
         ownerUserId: activeInternal[0]?.assigneeId || null,
-        assigneeUserIds: activeInternal.map((assignment) => assignment.assigneeId),
-        assignees: [
-          ...activeInternal.map((assignment) => assignment.displayLabel),
-          ...activeExternal.map((assignment) => serializeLegacyExternalToken(assignment)),
-        ],
-      }).where(eq(operationalTasks.id, entityId));
+        ownerName: activeInternal[0]?.displayLabel || null,
+        updatedAt: new Date(),
+      }).where(eq(workItems.id, entityId));
       return;
     case "tr_item":
       await executor.update(trItems).set({
@@ -880,11 +957,11 @@ async function syncLegacyAssignments(executor: Queryable, entityType: Assignment
       return;
     }
     case "engineering_task":
-      await executor.update(engineeringTasks).set({
-        assigneeUserId: activePrimary?.assigneeType === "internal_user" ? activePrimary.assigneeId : null,
-        assigneeName: activePrimary?.displayLabel || null,
+      await executor.update(workItems).set({
+        ownerUserId: activePrimary?.assigneeType === "internal_user" ? activePrimary.assigneeId : null,
+        ownerName: activePrimary?.displayLabel || null,
         updatedAt: new Date(),
-      }).where(eq(engineeringTasks.id, entityId));
+      }).where(eq(workItems.id, entityId));
       return;
     case "quality_item":
       await executor.update(qcItemInstance).set({
@@ -942,7 +1019,7 @@ async function syncLegacyAssignments(executor: Queryable, entityType: Assignment
 
 export async function setEntityAssignment(req: Request, input: SetEntityAssignmentInput): Promise<ResolvedAssignment[]> {
   const user = getEffectiveUser(req);
-  if (!user?.id) {
+  if (!user?.id || !Number.isFinite(user.id)) {
     throw new Error("Authentication required");
   }
 
@@ -950,6 +1027,7 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
   const mode = input.mode || "replace";
   const assigneeId = toInt(input.assigneeId);
   const entityId = toInt(input.entityId);
+  console.log("[Assignment] setEntityAssignment called:", { entityType: input.entityType, inputEntityId: input.entityId, entityId, inputAssigneeId: input.assigneeId, assigneeId, assigneeType: input.assigneeType, mode, userId: user.id });
 
   if (!entityId) {
     throw new Error("A valid entity ID is required");
@@ -985,9 +1063,11 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
     throw new Error("Selected assignee is inactive");
   }
 
+  console.log("[Assignment] Starting transaction:", { entityType: input.entityType, entityId, assignmentRole, mode, assigneeType: input.assigneeType, assigneeId });
   return db.transaction(async (tx) => {
     const projectId = await getEntityProjectId(tx as Queryable, input.entityType, entityId);
     const before = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId);
+    console.log("[Assignment] Before state:", before.length, "active assignments");
 
     if (mode !== "append" || !target) {
       await tx.update(entityAssignments).set({
@@ -1004,11 +1084,10 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
     }
 
     if (target && assigneeId) {
-      const duplicate = before.find((assignment) =>
-        assignment.assignmentRole === assignmentRole &&
+      const alreadyActive = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId, assignmentRole);
+      const duplicate = alreadyActive.find((assignment) =>
         assignment.assigneeType === input.assigneeType &&
-        assignment.assigneeId === assigneeId &&
-        assignment.active,
+        assignment.assigneeId === assigneeId,
       );
 
       if (!duplicate) {
@@ -1030,6 +1109,7 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
 
     await syncLegacyAssignments(tx as Queryable, input.entityType, entityId);
     const after = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId);
+    console.log("[Assignment] After state:", after.length, "active assignments, ids:", after.map(a => `${a.assigneeType}:${a.assigneeId}`).join(", "));
 
     logAuditFromReq(req, {
       entityType: "assignment",

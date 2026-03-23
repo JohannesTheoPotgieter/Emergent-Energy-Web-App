@@ -7,7 +7,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction) {
 
 export function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = getEffectiveUser(req)?.role;
-  if (role === "admin" || role === "COO_ADMIN" || role === "CEO_ADMIN") {
+  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
     return next();
   }
   res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
@@ -25,7 +25,7 @@ export function requireRole(...roles: string[]) {
 
 export function requirePriorityAdmin(req: Request, res: Response, next: NextFunction) {
   const role = getEffectiveUser(req)?.role;
-  const adminRoles = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER'];
+  const adminRoles = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER'];
   if (role && adminRoles.includes(role)) {
     return next();
   }

@@ -771,6 +771,7 @@ function EscalateForm({ onSubmit, submitting }: { onSubmit: FormSubmit; submitti
 }
 
 function AddProcurementForm({ projectId, onClose, onSuccess }: { projectId: number; onClose: () => void; onSuccess: () => void }) {
+  const queryClient = useQueryClient();
   const { toast } = useToast();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -797,6 +798,7 @@ function AddProcurementForm({ projectId, onClose, onSuccess }: { projectId: numb
     },
     onSuccess: () => {
       toast({ title: "Procurement item added" });
+      queryClient.invalidateQueries({ queryKey: ["pm-otg-snapshot", projectId] });
       onSuccess();
     },
     onError: (err: any) => {

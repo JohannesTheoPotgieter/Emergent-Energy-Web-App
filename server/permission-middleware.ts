@@ -1,9 +1,10 @@
 import { Request, Response, NextFunction } from "express";
-import { normalizeRoleForPermissions, rolePermissions, type PermissionEntity, type PermissionAction, type AuthorityAction } from "@shared/schema";
+import { normalizeRoleForPermissions, rolePermissions, userPermissionOverrides, type PermissionEntity, type PermissionAction, type AuthorityAction } from "@shared/schema";
 import { evaluateAuthorityForRole, evaluatePermissionForRole } from "@shared/permission-resolver";
 import { getEffectiveUser } from "./auth-context";
 import { db } from "./db";
 import { logAuditFromReq } from "./audit-logger";
+import { eq, and, or, isNull, gte } from "drizzle-orm";
 
 let entityPermCache: Record<string, Record<string, Record<string, boolean>>> = {};
 type CachedRoleRecord = {
@@ -16,6 +17,11 @@ type CachedRoleRecord = {
 let roleRecordCache: Record<string, CachedRoleRecord> = {};
 let cacheLoadedAt = 0;
 const CACHE_TTL = 60_000;
+
+// User-override cache: userId -> { entity:action -> allowed }
+let userOverrideCache: Record<number, Record<string, boolean>> = {};
+let userOverrideCacheLoadedAt = 0;
+const USER_OVERRIDE_CACHE_TTL = 60_000;
 
 async function loadEntityPermissions() {
   const now = Date.now();
@@ -49,8 +55,53 @@ async function loadEntityPermissions() {
   }
 }
 
+async function loadUserOverrides(userId: number): Promise<Record<string, boolean>> {
+  const now = Date.now();
+  if (now - userOverrideCacheLoadedAt < USER_OVERRIDE_CACHE_TTL && userOverrideCache[userId] !== undefined) {
+    return userOverrideCache[userId];
+  }
+
+  try {
+    const rows = await db.select({
+      entity: userPermissionOverrides.entity,
+      action: userPermissionOverrides.action,
+      allowed: userPermissionOverrides.allowed,
+      expiresAt: userPermissionOverrides.expiresAt,
+    })
+    .from(userPermissionOverrides)
+    .where(
+      and(
+        eq(userPermissionOverrides.userId, userId),
+        or(
+          isNull(userPermissionOverrides.expiresAt),
+          gte(userPermissionOverrides.expiresAt, new Date())
+        )
+      )
+    );
+
+    const overrides: Record<string, boolean> = {};
+    for (const row of rows) {
+      overrides[`${row.entity}:${row.action}`] = row.allowed;
+    }
+    userOverrideCache[userId] = overrides;
+    userOverrideCacheLoadedAt = now;
+    return overrides;
+  } catch {
+    return {};
+  }
+}
+
 export function invalidateEntityPermCache() {
   cacheLoadedAt = 0;
+}
+
+export function invalidateUserOverrideCache(userId?: number) {
+  if (userId) {
+    delete userOverrideCache[userId];
+  } else {
+    userOverrideCache = {};
+    userOverrideCacheLoadedAt = 0;
+  }
 }
 
 function resolveUserRole(req: Request): string | null {
@@ -100,12 +151,29 @@ export async function evaluateAuthorityForRequest(req: Request, entity: Permissi
 export async function evaluatePermissionForRequest(req: Request, entity: PermissionEntity, action: PermissionAction) {
   await loadEntityPermissions();
   const role = resolveUserRole(req);
+  const user = getEffectiveUser(req);
+
   if (!role) {
     return {
       allowed: false,
       reason: "Authentication required",
-      source: "none",
-    } as const;
+      source: "none" as const,
+    };
+  }
+
+  // Check user-specific overrides first (highest priority)
+  if (user?.id) {
+    const overrides = await loadUserOverrides(user.id);
+    const key = `${entity}:${action}`;
+    if (key in overrides) {
+      return {
+        allowed: overrides[key],
+        reason: overrides[key]
+          ? `Allowed by user-specific override (${key}).`
+          : `Blocked by user-specific override (${key}).`,
+        source: "user_override" as const,
+      };
+    }
   }
 
   return evaluatePermissionForRole({

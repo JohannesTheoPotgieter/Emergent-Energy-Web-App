@@ -80,7 +80,7 @@
   --input: 215 22% 88%;
   --ring: 145 72% 32%;
 
-  --radius: 0.625rem;
+  --radius: 0.5rem;
 
   --surface: 210 25% 99%;
   --surface-strong: 210 25% 97%;
@@ -102,6 +102,139 @@
   --sidebar-accent-foreground: 222 47% 11%;
   --sidebar-border: 214 32% 91%;
   --sidebar-ring: 142 76% 36%;
+}
+
+.dark {
+  --background: 222 14% 10%;
+  --foreground: 210 20% 92%;
+
+  --card: 222 14% 12%;
+  --card-foreground: 210 20% 92%;
+
+  --popover: 222 14% 12%;
+  --popover-foreground: 210 20% 92%;
+
+  --primary: 145 72% 40%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 215 14% 18%;
+  --secondary-foreground: 210 20% 92%;
+
+  --muted: 215 14% 18%;
+  --muted-foreground: 215 16% 58%;
+
+  --accent: 215 14% 20%;
+  --accent-foreground: 210 20% 92%;
+
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 215 14% 22%;
+  --input: 215 14% 22%;
+  --ring: 145 72% 40%;
+
+  --surface: 222 14% 11%;
+  --surface-strong: 222 14% 14%;
+  --surface-tint: 142 20% 12%;
+  --success: 142 64% 42%;
+  --warning: 35 92% 50%;
+  --danger: 0 72% 55%;
+  --info: 214 78% 55%;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+
+  --sidebar: 222 14% 11%;
+  --sidebar-foreground: 215 16% 58%;
+  --sidebar-primary: 142 76% 42%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 215 14% 18%;
+  --sidebar-accent-foreground: 210 20% 92%;
+  --sidebar-border: 215 14% 20%;
+  --sidebar-ring: 142 76% 42%;
+
+  color-scheme: dark;
+}
+
+/* Engineering dark mode overrides (#15) */
+.dark [data-testid="eng-tasks-page"] .bg-red-50\/60,
+.dark [data-testid="eng-tasks-page"] .bg-red-50,
+.dark [data-testid="standup-kpi-strip"] .bg-red-50 {
+  background-color: hsl(0 40% 18%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-blue-50,
+.dark [data-testid="eng-tasks-page"] .bg-blue-50\/30,
+.dark [data-testid="today-focus"] {
+  background-color: hsl(220 40% 16%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-amber-50,
+.dark [data-testid="eng-tasks-page"] .bg-amber-50\/30 {
+  background-color: hsl(40 40% 16%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-emerald-50,
+.dark [data-testid="eng-tasks-page"] .bg-emerald-50\/30 {
+  background-color: hsl(160 30% 14%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-purple-50 {
+  background-color: hsl(280 30% 16%) !important;
+}
+.dark [data-testid="eng-tasks-page"] .bg-orange-50\/30 {
+  background-color: hsl(30 30% 16%) !important;
+}
+.dark [data-testid="bulk-action-bar"] {
+  background-color: hsl(220 40% 18%) !important;
+  border-color: hsl(220 40% 30%) !important;
+}
+.dark [data-testid="section-stages-matrix"] table tr:hover,
+.dark [data-testid="section-activity-feed"] > div > div > div:hover {
+  background-color: hsl(220 14% 16%) !important;
+}
+.dark .bg-white {
+  background-color: hsl(222 14% 12%) !important;
+}
+/* Attention badges dark mode — all dashboard instances */
+.dark [data-testid="section-attention-needed"] .bg-red-50,
+.dark [data-testid="execution-attention-needed"] .bg-red-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-red-50,
+.dark [data-testid="eng-attention-needed"] .bg-red-50,
+.dark [data-testid="qm-attention-needed"] .bg-red-50 {
+  background-color: hsl(0 40% 16%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-amber-50,
+.dark [data-testid="execution-attention-needed"] .bg-amber-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-amber-50,
+.dark [data-testid="eng-attention-needed"] .bg-amber-50,
+.dark [data-testid="qm-attention-needed"] .bg-amber-50 {
+  background-color: hsl(40 40% 14%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-blue-50,
+.dark [data-testid="execution-attention-needed"] .bg-blue-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-blue-50,
+.dark [data-testid="eng-attention-needed"] .bg-blue-50,
+.dark [data-testid="qm-attention-needed"] .bg-blue-50 {
+  background-color: hsl(220 40% 16%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-violet-50,
+.dark [data-testid="execution-attention-needed"] .bg-violet-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-violet-50,
+.dark [data-testid="eng-attention-needed"] .bg-violet-50,
+.dark [data-testid="qm-attention-needed"] .bg-violet-50 {
+  background-color: hsl(280 30% 16%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-orange-50,
+.dark [data-testid="execution-attention-needed"] .bg-orange-50,
+.dark [data-testid="lifecycle-attention-needed"] .bg-orange-50,
+.dark [data-testid="eng-attention-needed"] .bg-orange-50,
+.dark [data-testid="qm-attention-needed"] .bg-orange-50 {
+  background-color: hsl(30 30% 16%) !important;
+}
+.dark [data-testid="section-attention-needed"] .bg-rose-50,
+.dark [data-testid="section-attention-needed"] .bg-sky-50 {
+  background-color: hsl(340 30% 16%) !important;
+}
+.dark [data-testid="qm-attention-needed"] .bg-sky-50 {
+  background-color: hsl(200 30% 16%) !important;
 }
 
 .command-header {
@@ -140,16 +273,29 @@
     padding-right: env(safe-area-inset-right);
   }
 
-  h1 { @apply text-2xl; }
-  h2 { @apply text-xl; }
-  h3 { @apply text-lg; }
+  h1 { @apply text-2xl; line-height: 1.2; }
+  h2 { @apply text-xl; line-height: 1.2; }
+  h3 { @apply text-lg; line-height: 1.25; }
+
+  body {
+    line-height: 1.5;
+  }
 
   th {
-    @apply text-[11px] uppercase tracking-wide font-semibold text-muted-foreground;
+    @apply text-xs uppercase tracking-wider font-medium text-muted-foreground;
+    font-size: 12px;
+    letter-spacing: 0.05em;
   }
 
   td {
     @apply text-sm;
+    font-size: max(13px, 0.8125rem);
+    line-height: 1.4;
+    min-height: 44px;
+  }
+
+  tr {
+    min-height: 44px;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading font-semibold tracking-tight;
@@ -158,14 +304,12 @@
 
 @layer components {
   .ee-shell {
-    background:
-      radial-gradient(circle at top left, hsl(var(--surface-tint)) 0%, transparent 34%),
-      linear-gradient(180deg, hsl(var(--surface)) 0%, #ffffff 100%);
+    background: hsl(var(--background));
     @apply text-foreground;
   }
 
   .ee-page {
-    @apply mx-auto w-full max-w-[1760px] space-y-7;
+    @apply mx-auto w-full max-w-[1440px] space-y-5;
   }
 
   .ee-page-header {
@@ -209,7 +353,7 @@
   }
 
   .ee-data-trust-card {
-    @apply rounded-xl border border-border/70 bg-background/85 px-3 py-3 shadow-[var(--shadow-xs)];
+    @apply rounded-lg border border-border/50 bg-background px-3 py-3;
   }
 
   .ee-data-trust-label {
@@ -221,11 +365,11 @@
   }
 
   .ee-subnav-pill {
-    @apply rounded-full border border-transparent bg-background/70 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:border-border hover:bg-background hover:text-foreground;
+    @apply rounded-md border border-transparent px-3 py-1.5 text-[13px] text-muted-foreground transition-colors hover:text-foreground hover:bg-muted/50;
   }
 
   .ee-subnav-pill-active {
-    @apply border-primary/20 bg-primary/10 text-primary;
+    @apply bg-primary/8 text-primary font-medium;
   }
 
   .ee-status-success { @apply border-emerald-200 bg-emerald-50 text-emerald-700; }
@@ -289,6 +433,39 @@
     padding-left: 6px;
     padding-right: 6px;
   }
+  /* Engineering mobile optimizations (#14) */
+  [data-testid="eng-tasks-page"] .flex.gap-1\.5.overflow-x-auto {
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  [data-testid="eng-tasks-page"] .flex.gap-1\.5.overflow-x-auto > div {
+    scroll-snap-align: start;
+    min-width: 85vw;
+  }
+  [data-testid="standup-kpi-strip"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  [data-testid="board-toolbar"] {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap !important;
+    padding-bottom: 4px;
+  }
+  [data-testid="timeline-view"] {
+    font-size: 10px;
+  }
+  [data-testid="timeline-view"] .w-\[220px\] {
+    width: 140px !important;
+    min-width: 140px !important;
+  }
+  /* Larger touch targets for task cards */
+  [data-testid^="kanban-card-"] {
+    padding: 12px !important;
+  }
+  /* Stack today focus items tighter */
+  [data-testid="today-focus"] .space-y-1 > div {
+    padding: 10px 8px !important;
+  }
 }
 
 thead {
@@ -298,11 +475,11 @@ thead {
 }
 
 thead th {
-  background-color: hsl(var(--muted));
+  background-color: hsl(var(--muted) / 0.6);
 }
 
 .data-table-row {
-  @apply hover:bg-muted/50 transition-colors duration-150;
+  @apply hover:bg-muted/30 transition-colors duration-100;
 }
 
 @keyframes skeleton-pulse {
@@ -436,12 +613,11 @@ thead th {
 }
 
 .card-hover {
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .card-hover:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08), 0 2px 6px -2px rgba(0, 0, 0, 0.04);
-  border-color: hsl(142 76% 36% / 0.3);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  border-color: hsl(var(--border));
 }
 
 .nav-item-glow {
@@ -621,7 +797,7 @@ thead th {
 }
 
 .page-enter {
-  animation: float-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: fade-in 0.2s ease-out both;
 }
 
 .energy-section-heading {

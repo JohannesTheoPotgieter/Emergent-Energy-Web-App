@@ -1,9 +1,12 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { AlertTriangle, ArrowRight, ShieldAlert } from "lucide-react";
+import { AlertTriangle, ArrowRight, ShieldAlert, Search, Filter, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { SearchableSelect } from "@/components/ui/searchable-select";
 
 type ExceptionItem = {
   id: string;
@@ -47,42 +50,134 @@ function fetchExceptions(): Promise<ExceptionResponse> {
 
 export default function ExceptionsPage() {
   const { data, isLoading, isError } = useQuery({ queryKey: ["exceptions-page"], queryFn: fetchExceptions });
+  const [search, setSearch] = useState("");
+  const [severityFilter, setSeverityFilter] = useState("all");
+  const [ownerFilter, setOwnerFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+
+  // Derive filter options from data
+  const filterOptions = useMemo(() => {
+    const items = data?.items || [];
+    const owners = Array.from(new Set(items.map((i) => i.owner).filter(Boolean))).sort();
+    const categories = Array.from(new Set(items.map((i) => i.category).filter(Boolean))).sort();
+    return { owners, categories };
+  }, [data?.items]);
+
+  // Apply filters
+  const filteredItems = useMemo(() => {
+    let items = data?.items || [];
+    if (search) {
+      const q = search.toLowerCase();
+      items = items.filter((i) =>
+        i.title.toLowerCase().includes(q) ||
+        i.project.toLowerCase().includes(q) ||
+        i.owner.toLowerCase().includes(q) ||
+        i.reason.toLowerCase().includes(q)
+      );
+    }
+    if (severityFilter !== "all") items = items.filter((i) => i.severity === severityFilter);
+    if (ownerFilter !== "all") items = items.filter((i) => i.owner === ownerFilter);
+    if (categoryFilter !== "all") items = items.filter((i) => i.category === categoryFilter);
+    return items;
+  }, [data?.items, search, severityFilter, ownerFilter, categoryFilter]);
+
+  const hasActiveFilters = search || severityFilter !== "all" || ownerFilter !== "all" || categoryFilter !== "all";
+
+  // Recompute summary from filtered items
+  const filteredSummary = useMemo(() => {
+    const bySeverity: Record<string, number> = {};
+    const byCategory: Record<string, number> = {};
+    for (const item of filteredItems) {
+      bySeverity[item.severity] = (bySeverity[item.severity] || 0) + 1;
+      byCategory[item.category] = (byCategory[item.category] || 0) + 1;
+    }
+    return { total: filteredItems.length, bySeverity, byCategory };
+  }, [filteredItems]);
 
   const groupedBySeverity = useMemo(() => {
     const order = ["critical", "high", "medium", "low"];
     const groups = new Map<string, ExceptionItem[]>();
     for (const severity of order) groups.set(severity, []);
-    for (const item of data?.items || []) groups.get(item.severity)?.push(item);
+    for (const item of filteredItems) groups.get(item.severity)?.push(item);
     return order.map((severity) => ({ severity, items: groups.get(severity) || [] }));
-  }, [data?.items]);
+  }, [filteredItems]);
 
   const groupedByCategory = useMemo(() => {
     const map = new Map<string, ExceptionItem[]>();
-    for (const item of data?.items || []) {
+    for (const item of filteredItems) {
       if (!map.has(item.category)) map.set(item.category, []);
       map.get(item.category)!.push(item);
     }
     return Array.from(map.entries()).sort((a, b) => b[1].length - a[1].length);
-  }, [data?.items]);
+  }, [filteredItems]);
 
   return (
     <div className="space-y-4 p-4 md:p-6">
       <Card className="border-red-100">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-xl"><ShieldAlert className="h-5 w-5 text-red-600" />Exception Command Center</CardTitle>
-          <p className="text-sm text-muted-foreground">Only what needs intervention now. Role-scoped, severity-ranked, deeply actionable.</p>
-        </CardHeader>
-        <CardContent className="grid gap-2 sm:grid-cols-4">
-          {["critical", "high", "medium", "low"].map((severity) => (
-            <div key={severity} className="rounded-md border p-2">
-              <p className="text-xs uppercase text-muted-foreground">{severity}</p>
-              <p className="text-lg font-semibold">{data?.summary?.bySeverity?.[severity] || 0}</p>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-xl"><ShieldAlert className="h-5 w-5 text-red-600" />Exception Command Center</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                {hasActiveFilters
+                  ? `${filteredSummary.total} of ${data?.summary?.total || 0} exceptions matching filters`
+                  : "Only what needs intervention now. Role-scoped, severity-ranked, deeply actionable."}
+              </p>
             </div>
-          ))}
+            {hasActiveFilters && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => { setSearch(""); setSeverityFilter("all"); setOwnerFilter("all"); setCategoryFilter("all"); }}
+                className="gap-1.5 text-muted-foreground"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />Clear filters
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-4">
+            {["critical", "high", "medium", "low"].map((severity) => (
+              <button
+                key={severity}
+                onClick={() => setSeverityFilter(severityFilter === severity ? "all" : severity)}
+                className={`rounded-md border p-2 text-left transition-colors cursor-pointer ${severityFilter === severity ? severityTone[severity] : "hover:bg-muted/30"}`}
+              >
+                <p className="text-xs uppercase text-muted-foreground">{severity}</p>
+                <p className="text-lg font-semibold">{filteredSummary.bySeverity[severity] || 0}</p>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
+            <div className="relative flex-1 min-w-[180px] max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search exceptions..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-8 h-9"
+              />
+            </div>
+            <SearchableSelect
+              value={ownerFilter}
+              onValueChange={setOwnerFilter}
+              placeholder="Owner"
+              options={[{ value: "all", label: "All Owners" }, ...filterOptions.owners.map((v) => ({ value: v, label: v }))]}
+            />
+            <SearchableSelect
+              value={categoryFilter}
+              onValueChange={setCategoryFilter}
+              placeholder="Category"
+              options={[{ value: "all", label: "All Categories" }, ...filterOptions.categories.map((v) => ({ value: v, label: v.replace(/_/g, " ") }))]}
+            />
+          </div>
         </CardContent>
       </Card>
 
-      {isLoading ? <p className="text-sm text-muted-foreground">Loading exceptions…</p> : null}
+      {isLoading ? <p className="text-sm text-muted-foreground">Loading exceptions...</p> : null}
       {isError ? <p className="text-sm text-red-600">Could not load exceptions.</p> : null}
 
       <div className="grid gap-4 lg:grid-cols-2">

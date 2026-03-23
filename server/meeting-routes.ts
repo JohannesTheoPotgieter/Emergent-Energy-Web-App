@@ -8,11 +8,13 @@ import {
   meetingActionItems,
   mytoolTasks,
   mytoolCompanyPriorities,
-  operationalTasks,
+  workItems,
   projectInfo,
   users,
 } from "@shared/schema";
+import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { z } from "zod";
+import { requirePermission } from "./permission-middleware";
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();
@@ -33,7 +35,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   res.status(401).json({ error: "auth_required" });
 }
 
-const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
+const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as any)?.role || "";
@@ -113,7 +115,7 @@ export function registerMeetingRoutes(app: Express) {
   // ==================== MEETING MANAGEMENT ====================
   app.use("/api/meetings", jwtAuth);
 
-  app.get("/api/meetings", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  app.get("/api/meetings", requireAuth, requirePermission("meetings", "view"), async (_req: Request, res: Response) => {
     try {
       const meetings = await db
         .select()
@@ -159,7 +161,7 @@ export function registerMeetingRoutes(app: Express) {
   });
 
   // ==================== WEBHOOK STATUS (must be before /:id) ====================
-  app.get("/api/meetings/webhook-status", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  app.get("/api/meetings/webhook-status", requireAuth, requirePermission("meetings", "view"), async (_req: Request, res: Response) => {
     try {
       const allMeetings = await db.select({ id: meetingSummaries.id, source: meetingSummaries.source, createdAt: meetingSummaries.createdAt }).from(meetingSummaries);
       const allItems = await db.select({ id: meetingActionItems.id, status: meetingActionItems.status }).from(meetingActionItems);
@@ -187,7 +189,7 @@ export function registerMeetingRoutes(app: Express) {
   });
 
   // ==================== WEBHOOK INFO (must be before /:id) ====================
-  app.get("/api/meetings/webhook-info", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.get("/api/meetings/webhook-info", requireAuth, requirePermission("meetings", "view"), async (req: Request, res: Response) => {
     try {
       const host = req.headers.host || req.hostname;
       const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
@@ -198,7 +200,7 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  app.get("/api/meetings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.get("/api/meetings/:id", requireAuth, requirePermission("meetings", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const [meeting] = await db.select().from(meetingSummaries).where(eq(meetingSummaries.id, id));
@@ -231,7 +233,7 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/meetings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.delete("/api/meetings/:id", requireAuth, requirePermission("meetings", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       await db.delete(meetingSummaries).where(eq(meetingSummaries.id, id));
@@ -243,7 +245,7 @@ export function registerMeetingRoutes(app: Express) {
 
   // ==================== ACTION ITEM MANAGEMENT ====================
 
-  app.patch("/api/meetings/action-items/:id/dismiss", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.patch("/api/meetings/action-items/:id/dismiss", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const [updated] = await db
@@ -260,7 +262,7 @@ export function registerMeetingRoutes(app: Express) {
 
   // ==================== CONVERSION ENDPOINTS ====================
 
-  app.post("/api/meetings/action-items/:id/convert-to-task", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/meetings/action-items/:id/convert-to-task", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const actionItemId = parseInt(req.params.id);
       const userId = (req as any).user.id;
@@ -292,17 +294,22 @@ export function registerMeetingRoutes(app: Express) {
       let convertedToType = "mytool_task";
 
       if (projectName) {
+        const [matchedProject] = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, projectName)).limit(1);
+        if (!matchedProject) {
+          return res.status(400).json({ error: `Project not found: ${projectName}` });
+        }
         const [opTask] = await db
-          .insert(operationalTasks)
+          .insert(workItems)
           .values({
-            projectName,
+            projectId: matchedProject.id,
             title: overrides.title || actionItem.text,
             status: "TO DO",
             priority: overrides.priority === "critical" ? "Critical" : overrides.priority === "high" ? "High" : overrides.priority === "low" ? "Low" : "Med",
             ownerUserId,
-            startDate: null,
-            dueDate: actionItem.dueDate || null,
+            endDate: actionItem.dueDate || null,
             description: `From meeting: ${meeting?.title || "Unknown"}\nOwner: ${actionItem.owner || "Unassigned"}${overrides.notes ? "\n" + overrides.notes : ""}`,
+            workstream: 'ENG' as any,
+            source: 'UI' as any,
             createdBy: userId,
           })
           .returning();
@@ -338,7 +345,7 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/meetings/action-items/:id/convert-to-priority", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/meetings/action-items/:id/convert-to-priority", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const actionItemId = parseInt(req.params.id);
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
@@ -373,7 +380,7 @@ export function registerMeetingRoutes(app: Express) {
     }
   });
 
-  app.post("/api/meetings/action-items/:id/convert-to-project", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/meetings/action-items/:id/convert-to-project", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const actionItemId = parseInt(req.params.id);
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
@@ -383,15 +390,18 @@ export function registerMeetingRoutes(app: Express) {
       const overrides = req.body || {};
       const projectName = overrides.projectName || actionItem.text.substring(0, 100);
 
-      const [project] = await db
-        .insert(projectInfo)
-        .values({
+      const insertValues = {
           projectName,
           sizeKwp: overrides.sizeKwp || null,
           pd: overrides.pd || actionItem.owner || null,
           pm: overrides.pm || null,
-        })
+        };
+      const [project] = await db
+        .insert(projectInfo)
+        .values(insertValues)
         .returning();
+
+      await syncProjectSplitTablesAfterInsert(project.id, insertValues);
 
       await db
         .update(meetingActionItems)
@@ -405,7 +415,7 @@ export function registerMeetingRoutes(app: Express) {
   });
 
   // ==================== MANUAL MEETING ENTRY ====================
-  app.post("/api/meetings/manual", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  app.post("/api/meetings/manual", requireAuth, requirePermission("meetings", "create"), async (req: Request, res: Response) => {
     try {
       const body = req.body;
       const schema = z.object({
@@ -455,7 +465,7 @@ export function registerMeetingRoutes(app: Express) {
   });
 
   // ==================== TEST WEBHOOK ====================
-  app.post("/api/meetings/test-webhook", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  app.post("/api/meetings/test-webhook", requireAuth, requirePermission("meetings", "edit"), async (_req: Request, res: Response) => {
     try {
       const testPayload = {
         meeting_id: `test_${Date.now()}`,
