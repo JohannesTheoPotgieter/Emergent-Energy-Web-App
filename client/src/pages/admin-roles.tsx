@@ -58,33 +58,54 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_tickets: "PD Tickets — development tickets & tracking",
 
   projects: "Project List — all projects summary table",
+  project_normalized: "Project Normalized — standardized project view",
   execution_board: "Execution Dashboard — delivery KPIs & cards",
   deliverables: "Deliverables tracker across projects",
   pm_dashboard: "Project Manager Dashboard",
   pm_on_the_go: "PM On-The-Go mobile site management",
   approvals: "Approvals — pending approval queue",
+  weekly_reviews: "Weekly Reviews — review submissions & history",
   weekly_review_wizard: "Weekly Reviews — guided review wizard",
   portfolios: "Portfolio view — grouped project analysis",
   portfolio_detail: "Portfolio detail — drilldown view",
+  tr_register: "Technical Register — technical tracking & records",
+  triage_inbox: "Triage Inbox — incoming items to classify",
+  unclassified_tasks: "Unclassified Tasks — tasks pending classification",
+  notifications: "Notifications — system & user notifications",
+  phase_templates: "Phase Templates — project phase configuration",
 
   engineering: "Engineering Overview — team workload & status",
   eng_tasks: "Engineering Requests & Tasks",
   eng_stages: "Engineering 5-Stage Checklist system",
+  eng_sync: "Engineering Sync — synchronize engineering data",
+  eng_inbox: "Engineering Inbox — incoming engineering requests",
 
   quality: "Quality Workspace — QA gates & inspections",
 
   cashflow: "Cashflow — inflows, outflows, forecast",
+  cashflow_forecast: "Cashflow Forecast — forward-looking projections",
   cos: "Cost of Sales — COS tracking & realised",
+  cos_control: "COS Control — cost of sales oversight & rules",
   revenue_tracker: "Revenue Tracker — invoiced & outstanding",
+  revenue: "Revenue — general revenue access & tracking",
   gp_tracker: "Gross Profit Tracker — GP% & margins",
+  fye_revenue_tracking: "FYE Revenue Tracking — financial year-end revenue",
   financials: "Finance — general financial access",
+  financial_integration: "Financial Integration — rule-based matching",
+  financial_linking: "Financial Linking — expense/revenue pairing",
   procurement: "Procurement Hub & subcontractor management",
   subcontractors: "Counterparties & procurement pipeline",
+  counterparties: "Counterparties — external counterparty records",
   invoice_patterns: "Invoice Pattern Library",
 
   ee_info: "Lifecycle & SOP — company knowledge base",
+  ee_info_lifecycle: "EE Info > Lifecycle — lifecycle knowledge articles",
+  ee_info_departments: "EE Info > Departments — department knowledge hub",
+  ee_info_processes: "EE Info > Processes — process documentation",
+  ee_info_templates: "EE Info > Templates — document templates",
   leaderboard: "Leaderboard — team & department scores",
   training: "Training — learning resources & modules",
+  knowledge_game: "Knowledge Game — quiz & training game",
   feedback: "Feedback & Support — suggestions & issues",
   department_scores: "Department Scores — team performance",
 
@@ -133,8 +154,6 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_raid: "Project detail > RAID log (Risks, Actions, Issues)",
 
   dashboard_widgets: "Home dashboard — widget cards & charts",
-  financial_integration: "Financial Integration — rule-based matching",
-  financial_linking: "Financial Linking — expense/revenue pairing",
   governance: "Governance — phase gate & compliance controls",
   operational_tasks: "Operational Tasks — ad-hoc task tracking (via work_items)",
   gamification: "Gamification — points, streaks & leaderboard",
@@ -158,11 +177,11 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   project_management: {
     label: "Project Management",
-    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_review_wizard", "portfolios", "portfolio_detail", "handover", "commissioning", "task_management", "standups"],
+    entities: ["projects", "project_normalized", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "triage_inbox", "unclassified_tasks", "handover", "commissioning", "task_management", "standups", "notifications", "phase_templates"],
   },
   engineering: {
     label: "Engineering",
-    entities: ["engineering", "eng_tasks", "eng_stages"],
+    entities: ["engineering", "eng_tasks", "eng_stages", "eng_sync", "eng_inbox"],
   },
   quality: {
     label: "Quality",
@@ -170,11 +189,11 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   finance: {
     label: "Finance",
-    entities: ["cashflow", "cos", "revenue_tracker", "gp_tracker", "financials", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
+    entities: ["cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
   },
   knowledge: {
     label: "Knowledge",
-    entities: ["ee_info", "leaderboard", "training", "feedback", "department_scores"],
+    entities: ["ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "leaderboard", "training", "knowledge_game", "feedback", "department_scores"],
   },
   collaboration: {
     label: "Collaboration",
@@ -190,7 +209,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   other: {
     label: "Other Permissions",
-    entities: ["dashboard_widgets", "financial_integration", "financial_linking", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
+    entities: ["dashboard_widgets", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
   },
 };
 
