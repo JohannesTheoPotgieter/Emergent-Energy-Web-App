@@ -1,120 +1,68 @@
-import { Express, Request, Response, NextFunction } from "express";
+import type { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, sql, desc, isNull } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { notifications } from "@shared/schema";
+import { eq, and, desc, sql } from "drizzle-orm";
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
+function requireAuth(req: Request, res: Response, next: () => void) {
+  if (!req.isAuthenticated || !req.isAuthenticated()) {
+    return res.status(401).json({ error: "Not authenticated" });
   }
   next();
 }
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
-
-function getUser(req: Request): { id: number; name?: string; role?: string } {
-  const u = (req as any).user;
-  if (u) return u;
-  const sess = req.user as any;
-  return { id: sess?.id ?? 0, name: sess?.username, role: sess?.role };
-}
-
 export function registerNotificationRoutes(app: Express) {
-
-  /** GET unread count for current user */
-  app.get("/api/notifications/unread-count", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Get user's notifications (recent + unread)
+  app.get("/api/notifications", requireAuth, async (req: Request, res: Response) => {
     try {
-      const user = getUser(req);
-      const [row] = await db
-        .select({ count: sql<number>`COUNT(*)::int` })
-        .from(notifications)
-        .where(and(eq(notifications.recipientUserId, user.id), eq(notifications.isRead, false)));
-      res.json({ count: row?.count ?? 0 });
-    } catch (err: any) {
-      res.status(500).json({ error: "Failed to fetch unread count" });
-    }
-  });
+      const user = req.user as any;
+      if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
 
-  /** GET notifications for current user (paginated) */
-  app.get("/api/notifications", jwtAuth, requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = getUser(req);
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-      const offset = parseInt(req.query.offset as string) || 0;
-      const unreadOnly = req.query.unreadOnly === "true";
-
-      const conditions = [eq(notifications.recipientUserId, user.id)];
-      if (unreadOnly) conditions.push(eq(notifications.isRead, false));
-
+      const limit = parseInt(req.query.limit as string) || 30;
       const rows = await db
         .select()
         .from(notifications)
-        .where(and(...conditions))
+        .where(eq(notifications.recipientUserId, user.id))
         .orderBy(desc(notifications.createdAt))
-        .limit(limit)
-        .offset(offset);
+        .limit(limit);
 
-      res.json({ notifications: rows });
+      const unreadCount = rows.filter(r => !r.isRead).length;
+
+      res.json({ notifications: rows, unreadCount });
     } catch (err: any) {
-      res.status(500).json({ error: "Failed to fetch notifications" });
+      res.status(500).json({ error: err.message });
     }
   });
 
-  /** POST mark single notification as read */
-  app.post("/api/notifications/mark-read", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  // Mark single notification as read
+  app.patch("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
     try {
-      const user = getUser(req);
-      const { notificationId } = req.body;
-      if (!notificationId) return res.status(400).json({ error: "notificationId required" });
-
-      await db.update(notifications)
-        .set({ isRead: true, readAt: new Date() })
-        .where(and(eq(notifications.id, notificationId), eq(notifications.recipientUserId, user.id)));
-
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: "Failed to mark as read" });
-    }
-  });
-
-  /** POST mark all notifications as read */
-  app.post("/api/notifications/mark-all-read", jwtAuth, requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = getUser(req);
-      await db.update(notifications)
-        .set({ isRead: true, readAt: new Date() })
-        .where(and(eq(notifications.recipientUserId, user.id), eq(notifications.isRead, false)));
-
-      res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: "Failed to mark all as read" });
-    }
-  });
-
-  /** POST confirm a notification that requires confirmation */
-  app.post("/api/notifications/:id/confirm", jwtAuth, requireAuth, async (req: Request, res: Response) => {
-    try {
-      const user = getUser(req);
+      const user = req.user as any;
       const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid notification ID" });
 
       await db.update(notifications)
-        .set({ confirmedByUserId: user.id, confirmedAt: new Date(), isRead: true, readAt: new Date() })
+        .set({ isRead: true, readAt: new Date() })
         .where(and(eq(notifications.id, id), eq(notifications.recipientUserId, user.id)));
 
       res.json({ success: true });
     } catch (err: any) {
-      res.status(500).json({ error: "Failed to confirm notification" });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Mark all notifications as read
+  app.patch("/api/notifications/read-all", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
+
+      await db.update(notifications)
+        .set({ isRead: true, readAt: new Date() })
+        .where(and(eq(notifications.recipientUserId, user.id), eq(notifications.isRead, false)));
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 }

@@ -59,7 +59,9 @@ export const notificationThrottle = pgTable("notification_throttle", {
   entityType: text("entity_type").notNull(),
   entityId: integer("entity_id").notNull(),
   lastSentAt: timestamp("last_sent_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  uniqueThrottle: unique("notification_throttle_recipient_event_entity").on(table.recipientUserId, table.eventType, table.entityType, table.entityId),
+}));
 export const insertNotificationThrottleSchema = createInsertSchema(notificationThrottle).omit({ id: true } as any);
 export type InsertNotificationThrottle = z.infer<typeof insertNotificationThrottleSchema>;
 export type NotificationThrottle = typeof notificationThrottle.$inferSelect;

@@ -344,7 +344,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
       rejectionReason: handover.rejection_reason || null,
       qualityStatus: handoverSummaryInput.qualityStatus,
       qualityRequired: handoverSummaryInput.qualityRequired,
-      readinessStatus: workspace.readiness.readinessStatus || handover.handover_readiness_status || null,
+      readinessStatus: workspace.readiness.readinessStatus || handover.handoverReadinessStatus || handover.handover_readiness_status || null,
       executionEnabled: project.executionEnabled,
       executionGateStatus: project.executionGateStatus,
       blockers: getQualityHandoverReasons(handoverSummaryInput),

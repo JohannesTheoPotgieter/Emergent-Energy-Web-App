@@ -80,6 +80,9 @@ export default function PdTicketCreatePage() {
     hseDiscussed: false,
     comments: "",
     designerUserId: "",
+    estimatedProjectValue: "",
+    estimatedCost: "",
+    financialNotes: "",
   });
 
   const { data: clientResults = [], isLoading: clientsLoading, isError: clientsError, error: clientsQueryError, refetch: refetchClients } = useQuery<any[]>({
@@ -179,6 +182,13 @@ export default function PdTicketCreatePage() {
       sizeKwp: form.sizeKwp ? parseFloat(form.sizeKwp) : null,
       batterySize: form.batterySize ? parseFloat(form.batterySize) : null,
       designerUserId: form.designerUserId ? parseInt(form.designerUserId) : null,
+      estimatedProjectValue: form.estimatedProjectValue ? parseFloat(form.estimatedProjectValue) : null,
+      estimatedCost: form.estimatedCost ? parseFloat(form.estimatedCost) : null,
+      estimatedMargin: form.estimatedProjectValue && form.estimatedCost
+        ? parseFloat(form.estimatedProjectValue) - parseFloat(form.estimatedCost) : null,
+      estimatedMarginPercent: form.estimatedProjectValue && form.estimatedCost && parseFloat(form.estimatedProjectValue) > 0
+        ? Math.round(((parseFloat(form.estimatedProjectValue) - parseFloat(form.estimatedCost)) / parseFloat(form.estimatedProjectValue)) * 10000) / 100 : null,
+      financialNotes: form.financialNotes || null,
       selectedTasks: Array.from(selectedTasks),
     };
 
@@ -534,6 +544,30 @@ export default function PdTicketCreatePage() {
 
             {availableTaskTemplates.length > 0 && (
               <>
+                <Separator />
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">Financial Estimates (Optional)</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Estimated Project Value (R)</Label>
+                      <Input type="number" placeholder="0.00" className="h-8 text-xs" value={form.estimatedProjectValue} onChange={e => setForm(f => ({ ...f, estimatedProjectValue: e.target.value }))} />
+                    </div>
+                    <div>
+                      <Label className="text-[11px] text-muted-foreground">Estimated Cost (R)</Label>
+                      <Input type="number" placeholder="0.00" className="h-8 text-xs" value={form.estimatedCost} onChange={e => setForm(f => ({ ...f, estimatedCost: e.target.value }))} />
+                    </div>
+                  </div>
+                  {form.estimatedProjectValue && form.estimatedCost && (
+                    <div className="text-xs text-muted-foreground">
+                      Margin: R {(parseFloat(form.estimatedProjectValue) - parseFloat(form.estimatedCost)).toLocaleString("en-ZA", { minimumFractionDigits: 2 })}
+                      {" "}({parseFloat(form.estimatedProjectValue) > 0 ? (((parseFloat(form.estimatedProjectValue) - parseFloat(form.estimatedCost)) / parseFloat(form.estimatedProjectValue)) * 100).toFixed(1) : "0"}%)
+                    </div>
+                  )}
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Financial Notes</Label>
+                    <Textarea placeholder="Assumptions, caveats..." className="min-h-[50px] text-xs" rows={2} value={form.financialNotes} onChange={e => setForm(f => ({ ...f, financialNotes: e.target.value }))} />
+                  </div>
+                </div>
                 <Separator />
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
