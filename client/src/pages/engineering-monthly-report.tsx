@@ -9,6 +9,9 @@ import { useToast } from "@/hooks/use-toast";
 import ReportHeader from "@/components/reports/ReportHeader";
 import KPITileGrid from "@/components/reports/KPITileGrid";
 import type { KPITile } from "@/components/reports/KPITileGrid";
+import TaskCompletionChart from "@/components/reports/charts/TaskCompletionChart";
+import DeliverableStatusChart from "@/components/reports/charts/DeliverableStatusChart";
+import ResourceWorkloadChart from "@/components/reports/charts/ResourceWorkloadChart";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -161,7 +164,10 @@ function EngTasksTab({ data, reportId, month }: { data: any; reportId?: number; 
   const perProject = data.perProject || [];
 
   return (
-    <div className="border rounded-lg overflow-hidden">
+    <div className="space-y-4">
+      <TaskCompletionChart data={perProject} showNotStarted />
+
+      <div className="border rounded-lg overflow-hidden">
       <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
         <table className="w-full text-xs">
           <thead className="bg-muted sticky top-0">
@@ -199,6 +205,7 @@ function EngTasksTab({ data, reportId, month }: { data: any; reportId?: number; 
         </table>
       </div>
     </div>
+    </div>
   );
 }
 
@@ -225,6 +232,8 @@ function DeliverablesTab({ data }: { data: any }) {
           <p className="text-xl font-bold text-amber-600">{activity.pendingReview ?? 0}</p>
         </CardContent></Card>
       </div>
+
+      <DeliverableStatusChart data={data.register || []} />
 
       <div className="border rounded-lg overflow-hidden">
         <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
@@ -307,12 +316,15 @@ function StagesTab({ data }: { data: any[] }) {
 
 function ResourcesTab({ data }: { data: any[] }) {
   return (
-    <div className="border rounded-lg overflow-hidden">
-      <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-        <table className="w-full text-xs">
-          <thead className="bg-muted sticky top-0">
-            <tr>
-              <th className="text-left px-3 py-2 font-medium">Engineer</th>
+    <div className="space-y-4">
+      <ResourceWorkloadChart data={data} />
+
+      <div className="border rounded-lg overflow-hidden">
+        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-muted sticky top-0">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium">Engineer</th>
               <th className="text-right px-3 py-2 font-medium">Assigned</th>
               <th className="text-right px-3 py-2 font-medium">Done This Month</th>
               <th className="text-right px-3 py-2 font-medium">Overdue</th>
@@ -334,6 +346,7 @@ function ResourcesTab({ data }: { data: any[] }) {
           </tbody>
         </table>
       </div>
+    </div>
     </div>
   );
 }
