@@ -273,16 +273,29 @@
     padding-right: env(safe-area-inset-right);
   }
 
-  h1 { @apply text-2xl; }
-  h2 { @apply text-xl; }
-  h3 { @apply text-lg; }
+  h1 { @apply text-2xl; line-height: 1.2; }
+  h2 { @apply text-xl; line-height: 1.2; }
+  h3 { @apply text-lg; line-height: 1.25; }
+
+  body {
+    line-height: 1.5;
+  }
 
   th {
-    @apply text-xs uppercase tracking-normal font-medium text-muted-foreground;
+    @apply text-xs uppercase tracking-wider font-medium text-muted-foreground;
+    font-size: 12px;
+    letter-spacing: 0.05em;
   }
 
   td {
     @apply text-sm;
+    font-size: max(13px, 0.8125rem);
+    line-height: 1.4;
+    min-height: 44px;
+  }
+
+  tr {
+    min-height: 44px;
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading font-semibold tracking-tight;

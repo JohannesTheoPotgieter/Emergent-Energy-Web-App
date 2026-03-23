@@ -84,6 +84,32 @@ export function statusColorClasses(status: string | null | undefined): string {
 
 // ─── Priority ────────────────────────────────────────────────────────────────
 
+// ─── Project Progress Status ─────────────────────────────────────────────────
+
+/** Unified project status color map — ensures "Behind Plan" and "Overdue" are visually distinct */
+export const PROJECT_STATUS_COLORS: Record<string, { bg: string; text: string; border: string; icon: string }> = {
+  on_track:   { bg: "bg-emerald-50",  text: "text-emerald-700", border: "border-emerald-200", icon: "text-emerald-500" },
+  at_risk:    { bg: "bg-amber-50",    text: "text-amber-700",   border: "border-amber-200",   icon: "text-amber-500"   },
+  behind:     { bg: "bg-orange-50",   text: "text-orange-700",  border: "border-orange-200",  icon: "text-orange-500"  },
+  overdue:    { bg: "bg-red-50",      text: "text-red-700",     border: "border-red-200",     icon: "text-red-600"     },
+  complete:   { bg: "bg-blue-50",     text: "text-blue-700",    border: "border-blue-200",    icon: "text-blue-500"    },
+  blocked:    { bg: "bg-rose-50",     text: "text-rose-800",    border: "border-rose-300",    icon: "text-rose-600"    },
+};
+
+export function projectStatusClasses(status: string | null | undefined): { bg: string; text: string; border: string; icon: string } {
+  const s = (status || "").toLowerCase().replace(/[\s_-]+/g, "_");
+  const mapped = s.includes("behind") ? "behind"
+    : s.includes("overdue") ? "overdue"
+    : s.includes("block") ? "blocked"
+    : s.includes("risk") ? "at_risk"
+    : s.includes("complete") || s.includes("done") ? "complete"
+    : s.includes("track") || s.includes("green") ? "on_track"
+    : null;
+  return PROJECT_STATUS_COLORS[mapped || "on_track"] || PROJECT_STATUS_COLORS.on_track;
+}
+
+// ─── Priority ────────────────────────────────────────────────────────────────
+
 /** Priority badge classes */
 export function priorityColorClasses(priority: string | null | undefined): string {
   const p = (priority || "").toLowerCase();

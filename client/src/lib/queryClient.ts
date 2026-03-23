@@ -1,6 +1,7 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryFunction, MutationCache, QueryCache } from "@tanstack/react-query";
 import { ApiError, parseApiError, networkError } from "./api-error";
 import { runAsyncAction } from "./async-action";
+import { toast } from "@/hooks/use-toast";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -175,7 +176,37 @@ export function invalidateProjectQueries(qc: QueryClient, projectName: string) {
   qc.invalidateQueries({ queryKey: ["finance-cos", projectName] });
 }
 
+function handleGlobalError(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 401) {
+      // Session expired — redirect to login
+      if (window.location.pathname !== "/login") {
+        window.location.href = "/login";
+      }
+      return;
+    }
+    if (error.status === 403) {
+      toast({ title: "Permission Denied", description: error.userMessage, variant: "destructive" });
+      return;
+    }
+    if (error.status === 429) {
+      toast({ title: "Too Many Requests", description: "Please wait a moment and try again." });
+      return;
+    }
+    if (error.status >= 500) {
+      toast({ title: "Server Error", description: error.userMessage, variant: "destructive" });
+      return;
+    }
+  }
+}
+
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (error) => handleGlobalError(error),
+  }),
+  mutationCache: new MutationCache({
+    onError: (error) => handleGlobalError(error),
+  }),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
