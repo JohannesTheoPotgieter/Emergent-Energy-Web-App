@@ -79,15 +79,27 @@ interface DerivedMetricsRow {
 }
 
 async function getPriorityDerivedMetrics(priorityId: number): Promise<DerivedMetricsRow | null> {
-  const rows: any = await db.execute(sql`
-    SELECT * FROM priority_derived_metrics WHERE priority_id = ${priorityId}
-  `);
-  return (rows.rows?.[0] || rows[0] || null) as DerivedMetricsRow | null;
+  try {
+    const rows: any = await db.execute(sql`
+      SELECT * FROM priority_derived_metrics WHERE priority_id = ${priorityId}
+    `);
+    return (rows.rows?.[0] || rows[0] || null) as DerivedMetricsRow | null;
+  } catch (err: any) {
+    // View may not exist yet if migration hasn't run
+    console.warn("[Priorities] priority_derived_metrics query failed:", err.message);
+    return null;
+  }
 }
 
 async function getAllPriorityDerivedMetrics(): Promise<DerivedMetricsRow[]> {
-  const rows: any = await db.execute(sql`SELECT * FROM priority_derived_metrics`);
-  return (rows.rows || rows) as DerivedMetricsRow[];
+  try {
+    const rows: any = await db.execute(sql`SELECT * FROM priority_derived_metrics`);
+    return (rows.rows || rows) as DerivedMetricsRow[];
+  } catch (err: any) {
+    // View may not exist yet if migration hasn't run
+    console.warn("[Priorities] priority_derived_metrics query failed:", err.message);
+    return [];
+  }
 }
 
 async function getUserById(userId: number): Promise<{ id: number; name: string } | null> {
