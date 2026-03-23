@@ -7415,8 +7415,33 @@ export async function registerRoutes(
       const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
       const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-      const saved = await storage.upsertManyRevenueTrackingOverrides(overridesWithUser);
+
+      // Apply overrides directly to the base table (normalized_revenue_lines)
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+      const saved: any[] = [];
+
+      for (const pn of projectNames) {
+        const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+        const inflows = await storage.getProgramInflowsByProject(pn);
+        const rowMap = new Map(inflows.map((r: any) => [r.rowNumber, r]));
+
+        const rowGroups = new Map<number, Record<string, any>>();
+        for (const ov of projectOverrides) {
+          const inflow = rowMap.get(ov.rowNumber);
+          if (!inflow) continue;
+          if (!rowGroups.has(inflow.id)) rowGroups.set(inflow.id, {});
+          const fields = rowGroups.get(inflow.id)!;
+          const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+          fields[ov.fieldName] = effectiveValue;
+        }
+
+        for (const [inflowId, fields] of rowGroups.entries()) {
+          if (Object.keys(fields).length > 0) {
+            const result = await storage.updateProgramInflowFields(inflowId, fields);
+            if (result) saved.push(result);
+          }
+        }
+      }
 
       try {
         for (const o of overrides) {
@@ -7446,7 +7471,7 @@ export async function registerRoutes(
         console.warn("[audit] Revenue override audit failed:", auditErr.message);
       }
 
-      logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "create", changesJson: { description: `${overrides.length} revenue tracking override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
+      logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "create", changesJson: { description: `${overrides.length} revenue tracking override(s) saved`, count: overrides.length, projectNames } });
       res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
     } catch (error) {
       res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
@@ -7459,8 +7484,7 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      await storage.deleteRevenueTrackingOverridesByProject(projectName);
-
+      // Override tables collapsed into base tables — no separate overrides to delete
       logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "delete", projectName, changesJson: { description: "All revenue tracking overrides deleted for project", projectName } });
       res.json({ message: `Revenue tracking overrides deleted for project: ${projectName}` });
     } catch (error) {
@@ -7865,9 +7889,6 @@ export async function registerRoutes(
 
       // Admin users apply overrides directly (this legacy route requires requireAdmin)
       const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-      await storage.upsertManyExpenditureOverrides(overridesWithUser);
-
       const fieldToColumnMap: Record<string, string> = {
         expenseInvoicedDate: "expenseInvoicedDate",
         expensePaymentDate: "expensePaymentDate",
@@ -7930,8 +7951,7 @@ export async function registerRoutes(
       if (!projectName || typeof projectName !== 'string') {
         return res.status(400).json({ error: "Project name required", message: "Project name is required" });
       }
-      await storage.deleteExpenditureOverridesByProject(projectName);
-
+      // Override tables collapsed into base tables — no separate overrides to delete
       logAuditFromReq(req, { entityType: "expenditure_override", action: "delete", projectName, changesJson: { description: "All expenditure overrides deleted for project", projectName } });
       res.json({ message: `Expenditure overrides deleted for project: ${projectName}` });
     } catch (error) {
@@ -8166,11 +8186,6 @@ export async function registerRoutes(
       const confirmedField = field === 'invoiceDateFontColor' ? 'invoiceDateConfirmed'
         : field === 'paymentDateFontColor' ? 'paymentDateConfirmed' : null;
       const isBlack = color === 'black';
-
-      await storage.upsertManyExpenditureOverrides([
-        { projectName, rowNumber, fieldName: field, overrideValue: color },
-        ...(confirmedField ? [{ projectName, rowNumber, fieldName: confirmedField, overrideValue: isBlack ? 'true' : 'false' }] : []),
-      ]);
 
       const expenses = await storage.getProgramExpensesByProject(projectName);
       const expense = expenses.find((e: any) => e.rowNumber === rowNumber);
