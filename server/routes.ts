@@ -9,7 +9,7 @@ import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense } from "@shared/schema";
+import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests } from "@shared/schema";
 import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -7836,6 +7836,8 @@ export async function registerRoutes(
     }
   });
 
+  // Expenditure overrides now handled by finance-routes.ts with approval workflow
+  // This legacy route is kept as a fallback redirect to the approval flow
   app.post("/api/expenditure/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const { overrides, overrideCategory, overrideComment } = req.body;
@@ -7845,94 +7847,33 @@ export async function registerRoutes(
       const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
       const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
       const userId = req.user?.id;
-      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-      const saved = await storage.upsertManyExpenditureOverrides(overridesWithUser);
+      const userRole = req.user?.role;
 
-      const fieldToColumnMap: Record<string, string> = {
-        expenseInvoicedDate: "expenseInvoicedDate",
-        expensePaymentDate: "expensePaymentDate",
-        expensePoNumber: "expensePoNumber",
-        expenseInvoiceNumber: "expenseInvoiceNumber",
-        expenseLineItem: "expenseLineItem",
-        expenseActualTotal: "expenseActualTotal",
-        budgetTotal: "budgetTotal",
-        forecastPaymentDate: "forecastPaymentDate",
-        expenseQty: "expenseQty",
-        expenseRateUnit: "expenseRateUnit",
-        budgetQty: "budgetQty",
-        budgetRateUnit: "budgetRateUnit",
-        invoiceDateFontColor: "invoiceDateFontColor",
-        paymentDateFontColor: "paymentDateFontColor",
-      };
-
+      // All cost corrections require approval before being applied
       const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      for (const pn of projectNames) {
-        const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
-        const expenses = await storage.getProgramExpensesByProject(pn as string);
-        const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
+      const hasHighExpense = overrides.some((o: any) => o.fieldName === "expenseActualTotal" && Number(o.overrideValue) > 50000);
+      const hasBudgetChange = overrides.some((o: any) => o.fieldName === "budgetTotal");
+      const editSummary = `Expenditure override: ${overrides.length} field(s). Category: ${effectiveCategory}. Comment: ${effectiveComment}${hasHighExpense ? " [HIGH EXPENSE]" : ""}${hasBudgetChange ? " [BUDGET CHANGE]" : ""} [Submitted by ${userRole || "unknown"}]`;
 
-        const rowGroups = new Map<number, Record<string, any>>();
-        for (const ov of projectOverrides) {
-          const colName = fieldToColumnMap[ov.fieldName];
-          if (!colName) continue;
-          const expense = rowMap.get(ov.rowNumber);
-          if (!expense) continue;
-          if (!rowGroups.has(expense.id)) rowGroups.set(expense.id, {});
-          const fields = rowGroups.get(expense.id)!;
-          const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
-          fields[colName] = effectiveValue;
-          if (ov.fieldName === 'expenseInvoicedDate' && !effectiveValue) {
-            fields.invoiceDateConfirmed = false;
-          }
-          if (ov.fieldName === 'expensePaymentDate' && !effectiveValue) {
-            fields.paymentDateConfirmed = false;
-          }
-        }
+      const [saved] = await db.insert(financialEditRequests).values({
+        projectName: projectNames[0] || "Unknown",
+        requestedByUserId: userId!,
+        editType: "expenditure_override",
+        editTarget: "expenditure_tracking",
+        editPayload: JSON.stringify({ overrides, overrideCategory: effectiveCategory, overrideComment: effectiveComment }),
+        editSummary,
+        isCriticalPath: false,
+        affectsRevenue: false,
+        affectsExpenditure: true,
+        affectsQuality: false,
+        status: "pending",
+      }).returning();
 
-        for (const [expenseId, fields] of rowGroups.entries()) {
-          if (Object.keys(fields).length > 0) {
-            await storage.updateProgramExpenseFields(expenseId, fields);
-          }
-        }
-      }
-
-      try {
-        for (const o of overrides) {
-          await recordOverride({
-            actorUserId: userId,
-            actorRole: (req as any).user?.role,
-            entityType: "expenditure_override",
-            entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
-            projectName: o.projectName,
-            action: "EXPENDITURE_OVERRIDE",
-            overrideCategory,
-            overrideComment: overrideComment.trim(),
-            oldRecord: {},
-            newRecord: { [o.fieldName]: o.overrideValue },
-          });
-        }
-      } catch (auditErr: any) {
-        console.warn("[audit] Expenditure override audit failed:", auditErr.message);
-      }
-
-      // Record manual edit flags for conflict detection during import
-      for (const [expenseId, fields] of rowGroups.entries()) {
-        for (const fieldName of Object.keys(fields)) {
-          recordManualEditFlag({
-            entityType: "program_expense",
-            entityId: expenseId,
-            fieldName,
-            editedByUserId: userId,
-            editedByName: (req as any).user?.name,
-          });
-        }
-      }
-
-      logAuditFromReq(req, { entityType: "expenditure_override", action: "create", changesJson: { description: `${overrides.length} expenditure override(s) saved`, count: overrides.length, projectNames: [...new Set(overrides.map((o: any) => o.projectName))] } });
-      res.json({ message: "Expenditure overrides saved and applied", count: saved.length, overrides: saved });
+      logAuditFromReq(req, { entityType: "expenditure_override", action: "submit_for_approval", changesJson: { description: `${overrides.length} expenditure override(s) submitted for approval`, count: overrides.length, projectNames, requestId: saved.id } });
+      res.json({ message: "Your cost correction has been submitted for approval", status: "pending_approval", requestId: saved.id });
     } catch (error) {
-      console.error("Failed to save expenditure overrides:", error);
-      res.status(500).json({ error: "Failed to save expenditure overrides", message: error instanceof Error ? error.message : "Failed to save expenditure overrides" });
+      console.error("Failed to submit expenditure overrides for approval:", error);
+      res.status(500).json({ error: "Failed to save overrides", message: error instanceof Error ? error.message : "Failed to save overrides" });
     }
   });
 
