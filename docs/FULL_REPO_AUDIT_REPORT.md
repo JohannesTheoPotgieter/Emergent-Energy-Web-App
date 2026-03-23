@@ -323,6 +323,21 @@ Schema files in `shared/schema/` organized by domain:
 | 4 | Role-based navigation | [CONFIRMED] | `client/src/config/role-aware-ux.ts` maps roles to navigation sections. `PermissionGate` component gates UI elements. |
 | 5 | Radix UI component library | [CONFIRMED] | 24 Radix UI packages provide accessible, unstyled primitives. Consistent pattern across UI components. |
 
+### 4.X Frontend BUGS (from deep audit)
+
+| # | Finding | Tag | Detail |
+|---|---------|-----|--------|
+| 1 | 401 redirect goes to wrong URL | [BUG] | `client/src/lib/queryClient.ts:183` redirects to `/login` but actual login route is `/auth/login`. Users hit the 404 page instead of login on session expiry. |
+| 2 | Dashboard queries skip auth token | [BUG] | `client/src/pages/dashboard.tsx:450-475` uses raw `fetch()` without `Authorization: Bearer` header. Bypasses `apiRequest`/`getQueryFn`. Will 401 if server requires Bearer token. |
+| 3 | 10+ queries silently swallow errors | [BUG] | `client/src/pages/project-detail.tsx` lines 95, 334, 1027+ all do `if (!res.ok) return []`. HTTP 403/500 errors display as empty data with no user feedback. |
+| 4 | Five different fetch utility patterns | [CONFLICT] | `lib/api.ts`, `lib/queryClient.ts`, `lib/eng-fetch.ts`, `pages/qm-dashboard.tsx` (local `qFetch`), `pages/project-detail.tsx` (local `engFetch`) — each has different error handling, token injection, and correlation ID behavior. |
+| 5 | Two `engFetch` with different return types | [CONFLICT] | `lib/eng-fetch.ts` returns parsed JSON. `pages/project-detail.tsx:124` local version returns raw `Response`. Same name, different semantics. |
+| 6 | Hardcoded FY26 months | [PLACEHOLDER] | `client/src/pages/cashflow.tsx:138-151` has static `FY26_MONTHS` array (Sep 2025–Aug 2026). API path `/api/cashflow-2026` is also FY-specific. Breaks on FY rollover. |
+| 7 | `smart-import.tsx` is 4,101 lines | [DEBT] | Second-largest component file. Multi-step wizard all in one file. |
+| 8 | 15+ parallel queries on project-detail mount | [DEBT] | V2 consolidated queries exist BUT legacy V1 queries also fire alongside — data fetched twice through different endpoints. File: `client/src/pages/project-detail.tsx:1023-1170` |
+| 9 | Feature flags fetch omits auth token | [DEBT] | `client/src/lib/feature-flags.ts` calls `fetch()` without Bearer token. |
+| 10 | `User` role type union is incomplete | [DEBT] | `client/src/lib/api.ts:192` defines only 5 roles but app has 14+. False type safety. |
+
 ### 4.2 Data Fetching & Caching
 
 | # | Finding | Tag | Detail |
@@ -790,6 +805,9 @@ Schema files in `shared/schema/` organized by domain:
 
 | # | Area | Finding | Tag | Priority | Effort | Recommended Action |
 |---|------|---------|-----|----------|--------|-------------------|
+| 0x | Frontend | 401 redirect goes to `/login` instead of `/auth/login` — hits 404 | [BUG] | Critical | Low | Fix redirect path in `queryClient.ts:183` |
+| 0y | Frontend | Dashboard queries skip Bearer token — uses raw `fetch()` | [BUG] | Critical | Low | Replace with `apiRequest` or `getQueryFn` in `dashboard.tsx` |
+| 0z | Frontend | 10+ queries silently swallow 403/500 as empty arrays | [BUG] | High | Medium | Add error state handling in `project-detail.tsx` |
 | 0a | MS Integration | Refresh tokens stored unencrypted (column named `encrypted`) | [BUG] | Critical | Medium | Encrypt tokens at rest with AES-256 via vault key |
 | 0b | MS Integration | SharePoint List header typo (`X_REPLIT_TOKEN` vs `X-Replit-Token`) | [BUG] | Critical | Low | Fix header name in `server/sharepoint-list.ts:24` |
 | 0c | MS Integration | Insufficient Graph scopes for sending (Chat.Read, not Chat.ReadWrite) | [BUG] | Critical | Low | Add `Chat.ReadWrite`, `ChannelMessage.Send` to SCOPES in `microsoft-auth.ts` |
@@ -863,6 +881,7 @@ Phase 5 (Weeks 9-12): Advanced
 
 | # | Action | Effort | Impact |
 |---|--------|--------|--------|
+| 0 | Fix 401 redirect: `/login` → `/auth/login` in `queryClient.ts:183` | 5 min | Users currently hit 404 on session expiry |
 | 1 | Add CSP header to `security-middleware.ts` | 30 min | Blocks XSS via injected scripts |
 | 2 | Add production guard on dev-login endpoint | 15 min | Prevents unauthorized access |
 | 3 | Add database indexes on `workItems(projectId, status)`, `notifications(recipientUserId)` | 1 hour | Speeds up most-hit queries by 10-100x |
