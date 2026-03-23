@@ -20,7 +20,7 @@ import {
   type RoleSummary,
   type UserSummary,
 } from "./admin-roles.utils";
-import { AlertTriangle, Check, ChevronDown, ChevronRight, Clock, Eye, EyeOff, FileText, Pencil, Plus, Save, Search, Shield, ShieldCheck, Trash2, Users, UserCheck, Lock, X, ToggleLeft, ToggleRight } from "lucide-react";
+import { AlertTriangle, Archive, Check, ChevronDown, ChevronRight, Clock, Copy, Eye, EyeOff, FileText, Pencil, Plus, Save, Search, Shield, ShieldCheck, Trash2, Users, UserCheck, Lock, X, ToggleLeft, ToggleRight } from "lucide-react";
 import type { PermissionAction, PermissionEntity } from "@shared/schema";
 import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
 
@@ -58,33 +58,54 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_tickets: "PD Tickets — development tickets & tracking",
 
   projects: "Project List — all projects summary table",
+  project_normalized: "Project Normalized — standardized project view",
   execution_board: "Execution Dashboard — delivery KPIs & cards",
   deliverables: "Deliverables tracker across projects",
   pm_dashboard: "Project Manager Dashboard",
   pm_on_the_go: "PM On-The-Go mobile site management",
   approvals: "Approvals — pending approval queue",
+  weekly_reviews: "Weekly Reviews — review submissions & history",
   weekly_review_wizard: "Weekly Reviews — guided review wizard",
   portfolios: "Portfolio view — grouped project analysis",
   portfolio_detail: "Portfolio detail — drilldown view",
+  tr_register: "Technical Register — technical tracking & records",
+  triage_inbox: "Triage Inbox — incoming items to classify",
+  unclassified_tasks: "Unclassified Tasks — tasks pending classification",
+  notifications: "Notifications — system & user notifications",
+  phase_templates: "Phase Templates — project phase configuration",
 
   engineering: "Engineering Overview — team workload & status",
   eng_tasks: "Engineering Requests & Tasks",
   eng_stages: "Engineering 5-Stage Checklist system",
+  eng_sync: "Engineering Sync — synchronize engineering data",
+  eng_inbox: "Engineering Inbox — incoming engineering requests",
 
   quality: "Quality Workspace — QA gates & inspections",
 
   cashflow: "Cashflow — inflows, outflows, forecast",
+  cashflow_forecast: "Cashflow Forecast — forward-looking projections",
   cos: "Cost of Sales — COS tracking & realised",
+  cos_control: "COS Control — cost of sales oversight & rules",
   revenue_tracker: "Revenue Tracker — invoiced & outstanding",
+  revenue: "Revenue — general revenue access & tracking",
   gp_tracker: "Gross Profit Tracker — GP% & margins",
+  fye_revenue_tracking: "FYE Revenue Tracking — financial year-end revenue",
   financials: "Finance — general financial access",
+  financial_integration: "Financial Integration — rule-based matching",
+  financial_linking: "Financial Linking — expense/revenue pairing",
   procurement: "Procurement Hub & subcontractor management",
   subcontractors: "Counterparties & procurement pipeline",
+  counterparties: "Counterparties — external counterparty records",
   invoice_patterns: "Invoice Pattern Library",
 
   ee_info: "Lifecycle & SOP — company knowledge base",
+  ee_info_lifecycle: "EE Info > Lifecycle — lifecycle knowledge articles",
+  ee_info_departments: "EE Info > Departments — department knowledge hub",
+  ee_info_processes: "EE Info > Processes — process documentation",
+  ee_info_templates: "EE Info > Templates — document templates",
   leaderboard: "Leaderboard — team & department scores",
   training: "Training — learning resources & modules",
+  knowledge_game: "Knowledge Game — quiz & training game",
   feedback: "Feedback & Support — suggestions & issues",
   department_scores: "Department Scores — team performance",
 
@@ -133,8 +154,6 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_raid: "Project detail > RAID log (Risks, Actions, Issues)",
 
   dashboard_widgets: "Home dashboard — widget cards & charts",
-  financial_integration: "Financial Integration — rule-based matching",
-  financial_linking: "Financial Linking — expense/revenue pairing",
   governance: "Governance — phase gate & compliance controls",
   operational_tasks: "Operational Tasks — ad-hoc task tracking (via work_items)",
   gamification: "Gamification — points, streaks & leaderboard",
@@ -158,11 +177,11 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   project_management: {
     label: "Project Management",
-    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_review_wizard", "portfolios", "portfolio_detail", "handover", "commissioning", "task_management", "standups"],
+    entities: ["projects", "project_normalized", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "triage_inbox", "unclassified_tasks", "handover", "commissioning", "task_management", "standups", "notifications", "phase_templates"],
   },
   engineering: {
     label: "Engineering",
-    entities: ["engineering", "eng_tasks", "eng_stages"],
+    entities: ["engineering", "eng_tasks", "eng_stages", "eng_sync", "eng_inbox"],
   },
   quality: {
     label: "Quality",
@@ -170,11 +189,11 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   finance: {
     label: "Finance",
-    entities: ["cashflow", "cos", "revenue_tracker", "gp_tracker", "financials", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
+    entities: ["cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
   },
   knowledge: {
     label: "Knowledge",
-    entities: ["ee_info", "leaderboard", "training", "feedback", "department_scores"],
+    entities: ["ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "leaderboard", "training", "knowledge_game", "feedback", "department_scores"],
   },
   collaboration: {
     label: "Collaboration",
@@ -190,7 +209,7 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
   },
   other: {
     label: "Other Permissions",
-    entities: ["dashboard_widgets", "financial_integration", "financial_linking", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
+    entities: ["dashboard_widgets", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
   },
 };
 
@@ -310,11 +329,19 @@ function RolesControlCenter() {
   const [showCreate, setShowCreate] = useState(false);
   const [createKey, setCreateKey] = useState("");
   const [createLabel, setCreateLabel] = useState("");
+  const [showClone, setShowClone] = useState(false);
+  const [cloneKey, setCloneKey] = useState("");
+  const [cloneLabel, setCloneLabel] = useState("");
+  const [showArchive, setShowArchive] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [descriptionDraft, setDescriptionDraft] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string>("");
   const [canManageRoles, setCanManageRoles] = useState(false);
   const [activeTab, setActiveTab] = useState<"navigation" | "permissions">("navigation");
   const [permSearch, setPermSearch] = useState("");
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
   const load = async () => {
     setIsLoading(true);
@@ -394,6 +421,49 @@ function RolesControlCenter() {
   });
   const createRole = () => createRoleMutation.mutate();
 
+  const cloneRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !canManageRoles) throw new Error("Not allowed");
+      const res = await fetch(`/api/roles/${selected.role}/clone`, { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: cloneKey.trim(), label: cloneLabel.trim() }) });
+      if (!res.ok) { const err = await parseJsonSafe<{ error?: string }>(res); throw new Error(err?.error || "Clone failed"); }
+    },
+    onSuccess: () => { setShowClone(false); setCloneKey(""); setCloneLabel(""); load(); toast({ title: "Role cloned", description: `${cloneLabel} created from ${selected?.label}` }); },
+    onError: (err: Error) => toast({ title: "Clone failed", description: err.message, variant: "destructive" }),
+  });
+
+  const archiveRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !canManageRoles) throw new Error("Not allowed");
+      const res = await fetch(`/api/roles/${selected.role}/archive`, { method: "PATCH", headers: authHeaders(), credentials: "include", body: JSON.stringify({ archived: true }) });
+      if (!res.ok) { const err = await parseJsonSafe<{ error?: string }>(res); throw new Error(err?.error || "Archive failed"); }
+    },
+    onSuccess: () => { setShowArchive(false); load(); toast({ title: "Role archived", description: `${selected?.label} has been archived` }); },
+    onError: (err: Error) => toast({ title: "Archive failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteRoleMutation = useMutation({
+    mutationFn: async () => {
+      if (!selected || !canManageRoles) throw new Error("Not allowed");
+      const res = await fetch(`/api/roles/${selected.role}`, { method: "DELETE", headers: authHeaders(), credentials: "include" });
+      if (!res.ok) { const err = await parseJsonSafe<{ error?: string }>(res); throw new Error(err?.error || "Delete failed"); }
+    },
+    onSuccess: () => { setShowDelete(false); setSelectedRole(""); load(); toast({ title: "Role deleted", description: `${selected?.label} has been permanently removed` }); },
+    onError: (err: Error) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
+  });
+
+  const saveDescription = () => {
+    setDraft((d) => ({ ...d, description: descriptionDraft }));
+    setEditingDescription(false);
+  };
+
+  const toggleCategory = (key: string) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
   const resources = Object.keys(currentEp).filter((k) => !k.startsWith("_")).sort();
   const allEntities = Object.values(ENTITY_CATEGORIES).flatMap((c) => c.entities).sort();
   const viewState: AdminRolesViewState = resolveAdminRolesViewState({ isLoading, hasError: Boolean(loadError), roleCount: roles.length, canManageRoles });
@@ -429,8 +499,48 @@ function RolesControlCenter() {
     })).filter((cat) => cat.entities.length > 0);
   }, [categorizedEntities, permSearch]);
 
-  const totalGranted = allEntities.reduce((s, e) => s + Object.values(currentEp[e] || {}).filter(Boolean).length, 0);
+  // Calculate effective permissions by merging defaults + DB overrides
+  const totalGranted = useMemo(() => {
+    const normalizedRole = effectiveRole.role || "";
+    return allEntities.reduce((sum, entity) => {
+      return sum + ACTIONS.reduce((actionSum, action) => {
+        // Check DB override first
+        const dbOverride = currentEp[entity]?.[action];
+        if (typeof dbOverride === "boolean") return actionSum + (dbOverride ? 1 : 0);
+        // Fall back to hardcoded defaults
+        const defaultRule = ENTITY_PERMISSION_DEFAULTS.find((r) => r.entity === entity);
+        if (defaultRule) {
+          const roleList = (defaultRule as any)[`${action}_roles`] as string[] | undefined;
+          if (roleList?.includes(normalizedRole)) return actionSum + 1;
+        }
+        return actionSum;
+      }, 0);
+    }, 0);
+  }, [allEntities, currentEp, effectiveRole.role]);
   const totalPossible = allEntities.length * ACTIONS.length;
+
+  // Per-category permission summary
+  const categorySummary = useMemo(() => {
+    const normalizedRole = effectiveRole.role || "";
+    const summary: Record<string, { granted: number; total: number }> = {};
+    for (const cat of categorizedEntities) {
+      let granted = 0;
+      const total = cat.entities.length * ACTIONS.length;
+      for (const entity of cat.entities) {
+        for (const action of ACTIONS) {
+          const dbOverride = currentEp[entity]?.[action];
+          if (typeof dbOverride === "boolean") { if (dbOverride) granted++; continue; }
+          const defaultRule = ENTITY_PERMISSION_DEFAULTS.find((r) => r.entity === entity);
+          if (defaultRule) {
+            const roleList = (defaultRule as any)[`${action}_roles`] as string[] | undefined;
+            if (roleList?.includes(normalizedRole)) granted++;
+          }
+        }
+      }
+      summary[cat.key] = { granted, total };
+    }
+    return summary;
+  }, [categorizedEntities, currentEp, effectiveRole.role]);
 
   return (
     <div className="flex gap-4" style={{ minHeight: 'calc(100vh - 10rem)' }}>
@@ -532,18 +642,84 @@ function RolesControlCenter() {
                         <p className="text-xs text-muted-foreground">
                           {selected?.isSystem ? "System" : "Custom"} · {roleUsers.length} user{roleUsers.length !== 1 ? "s" : ""} · {totalGranted}/{totalPossible} permissions granted
                         </p>
+                        {/* Editable description */}
+                        {selected && !editingDescription && (
+                          <button
+                            type="button"
+                            className="text-[11px] text-muted-foreground hover:text-foreground mt-0.5 flex items-center gap-1 group"
+                            onClick={() => { setDescriptionDraft((draft.description ?? selected.description) || ""); setEditingDescription(true); }}
+                            disabled={!canManageRoles}
+                          >
+                            {(draft.description ?? selected.description) || "No description — click to add"}
+                            {canManageRoles && <Pencil className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />}
+                          </button>
+                        )}
+                        {editingDescription && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <Input
+                              className="h-6 text-[11px] w-64"
+                              value={descriptionDraft}
+                              onChange={(e) => setDescriptionDraft(e.target.value)}
+                              placeholder="Role description..."
+                              autoFocus
+                              onKeyDown={(e) => { if (e.key === "Enter") saveDescription(); if (e.key === "Escape") setEditingDescription(false); }}
+                            />
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={saveDescription}><Check className="h-3 w-3 text-emerald-600" /></Button>
+                            <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => setEditingDescription(false)}><X className="h-3 w-3 text-gray-400" /></Button>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    {roleUsers.length > 0 && (
-                      <div className="flex -space-x-2">
-                        {roleUsers.slice(0, 5).map((u) => (
-                          <div key={u.id} className="h-7 w-7 rounded-full bg-emerald-100 border-2 border-white flex items-center justify-center text-emerald-700 font-bold text-[10px]" title={u.name}>
-                            {(u.name || "?").charAt(0).toUpperCase()}
-                          </div>
-                        ))}
-                        {roleUsers.length > 5 && <div className="h-7 w-7 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center text-gray-600 font-bold text-[10px]">+{roleUsers.length - 5}</div>}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {roleUsers.length > 0 && (
+                        <div className="flex -space-x-2 mr-2">
+                          {roleUsers.slice(0, 5).map((u) => (
+                            <div key={u.id} className="h-7 w-7 rounded-full bg-emerald-100 border-2 border-white flex items-center justify-center text-emerald-700 font-bold text-[10px]" title={u.name}>
+                              {(u.name || "?").charAt(0).toUpperCase()}
+                            </div>
+                          ))}
+                          {roleUsers.length > 5 && <div className="h-7 w-7 rounded-full bg-gray-100 border-2 border-white flex items-center justify-center text-gray-600 font-bold text-[10px]">+{roleUsers.length - 5}</div>}
+                        </div>
+                      )}
+                      {/* Role action buttons */}
+                      {canManageRoles && selected && (
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm" variant="outline"
+                            className="h-7 text-[11px] gap-1 text-gray-600 border-gray-200 hover:bg-gray-50"
+                            onClick={() => { setCloneKey(""); setCloneLabel(`${selected.label} (Copy)`); setShowClone(true); }}
+                            title="Clone this role"
+                            data-testid="button-clone-role"
+                          >
+                            <Copy className="h-3 w-3" /> Clone
+                          </Button>
+                          {!selected.protected && (
+                            <>
+                              <Button
+                                size="sm" variant="outline"
+                                className="h-7 text-[11px] gap-1 text-amber-600 border-amber-200 hover:bg-amber-50"
+                                onClick={() => setShowArchive(true)}
+                                title="Archive this role"
+                                data-testid="button-archive-role"
+                              >
+                                <Archive className="h-3 w-3" /> Archive
+                              </Button>
+                              {!selected.isSystem && (
+                                <Button
+                                  size="sm" variant="outline"
+                                  className="h-7 text-[11px] gap-1 text-red-600 border-red-200 hover:bg-red-50"
+                                  onClick={() => setShowDelete(true)}
+                                  title="Delete this role"
+                                  data-testid="button-delete-role"
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -592,14 +768,29 @@ function RolesControlCenter() {
                                   {filteredCategories.length === 0 && (
                                     <tr><td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="text-center py-8 text-sm text-muted-foreground">No permissions match "{permSearch}"</td></tr>
                                   )}
-                                  {filteredCategories.map((cat) => (
+                                  {filteredCategories.map((cat) => {
+                                    const summary = categorySummary[cat.key];
+                                    const isCollapsed = collapsedCategories.has(cat.key);
+                                    const pct = summary ? Math.round((summary.granted / summary.total) * 100) : 0;
+                                    return (
                                     <React.Fragment key={cat.key}>
-                                      <tr className="bg-gray-50/80">
+                                      <tr className="bg-gray-50/80 cursor-pointer" onClick={() => toggleCategory(cat.key)}>
                                         <td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="px-3 py-1.5">
                                           <div className="flex items-center justify-between">
-                                            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{cat.label}</span>
+                                            <div className="flex items-center gap-2">
+                                              {isCollapsed ? <ChevronRight className="h-3 w-3 text-gray-400" /> : <ChevronDown className="h-3 w-3 text-gray-400" />}
+                                              <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">{cat.label}</span>
+                                              {summary && (
+                                                <div className="flex items-center gap-1.5 ml-2">
+                                                  <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                                    <div className={`h-full rounded-full transition-all ${pct > 75 ? "bg-emerald-500" : pct > 25 ? "bg-amber-500" : "bg-gray-400"}`} style={{ width: `${pct}%` }} />
+                                                  </div>
+                                                  <span className="text-[10px] text-gray-400 font-medium">{summary.granted}/{summary.total}</span>
+                                                </div>
+                                              )}
+                                            </div>
                                             {canManageRoles && (
-                                              <div className="flex gap-1">
+                                              <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
                                                 <button type="button" onClick={() => bulkUpdateCategory(cat.entities, true)} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-medium" data-testid={`grant-category-${cat.key}`}>Grant all</button>
                                                 <button type="button" onClick={() => bulkUpdateCategory(cat.entities, false)} className="text-[10px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium" data-testid={`revoke-category-${cat.key}`}>Revoke all</button>
                                               </div>
@@ -607,7 +798,7 @@ function RolesControlCenter() {
                                           </div>
                                         </td>
                                       </tr>
-                                      {cat.entities.map((entity) => {
+                                      {!isCollapsed && cat.entities.map((entity) => {
                                         const perms = currentEp[entity] || {};
                                         return (
                                           <tr key={entity} className="border-t border-gray-100 hover:bg-gray-50/50" data-testid={`perm-row-${entity}`}>
@@ -643,7 +834,8 @@ function RolesControlCenter() {
                                         );
                                       })}
                                     </React.Fragment>
-                                  ))}
+                                  );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
@@ -702,6 +894,88 @@ function RolesControlCenter() {
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowCreate(false)} data-testid="button-cancel-create">Cancel</Button>
             <Button onClick={createRole} disabled={!canManageRoles} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-create">Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Clone Role Dialog */}
+      <Dialog open={showClone} onOpenChange={setShowClone}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Copy className="h-5 w-5 text-emerald-600" /> Clone Role
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600">
+            Create a new role with all navigation sections and permissions copied from <strong>{selected?.label}</strong>.
+          </p>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs font-medium text-gray-600">New Role Key *</Label>
+              <Input value={cloneKey} onChange={(e) => setCloneKey(e.target.value.toUpperCase())} placeholder="e.g. SITE_MANAGER" data-testid="input-clone-role-key" />
+            </div>
+            <div>
+              <Label className="text-xs font-medium text-gray-600">Display Name *</Label>
+              <Input value={cloneLabel} onChange={(e) => setCloneLabel(e.target.value)} placeholder="e.g. Site Manager" data-testid="input-clone-role-label" />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowClone(false)}>Cancel</Button>
+            <Button onClick={() => cloneRoleMutation.mutate()} disabled={!cloneKey.trim() || !cloneLabel.trim() || cloneRoleMutation.isPending} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-clone">
+              {cloneRoleMutation.isPending ? "Cloning..." : "Clone Role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Archive Role Dialog */}
+      <Dialog open={showArchive} onOpenChange={setShowArchive}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-amber-600">
+              <Archive className="h-5 w-5" /> Archive Role
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 py-2">
+            Archive <strong>{selected?.label}</strong>? This will disable data editing for users with this role. The role can be unarchived later.
+          </p>
+          {(selected?.userCount ?? 0) > 0 && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800 flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>This role has {selected?.userCount} assigned user{(selected?.userCount ?? 0) !== 1 ? "s" : ""}. They will lose edit access.</span>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowArchive(false)}>Cancel</Button>
+            <Button onClick={() => archiveRoleMutation.mutate()} disabled={archiveRoleMutation.isPending} className="bg-amber-600 hover:bg-amber-700 text-white" data-testid="button-confirm-archive">
+              {archiveRoleMutation.isPending ? "Archiving..." : "Archive Role"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Role Dialog */}
+      <Dialog open={showDelete} onOpenChange={setShowDelete}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <Trash2 className="h-5 w-5" /> Delete Role
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-gray-600 py-2">
+            Permanently delete <strong>{selected?.label}</strong>? This action cannot be undone.
+          </p>
+          {(selected?.userCount ?? 0) > 0 && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-2.5 text-xs text-red-800 flex items-start gap-2">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>This role has {selected?.userCount} assigned user{(selected?.userCount ?? 0) !== 1 ? "s" : ""}. They will need to be reassigned.</span>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowDelete(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteRoleMutation.mutate()} disabled={deleteRoleMutation.isPending} data-testid="button-confirm-delete-role">
+              {deleteRoleMutation.isPending ? "Deleting..." : "Delete Role"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
