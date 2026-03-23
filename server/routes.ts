@@ -7849,28 +7849,61 @@ export async function registerRoutes(
       const userId = req.user?.id;
       const userRole = req.user?.role;
 
-      // All cost corrections require approval before being applied
+      // Admin users apply overrides directly (this legacy route requires requireAdmin)
       const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
-      const hasHighExpense = overrides.some((o: any) => o.fieldName === "expenseActualTotal" && Number(o.overrideValue) > 50000);
-      const hasBudgetChange = overrides.some((o: any) => o.fieldName === "budgetTotal");
-      const editSummary = `Expenditure override: ${overrides.length} field(s). Category: ${effectiveCategory}. Comment: ${effectiveComment}${hasHighExpense ? " [HIGH EXPENSE]" : ""}${hasBudgetChange ? " [BUDGET CHANGE]" : ""} [Submitted by ${userRole || "unknown"}]`;
+      const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
+      await storage.upsertManyExpenditureOverrides(overridesWithUser);
 
-      const [saved] = await db.insert(financialEditRequests).values({
-        projectName: projectNames[0] || "Unknown",
-        requestedByUserId: userId!,
-        editType: "expenditure_override",
-        editTarget: "expenditure_tracking",
-        editPayload: JSON.stringify({ overrides, overrideCategory: effectiveCategory, overrideComment: effectiveComment }),
-        editSummary,
-        isCriticalPath: false,
-        affectsRevenue: false,
-        affectsExpenditure: true,
-        affectsQuality: false,
-        status: "pending",
-      }).returning();
+      const fieldToColumnMap: Record<string, string> = {
+        expenseInvoicedDate: "expenseInvoicedDate",
+        expensePaymentDate: "expensePaymentDate",
+        expensePoNumber: "expensePoNumber",
+        expenseInvoiceNumber: "expenseInvoiceNumber",
+        expenseLineItem: "expenseLineItem",
+        expenseActualTotal: "expenseActualTotal",
+        budgetTotal: "budgetTotal",
+        forecastPaymentDate: "forecastPaymentDate",
+        expenseQty: "expenseQty",
+        expenseRateUnit: "expenseRateUnit",
+        budgetQty: "budgetQty",
+        budgetRateUnit: "budgetRateUnit",
+        invoiceDateFontColor: "invoiceDateFontColor",
+        paymentDateFontColor: "paymentDateFontColor",
+        supplierName: "supplierName",
+      };
 
-      logAuditFromReq(req, { entityType: "expenditure_override", action: "submit_for_approval", changesJson: { description: `${overrides.length} expenditure override(s) submitted for approval`, count: overrides.length, projectNames, requestId: saved.id } });
-      res.json({ message: "Your cost correction has been submitted for approval", status: "pending_approval", requestId: saved.id });
+      for (const pn of projectNames) {
+        const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+        const expenses = await storage.getProgramExpensesByProject(pn as string);
+        const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
+
+        const rowGroups = new Map<number, Record<string, any>>();
+        for (const ov of projectOverrides) {
+          const colName = fieldToColumnMap[ov.fieldName];
+          if (!colName) continue;
+          const expense = rowMap.get(ov.rowNumber);
+          if (!expense) continue;
+          if (!rowGroups.has(expense.id)) rowGroups.set(expense.id, {});
+          const fields = rowGroups.get(expense.id)!;
+          const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+          fields[colName] = effectiveValue;
+          if (ov.fieldName === 'expenseInvoicedDate' && !effectiveValue) {
+            fields.invoiceDateConfirmed = false;
+          }
+          if (ov.fieldName === 'expensePaymentDate' && !effectiveValue) {
+            fields.paymentDateConfirmed = false;
+          }
+        }
+
+        for (const [expenseId, fields] of rowGroups.entries()) {
+          if (Object.keys(fields).length > 0) {
+            await storage.updateProgramExpenseFields(expenseId, fields);
+          }
+        }
+      }
+
+      logAuditFromReq(req, { entityType: "expenditure_override", action: "direct_apply", changesJson: { description: `${overrides.length} expenditure override(s) applied directly by admin`, count: overrides.length, projectNames } });
+      res.json({ message: "Expenditure overrides applied successfully", count: overrides.length });
     } catch (error) {
       console.error("Failed to submit expenditure overrides for approval:", error);
       res.status(500).json({ error: "Failed to save overrides", message: error instanceof Error ? error.message : "Failed to save overrides" });
