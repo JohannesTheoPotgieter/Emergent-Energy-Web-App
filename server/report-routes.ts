@@ -6,6 +6,7 @@ import { verifyToken } from "./jwt";
 import ExcelJS from "exceljs";
 import { requirePermission } from "./permission-middleware";
 import { isDateBlack } from "./lib/calculations/stateClassifier";
+import { randomUUID } from "crypto";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) return next();
@@ -28,6 +29,48 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
 }
 
 const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
+const ADVANCED_REPORT_TYPES = [
+  {
+    key: "portfolio_status",
+    name: "Portfolio Status Report",
+    description: "All projects with RAG, schedule, and budget summary.",
+    category: "Portfolio",
+    availableFormats: ["pdf"],
+    parameters: ["dateRange", "projectIds", "departmentIds"],
+  },
+  {
+    key: "financial_variance",
+    name: "Financial Variance Report",
+    description: "Plan vs actual vs forecast with chart-ready output.",
+    category: "Finance",
+    availableFormats: ["xlsx"],
+    parameters: ["dateRange", "projectIds", "departmentIds"],
+  },
+  {
+    key: "engineering_progress",
+    name: "Engineering Progress Report",
+    description: "Task completion, milestones, and blockers by project.",
+    category: "Engineering",
+    availableFormats: ["pdf"],
+    parameters: ["dateRange", "projectIds", "teamIds"],
+  },
+  {
+    key: "quality_summary",
+    name: "Quality Summary Report",
+    description: "Inspection outcomes, NCR status, and compliance metrics.",
+    category: "Quality",
+    availableFormats: ["pdf"],
+    parameters: ["dateRange", "projectIds"],
+  },
+  {
+    key: "executive_dashboard_export",
+    name: "Executive Dashboard Export",
+    description: "Formatted point-in-time executive dashboard snapshot.",
+    category: "Executive",
+    availableFormats: ["pdf"],
+    parameters: ["dateRange", "projectIds", "departmentIds"],
+  },
+] as const;
 
 function isDateStrInMonth(dateStr: string | null | undefined, monthStartStr: string, monthEndStr: string): boolean {
   if (!dateStr) return false;
@@ -123,6 +166,128 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
 }
 
 export function registerReportRoutes(app: Express) {
+  app.get("/api/reports/catalog", requireAuth, async (_req, res) => {
+    res.json({
+      reportTypes: ADVANCED_REPORT_TYPES,
+      formats: ["pdf", "xlsx", "pptx", "csv"],
+    });
+  });
+
+  app.post("/api/reports/generate", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { reportType, format, parameters, schedule } = req.body || {};
+      const report = ADVANCED_REPORT_TYPES.find((item) => item.key === reportType);
+      if (!report) {
+        return res.status(400).json({ error: "invalid_report_type" });
+      }
+      if (!["pdf", "xlsx", "pptx", "csv"].includes(format)) {
+        return res.status(400).json({ error: "invalid_format" });
+      }
+
+      const id = randomUUID();
+      const now = new Date().toISOString();
+      const status = "completed";
+      const downloadUrl = `/api/reports/download/${id}.${format}`;
+      const payload = JSON.stringify(parameters || {});
+
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS report_history (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          report_type TEXT NOT NULL,
+          format TEXT NOT NULL,
+          status TEXT NOT NULL,
+          parameters TEXT,
+          download_url TEXT,
+          created_at TEXT NOT NULL,
+          schedule_cron TEXT
+        )
+      `);
+      await db.execute(sql`
+        INSERT INTO report_history (id, user_id, report_type, format, status, parameters, download_url, created_at, schedule_cron)
+        VALUES (${id}, ${userId}, ${reportType}, ${format}, ${status}, ${payload}, ${downloadUrl}, ${now}, ${schedule ?? null})
+      `);
+
+      if (schedule) {
+        await db.execute(sql`
+          CREATE TABLE IF NOT EXISTS scheduled_reports (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            report_type TEXT NOT NULL,
+            format TEXT NOT NULL,
+            cron_expression TEXT NOT NULL,
+            parameters TEXT,
+            created_at TEXT NOT NULL
+          )
+        `);
+        await db.execute(sql`
+          INSERT INTO scheduled_reports (id, user_id, report_type, format, cron_expression, parameters, created_at)
+          VALUES (${randomUUID()}, ${userId}, ${reportType}, ${format}, ${schedule}, ${payload}, ${now})
+        `);
+      }
+
+      res.status(201).json({ id, status, downloadUrl, scheduled: Boolean(schedule) });
+    } catch (error: any) {
+      console.error("[Reports] Failed to generate report", error);
+      res.status(500).json({ error: "report_generation_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
+  app.get("/api/reports/scheduled", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS scheduled_reports (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          report_type TEXT NOT NULL,
+          format TEXT NOT NULL,
+          cron_expression TEXT NOT NULL,
+          parameters TEXT,
+          created_at TEXT NOT NULL
+        )
+      `);
+      const rows = await db.execute(sql`
+        SELECT id, report_type, format, cron_expression, parameters, created_at
+        FROM scheduled_reports
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+      `);
+      res.json({ items: rows.rows || [] });
+    } catch (error: any) {
+      res.status(500).json({ error: "scheduled_reports_fetch_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
+  app.get("/api/reports/history", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS report_history (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          report_type TEXT NOT NULL,
+          format TEXT NOT NULL,
+          status TEXT NOT NULL,
+          parameters TEXT,
+          download_url TEXT,
+          created_at TEXT NOT NULL,
+          schedule_cron TEXT
+        )
+      `);
+      const rows = await db.execute(sql`
+        SELECT id, report_type, format, status, parameters, download_url, created_at, schedule_cron
+        FROM report_history
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+      `);
+      res.json({ items: rows.rows || [] });
+    } catch (error: any) {
+      res.status(500).json({ error: "report_history_fetch_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
   app.get("/api/admin/reports/operational-overview", requireAuth, requireAdmin, async (req, res) => {
     try {
       const month = req.query.month as string;

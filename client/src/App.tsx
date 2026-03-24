@@ -102,6 +102,11 @@ const EngMonthlyReportPage = lazy(() => import("@/pages/engineering-monthly-repo
 const EngMonthlyReportHistoryPage = lazy(() => import("@/pages/engineering-monthly-report-history"));
 const EngMonthlyReportComparePage = lazy(() => import("@/pages/engineering-monthly-report-compare"));
 const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-monthly-report-project"));
+const ReportCenterPage = lazy(() => import("@/pages/reports/report-center"));
+const EngineeringStandupPage = lazy(() => import("@/pages/engineering/standup"));
+const NcrListPage = lazy(() => import("@/pages/quality/ncr-list"));
+const NcrDetailPage = lazy(() => import("@/pages/quality/ncr-detail"));
+const QualityDashboardV2Page = lazy(() => import("@/pages/quality/quality-dashboard"));
 
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
 const PM_ALLOWED_PATHS = ["/", "/dashboard", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
@@ -194,6 +199,11 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   EngMonthlyReportHistoryPage,
   EngMonthlyReportComparePage,
   EngMonthlyReportProjectPage,
+  ReportCenterPage,
+  EngineeringStandupPage,
+  NcrListPage,
+  NcrDetailPage,
+  QualityDashboardV2Page,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {

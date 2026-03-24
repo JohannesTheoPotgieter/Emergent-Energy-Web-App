@@ -17,6 +17,7 @@ import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { NotificationBell } from "@/components/NotificationBell";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { useTheme } from "@/hooks/use-theme";
+import { useBreakpoint } from "@/hooks/use-breakpoint";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -43,6 +44,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { canAccessEntityAction, canViewPath } = useAccessMatrix();
   const { theme, setTheme } = useTheme();
+  const { isMobile, isTablet } = useBreakpoint();
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const subNavRef = useRef<HTMLDivElement>(null);
 
@@ -185,7 +187,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <img src="/emergent-logo.png" alt="Emergent Energy" className="h-7 w-auto object-contain" />
           </Link>
 
-          <div className="relative flex-1 max-w-xl" ref={searchContainerRef}>
+          <div className={cn("relative flex-1", isMobile ? "max-w-[42vw]" : "max-w-xl")} ref={searchContainerRef}>
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/50" />
             <Input
               value={searchTerm}
@@ -366,9 +368,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         )}
       </header>
 
-      <main id="main-content" className="px-4 lg:px-6 py-5">{children}</main>
+      <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24")}>{children}</main>
       <GlobalCommandPalette />
     </div>
   );
 }
-
