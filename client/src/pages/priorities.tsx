@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Flag, Plus, AlertTriangle, AlertCircle, Clock, Settings, RefreshCw } from "lucide-react";
+import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -292,7 +292,7 @@ export default function PrioritiesPage() {
     });
   }, [priorities, levelFilter, healthFilter, categoryFilter]);
 
-  const isAdmin = user?.role && ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(user.role);
+  const isAdmin = user?.role && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER"].includes(user.role);
 
   return (
     <PageShell>
@@ -308,12 +308,6 @@ export default function PrioritiesPage() {
         </div>
         {isAdmin && (
           <div className="flex items-center gap-2">
-            <Link href="/company-priorities">
-              <Button variant="outline" size="sm">
-                <Settings className="w-4 h-4 mr-1" />
-                Manage
-              </Button>
-            </Link>
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="w-4 h-4 mr-1" />
               Add Priority
