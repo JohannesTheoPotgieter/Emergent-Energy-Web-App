@@ -4,6 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
+import { isPriorityAdminRole } from "@/config/priorities";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,8 +142,7 @@ export default function MyToolPrioritiesPage() {
   const { allowed: canView } = usePermission('company_priorities', 'view');
   const { allowed: canEditPerm } = usePermission('company_priorities', 'edit');
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const editRoles = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO"];
-  const canEdit = canEditPerm || isAdmin || (companyRole ? editRoles.includes(companyRole) : false);
+  const canEdit = canEditPerm || isAdmin || isPriorityAdminRole(companyRole);
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [showDialog, setShowDialog] = useState(false);
