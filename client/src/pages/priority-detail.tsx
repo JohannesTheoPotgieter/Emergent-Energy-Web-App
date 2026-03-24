@@ -8,9 +8,13 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, Plus, X, Search, DollarSign, ListTodo, MessageSquare, FolderOpen, CheckCircle2 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { isPriorityAdminRole } from "@/config/priorities";
 
 const token = () => localStorage.getItem("auth_token") || "";
 
@@ -54,10 +58,39 @@ function ProjectLinker({ priorityId, existingProjectIds, onDone }: { priorityId:
   const { data: allProjects = [] } = useQuery<any[]>({
     queryKey: ["/api/v2/projects", "linker"],
     queryFn: async () => {
-      const res = await fetch("/api/v2/projects?pageSize=100", { headers: { Authorization: `Bearer ${token()}` } });
+      // Primary source: projects-summary endpoint (widely used across app + role aware).
+      try {
+        const summaryRes = await fetch("/api/projects-summary", {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${token()}` },
+        });
+        if (summaryRes.ok) {
+          const summaryData = await summaryRes.json();
+          const summaryRows = Array.isArray(summaryData)
+            ? summaryData
+            : summaryData?.projects || summaryData?.data?.rows || [];
+          if (summaryRows.length > 0) {
+            return summaryRows.map((p: any) => ({
+              id: p.id,
+              projectName: p.projectName || p.project_name || p.name || `Project ${p.id}`,
+            }));
+          }
+        }
+      } catch {
+        // Fall through to v2 endpoint
+      }
+
+      // Fallback: v2 projects endpoint.
+      const res = await fetch("/api/v2/projects?pageSize=500", {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${token()}` },
+      });
       if (!res.ok) return [];
       const data = await res.json();
-      return data.data?.rows || [];
+      return (data.data?.rows || []).map((p: any) => ({
+        id: p.id,
+        projectName: p.projectName || p.project_name || p.name || `Project ${p.id}`,
+      }));
     },
   });
 
@@ -116,8 +149,19 @@ export default function PriorityDetailPage() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    severity: "normal",
+    status: "active",
+    due_date: "",
+    target_outcome: "",
+    manual_health: "none",
+    manual_progress: "",
+  });
 
-  const isAdmin = user?.role && ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(user.role);
+  const isAdmin = isPriorityAdminRole(user?.role);
 
   const { data: priority, isLoading } = useQuery<any>({
     queryKey: [`/api/priorities/${priorityId}`],
@@ -170,6 +214,38 @@ export default function PriorityDetailPage() {
     },
   });
 
+  const updatePriorityMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PUT", `/api/priorities/${priorityId}`, {
+        title: editForm.title,
+        description: editForm.description || null,
+        severity: editForm.severity,
+        status: editForm.status,
+        due_date: editForm.due_date || null,
+        target_outcome: editForm.target_outcome || null,
+        manual_health: editForm.manual_health === "none" ? null : editForm.manual_health,
+        manual_progress: editForm.manual_progress ? parseInt(editForm.manual_progress) : null,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+      setEditDialogOpen(false);
+    },
+  });
+
+  const closePriorityMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PUT", `/api/priorities/${priorityId}`, { status: "closed" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
+    },
+  });
+
   if (isLoading) {
     return <PageShell><div className="flex items-center justify-center min-h-[40vh]"><div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" /></div></PageShell>;
   }
@@ -177,6 +253,20 @@ export default function PriorityDetailPage() {
   if (!priority) {
     return <PageShell><p className="text-muted-foreground">Priority not found</p></PageShell>;
   }
+
+  const openEditDialog = () => {
+    setEditForm({
+      title: priority.title || "",
+      description: priority.description || "",
+      severity: priority.severity || "normal",
+      status: priority.status || "active",
+      due_date: priority.dueDate || "",
+      target_outcome: priority.targetOutcome || "",
+      manual_health: priority.manualHealth || "none",
+      manual_progress: priority.manualProgress != null ? String(priority.manualProgress) : "",
+    });
+    setEditDialogOpen(true);
+  };
 
   const sev = SEVERITY_BADGE[priority.severity] || SEVERITY_BADGE.normal;
   const days = daysRemaining(priority.dueDate);
@@ -213,6 +303,21 @@ export default function PriorityDetailPage() {
           <span className={`w-3 h-3 rounded-full ${HEALTH_DOT[priority.effectiveHealth] || HEALTH_DOT.healthy}`} />
           <h1 className="text-xl font-semibold text-foreground">{priority.title}</h1>
           <Badge variant="secondary" className={`text-[10px] ${sev.className}`}>{sev.label}</Badge>
+          {isAdmin && (
+            <div className="ml-auto flex items-center gap-2">
+              <Button size="sm" variant="outline" onClick={openEditDialog}>Edit priority</Button>
+              {priority.status !== "closed" && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => { if (confirm("Close this priority?")) closePriorityMutation.mutate(); }}
+                  disabled={closePriorityMutation.isPending}
+                >
+                  {closePriorityMutation.isPending ? "Closing..." : "Close"}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
 
         {priority.description && (
@@ -509,6 +614,80 @@ export default function PriorityDetailPage() {
               existingProjectIds={linkedProjects.map((p: any) => p.id)}
               onDone={() => setLinkDialogOpen(false)}
             />
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {isAdmin && (
+        <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>Edit Priority</DialogTitle>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <Label className="text-xs">Title</Label>
+                <Input value={editForm.title} onChange={(e) => setEditForm((p) => ({ ...p, title: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">Description</Label>
+                <Textarea value={editForm.description} onChange={(e) => setEditForm((p) => ({ ...p, description: e.target.value }))} rows={3} />
+              </div>
+              <div>
+                <Label className="text-xs">Severity</Label>
+                <Select value={editForm.severity} onValueChange={(v) => setEditForm((p) => ({ ...p, severity: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="important">High</SelectItem>
+                    <SelectItem value="normal">Normal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Status</Label>
+                <Select value={editForm.status} onValueChange={(v) => setEditForm((p) => ({ ...p, status: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="monitoring">Monitoring</SelectItem>
+                    <SelectItem value="in_progress">In progress</SelectItem>
+                    <SelectItem value="complete">Complete</SelectItem>
+                    <SelectItem value="closed">Closed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Due date</Label>
+                <Input type="date" value={editForm.due_date} onChange={(e) => setEditForm((p) => ({ ...p, due_date: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs">Manual health</Label>
+                <Select value={editForm.manual_health} onValueChange={(v) => setEditForm((p) => ({ ...p, manual_health: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Auto</SelectItem>
+                    <SelectItem value="healthy">Healthy</SelectItem>
+                    <SelectItem value="at_risk">At risk</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Manual progress %</Label>
+                <Input type="number" min={0} max={100} value={editForm.manual_progress} onChange={(e) => setEditForm((p) => ({ ...p, manual_progress: e.target.value }))} />
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">Target outcome</Label>
+                <Textarea value={editForm.target_outcome} onChange={(e) => setEditForm((p) => ({ ...p, target_outcome: e.target.value }))} rows={2} />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <Button variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
+              <Button onClick={() => updatePriorityMutation.mutate()} disabled={updatePriorityMutation.isPending || !editForm.title.trim()}>
+                {updatePriorityMutation.isPending ? "Saving..." : "Save changes"}
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       )}
