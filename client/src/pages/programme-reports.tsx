@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, Download, FileSpreadsheet, Search, Clock, ShieldAlert, CalendarDays, BarChart3 } from "lucide-react";
+import { ReportCard } from "@/components/reports/ReportCard";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -626,11 +627,31 @@ function ResourceAllocationReport() {
 }
 
 export default function ProgrammeReports() {
+  const reportCatalog = [
+    { name: "Project Plan Report", category: "Engineering", description: "Programme progress and schedule status.", type: "chart" as const },
+    { name: "Cost Report", category: "Financial", description: "Planned vs actual cost insights.", type: "excel" as const },
+    { name: "Quality Report", category: "Quality", description: "Open NCRs and warning trends.", type: "pdf" as const },
+    { name: "Resource Allocation", category: "Executive", description: "People, capacity, and workload summary.", type: "chart" as const },
+  ];
   return (
     <div className="container mx-auto p-6 space-y-4">
       <div className="flex items-center gap-3">
         <FileSpreadsheet className="w-6 h-6 text-primary" />
         <h1 className="text-2xl font-bold">Programme Reports</h1>
+      </div>
+      <div className="space-y-3">
+        <h2 className="text-lg font-semibold">Report Library</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {reportCatalog.map((report) => (
+            <ReportCard
+              key={report.name}
+              name={report.name}
+              description={`${report.category} • ${report.description}`}
+              type={report.type}
+              lastGenerated={new Date().toLocaleDateString()}
+            />
+          ))}
+        </div>
       </div>
 
       <Tabs defaultValue="project-plan" className="w-full">
