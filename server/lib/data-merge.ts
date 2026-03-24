@@ -72,6 +72,10 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   else if (hasInvoice && hasInvoiceDate && invoiceDateActual) computedState = "Invoiced";
   else if (hasPO || hasInvoice) computedState = "Committed";
 
+  const effectivePaidDate = cost.paidDate || (cost as any).forecastPaymentDate || null;
+  const effectivePaidDateFontColor = cost.paidDate ? paymentDateFontColor : ((cost as any).forecastPaymentDate ? (paymentDateFontColor || "red") : null);
+  const effectivePaidDateConfirmed = cost.paidDate ? (rawPaidDateConfirmed ?? false) : ((cost as any).forecastPaymentDate ? (rawPaidDateConfirmed ?? false) : false);
+
   return {
     id: cost.id + 900000,
     projectName: resolvedName,
@@ -81,7 +85,7 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     expenseLineItem: cost.description,
     expenseInvoiceNumber: cost.invoiceNumber,
     expenseInvoicedDate: cost.invoiceDate,
-    expensePaymentDate: cost.paidDate,
+    expensePaymentDate: effectivePaidDate,
     expenseActualTotal: cost.amountExVat,
     expensePoNumber: cost.poNumber,
     budgetQty: (cost as any).budgetQty ?? null,
@@ -94,8 +98,8 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     computedState,
     invoiceDateConfirmed: rawInvoiceDateConfirmed ?? false,
     invoiceDateFontColor,
-    paymentDateConfirmed: rawPaidDateConfirmed ?? false,
-    paymentDateFontColor,
+    paymentDateConfirmed: effectivePaidDateConfirmed,
+    paymentDateFontColor: effectivePaidDateFontColor,
     supplierName: cost.counterpartyName,
     noRevenueLinked: cost.noRevenueLinked ?? false,
     subProjectName: (cost as any).subProjectName ?? null,
