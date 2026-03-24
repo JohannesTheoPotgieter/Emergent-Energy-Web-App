@@ -6,12 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import ReportHeader from "@/components/reports/ReportHeader";
 import KPITileGrid from "@/components/reports/KPITileGrid";
 import type { KPITile } from "@/components/reports/KPITileGrid";
 import TaskCompletionChart from "@/components/reports/charts/TaskCompletionChart";
 import DeliverableStatusChart from "@/components/reports/charts/DeliverableStatusChart";
 import ResourceWorkloadChart from "@/components/reports/charts/ResourceWorkloadChart";
+import ReportShell from "@/components/reports/shared/ReportShell";
+import DrilldownDrawer from "@/components/reports/shared/DrilldownDrawer";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -47,6 +48,7 @@ async function downloadFile(url: string, filename: string) {
 
 export default function EngineeringMonthlyReport() {
   const [month, setMonth] = useState(getCurrentMonth);
+  const [drill, setDrill] = useState<{ title: string; context: Record<string, any> } | null>(null);
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -90,34 +92,34 @@ export default function EngineeringMonthlyReport() {
   const reportId = report?.id;
 
   const kpiTiles: KPITile[] = [
-    { label: "Eng Tasks", value: kpis.totalEngineeringTasks ?? 0 },
+    { label: "Eng Tasks", value: kpis.totalEngineeringTasks ?? 0, onClick: () => setDrill({ title: "Engineering Tasks", context: { tab: "tasks", metric: "totalEngineeringTasks" } }) },
     { label: "Done This Month", value: kpis.tasksCompletedThisMonth ?? 0 },
     { label: "Completion Rate", value: `${(kpis.cumulativeCompletionRate ?? 0).toFixed(0)}%` },
-    { label: "Approved", value: kpis.deliverablesApproved ?? 0 },
+    { label: "Approved", value: kpis.deliverablesApproved ?? 0, onClick: () => setDrill({ title: "Approved Deliverables", context: { tab: "deliverables", status: "QC APPROVED" } }) },
     { label: "Submitted", value: kpis.deliverablesSubmitted ?? 0 },
-    { label: "Blockers", value: kpis.openBlockers ?? 0, color: (kpis.openBlockers ?? 0) > 0 ? "red" as const : "default" as const },
+    { label: "Blockers", value: kpis.openBlockers ?? 0, color: (kpis.openBlockers ?? 0) > 0 ? "red" as const : "default" as const, onClick: () => setDrill({ title: "Open Blockers", context: { tab: "tasks", metric: "openBlockers" } }) },
   ];
 
   return (
-    <div className="container mx-auto p-6 space-y-4">
-      <ReportHeader
-        title="Engineering Monthly Report"
-        month={month}
-        onMonthChange={setMonth}
-        status={status}
-        generatedAt={report?.generatedAt}
-        regeneratedAt={report?.regeneratedAt}
-        reportId={reportId}
-        isLoading={isLoading}
-        onRegenerate={reportId ? () => safeAction(() => apiPost(`/api/reports/engineering/monthly/${reportId}/regenerate`), "Regenerate") : undefined}
-        onReview={reportId && status === "draft" ? () => safeAction(() => apiPost(`/api/reports/engineering/monthly/${reportId}/review`), "Review") : undefined}
-        onPublish={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/engineering/monthly/${reportId}/publish`), "Publish") : undefined}
-        onRevert={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/engineering/monthly/${reportId}/revert`), "Revert") : undefined}
-        onExportPdf={reportId ? () => safeAction(() => downloadFile(`/api/reports/engineering/monthly/${reportId}/export/pdf`, `Engineering_Report_${month}.pdf`), "PDF Export") : undefined}
-        onExportExcel={reportId ? () => safeAction(() => downloadFile(`/api/reports/engineering/monthly/${reportId}/export/excel`, `Engineering_Report_${month}.xlsx`), "Excel Export") : undefined}
-        onCompare={() => navigate(`/reports/engineering/monthly/compare?monthA=${month}`)}
-        onHistory={() => navigate("/reports/engineering/monthly/history")}
-      />
+    <ReportShell
+      title="Engineering Monthly Report"
+      month={month}
+      onMonthChange={setMonth}
+      status={status}
+      generatedAt={report?.generatedAt}
+      regeneratedAt={report?.regeneratedAt}
+      reportId={reportId}
+      isLoading={isLoading}
+      lastImportAt={reportData.meta?.lastImportAt}
+      onRegenerate={reportId ? () => safeAction(() => apiPost(`/api/reports/engineering/monthly/${reportId}/regenerate`), "Regenerate") : undefined}
+      onReview={reportId && status === "draft" ? () => safeAction(() => apiPost(`/api/reports/engineering/monthly/${reportId}/review`), "Review") : undefined}
+      onPublish={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/engineering/monthly/${reportId}/publish`), "Publish") : undefined}
+      onRevert={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/engineering/monthly/${reportId}/revert`), "Revert") : undefined}
+      onExportPdf={reportId ? () => safeAction(() => downloadFile(`/api/reports/engineering/monthly/${reportId}/export/pdf`, `Engineering_Report_${month}.pdf`), "PDF Export") : undefined}
+      onExportExcel={reportId ? () => safeAction(() => downloadFile(`/api/reports/engineering/monthly/${reportId}/export/excel`, `Engineering_Report_${month}.xlsx`), "Excel Export") : undefined}
+      onCompare={() => navigate(`/reports/engineering/monthly/compare?monthA=${month}`)}
+      onHistory={() => navigate("/reports/engineering/monthly/history")}
+    >
 
       {error && (
         <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
@@ -165,7 +167,14 @@ export default function EngineeringMonthlyReport() {
           </Tabs>
         </>
       )}
-    </div>
+      <DrilldownDrawer
+        open={!!drill}
+        onOpenChange={(o) => !o && setDrill(null)}
+        title={drill?.title || "Drill-through"}
+        endpoint={reportId ? `/api/reports/engineering/monthly/${reportId}/drilldown` : "/api/reports/engineering/monthly/0/drilldown"}
+        context={drill?.context || {}}
+      />
+    </ReportShell>
   );
 }
 

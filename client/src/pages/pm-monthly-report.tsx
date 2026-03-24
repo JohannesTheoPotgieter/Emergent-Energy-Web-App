@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import ReportHeader from "@/components/reports/ReportHeader";
 import KPITileGrid from "@/components/reports/KPITileGrid";
 import RAGBadge from "@/components/reports/RAGBadge";
 import type { KPITile } from "@/components/reports/KPITileGrid";
@@ -15,6 +14,8 @@ import RevenueTrendChart from "@/components/reports/charts/RevenueTrendChart";
 import CashflowTrendChart from "@/components/reports/charts/CashflowTrendChart";
 import RAGDistributionChart from "@/components/reports/charts/RAGDistributionChart";
 import TaskCompletionChart from "@/components/reports/charts/TaskCompletionChart";
+import ReportShell from "@/components/reports/shared/ReportShell";
+import DrilldownDrawer from "@/components/reports/shared/DrilldownDrawer";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -56,6 +57,7 @@ async function downloadFile(url: string, filename: string) {
 
 export default function PmMonthlyReport() {
   const [month, setMonth] = useState(getCurrentMonth);
+  const [drill, setDrill] = useState<{ title: string; context: Record<string, any> } | null>(null);
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -99,34 +101,37 @@ export default function PmMonthlyReport() {
   const reportId = report?.id;
 
   const kpiTiles: KPITile[] = [
-    { label: "Active Projects", value: kpis.activeProjects ?? 0 },
-    { label: "Total Revenue", value: formatCurrency(kpis.totalRevenue ?? 0) },
+    { label: "Active Projects", value: kpis.activeProjects ?? 0, onClick: () => setDrill({ title: "Active Projects", context: { tab: "projects", metric: "activeProjects" } }) },
+    { label: "Total Revenue", value: formatCurrency(kpis.totalRevenue ?? 0), onClick: () => setDrill({ title: "Total Revenue", context: { tab: "financial", metric: "totalRevenue" } }) },
     { label: "Construction Starts", value: kpis.constructionStarts ?? 0 },
     { label: "Commissionings", value: kpis.commissionings ?? 0 },
-    { label: "GP Margin", value: `${(kpis.blendedGpMarginPct ?? 0).toFixed(1)}%` },
-    { label: "At Risk", value: kpis.projectsAtRisk ?? 0, color: (kpis.projectsAtRisk ?? 0) > 0 ? "red" as const : "default" as const },
+    { label: "GP Margin", value: `${(kpis.blendedGpMarginPct ?? 0).toFixed(1)}%`, onClick: () => setDrill({ title: "Gross Margin Drivers", context: { tab: "financial", metric: "blendedGpMarginPct" } }) },
+    { label: "At Risk", value: kpis.projectsAtRisk ?? 0, color: (kpis.projectsAtRisk ?? 0) > 0 ? "red" as const : "default" as const, onClick: () => setDrill({ title: "At-Risk Projects", context: { tab: "raid", metric: "projectsAtRisk" } }) },
   ];
 
   return (
-    <div className="container mx-auto p-6 space-y-4">
-      <ReportHeader
-        title="PM Monthly Report"
-        month={month}
-        onMonthChange={setMonth}
-        status={status}
-        generatedAt={report?.generatedAt}
-        regeneratedAt={report?.regeneratedAt}
-        reportId={reportId}
-        isLoading={isLoading}
-        onRegenerate={reportId ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/regenerate`), "Regenerate") : undefined}
-        onReview={reportId && status === "draft" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/review`), "Review") : undefined}
-        onPublish={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/publish`), "Publish") : undefined}
-        onRevert={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/revert`), "Revert") : undefined}
-        onExportPdf={reportId ? () => safeAction(() => downloadFile(`/api/reports/pm/monthly/${reportId}/export/pdf`, `PM_Report_${month}.pdf`), "PDF Export") : undefined}
-        onExportExcel={reportId ? () => safeAction(() => downloadFile(`/api/reports/pm/monthly/${reportId}/export/excel`, `PM_Report_${month}.xlsx`), "Excel Export") : undefined}
-        onCompare={() => navigate(`/reports/pm/monthly/compare?monthA=${month}`)}
-        onHistory={() => navigate("/reports/pm/monthly/history")}
-      />
+    <ReportShell
+      title="PM Monthly Report"
+      month={month}
+      onMonthChange={setMonth}
+      status={status}
+      generatedAt={report?.generatedAt}
+      regeneratedAt={report?.regeneratedAt}
+      reportId={reportId}
+      isLoading={isLoading}
+      isStale={reportData.meta?.isStale}
+      daysSinceImport={reportData.meta?.daysSinceImport}
+      stalenessThresholdDays={reportData.meta?.stalenessThresholdDays}
+      lastImportAt={reportData.meta?.lastImportAt}
+      onRegenerate={reportId ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/regenerate`), "Regenerate") : undefined}
+      onReview={reportId && status === "draft" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/review`), "Review") : undefined}
+      onPublish={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/publish`), "Publish") : undefined}
+      onRevert={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/revert`), "Revert") : undefined}
+      onExportPdf={reportId ? () => safeAction(() => downloadFile(`/api/reports/pm/monthly/${reportId}/export/pdf`, `PM_Report_${month}.pdf`), "PDF Export") : undefined}
+      onExportExcel={reportId ? () => safeAction(() => downloadFile(`/api/reports/pm/monthly/${reportId}/export/excel`, `PM_Report_${month}.xlsx`), "Excel Export") : undefined}
+      onCompare={() => navigate(`/reports/pm/monthly/compare?monthA=${month}`)}
+      onHistory={() => navigate("/reports/pm/monthly/history")}
+    >
 
       {error && (
         <div className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded text-sm text-red-700">
@@ -207,7 +212,14 @@ export default function PmMonthlyReport() {
           </Tabs>
         </>
       )}
-    </div>
+      <DrilldownDrawer
+        open={!!drill}
+        onOpenChange={(o) => !o && setDrill(null)}
+        title={drill?.title || "Drill-through"}
+        endpoint={reportId ? `/api/reports/pm/monthly/${reportId}/drilldown` : "/api/reports/pm/monthly/0/drilldown"}
+        context={drill?.context || {}}
+      />
+    </ReportShell>
   );
 }
 

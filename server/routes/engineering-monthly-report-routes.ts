@@ -9,6 +9,7 @@ import { eq, and, desc } from "drizzle-orm";
 import { requirePermission } from "../permission-middleware";
 import { generateEngineeringReportData } from "../services/engineering-monthly-report-service";
 import { requireAuth, validateMonth, computeKpiDeltas } from "./monthly-report-shared";
+import { getEngineeringDrilldownRows, writeDrilldownExcel } from "../services/report-drilldown-service";
 
 const REPORT_TYPE = "engineering";
 
@@ -309,6 +310,40 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       res.json(projectData);
     } catch (err: any) {
       console.error("[Engineering Monthly Report] Project drill-down error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Shared KPI/chart/exception drill-down
+  app.get("/api/reports/engineering/monthly/:reportId/drilldown", requireAuth, requirePermission("reports", "view"), async (req, res) => {
+    try {
+      const reportId = parseInt(req.params.reportId);
+      const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, reportId)).limit(1);
+      if (!snapshot) return res.status(404).json({ error: "Report not found" });
+
+      const filters = {
+        tab: req.query.tab as string | undefined,
+        metric: req.query.metric as string | undefined,
+        projectId: req.query.projectId ? parseInt(req.query.projectId as string) : undefined,
+        status: req.query.status as string | undefined,
+        owner: req.query.owner as string | undefined,
+        dateFrom: req.query.dateFrom as string | undefined,
+        dateTo: req.query.dateTo as string | undefined,
+        category: req.query.category as string | undefined,
+        riskPriority: req.query.riskPriority as string | undefined,
+        supplier: req.query.supplier as string | undefined,
+        approvalState: req.query.approvalState as string | undefined,
+      };
+
+      const result = await getEngineeringDrilldownRows(filters);
+      const payload = { ...result, appliedFilters: filters };
+
+      if ((req.query.format as string) === "xlsx") {
+        return writeDrilldownExcel(res, `engineering_monthly_drilldown_${snapshot.reportMonth}.xlsx`, payload);
+      }
+      res.json(payload);
+    } catch (err: any) {
+      console.error("[Engineering Monthly Report] Drill-down error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });

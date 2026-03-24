@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, Download, FileSpreadsheet, Search, Clock, ShieldAlert, CalendarDays, BarChart3 } from "lucide-react";
 import { ReportCard } from "@/components/reports/ReportCard";
+import DrilldownDrawer from "@/components/reports/shared/DrilldownDrawer";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -627,6 +628,7 @@ function ResourceAllocationReport() {
 }
 
 export default function ProgrammeReports() {
+  const [drill, setDrill] = useState<{ title: string; context: Record<string, any> } | null>(null);
   const reportCatalog = [
     { name: "Project Plan Report", category: "Engineering", description: "Programme progress and schedule status.", type: "chart" as const },
     { name: "Cost Report", category: "Financial", description: "Planned vs actual cost insights.", type: "excel" as const },
@@ -654,6 +656,18 @@ export default function ProgrammeReports() {
         </div>
       </div>
 
+      <Card className="border-emerald-200">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Executive Exceptions & Risks</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => setDrill({ title: "Programme Cost Exceptions", context: { tab: "cost", metric: "costExceptions" } })}>Cost Exceptions</Button>
+          <Button size="sm" variant="outline" onClick={() => setDrill({ title: "Programme Schedule Slippage", context: { tab: "project-plan", metric: "scheduleRisks" } })}>Schedule Risks</Button>
+          <Button size="sm" variant="outline" onClick={() => setDrill({ title: "Programme Quality Warnings", context: { tab: "quality", metric: "qualityWarnings" } })}>Quality Warnings</Button>
+          <Button size="sm" variant="outline" onClick={() => setDrill({ title: "Programme Resource Pressure", context: { tab: "resource", metric: "resourcePressure" } })}>Resource Pressure</Button>
+        </CardContent>
+      </Card>
+
       <Tabs defaultValue="project-plan" className="w-full">
         <TabsList className="w-full justify-start">
           <TabsTrigger value="project-plan">Project Plan</TabsTrigger>
@@ -678,6 +692,14 @@ export default function ProgrammeReports() {
           <ResourceAllocationReport />
         </TabsContent>
       </Tabs>
+
+      <DrilldownDrawer
+        open={!!drill}
+        onOpenChange={(o) => !o && setDrill(null)}
+        title={drill?.title || "Programme drill-through"}
+        endpoint="/api/reports/programme/drilldown"
+        context={drill?.context || {}}
+      />
     </div>
   );
 }

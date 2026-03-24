@@ -8,6 +8,7 @@ import { jsPDF } from "jspdf";
 import { requirePermission } from "./permission-middleware";
 import { isDateBlack } from "./lib/calculations/stateClassifier";
 import { randomUUID } from "crypto";
+import { getProgrammeDrilldownRows, writeDrilldownExcel } from "./services/report-drilldown-service";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (req.isAuthenticated()) return next();
@@ -286,6 +287,34 @@ export function registerReportRoutes(app: Express) {
       res.json({ items: rows.rows || [] });
     } catch (error: any) {
       res.status(500).json({ error: "report_history_fetch_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
+  // Programme reporting drill-down API (board/management report detail traceability)
+  app.get("/api/reports/programme/drilldown", requireAuth, requirePermission("reports", "view"), async (req, res) => {
+    try {
+      const filters = {
+        tab: req.query.tab as string | undefined,
+        metric: req.query.metric as string | undefined,
+        projectId: req.query.projectId ? parseInt(req.query.projectId as string) : undefined,
+        status: req.query.status as string | undefined,
+        owner: req.query.owner as string | undefined,
+        dateFrom: req.query.dateFrom as string | undefined,
+        dateTo: req.query.dateTo as string | undefined,
+        category: req.query.category as string | undefined,
+        riskPriority: req.query.riskPriority as string | undefined,
+        supplier: req.query.supplier as string | undefined,
+        approvalState: req.query.approvalState as string | undefined,
+      };
+      const result = await getProgrammeDrilldownRows(filters);
+      const payload = { ...result, appliedFilters: filters };
+      if ((req.query.format as string) === "xlsx") {
+        return writeDrilldownExcel(res, "programme_drilldown.xlsx", payload);
+      }
+      res.json(payload);
+    } catch (error: any) {
+      console.error("[Programme Reports] drilldown failed", error);
+      res.status(500).json({ error: "programme_drilldown_failed", message: error?.message || "Unknown error" });
     }
   });
 
