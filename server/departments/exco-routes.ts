@@ -5,12 +5,40 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { eq, and, or, sql, isNull } from "drizzle-orm";
-import { projectInfo } from "@shared/schema";
+import { z } from "zod";
+import { projectInfo, priorityLinks, priorityProjects, mytoolCompanyPriorities } from "@shared/schema";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
 
 const router = Router();
+
+const companyPriorityWriteSchema = z.object({
+  title: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  department: z.string().nullable().optional(),
+  horizon: z.enum(["today", "week", "month", "quarter"]).optional(),
+  ownerRole: z.string().nullable().optional(),
+  linkedProjectName: z.string().nullable().optional(),
+  linkedProjectId: z.number().int().nullable().optional(),
+  severity: z.enum(["normal", "important", "critical"]).optional(),
+  status: z.enum(["active", "monitoring", "closed", "not_started", "in_progress", "complete"]).optional(),
+  priorityRank: z.number().int().nullable().optional(),
+  assignedTo: z.string().nullable().optional(),
+  nextAction: z.string().nullable().optional(),
+  support: z.array(z.string()).nullable().optional(),
+  definitionOfDone: z.string().nullable().optional(),
+  dueDate: z.string().nullable().optional(),
+  linkedTaskId: z.number().int().nullable().optional(),
+  linkedTaskType: z.string().nullable().optional(),
+  accountableExecId: z.number().int().nullable().optional(),
+  ownerUserId: z.number().int().nullable().optional(),
+  targetStartDate: z.string().nullable().optional(),
+  targetOutcome: z.string().nullable().optional(),
+  sortOrder: z.number().int().nullable().optional(),
+  manualHealth: z.enum(["healthy", "at_risk", "critical"]).nullable().optional(),
+  manualProgress: z.number().int().min(0).max(100).nullable().optional(),
+}).strict();
 
 const CANONICAL_TO_MYTOOL_STATUS: Record<string, string> = {
   todo: "planned", TODO: "planned",
@@ -360,7 +388,14 @@ router.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
 
 router.post("/api/mytool/company-priorities", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const priority = await storage.createMytoolCompanyPriority(req.body);
+    const parsed = companyPriorityWriteSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    if (!parsed.data.title?.trim()) {
+      return res.status(400).json({ error: "title_required", message: "title is required" });
+    }
+    const priority = await storage.createMytoolCompanyPriority(parsed.data as any);
     res.json(priority);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -369,7 +404,11 @@ router.post("/api/mytool/company-priorities", requireAuth, requirePriorityAdmin,
 
 router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const priority = await storage.updateMytoolCompanyPriority(parseInt(req.params.id), req.body);
+    const parsed = companyPriorityWriteSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
+    }
+    const priority = await storage.updateMytoolCompanyPriority(parseInt(req.params.id), parsed.data as any);
     res.json(priority);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -378,8 +417,8 @@ router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityA
 
 router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolCompanyPriority(parseInt(req.params.id));
-    res.json({ success: true });
+    await storage.updateMytoolCompanyPriority(parseInt(req.params.id), { status: "closed" } as any);
+    res.json({ success: true, mode: "soft_close" });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -389,9 +428,33 @@ router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriority
 
 router.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, res) => {
   try {
-    const { priorityLinks: plTable } = await import("@shared/schema");
-    const links = await db.select().from(plTable).where(eq(plTable.priorityId, parseInt(req.params.id)));
-    res.json(links);
+    const priorityId = parseInt(req.params.id);
+    const links = await db.select().from(priorityLinks).where(eq(priorityLinks.priorityId, priorityId));
+    const projects = await db.select({
+      id: priorityProjects.id,
+      priorityId: priorityProjects.priorityId,
+      projectId: priorityProjects.projectId,
+      projectName: projectInfo.projectName,
+    })
+    .from(priorityProjects)
+    .innerJoin(projectInfo, eq(priorityProjects.projectId, projectInfo.id))
+    .where(eq(priorityProjects.priorityId, priorityId));
+
+    const existingProjectIds = new Set(links.map((l: any) => l.projectId).filter(Boolean));
+    const synthetic = projects
+      .filter((p) => !existingProjectIds.has(p.projectId))
+      .map((p) => ({
+        id: -p.id,
+        priorityId: p.priorityId,
+        linkType: "project",
+        projectName: p.projectName,
+        projectId: p.projectId,
+        taskId: null,
+        taskType: null,
+        createdAt: new Date(),
+      }));
+
+    res.json([...links, ...synthetic]);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -409,17 +472,38 @@ router.get("/api/mytool/priority-links", requireAuth, async (_req, res) => {
 
 router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const { priorityLinks: plTable } = await import("@shared/schema");
     const priorityId = parseInt(req.params.id);
     const { linkType, projectName, taskId, taskType } = req.body;
     if (!linkType) return res.status(400).json({ error: "linkType is required" });
-    const [link] = await db.insert(plTable).values({
+    let resolvedProjectId: number | null = req.body.projectId ? parseInt(req.body.projectId) : null;
+    let resolvedProjectName: string | null = projectName || null;
+    if (!resolvedProjectId && resolvedProjectName) {
+      const [project] = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, resolvedProjectName)).limit(1);
+      if (project) resolvedProjectId = project.id;
+    }
+    if (!resolvedProjectName && resolvedProjectId) {
+      const [project] = await db.select({ name: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, resolvedProjectId)).limit(1);
+      resolvedProjectName = project?.name || null;
+    }
+
+    const [link] = await db.insert(priorityLinks).values({
       priorityId,
       linkType,
-      projectName: projectName || null,
+      projectName: resolvedProjectName,
+      projectId: resolvedProjectId,
       taskId: taskId ? parseInt(taskId) : null,
       taskType: taskType || null,
     }).returning();
+
+    // Keep strategic and legacy models in sync.
+    if (resolvedProjectId) {
+      await db.insert(priorityProjects).values({
+        priorityId,
+        projectId: resolvedProjectId,
+        linkedBy: (req.user as any)?.id || null,
+      }).onConflictDoNothing();
+    }
+
     res.json(link);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -428,8 +512,15 @@ router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePrio
 
 router.delete("/api/mytool/priority-links/:linkId", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const { priorityLinks: plTable } = await import("@shared/schema");
-    await db.delete(plTable).where(eq(plTable.id, parseInt(req.params.linkId)));
+    const linkId = parseInt(req.params.linkId);
+    const [existing] = await db.select().from(priorityLinks).where(eq(priorityLinks.id, linkId)).limit(1);
+    await db.delete(priorityLinks).where(eq(priorityLinks.id, linkId));
+    if (existing?.projectId) {
+      await db.delete(priorityProjects).where(and(
+        eq(priorityProjects.priorityId, existing.priorityId),
+        eq(priorityProjects.projectId, existing.projectId),
+      ));
+    }
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

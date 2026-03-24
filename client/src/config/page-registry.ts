@@ -166,6 +166,9 @@ const NAV_GROUP_TO_SECTION: Record<string, string> = {
   // so removing PROJECT_MANAGEMENT from a role doesn't hide reports.
 };
 
+// Backward compatibility for older tests/modules.
+export const PAGES = PAGE_REGISTRY;
+
 export function getAppSectionForPath(pathname: string): string | undefined {
   if (pathname === "/" || pathname === "/my-work" || pathname.startsWith("/my-work/")) {
     return "COCKPIT";
