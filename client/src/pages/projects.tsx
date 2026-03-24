@@ -859,7 +859,7 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
-  { label: "Financials", keys: ["actual_revenue", "actual_expenses", "gp_percent", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
+  { label: "Financials", keys: ["actual_revenue", "actual_expenses", "cashflow_delta", "gp_percent", "tracking_gp_percent", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
   { label: "Updates", keys: ["latest_update", "comments", "next_key_date"], color: "bg-amber-50 text-amber-700" },
 ];
 
@@ -2038,6 +2038,21 @@ export default function ProjectsSummary() {
       },
     },
     {
+      key: "cashflow_delta",
+      header: "Delta",
+      align: "right",
+      render: (p) => {
+        const inBank = p.actual_revenue ?? 0;
+        const paid = p.actual_expenses ?? 0;
+        const delta = inBank - paid;
+        if (inBank === 0 && paid === 0) return <span className="text-slate-500 text-[10px]">—</span>;
+        const fmt = (v: number) => "R" + Math.abs(v).toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        const color = delta >= 0 ? "text-emerald-600" : "text-red-600";
+        const prefix = delta >= 0 ? "+" : "-";
+        return <span className={`font-mono text-[10px] font-semibold ${color}`} data-testid="text-cashflow-delta">{prefix}{fmt(delta)}</span>;
+      },
+    },
+    {
       key: "gp_percent",
       header: "GP%",
       align: "right",
@@ -2046,6 +2061,20 @@ export default function ProjectsSummary() {
         const val = p.gp_percent * 100;
         const color = val >= 20 ? "text-emerald-600" : val >= 0 ? "text-amber-600" : "text-red-600";
         return <span className={`font-mono text-[10px] font-semibold ${color}`}>{val.toFixed(1)}%</span>;
+      },
+    },
+    {
+      key: "tracking_gp_percent",
+      header: "Tracking GP%",
+      align: "right",
+      render: (p) => {
+        const revenue = p.actual_revenue ?? 0;
+        const expenses = p.actual_expenses ?? 0;
+        if (revenue === 0 && expenses === 0) return <span className="text-slate-500 text-[10px]">—</span>;
+        if (revenue === 0) return <span className="font-mono text-[10px] font-semibold text-red-600">-∞</span>;
+        const val = ((revenue - expenses) / revenue) * 100;
+        const color = val >= 20 ? "text-emerald-600" : val >= 0 ? "text-amber-600" : "text-red-600";
+        return <span className={`font-mono text-[10px] font-semibold ${color}`} data-testid="text-tracking-gp">{val.toFixed(1)}%</span>;
       },
     },
     {
