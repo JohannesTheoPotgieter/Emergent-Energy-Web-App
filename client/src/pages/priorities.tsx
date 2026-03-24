@@ -10,9 +10,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw } from "lucide-react";
+import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw, Settings } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
+import { isPriorityAdminRole } from "@/config/priorities";
 
 interface Priority {
   id: number;
@@ -292,7 +293,7 @@ export default function PrioritiesPage() {
     });
   }, [priorities, levelFilter, healthFilter, categoryFilter]);
 
-  const isAdmin = user?.role && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER"].includes(user.role);
+  const isAdmin = isPriorityAdminRole(user?.role);
 
   return (
     <PageShell>
