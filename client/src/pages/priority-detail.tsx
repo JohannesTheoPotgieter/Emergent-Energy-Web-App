@@ -380,23 +380,9 @@ export default function PriorityDetailPage() {
           </div>
 
           {isAdmin && (
-            <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm" className="mt-3">
-                  <Plus className="w-3 h-3 mr-1" /> Link project
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Link projects to {priority.title}</DialogTitle>
-                </DialogHeader>
-                <ProjectLinker
-                  priorityId={priorityId}
-                  existingProjectIds={linkedProjects.map((p: any) => p.id)}
-                  onDone={() => setLinkDialogOpen(false)}
-                />
-              </DialogContent>
-            </Dialog>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => setLinkDialogOpen(true)}>
+              <Plus className="w-3 h-3 mr-1" /> Link project
+            </Button>
           )}
         </TabsContent>
 
@@ -511,6 +497,21 @@ export default function PriorityDetailPage() {
           )}
         </TabsContent>
       </Tabs>
+
+      {isAdmin && (
+        <Dialog open={linkDialogOpen} onOpenChange={setLinkDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Link projects to {priority.title}</DialogTitle>
+            </DialogHeader>
+            <ProjectLinker
+              priorityId={priorityId}
+              existingProjectIds={linkedProjects.map((p: any) => p.id)}
+              onDone={() => setLinkDialogOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
     </PageShell>
   );
 }
