@@ -1094,6 +1094,41 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
     const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
 
+    const needsCarryForward = adapted.some((a: any) => !a.expensePaymentDate && !a.forecastPaymentDate);
+    if (needsCarryForward) {
+      const closedLines = await this.dbInstance.select().from(normalizedCostLines)
+        .where(and(
+          eq(normalizedCostLines.projectName, projectName),
+          isNotNull(normalizedCostLines.effectiveTo),
+        ));
+      const priorByRow = new Map<number, any>();
+      for (const cl of closedLines) {
+        const row = (cl as any).sourceRow;
+        if (row == null) continue;
+        const payDate = cl.paidDate || (cl as any).forecastPaymentDate;
+        if (!payDate) continue;
+        const existing = priorByRow.get(row);
+        if (!existing || (cl.id > existing.id)) {
+          priorByRow.set(row, cl);
+        }
+      }
+      for (const item of adapted) {
+        if (!item.expensePaymentDate && !item.forecastPaymentDate) {
+          const prior = priorByRow.get(item.rowNumber);
+          if (prior) {
+            const priorDate = prior.paidDate || (prior as any).forecastPaymentDate;
+            if (priorDate) {
+              item.expensePaymentDate = priorDate;
+              item.forecastPaymentDate = priorDate;
+              item.paymentDateFontColor = prior.paidDateFontColor || "red";
+              item.paymentDateConfirmed = prior.paidDateConfirmed ?? false;
+              item._carryForward = true;
+            }
+          }
+        }
+      }
+    }
+
     const peRows = await this.dbInstance.select().from(programExpense)
       .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
     if (peRows.length === 0) return adapted;
