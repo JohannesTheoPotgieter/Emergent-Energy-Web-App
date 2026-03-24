@@ -240,20 +240,90 @@ export async function getEngineeringDrilldownRows(filters: DrillFilters) {
   let sourceTables: string[] = [];
 
   if (filters.tab === "tasks" || ["totalEngineeringTasks", "openBlockers"].includes(filters.metric || "")) {
-    const all = await db.select().from(workItems).where(and(isNull(workItems.deletedAt), eq(workItems.workstream, "ENG")));
-    rows = all.map(t => ({ projectId: t.projectId, owner: t.ownerName, status: t.status, taskName: t.taskName, startDate: t.startDate, endDate: t.endDate }));
+    const [allTasks, projectRows] = await Promise.all([
+      db.select().from(workItems).where(and(isNull(workItems.deletedAt), eq(workItems.workstream, "ENG"))),
+      db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
+    ]);
+    const projectMap = new Map(projectRows.map((r: any) => [r.project_info.id, r.project_info.projectName]));
+    rows = allTasks.map(t => ({
+      source: "work_items",
+      rowId: t.id,
+      projectId: t.projectId,
+      projectName: projectMap.get(t.projectId) || "",
+      owner: t.ownerName,
+      status: t.status,
+      taskName: t.title || t.taskName,
+      blockerReason: t.blockerReason || t.holdReason,
+      priority: t.priority,
+      startDate: t.startDate,
+      endDate: t.endDate,
+      completedAt: t.completedAt ? t.completedAt.toISOString().substring(0, 10) : null,
+      agingDays: t.endDate ? Math.max(0, Math.floor((Date.now() - new Date(`${t.endDate}T00:00:00Z`).getTime()) / (1000 * 60 * 60 * 24))) : 0,
+      sourceRow: t.sourceRow,
+      sourceSheet: t.sourceSheet,
+    }));
     sourceTables = ["work_items"];
   } else if (filters.tab === "deliverables") {
     const all = await db.select().from(deliverables);
-    rows = all.map(d => ({ projectId: d.projectId, title: d.title, type: d.deliverableType, status: d.status, updatedAt: d.updatedAt?.toISOString().substring(0, 10) || null }));
+    rows = all.map(d => ({
+      source: "deliverables",
+      rowId: d.id,
+      projectId: d.projectId,
+      projectName: d.projectName,
+      title: d.title,
+      type: d.deliverableType,
+      status: d.status,
+      currentVersion: d.currentVersion,
+      ownerUserId: d.ownerUserId,
+      reviewerUserId: d.reviewerUserId,
+      createdAt: d.createdAt?.toISOString().substring(0, 10) || null,
+      updatedAt: d.updatedAt?.toISOString().substring(0, 10) || null,
+    }));
     sourceTables = ["deliverables"];
   } else if (filters.tab === "stages") {
-    const all = await db.select().from(projectEngStages);
-    rows = all.map(s => ({ projectId: s.projectId, stageTemplateId: s.stageTemplateId, status: s.status, startedAt: s.startedAt?.toISOString().substring(0, 10) || null, completedAt: s.completedAt?.toISOString().substring(0, 10) || null }));
+    const [allStages, projectRows] = await Promise.all([
+      db.select().from(projectEngStages),
+      db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
+    ]);
+    const projectMap = new Map(projectRows.map((r: any) => [r.project_info.id, r.project_info.projectName]));
+    rows = allStages.map(s => ({
+      source: "project_eng_stages",
+      rowId: s.id,
+      projectId: s.projectId,
+      projectName: projectMap.get(s.projectId) || "",
+      stageTemplateId: s.stageTemplateId,
+      status: s.status,
+      overrideReason: s.overrideReason,
+      startedAt: s.startedAt?.toISOString().substring(0, 10) || null,
+      completedAt: s.completedAt?.toISOString().substring(0, 10) || null,
+      createdAt: s.createdAt?.toISOString().substring(0, 10) || null,
+    }));
     sourceTables = ["project_eng_stages"];
   } else {
-    const all = await db.select().from(projectEngApprovals);
-    rows = all.map(a => ({ projectEngStageId: a.projectEngStageId, status: a.status, approvalState: a.status, approverRole: a.approverRole, updatedAt: a.updatedAt?.toISOString().substring(0, 10) || null }));
+    const [allApprovals, allStages, allProjects] = await Promise.all([
+      db.select().from(projectEngApprovals),
+      db.select().from(projectEngStages),
+      db.select().from(projectInfo),
+    ]);
+    const stageMap = new Map(allStages.map(s => [s.id, s]));
+    const projectMap = new Map(allProjects.map(p => [p.id, p.projectName]));
+    rows = allApprovals.map(a => {
+      const stage = stageMap.get(a.projectEngStageId);
+      return {
+        source: "project_eng_approvals",
+        rowId: a.id,
+        projectEngStageId: a.projectEngStageId,
+        projectId: stage?.projectId,
+        projectName: stage ? projectMap.get(stage.projectId) || "" : "",
+        status: a.status,
+        approvalState: a.status,
+        approverRole: a.approverRole,
+        approverUserId: a.approverUserId,
+        comments: a.comments,
+        createdAt: a.createdAt?.toISOString().substring(0, 10) || null,
+        updatedAt: a.updatedAt?.toISOString().substring(0, 10) || null,
+      };
+    });
     sourceTables = ["project_eng_approvals"];
   }
 
