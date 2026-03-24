@@ -3096,11 +3096,12 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
       for (const row of expenseRows) {
         if ((row as any).rowType === 'item') {
           costedExpenditure += parseFloat(String((row as any).budgetTotal || 0)) || 0;
-          const actualAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
-          allExpenditure += actualAmt;
+          const lineAmt = parseFloat(String((row as any).quotedTotal || (row as any).expenseActualTotal || 0)) || 0;
+          const confirmedAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
+          allExpenditure += confirmedAmt;
           const state = (row as any).computedState || classifyExpenseState(row as any);
-          if (state === 'Paid' && actualAmt > 0) {
-            actualExpenditure += actualAmt;
+          if (state === 'Paid' && lineAmt > 0) {
+            actualExpenditure += lineAmt;
           }
         }
       }

@@ -2276,12 +2276,13 @@ export async function registerRoutes(
         let actualExpenses = 0;
         if (projectExpenses.length > 0) {
           for (const expense of projectExpenses) {
-            if (expense.expenseActualTotal) {
-              const amt = parseFloat(expense.expenseActualTotal) || 0;
+            const lineAmt = (expense as any).quotedTotal || expense.expenseActualTotal;
+            if (lineAmt) {
+              const amt = parseFloat(lineAmt) || 0;
               totalExpenses += amt;
               const state = (expense as any).computedState || classifyExpenseState(expense as any);
               if (state === 'Paid') {
-                actualExpenses += amt;
+                actualExpenses += parseFloat(expense.expenseActualTotal || lineAmt) || 0;
               }
             }
           }
@@ -2895,8 +2896,7 @@ export async function registerRoutes(
           // Use effective payment date: actual, then computed forecast, then forecast, then invoice date
           const d = expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
           if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-          // Use actual total with budget fallback, matching project-detail level logic
-          const amt = parseFloat(expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
+          const amt = parseFloat((expense as any).quotedTotal || expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
           if (d >= weekStart && d < weekEnd && amt > 0) {
             projectOutflowsSum += amt;
           }
@@ -2988,7 +2988,7 @@ export async function registerRoutes(
           expenseLineItem: e.expenseLineItem,
           expenseInvoiceNumber: e.expenseInvoiceNumber,
           expensePaymentDate: e.expensePaymentDate,
-          expenseActualTotal: e.expenseActualTotal ? parseFloat(e.expenseActualTotal) : 0,
+          expenseActualTotal: parseFloat(e.quotedTotal || e.expenseActualTotal || '0') || 0,
         }));
 
       const inflows = resolvedInflows
@@ -7800,11 +7800,12 @@ export async function registerRoutes(
         for (const row of expenseRows) {
           if ((row as any).rowType === 'item') {
             costedExpenditure += parseFloat(String((row as any).budgetTotal || 0)) || 0;
-            const actualAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
-            allExpenditure += actualAmt;
+            const lineAmt = parseFloat(String((row as any).quotedTotal || (row as any).expenseActualTotal || 0)) || 0;
+            const confirmedAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
+            allExpenditure += confirmedAmt;
             const state = (row as any).computedState || classifyExpenseState(row as any);
-            if (state === 'Paid' && actualAmt > 0) {
-              actualExpenditure += actualAmt;
+            if (state === 'Paid' && lineAmt > 0) {
+              actualExpenditure += lineAmt;
             }
           }
         }
