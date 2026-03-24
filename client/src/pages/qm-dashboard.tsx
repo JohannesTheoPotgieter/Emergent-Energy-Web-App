@@ -28,6 +28,7 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Collapsible,
   CollapsibleContent,
