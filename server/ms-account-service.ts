@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { msAccounts } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
+import { decrypt, encrypt, isEncryptedPayload } from "./utils/encryption";
 
 const CONFIGURED_TENANT_ID = process.env.AZURE_TENANT_ID || "";
 
@@ -19,11 +20,11 @@ export async function ensureMsAccount(
 
   const tokenFields: Record<string, any> = {};
   if (ssoToken?.accessToken) {
-    tokenFields.ssoAccessToken = ssoToken.accessToken;
+    tokenFields.ssoAccessToken = encrypt(ssoToken.accessToken);
     tokenFields.ssoTokenExpiresAt = ssoToken.expiresOn || new Date(Date.now() + 3600_000);
   }
   if (tokenCache) {
-    tokenFields.refreshTokenEncrypted = tokenCache;
+    tokenFields.refreshTokenEncrypted = encrypt(tokenCache);
   }
 
   const existing = await db
@@ -80,17 +81,25 @@ export async function getSsoTokenForUser(userId: number): Promise<string | null>
   const account = await getMsAccountForUser(userId);
   if (!account?.ssoAccessToken) return null;
 
+  const accessToken = isEncryptedPayload(account.ssoAccessToken)
+    ? decrypt(account.ssoAccessToken)
+    : account.ssoAccessToken;
+
   if (account.ssoTokenExpiresAt && account.ssoTokenExpiresAt.getTime() < Date.now() + 60_000) {
     const refreshed = await tryRefreshToken(account);
     if (refreshed) return refreshed;
     return null;
   }
 
-  return account.ssoAccessToken;
+  return accessToken;
 }
 
 async function tryRefreshToken(account: typeof msAccounts.$inferSelect): Promise<string | null> {
-  const serializedCache = account.refreshTokenEncrypted;
+  const serializedCache = account.refreshTokenEncrypted
+    ? (isEncryptedPayload(account.refreshTokenEncrypted)
+      ? decrypt(account.refreshTokenEncrypted)
+      : account.refreshTokenEncrypted)
+    : null;
   if (!serializedCache) {
     console.log(`[MS Token] No cached token data for user ${account.userId}, cannot refresh`);
     return null;
@@ -104,9 +113,9 @@ async function tryRefreshToken(account: typeof msAccounts.$inferSelect): Promise
     await db
       .update(msAccounts)
       .set({
-        ssoAccessToken: result.accessToken,
+        ssoAccessToken: encrypt(result.accessToken),
         ssoTokenExpiresAt: result.expiresOn || new Date(Date.now() + 3600_000),
-        refreshTokenEncrypted: result.tokenCache,
+        refreshTokenEncrypted: encrypt(result.tokenCache),
       })
       .where(eq(msAccounts.id, account.id));
 

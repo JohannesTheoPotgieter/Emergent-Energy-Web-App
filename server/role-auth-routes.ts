@@ -40,27 +40,32 @@ export function requireCompanyRole(...allowedRoles: CompanyRole[]) {
 
 export async function seedRoleCredentials() {
   try {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Role credential seeding is disabled in production");
+    }
+
     const existing = await db.select().from(roleCredentials);
     if (existing.length > 0) return;
 
-    const defaultPasswords: Record<string, string> = {
-      COO_ADMIN: "2024",
-      CEO_ADMIN: "ceo2026",
-    };
+    const basePassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!basePassword || basePassword.length < 12) {
+      throw new Error("SEED_ADMIN_PASSWORD must be set and at least 12 characters");
+    }
 
     for (const role of COMPANY_ROLES) {
-      const password = defaultPasswords[role] || "emergent2026";
-      const passwordHash = await bcrypt.hash(password, 10);
+      const passwordHash = await bcrypt.hash(basePassword, 12);
       await db.insert(roleCredentials).values({
         role,
         passwordHash,
         failedAttempts: 0,
+        passwordLastChangedAt: new Date(),
         updatedBy: "system",
       });
     }
-    console.log("[ROLE-AUTH] Seeded default role credentials");
+    console.log("[ROLE-AUTH] Seeded role credentials from SEED_ADMIN_PASSWORD");
   } catch (err: any) {
     console.error("[ROLE-AUTH] Error seeding role credentials:", err.message);
+    throw err;
   }
 }
 
@@ -225,7 +230,7 @@ export function registerRoleAuthRoutes(app: Express) {
       const passwordHash = await bcrypt.hash(newPassword, 10);
       await db.update(roleCredentials).set({
         passwordHash,
-        lastPasswordPlain: null,
+        passwordLastChangedAt: new Date(),
         failedAttempts: 0,
         lockedUntil: null,
         updatedBy: currentRole,
@@ -264,6 +269,7 @@ export function registerRoleAuthRoutes(app: Express) {
         role: roleCredentials.role,
         updatedBy: roleCredentials.updatedBy,
         updatedAt: roleCredentials.updatedAt,
+        passwordLastChangedAt: roleCredentials.passwordLastChangedAt,
       }).from(roleCredentials);
 
       return res.json(creds);

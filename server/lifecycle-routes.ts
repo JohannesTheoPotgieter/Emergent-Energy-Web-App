@@ -1453,7 +1453,8 @@ export function registerLifecycleRoutes(app: Express) {
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
-      const handoverRows: any[] = await db.execute(sql.raw(`SELECT status FROM project_pd_pm_handover WHERE project_id = ${id} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      // SECURITY: parameterized
+      const handoverRows: any[] = await db.execute(sql`SELECT status FROM project_pd_pm_handover WHERE project_id = ${id} LIMIT 1`).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
       const handoverAccepted = handoverRows[0]?.status === "ACCEPTED";
 
       const isEligible = project.signedStatus !== 'NONE' && project.signedDate != null && project.signedDocumentLink != null && project.signedDocumentLink.trim() !== '';
@@ -1505,7 +1506,8 @@ export function registerLifecycleRoutes(app: Express) {
 
       const isEligible = effectiveSignedStatus !== 'NONE' && effectiveSignedDate != null && effectiveSignedDocumentLink != null && effectiveSignedDocumentLink.trim() !== '';
 
-      const handoverRows: any[] = await db.execute(sql.raw(`SELECT status FROM project_pd_pm_handover WHERE project_id = ${id} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      // SECURITY: parameterized
+      const handoverRows: any[] = await db.execute(sql`SELECT status FROM project_pd_pm_handover WHERE project_id = ${id} LIMIT 1`).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
       const handoverAccepted = handoverRows[0]?.status === "ACCEPTED";
       if (executionEnabled === true && !handoverAccepted) {
         return res.status(400).json({
