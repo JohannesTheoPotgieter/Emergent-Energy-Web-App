@@ -420,6 +420,20 @@ export default function QmDashboardPage() {
   const getProjectUpdated = (c: Checklist) => {
     return c.updatedAt || c.createdAt || "";
   };
+  const formatShortDate = (value?: string | null) => {
+    if (!value) return "No due date";
+    return new Date(value).toLocaleDateString();
+  };
+
+  const hasLinkedItems = (c: Checklist) => {
+    if (!c.phases || c.phases.length === 0) return false;
+    return c.phases.reduce((t, p) => t + p.total, 0) > 0;
+  };
+
+  const projectsWithLinkedItems = useMemo(
+    () => checklists.filter(hasLinkedItems),
+    [checklists]
+  );
 
   const hasLinkedItems = (c: Checklist) => {
     if (!c.phases || c.phases.length === 0) return false;
