@@ -2692,6 +2692,42 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mock_sp_items' AND column_name='updated_at') THEN
     ALTER TABLE "mock_sp_items" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='report_type') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "report_type" VARCHAR(20);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='report_month') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "report_month" VARCHAR(7);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='status') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "status" VARCHAR(20) DEFAULT 'draft';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='data') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "data" JSONB;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='generated_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "generated_at" TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='regenerated_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "regenerated_at" TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='reviewed_by') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "reviewed_by" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='reviewed_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "reviewed_at" TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='published_by') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "published_by" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='published_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "published_at" TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='created_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "created_at" TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='updated_at') THEN
+    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "updated_at" TIMESTAMP;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='ms_accounts' AND column_name='user_id') THEN
     ALTER TABLE "ms_accounts" ADD COLUMN "user_id" INTEGER;
   END IF;
@@ -2823,6 +2859,27 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mytool_company_priorities' AND column_name='linked_task_type') THEN
     ALTER TABLE "mytool_company_priorities" ADD COLUMN "linked_task_type" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mytool_company_priorities' AND column_name='accountable_exec_id') THEN
+    ALTER TABLE "mytool_company_priorities" ADD COLUMN "accountable_exec_id" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mytool_company_priorities' AND column_name='owner_user_id') THEN
+    ALTER TABLE "mytool_company_priorities" ADD COLUMN "owner_user_id" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mytool_company_priorities' AND column_name='target_start_date') THEN
+    ALTER TABLE "mytool_company_priorities" ADD COLUMN "target_start_date" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mytool_company_priorities' AND column_name='target_outcome') THEN
+    ALTER TABLE "mytool_company_priorities" ADD COLUMN "target_outcome" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mytool_company_priorities' AND column_name='sort_order') THEN
+    ALTER TABLE "mytool_company_priorities" ADD COLUMN "sort_order" INTEGER DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mytool_company_priorities' AND column_name='manual_health') THEN
+    ALTER TABLE "mytool_company_priorities" ADD COLUMN "manual_health" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mytool_company_priorities' AND column_name='manual_progress') THEN
+    ALTER TABLE "mytool_company_priorities" ADD COLUMN "manual_progress" INTEGER;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='mytool_company_priorities' AND column_name='created_at') THEN
     ALTER TABLE "mytool_company_priorities" ADD COLUMN "created_at" TIMESTAMP;
@@ -3640,6 +3697,21 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='comments') THEN
     ALTER TABLE "pd_tickets" ADD COLUMN "comments" TEXT;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_project_value') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_project_value" NUMERIC(14,2);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_cost') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_cost" NUMERIC(14,2);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_margin') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_margin" NUMERIC(14,2);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_margin_percent') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_margin_percent" NUMERIC(6,2);
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='financial_notes') THEN
+    ALTER TABLE "pd_tickets" ADD COLUMN "financial_notes" TEXT;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='clickup_synced') THEN
     ALTER TABLE "pd_tickets" ADD COLUMN "clickup_synced" BOOLEAN DEFAULT false;
   END IF;
@@ -3655,20 +3727,23 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='updated_at') THEN
     ALTER TABLE "pd_tickets" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_project_value') THEN
-    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_project_value" DECIMAL(14, 2);
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_visibility_config' AND column_name='role') THEN
+    ALTER TABLE "pd_visibility_config" ADD COLUMN "role" TEXT;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_cost') THEN
-    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_cost" DECIMAL(14, 2);
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_visibility_config' AND column_name='user_id') THEN
+    ALTER TABLE "pd_visibility_config" ADD COLUMN "user_id" INTEGER;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_margin') THEN
-    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_margin" DECIMAL(14, 2);
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_visibility_config' AND column_name='ticket_types') THEN
+    ALTER TABLE "pd_visibility_config" ADD COLUMN "ticket_types" TEXT[];
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='estimated_margin_percent') THEN
-    ALTER TABLE "pd_tickets" ADD COLUMN "estimated_margin_percent" DECIMAL(6, 2);
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_visibility_config' AND column_name='scope') THEN
+    ALTER TABLE "pd_visibility_config" ADD COLUMN "scope" TEXT DEFAULT 'all';
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='financial_notes') THEN
-    ALTER TABLE "pd_tickets" ADD COLUMN "financial_notes" TEXT;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_visibility_config' AND column_name='updated_at') THEN
+    ALTER TABLE "pd_visibility_config" ADD COLUMN "updated_at" TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_visibility_config' AND column_name='updated_by') THEN
+    ALTER TABLE "pd_visibility_config" ADD COLUMN "updated_by" INTEGER;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='permission_audit_log' AND column_name='event_type') THEN
     ALTER TABLE "permission_audit_log" ADD COLUMN "event_type" TEXT;
@@ -4066,6 +4141,18 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='priority_links' AND column_name='created_at') THEN
     ALTER TABLE "priority_links" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='priority_projects' AND column_name='priority_id') THEN
+    ALTER TABLE "priority_projects" ADD COLUMN "priority_id" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='priority_projects' AND column_name='project_id') THEN
+    ALTER TABLE "priority_projects" ADD COLUMN "project_id" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='priority_projects' AND column_name='linked_by') THEN
+    ALTER TABLE "priority_projects" ADD COLUMN "linked_by" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='priority_projects' AND column_name='linked_at') THEN
+    ALTER TABLE "priority_projects" ADD COLUMN "linked_at" TIMESTAMP;
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='project_id') THEN
     ALTER TABLE "procurement_items" ADD COLUMN "project_id" INTEGER;
   END IF;
@@ -4434,6 +4521,9 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_editable_fields' AND column_name='epc_contract_na_reason') THEN
     ALTER TABLE "project_editable_fields" ADD COLUMN "epc_contract_na_reason" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_editable_fields' AND column_name='province') THEN
+    ALTER TABLE "project_editable_fields" ADD COLUMN "province" TEXT;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_editable_fields' AND column_name='current_vo_total') THEN
     ALTER TABLE "project_editable_fields" ADD COLUMN "current_vo_total" NUMERIC(15,2);
@@ -4899,6 +4989,21 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='rejection_reason') THEN
     ALTER TABLE "project_pd_pm_handover" ADD COLUMN "rejection_reason" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='feasibility_status') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "feasibility_status" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='feasibility_notes') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "feasibility_notes" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='dependency_summary') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "dependency_summary" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='handover_readiness_status') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "handover_readiness_status" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='handover_readiness_notes') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "handover_readiness_notes" TEXT;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='created_at') THEN
     ALTER TABLE "project_pd_pm_handover" ADD COLUMN "created_at" TIMESTAMP;
@@ -5980,6 +6085,9 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='standup_schedules' AND column_name='deadline_time') THEN
     ALTER TABLE "standup_schedules" ADD COLUMN "deadline_time" TEXT DEFAULT '10:00';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='standup_schedules' AND column_name='deadline_timezone') THEN
+    ALTER TABLE "standup_schedules" ADD COLUMN "deadline_timezone" TEXT DEFAULT 'Africa/Johannesburg';
+  END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='standup_schedules' AND column_name='is_active') THEN
     ALTER TABLE "standup_schedules" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
   END IF;
@@ -6986,7 +7094,7 @@ DO $$ BEGIN
     ALTER TABLE "work_items" ADD COLUMN "blocker_reason" TEXT;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='pd_ticket_id') THEN
-    ALTER TABLE "work_items" ADD COLUMN "pd_ticket_id" INTEGER REFERENCES pd_tickets(id);
+    ALTER TABLE "work_items" ADD COLUMN "pd_ticket_id" INTEGER;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_dependency_override' AND column_name='scenario_id') THEN
     ALTER TABLE "working_plan_dependency_override" ADD COLUMN "scenario_id" INTEGER;
@@ -7032,6 +7140,30 @@ DO $$ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_scenario' AND column_name='updated_at') THEN
     ALTER TABLE "working_plan_scenario" ADD COLUMN "updated_at" TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='workstream_visibility_config' AND column_name='role') THEN
+    ALTER TABLE "workstream_visibility_config" ADD COLUMN "role" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='workstream_visibility_config' AND column_name='user_id') THEN
+    ALTER TABLE "workstream_visibility_config" ADD COLUMN "user_id" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='workstream_visibility_config' AND column_name='workstreams') THEN
+    ALTER TABLE "workstream_visibility_config" ADD COLUMN "workstreams" TEXT[];
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='workstream_visibility_config' AND column_name='ticket_types') THEN
+    ALTER TABLE "workstream_visibility_config" ADD COLUMN "ticket_types" TEXT[];
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='workstream_visibility_config' AND column_name='scope') THEN
+    ALTER TABLE "workstream_visibility_config" ADD COLUMN "scope" TEXT DEFAULT 'all';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='workstream_visibility_config' AND column_name='sections') THEN
+    ALTER TABLE "workstream_visibility_config" ADD COLUMN "sections" TEXT[];
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='workstream_visibility_config' AND column_name='updated_at') THEN
+    ALTER TABLE "workstream_visibility_config" ADD COLUMN "updated_at" TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='workstream_visibility_config' AND column_name='updated_by') THEN
+    ALTER TABLE "workstream_visibility_config" ADD COLUMN "updated_by" INTEGER;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='writeback_audit_log' AND column_name='mapping_id') THEN
     ALTER TABLE "writeback_audit_log" ADD COLUMN "mapping_id" INTEGER;
@@ -7111,66 +7243,4 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='writeback_mappings' AND column_name='updated_at') THEN
     ALTER TABLE "writeback_mappings" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
-  -- GAP 4b: Add hours tracking columns to work_items
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='planned_hours') THEN
-    ALTER TABLE "work_items" ADD COLUMN "planned_hours" REAL;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='actual_hours') THEN
-    ALTER TABLE "work_items" ADD COLUMN "actual_hours" REAL DEFAULT 0;
-  END IF;
-  -- Monthly Report Snapshots columns
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='report_type') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "report_type" VARCHAR(20) NOT NULL DEFAULT 'pm';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='report_month') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "report_month" VARCHAR(7) NOT NULL DEFAULT '2026-01';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='status') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "status" VARCHAR(20) NOT NULL DEFAULT 'draft';
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='data') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "data" JSONB;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='generated_at') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "generated_at" TIMESTAMPTZ DEFAULT NOW();
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='regenerated_at') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "regenerated_at" TIMESTAMPTZ;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='reviewed_by') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "reviewed_by" INTEGER;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='reviewed_at') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "reviewed_at" TIMESTAMPTZ;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='published_by') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "published_by" INTEGER;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='published_at') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "published_at" TIMESTAMPTZ;
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='created_at') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "created_at" TIMESTAMPTZ DEFAULT NOW();
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='monthly_report_snapshots' AND column_name='updated_at') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD COLUMN "updated_at" TIMESTAMPTZ DEFAULT NOW();
-  END IF;
 END $$;
-
--- Unique constraint for monthly_report_snapshots
-DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'monthly_report_snapshots_type_month_unique') THEN
-    ALTER TABLE "monthly_report_snapshots" ADD CONSTRAINT "monthly_report_snapshots_type_month_unique" UNIQUE (report_type, report_month);
-  END IF;
-END $$;
-
--- PD Visibility Config table
-CREATE TABLE IF NOT EXISTS "pd_visibility_config" (
-  "id" SERIAL PRIMARY KEY,
-  "role" TEXT,
-  "user_id" INTEGER REFERENCES "users"("id") ON DELETE CASCADE,
-  "ticket_types" TEXT[] NOT NULL DEFAULT ARRAY['pd','engineering'],
-  "scope" TEXT NOT NULL DEFAULT 'all',
-  "updated_at" TIMESTAMP NOT NULL DEFAULT NOW(),
-  "updated_by" INTEGER REFERENCES "users"("id")
-);

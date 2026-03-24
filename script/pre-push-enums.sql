@@ -288,3 +288,4 @@ CREATE TABLE IF NOT EXISTS "role_permissions" (id SERIAL PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS "user_permission_overrides" (id SERIAL PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS "permission_audit_log" (id SERIAL PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS "monthly_report_snapshots" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "workstream_visibility_config" (id SERIAL PRIMARY KEY);
