@@ -472,13 +472,14 @@ export default function HomePage() {
     },
   });
 
-  const { data: companyPriorities, isLoading: prioritiesLoading, isError: prioritiesIsError, error: prioritiesError } = useQuery<any[]>({
+  const { data: companyPrioritiesRaw, isLoading: prioritiesLoading, isError: prioritiesIsError, error: prioritiesError } = useQuery<any[]>({
     queryKey: ["/api/priorities"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/priorities");
       return res.json();
     },
   });
+  const companyPriorities = companyPrioritiesRaw?.filter((p: any) => p.status !== "complete" && p.status !== "completed");
 
   const { data: myWorkData, isError: myWorkIsError, error: myWorkError } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks"],
