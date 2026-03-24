@@ -435,16 +435,6 @@ export default function QmDashboardPage() {
     [checklists]
   );
 
-  const hasLinkedItems = (c: Checklist) => {
-    if (!c.phases || c.phases.length === 0) return false;
-    return c.phases.reduce((t, p) => t + p.total, 0) > 0;
-  };
-
-  const projectsWithLinkedItems = useMemo(
-    () => checklists.filter(hasLinkedItems),
-    [checklists]
-  );
-
   const projectsWithWarningsCount = useMemo(() => checklists.filter(c => getProjectWarnings(c) > 0).length, [checklists, warnings]);
 
   const filteredProjects = useMemo(() => {
