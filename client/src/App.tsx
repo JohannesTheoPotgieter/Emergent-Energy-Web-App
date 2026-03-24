@@ -361,6 +361,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/auth/login" component={LoginPage} />
+      <Route path="/login">{() => <Redirect to="/auth/login" />}</Route>
       <Route path="/auth/ms-callback" component={MsCallbackPage} />
       <Route>
         <ProtectedRoute>

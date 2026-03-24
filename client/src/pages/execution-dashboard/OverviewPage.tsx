@@ -19,6 +19,7 @@ import {
   ArrowRight, BarChart3, PieChart,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
+import { apiRequest } from "@/lib/queryClient";
 
 function queueIcon(queue: string) {
   const q = queue?.toLowerCase();
@@ -408,13 +409,12 @@ function RealisationSummaryStrip() {
   } | null>(null);
 
   useEffect(() => {
-    const token = localStorage.getItem("auth_token");
-    const headers: Record<string, string> = {};
-    if (token) headers.Authorization = `Bearer ${token}`;
-    fetch("/api/realisation-kpis", { headers })
-      .then((r) => (r.ok ? r.json() : null))
+    apiRequest("GET", "/api/realisation-kpis")
+      .then((r) => r.json())
       .then(setData)
-      .catch(() => {});
+      .catch(() => {
+        setData(null);
+      });
   }, []);
 
   if (!data) return null;

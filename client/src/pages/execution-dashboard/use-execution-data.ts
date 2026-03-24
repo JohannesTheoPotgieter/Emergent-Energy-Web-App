@@ -6,6 +6,7 @@ import {
   ExecutionFilters,
   filterExecutionProjects,
 } from "@/lib/execution-dashboard";
+import { apiRequest } from "@/lib/queryClient";
 
 export const defaultFilters: ExecutionFilters = {
   search: "",
@@ -98,11 +99,7 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
     try {
       setLoading(true);
       setError(null);
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch("/api/lifecycle-board/execution-dashboard", { headers });
-      if (!res.ok) throw new Error(`Failed to load dashboard (${res.status})`);
+      const res = await apiRequest("GET", "/api/lifecycle-board/execution-dashboard");
       const data: ExecutionDashboardResponse = await res.json();
       setDashboard(data);
       setLastRefresh(new Date());
