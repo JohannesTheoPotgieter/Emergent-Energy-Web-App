@@ -36,7 +36,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "myToolWeek", path: "/my-tool/week", label: "My Work Week (Legacy)", redirectTo: "/my-work/calendar" },
   { id: "myToolBacklog", path: "/my-tool/backlog", label: "My Work Backlog (Legacy)", redirectTo: "/my-work/tasks" },
   { id: "myToolSettings", path: "/my-tool/settings", label: "My Work Settings (Legacy)", redirectTo: "/my-work" },
-  { id: "companyPriorities", path: "/company-priorities", label: "Manage Priorities", permissionEntity: "company_priorities", routeComponentKey: "MyToolPrioritiesPage" },
+  { id: "companyPriorities", path: "/company-priorities", label: "Manage Priorities", permissionEntity: "company_priorities", redirectTo: "/priorities" },
   { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "EXCO", permissionEntity: "company_priorities", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
   { id: "priorityDetail", path: "/priorities/:id", label: "Priority Detail", permissionEntity: "company_priorities", routeComponentKey: "PriorityDetailPage" },
   { id: "myToolHelp", path: "/my-tool/help", label: "My Work Help (Legacy)", redirectTo: "/my-work" },
@@ -165,6 +165,9 @@ const NAV_GROUP_TO_SECTION: Record<string, string> = {
   // REPORTS is deliberately unmapped — controlled by entity permissions only,
   // so removing PROJECT_MANAGEMENT from a role doesn't hide reports.
 };
+
+// Backward compatibility for older tests/modules.
+export const PAGES = PAGE_REGISTRY;
 
 export function getAppSectionForPath(pathname: string): string | undefined {
   if (pathname === "/" || pathname === "/my-work" || pathname.startsWith("/my-work/")) {
