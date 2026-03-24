@@ -58,10 +58,39 @@ function ProjectLinker({ priorityId, existingProjectIds, onDone }: { priorityId:
   const { data: allProjects = [] } = useQuery<any[]>({
     queryKey: ["/api/v2/projects", "linker"],
     queryFn: async () => {
-      const res = await fetch("/api/v2/projects?pageSize=100", { headers: { Authorization: `Bearer ${token()}` } });
+      // Primary source: projects-summary endpoint (widely used across app + role aware).
+      try {
+        const summaryRes = await fetch("/api/projects-summary", {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${token()}` },
+        });
+        if (summaryRes.ok) {
+          const summaryData = await summaryRes.json();
+          const summaryRows = Array.isArray(summaryData)
+            ? summaryData
+            : summaryData?.projects || summaryData?.data?.rows || [];
+          if (summaryRows.length > 0) {
+            return summaryRows.map((p: any) => ({
+              id: p.id,
+              projectName: p.projectName || p.project_name || p.name || `Project ${p.id}`,
+            }));
+          }
+        }
+      } catch {
+        // Fall through to v2 endpoint
+      }
+
+      // Fallback: v2 projects endpoint.
+      const res = await fetch("/api/v2/projects?pageSize=500", {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${token()}` },
+      });
       if (!res.ok) return [];
       const data = await res.json();
-      return data.data?.rows || [];
+      return (data.data?.rows || []).map((p: any) => ({
+        id: p.id,
+        projectName: p.projectName || p.project_name || p.name || `Project ${p.id}`,
+      }));
     },
   });
 
