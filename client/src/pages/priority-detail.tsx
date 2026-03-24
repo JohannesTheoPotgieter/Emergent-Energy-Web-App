@@ -117,7 +117,7 @@ export default function PriorityDetailPage() {
   const queryClient = useQueryClient();
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
-  const isAdmin = user?.role && ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"].includes(user.role);
+  const isAdmin = user?.role && ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER"].includes(user.role);
 
   const { data: priority, isLoading } = useQuery<any>({
     queryKey: [`/api/priorities/${priorityId}`],
