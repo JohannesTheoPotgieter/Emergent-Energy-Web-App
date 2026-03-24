@@ -95,6 +95,27 @@ import { actorFromReq, createProjectEvent } from "./services/project-event-servi
 import { getPlatformProjectSummaryMap } from "./services/project-platform-summary-service";
 import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
 import { mytoolTaskIdempotencyStore } from "./lib/mytool-task-idempotency";
+
+const CANONICAL_TO_MYTOOL_STATUS: Record<string, string> = {
+  todo: "planned",
+  in_progress: "in_progress",
+  blocked: "blocked",
+  review: "waiting",
+  complete: "done",
+  cancelled: "cancelled",
+};
+function toMytoolDbStatus(canonical: string): string {
+  return CANONICAL_TO_MYTOOL_STATUS[canonical] || CANONICAL_TO_MYTOOL_STATUS[canonical.toLowerCase()] || "planned";
+}
+const CANONICAL_TO_MYTOOL_PRIORITY: Record<string, string> = {
+  P1: "critical", p1: "critical", urgent: "critical", critical: "critical",
+  P2: "high", p2: "high", high: "high",
+  P3: "normal", p3: "normal", medium: "normal", normal: "normal",
+  P4: "low", p4: "low", low: "low",
+};
+function toMytoolDbPriority(priority: string): string {
+  return CANONICAL_TO_MYTOOL_PRIORITY[priority] || CANONICAL_TO_MYTOOL_PRIORITY[priority.toLowerCase()] || "normal";
+}
 import { computeNextRecurrenceDate, computeMilestoneProgress, isOverdue, shouldBlockTask, validateDependencyPair } from "./lib/mytool-work-engine";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag, DEFAULT_RAG_THRESHOLDS } from "@shared/kpi-definitions";
 import { STATIC_COS_BUDGET_FY26 } from "./lib/calculations/financeUtils";
@@ -13702,8 +13723,8 @@ export async function registerRoutes(
       if (bucket !== 'project' && req.body.projectName) {
         req.body.projectName = null;
       }
-      if (req.body.status) req.body.status = normalizeStatus(req.body.status);
-      if (req.body.priority) req.body.priority = normalizePriority(req.body.priority);
+      if (req.body.status) req.body.status = toMytoolDbStatus(normalizeStatus(req.body.status));
+      if (req.body.priority) req.body.priority = toMytoolDbPriority(normalizePriority(req.body.priority));
 
       if (hasRequestId) {
         const idempotencyResult = mytoolTaskIdempotencyStore.begin(userId, requestId);
@@ -13768,8 +13789,8 @@ export async function registerRoutes(
         validationErrors.forEach(e => { fields[e.field] = e.message; });
         return sendError(res, validationError(fields));
       }
-      if (req.body.status) req.body.status = normalizeStatus(req.body.status);
-      if (req.body.priority) req.body.priority = normalizePriority(req.body.priority);
+      if (req.body.status) req.body.status = toMytoolDbStatus(normalizeStatus(req.body.status));
+      if (req.body.priority) req.body.priority = toMytoolDbPriority(normalizePriority(req.body.priority));
       const existingTask = await storage.getMytoolTask(taskId);
 
       if (req.body.bucket !== undefined || req.body.projectName !== undefined) {
