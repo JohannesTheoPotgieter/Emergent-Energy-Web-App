@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, Download, FileSpreadsheet, Search, Clock, ShieldAlert, CalendarDays, BarChart3 } from "lucide-react";
+import { Download, FileSpreadsheet, Search, Clock, ShieldAlert, CalendarDays, Building2, Briefcase, ChevronRight, FileText } from "lucide-react";
 import { ReportCard } from "@/components/reports/ReportCard";
 import DrilldownDrawer from "@/components/reports/shared/DrilldownDrawer";
 
@@ -15,40 +15,26 @@ function getAuthHeaders(): Record<string, string> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-function StalenessWarning({ isStale, daysSinceImport }: { isStale: boolean; daysSinceImport: number }) {
-  if (!isStale) return null;
-  return (
-    <div className="flex items-center gap-1.5 text-amber-600 text-xs">
-      <Clock className="w-3.5 h-3.5" />
-      <span>Data is {daysSinceImport >= 0 ? `${daysSinceImport} day(s)` : "never imported"} since last import</span>
-    </div>
-  );
+function formatCurrency(value: number) {
+  return `R ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
-function ManualEditIndicator({ hasProtectedFields }: { hasProtectedFields: boolean }) {
-  if (!hasProtectedFields) return null;
-  return (
-    <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 text-[10px] gap-1">
-      <ShieldAlert className="w-3 h-3" />
-      Contains protected manual edits
-    </Badge>
-  );
+function getMonthOptions() {
+  const options: { value: string; label: string }[] = [];
+  const now = new Date();
+  for (let i = 0; i < 25; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const label = d.toLocaleDateString("en-ZA", { year: "numeric", month: "long" });
+    options.push({ value, label });
+  }
+  return options;
 }
 
-function ReportMeta({ meta, lastImportAt, hasProtectedFields }: { meta: any; lastImportAt?: string; hasProtectedFields?: boolean }) {
-  const hasStale = meta?.stalenessThresholdDays;
-  return (
-    <div className="flex items-center justify-between text-xs text-muted-foreground px-1 py-2">
-      <div className="flex items-center gap-3">
-        <span>{meta?.count || 0} records</span>
-        {lastImportAt && (
-          <span>Last import: {new Date(lastImportAt).toLocaleString()}</span>
-        )}
-        {hasStale && <span className="text-slate-400">(Staleness threshold: {meta.stalenessThresholdDays} days)</span>}
-      </div>
-      {hasProtectedFields && <ManualEditIndicator hasProtectedFields />}
-    </div>
-  );
+function parseAmount(value: unknown): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const parsed = parseFloat(String(value || "0"));
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function ExportButton({ reportType, filters }: { reportType: string; filters: Record<string, string> }) {
@@ -56,8 +42,6 @@ function ExportButton({ reportType, filters }: { reportType: string; filters: Re
     const params = new URLSearchParams({ ...filters, format: "xlsx" });
     const url = `/api/reports/${reportType}?${params.toString()}`;
     const link = document.createElement("a");
-    link.href = url;
-    // Add auth header via fetch
     fetch(url, { headers: getAuthHeaders() })
       .then(r => r.blob())
       .then(blob => {
@@ -77,619 +61,363 @@ function ExportButton({ reportType, filters }: { reportType: string; filters: Re
   );
 }
 
-function ProjectPlanReport() {
-  const [projectFilter, setProjectFilter] = useState("");
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["/api/reports/project-plan", projectFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (projectFilter) params.set("projectName", projectFilter);
-      const res = await fetch(`/api/reports/project-plan?${params}`, { headers: getAuthHeaders() });
-      return res.json();
-    },
-  });
-
-  const rows = data?.data || [];
-  const hasStale = rows.some((r: any) => r.isStale);
-  const hasProtected = rows.some((r: any) => r.hasProtectedFields);
-  const latestImport = rows.reduce((max: string, r: any) => r.lastImportAt && r.lastImportAt > max ? r.lastImportAt : max, "");
-
+function ReportMeta({ meta, lastImportAt, hasProtectedFields }: { meta: any; lastImportAt?: string; hasProtectedFields?: boolean }) {
+  const hasStale = meta?.stalenessThresholdDays;
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Filter by project..."
-            className="pl-9 h-9"
-            value={projectFilter}
-            onChange={e => setProjectFilter(e.target.value)}
-          />
-        </div>
-        <ExportButton reportType="project-plan" filters={{ projectName: projectFilter }} />
+    <div className="flex items-center justify-between text-xs text-muted-foreground px-1 py-2">
+      <div className="flex items-center gap-3">
+        <span>{meta?.count || 0} records</span>
+        {lastImportAt && <span>Last import: {new Date(lastImportAt).toLocaleString()}</span>}
+        {hasStale && <span className="text-slate-400">(Staleness threshold: {meta.stalenessThresholdDays} days)</span>}
       </div>
-
-      {hasStale && (
-        <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          Some project data exceeds the staleness threshold. Consider re-importing.
-        </div>
+      {hasProtectedFields && (
+        <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 text-[10px] gap-1">
+          <ShieldAlert className="w-3 h-3" /> Contains protected manual edits
+        </Badge>
       )}
-
-      <ReportMeta meta={data?.meta} lastImportAt={latestImport} hasProtectedFields={hasProtected} />
-
-      <div className="border rounded-lg overflow-hidden">
-        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-muted sticky top-0">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium">Project</th>
-                <th className="text-left px-3 py-2 font-medium">Task</th>
-                <th className="text-left px-3 py-2 font-medium">Phase</th>
-                <th className="text-left px-3 py-2 font-medium">Start</th>
-                <th className="text-left px-3 py-2 font-medium">End</th>
-                <th className="text-left px-3 py-2 font-medium">Owner</th>
-                <th className="text-left px-3 py-2 font-medium">Status</th>
-                <th className="text-right px-3 py-2 font-medium">% Complete</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">Loading...</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">No data</td></tr>
-              ) : rows.map((r: any, i: number) => (
-                <tr key={i} className="border-b hover:bg-muted/30">
-                  <td className="px-3 py-1.5 max-w-[180px] truncate">{r.projectName}</td>
-                  <td className="px-3 py-1.5 max-w-[200px] truncate">{r.isMilestone ? `[M] ${r.taskName}` : r.taskName}</td>
-                  <td className="px-3 py-1.5">{r.phase || "—"}</td>
-                  <td className="px-3 py-1.5">{r.startDate || "—"}</td>
-                  <td className="px-3 py-1.5">{r.endDate || "—"}</td>
-                  <td className="px-3 py-1.5">{r.owner || "—"}</td>
-                  <td className="px-3 py-1.5">{r.status || "—"}</td>
-                  <td className="px-3 py-1.5 text-right">{r.percentComplete != null ? `${r.percentComplete}%` : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }
 
-function getMonthOptions() {
-  const options: { value: string; label: string }[] = [];
-  const now = new Date();
-  // Show last 24 months plus current month
-  for (let i = 0; i < 25; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const label = d.toLocaleDateString("en-ZA", { year: "numeric", month: "long" });
-    options.push({ value, label });
-  }
-  return options;
-}
-
-function parseMonth(dateStr: string | null | undefined): string | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return null;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function CostAnalysis({ rows }: { rows: any[] }) {
-  const analysis = useMemo(() => {
-    // Category breakdown
-    const byCategory: Record<string, { total: number; realized: number; unrealized: number; count: number }> = {};
-    // COS Status breakdown
-    const byStatus: Record<string, { total: number; count: number }> = {};
-    // Counterparty breakdown (top 10)
-    const byCounterparty: Record<string, { total: number; count: number }> = {};
-
-    for (const r of rows) {
-      const amt = parseFloat(r.amountExVat || "0") || 0;
-      const cat = r.costCategory || "Uncategorised";
-      const status = r.cosStatus || "Planned";
-      const counterparty = r.counterpartyName || "Unknown";
-
-      if (!byCategory[cat]) byCategory[cat] = { total: 0, realized: 0, unrealized: 0, count: 0 };
-      byCategory[cat].total += amt;
-      byCategory[cat].count++;
-      if (r.cosRealized) byCategory[cat].realized += amt;
-      else byCategory[cat].unrealized += amt;
-
-      if (!byStatus[status]) byStatus[status] = { total: 0, count: 0 };
-      byStatus[status].total += amt;
-      byStatus[status].count++;
-
-      if (!byCounterparty[counterparty]) byCounterparty[counterparty] = { total: 0, count: 0 };
-      byCounterparty[counterparty].total += amt;
-      byCounterparty[counterparty].count++;
-    }
-
-    const totalAmount = rows.reduce((sum, r) => sum + (parseFloat(r.amountExVat || "0") || 0), 0);
-
-    const topCounterparties = Object.entries(byCounterparty)
-      .sort(([, a], [, b]) => b.total - a.total)
-      .slice(0, 10);
-
-    return { byCategory, byStatus, byCounterparty: topCounterparties, totalAmount };
-  }, [rows]);
-
-  if (rows.length === 0) return null;
-
-  const statusColors: Record<string, string> = {
-    Paid: "bg-emerald-500",
-    Realised: "bg-blue-500",
-    Committed: "bg-purple-500",
-    Planned: "bg-slate-300",
-  };
-
-  return (
-    <div className="space-y-4 mt-4">
-      <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-        <BarChart3 className="w-4 h-4" />
-        Monthly Analysis
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Category Breakdown */}
-        <Card>
-          <CardHeader className="pb-2 pt-3 px-4">
-            <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">By Category</CardTitle>
-          </CardHeader>
-          <CardContent className="px-4 pb-3">
-            <div className="space-y-2">
-              {Object.entries(analysis.byCategory)
-                .sort(([, a], [, b]) => b.total - a.total)
-                .map(([cat, data]) => {
-                  const pct = analysis.totalAmount > 0 ? (data.total / analysis.totalAmount) * 100 : 0;
-                  return (
-                    <div key={cat} className="space-y-1">
-                      <div className="flex justify-between text-xs">
-                        <span className="truncate max-w-[200px]" title={cat}>{cat}</span>
-                        <span className="font-mono font-medium">R {data.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                          <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
-                        </div>
-                        <span className="text-[10px] text-muted-foreground w-10 text-right">{pct.toFixed(1)}%</span>
-                      </div>
-                      <div className="flex gap-3 text-[10px] text-muted-foreground">
-                        <span>{data.count} items</span>
-                        <span className="text-emerald-600">Realized: R {data.realized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                        <span className="text-amber-600">Unrealized: R {data.unrealized.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* COS Status Breakdown */}
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">By COS Status</CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-3">
-              <div className="space-y-2">
-                {Object.entries(analysis.byStatus)
-                  .sort(([, a], [, b]) => b.total - a.total)
-                  .map(([status, data]) => {
-                    const pct = analysis.totalAmount > 0 ? (data.total / analysis.totalAmount) * 100 : 0;
-                    return (
-                      <div key={status} className="flex items-center gap-3">
-                        <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${statusColors[status] || "bg-slate-300"}`} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex justify-between text-xs">
-                            <span>{status}</span>
-                            <span className="font-mono font-medium">R {data.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full ${statusColors[status] || "bg-slate-300"}`} style={{ width: `${pct}%` }} />
-                            </div>
-                            <span className="text-[10px] text-muted-foreground w-16 text-right">{data.count} ({pct.toFixed(1)}%)</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Top Counterparties */}
-          <Card>
-            <CardHeader className="pb-2 pt-3 px-4">
-              <CardTitle className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Top Counterparties</CardTitle>
-            </CardHeader>
-            <CardContent className="px-4 pb-3">
-              <div className="space-y-1.5">
-                {analysis.byCounterparty.map(([name, data], idx) => (
-                  <div key={name} className="flex justify-between text-xs">
-                    <span className="truncate max-w-[200px] text-muted-foreground" title={name}>
-                      {idx + 1}. {name}
-                    </span>
-                    <span className="font-mono font-medium shrink-0 ml-2">
-                      R {data.total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      <span className="text-muted-foreground ml-1">({data.count})</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CostReport() {
-  const [projectFilter, setProjectFilter] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [monthFilter, setMonthFilter] = useState("all");
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["/api/reports/cost", projectFilter, categoryFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (projectFilter) params.set("projectName", projectFilter);
-      if (categoryFilter) params.set("costCategory", categoryFilter);
-      const res = await fetch(`/api/reports/cost?${params}`, { headers: getAuthHeaders() });
-      return res.json();
-    },
+function useProgrammeData() {
+  const projectPlanQuery = useQuery({
+    queryKey: ["/api/reports/project-plan"],
+    queryFn: async () => (await fetch("/api/reports/project-plan", { headers: getAuthHeaders() })).json(),
+  });
+  const costQuery = useQuery({
+    queryKey: ["/api/reports/cost"],
+    queryFn: async () => (await fetch("/api/reports/cost", { headers: getAuthHeaders() })).json(),
+  });
+  const qualityQuery = useQuery({
+    queryKey: ["/api/reports/quality"],
+    queryFn: async () => (await fetch("/api/reports/quality", { headers: getAuthHeaders() })).json(),
+  });
+  const resourceQuery = useQuery({
+    queryKey: ["/api/reports/resource-allocation"],
+    queryFn: async () => (await fetch("/api/reports/resource-allocation", { headers: getAuthHeaders() })).json(),
   });
 
-  const allRows = data?.data || [];
-  const hasStale = allRows.some((r: any) => r.isStale);
-  const hasProtected = allRows.some((r: any) => r.hasProtectedFields);
+  return { projectPlanQuery, costQuery, qualityQuery, resourceQuery };
+}
 
-  // Apply month filter client-side using payment date, falling back to invoice date
-  const rows = useMemo(() => {
-    if (monthFilter === "all") return allRows;
-    return allRows.filter((r: any) => {
-      const month = parseMonth(r.paidDate) || parseMonth(r.invoiceDate);
-      return month === monthFilter;
-    });
-  }, [allRows, monthFilter]);
+type PeriodType = "month" | "prior" | "custom";
 
-  // Recalculate aggregates for filtered data
-  const agg = useMemo(() => {
-    let totalActuals = 0;
-    let totalCosRealized = 0;
-    for (const r of rows) {
-      const amt = parseFloat(r.amountExVat || "0") || 0;
-      totalActuals += amt;
-      if (r.cosRealized) totalCosRealized += amt;
-    }
-    return { totalActuals, totalCosRealized, totalUnrealized: totalActuals - totalCosRealized };
-  }, [rows]);
-
+function ProgrammeControlBar({ periodType, setPeriodType, month, setMonth, fromDate, setFromDate, toDate, setToDate, onBoardPdf }: {
+  periodType: PeriodType;
+  setPeriodType: (v: PeriodType) => void;
+  month: string;
+  setMonth: (v: string) => void;
+  fromDate: string;
+  setFromDate: (v: string) => void;
+  toDate: string;
+  setToDate: (v: string) => void;
+  onBoardPdf: () => void;
+}) {
   const monthOptions = useMemo(() => getMonthOptions(), []);
-
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex gap-2 flex-1 max-w-2xl">
-          <div className="relative flex-1">
-            <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-            <Input placeholder="Filter project..." className="pl-9 h-9" value={projectFilter} onChange={e => setProjectFilter(e.target.value)} />
-          </div>
-          <Input placeholder="Filter category..." className="h-9 max-w-[180px]" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} />
-          <Select value={monthFilter} onValueChange={setMonthFilter}>
-            <SelectTrigger className="h-9 w-[200px]">
-              <CalendarDays className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
-              <SelectValue placeholder="All months" />
-            </SelectTrigger>
+    <Card>
+      <CardContent className="pt-4 flex flex-wrap gap-2 items-center justify-between">
+        <div className="flex flex-wrap gap-2 items-center">
+          <Select value={periodType} onValueChange={(v: PeriodType) => setPeriodType(v)}>
+            <SelectTrigger className="w-[180px] h-9"><SelectValue /></SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All months</SelectItem>
-              {monthOptions.map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-              ))}
+              <SelectItem value="month">Operating Month</SelectItem>
+              <SelectItem value="prior">Prior Month</SelectItem>
+              <SelectItem value="custom">Custom Date Range</SelectItem>
             </SelectContent>
           </Select>
+          {(periodType === "month" || periodType === "prior") && (
+            <Select value={month} onValueChange={setMonth}>
+              <SelectTrigger className="w-[220px] h-9">
+                <CalendarDays className="w-3.5 h-3.5 mr-1.5 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {monthOptions.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          )}
+          {periodType === "custom" && (
+            <>
+              <Input type="date" className="h-9 w-[170px]" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              <Input type="date" className="h-9 w-[170px]" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            </>
+          )}
         </div>
-        <ExportButton reportType="cost" filters={{ projectName: projectFilter, costCategory: categoryFilter }} />
+        <Button size="sm" className="gap-1.5" onClick={onBoardPdf}>
+          <FileText className="w-3.5 h-3.5" /> Export Board PDF
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BoardView({ summary, trendText, openDrill, exportBoardPdf }: { summary: any; trendText: string; openDrill: (title: string, context: Record<string, any>) => void; exportBoardPdf: () => void }) {
+  const health = summary.health;
+  const topProjects = summary.criticalProjects.slice(0, 8);
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+        <Card className="cursor-pointer" onClick={() => openDrill("Portfolio Health", { tab: "project-plan", metric: "portfolioHealth" })}><CardContent className="p-4"><p className="text-xs text-muted-foreground">Overall Portfolio Health</p><p className="text-2xl font-semibold">{health.green}/{health.amber}/{health.red}</p><p className="text-xs text-muted-foreground">Green / Amber / Red</p></CardContent></Card>
+        <Card className="cursor-pointer" onClick={() => openDrill("Revenue Position", { tab: "cost", metric: "revenuePosition" })}><CardContent className="p-4"><p className="text-xs text-muted-foreground">Revenue / Cost / Margin</p><p className="text-2xl font-semibold">{formatCurrency(summary.financial.revenue)}</p><p className="text-xs">Cost {formatCurrency(summary.financial.cost)} • Margin {summary.financial.marginPct.toFixed(1)}%</p></CardContent></Card>
+        <Card className="cursor-pointer" onClick={() => openDrill("Top Delivery Risks", { tab: "project-plan", metric: "deliveryRisks" })}><CardContent className="p-4"><p className="text-xs text-muted-foreground">Top Delivery Risks</p><p className="text-2xl font-semibold text-amber-600">{summary.risks.delivery}</p><p className="text-xs">Open late tasks and slippage</p></CardContent></Card>
+        <Card className="cursor-pointer" onClick={() => openDrill("Top Engineering Risks", { tab: "project-plan", metric: "engineeringRisks" })}><CardContent className="p-4"><p className="text-xs text-muted-foreground">Top Engineering Risks</p><p className="text-2xl font-semibold text-red-600">{summary.risks.engineering}</p><p className="text-xs">Blocked / aging task pressure</p></CardContent></Card>
       </div>
 
-      {hasStale && (
-        <div className="flex items-center gap-2 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          Some cost data exceeds the staleness threshold.
-        </div>
-      )}
-
-      {/* Aggregates */}
-      <div className="grid grid-cols-3 gap-3">
-        <Card className="bg-card"><CardContent className="p-3 text-center">
-          <p className="text-xs text-muted-foreground">Total Actuals</p>
-          <p className="text-lg font-bold">R {(agg.totalActuals || 0).toLocaleString()}</p>
-        </CardContent></Card>
-        <Card className="bg-card"><CardContent className="p-3 text-center">
-          <p className="text-xs text-muted-foreground">COS Realized</p>
-          <p className="text-lg font-bold text-emerald-600">R {(agg.totalCosRealized || 0).toLocaleString()}</p>
-        </CardContent></Card>
-        <Card className="bg-card"><CardContent className="p-3 text-center">
-          <p className="text-xs text-muted-foreground">Unrealized COS</p>
-          <p className="text-lg font-bold text-amber-600">R {(agg.totalUnrealized || 0).toLocaleString()}</p>
-        </CardContent></Card>
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-3">
+        <Card className="xl:col-span-2">
+          <CardHeader className="pb-2"><CardTitle className="text-base">Executive Scorecard</CardTitle></CardHeader>
+          <CardContent className="space-y-2 text-sm">
+            <div className="flex justify-between cursor-pointer" onClick={() => openDrill("Quality Risks", { tab: "quality", metric: "qualityRisks" })}><span>Top quality risks</span><span className="font-semibold">{summary.risks.quality}</span></div>
+            <div className="flex justify-between cursor-pointer" onClick={() => openDrill("Procurement Exposure", { tab: "cost", metric: "procurementExposure" })}><span>Procurement exposure</span><span className="font-semibold">{formatCurrency(summary.procurement.exposure)}</span></div>
+            <div className="flex justify-between cursor-pointer" onClick={() => openDrill("Margin At Risk", { tab: "cost", metric: "marginAtRisk" })}><span>Margin at risk</span><span className="font-semibold text-red-600">{formatCurrency(summary.financial.marginAtRisk)}</span></div>
+            <div className="flex justify-between"><span>Major achievements this period</span><span className="font-semibold">{summary.achievements}</span></div>
+            <div className="flex justify-between"><span>Decisions / escalations needed</span><span className="font-semibold">{summary.decisionsNeeded}</span></div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-base">Trend vs Previous Month</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-sm">{trendText}</p>
+            <Button variant="outline" size="sm" className="mt-3 w-full" onClick={exportBoardPdf}>Export board-ready PDF</Button>
+          </CardContent>
+        </Card>
       </div>
 
-      <ReportMeta meta={{ count: rows.length, stalenessThresholdDays: data?.meta?.stalenessThresholdDays }} hasProtectedFields={hasProtected} />
-
-      <div className="border rounded-lg overflow-hidden">
-        <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-muted sticky top-0">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium">Project</th>
-                <th className="text-left px-3 py-2 font-medium">Category</th>
-                <th className="text-left px-3 py-2 font-medium">Counterparty</th>
-                <th className="text-right px-3 py-2 font-medium">Amount</th>
-                <th className="text-left px-3 py-2 font-medium">Invoice</th>
-                <th className="text-left px-3 py-2 font-medium">COS Status</th>
-                <th className="text-left px-3 py-2 font-medium">Payment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">Loading...</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">No data{monthFilter !== "all" ? " for selected month" : ""}</td></tr>
-              ) : rows.map((r: any, i: number) => (
-                <tr key={i} className="border-b hover:bg-muted/30">
-                  <td className="px-3 py-1.5 max-w-[150px] truncate">{r.projectName}</td>
-                  <td className="px-3 py-1.5">{r.costCategory || "—"}</td>
-                  <td className="px-3 py-1.5 max-w-[150px] truncate">{r.counterpartyName || "—"}</td>
-                  <td className="px-3 py-1.5 text-right font-mono">{r.amountExVat || "—"}</td>
-                  <td className="px-3 py-1.5">
-                    {r.invoiceNumber || "—"}
-                    {r.invoiceDateConfirmed && <span className="ml-1 text-emerald-600" title="Confirmed">&#x2713;</span>}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <Badge variant="outline" className={`text-[10px] ${
-                      r.cosStatus === "Paid" ? "text-emerald-700 border-emerald-200 bg-emerald-50" :
-                      r.cosStatus === "Realised" ? "text-blue-700 border-blue-200 bg-blue-50" :
-                      r.cosStatus === "Committed" ? "text-purple-700 border-purple-200 bg-purple-50" :
-                      "text-slate-500 border-slate-200"
-                    }`}>
-                      {r.cosStatus}
-                    </Badge>
-                  </td>
-                  <td className="px-3 py-1.5">
-                    {r.paidDate || "—"}
-                    {r.paymentConfirmed && <span className="ml-1 text-emerald-600" title="Confirmed">&#x2713;</span>}
-                    {r.paidDate && !r.paymentConfirmed && <span className="ml-1 text-red-400" title="Unconfirmed (not black)">?</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Analysis Section - shown when month filter is active */}
-      {monthFilter !== "all" && <CostAnalysis rows={rows} />}
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Critical Projects List</CardTitle></CardHeader>
+        <CardContent className="space-y-1">
+          {topProjects.length === 0 ? <p className="text-sm text-muted-foreground">No critical projects in selected period.</p> : topProjects.map((p: any) => (
+            <div key={`${p.projectName}-${p.owner}`} className="flex items-center justify-between text-sm py-1 border-b last:border-0 cursor-pointer" onClick={() => openDrill(`Project Detail: ${p.projectName}`, { tab: "project-plan", projectId: p.projectId })}>
+              <span>{p.projectName}</span>
+              <span className="text-muted-foreground">{p.owner || "Unassigned"} <ChevronRight className="inline w-3.5 h-3.5" /></span>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function QualityReport() {
-  const [projectFilter, setProjectFilter] = useState("");
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["/api/reports/quality", projectFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (projectFilter) params.set("projectName", projectFilter);
-      const res = await fetch(`/api/reports/quality?${params}`, { headers: getAuthHeaders() });
-      return res.json();
-    },
-  });
-
-  const rows = data?.data || [];
+function ManagementView({ summary, openDrill }: { summary: any; openDrill: (title: string, context: Record<string, any>) => void }) {
+  const sections = [
+    { id: "portfolio", title: "Portfolio Overview", cards: [{ label: "Active projects", value: summary.counts.activeProjects, ctx: { tab: "project-plan" } }, { label: "Red projects", value: summary.health.red, ctx: { tab: "quality", status: "red" } }] },
+    { id: "financial", title: "Financial Control", cards: [{ label: "Revenue", value: formatCurrency(summary.financial.revenue), ctx: { tab: "cost", metric: "revenue" } }, { label: "Cost", value: formatCurrency(summary.financial.cost), ctx: { tab: "cost", metric: "cost" } }, { label: "Margin", value: `${summary.financial.marginPct.toFixed(1)}%`, ctx: { tab: "cost", metric: "margin" } }] },
+    { id: "delivery", title: "Delivery Control", cards: [{ label: "Overdue tasks", value: summary.risks.delivery, ctx: { tab: "project-plan", metric: "overdueTasks" } }, { label: "At risk projects", value: summary.health.red + summary.health.amber, ctx: { tab: "project-plan", metric: "projectsAtRisk" } }] },
+    { id: "engineering", title: "Engineering Control", cards: [{ label: "Blocked tasks", value: summary.risks.engineering, ctx: { tab: "project-plan", metric: "engineeringRisks" } }] },
+    { id: "quality", title: "Quality Control", cards: [{ label: "Quality warnings", value: summary.risks.quality, ctx: { tab: "quality" } }] },
+    { id: "procurement", title: "Procurement Control", cards: [{ label: "Unpaid exposure", value: formatCurrency(summary.procurement.exposure), ctx: { tab: "cost", metric: "procurementExposure" } }] },
+    { id: "resource", title: "Resource Control", cards: [{ label: "High utilisation owners", value: summary.resources.highUtilization, ctx: { tab: "resource", metric: "highUtilization" } }] },
+    { id: "import", title: "Import / Data Quality", cards: [{ label: "Stale rows", value: summary.staleness.staleRows, ctx: { tab: "project-plan", metric: "staleRows" } }, { label: "Last import", value: summary.staleness.lastImportLabel, ctx: { tab: "project-plan", metric: "importHealth" } }] },
+  ];
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Filter by project..." className="pl-9 h-9" value={projectFilter} onChange={e => setProjectFilter(e.target.value)} />
-        </div>
-        <ExportButton reportType="quality" filters={{ projectName: projectFilter }} />
-      </div>
-
-      <ReportMeta meta={data?.meta} />
-
-      <div className="border rounded-lg overflow-hidden">
-        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-muted sticky top-0">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium">Project</th>
-                <th className="text-left px-3 py-2 font-medium">Phase</th>
-                <th className="text-left px-3 py-2 font-medium">RAG Status</th>
-                <th className="text-left px-3 py-2 font-medium">Size (kWp)</th>
-                <th className="text-left px-3 py-2 font-medium">PD</th>
-                <th className="text-left px-3 py-2 font-medium">PM</th>
-                <th className="text-left px-3 py-2 font-medium">Last Import</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">Loading...</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">No data</td></tr>
-              ) : rows.map((r: any, i: number) => (
-                <tr key={i} className="border-b hover:bg-muted/30">
-                  <td className="px-3 py-1.5">{r.projectName}</td>
-                  <td className="px-3 py-1.5">{r.phase || "—"}</td>
-                  <td className="px-3 py-1.5">
-                    {r.ragStatus ? (
-                      <Badge variant="outline" className={`text-[10px] ${
-                        r.ragStatus === "GREEN" || r.ragStatus === "green" ? "text-emerald-700 border-emerald-200 bg-emerald-50" :
-                        r.ragStatus === "AMBER" || r.ragStatus === "amber" ? "text-amber-700 border-amber-200 bg-amber-50" :
-                        r.ragStatus === "RED" || r.ragStatus === "red" ? "text-red-700 border-red-200 bg-red-50" :
-                        "text-slate-500"
-                      }`}>
-                        {r.ragStatus}
-                      </Badge>
-                    ) : "—"}
-                  </td>
-                  <td className="px-3 py-1.5">{r.sizeKwp || "—"}</td>
-                  <td className="px-3 py-1.5">{r.pd || "—"}</td>
-                  <td className="px-3 py-1.5">{r.pm || "—"}</td>
-                  <td className="px-3 py-1.5 text-slate-400">
-                    {r.lastImportAt ? new Date(r.lastImportAt).toLocaleDateString() : "Never"}
-                    {r.isStale && <AlertTriangle className="w-3 h-3 inline ml-1 text-amber-500" />}
-                  </td>
-                </tr>
+    <Tabs defaultValue="portfolio" className="w-full">
+      <TabsList className="w-full justify-start flex-wrap h-auto">
+        {sections.map(s => <TabsTrigger key={s.id} value={s.id}>{s.title}</TabsTrigger>)}
+      </TabsList>
+      {sections.map(section => (
+        <TabsContent key={section.id} value={section.id} className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {section.cards.map((card) => (
+              <Card key={card.label} className="cursor-pointer" onClick={() => openDrill(`${section.title}: ${card.label}`, card.ctx)}>
+                <CardContent className="p-4">
+                  <p className="text-xs text-muted-foreground">{card.label}</p>
+                  <p className="text-xl font-semibold">{card.value}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+          <Card>
+            <CardHeader className="pb-2"><CardTitle className="text-base">Exception-first list</CardTitle></CardHeader>
+            <CardContent className="space-y-1">
+              {summary.criticalProjects.slice(0, 6).map((p: any) => (
+                <div key={`${section.id}-${p.projectName}`} className="flex items-center justify-between text-sm py-1 border-b last:border-0 cursor-pointer" onClick={() => openDrill(`${section.title}: ${p.projectName}`, { tab: "project-plan", projectId: p.projectId })}>
+                  <span>{p.projectName}</span><Badge variant="outline">{p.status || "risk"}</Badge>
+                </div>
               ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      ))}
+    </Tabs>
   );
 }
 
-function ResourceAllocationReport() {
-  const [resourceFilter, setResourceFilter] = useState("");
+function ProjectPlanReport() { const [projectFilter, setProjectFilter] = useState(""); const { data, isLoading } = useQuery({ queryKey: ["/api/reports/project-plan", projectFilter], queryFn: async () => { const params = new URLSearchParams(); if (projectFilter) params.set("projectName", projectFilter); return (await fetch(`/api/reports/project-plan?${params}`, { headers: getAuthHeaders() })).json(); }, }); const rows = data?.data || []; const hasProtected = rows.some((r: any) => r.hasProtectedFields); const latestImport = rows.reduce((max: string, r: any) => r.lastImportAt && r.lastImportAt > max ? r.lastImportAt : max, ""); return (<div className="space-y-3"><div className="flex items-center justify-between gap-3"><div className="relative flex-1 max-w-xs"><Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" /><Input placeholder="Filter by project..." className="pl-9 h-9" value={projectFilter} onChange={e => setProjectFilter(e.target.value)} /></div><ExportButton reportType="project-plan" filters={{ projectName: projectFilter }} /></div><ReportMeta meta={data?.meta} lastImportAt={latestImport} hasProtectedFields={hasProtected} /><div className="border rounded-lg overflow-hidden"><div className="overflow-x-auto max-h-[500px] overflow-y-auto"><table className="w-full text-xs"><thead className="bg-muted sticky top-0"><tr><th className="text-left px-3 py-2 font-medium">Project</th><th className="text-left px-3 py-2 font-medium">Task</th><th className="text-left px-3 py-2 font-medium">Owner</th><th className="text-left px-3 py-2 font-medium">Status</th><th className="text-right px-3 py-2 font-medium">% Complete</th></tr></thead><tbody>{isLoading ? (<tr><td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">Loading...</td></tr>) : rows.length === 0 ? (<tr><td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">No data</td></tr>) : rows.map((r: any, i: number) => (<tr key={i} className="border-b hover:bg-muted/30"><td className="px-3 py-1.5 max-w-[180px] truncate">{r.projectName}</td><td className="px-3 py-1.5 max-w-[220px] truncate">{r.taskName}</td><td className="px-3 py-1.5">{r.owner || "—"}</td><td className="px-3 py-1.5">{r.status || "—"}</td><td className="px-3 py-1.5 text-right">{r.percentComplete != null ? `${r.percentComplete}%` : "—"}</td></tr>))}</tbody></table></div></div></div>); }
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["/api/reports/resource-allocation", resourceFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (resourceFilter) params.set("resource", resourceFilter);
-      const res = await fetch(`/api/reports/resource-allocation?${params}`, { headers: getAuthHeaders() });
-      return res.json();
-    },
-  });
+function CostReport() { const [projectFilter, setProjectFilter] = useState(""); const [categoryFilter, setCategoryFilter] = useState(""); const { data, isLoading } = useQuery({ queryKey: ["/api/reports/cost", projectFilter, categoryFilter], queryFn: async () => { const params = new URLSearchParams(); if (projectFilter) params.set("projectName", projectFilter); if (categoryFilter) params.set("costCategory", categoryFilter); return (await fetch(`/api/reports/cost?${params}`, { headers: getAuthHeaders() })).json(); }, }); const rows = data?.data || []; return (<div className="space-y-3"><div className="flex items-center justify-between gap-3"><div className="flex gap-2 flex-1 max-w-2xl"><div className="relative flex-1"><Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" /><Input placeholder="Filter project..." className="pl-9 h-9" value={projectFilter} onChange={e => setProjectFilter(e.target.value)} /></div><Input placeholder="Filter category..." className="h-9 max-w-[180px]" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} /></div><ExportButton reportType="cost" filters={{ projectName: projectFilter, costCategory: categoryFilter }} /></div><ReportMeta meta={data?.meta} /><div className="border rounded-lg overflow-hidden"><div className="overflow-x-auto max-h-[500px] overflow-y-auto"><table className="w-full text-xs"><thead className="bg-muted sticky top-0"><tr><th className="text-left px-3 py-2 font-medium">Project</th><th className="text-left px-3 py-2 font-medium">Category</th><th className="text-left px-3 py-2 font-medium">Counterparty</th><th className="text-right px-3 py-2 font-medium">Amount</th><th className="text-left px-3 py-2 font-medium">COS Status</th></tr></thead><tbody>{isLoading ? (<tr><td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">Loading...</td></tr>) : rows.length === 0 ? (<tr><td colSpan={5} className="px-3 py-8 text-center text-muted-foreground">No data</td></tr>) : rows.map((r: any, i: number) => (<tr key={i} className="border-b hover:bg-muted/30"><td className="px-3 py-1.5 max-w-[150px] truncate">{r.projectName}</td><td className="px-3 py-1.5">{r.costCategory || "—"}</td><td className="px-3 py-1.5 max-w-[150px] truncate">{r.counterpartyName || "—"}</td><td className="px-3 py-1.5 text-right font-mono">{r.amountExVat || "—"}</td><td className="px-3 py-1.5"><Badge variant="outline">{r.cosStatus}</Badge></td></tr>))}</tbody></table></div></div></div>); }
 
-  const rows = data?.data || [];
+function QualityReport() { const [projectFilter, setProjectFilter] = useState(""); const { data, isLoading } = useQuery({ queryKey: ["/api/reports/quality", projectFilter], queryFn: async () => { const params = new URLSearchParams(); if (projectFilter) params.set("projectName", projectFilter); return (await fetch(`/api/reports/quality?${params}`, { headers: getAuthHeaders() })).json(); }, }); const rows = data?.data || []; return (<div className="space-y-3"><div className="flex items-center justify-between gap-3"><div className="relative flex-1 max-w-xs"><Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" /><Input placeholder="Filter by project..." className="pl-9 h-9" value={projectFilter} onChange={e => setProjectFilter(e.target.value)} /></div><ExportButton reportType="quality" filters={{ projectName: projectFilter }} /></div><ReportMeta meta={data?.meta} /><div className="border rounded-lg overflow-hidden"><div className="overflow-x-auto max-h-[500px] overflow-y-auto"><table className="w-full text-xs"><thead className="bg-muted sticky top-0"><tr><th className="text-left px-3 py-2 font-medium">Project</th><th className="text-left px-3 py-2 font-medium">Phase</th><th className="text-left px-3 py-2 font-medium">RAG Status</th><th className="text-left px-3 py-2 font-medium">Last Import</th></tr></thead><tbody>{isLoading ? (<tr><td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">Loading...</td></tr>) : rows.length === 0 ? (<tr><td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">No data</td></tr>) : rows.map((r: any, i: number) => (<tr key={i} className="border-b hover:bg-muted/30"><td className="px-3 py-1.5">{r.projectName}</td><td className="px-3 py-1.5">{r.phase || "—"}</td><td className="px-3 py-1.5"><Badge variant="outline">{r.ragStatus || "—"}</Badge></td><td className="px-3 py-1.5">{r.lastImportAt ? new Date(r.lastImportAt).toLocaleDateString() : "Never"}</td></tr>))}</tbody></table></div></div></div>); }
 
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" />
-          <Input placeholder="Filter by resource..." className="pl-9 h-9" value={resourceFilter} onChange={e => setResourceFilter(e.target.value)} />
-        </div>
-        <ExportButton reportType="resource-allocation" filters={{ resource: resourceFilter }} />
-      </div>
-
-      <ReportMeta meta={data?.meta} />
-
-      <div className="border rounded-lg overflow-hidden">
-        <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
-          <table className="w-full text-xs">
-            <thead className="bg-muted sticky top-0">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium">Resource</th>
-                <th className="text-right px-3 py-2 font-medium">Total Tasks</th>
-                <th className="text-right px-3 py-2 font-medium">Completed</th>
-                <th className="text-right px-3 py-2 font-medium">In Progress</th>
-                <th className="text-right px-3 py-2 font-medium">Planned Hrs</th>
-                <th className="text-right px-3 py-2 font-medium">Actual Hrs</th>
-                <th className="text-right px-3 py-2 font-medium">Utilisation</th>
-                <th className="text-left px-3 py-2 font-medium">Projects</th>
-              </tr>
-            </thead>
-            <tbody>
-              {isLoading ? (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">Loading...</td></tr>
-              ) : rows.length === 0 ? (
-                <tr><td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">No data</td></tr>
-              ) : rows.map((r: any, i: number) => (
-                <tr key={i} className="border-b hover:bg-muted/30">
-                  <td className="px-3 py-1.5 font-medium">{r.resource}</td>
-                  <td className="px-3 py-1.5 text-right">{r.totalTasks}</td>
-                  <td className="px-3 py-1.5 text-right text-emerald-600">{r.completedTasks}</td>
-                  <td className="px-3 py-1.5 text-right text-blue-600">{r.inProgressTasks}</td>
-                  <td className="px-3 py-1.5 text-right">{r.plannedHours || "—"}</td>
-                  <td className="px-3 py-1.5 text-right">{r.actualHours || "—"}</td>
-                  <td className="px-3 py-1.5 text-right">{r.utilisation > 0 ? `${r.utilisation}%` : "—"}</td>
-                  <td className="px-3 py-1.5 max-w-[200px] truncate text-slate-500" title={r.projects}>{r.projects}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
+function ResourceAllocationReport() { const [resourceFilter, setResourceFilter] = useState(""); const { data, isLoading } = useQuery({ queryKey: ["/api/reports/resource-allocation", resourceFilter], queryFn: async () => { const params = new URLSearchParams(); if (resourceFilter) params.set("resource", resourceFilter); return (await fetch(`/api/reports/resource-allocation?${params}`, { headers: getAuthHeaders() })).json(); }, }); const rows = data?.data || []; return (<div className="space-y-3"><div className="flex items-center justify-between gap-3"><div className="relative flex-1 max-w-xs"><Search className="absolute left-2.5 top-2.5 w-4 h-4 text-muted-foreground" /><Input placeholder="Filter by resource..." className="pl-9 h-9" value={resourceFilter} onChange={e => setResourceFilter(e.target.value)} /></div><ExportButton reportType="resource-allocation" filters={{ resource: resourceFilter }} /></div><ReportMeta meta={data?.meta} /><div className="border rounded-lg overflow-hidden"><div className="overflow-x-auto max-h-[500px] overflow-y-auto"><table className="w-full text-xs"><thead className="bg-muted sticky top-0"><tr><th className="text-left px-3 py-2 font-medium">Resource</th><th className="text-right px-3 py-2 font-medium">Total Tasks</th><th className="text-right px-3 py-2 font-medium">Utilisation</th><th className="text-left px-3 py-2 font-medium">Projects</th></tr></thead><tbody>{isLoading ? (<tr><td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">Loading...</td></tr>) : rows.length === 0 ? (<tr><td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">No data</td></tr>) : rows.map((r: any, i: number) => (<tr key={i} className="border-b hover:bg-muted/30"><td className="px-3 py-1.5 font-medium">{r.resource}</td><td className="px-3 py-1.5 text-right">{r.totalTasks}</td><td className="px-3 py-1.5 text-right">{r.utilisation > 0 ? `${r.utilisation}%` : "—"}</td><td className="px-3 py-1.5 max-w-[200px] truncate text-slate-500" title={r.projects}>{r.projects}</td></tr>))}</tbody></table></div></div></div>); }
 
 export default function ProgrammeReports() {
   const [drill, setDrill] = useState<{ title: string; context: Record<string, any> } | null>(null);
+  const [periodType, setPeriodType] = useState<PeriodType>("month");
+  const [month, setMonth] = useState(getMonthOptions()[0].value);
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+
+  const { projectPlanQuery, costQuery, qualityQuery, resourceQuery } = useProgrammeData();
+
+  const period = useMemo(() => {
+    if (periodType === "custom") return { from: fromDate || undefined, to: toDate || undefined, month: null as string | null };
+    const [year, m] = month.split("-").map(Number);
+    const base = periodType === "prior" ? new Date(year, (m - 1) - 1, 1) : new Date(year, m - 1, 1);
+    const start = `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-01`;
+    const endDate = new Date(base.getFullYear(), base.getMonth() + 1, 0);
+    const end = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, "0")}-${String(endDate.getDate()).padStart(2, "0")}`;
+    return { from: start, to: end, month: `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}` };
+  }, [periodType, month, fromDate, toDate]);
+
+  const summary = useMemo(() => {
+    const planRows = projectPlanQuery.data?.data || [];
+    const costRows = costQuery.data?.data || [];
+    const qualityRows = qualityQuery.data?.data || [];
+    const resourceRows = resourceQuery.data?.data || [];
+
+    const inPeriod = (date?: string | null) => {
+      if (!date) return true;
+      const normalized = date.substring(0, 10);
+      if (period.from && normalized < period.from) return false;
+      if (period.to && normalized > period.to) return false;
+      return true;
+    };
+
+    const filteredPlan = planRows.filter((r: any) => inPeriod(r.endDate || r.startDate));
+    const filteredCost = costRows.filter((r: any) => inPeriod(r.paidDate || r.invoiceDate));
+    const filteredQuality = qualityRows;
+
+    const revenue = filteredCost.filter((r: any) => String(r.costCategory || "").toLowerCase().includes("revenue")).reduce((sum: number, r: any) => sum + parseAmount(r.amountExVat), 0);
+    const cost = filteredCost.reduce((sum: number, r: any) => sum + parseAmount(r.amountExVat), 0);
+    const margin = revenue - cost;
+    const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
+    const marginAtRisk = filteredCost.filter((r: any) => !["Paid", "Realised"].includes(r.cosStatus)).reduce((sum: number, r: any) => sum + parseAmount(r.amountExVat), 0);
+    const deliveryRisks = filteredPlan.filter((r: any) => (r.endDate && r.endDate < new Date().toISOString().substring(0, 10)) && !["done", "complete", "completed"].includes(String(r.status || "").toLowerCase())).length;
+    const engineeringRisks = filteredPlan.filter((r: any) => String(r.phase || "").toLowerCase().includes("eng") && !["done", "complete", "completed"].includes(String(r.status || "").toLowerCase())).length;
+    const qualityRisks = filteredQuality.filter((r: any) => ["red", "amber"].includes(String(r.ragStatus || "").toLowerCase())).length;
+    const procurementExposure = filteredCost.filter((r: any) => !r.paymentConfirmed).reduce((sum: number, r: any) => sum + parseAmount(r.amountExVat), 0);
+    const health = {
+      green: filteredQuality.filter((r: any) => String(r.ragStatus || "").toLowerCase() === "green").length,
+      amber: filteredQuality.filter((r: any) => String(r.ragStatus || "").toLowerCase() === "amber").length,
+      red: filteredQuality.filter((r: any) => String(r.ragStatus || "").toLowerCase() === "red").length,
+    };
+
+    const projectCounts = new Map<string, number>();
+    filteredPlan.forEach((r: any) => {
+      if (!r.projectName) return;
+      const key = String(r.projectName);
+      if ((r.endDate && r.endDate < new Date().toISOString().substring(0, 10)) || ["blocked", "at risk", "late"].includes(String(r.status || "").toLowerCase())) {
+        projectCounts.set(key, (projectCounts.get(key) || 0) + 1);
+      }
+    });
+    const criticalProjects = Array.from(projectCounts.entries()).sort((a, b) => b[1] - a[1]).map(([projectName, count]) => {
+      const row = filteredPlan.find((r: any) => r.projectName === projectName);
+      return { projectName, projectId: row?.projectId, owner: row?.owner, status: `${count} risks` };
+    });
+
+    const allRows = [...planRows, ...costRows, ...qualityRows];
+    const staleRows = allRows.filter((r: any) => r.isStale).length;
+    const lastImport = allRows.map((r: any) => r.lastImportAt).filter(Boolean).sort().reverse()[0];
+
+    return {
+      counts: { activeProjects: new Set(filteredPlan.map((r: any) => r.projectName).filter(Boolean)).size },
+      health,
+      financial: { revenue, cost, margin, marginPct, marginAtRisk },
+      risks: { delivery: deliveryRisks, engineering: engineeringRisks, quality: qualityRisks },
+      procurement: { exposure: procurementExposure },
+      achievements: filteredPlan.filter((r: any) => ["complete", "completed", "done"].includes(String(r.status || "").toLowerCase())).length,
+      decisionsNeeded: deliveryRisks + qualityRisks,
+      criticalProjects,
+      resources: { highUtilization: resourceRows.filter((r: any) => (r.utilisation || 0) > 100).length },
+      staleness: { staleRows, lastImportLabel: lastImport ? new Date(lastImport).toLocaleString() : "Never" },
+    };
+  }, [projectPlanQuery.data, costQuery.data, qualityQuery.data, resourceQuery.data, period]);
+
+  const trendText = useMemo(() => `Margin at risk is ${formatCurrency(summary.financial.marginAtRisk)} with ${summary.risks.delivery} delivery exceptions and ${summary.risks.quality} quality exceptions in selected period.`, [summary]);
+
+  const openDrill = (title: string, context: Record<string, any>) => {
+    setDrill({ title, context: { ...context, dateFrom: period.from, dateTo: period.to } });
+  };
+
+  const exportBoardPdf = async () => {
+    const params = new URLSearchParams();
+    if (period.from) params.set("dateFrom", period.from);
+    if (period.to) params.set("dateTo", period.to);
+    if (period.month) params.set("month", period.month);
+    const res = await fetch(`/api/reports/programme/board-pdf?${params.toString()}`, { headers: getAuthHeaders() });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `programme_board_pack_${period.month || "custom"}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const reportCatalog = [
     { name: "Project Plan Report", category: "Engineering", description: "Programme progress and schedule status.", type: "chart" as const },
     { name: "Cost Report", category: "Financial", description: "Planned vs actual cost insights.", type: "excel" as const },
     { name: "Quality Report", category: "Quality", description: "Open NCRs and warning trends.", type: "pdf" as const },
     { name: "Resource Allocation", category: "Executive", description: "People, capacity, and workload summary.", type: "chart" as const },
   ];
+
   return (
     <div className="container mx-auto p-6 space-y-4">
-      <div className="flex items-center gap-3">
-        <FileSpreadsheet className="w-6 h-6 text-primary" />
-        <h1 className="text-2xl font-bold">Programme Reports</h1>
-      </div>
-      <div className="space-y-3">
-        <h2 className="text-lg font-semibold">Report Library</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {reportCatalog.map((report) => (
-            <ReportCard
-              key={report.name}
-              name={report.name}
-              description={`${report.category} • ${report.description}`}
-              type={report.type}
-              lastGenerated={new Date().toLocaleDateString()}
-            />
-          ))}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <FileSpreadsheet className="w-6 h-6 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold">Programme Reports</h1>
+            <p className="text-sm text-muted-foreground">Board and management reporting cockpit with full drill-through.</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Clock className="w-3.5 h-3.5" />
+          Last import health: {summary.staleness.lastImportLabel} • {summary.staleness.staleRows} stale rows
         </div>
       </div>
 
-      <Card className="border-emerald-200">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Executive Exceptions & Risks</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => setDrill({ title: "Programme Cost Exceptions", context: { tab: "cost", metric: "costExceptions" } })}>Cost Exceptions</Button>
-          <Button size="sm" variant="outline" onClick={() => setDrill({ title: "Programme Schedule Slippage", context: { tab: "project-plan", metric: "scheduleRisks" } })}>Schedule Risks</Button>
-          <Button size="sm" variant="outline" onClick={() => setDrill({ title: "Programme Quality Warnings", context: { tab: "quality", metric: "qualityWarnings" } })}>Quality Warnings</Button>
-          <Button size="sm" variant="outline" onClick={() => setDrill({ title: "Programme Resource Pressure", context: { tab: "resource", metric: "resourcePressure" } })}>Resource Pressure</Button>
-        </CardContent>
-      </Card>
+      <ProgrammeControlBar periodType={periodType} setPeriodType={setPeriodType} month={month} setMonth={setMonth} fromDate={fromDate} setFromDate={setFromDate} toDate={toDate} setToDate={setToDate} onBoardPdf={exportBoardPdf} />
 
-      <Tabs defaultValue="project-plan" className="w-full">
+      <Tabs defaultValue="board" className="w-full">
         <TabsList className="w-full justify-start">
-          <TabsTrigger value="project-plan">Project Plan</TabsTrigger>
-          <TabsTrigger value="cost">Cost</TabsTrigger>
-          <TabsTrigger value="quality">Quality</TabsTrigger>
-          <TabsTrigger value="resource">Resource Allocation</TabsTrigger>
+          <TabsTrigger value="board"><Building2 className="w-3.5 h-3.5 mr-1" />Board View</TabsTrigger>
+          <TabsTrigger value="management"><Briefcase className="w-3.5 h-3.5 mr-1" />Management View</TabsTrigger>
+          <TabsTrigger value="library"><FileSpreadsheet className="w-3.5 h-3.5 mr-1" />Report Library</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="project-plan" className="mt-4">
-          <ProjectPlanReport />
+        <TabsContent value="board" className="mt-4">
+          <BoardView summary={summary} trendText={trendText} openDrill={openDrill} exportBoardPdf={exportBoardPdf} />
         </TabsContent>
 
-        <TabsContent value="cost" className="mt-4">
-          <CostReport />
+        <TabsContent value="management" className="mt-4">
+          <ManagementView summary={summary} openDrill={openDrill} />
         </TabsContent>
 
-        <TabsContent value="quality" className="mt-4">
-          <QualityReport />
-        </TabsContent>
-
-        <TabsContent value="resource" className="mt-4">
-          <ResourceAllocationReport />
+        <TabsContent value="library" className="mt-4 space-y-4">
+          <div className="space-y-3">
+            <h2 className="text-lg font-semibold">Report Library</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {reportCatalog.map((report) => (
+                <ReportCard key={report.name} name={report.name} description={`${report.category} • ${report.description}`} type={report.type} lastGenerated={new Date().toLocaleDateString()} />
+              ))}
+            </div>
+          </div>
+          <Tabs defaultValue="project-plan" className="w-full">
+            <TabsList className="w-full justify-start">
+              <TabsTrigger value="project-plan">Project Plan</TabsTrigger>
+              <TabsTrigger value="cost">Cost</TabsTrigger>
+              <TabsTrigger value="quality">Quality</TabsTrigger>
+              <TabsTrigger value="resource">Resource Allocation</TabsTrigger>
+            </TabsList>
+            <TabsContent value="project-plan" className="mt-4"><ProjectPlanReport /></TabsContent>
+            <TabsContent value="cost" className="mt-4"><CostReport /></TabsContent>
+            <TabsContent value="quality" className="mt-4"><QualityReport /></TabsContent>
+            <TabsContent value="resource" className="mt-4"><ResourceAllocationReport /></TabsContent>
+          </Tabs>
         </TabsContent>
       </Tabs>
 
