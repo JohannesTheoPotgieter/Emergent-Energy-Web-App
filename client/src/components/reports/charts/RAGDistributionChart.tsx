@@ -19,9 +19,10 @@ interface ProjectStatusItem {
 
 interface RAGDistributionChartProps {
   data: ProjectStatusItem[];
+  onChartClick?: (rag?: string) => void;
 }
 
-export default function RAGDistributionChart({ data }: RAGDistributionChartProps) {
+export default function RAGDistributionChart({ data, onChartClick }: RAGDistributionChartProps) {
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
 
@@ -58,6 +59,7 @@ export default function RAGDistributionChart({ data }: RAGDistributionChartProps
           <PieChart>
             <Pie
               data={chartData}
+              onClick={(row: any) => onChartClick?.(row?.name)}
               dataKey="value"
               nameKey="name"
               cx="50%"
