@@ -65,6 +65,7 @@ import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/Micro
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
+import { QualityTab } from "@/components/tabs/QualityTab";
 
 async function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem('auth_token');
@@ -162,23 +163,6 @@ interface QualityDashboardSummary {
 type ProjectSortKey = "name" | "completion" | "warnings" | "updated";
 type ProjectSortDir = "asc" | "desc";
 type ItemSortKey = "itemName" | "projectName" | "phaseName" | "groupName" | "qmStatus" | "assigneeName" | "endDate" | "evidenceCount";
-
-function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { bg: string; text: string; label: string; dot: string }> = {
-    pass: { bg: "bg-emerald-50", text: "text-emerald-600", label: "Pass", dot: "bg-emerald-500" },
-    fail: { bg: "bg-red-50", text: "text-red-600", label: "Fail", dot: "bg-red-500" },
-    review: { bg: "bg-amber-50", text: "text-amber-600", label: "Review", dot: "bg-amber-500" },
-    na: { bg: "bg-gray-500/15", text: "text-muted-foreground", label: "N/A", dot: "bg-gray-400" },
-    pending: { bg: "bg-blue-50", text: "text-blue-600", label: "Pending", dot: "bg-blue-500" },
-  };
-  const c = config[status] || config.pending;
-  return (
-    <Badge variant="outline" className={`${c.bg} ${c.text} border-0 text-xs gap-1.5`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
-      {c.label}
-    </Badge>
-  );
-}
 
 function RiskLevelBadge({ level }: { level?: string }) {
   const normalized = String(level || "low").toLowerCase();
@@ -451,6 +435,16 @@ export default function QmDashboardPage() {
     [checklists]
   );
 
+  const hasLinkedItems = (c: Checklist) => {
+    if (!c.phases || c.phases.length === 0) return false;
+    return c.phases.reduce((t, p) => t + p.total, 0) > 0;
+  };
+
+  const projectsWithLinkedItems = useMemo(
+    () => checklists.filter(hasLinkedItems),
+    [checklists]
+  );
+
   const projectsWithWarningsCount = useMemo(() => checklists.filter(c => getProjectWarnings(c) > 0).length, [checklists, warnings]);
 
   const filteredProjects = useMemo(() => {
@@ -506,16 +500,6 @@ export default function QmDashboardPage() {
   const selectedProjectChecklist = useMemo(
     () => checklists.find((c) => c.projectName === selectedProjectName) ?? null,
     [checklists, selectedProjectName]
-  );
-  const selectedProjectItems = useMemo(
-    () => allItems
-      .filter((i) => i.projectName === selectedProjectName)
-      .sort((a, b) => (a.endDate || "9999-12-31").localeCompare(b.endDate || "9999-12-31")),
-    [allItems, selectedProjectName]
-  );
-  const selectedProjectWarnings = useMemo(
-    () => warnings.filter((w) => w.projectName === selectedProjectName),
-    [warnings, selectedProjectName]
   );
 
   const highSeverityWarnings = useMemo(() => warnings.filter(w => w.severity === "High"), [warnings]);
@@ -799,58 +783,9 @@ export default function QmDashboardPage() {
                     Open full project
                   </Button>
                 </div>
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="rounded-md border px-3 py-2 bg-muted/20">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Open warnings</p>
-                    <p className="text-sm font-semibold">{selectedProjectWarnings.length}</p>
-                  </div>
-                  <div className="rounded-md border px-3 py-2 bg-muted/20">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Checklist items</p>
-                    <p className="text-sm font-semibold">{selectedProjectItems.length}</p>
-                  </div>
-                  <div className="rounded-md border px-3 py-2 bg-muted/20">
-                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Updated</p>
-                    <p className="text-sm font-semibold">{formatShortDate(selectedProjectChecklist.updatedAt || selectedProjectChecklist.createdAt)}</p>
-                  </div>
-                </div>
               </CardHeader>
-              <CardContent className="pt-4 space-y-4">
-                <div className="rounded-md border">
-                  <div className="px-3 py-2 border-b bg-muted/30">
-                    <p className="text-xs font-semibold">Action list (What, Who, When)</p>
-                  </div>
-                  {selectedProjectItems.length === 0 ? (
-                    <p className="text-xs text-muted-foreground px-3 py-4">No linked checklist items were found for this project.</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b bg-muted/20">
-                            <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">What</th>
-                            <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">Who</th>
-                            <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">When</th>
-                            <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {selectedProjectItems.map((item) => (
-                            <tr key={item.id} className="border-b last:border-0">
-                              <td className="px-3 py-2.5">
-                                <p className="text-sm font-medium">{item.itemName}</p>
-                                <p className="text-xs text-muted-foreground">{item.phaseName}</p>
-                              </td>
-                              <td className="px-3 py-2.5 text-xs">{item.assigneeName || "Unassigned"}</td>
-                              <td className="px-3 py-2.5 text-xs">{formatShortDate(item.endDate)}</td>
-                              <td className="px-3 py-2.5">
-                                <StatusBadge status={item.qmStatus || "pending"} />
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
+              <CardContent className="pt-4">
+                <QualityTab projectName={selectedProjectName} />
               </CardContent>
             </Card>
           ) : (
