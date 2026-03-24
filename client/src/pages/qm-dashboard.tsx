@@ -28,7 +28,6 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Collapsible,
   CollapsibleContent,
@@ -50,7 +49,6 @@ import {
   Loader2,
   ListFilter,
   LayoutGrid,
-  Table2,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -163,7 +161,6 @@ interface QualityDashboardSummary {
 
 type ProjectSortKey = "name" | "completion" | "warnings" | "updated";
 type ProjectSortDir = "asc" | "desc";
-type ItemSortKey = "itemName" | "projectName" | "phaseName" | "groupName" | "qmStatus" | "assigneeName" | "endDate" | "evidenceCount";
 
 function RiskLevelBadge({ level }: { level?: string }) {
   const normalized = String(level || "low").toLowerCase();
@@ -210,7 +207,6 @@ export default function QmDashboardPage() {
     const params = new URLSearchParams(window.location.search);
     return params.get("project") || "";
   });
-  const [viewMode, setViewMode] = useState<"projects" | "items">("projects");
   const [projectSort, setProjectSort] = useState<ProjectSortKey>("name");
   const [projectSortDir, setProjectSortDir] = useState<ProjectSortDir>("asc");
   const [statusFilter, setStatusFilter] = useState<"active">("active");
@@ -223,12 +219,6 @@ export default function QmDashboardPage() {
   const [startQmOpen, setStartQmOpen] = useState(false);
   const [startQmProject, setStartQmProject] = useState("");
   const [startQmPopoverOpen, setStartQmPopoverOpen] = useState(false);
-  const [itemsStatusFilter, setItemsStatusFilter] = useState<string>("all");
-  const [itemsProjectFilter, setItemsProjectFilter] = useState<string>("all");
-  const [itemsPhaseFilter, setItemsPhaseFilter] = useState<string>("all");
-  const [itemsSearch, setItemsSearch] = useState("");
-  const [itemSort, setItemSort] = useState<ItemSortKey>("itemName");
-  const [itemSortDir, setItemSortDir] = useState<ProjectSortDir>("asc");
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -253,12 +243,6 @@ export default function QmDashboardPage() {
     staleTime: 10_000,
   });
 
-  const { data: allItems = [], isLoading: itemsLoading, isError: itemsError, refetch: refetchItems } = useQuery<QualityItem[]>({
-    queryKey: ["quality-all-items"],
-    queryFn: () => qFetch("/api/quality/all-items"),
-    refetchOnMount: "always",
-    staleTime: 30_000,
-  });
 
   const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
     queryKey: ["projects-summary-names"],
@@ -458,36 +442,6 @@ export default function QmDashboardPage() {
     return list;
   }, [projectsWithLinkedItems, searchTerm, statusFilter, warningFilter, projectSort, projectSortDir, warnings]);
 
-  const filteredItems = useMemo(() => {
-    let list = [...allItems];
-    if (itemsSearch) list = list.filter(i => i.itemName.toLowerCase().includes(itemsSearch.toLowerCase()) || i.projectName.toLowerCase().includes(itemsSearch.toLowerCase()));
-    if (itemsStatusFilter !== "all") {
-      list = list.filter(i => itemsStatusFilter === "pending"
-        ? !i.qmStatus || i.qmStatus === "not_started"
-        : i.qmStatus === itemsStatusFilter);
-    }
-    if (itemsProjectFilter !== "all") list = list.filter(i => i.projectName === itemsProjectFilter);
-    if (itemsPhaseFilter !== "all") list = list.filter(i => i.phaseName === itemsPhaseFilter);
-
-    list.sort((a, b) => {
-      let cmp = 0;
-      switch (itemSort) {
-        case "itemName": cmp = (a.itemName || "").localeCompare(b.itemName || ""); break;
-        case "projectName": cmp = (a.projectName || "").localeCompare(b.projectName || ""); break;
-        case "phaseName": cmp = (a.phaseName || "").localeCompare(b.phaseName || ""); break;
-        case "groupName": cmp = (a.groupName || "").localeCompare(b.groupName || ""); break;
-        case "qmStatus": cmp = (a.qmStatus || "").localeCompare(b.qmStatus || ""); break;
-        case "assigneeName": cmp = (a.assigneeName || "").localeCompare(b.assigneeName || ""); break;
-        case "endDate": cmp = (a.endDate || "").localeCompare(b.endDate || ""); break;
-        case "evidenceCount": cmp = a.evidenceCount - b.evidenceCount; break;
-      }
-      return itemSortDir === "desc" ? -cmp : cmp;
-    });
-    return list;
-  }, [allItems, itemsSearch, itemsStatusFilter, itemsProjectFilter, itemsPhaseFilter, itemSort, itemSortDir]);
-
-  const itemProjects = useMemo(() => Array.from(new Set(allItems.map(i => i.projectName))).sort(), [allItems]);
-  const itemPhases = useMemo(() => Array.from(new Set(allItems.map(i => i.phaseName))).sort(), [allItems]);
   const selectedProjectChecklist = useMemo(
     () => checklists.find((c) => c.projectName === selectedProjectName) ?? null,
     [checklists, selectedProjectName]
@@ -497,15 +451,6 @@ export default function QmDashboardPage() {
   const mediumWarnings = useMemo(() => warnings.filter(w => w.severity === "Medium"), [warnings]);
   const lowWarnings = useMemo(() => warnings.filter(w => w.severity !== "High" && w.severity !== "Medium"), [warnings]);
   const topRiskProjects = governanceSummary?.topRiskProjects || [];
-
-  const toggleItemSort = (key: string) => {
-    if (itemSort === key) {
-      setItemSortDir(d => d === "asc" ? "desc" : "asc");
-    } else {
-      setItemSort(key as ItemSortKey);
-      setItemSortDir("asc");
-    }
-  };
 
   const qmNextAction = useMemo((): NextAction | null => {
     const overdueActions = governanceSummary?.overdueActions || 0;
@@ -541,12 +486,6 @@ export default function QmDashboardPage() {
     warningFilter ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
-  const activeItemFiltersCount = [
-    itemsSearch ? 1 : 0,
-    itemsStatusFilter !== "all" ? 1 : 0,
-    itemsProjectFilter !== "all" ? 1 : 0,
-    itemsPhaseFilter !== "all" ? 1 : 0,
-  ].reduce((a, b) => a + b, 0);
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="qm-dashboard-page">
@@ -700,23 +639,16 @@ export default function QmDashboardPage() {
         </Card>
       </div>
 
-      <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as "projects" | "items")}>
+      <Tabs value="projects">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <TabsList className="h-10" data-testid="view-mode-toggle">
-            <TabsTrigger value="projects" data-testid="tab-projects-view" className="gap-1.5 px-4">
-              <LayoutGrid className="h-4 w-4" /> Projects
-            </TabsTrigger>
-            <TabsTrigger value="items" data-testid="tab-items-view" className="gap-1.5 px-4">
-              <Table2 className="h-4 w-4" /> Items
-            </TabsTrigger>
-          </TabsList>
+          <div className="flex items-center gap-1.5 px-4 h-10 font-semibold text-sm">
+            <LayoutGrid className="h-4 w-4" /> Project Checklists
+          </div>
           <div className="w-full rounded-lg border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-            {viewMode === "projects"
-              ? `Projects view: prioritize checklist-level review and navigate to project quality tabs (${activeProjectsCount} active, ${completedProjectsCount} completed).`
-              : "Items view: inspect individual checklist items across projects for fast triage."}
+            {`Projects view: prioritize checklist-level review and navigate to project quality tabs (${activeProjectsCount} active, ${completedProjectsCount} completed).`}
           </div>
 
-          {viewMode === "projects" && activeFiltersCount > 0 && (
+          {activeFiltersCount > 0 && (
             <Button
               variant="ghost"
               size="sm"
@@ -726,18 +658,6 @@ export default function QmDashboardPage() {
             >
               <XCircle className="h-3.5 w-3.5 mr-1" />
               Clear {activeFiltersCount} filter{activeFiltersCount > 1 ? "s" : ""}
-            </Button>
-          )}
-          {viewMode === "items" && activeItemFiltersCount > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs text-muted-foreground"
-              onClick={() => { setItemsSearch(""); setItemsStatusFilter("all"); setItemsProjectFilter("all"); setItemsPhaseFilter("all"); }}
-              data-testid="btn-clear-all-item-filters"
-            >
-              <XCircle className="h-3.5 w-3.5 mr-1" />
-              Clear {activeItemFiltersCount} filter{activeItemFiltersCount > 1 ? "s" : ""}
             </Button>
           )}
         </div>
@@ -1028,213 +948,6 @@ export default function QmDashboardPage() {
             </CardContent>
           </Card>
           )}
-        </TabsContent>
-
-        <TabsContent value="items" className="mt-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <CardTitle className="text-base font-semibold">All Quality Items</CardTitle>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      placeholder="Search items..."
-                      value={itemsSearch}
-                      onChange={(e) => setItemsSearch(e.target.value)}
-                      className="pl-9 h-9 w-[200px] sm:w-[240px]"
-                      data-testid="input-items-search"
-                    />
-                  </div>
-                  <SearchableSelect
-                    value={itemsStatusFilter}
-                    onValueChange={setItemsStatusFilter}
-                    placeholder="Status"
-                    triggerClassName="w-[120px] h-9"
-                    data-testid="select-items-status"
-                    options={[
-                      { value: "all", label: "All Status" },
-                      { value: "pending", label: "Pending" },
-                      { value: "pass", label: "Pass" },
-                      { value: "fail", label: "Fail" },
-                      { value: "review", label: "Review" },
-                      { value: "na", label: "N/A" },
-                    ]}
-                  />
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-9 text-xs gap-1.5" data-testid="qm-items-more-filters">
-                        <ListFilter className="h-3.5 w-3.5" /> More
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-64 p-3 space-y-2.5">
-                      <SearchableSelect
-                        value={itemsProjectFilter}
-                        onValueChange={setItemsProjectFilter}
-                        placeholder="Project"
-                        triggerClassName="w-full h-9"
-                        data-testid="select-items-project"
-                        options={[
-                          { value: "all", label: "All Projects" },
-                          ...itemProjects.map(p => ({ value: p, label: p })),
-                        ]}
-                      />
-                      <SearchableSelect
-                        value={itemsPhaseFilter}
-                        onValueChange={setItemsPhaseFilter}
-                        placeholder="Phase"
-                        triggerClassName="w-full h-9"
-                        data-testid="select-items-phase"
-                        options={[
-                          { value: "all", label: "All Phases" },
-                          ...itemPhases.map(p => ({ value: p, label: p })),
-                        ]}
-                      />
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {itemsLoading ? (
-                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                  <Loader2 className="h-8 w-8 mb-3 animate-spin text-emerald-500" />
-                  <p className="text-sm">Loading items...</p>
-                </div>
-              ) : itemsError ? (
-                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                  <AlertTriangle className="h-10 w-10 mb-3 text-amber-500" />
-                  <p className="font-medium">Couldn't load quality items</p>
-                  <p className="text-xs mt-1">Retry to continue item-level review.</p>
-                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchItems()} data-testid="btn-retry-items">Retry</Button>
-                </div>
-              ) : filteredItems.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
-                  <ListFilter className="h-16 w-16 mb-4 opacity-20" />
-                  <p className="font-medium">No quality items found</p>
-                  <p className="text-xs mt-1">
-                    {activeItemFiltersCount > 0 ? "Try adjusting your filters" : "Quality items will appear when checklists are created"}
-                  </p>
-                  {activeItemFiltersCount > 0 && (
-                    <Button variant="link" size="sm" className="mt-2" onClick={() => { setItemsSearch(""); setItemsStatusFilter("all"); setItemsProjectFilter("all"); setItemsPhaseFilter("all"); }} data-testid="btn-clear-items-filters">
-                      Clear filters
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <div className="overflow-x-auto -mx-6">
-                  <table className="w-full min-w-[800px]">
-                    <thead>
-                      <tr className="border-b bg-muted/30">
-                        <th className="text-left py-2.5 px-4">
-                          <SortHeader label="Item Name" sortKey="itemName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
-                        </th>
-                        <th className="text-left py-2.5 px-4 hidden md:table-cell">
-                          <SortHeader label="Project" sortKey="projectName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
-                        </th>
-                        <th className="text-left py-2.5 px-4 hidden lg:table-cell">
-                          <SortHeader label="Phase" sortKey="phaseName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
-                        </th>
-                        <th className="text-left py-2.5 px-4 hidden lg:table-cell">
-                          <SortHeader label="Group" sortKey="groupName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
-                        </th>
-                        <th className="text-center py-2.5 px-4">
-                          <SortHeader label="Status" sortKey="qmStatus" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs justify-center" />
-                        </th>
-                        <th className="text-left py-2.5 px-4 hidden md:table-cell">
-                          <SortHeader label="Assignee" sortKey="assigneeName" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs" />
-                        </th>
-                        <th className="text-center py-2.5 px-4 hidden sm:table-cell">
-                          <SortHeader label="Evidence" sortKey="evidenceCount" currentSort={itemSort} currentDir={itemSortDir} onSort={toggleItemSort} className="text-xs justify-center" />
-                        </th>
-                        <th className="w-8"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredItems.map((item) => (
-                        <tr
-                          key={item.id}
-                          data-testid={`item-row-${item.id}`}
-                          className="border-b border-border/40 hover:bg-muted/30 cursor-pointer transition-colors group"
-                          onClick={() => setLocation(`/project/${encodeURIComponent(item.projectName)}?mode=execution&section=quality&subTab=quality&qualityItemId=${item.id}`)}
-                        >
-                          <td className="py-3 px-4">
-                            <div className="font-medium text-sm truncate max-w-[220px]">{item.itemName}</div>
-                            <div className="text-[10px] text-muted-foreground truncate max-w-[220px] md:hidden mt-0.5">
-                              {item.projectName}
-                            </div>
-                            <div className="mt-1 flex flex-wrap gap-1">
-                              {item.resubmissionNeeded && (
-                                <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
-                                  Resubmission
-                                </Badge>
-                              )}
-                              {item.overdue && (
-                                <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200">
-                                  {item.daysOverdue || 0}d overdue
-                                </Badge>
-                              )}
-                              {item.evidenceMissing && (
-                                <Badge variant="outline" className="text-[10px] bg-sky-50 text-sky-700 border-sky-200">
-                                  Evidence required
-                                </Badge>
-                              )}
-                              {item.approvalState === "pending_review" && (
-                                <Badge variant="outline" className="text-[10px] bg-violet-50 text-violet-700 border-violet-200">
-                                  Pending review
-                                </Badge>
-                              )}
-                            </div>
-                            {item.resubmissionNeeded && item.approvalComment && (
-                              <div className="text-[10px] text-amber-700 mt-1 truncate max-w-[240px]">
-                                {item.approvalComment}
-                              </div>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-sm hidden md:table-cell">
-                            <span className="truncate max-w-[150px] inline-block">{item.projectName}</span>
-                          </td>
-                          <td className="py-3 px-4 text-xs text-muted-foreground hidden lg:table-cell">{item.phaseName}</td>
-                          <td className="py-3 px-4 text-xs text-muted-foreground hidden lg:table-cell">{item.groupName}</td>
-                          <td className="py-3 px-4 text-center">
-                            <StatusBadge status={item.qmStatus || "pending"} />
-                          </td>
-                          <td className="py-3 px-4 text-sm hidden md:table-cell">
-                            {item.assigneeName ? (
-                              <div className="flex items-center gap-1.5">
-                                <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center">
-                                  <User className="h-3 w-3 text-muted-foreground" />
-                                </div>
-                                <span className="truncate max-w-[100px] text-xs">{item.assigneeName}</span>
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">—</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-center hidden sm:table-cell">
-                            {item.evidenceCount > 0 ? (
-                              <Badge variant="outline" className="text-[10px] gap-1">
-                                <FileText className="h-3 w-3" />
-                                {item.evidenceCount}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">—</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4">
-                            <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                  <div className="text-xs text-muted-foreground text-right pt-3 px-4">
-                    Showing {filteredItems.length} of {allItems.length} items
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </TabsContent>
       </Tabs>
 
