@@ -43,4 +43,16 @@ export async function registerSupportRoutes(app: Express) {
 
   const { registerExceptionDashboardRoutes } = await import("../exception-dashboard-routes");
   registerExceptionDashboardRoutes(app);
+
+  const { registerQualityNcrRoutes } = await import("../quality-ncr-routes");
+  registerQualityNcrRoutes(app);
+
+  const { registerUserDashboardPreferenceRoutes } = await import("../user-dashboard-preferences-routes");
+  registerUserDashboardPreferenceRoutes(app);
+
+  const { registerAnalyticsRoutes } = await import("../analytics-routes");
+  registerAnalyticsRoutes(app);
+
+  const { registerMicrosoftIntegrationEnhancementRoutes } = await import("../microsoft-integration-enhancements-routes");
+  registerMicrosoftIntegrationEnhancementRoutes(app);
 }
