@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CalendarDays, FileText, FolderKanban, Settings2 } from "lucide-react";
+import { Link } from "wouter";
 
 type ReportType = {
   key: string;
@@ -132,6 +133,18 @@ export default function ReportCenterPage() {
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="border-emerald-200">
+        <CardHeader>
+          <CardTitle>Executive Reporting Packs</CardTitle>
+          <CardDescription>Primary board/management packs with compare, history, review and publish controls.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Link href="/reports/pm/monthly"><Button className="w-full" variant="outline">PM Monthly Report</Button></Link>
+          <Link href="/reports/engineering/monthly"><Button className="w-full" variant="outline">Engineering Monthly Report</Button></Link>
+          <Link href="/reports/programme"><Button className="w-full" variant="outline">Programme Reports</Button></Link>
         </CardContent>
       </Card>
 
