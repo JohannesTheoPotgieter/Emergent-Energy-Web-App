@@ -99,7 +99,7 @@ for (const [key, value] of Object.entries(schema)) {
       
       let defaultClause = getDefaultSQL(col);
       
-      lines.push(`  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='${colName}') THEN`);
+      lines.push(`  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='${tableName}') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='${tableName}' AND column_name='${colName}') THEN`);
       lines.push(`    ALTER TABLE "${tableName}" ADD COLUMN "${colName}" ${pgType}${defaultClause};`);
       lines.push(`  END IF;`);
     }
