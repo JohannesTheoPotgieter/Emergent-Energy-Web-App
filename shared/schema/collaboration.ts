@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -47,7 +47,10 @@ export const notifications = pgTable("notifications", {
   confirmedAt: timestamp("confirmed_at"),
   changeDetails: text("change_details"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  recipientReadIdx: index("notifications_recipient_read_idx").on(table.recipientUserId, table.isRead),
+  createdAtIdx: index("notifications_created_at_idx").on(table.createdAt),
+}));
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ id: true, createdAt: true } as any);
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
@@ -203,7 +206,10 @@ export const auditEvents = pgTable("audit_events", {
   requestPath: text("request_path"),
   requestMethod: text("request_method"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  createdAtIdx: index("audit_events_created_at_idx").on(table.createdAt),
+  userIdIdx: index("audit_events_user_id_idx").on(table.userId),
+}));
 export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({ id: true, createdAt: true } as any);
 export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
 export type AuditEvent = typeof auditEvents.$inferSelect;
@@ -836,3 +842,89 @@ export const eventProcessingLog = pgTable("event_processing_log", {
   durationMs: integer("duration_ms"),
 });
 export type EventProcessingLog = typeof eventProcessingLog.$inferSelect;
+
+// ===================== DATA INTEGRITY ADDITIONS =====================
+
+export const auditTrail = pgTable("audit_trail", {
+  id: serial("id").primaryKey(),
+  actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  action: text("action").notNull(),
+  beforeValue: jsonb("before_value"),
+  afterValue: jsonb("after_value"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  entityLookupIdx: index("audit_trail_entity_lookup_idx").on(table.entityType, table.entityId),
+  createdAtIdx: index("audit_trail_created_at_idx").on(table.createdAt),
+}));
+
+export const notificationPreferences = pgTable("notification_preferences", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  inAppEnabled: boolean("in_app_enabled").notNull().default(true),
+  emailEnabled: boolean("email_enabled").notNull().default(true),
+  dailyDigestEnabled: boolean("daily_digest_enabled").notNull().default(false),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const fileVersions = pgTable("file_versions", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
+  fileKey: text("file_key").notNull(),
+  versionNumber: integer("version_number").notNull(),
+  storagePath: text("storage_path").notNull(),
+  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectVersionIdx: index("file_versions_project_version_idx").on(table.projectId, table.versionNumber),
+}));
+
+export const projectMilestones = pgTable("project_milestones", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  dueDate: date("due_date"),
+  completedAt: timestamp("completed_at"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const approvalWorkflows = pgTable("approval_workflows", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
+  workflowType: text("workflow_type").notNull(),
+  status: text("status").notNull().default("pending"),
+  requestedByUserId: integer("requested_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  decidedByUserId: integer("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  payload: jsonb("payload"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const dashboardPreferences = pgTable("dashboard_preferences", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  layout: jsonb("layout").notNull().default({}),
+  filters: jsonb("filters").notNull().default({}),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const importHistory = pgTable("import_history", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "set null" }),
+  startedByUserId: integer("started_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  sourceType: text("source_type").notNull(),
+  status: text("status").notNull(),
+  recordsProcessed: integer("records_processed"),
+  errorCount: integer("error_count").notNull().default(0),
+  errorSummary: text("error_summary"),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  finishedAt: timestamp("finished_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectStartedAtIdx: index("import_history_project_started_at_idx").on(table.projectId, table.startedAt),
+}));

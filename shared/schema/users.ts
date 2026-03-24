@@ -17,13 +17,14 @@ export type InsertOrganization = typeof organizations.$inferInsert;
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
-  email: text("email").notNull(),
+  email: text("email").notNull().unique(),
   password: text("password").notNull(),
   name: text("name").notNull(),
   role: text("role").notNull().default('member'),
   department: text("department"),
   microsoft_id: text("microsoft_id").unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true } as any);
