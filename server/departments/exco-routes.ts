@@ -12,6 +12,31 @@ import multer from "multer";
 
 const router = Router();
 
+const CANONICAL_TO_MYTOOL_STATUS: Record<string, string> = {
+  todo: "planned", TODO: "planned",
+  in_progress: "in_progress", IN_PROGRESS: "in_progress",
+  blocked: "blocked", BLOCKED: "blocked",
+  review: "waiting", REVIEW: "waiting",
+  complete: "done", COMPLETE: "done", done: "done", DONE: "done",
+  cancelled: "cancelled", CANCELLED: "cancelled",
+  inbox: "inbox", INBOX: "inbox",
+  planned: "planned", PLANNED: "planned",
+  waiting: "waiting", WAITING: "waiting",
+};
+function toMytoolDbStatus(status: string): string {
+  return CANONICAL_TO_MYTOOL_STATUS[status] || CANONICAL_TO_MYTOOL_STATUS[status.toLowerCase()] || "planned";
+}
+
+const CANONICAL_TO_MYTOOL_PRIORITY: Record<string, string> = {
+  P1: "critical", p1: "critical", urgent: "critical", critical: "critical",
+  P2: "high", p2: "high", high: "high",
+  P3: "normal", p3: "normal", medium: "normal", normal: "normal", med: "normal",
+  P4: "low", p4: "low", low: "low",
+};
+function toMytoolDbPriority(priority: string): string {
+  return CANONICAL_TO_MYTOOL_PRIORITY[priority] || CANONICAL_TO_MYTOOL_PRIORITY[priority.toLowerCase()] || "normal";
+}
+
 function computeNextRecurrenceDate(
   currentDate: string,
   frequency: string,
@@ -111,6 +136,8 @@ router.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => 
     if (bucket !== 'project' && req.body.projectName) {
       req.body.projectName = null;
     }
+    if (req.body.status) req.body.status = toMytoolDbStatus(req.body.status);
+    if (req.body.priority) req.body.priority = toMytoolDbPriority(req.body.priority);
     const task = await storage.createMytoolTask({ ...req.body, bucket, ownerUserId: userId });
     res.json(task);
   } catch (err: any) {
@@ -134,6 +161,9 @@ router.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res
         req.body.projectName = null;
       }
     }
+
+    if (req.body.status) req.body.status = toMytoolDbStatus(req.body.status);
+    if (req.body.priority) req.body.priority = toMytoolDbPriority(req.body.priority);
 
     if (req.body.status === 'done' && existingTask) {
       const dod = req.body.definitionOfDone || existingTask.definitionOfDone;
