@@ -5197,6 +5197,133 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/dashboard/import-health", requireAuth, async (_req, res) => {
+    try {
+      const now = Date.now();
+      const history = [
+        { timestamp: new Date(now - 2 * 60 * 60 * 1000).toISOString(), status: "success", recordsProcessed: 150, errors: 0 },
+        { timestamp: new Date(now - 7 * 60 * 60 * 1000).toISOString(), status: "partial", recordsProcessed: 120, errors: 3 },
+        { timestamp: new Date(now - 30 * 60 * 60 * 1000).toISOString(), status: "failed", recordsProcessed: 0, errors: 6 },
+      ] as const;
+      res.json({
+        lastImportTime: history[0].timestamp,
+        lastImportStatus: history[0].status,
+        errorCount: history.reduce((sum, h) => sum + h.errors, 0),
+        pendingValidations: 5,
+        importHistory: history,
+      });
+    } catch (error) {
+      console.error("Import health API error:", error);
+      res.status(500).json({ error: "Failed to fetch import health" });
+    }
+  });
+
+  app.get("/api/dashboard/attention-items", requireAuth, async (_req, res) => {
+    try {
+      res.json({
+        behindPlan: [
+          { id: 1, name: "Solar Farm Alpha", owner: "John", daysBehind: 12, ageDays: 12, severity: "high", link: "/projects/1" },
+          { id: 2, name: "Wind Cluster Beta", owner: "Anna", daysBehind: 8, ageDays: 8, severity: "medium", link: "/projects/2" },
+        ],
+        engineeringBlockers: [
+          { id: 11, name: "Grid Study Delay", owner: "Sam", ageDays: 6, severity: "high", link: "/engineering" },
+        ],
+        qualityWarnings: [
+          { id: 21, name: "Commissioning Punchlist", owner: "Lebo", ageDays: 5, severity: "medium", link: "/quality" },
+        ],
+        overdueActions: [
+          { id: 31, name: "Approve Variation 112", owner: "Finance Ops", ageDays: 4, severity: "high", link: "/approvals" },
+        ],
+      });
+    } catch (error) {
+      console.error("Attention items API error:", error);
+      res.status(500).json({ error: "Failed to fetch attention items" });
+    }
+  });
+
+  app.get("/api/dashboard/financial-summary", requireAuth, async (req, res) => {
+    try {
+      const period = String(req.query.period || "ytd");
+      res.json({
+        period,
+        metrics: [
+          {
+            key: "revenue",
+            label: "Revenue",
+            plan: 12000000,
+            actual: 11100000,
+            forecast: 12500000,
+            trend: [
+              { month: "Oct", value: 1600000 },
+              { month: "Nov", value: 1700000 },
+              { month: "Dec", value: 1800000 },
+              { month: "Jan", value: 1900000 },
+              { month: "Feb", value: 2050000 },
+              { month: "Mar", value: 2200000 },
+            ],
+          },
+          {
+            key: "cos",
+            label: "Cost of Sales",
+            plan: 7600000,
+            actual: 8100000,
+            forecast: 8400000,
+            trend: [
+              { month: "Oct", value: 900000 },
+              { month: "Nov", value: 1100000 },
+              { month: "Dec", value: 1200000 },
+              { month: "Jan", value: 1300000 },
+              { month: "Feb", value: 1500000 },
+              { month: "Mar", value: 1600000 },
+            ],
+          },
+          {
+            key: "opex",
+            label: "Operating Expenditure",
+            plan: 1200000,
+            actual: 980000,
+            forecast: 1150000,
+            trend: [
+              { month: "Oct", value: 180000 },
+              { month: "Nov", value: 150000 },
+              { month: "Dec", value: 160000 },
+              { month: "Jan", value: 170000 },
+              { month: "Feb", value: 160000 },
+              { month: "Mar", value: 160000 },
+            ],
+          },
+        ],
+      });
+    } catch (error) {
+      console.error("Financial summary API error:", error);
+      res.status(500).json({ error: "Failed to fetch financial summary" });
+    }
+  });
+
+  app.get("/api/dashboard/my-work", requireAuth, async (req, res) => {
+    try {
+      const role = String((req as any).user?.role || "USER").toUpperCase();
+      const roleView =
+        role.includes("FINANCE") || role === "CFO" ? "Finance focus" :
+        role.includes("ENGINEER") ? "Engineering focus" :
+        role.includes("ADMIN") ? "Admin focus" :
+        role.includes("PROJECT") || role.includes("PM") ? "PM focus" : "General";
+
+      res.json({
+        overdueTasks: [{ id: 1, title: "Review delayed milestone: Solar Farm Alpha", link: "/my-work/tasks" }],
+        dueTodayTasks: [{ id: 2, title: "Approve contractor invoice INV-3442", link: "/approvals" }],
+        upcomingTasks: [{ id: 3, title: "Prepare weekly status update", link: "/execution-board" }],
+        pendingApprovals: [{ id: 4, title: "CAPEX change request #128", link: "/approvals" }],
+        recentMentions: [{ id: 5, title: "@you in Engineering blocker thread", link: "/teams-chats" }],
+        assignedProjects: [{ id: 6, title: "Solar Farm Alpha", link: "/projects/1" }],
+        roleView,
+      });
+    } catch (error) {
+      console.error("My work dashboard API error:", error);
+      res.status(500).json({ error: "Failed to fetch my work" });
+    }
+  });
+
   // ==================== PROJECTS ROUTES ====================
 
   app.get("/api/projects", requireAuth, async (req, res) => {
