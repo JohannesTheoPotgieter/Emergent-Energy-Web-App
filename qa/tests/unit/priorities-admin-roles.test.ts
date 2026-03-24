@@ -1,0 +1,29 @@
+import { describe, expect, it } from "vitest";
+import { PRIORITY_ADMIN_ROLES, isPriorityAdminRole } from "@/config/priorities";
+
+describe("priority admin roles", () => {
+  it("contains the expected maintainers", () => {
+    expect(PRIORITY_ADMIN_ROLES).toEqual([
+      "COO_ADMIN",
+      "CEO_ADMIN",
+      "CCO",
+      "CFO",
+      "PROGRAM_MANAGER",
+    ]);
+  });
+
+  it("allows expected roles", () => {
+    expect(isPriorityAdminRole("COO_ADMIN")).toBe(true);
+    expect(isPriorityAdminRole("CEO_ADMIN")).toBe(true);
+    expect(isPriorityAdminRole("CCO")).toBe(true);
+    expect(isPriorityAdminRole("CFO")).toBe(true);
+    expect(isPriorityAdminRole("PROGRAM_MANAGER")).toBe(true);
+  });
+
+  it("rejects non-admin roles", () => {
+    expect(isPriorityAdminRole("ENGINEER")).toBe(false);
+    expect(isPriorityAdminRole("PROJECT_MANAGER" as any)).toBe(false);
+    expect(isPriorityAdminRole(undefined)).toBe(false);
+    expect(isPriorityAdminRole(null)).toBe(false);
+  });
+});
