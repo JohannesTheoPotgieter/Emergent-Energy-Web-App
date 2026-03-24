@@ -495,6 +495,18 @@ export function registerPdRoutes(app: Express) {
     }
   });
 
+  app.get("/api/pd/tickets/:id/task-templates", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+      const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
+      res.json({ requestType: ticket.requestType, templates });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.post("/api/pd/tickets/:id/spawn-tasks", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
@@ -511,7 +523,8 @@ export function registerPdRoutes(app: Express) {
         return res.status(409).json({ error: "Tasks already spawned for this ticket" });
       }
 
-      const spawned = await spawnTasksForTicket(ticket, user);
+      const { selectedTasks, customTasks } = req.body || {};
+      const spawned = await spawnTasksForTicket(ticket, user, selectedTasks, customTasks);
       res.json({ spawned: spawned.length, tasks: spawned });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -879,22 +892,20 @@ async function generateClientId(): Promise<string> {
   return `EE-C${String(nextNum).padStart(4, "0")}`;
 }
 
-async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: string[]): Promise<any[]> {
+async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: string[], customTasks?: { title: string; priority: string }[]): Promise<any[]> {
   if (ticket.tasksSpawnedAt) return [];
 
   let templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
-  if (templates.length === 0) return [];
 
   if (selectedTasks && Array.isArray(selectedTasks)) {
     const selectedSet = new Set(selectedTasks);
     templates = templates.filter(t => selectedSet.has(t.title));
-    if (templates.length === 0) {
-      await db.update(pdTickets)
-        .set({ tasksSpawnedAt: new Date(), status: ticket.status === "Draft" ? "In Progress" : ticket.status })
-        .where(eq(pdTickets.id, ticket.id));
-      return [];
-    }
   }
+
+  const allTasks: { title: string; priority: string }[] = [
+    ...templates,
+    ...(Array.isArray(customTasks) ? customTasks.filter(t => t.title?.trim()) : []),
+  ];
 
   let projectName = ticket.projectSiteName || "Unassigned";
   if (ticket.projectId) {
@@ -905,9 +916,9 @@ async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: strin
   }
 
   const spawned: any[] = [];
-  for (let i = 0; i < templates.length; i++) {
-    const tmpl = templates[i];
-    if (!ticket.projectId) continue; // workItems requires a projectId
+  for (let i = 0; i < allTasks.length; i++) {
+    const tmpl = allTasks[i];
+    if (!ticket.projectId) continue;
     const [task] = await db.insert(workItems).values({
       projectId: ticket.projectId,
       workstream: "ENG",
@@ -927,7 +938,7 @@ async function spawnTasksForTicket(ticket: any, user: any, selectedTasks?: strin
         workItemId: task.id,
         actorId: user?.id || null,
         actionType: "created",
-        newValue: `Task auto-spawned from PD Ticket #${ticket.id} (${ticket.requestType})`,
+        newValue: `Task spawned from PD Ticket #${ticket.id} (${ticket.requestType})`,
       });
       spawned.push(task);
     }

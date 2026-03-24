@@ -7,6 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
+import { apiRequest } from "@/lib/queryClient";
+import { QueryErrorBanner } from "@/components/QueryErrorBanner";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -28,7 +30,6 @@ import {
   FileText,
 } from "lucide-react";
 
-const token = () => localStorage.getItem("auth_token") || "";
 const money = (n: number | null | undefined) =>
   `R ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
@@ -463,35 +464,26 @@ export default function HomePage() {
 
   // Single source of truth: use execution-dashboard for ALL KPIs and stats
   // This ensures Home page numbers match the Execution Dashboard exactly
-  const { data: dashData, isLoading: dashLoading } = useQuery<any>({
+  const { data: dashData, isLoading: dashLoading, isError: dashIsError, error: dashError } = useQuery<any>({
     queryKey: ["/api/lifecycle-board/execution-dashboard"],
     queryFn: async () => {
-      const res = await fetch("/api/lifecycle-board/execution-dashboard", {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (!res.ok) return null;
+      const res = await apiRequest("GET", "/api/lifecycle-board/execution-dashboard");
       return res.json();
     },
   });
 
-  const { data: companyPriorities, isLoading: prioritiesLoading } = useQuery<any[]>({
+  const { data: companyPriorities, isLoading: prioritiesLoading, isError: prioritiesIsError, error: prioritiesError } = useQuery<any[]>({
     queryKey: ["/api/priorities"],
     queryFn: async () => {
-      const res = await fetch("/api/priorities", {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (!res.ok) return [];
+      const res = await apiRequest("GET", "/api/priorities");
       return res.json();
     },
   });
 
-  const { data: myWorkData } = useQuery<any>({
+  const { data: myWorkData, isError: myWorkIsError, error: myWorkError } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks"],
     queryFn: async () => {
-      const res = await fetch("/api/my-work/all-tasks", {
-        headers: { Authorization: `Bearer ${token()}` },
-      });
-      if (!res.ok) return null;
+      const res = await apiRequest("GET", "/api/my-work/all-tasks");
       return res.json();
     },
   });
@@ -570,6 +562,13 @@ export default function HomePage() {
 
   return (
     <PageShell data-testid="home-page">
+      {(dashIsError || prioritiesIsError || myWorkIsError) && (
+        <div className="mb-4 space-y-2">
+          {dashIsError && <QueryErrorBanner error={dashError} />}
+          {prioritiesIsError && <QueryErrorBanner error={prioritiesError} />}
+          {myWorkIsError && <QueryErrorBanner error={myWorkError} />}
+        </div>
+      )}
       <div className="mb-6">
         <div className="flex items-center justify-between">
           <div>

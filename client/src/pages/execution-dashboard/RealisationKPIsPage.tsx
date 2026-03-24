@@ -12,6 +12,7 @@ import {
   RefreshCw, AlertCircle,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
+import { apiRequest } from "@/lib/queryClient";
 
 type TimePeriod = "weekly" | "monthly" | "yearly";
 
@@ -88,11 +89,7 @@ export default function RealisationKPIsPage() {
       try {
         setLoading(true);
         setError(null);
-        const token = localStorage.getItem("auth_token");
-        const headers: Record<string, string> = {};
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const res = await fetch("/api/realisation-kpis", { headers });
-        if (!res.ok) throw new Error(`Failed to load (${res.status})`);
+        const res = await apiRequest("GET", "/api/realisation-kpis");
         setData(await res.json());
       } catch (err: any) {
         setError(err.message);
