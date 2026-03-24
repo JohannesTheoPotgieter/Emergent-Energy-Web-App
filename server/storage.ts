@@ -1062,8 +1062,8 @@ export class DatabaseStorage implements IStorage {
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
     const adapted = costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
 
-    // Enrich with programExpense data (budget totals, forecast dates) — matching
-    // getProgramExpensesByProject() so portfolio reads from project-detail level up
+    const projectsWithCostLines = new Set(costLines.map(c => resolve(c.projectName)));
+
     if (peRows.length > 0) {
       const budgetByKey = new Map<string, any>();
       for (const pe of peRows) {
@@ -1083,6 +1083,11 @@ export class DatabaseStorage implements IStorage {
           if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
         }
       }
+
+      const legacyOnly = peRows.filter(pe => !projectsWithCostLines.has(pe.projectName) && !projectsWithCostLines.has(resolve(pe.projectName)));
+      if (legacyOnly.length > 0) {
+        adapted.push(...legacyOnly);
+      }
     }
 
     return adapted;
@@ -1092,6 +1097,14 @@ export class DatabaseStorage implements IStorage {
     const { adaptCostToExpense } = await import("./lib/data-merge");
     const costLines = await this.dbInstance.select().from(normalizedCostLines)
       .where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
+
+    const peRows = await this.dbInstance.select().from(programExpense)
+      .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
+
+    if (costLines.length === 0 && peRows.length > 0) {
+      return peRows as any[];
+    }
+
     const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
 
     const needsCarryForward = adapted.some((a: any) => !a.expensePaymentDate && !a.forecastPaymentDate);
@@ -1129,8 +1142,6 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    const peRows = await this.dbInstance.select().from(programExpense)
-      .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
     if (peRows.length === 0) return adapted;
 
     const budgetByRow = new Map<number, any>();
