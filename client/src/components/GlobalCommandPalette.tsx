@@ -15,6 +15,7 @@ const NAV_ITEMS = PAGE_REGISTRY.filter(
 
 export function GlobalCommandPalette() {
   const [open, setOpen] = useState(false);
+  const [recent, setRecent] = useState<Array<{ path: string; label: string }>>([]);
   const [, setLocation] = useLocation();
   const { canViewPath } = useAccessMatrix();
 
@@ -29,9 +30,25 @@ export function GlobalCommandPalette() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("recent-command-searches");
+      if (raw) setRecent(JSON.parse(raw));
+    } catch {
+      setRecent([]);
+    }
+  }, []);
+
   const handleSelect = useCallback(
-    (path: string) => {
+    (path: string, label?: string) => {
       setOpen(false);
+      if (label) {
+        setRecent((prev) => {
+          const next = [{ path, label }, ...prev.filter((r) => r.path !== path)].slice(0, 5);
+          localStorage.setItem("recent-command-searches", JSON.stringify(next));
+          return next;
+        });
+      }
       setLocation(path);
     },
     [setLocation],
@@ -54,13 +71,23 @@ export function GlobalCommandPalette() {
       <CommandInput placeholder="Search pages... (Ctrl+K)" />
       <CommandList>
         <CommandEmpty>No pages found.</CommandEmpty>
+        {recent.length > 0 && (
+          <CommandGroup heading="Recent Searches">
+            {recent.map((item) => (
+              <CommandItem key={`recent-${item.path}`} value={`recent ${item.label}`} onSelect={() => handleSelect(item.path, item.label)}>
+                <Search className="h-4 w-4 mr-2 text-muted-foreground" />
+                {item.label}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        )}
         {Object.entries(groups).map(([group, items]) => (
           <CommandGroup key={group} heading={group.replace(/_/g, " ")}>
             {items.map((item) => (
               <CommandItem
                 key={item.path}
                 value={`${item.label} ${item.group}`}
-                onSelect={() => handleSelect(item.path)}
+                onSelect={() => handleSelect(item.path, item.label)}
               >
                 <Navigation className="h-4 w-4 mr-2 text-muted-foreground" />
                 {item.label}

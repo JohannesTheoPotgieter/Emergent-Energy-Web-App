@@ -11,6 +11,10 @@ import { Link, useSearch, useLocation } from "wouter";
 import { severityStyle, ragBadgeClasses } from "@/lib/status-colors";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageShell } from "@/components/layout/page-shell";
+import { ImportHealthWidget, type ImportHealthResponse } from "@/components/dashboard/ImportHealthWidget";
+import { AttentionPanel, type AttentionItemsResponse } from "@/components/dashboard/AttentionPanel";
+import { FinancialSummaryTiles, type FinancialSummaryResponse } from "@/components/dashboard/FinancialSummaryTiles";
+import { MyWorkToday, type MyWorkResponse } from "@/components/dashboard/MyWorkToday";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
@@ -44,6 +48,7 @@ import {
   AlertTriangle,
   BarChart3,
   Activity,
+  ArrowUpRight,
 } from "lucide-react";
 type DashboardResponse = {
   meta: { fyStart: string; fyEnd: string };
@@ -395,6 +400,7 @@ export default function DashboardPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
   const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
+  const [financialPeriod, setFinancialPeriod] = useState("ytd");
 
   /* ── URL filter sync ── */
   const searchString = useSearch();
@@ -453,6 +459,38 @@ export default function DashboardPage() {
       return res.json();
     },
     refetchOnWindowFocus: true,
+  });
+  const { data: importHealth } = useQuery<ImportHealthResponse>({
+    queryKey: ["/api/dashboard/import-health"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/import-health", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch import health");
+      return res.json();
+    },
+  });
+  const { data: attentionItems } = useQuery<AttentionItemsResponse>({
+    queryKey: ["/api/dashboard/attention-items"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/attention-items", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch attention items");
+      return res.json();
+    },
+  });
+  const { data: financialSummary, isLoading: financialSummaryLoading } = useQuery<FinancialSummaryResponse>({
+    queryKey: ["/api/dashboard/financial-summary", financialPeriod],
+    queryFn: async () => {
+      const res = await fetch(`/api/dashboard/financial-summary?period=${financialPeriod}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch financial summary");
+      return res.json();
+    },
+  });
+  const { data: myWorkSummary } = useQuery<MyWorkResponse>({
+    queryKey: ["/api/dashboard/my-work"],
+    queryFn: async () => {
+      const res = await fetch("/api/dashboard/my-work", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch my work");
+      return res.json();
+    },
   });
 
   const { data: upcomingData } = useQuery<{ rangeStart: string; rangeEnd: string; events: UpcomingEvent[] }>({
@@ -518,7 +556,7 @@ export default function DashboardPage() {
 
 
   return (
-    <PageShell className="p-0" data-testid="execution-dashboard-page">
+    <PageShell className="p-0 space-y-6" data-testid="execution-dashboard-page">
       {/* ── Error banner ── */}
       {isError && (
         <div className="rounded-lg border border-red-200 bg-red-50/80 p-4 flex items-center gap-3">
@@ -647,8 +685,22 @@ export default function DashboardPage() {
           </span>
         </div>
       )}
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold flex items-center gap-2"><Users className="h-5 w-5 text-blue-500" />My Work</h2>
+        <MyWorkToday data={myWorkSummary} />
+      </div>
+      <ImportHealthWidget data={importHealth} />
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-amber-500" />Attention Needed</h2>
+        <AttentionPanel data={attentionItems} />
+      </div>
+      <div className="space-y-2">
+        <h2 className="text-lg font-semibold flex items-center gap-2"><DollarSign className="h-5 w-5 text-green-500" />Financial Summary</h2>
+        <FinancialSummaryTiles data={financialSummary} loading={financialSummaryLoading} onPeriodChange={setFinancialPeriod} />
+      </div>
 
       {/* ── KPI strip (expanded) ── */}
+      <h2 className="text-lg font-semibold flex items-center gap-2"><Briefcase className="h-5 w-5 text-blue-500" />Portfolio Overview</h2>
       <TooltipProvider delayDuration={200}>
         {isLoading && !data ? (
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
@@ -659,28 +711,51 @@ export default function DashboardPage() {
             {([
               { label: "Active Projects", value: String(data?.kpis?.activeDashboardProjects ?? 0), icon: <Sun className="w-4 h-4 text-amber-500" />, color: "text-foreground", tip: "Projects with committed imports and FY activity" },
               { label: "Avg Progress", value: pct(data?.kpis?.averageActualProgressPct), icon: <Activity className="w-4 h-4 text-emerald-500" />, color: "text-emerald-700", tip: `Actual ${pct(data?.kpis?.averageActualProgressPct)} vs Expected ${pct(data?.kpis?.averageExpectedProgressPct)}` },
-              { label: "Behind Plan", value: String(data?.kpis?.projectsBehindPlan ?? 0), icon: <Clock className="w-4 h-4 text-red-500" />, color: Number(data?.kpis?.projectsBehindPlan || 0) > 0 ? "text-red-700" : "text-foreground", tip: "Projects >5% behind expected progress" },
+              { label: "Behind Plan", value: String(data?.kpis?.projectsBehindPlan ?? 0), icon: <Clock className="w-4 h-4 text-red-500" />, color: Number(data?.kpis?.projectsBehindPlan || 0) > 0 ? "text-red-700" : "text-foreground", tip: "Projects >5% behind expected progress", href: "/projects?schedule_status=behind" },
               { label: "Planned Revenue", value: money(data?.kpis?.plannedRevenueFy), icon: <Zap className="w-4 h-4 text-emerald-500 animate-glow-pulse" />, color: "text-foreground", tip: "Total planned revenue for the financial year" },
               { label: "Received Inflow", value: money(data?.kpis?.receivedInflowFy), icon: <Battery className="w-4 h-4 text-emerald-600" />, color: "text-emerald-700", tip: "Cash received and confirmed in bank" },
               { label: "Open Receivables", value: money(data?.kpis?.openInflowFy), icon: <TrendingUp className="w-4 h-4 text-amber-500" />, color: "text-amber-700", tip: "Outstanding inflow requiring follow-up" },
               { label: "Gross Profit", value: money(data?.kpis?.grossProfitFy), icon: <Wind className="w-4 h-4 text-teal-500" />, color: Number(data?.kpis?.grossProfitFy || 0) >= 0 ? "text-teal-700" : "text-red-700", tip: `GP Margin: ${data?.kpis?.grossMarginPctFy != null ? Number(data.kpis.grossMarginPctFy).toFixed(1) + "%" : "-"}` },
               { label: "Open Expenditure", value: money(data?.kpis?.openExpenditureFy), icon: <TrendingDown className="w-4 h-4 text-orange-500" />, color: "text-orange-700", tip: "Supplier spend outstanding this FY" },
-            ] as const).map((kpi) => (
+            ] as const).map((kpi) => {
+              const hrefMap: Record<string, string> = {
+                "Active Projects": "/projects",
+                "Avg Progress": "/projects",
+                "Behind Plan": "/projects?schedule_status=behind",
+                "Planned Revenue": "/financials",
+                "Received Inflow": "/financials",
+                "Open Receivables": "/financials",
+                "Gross Profit": "/financials",
+                "Open Expenditure": "/financials",
+              };
+              const href = kpi.href || hrefMap[kpi.label] || "/projects";
+              return (
               <Tooltip key={kpi.label}>
                 <TooltipTrigger asChild>
-                  <Card className="border-border/50 energy-card cursor-default" data-testid={`kpi-${kpi.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(href)}
+                    role="link"
+                    aria-label={`${kpi.label}: open filtered details`}
+                    className="text-left"
+                  >
+                  <Card className="border-border/50 energy-card cursor-pointer hover:shadow-md hover:-translate-y-0.5 transition-all" data-testid={`kpi-${kpi.label.toLowerCase().replace(/\s+/g, "-")}`}>
                     <CardContent className="p-3">
-                      <div className="flex items-center gap-1.5 mb-1">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <div className="flex items-center gap-1.5 min-w-0">
                         {kpi.icon}
                         <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground truncate">{kpi.label}</p>
+                        </div>
+                        <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground/70" />
                       </div>
                       <p className={`text-lg font-semibold font-mono ${kpi.color}`}>{kpi.value}</p>
                     </CardContent>
                   </Card>
+                  </button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom"><p>{kpi.tip}</p></TooltipContent>
               </Tooltip>
-            ))}
+            )})}
           </div>
         )}
 
