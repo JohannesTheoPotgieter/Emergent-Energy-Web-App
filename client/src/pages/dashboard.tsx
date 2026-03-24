@@ -11,7 +11,10 @@ import { Link, useSearch, useLocation } from "wouter";
 import { severityStyle, ragBadgeClasses } from "@/lib/status-colors";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageShell } from "@/components/layout/page-shell";
-import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { ImportHealthWidget, type ImportHealthResponse } from "@/components/dashboard/ImportHealthWidget";
+import { AttentionPanel, type AttentionItemsResponse } from "@/components/dashboard/AttentionPanel";
+import { FinancialSummaryTiles, type FinancialSummaryResponse } from "@/components/dashboard/FinancialSummaryTiles";
+import { MyWorkToday, type MyWorkResponse } from "@/components/dashboard/MyWorkToday";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartsTooltip, ResponsiveContainer, Legend,
@@ -398,9 +401,7 @@ export default function DashboardPage() {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
   const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
-  const [customizeOpen, setCustomizeOpen] = useState(false);
-  const { isMobile } = useBreakpoint();
-  const queryClient = useQueryClient();
+  const [financialPeriod, setFinancialPeriod] = useState("ytd");
 
   /* ── URL filter sync ── */
   const searchString = useSearch();
