@@ -318,6 +318,87 @@ export function registerReportRoutes(app: Express) {
     }
   });
 
+  app.get("/api/reports/programme/board-pdf", requireAuth, requirePermission("reports", "view"), async (req, res) => {
+    try {
+      const month = (req.query.month as string | undefined) || null;
+      const dateFrom = (req.query.dateFrom as string | undefined) || null;
+      const dateTo = (req.query.dateTo as string | undefined) || null;
+
+      const [costRows, planRows, qualityRows] = await Promise.all([
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        db.select().from(workItems).where(and(eq(workItems.workstream, "PM"), sql`${workItems.deletedAt} IS NULL`)),
+        db.select().from(projectInfo),
+      ]);
+
+      const inPeriod = (dateValue?: string | null) => {
+        if (!dateValue) return true;
+        const normalized = dateValue.substring(0, 10);
+        if (dateFrom && normalized < dateFrom) return false;
+        if (dateTo && normalized > dateTo) return false;
+        if (month && !normalized.startsWith(month)) return false;
+        return true;
+      };
+
+      const filteredCost = costRows.filter((r) => inPeriod(r.paidDate || r.invoiceDate));
+      const filteredPlan = planRows.filter((r) => inPeriod(r.endDate || r.startDate));
+
+      const totalCost = filteredCost.reduce((sum, row) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);
+      const marginAtRisk = filteredCost
+        .filter((r) => {
+          const cosStatus = ((r as any).cosStatus || "").toLowerCase();
+          return cosStatus !== "paid" && cosStatus !== "realised";
+        })
+        .reduce((sum, row) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);
+      const deliveryRisks = filteredPlan.filter((r) => {
+        if (!r.endDate) return false;
+        const done = ["done", "complete", "completed"].includes(String(r.status || "").toLowerCase());
+        return !done && r.endDate < new Date().toISOString().substring(0, 10);
+      }).length;
+
+      const health = {
+        green: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "green").length,
+        amber: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "amber").length,
+        red: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "red").length,
+      };
+
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      pdf.setFontSize(18);
+      pdf.text("Programme Board Pack", 14, 18);
+      pdf.setFontSize(11);
+      pdf.text(`Period: ${month || `${dateFrom || ""} to ${dateTo || ""}` || "Current"}`, 14, 26);
+      pdf.text(`Generated: ${new Date().toLocaleString("en-ZA")}`, 14, 32);
+
+      const lines: Array<[string, string]> = [
+        ["Portfolio health (G/A/R)", `${health.green}/${health.amber}/${health.red}`],
+        ["Cost position", `R ${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`],
+        ["Margin at risk", `R ${marginAtRisk.toLocaleString(undefined, { maximumFractionDigits: 0 })}`],
+        ["Delivery risks", String(deliveryRisks)],
+        ["Top quality risks", String(health.red + health.amber)],
+      ];
+
+      let y = 50;
+      for (const [label, value] of lines) {
+        pdf.setFontSize(12);
+        pdf.text(label, 14, y);
+        pdf.setFontSize(13);
+        pdf.text(value, 150, y, { align: "right" });
+        pdf.line(14, y + 2, 196, y + 2);
+        y += 16;
+      }
+
+      pdf.setFontSize(10);
+      pdf.text("This board pack supports drill-through in Programme Reports > Board/Management View.", 14, 152);
+
+      const data = pdf.output("arraybuffer");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename=programme_board_pack_${month || "custom"}.pdf`);
+      res.send(Buffer.from(data));
+    } catch (error: any) {
+      console.error("[Programme Reports] board pdf failed", error);
+      res.status(500).json({ error: "programme_board_pdf_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
   app.get("/api/admin/reports/operational-overview", requireAuth, requireAdmin, async (req, res) => {
     try {
       const month = req.query.month as string;
