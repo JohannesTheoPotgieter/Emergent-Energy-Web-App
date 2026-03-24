@@ -1,5 +1,6 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import path from "path";
+import { verifyToken } from "../jwt";
 
 type RateLimitEntry = {
   count: number;
@@ -119,6 +120,13 @@ export function applySecurityAndParsingMiddleware(app: Express): void {
   app.use(
     "/uploads",
     (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+      if (!verifyToken(authHeader.substring(7))) {
+        return res.status(401).json({ error: "Invalid auth token" });
+      }
       if (req.path.includes("_private_")) {
         return res.status(403).json({ error: "Access denied" });
       }
