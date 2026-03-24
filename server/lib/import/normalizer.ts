@@ -823,7 +823,7 @@ function extractCostLines(
     const invoiceNumber = cellStr(row, invoiceNumCol);
     const invoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
     const approvedDate = approvedDateCol >= 0 ? parseDate(row[approvedDateCol]) : null;
-    const paidDate = paidDateCol >= 0 ? parseDate(row[paidDateCol]) : null;
+    let paidDate = paidDateCol >= 0 ? parseDate(row[paidDateCol]) : null;
     const poNumber = cellStr(row, poCol);
 
     const status = deriveCostStatus(invoiceNumber, invoiceDate, approvedDate, paidDate);
@@ -899,9 +899,6 @@ function extractCostLines(
       paidDateConfirmed = fc.isBlack;
     }
 
-    const cosRealised = !!(invoiceNumber && invoiceDate);
-    const cashflowConfirmed = !!(invoiceNumber && poNumber && paidDateConfirmed);
-
     const budgetQty = budgetQtyCol >= 0 ? parseNumber(row[budgetQtyCol]) : null;
     const budgetRate = budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null;
     let budgetTotal = budgetTotalCol >= 0 ? parseNumber(row[budgetTotalCol]) : null;
@@ -914,6 +911,18 @@ function extractCostLines(
     const actualCos = actualCosCol >= 0 ? parseNumber(row[actualCosCol]) : null;
     const revenueRecognitionAmount = revenueRecogCol >= 0 ? parseNumber(row[revenueRecogCol]) : null;
     const forecastPaymentDate = forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null;
+
+    if (!paidDate && forecastPaymentDate) {
+      paidDate = forecastPaymentDate;
+      if (ws && forecastPayDateCol >= 0) {
+        const fc = getCellFontColor(ws, i, forecastPayDateCol);
+        paidDateFontColor = fc.color;
+        paidDateConfirmed = fc.isBlack;
+      }
+    }
+
+    const cosRealised = !!(invoiceNumber && invoiceDate);
+    const cashflowConfirmed = !!(invoiceNumber && poNumber && paidDateConfirmed);
 
     // Extract sub-project name from category in multi-project trackers
     const subProjectName = isMultiProject ? extractSubProjectFromCategory(rawCategory) : null;
