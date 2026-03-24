@@ -53,6 +53,8 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  ArrowLeft,
+  ExternalLink,
   FileText,
   User,
   XCircle,
@@ -226,8 +228,9 @@ export default function QmDashboardPage() {
   const [viewMode, setViewMode] = useState<"projects" | "items">("projects");
   const [projectSort, setProjectSort] = useState<ProjectSortKey>("name");
   const [projectSortDir, setProjectSortDir] = useState<ProjectSortDir>("asc");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "completed">("active");
+  const [statusFilter, setStatusFilter] = useState<"active">("active");
   const [warningFilter, setWarningFilter] = useState(false);
+  const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null);
   const [warningsExpanded, setWarningsExpanded] = useState(true);
   const [selectedWarning, setSelectedWarning] = useState<Warning | null>(null);
   const [actionType, setActionType] = useState<"override" | "resolve" | null>(null);
@@ -433,15 +436,28 @@ export default function QmDashboardPage() {
   const getProjectUpdated = (c: Checklist) => {
     return c.updatedAt || c.createdAt || "";
   };
+  const formatShortDate = (value?: string | null) => {
+    if (!value) return "No due date";
+    return new Date(value).toLocaleDateString();
+  };
+
+  const hasLinkedItems = (c: Checklist) => {
+    if (!c.phases || c.phases.length === 0) return false;
+    return c.phases.reduce((t, p) => t + p.total, 0) > 0;
+  };
+
+  const projectsWithLinkedItems = useMemo(
+    () => checklists.filter(hasLinkedItems),
+    [checklists]
+  );
 
   const projectsWithWarningsCount = useMemo(() => checklists.filter(c => getProjectWarnings(c) > 0).length, [checklists, warnings]);
 
   const filteredProjects = useMemo(() => {
-    let list = checklists.filter(c =>
+    let list = projectsWithLinkedItems.filter(c =>
       c.projectName.toLowerCase().includes(searchTerm.toLowerCase())
     );
     if (statusFilter === "active") list = list.filter(c => c.status === "active");
-    if (statusFilter === "completed") list = list.filter(c => c.status === "completed");
     if (warningFilter) list = list.filter(c => getProjectWarnings(c) > 0);
 
     list.sort((a, b) => {
@@ -455,7 +471,7 @@ export default function QmDashboardPage() {
       return projectSortDir === "desc" ? -cmp : cmp;
     });
     return list;
-  }, [checklists, searchTerm, statusFilter, warningFilter, projectSort, projectSortDir, warnings]);
+  }, [projectsWithLinkedItems, searchTerm, statusFilter, warningFilter, projectSort, projectSortDir, warnings]);
 
   const filteredItems = useMemo(() => {
     let list = [...allItems];
@@ -487,6 +503,20 @@ export default function QmDashboardPage() {
 
   const itemProjects = useMemo(() => Array.from(new Set(allItems.map(i => i.projectName))).sort(), [allItems]);
   const itemPhases = useMemo(() => Array.from(new Set(allItems.map(i => i.phaseName))).sort(), [allItems]);
+  const selectedProjectChecklist = useMemo(
+    () => checklists.find((c) => c.projectName === selectedProjectName) ?? null,
+    [checklists, selectedProjectName]
+  );
+  const selectedProjectItems = useMemo(
+    () => allItems
+      .filter((i) => i.projectName === selectedProjectName)
+      .sort((a, b) => (a.endDate || "9999-12-31").localeCompare(b.endDate || "9999-12-31")),
+    [allItems, selectedProjectName]
+  );
+  const selectedProjectWarnings = useMemo(
+    () => warnings.filter((w) => w.projectName === selectedProjectName),
+    [warnings, selectedProjectName]
+  );
 
   const highSeverityWarnings = useMemo(() => warnings.filter(w => w.severity === "High"), [warnings]);
   const mediumWarnings = useMemo(() => warnings.filter(w => w.severity === "Medium"), [warnings]);
@@ -533,7 +563,6 @@ export default function QmDashboardPage() {
 
   const activeFiltersCount = [
     searchTerm ? 1 : 0,
-    statusFilter !== "all" ? 1 : 0,
     warningFilter ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
@@ -717,7 +746,7 @@ export default function QmDashboardPage() {
               variant="ghost"
               size="sm"
               className="text-xs text-muted-foreground"
-              onClick={() => { setSearchTerm(""); setStatusFilter("all"); setWarningFilter(false); }}
+              onClick={() => { setSearchTerm(""); setWarningFilter(false); }}
               data-testid="btn-clear-all-filters"
             >
               <XCircle className="h-3.5 w-3.5 mr-1" />
@@ -739,6 +768,92 @@ export default function QmDashboardPage() {
         </div>
 
         <TabsContent value="projects" className="mt-4">
+          {selectedProjectName && selectedProjectChecklist ? (
+            <Card>
+              <CardHeader className="pb-3 border-b">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 -ml-2 mb-2 text-xs"
+                      onClick={() => setSelectedProjectName(null)}
+                      data-testid="btn-back-to-project-list"
+                    >
+                      <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                      Back to project list
+                    </Button>
+                    <CardTitle className="text-lg font-semibold">{selectedProjectName}</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Review what needs action, who owns it, and when it is due.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLocation(`/project/${encodeURIComponent(selectedProjectName)}?mode=execution&section=quality&subTab=quality`)}
+                    data-testid="btn-open-full-project"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                    Open full project
+                  </Button>
+                </div>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="rounded-md border px-3 py-2 bg-muted/20">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Open warnings</p>
+                    <p className="text-sm font-semibold">{selectedProjectWarnings.length}</p>
+                  </div>
+                  <div className="rounded-md border px-3 py-2 bg-muted/20">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Checklist items</p>
+                    <p className="text-sm font-semibold">{selectedProjectItems.length}</p>
+                  </div>
+                  <div className="rounded-md border px-3 py-2 bg-muted/20">
+                    <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Updated</p>
+                    <p className="text-sm font-semibold">{formatShortDate(selectedProjectChecklist.updatedAt || selectedProjectChecklist.createdAt)}</p>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-4">
+                <div className="rounded-md border">
+                  <div className="px-3 py-2 border-b bg-muted/30">
+                    <p className="text-xs font-semibold">Action list (What, Who, When)</p>
+                  </div>
+                  {selectedProjectItems.length === 0 ? (
+                    <p className="text-xs text-muted-foreground px-3 py-4">No linked checklist items were found for this project.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b bg-muted/20">
+                            <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">What</th>
+                            <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">Who</th>
+                            <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">When</th>
+                            <th className="text-left text-xs font-medium text-muted-foreground px-3 py-2">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {selectedProjectItems.map((item) => (
+                            <tr key={item.id} className="border-b last:border-0">
+                              <td className="px-3 py-2.5">
+                                <p className="text-sm font-medium">{item.itemName}</p>
+                                <p className="text-xs text-muted-foreground">{item.phaseName}</p>
+                              </td>
+                              <td className="px-3 py-2.5 text-xs">{item.assigneeName || "Unassigned"}</td>
+                              <td className="px-3 py-2.5 text-xs">{formatShortDate(item.endDate)}</td>
+                              <td className="px-3 py-2.5">
+                                <StatusBadge status={item.qmStatus || "pending"} />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -761,9 +876,7 @@ export default function QmDashboardPage() {
                     triggerClassName="w-[120px] h-9"
                     data-testid="select-status-filter"
                     options={[
-                      { value: "all", label: "All Status" },
                       { value: "active", label: "Active" },
-                      { value: "completed", label: "Completed" },
                     ]}
                   />
                   <Popover>
@@ -809,7 +922,7 @@ export default function QmDashboardPage() {
                     {activeFiltersCount > 0 ? "Try adjusting your filters" : "Start a quality process for a project"}
                   </p>
                   {activeFiltersCount > 0 && (
-                    <Button variant="link" size="sm" className="mt-2" onClick={() => { setSearchTerm(""); setStatusFilter("all"); setWarningFilter(false); }} data-testid="btn-clear-filters">
+                    <Button variant="link" size="sm" className="mt-2" onClick={() => { setSearchTerm(""); setWarningFilter(false); }} data-testid="btn-clear-filters">
                       Clear filters
                     </Button>
                   )}
@@ -857,8 +970,8 @@ export default function QmDashboardPage() {
                               className="border-b last:border-0 hover:bg-emerald-50/40 cursor-pointer transition-colors group"
                               role="button"
                               tabIndex={0}
-                              onClick={() => setLocation(`/project/${encodeURIComponent(checklist.projectName)}?mode=execution&section=quality&subTab=quality`)}
-                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setLocation(`/project/${encodeURIComponent(checklist.projectName)}?mode=execution&section=quality&subTab=quality`); }}}
+                              onClick={() => setSelectedProjectName(checklist.projectName)}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedProjectName(checklist.projectName); }}}
                             >
                               <td className="py-2.5 px-3">
                                 <span className="font-medium text-sm group-hover:text-emerald-600 transition-colors" data-testid={`text-project-name-${checklist.id}`}>
@@ -891,13 +1004,9 @@ export default function QmDashboardPage() {
                               <td className="py-2.5 px-2 text-center">
                                 <Badge
                                   variant="outline"
-                                  className={`text-[10px] ${
-                                    checklist.status === "completed"
-                                      ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                                      : "bg-blue-50 text-blue-600 border-blue-200"
-                                  }`}
+                                  className="text-[10px] bg-blue-50 text-blue-600 border-blue-200"
                                 >
-                                  {checklist.status}
+                                  active
                                 </Badge>
                               </td>
                               <td className="py-2.5 px-2 text-center">
@@ -961,7 +1070,23 @@ export default function QmDashboardPage() {
                                 </span>
                               </td>
                               <td className="py-2.5 pr-2">
-                                <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-emerald-500 transition-colors" />
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setLocation(`/project/${encodeURIComponent(checklist.projectName)}?mode=execution&section=quality&subTab=quality`);
+                                    }}
+                                    aria-label={`Open ${checklist.projectName} project details`}
+                                    data-testid={`btn-open-project-${checklist.id}`}
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                                  </Button>
+                                  <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-emerald-500 transition-colors" />
+                                </div>
                               </td>
                             </tr>
                           );
@@ -970,12 +1095,13 @@ export default function QmDashboardPage() {
                     </table>
                   </div>
                   <p className="text-xs text-muted-foreground text-right mt-3 px-3">
-                    Showing {filteredProjects.length} of {checklists.length} projects
+                    Showing {filteredProjects.length} of {projectsWithLinkedItems.length} projects with linked items
                   </p>
                 </>
               )}
             </CardContent>
           </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="items" className="mt-4">
