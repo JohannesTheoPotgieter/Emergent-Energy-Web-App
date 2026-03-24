@@ -471,14 +471,52 @@ async function sendPlanChangeNotifications(
       : [{ name: "System" }];
 
     const detailsJson = JSON.stringify({ projectName, changedBy: changedByUser?.name || "Unknown", changes: changeDetails, timestamp: new Date().toISOString() });
-
-    // Notifications feature removed - notification inserts are now no-ops
-    // for (const recipient of recipients) {
-    //   if (recipient.id === changedByUserId) continue;
-    //   await db.insert(notifications).values({...});
-    // }
+    for (const recipient of recipients) {
+      if (recipient.id === changedByUserId) continue;
+      await db.insert(notifications).values({
+        recipientUserId: recipient.id,
+        eventType: "plan_change",
+        title: `Plan updated: ${projectName}`,
+        body: changeDescription,
+        projectName,
+        changeDetails: detailsJson,
+      });
+    }
   } catch (err: any) {
     console.warn("[plan-notify] Failed to send plan change notifications:", err.message);
+  }
+}
+
+async function notifyWorkItemWatchers(params: {
+  workItemId: number;
+  actorUserId?: number;
+  projectName: string;
+  title: string;
+  body: string;
+  eventType?: string;
+}) {
+  try {
+    const watcherRows = await db
+      .select({ userId: workItemAssignments.userId })
+      .from(workItemAssignments)
+      .where(and(eq(workItemAssignments.workItemId, params.workItemId), eq(workItemAssignments.role, "VIEWER")));
+
+    if (!watcherRows.length) return;
+
+    for (const watcher of watcherRows) {
+      if (params.actorUserId && watcher.userId === params.actorUserId) continue;
+      await db.insert(notifications).values({
+        recipientUserId: watcher.userId,
+        eventType: params.eventType || "watcher_update",
+        title: params.title,
+        body: params.body,
+        projectName: params.projectName,
+        linkedTaskId: params.workItemId,
+        changeDetails: JSON.stringify({ source: "watcher_notification", workItemId: params.workItemId }),
+      });
+    }
+  } catch (error: any) {
+    console.warn("[watcher-notify] Failed to notify watchers:", error?.message || error);
   }
 }
 
@@ -1800,17 +1838,17 @@ export async function registerRoutes(
       const usePromotedProjectDetail = rolloutFlags.promoted_core_project_detail_read;
 
       const [allProjectInfo, allExpenses, rawInflows, rawPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, committedSmartImports, allNormCosts, allNormRevenue, allNormPlans, allPlanOverrides, lastImportRows, allClientsData, handoverRows] = await Promise.all([
-        (usePromotedProjectDetail ? listProjectInfoFromPromotedCoreCompat() : storage.getAllProjectInfo()).catch((e: any) => { console.warn("[projects-summary] allProjectInfo failed:", e.message); return []; }),
-        storage.getAllProgramExpenses().catch((e: any) => { console.warn("[projects-summary] allExpenses failed:", e.message); return []; }),
-        storage.getAllProgramInflows().catch((e: any) => { console.warn("[projects-summary] rawInflows failed:", e.message); return []; }),
-        storage.getAllProjectPlans().catch((e: any) => { console.warn("[projects-summary] rawPlans failed:", e.message); return []; }),
-        storage.getAllProjectEditableFields().catch((e: any) => { console.warn("[projects-summary] allEditableFields failed:", e.message); return []; }),
-        storage.getAllMilestoneTaskLinks().catch((e: any) => { console.warn("[projects-summary] allTaskLinks failed:", e.message); return []; }),
-        storage.getAllOperationalTasks().catch((e: any) => { console.warn("[projects-summary] allOpTasks failed:", e.message); return []; }),
-        db.selectDistinct({ fileName: uploadMetadata.fileName }).from(uploadMetadata).catch((e: any) => { console.warn("[projects-summary] uploadMetadata failed:", e.message); return []; }),
-        db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')).catch((e: any) => { console.warn("[projects-summary] smartImportRuns failed:", e.message); return []; }),
-        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)).catch((e: any) => { console.warn("[projects-summary] normalizedCostLines failed:", e.message); return []; }),
-        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)).catch((e: any) => { console.warn("[projects-summary] normalizedRevenueLines failed:", e.message); return []; }),
+        (usePromotedProjectDetail ? listProjectInfoFromPromotedCoreCompat() : storage.getAllProjectInfo()).catch((error: any) => { console.error("[projects-summary] allProjectInfo failed:", error); throw error; }),
+        storage.getAllProgramExpenses().catch((error: any) => { console.error("[projects-summary] allExpenses failed:", error); throw error; }),
+        storage.getAllProgramInflows().catch((error: any) => { console.error("[projects-summary] rawInflows failed:", error); throw error; }),
+        storage.getAllProjectPlans().catch((error: any) => { console.error("[projects-summary] rawPlans failed:", error); throw error; }),
+        storage.getAllProjectEditableFields().catch((error: any) => { console.error("[projects-summary] allEditableFields failed:", error); throw error; }),
+        storage.getAllMilestoneTaskLinks().catch((error: any) => { console.error("[projects-summary] allTaskLinks failed:", error); throw error; }),
+        storage.getAllOperationalTasks().catch((error: any) => { console.error("[projects-summary] allOpTasks failed:", error); throw error; }),
+        db.selectDistinct({ fileName: uploadMetadata.fileName }).from(uploadMetadata).catch((error: any) => { console.error("[projects-summary] uploadMetadata failed:", error); throw error; }),
+        db.selectDistinct({ projectName: smartImportRuns.projectName }).from(smartImportRuns).where(eq(smartImportRuns.status, 'COMMITTED')).catch((error: any) => { console.error("[projects-summary] smartImportRuns failed:", error); throw error; }),
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)).catch((error: any) => { console.error("[projects-summary] normalizedCostLines failed:", error); throw error; }),
+        db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)).catch((error: any) => { console.error("[projects-summary] normalizedRevenueLines failed:", error); throw error; }),
         useCanonicalPs
           ? (async () => {
               const [wiRows, piRows] = await Promise.all([
@@ -1883,7 +1921,7 @@ export async function registerRoutes(
                 scheduledStartTime: null,
                 scheduledEndTime: null,
               }));
-            })().catch((e: any) => { console.warn("[projects-summary] work items failed:", e.message); return []; }),
+            })().catch((error: any) => { console.error("[projects-summary] work items failed:", error); throw error; }),
         Promise.resolve([]),
         db
           .select({
@@ -1893,9 +1931,9 @@ export async function registerRoutes(
           .from(smartImportRuns)
           .where(eq(smartImportRuns.status, 'COMMITTED'))
           .groupBy(smartImportRuns.projectName)
-          .catch((e: any) => { console.warn("[projects-summary] lastImportRows failed:", e.message); return []; }),
-        (usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients)).catch((e: any) => { console.warn("[projects-summary] clients failed:", e.message); return []; }),
-        db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)).catch(() => ({ rows: [] })),
+          .catch((error: any) => { console.error("[projects-summary] lastImportRows failed:", error); throw error; }),
+        (usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients)).catch((error: any) => { console.error("[projects-summary] clients failed:", error); throw error; }),
+        db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)).catch((error: any) => { console.error("[projects-summary] handover rows failed:", error); throw error; }),
       ]);
       const allPlans = rawPlans;
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
@@ -12703,6 +12741,14 @@ export async function registerRoutes(
           changesJson: { taskName, ...updates },
         });
 
+        await notifyWorkItemWatchers({
+          workItemId: wi.id,
+          actorUserId: (req.user as any)?.id,
+          projectName,
+          title: `Task updated: ${taskName}`,
+          body: `${taskName} was updated in ${projectName}.`,
+          eventType: "task_updated",
+        });
         res.json({ success: true, taskId, workItemId: wi.id });
       } else {
         // Canonical boundary: work_items is write-master for active planning task edits.
@@ -12807,6 +12853,14 @@ export async function registerRoutes(
         changesJson: { title, status, priority, wbsCode: newWbsCode },
       });
 
+      await notifyWorkItemWatchers({
+        workItemId: workItem.id,
+        actorUserId: user.id,
+        projectName,
+        title: `Task created: ${title}`,
+        body: `${title} was created in ${projectName}.`,
+        eventType: "task_created",
+      });
       res.json({ ...task, workItemId: workItem.id, wbsCode: newWbsCode });
     } catch (err: any) {
       console.error("Plan task create error:", err);
