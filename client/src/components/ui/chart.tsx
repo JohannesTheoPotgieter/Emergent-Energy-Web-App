@@ -1,5 +1,6 @@
 import * as React from "react"
 import * as RechartsPrimitive from "recharts"
+import { sanitizeHtml } from "@/lib/sanitize"
 
 import { cn } from "@/lib/utils"
 
@@ -77,7 +78,7 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   return (
     <style
       dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
+        __html: sanitizeHtml(Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
 ${prefix} [data-chart=${id}] {
@@ -92,7 +93,7 @@ ${colorConfig
 }
 `
           )
-          .join("\n"),
+          .join("\n")),
       }}
     />
   )
