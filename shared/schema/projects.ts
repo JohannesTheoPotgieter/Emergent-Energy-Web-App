@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./users";
@@ -35,11 +35,12 @@ export const projectInfo = pgTable("project_info", {
   pd: text("pd"),
   pm: text("pm"),
   contractValue: decimal("contract_value", { precision: 15, scale: 2 }),
-  canonicalProjectId: integer("canonical_project_id"),
+  canonicalProjectId: integer("canonical_project_id").references((): any => projectInfo.id, { onDelete: "set null" }),
   clientId: integer("client_id").references(() => clients.id),
-  pmUserId: integer("pm_user_id"),
-  pdUserId: integer("pd_user_id"),
+  pmUserId: integer("pm_user_id").references(() => users.id, { onDelete: "set null" }),
+  pdUserId: integer("pd_user_id").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 export const insertProjectInfoSchema = createInsertSchema(projectInfo).omit({ id: true, updatedAt: true } as any);
@@ -79,7 +80,7 @@ export const projectExecutionState = pgTable("project_execution_state", {
   ragStatus: text("rag_status"),
   ragComment: text("rag_comment"),
   ragUpdatedAt: timestamp("rag_updated_at"),
-  ragUpdatedByUserId: integer("rag_updated_by_user_id"),
+  ragUpdatedByUserId: integer("rag_updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
 
   // Active / archived
   isActive: boolean("is_active").notNull().default(true),
@@ -110,7 +111,10 @@ export const projectExecutionState = pgTable("project_execution_state", {
   // Timestamps
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  phaseIdx: index("project_execution_state_phase_idx").on(table.phase),
+  archivedStatusIdx: index("project_execution_state_archived_status_idx").on(table.archivedStatus),
+}));
 
 export const insertProjectExecutionStateSchema = createInsertSchema(projectExecutionState).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertProjectExecutionState = z.infer<typeof insertProjectExecutionStateSchema>;
@@ -162,7 +166,7 @@ export const projectRagAudit = pgTable("project_rag_audit", {
   fromRag: text("from_rag"),
   toRag: text("to_rag").notNull(),
   comment: text("comment").notNull(),
-  changedByUserId: integer("changed_by_user_id").notNull(),
+  changedByUserId: integer("changed_by_user_id").notNull().references(() => users.id),
   changedAt: timestamp("changed_at").notNull().defaultNow(),
 });
 
@@ -591,8 +595,8 @@ export const COMPANY_LIFECYCLE_PHASE_LABELS: Record<CompanyLifecyclePhase, strin
 
 export const mergeAuditLog = pgTable("merge_audit_log", {
   id: serial("id").primaryKey(),
-  primaryProjectId: integer("primary_project_id").notNull(),
-  secondaryProjectId: integer("secondary_project_id").notNull(),
+  primaryProjectId: integer("primary_project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  secondaryProjectId: integer("secondary_project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   primaryProjectName: text("primary_project_name").notNull(),
   secondaryProjectName: text("secondary_project_name").notNull(),
   mergedByUserId: integer("merged_by_user_id").references(() => users.id),
@@ -643,7 +647,7 @@ export const projectGateEvaluations = pgTable("project_gate_evaluations", {
   status: text("status").notNull(),
   missingItems: jsonb("missing_items").notNull().default([]),
   hasOverride: boolean("has_override").notNull().default(false),
-  overrideId: integer("override_id"),
+  overrideId: integer("override_id").references(() => stageGateOverrides.id, { onDelete: "set null" }),
   evaluatedByUserId: integer("evaluated_by_user_id").references(() => users.id),
   evaluatedByRole: text("evaluated_by_role"),
   evaluatedAt: timestamp("evaluated_at").notNull().defaultNow(),
@@ -1104,4 +1108,3 @@ export const monthlyReportSnapshots = pgTable("monthly_report_snapshots", {
 export const insertMonthlyReportSnapshotSchema = createInsertSchema(monthlyReportSnapshots).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertMonthlyReportSnapshot = z.infer<typeof insertMonthlyReportSnapshotSchema>;
 export type MonthlyReportSnapshot = typeof monthlyReportSnapshots.$inferSelect;
-

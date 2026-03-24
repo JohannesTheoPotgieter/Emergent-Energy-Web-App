@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -60,7 +60,7 @@ export const programExpense = pgTable("program_expense", {
   subProjectName: text("sub_project_name"),
   dataSource: text("data_source").default("SMART_IMPORT"),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
-  importRunId: integer("import_run_id"),
+  importRunId: integer("import_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
   source: rowSourceEnum("source").notNull().default("imported"),
   importSnapshot: jsonb("import_snapshot"),
   lastEditedBy: integer("last_edited_by").references(() => users.id),
@@ -70,7 +70,10 @@ export const programExpense = pgTable("program_expense", {
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
   snapshotRunId: integer("snapshot_run_id"),
-});
+  deletedAt: timestamp("deleted_at"),
+}, (table) => ({
+  projectForecastPaymentIdx: index("program_expense_project_forecast_payment_idx").on(table.projectId, table.forecastPaymentDate),
+}));
 export const insertProgramExpenseSchema = createInsertSchema(programExpense).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertProgramExpense = z.infer<typeof insertProgramExpenseSchema>;
 export type ProgramExpense = typeof programExpense.$inferSelect;
@@ -97,7 +100,7 @@ export const programInflows = pgTable("program_inflows", {
   subProjectName: text("sub_project_name"),
   dataSource: text("data_source").default("SMART_IMPORT"),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
-  importRunId: integer("import_run_id"),
+  importRunId: integer("import_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
   source: rowSourceEnum("source").notNull().default("imported"),
   importSnapshot: jsonb("import_snapshot"),
   lastEditedBy: integer("last_edited_by").references(() => users.id),
@@ -196,7 +199,9 @@ export const financeCosMonthly = pgTable("finance_cos_monthly", {
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
   snapshotRunId: integer("snapshot_run_id"),
-});
+}, (table) => ({
+  projectMonthIdx: index("finance_cos_monthly_project_month_idx").on(table.projectId, table.monthEndDate),
+}));
 export const insertFinanceCosMonthlySchema = createInsertSchema(financeCosMonthly).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertFinanceCosMonthly = z.infer<typeof insertFinanceCosMonthlySchema>;
 export type FinanceCosMonthly = typeof financeCosMonthly.$inferSelect;
@@ -208,7 +213,7 @@ export const workingPlanScenario = pgTable("working_plan_scenario", {
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   name: text("name").notNull().default("Working Plan"),
-  isActive: integer("is_active").notNull().default(1),
+  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -220,8 +225,8 @@ export const projectPlanDependency = pgTable("project_plan_dependency", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
-  predecessorTaskId: integer("predecessor_task_id").notNull(),
-  successorTaskId: integer("successor_task_id").notNull(),
+  predecessorTaskId: integer("predecessor_task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
+  successorTaskId: integer("successor_task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   dependencyType: text("dependency_type").notNull().default("FS"),
   lagDays: integer("lag_days").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -234,11 +239,11 @@ export const workingPlanDependencyOverride = pgTable("working_plan_dependency_ov
   id: serial("id").primaryKey(),
   scenarioId: integer("scenario_id").notNull().references(() => workingPlanScenario.id, { onDelete: 'cascade' }),
   importedDependencyId: integer("imported_dependency_id").references(() => projectPlanDependency.id),
-  predecessorTaskId: integer("predecessor_task_id").notNull(),
-  successorTaskId: integer("successor_task_id").notNull(),
+  predecessorTaskId: integer("predecessor_task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
+  successorTaskId: integer("successor_task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   dependencyType: text("dependency_type").notNull().default("FS"),
   lagDays: integer("lag_days").notNull().default(0),
-  deletedFlag: integer("deleted_flag").notNull().default(0),
+  deletedFlag: boolean("deleted_flag").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -256,8 +261,8 @@ export const scheduleChangeNotice = pgTable("schedule_change_notice", {
   changedTasks: text("changed_tasks"),
   criticalPathDelta: text("critical_path_delta"),
   userNote: text("user_note"),
-  clientNotified: integer("client_notified").notNull().default(0),
-  documentationUpdated: integer("documentation_updated").notNull().default(0),
+  clientNotified: boolean("client_notified").notNull().default(false),
+  documentationUpdated: boolean("documentation_updated").notNull().default(false),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -617,7 +622,7 @@ export const trItemProjectLinks = pgTable("tr_item_project_links", {
   id: serial("id").primaryKey(),
   trItemId: integer("tr_item_id").notNull().references(() => trItems.id, { onDelete: "cascade" }),
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
-  autoCreatedPmTaskId: integer("auto_created_pm_task_id"),
+  autoCreatedPmTaskId: integer("auto_created_pm_task_id").references(() => projectPlan.id, { onDelete: "set null" }),
   linkStatus: trLinkStatusEnum("link_status").notNull().default("Linked"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   createdBy: text("created_by"),
@@ -649,7 +654,7 @@ export const milestoneTaskLinks = pgTable("milestone_task_links", {
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   milestoneRowNumber: integer("milestone_row_number").notNull(),
-  taskId: integer("task_id").notNull(),
+  taskId: integer("task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   dateOverride: text("date_override"),
   dateOverrideReason: text("date_override_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -662,8 +667,8 @@ export const expenseTaskLinks = pgTable("expense_task_links", {
   id: serial("id").primaryKey(),
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
-  expenseId: integer("expense_id").notNull(),
-  taskId: integer("task_id").notNull(),
+  expenseId: integer("expense_id").notNull().references(() => programExpense.id, { onDelete: "cascade" }),
+  taskId: integer("task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   dateOverride: text("date_override"),
   dateOverrideReason: text("date_override_reason"),
   createdBy: integer("created_by"),
@@ -730,7 +735,7 @@ export const financialEditRequests = pgTable("financial_edit_requests", {
   affectsExpenditure: boolean("affects_expenditure").notNull().default(false),
   affectsQuality: boolean("affects_quality").notNull().default(false),
   status: text("status").notNull().default("pending"),
-  reviewedByUserId: integer("reviewed_by_user_id"),
+  reviewedByUserId: integer("reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
   reviewComment: text("review_comment"),
   reviewedAt: timestamp("reviewed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -766,7 +771,7 @@ export const invoiceCaptures = pgTable("invoice_captures", {
   amount: real("amount"),
   vatAmount: real("vat_amount"),
   linkedPoId: integer("linked_po_id"),
-  linkedProcurementItemId: integer("linked_procurement_item_id"),
+  linkedProcurementItemId: integer("linked_procurement_item_id").references(() => procurementItems.id, { onDelete: "set null" }),
   status: invoiceCaptureStatusEnum("status").notNull().default('captured'),
   capturedByUserId: integer("captured_by_user_id").references(() => users.id),
   documentPath: text("document_path"),
@@ -802,7 +807,7 @@ export const procurementItems = pgTable("procurement_items", {
   progressPercent: real("progress_percent"),
   receiptRef: text("receipt_ref"),
   paymentStatus: procurementPaymentStatusEnum("payment_status").notNull().default('not_applicable'),
-  linkedTaskId: integer("linked_task_id"),
+  linkedTaskId: integer("linked_task_id").references(() => projectPlan.id, { onDelete: "set null" }),
   approvalId: integer("approval_id"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -829,6 +834,31 @@ export const fyeBudgets = pgTable("fye_budgets", {
 export const insertFyeBudgetSchema = createInsertSchema(fyeBudgets).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertFyeBudget = z.infer<typeof insertFyeBudgetSchema>;
 export type FyeBudget = typeof fyeBudgets.$inferSelect;
+
+export const fiscalYears = pgTable("fiscal_years", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  isCurrent: boolean("is_current").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export type FiscalYear = typeof fiscalYears.$inferSelect;
+
+export const fiscalPeriods = pgTable("fiscal_periods", {
+  id: serial("id").primaryKey(),
+  fiscalYearId: integer("fiscal_year_id").notNull().references(() => fiscalYears.id, { onDelete: "cascade" }),
+  periodName: text("period_name").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  sortOrder: integer("sort_order").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  fiscalYearSortIdx: index("fiscal_periods_fiscal_year_sort_idx").on(table.fiscalYearId, table.sortOrder),
+}));
+export type FiscalPeriod = typeof fiscalPeriods.$inferSelect;
 
 export const forecastPipeline = pgTable("forecast_pipeline", {
   id: serial("id").primaryKey(),

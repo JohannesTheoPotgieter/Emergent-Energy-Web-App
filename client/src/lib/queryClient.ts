@@ -180,8 +180,8 @@ function handleGlobalError(error: unknown) {
   if (error instanceof ApiError) {
     if (error.status === 401) {
       // Session expired — redirect to login
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+      if (window.location.pathname !== "/auth/login") {
+        window.location.href = "/auth/login";
       }
       return;
     }

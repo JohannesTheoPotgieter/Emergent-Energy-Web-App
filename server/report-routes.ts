@@ -4,6 +4,7 @@ import { projectInfo, projectExecutionState, type ProjectInfo, smartImportRuns, 
 import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
 import { verifyToken } from "./jwt";
 import ExcelJS from "exceljs";
+import { jsPDF } from "jspdf";
 import { requirePermission } from "./permission-middleware";
 import { isDateBlack } from "./lib/calculations/stateClassifier";
 import { randomUUID } from "crypto";
@@ -322,44 +323,38 @@ export function registerReportRoutes(app: Express) {
           ${sub ? `<span style="font-size:11px;margin-top:8px;opacity:0.7;text-align:center">${sub}</span>` : ""}
         </div>`;
 
-      const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
-.slide{position:relative;width:1100px;aspect-ratio:16/9;overflow:hidden}
-.bar{position:absolute;right:0;top:0;bottom:0;width:64px;background:#1a5c3a}
-.content{position:relative;z-index:1;padding:32px 80px 32px 40px;display:flex;flex-direction:column;height:100%}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;flex:1}
-.footer{margin-top:auto;padding-top:16px;display:flex;justify-content:space-between;font-size:10px;color:#999}
-</style></head><body>
-<div class="slide">
-  <div class="bar"></div>
-  <div class="content">
-    <div style="font-size:18px;font-weight:700;color:#1a5c3a;margin-bottom:4px">EMERGENT ENERGY</div>
-    <h1 style="font-size:24px;font-weight:700;color:#1a5c3a;margin-top:16px">Operational Overview</h1>
-    <p style="font-size:14px;color:#4a7c5e;margin-bottom:32px">${monthLabel}</p>
-    <div class="grid">
-      ${tile(data.kpis.activeProjects, "Active Projects")}
-      ${tile(data.kpis.constructionStarts, "Construction Starts (Actual)")}
-      ${tile(data.kpis.pdPmHandovers, "PD → PM Handovers")}
-      ${tile(data.kpis.commissionings, "Commissionings")}
-      ${tile(data.kpis.clientHandoversPlanned, "Client Handovers (Planned)")}
-    </div>
-    <div class="footer">
-      <span>Generated: ${new Date(data.generatedAt).toLocaleString("en-ZA")}</span>
-      <span style="color:#1a5c3a;font-weight:500">CONFIDENTIAL</span>
-    </div>
-  </div>
-</div>
-</body></html>`;
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      pdf.setFontSize(18);
+      pdf.text("EMERGENT ENERGY", 14, 16);
+      pdf.setFontSize(22);
+      pdf.text("Operational Overview", 14, 28);
+      pdf.setFontSize(12);
+      pdf.text(monthLabel, 14, 36);
+      const rows = [
+        ["Active Projects", String(data.kpis.activeProjects)],
+        ["Construction Starts (Actual)", String(data.kpis.constructionStarts)],
+        ["PD -> PM Handovers", String(data.kpis.pdPmHandovers)],
+        ["Commissionings", String(data.kpis.commissionings)],
+        ["Client Handovers (Planned)", String(data.kpis.clientHandoversPlanned)],
+      ];
+      rows.forEach(([label, value], i) => {
+        const y = 55 + i * 16;
+        pdf.setFontSize(12);
+        pdf.text(label, 14, y);
+        pdf.setFontSize(14);
+        pdf.text(value, 140, y);
+        pdf.line(14, y + 2, 190, y + 2);
+      });
+      pdf.setFontSize(10);
+      pdf.text(`Generated: ${new Date(data.generatedAt).toLocaleString("en-ZA")}`, 14, 125);
 
       const duration = Date.now() - startTs;
-      console.log(`[Reports] PDF HTML generation for ${month} by user ${userId} took ${duration}ms`);
+      console.log(`[Reports] PDF generation for ${month} by user ${userId} took ${duration}ms`);
 
-      res.setHeader("Content-Type", "text/html");
-      res.setHeader("Content-Disposition", `inline; filename="Operational Overview - ${monthLabel}.html"`);
-      res.send(html);
+      const pdfBytes = Buffer.from(pdf.output("arraybuffer"));
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", 'attachment; filename="operational-overview.pdf"');
+      res.send(pdfBytes);
     } catch (err: any) {
       console.error("[Reports] PDF error:", err.message);
       res.status(400).json({ error: err.message });

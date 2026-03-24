@@ -193,9 +193,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Escape") setSearchTerm(""); }}
-              placeholder="Search..."
-              className={cn("pl-9 h-9 bg-muted/40 border-transparent hover:border-border focus-visible:border-border focus-visible:bg-background focus-visible:ring-ring/20 transition-colors", searchTerm && "pr-8 bg-background border-border")}
+              placeholder="Search projects, tasks, people..."
+              className={cn("pl-9 pr-14 h-9 bg-muted/40 border-transparent hover:border-border focus-visible:border-border focus-visible:bg-background focus-visible:ring-ring/20 transition-colors", searchTerm && "pr-8 bg-background border-border")}
             />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground border rounded px-1.5 py-0.5 bg-background/80">
+              ⌘K / Ctrl+K
+            </span>
             {searchTerm && (
               <button
                 type="button"
