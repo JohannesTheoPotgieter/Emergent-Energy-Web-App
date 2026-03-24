@@ -50,6 +50,7 @@ import {
   Activity,
   ArrowUpRight,
 } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 type DashboardResponse = {
   meta: { fyStart: string; fyEnd: string };
   kpis: Record<string, number | null>;
@@ -513,6 +514,27 @@ export default function DashboardPage() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: dashboardPreferences } = useQuery<any>({
+    queryKey: ["dashboard-preferences"],
+    queryFn: async () => {
+      const res = await fetch("/api/user/dashboard-preferences", { credentials: "include" });
+      if (!res.ok) return { layout: [], pinned_projects: [] };
+      return res.json();
+    },
+  });
+
+  const savePreferences = useMutation({
+    mutationFn: async (payload: any) => {
+      await fetch("/api/user/dashboard-preferences", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["dashboard-preferences"] }),
+  });
+
   const opts = data?.options || { portfolios: [], pms: [], pds: [], executionPhases: [], rags: [] };
 
   const toggleQueue = (queue: string) => {
@@ -674,7 +696,30 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <p className="text-[13px] text-muted-foreground -mt-2">Portfolio health at a glance — powered by live project data.</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] text-muted-foreground -mt-2">Portfolio health at a glance — powered by live project data.</p>
+        <Button variant="outline" size="sm" onClick={() => setCustomizeOpen((v) => !v)}>Customize Dashboard</Button>
+      </div>
+      {customizeOpen && (
+        <Card className="border-dashed">
+          <CardContent className="p-3 text-sm space-y-2">
+            <div className="font-medium">Customize Dashboard</div>
+            <div className="text-muted-foreground">Pinned projects (comma separated IDs)</div>
+            <Input
+              value={(dashboardPreferences?.pinned_projects || []).join(",")}
+              onChange={(e) =>
+                savePreferences.mutate({
+                  ...(dashboardPreferences || {}),
+                  pinned_projects: e.target.value.split(",").map((v) => Number(v.trim())).filter((v) => Number.isFinite(v)),
+                })
+              }
+            />
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={() => savePreferences.mutate({ layout: [], pinned_projects: [], default_period: "ytd", theme: "system" })}>Reset to defaults</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Stale metrics banner ── */}
       {data?.kpis && Number(data.kpis.staleImports || 0) > 0 && (
@@ -703,7 +748,7 @@ export default function DashboardPage() {
       <h2 className="text-lg font-semibold flex items-center gap-2"><Briefcase className="h-5 w-5 text-blue-500" />Portfolio Overview</h2>
       <TooltipProvider delayDuration={200}>
         {isLoading && !data ? (
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+          <div className={`grid gap-3 ${isMobile ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-4 lg:grid-cols-8"}`}>
             {Array.from({ length: 8 }).map((_, i) => <KpiSkeleton key={i} />)}
           </div>
         ) : (
