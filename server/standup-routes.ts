@@ -258,6 +258,20 @@ export function registerStandupRoutes(app: Express) {
   /** Get today's standup info (which schedules need a submission) */
   app.get("/api/standups/today", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (req.query.team_id) {
+        const date = new Date().toISOString().slice(0, 10);
+        const teamId = Number(req.query.team_id);
+        await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+        const rows = await db.execute(sql`
+          SELECT e.*, u.name as user_name, u.email as user_email
+          FROM standup_entries_v2 e
+          LEFT JOIN users u ON u.id = e.user_id
+          WHERE e.date = ${date} AND (${teamId} IS NULL OR e.team_id = ${teamId})
+          ORDER BY e.created_at ASC
+        `);
+        return res.json({ date, items: rows.rows || [] });
+      }
+
       const user = getUser(req);
       const todayStr = today();
 
@@ -904,6 +918,74 @@ export function registerStandupRoutes(app: Express) {
         .slice(0, 5);
 
       res.json({ whatIDid, whatImDoing });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Advanced daily standup workflow ───────────────────────────────────────
+  app.post("/api/standups/entry", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { yesterday, today: todayPlan, blockers, project_id, team_id } = req.body || {};
+      if (!todayPlan || typeof todayPlan !== "string") {
+        return res.status(400).json({ error: "today field is required" });
+      }
+      const date = new Date().toISOString().slice(0, 10);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS standup_entries_v2 (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          date TEXT NOT NULL,
+          yesterday TEXT,
+          today TEXT,
+          blockers TEXT,
+          project_id INTEGER,
+          team_id INTEGER,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await db.execute(sql`
+        INSERT INTO standup_entries_v2 (user_id, date, yesterday, today, blockers, project_id, team_id, created_at)
+        VALUES (${user.id}, ${date}, ${yesterday ?? null}, ${todayPlan}, ${blockers ?? null}, ${project_id ?? null}, ${team_id ?? null}, ${new Date().toISOString()})
+      `);
+      res.status(201).json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/standups/history", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const teamId = req.query.team_id ? Number(req.query.team_id) : null;
+      const from = String(req.query.from || "1900-01-01");
+      const to = String(req.query.to || "2999-12-31");
+      await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+      const rows = await db.execute(sql`
+        SELECT e.*, u.name as user_name, u.email as user_email
+        FROM standup_entries_v2 e
+        LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.date >= ${from} AND e.date <= ${to} AND (${teamId} IS NULL OR e.team_id = ${teamId})
+        ORDER BY e.date DESC, e.created_at DESC
+      `);
+      res.json({ items: rows.rows || [] });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/standups/blockers/active", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+      const rows = await db.execute(sql`
+        SELECT e.id, e.date, e.blockers, e.project_id, e.team_id, e.user_id, u.name as owner_name,
+               CAST(julianday('now') - julianday(e.date) AS INTEGER) as age_days
+        FROM standup_entries_v2 e
+        LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.blockers IS NOT NULL AND TRIM(e.blockers) <> ''
+        ORDER BY e.date ASC
+      `);
+      res.json({ items: rows.rows || [] });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

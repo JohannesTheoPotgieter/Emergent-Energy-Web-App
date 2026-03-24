@@ -336,7 +336,7 @@ export async function refreshProgramMetrics(): Promise<void> {
     }
 
     const rag = (p.ragStatus ?? "").toUpperCase();
-    if (rag === "RED" || rag === "AT RISK") projectsAtRisk++;
+    if (rag === "RED" || rag === "AMBER" || rag === "AT RISK") projectsAtRisk++;
   }
 
   const avgMargin = marginCount > 0 ? (marginSum / marginCount).toFixed(4) : null;

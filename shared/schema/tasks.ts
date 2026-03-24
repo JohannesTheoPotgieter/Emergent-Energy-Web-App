@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, decimal, timestamp, pgEnum, serial, real, boolean, date, time, jsonb, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -207,7 +207,12 @@ export const workItems = pgTable("work_items", {
   taskTypeTag: text("task_type_tag"),
   blockerReason: text("blocker_reason"),
   pdTicketId: integer("pd_ticket_id"),
-});
+}, (table) => ({
+  projectIdIdx: index("work_items_project_id_idx").on(table.projectId),
+  ownerUserIdIdx: index("work_items_owner_user_id_idx").on(table.ownerUserId),
+  statusIdx: index("work_items_status_idx").on(table.status),
+  endDateIdx: index("work_items_end_date_idx").on(table.endDate),
+}));
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;
 export type WorkItem = typeof workItems.$inferSelect;
