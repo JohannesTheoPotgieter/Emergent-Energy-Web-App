@@ -7,8 +7,11 @@ import {
   normalizedCostLines,
   workItems,
   raidItems,
+  qcChecklist,
+  qcItemInstance,
   qcWarning,
   procurementItems,
+  counterparties,
   deliverables,
   projectEngStages,
   projectEngApprovals,
@@ -68,14 +71,17 @@ function computeAggregates(rows: any[]) {
 }
 
 export async function getPmDrilldownRows(filters: DrillFilters) {
-  const [projectRows, revenueRows, costRows, taskRows, raidRows, warningRows, procurementRows] = await Promise.all([
+  const [projectRows, revenueRows, costRows, taskRows, raidRows, warningRows, checklistRows, qcItemRows, procurementRows, counterpartiesRows] = await Promise.all([
     db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
     db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
     db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
     db.select().from(workItems).where(and(isNull(workItems.deletedAt), or(eq(workItems.workstream, "PM"), isNull(workItems.workstream)))),
     db.select().from(raidItems),
     db.select().from(qcWarning),
+    db.select().from(qcChecklist),
+    db.select().from(qcItemInstance),
     db.select().from(procurementItems),
+    db.select().from(counterparties),
   ]);
 
   const activeProjects = projectRows.map(r => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id })).filter(isActiveProject);
@@ -84,76 +90,137 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
   let rows: any[] = [];
   let sourceTables: string[] = [];
 
-  if (filters.tab === "financial" || ["totalRevenue", "totalCost", "blendedGpMarginPct"].includes(filters.metric || "")) {
-    if (filters.metric === "totalRevenue") {
+  if (filters.tab === "financial" || ["totalRevenue", "totalCost", "blendedGpMarginPct", "revenue", "cost", "revenueBridge", "costBridge", "gpBridge"].includes(filters.metric || "")) {
+    if (["totalRevenue", "revenue", "revenueBridge"].includes(filters.metric || "")) {
       rows = revenueRows.filter(r => activeProjectIds.has(r.projectId)).map(r => ({
+        source: "normalized_revenue_lines",
         projectId: r.projectId,
+        projectName: r.projectName,
         category: r.category,
         amountExVat: Number(r.amountExVat || 0),
+        vat: Number(r.vat || 0),
+        invoiceNumber: r.invoiceNumber,
+        description: r.description,
         invoiceDate: r.invoiceDate,
+        inBankDate: r.inBankDate,
         paidDate: r.paidDate,
         status: r.status,
       }));
       sourceTables = ["normalized_revenue_lines"];
     } else {
       rows = costRows.filter(r => activeProjectIds.has(r.projectId)).map(r => ({
+        source: "normalized_cost_lines",
         projectId: r.projectId,
+        projectName: r.projectName,
         category: r.costCategory,
         supplier: r.counterpartyName,
         amountExVat: Number(r.amountExVat || 0),
+        poNumber: r.poNumber,
+        invoiceNumber: r.invoiceNumber,
         cosStatus: r.cosStatus,
         invoiceDate: r.invoiceDate,
         paidDate: r.paidDate,
+        forecastPaymentDate: r.forecastPaymentDate,
       }));
       sourceTables = ["normalized_cost_lines"];
     }
   } else if (filters.tab === "tasks" || ["overdueTasks", "tasksCompletedThisMonth"].includes(filters.metric || "")) {
     rows = taskRows.filter(t => activeProjectIds.has(t.projectId)).map(t => ({
+      source: "work_items",
       projectId: t.projectId,
       owner: t.ownerName,
       status: t.status,
-      taskName: t.taskName,
+      taskName: t.title || t.taskName,
+      phase: t.phase,
       startDate: t.startDate,
       endDate: t.endDate,
       completedAt: t.completedAt ? new Date(t.completedAt).toISOString().substring(0, 10) : null,
       isMilestone: t.isMilestone,
+      agingDays: t.endDate ? Math.max(0, Math.floor((Date.now() - new Date(`${t.endDate}T00:00:00Z`).getTime()) / (1000 * 60 * 60 * 24))) : 0,
+      sourceRow: t.sourceRow,
+      sourceFileName: t.sourceFileName,
     }));
     sourceTables = ["work_items"];
   } else if (filters.tab === "raid" || filters.metric === "projectsAtRisk") {
     rows = raidRows.filter(r => activeProjectIds.has(r.projectId)).map(r => ({
+      source: "raid_items",
       projectId: r.projectId,
       type: r.type,
       title: r.title,
+      mitigation: r.mitigationResponse,
       priority: r.priority,
       owner: r.owner,
       status: r.status,
       dueDate: r.dueDate,
+      ageDays: r.createdAt ? Math.floor((Date.now() - new Date(r.createdAt).getTime()) / (1000 * 60 * 60 * 24)) : 0,
     }));
     sourceTables = ["raid_items"];
   } else if (filters.tab === "quality") {
-    rows = warningRows.filter(w => activeProjectIds.has(w.projectId)).map(w => ({
+    const checklistMapped = checklistRows
+      .filter(c => activeProjectIds.has(c.projectId))
+      .map(c => ({
+        source: "qc_checklist",
+        recordType: "checklist",
+        projectId: c.projectId,
+        projectName: c.projectName,
+        checklistId: c.id,
+        checklistStatus: c.status,
+        createdAt: c.createdAt ? new Date(c.createdAt).toISOString().substring(0, 10) : null,
+      }));
+    const qcItemsMapped = qcItemRows.map(i => ({
+      source: "qc_item_instance",
+      recordType: "item",
+      checklistId: i.checklistId,
+      templateItemId: i.templateItemId,
+      isApplicable: i.isApplicable,
+      approved: i.approved,
+      approvalStatus: i.approved ? "approved" : "open",
+      startDate: i.startDate,
+      endDate: i.endDate,
+    }));
+    const checklistById = new Map(checklistRows.map(c => [c.id, c]));
+    const itemRowsWithProject = qcItemsMapped
+      .map(i => ({ ...i, projectId: checklistById.get(i.checklistId)?.projectId, projectName: checklistById.get(i.checklistId)?.projectName }))
+      .filter(i => i.projectId && activeProjectIds.has(i.projectId));
+    const warningMapped = warningRows.filter(w => activeProjectIds.has(w.projectId)).map(w => ({
+      source: "qc_warning",
+      recordType: "warning",
       projectId: w.projectId,
+      projectName: w.projectName,
       warningType: w.warningType,
       status: w.status,
-      message: w.message,
+      title: w.title,
+      message: w.description,
+      severity: w.severity,
       createdAt: w.createdAt ? new Date(w.createdAt).toISOString().substring(0, 10) : null,
     }));
-    sourceTables = ["qc_warning"];
+    rows = [...checklistMapped, ...itemRowsWithProject, ...warningMapped];
+    sourceTables = ["qc_checklist", "qc_item_instance", "qc_warning"];
   } else {
+    const supplierMap = new Map(counterpartiesRows.map(c => [c.id, c.nameCanonical || c.nameDisplay || `Supplier ${c.id}`]));
     rows = procurementRows.filter(p => activeProjectIds.has(p.projectId)).map(p => ({
+      source: "procurement_items",
       projectId: p.projectId,
       category: p.category,
       title: p.title,
-      supplier: p.supplier,
+      supplier: p.supplierId ? supplierMap.get(p.supplierId) : null,
       status: p.status,
       expectedCost: Number(p.expectedCost || 0),
       actualCost: Number(p.actualCost || 0),
+      paymentStatus: p.paymentStatus,
       approvalState: p.approvalState,
     }));
     sourceTables = ["procurement_items"];
   }
 
   rows = withCommonProjectFilters(rows, filters).filter(r => {
+    if (filters.metric === "overdueTasks") {
+      const endDate = r.endDate;
+      if (!endDate) return false;
+      if (["done", "complete", "completed"].includes(String(r.status || "").toLowerCase())) return false;
+      return endDate < new Date().toISOString().substring(0, 10);
+    }
+    if (filters.metric === "projectsAtRisk" && !["critical", "high"].includes(String(r.priority || "").toLowerCase())) return false;
     if (filters.status && String(r.status || r.cosStatus || "").toLowerCase() !== filters.status.toLowerCase()) return false;
     if (filters.owner && String(r.owner || "").toLowerCase() !== filters.owner.toLowerCase()) return false;
     if (filters.category && String(r.category || "").toLowerCase() !== filters.category.toLowerCase()) return false;
