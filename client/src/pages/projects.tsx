@@ -104,6 +104,7 @@ interface ProjectSummary {
   total_expenses: number | null;
   actual_expenses: number | null;
   gp_percent: number | null;
+  cos_realised_pct: number | null;
   revenue_outstanding: number | null;
   expenses_due: number | null;
   current_vo_total: number | null;
@@ -859,7 +860,7 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
-  { label: "Financials", keys: ["actual_revenue", "actual_expenses", "cashflow_delta", "gp_percent", "tracking_gp_percent", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
+  { label: "Financials", keys: ["actual_revenue", "actual_expenses", "cashflow_delta", "gp_percent", "tracking_gp_percent", "cos_realised_pct", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
   { label: "Updates", keys: ["latest_update", "comments", "next_key_date"], color: "bg-amber-50 text-amber-700" },
 ];
 
@@ -2075,6 +2076,17 @@ export default function ProjectsSummary() {
         const val = ((revenue - expenses) / revenue) * 100;
         const color = val >= 20 ? "text-emerald-600" : val >= 0 ? "text-amber-600" : "text-red-600";
         return <span className={`font-mono text-[10px] font-semibold ${color}`} data-testid="text-tracking-gp">{val.toFixed(1)}%</span>;
+      },
+    },
+    {
+      key: "cos_realised_pct",
+      header: "COS Realised %",
+      align: "right",
+      render: (p) => {
+        if (p.cos_realised_pct == null) return <span className="text-slate-500 text-[10px]">—</span>;
+        const val = p.cos_realised_pct * 100;
+        const color = val >= 80 ? "text-emerald-600" : val >= 50 ? "text-amber-600" : "text-red-600";
+        return <span className={`font-mono text-[10px] font-semibold ${color}`} data-testid="text-cos-realised-pct">{val.toFixed(1)}%</span>;
       },
     },
     {
