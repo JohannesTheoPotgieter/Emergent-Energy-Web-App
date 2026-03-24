@@ -802,6 +802,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
 
       let totalExpenses = 0;
       let actualExpenses = 0;
+      let cosRealisedTotal = 0;
       for (const expense of projectExpenses) {
         if (expense.expenseActualTotal) {
           const amt = parseFloat(expense.expenseActualTotal) || 0;
@@ -810,8 +811,12 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
           if (state === 'Paid') {
             actualExpenses += amt;
           }
+          if (isCosRealised(expense as any)) {
+            cosRealisedTotal += amt;
+          }
         }
       }
+      const cosRealisedPct = totalExpenses > 0 ? cosRealisedTotal / totalExpenses : null;
 
       const gpPercent = totalContractRevenue > 0 ? 1 - (totalExpenses / totalContractRevenue) : null;
 
@@ -970,6 +975,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
         total_expenses: totalExpenses,
         actual_expenses: actualExpenses,
         gp_percent: gpPercent,
+        cos_realised_pct: cosRealisedPct,
         revenue_outstanding: revenueOutstanding,
         expenses_due: expensesDue,
         current_vo_total: editable?.currentVoTotal ? parseFloat(editable.currentVoTotal) : 0,
