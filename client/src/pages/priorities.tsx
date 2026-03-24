@@ -309,12 +309,6 @@ export default function PrioritiesPage() {
         </div>
         {isAdmin && (
           <div className="flex items-center gap-2">
-            <Link href="/company-priorities">
-              <Button variant="outline" size="sm">
-                <Settings className="w-4 h-4 mr-1" />
-                Manage
-              </Button>
-            </Link>
             <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
               <Plus className="w-4 h-4 mr-1" />
               Add Priority

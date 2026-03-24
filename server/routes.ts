@@ -7,6 +7,8 @@ import { createServer, type Server } from "http";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
+import { randomUUID } from "crypto";
+import { fileTypeFromBuffer } from "file-type";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
 import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests } from "@shared/schema";
@@ -200,9 +202,8 @@ const upload = multer({
       cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
-      const timestamp = Date.now();
-      const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
-      cb(null, `${timestamp}_${sanitized}`);
+      const ext = path.extname(file.originalname).toLowerCase().replace(/[^a-z0-9.]/g, "");
+      cb(null, `${randomUUID()}${ext}`);
     }
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
@@ -5280,6 +5281,15 @@ export async function registerRoutes(
         try {
           // Read and parse file first (no DB writes yet)
           const fileBuffer = fs.readFileSync(file.path);
+          const actualType = await fileTypeFromBuffer(fileBuffer);
+          const allowedMime = new Set([
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.ms-excel.sheet.macroEnabled.12",
+            "application/vnd.ms-excel",
+          ]);
+          if (!actualType || !allowedMime.has(actualType.mime)) {
+            throw new Error(`Invalid file signature for ${file.originalname}`);
+          }
           const cleanedFilename = file.originalname.replace(/^\d{10,}_/, '');
           const parseResult = await parseTrackerFile(fileBuffer, cleanedFilename);
           
@@ -8971,7 +8981,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/mark-active", requireAuth, async (req, res) => {
+  app.post("/api/admin/mark-active", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { projectNames } = req.body;
       if (!Array.isArray(projectNames)) {
