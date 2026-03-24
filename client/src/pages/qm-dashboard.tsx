@@ -226,7 +226,7 @@ export default function QmDashboardPage() {
   const [viewMode, setViewMode] = useState<"projects" | "items">("projects");
   const [projectSort, setProjectSort] = useState<ProjectSortKey>("name");
   const [projectSortDir, setProjectSortDir] = useState<ProjectSortDir>("asc");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "completed">("active");
+  const [statusFilter, setStatusFilter] = useState<"active">("active");
   const [warningFilter, setWarningFilter] = useState(false);
   const [warningsExpanded, setWarningsExpanded] = useState(true);
   const [selectedWarning, setSelectedWarning] = useState<Warning | null>(null);
@@ -434,14 +434,23 @@ export default function QmDashboardPage() {
     return c.updatedAt || c.createdAt || "";
   };
 
+  const hasLinkedItems = (c: Checklist) => {
+    if (!c.phases || c.phases.length === 0) return false;
+    return c.phases.reduce((t, p) => t + p.total, 0) > 0;
+  };
+
+  const projectsWithLinkedItems = useMemo(
+    () => checklists.filter(hasLinkedItems),
+    [checklists]
+  );
+
   const projectsWithWarningsCount = useMemo(() => checklists.filter(c => getProjectWarnings(c) > 0).length, [checklists, warnings]);
 
   const filteredProjects = useMemo(() => {
-    let list = checklists.filter(c =>
+    let list = projectsWithLinkedItems.filter(c =>
       c.projectName.toLowerCase().includes(searchTerm.toLowerCase())
     );
     if (statusFilter === "active") list = list.filter(c => c.status === "active");
-    if (statusFilter === "completed") list = list.filter(c => c.status === "completed");
     if (warningFilter) list = list.filter(c => getProjectWarnings(c) > 0);
 
     list.sort((a, b) => {
@@ -455,7 +464,7 @@ export default function QmDashboardPage() {
       return projectSortDir === "desc" ? -cmp : cmp;
     });
     return list;
-  }, [checklists, searchTerm, statusFilter, warningFilter, projectSort, projectSortDir, warnings]);
+  }, [projectsWithLinkedItems, searchTerm, statusFilter, warningFilter, projectSort, projectSortDir, warnings]);
 
   const filteredItems = useMemo(() => {
     let list = [...allItems];
@@ -533,7 +542,6 @@ export default function QmDashboardPage() {
 
   const activeFiltersCount = [
     searchTerm ? 1 : 0,
-    statusFilter !== "all" ? 1 : 0,
     warningFilter ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
@@ -717,7 +725,7 @@ export default function QmDashboardPage() {
               variant="ghost"
               size="sm"
               className="text-xs text-muted-foreground"
-              onClick={() => { setSearchTerm(""); setStatusFilter("all"); setWarningFilter(false); }}
+              onClick={() => { setSearchTerm(""); setWarningFilter(false); }}
               data-testid="btn-clear-all-filters"
             >
               <XCircle className="h-3.5 w-3.5 mr-1" />
@@ -761,9 +769,7 @@ export default function QmDashboardPage() {
                     triggerClassName="w-[120px] h-9"
                     data-testid="select-status-filter"
                     options={[
-                      { value: "all", label: "All Status" },
                       { value: "active", label: "Active" },
-                      { value: "completed", label: "Completed" },
                     ]}
                   />
                   <Popover>
@@ -809,7 +815,7 @@ export default function QmDashboardPage() {
                     {activeFiltersCount > 0 ? "Try adjusting your filters" : "Start a quality process for a project"}
                   </p>
                   {activeFiltersCount > 0 && (
-                    <Button variant="link" size="sm" className="mt-2" onClick={() => { setSearchTerm(""); setStatusFilter("all"); setWarningFilter(false); }} data-testid="btn-clear-filters">
+                    <Button variant="link" size="sm" className="mt-2" onClick={() => { setSearchTerm(""); setWarningFilter(false); }} data-testid="btn-clear-filters">
                       Clear filters
                     </Button>
                   )}
@@ -891,13 +897,9 @@ export default function QmDashboardPage() {
                               <td className="py-2.5 px-2 text-center">
                                 <Badge
                                   variant="outline"
-                                  className={`text-[10px] ${
-                                    checklist.status === "completed"
-                                      ? "bg-emerald-50 text-emerald-600 border-emerald-200"
-                                      : "bg-blue-50 text-blue-600 border-blue-200"
-                                  }`}
+                                  className="text-[10px] bg-blue-50 text-blue-600 border-blue-200"
                                 >
-                                  {checklist.status}
+                                  active
                                 </Badge>
                               </td>
                               <td className="py-2.5 px-2 text-center">
@@ -970,7 +972,7 @@ export default function QmDashboardPage() {
                     </table>
                   </div>
                   <p className="text-xs text-muted-foreground text-right mt-3 px-3">
-                    Showing {filteredProjects.length} of {checklists.length} projects
+                    Showing {filteredProjects.length} of {projectsWithLinkedItems.length} projects with linked items
                   </p>
                 </>
               )}
