@@ -68,9 +68,10 @@ Cashflow tracking monitors when money actually leaves or enters the company bank
 
 ### Cash Outflow Statuses
 
-- **Out of Bank** — Payment date font is **black** AND has an invoice number. Money has actually left the bank.
-- **Payment Planned** — Payment date exists but font is **red**. Payment is scheduled but not yet made.
-- **Planned** — No payment date or insufficient data. Default state.
+- **Out of Bank** — Payment date font is **black** AND has an invoice number. Money has actually left the bank (Paid).
+- **Outstanding** — Payment date font is **red** AND has an invoice number. Invoice received but not yet paid.
+- **Risk** — Payment date font is **black** but NO invoice number. Payment recorded without supporting invoice.
+- **Planned** — Payment date font is **red** with no invoice, or no payment date. Just planned.
 
 ### Font Colour Toggle
 
