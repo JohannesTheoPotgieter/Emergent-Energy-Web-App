@@ -27,15 +27,7 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Priorities",
-    path: "/priorities",
-    match: (pathname) => startsWithAny(pathname, ["/priorities"]),
-    secondary: [
-      { label: "All Priorities", path: "/priorities" },
-    ],
-  },
-  {
-    label: "Project Lifecycle",
+    label: "Projects",
     path: "/project-lifecycle",
     match: (pathname) => startsWithAny(pathname, ["/project-lifecycle", "/lifecycle-board", "/project", "/clients"]),
     secondary: [
@@ -57,7 +49,7 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Project Management",
+    label: "Execution",
     path: "/execution-board",
     match: (pathname) => startsWithAny(pathname, ["/dashboard", "/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios", "/exceptions"]),
     secondary: [
@@ -71,20 +63,15 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Engineering",
+    label: "Operations",
     path: "/engineering",
-    match: (pathname) => startsWithAny(pathname, ["/engineering"]),
+    match: (pathname) => startsWithAny(pathname, ["/engineering", "/quality"]),
     secondary: [
-      { label: "Overview", path: "/engineering" },
+      { label: "Engineering Overview", path: "/engineering" },
       { label: "Requests & Tasks", path: "/engineering/tasks" },
+      { label: "Quality Workspace", path: "/quality" },
       { label: "Audit Log", path: "/engineering/audit" },
     ],
-  },
-  {
-    label: "Quality",
-    path: "/quality",
-    match: (pathname) => startsWithAny(pathname, ["/quality"]),
-    secondary: [{ label: "Quality Workspace", path: "/quality" }],
   },
   {
     label: "Finance",
@@ -101,25 +88,19 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Knowledge",
-    path: "/ee-info",
-    match: (pathname) => startsWithAny(pathname, ["/ee-info", "/leaderboard", "/feedback", "/training", "/department-scores"]),
+    label: "Insights",
+    path: "/priorities",
+    match: (pathname) => startsWithAny(pathname, ["/priorities", "/reports", "/ee-info", "/leaderboard", "/feedback", "/training", "/department-scores"]),
     secondary: [
+      { label: "Priorities", path: "/priorities" },
+      { label: "PM Monthly Report", path: "/reports/pm/monthly" },
+      { label: "Eng Monthly Report", path: "/reports/engineering/monthly" },
+      { label: "Programme Reports", path: "/reports/programme" },
       { label: "Lifecycle & SOP", path: "/ee-info" },
       { label: "Leaderboard", path: "/leaderboard" },
       { label: "Dept Scores", path: "/department-scores" },
       { label: "Training", path: "/training" },
       { label: "Feedback", path: "/feedback" },
-    ],
-  },
-  {
-    label: "Reports",
-    path: "/reports/pm/monthly",
-    match: (pathname) => startsWithAny(pathname, ["/reports"]),
-    secondary: [
-      { label: "PM Monthly Report", path: "/reports/pm/monthly" },
-      { label: "Engineering Monthly Report", path: "/reports/engineering/monthly" },
-      { label: "Programme Reports", path: "/reports/programme" },
     ],
   },
   {
@@ -170,25 +151,26 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   // Priority detail breadcrumb
   const priorityDetailMatch = pathname.match(/^\/priorities\/(\d+)/);
   if (priorityDetailMatch) return [
+    { label: "Insights", path: "/priorities" },
     { label: "Priorities", path: "/priorities" },
     { label: `Priority #${priorityDetailMatch[1]}` },
   ];
 
   // Priority list breadcrumb
   if (pathname === "/priorities") return [
-    { label: "Priorities" },
+    { label: "Insights" },
   ];
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
   if (projectMatch) return [
-    { label: "Project Management", path: "/execution-board" },
+    { label: "Execution", path: "/execution-board" },
     { label: "Project List", path: "/projects" },
     { label: decodeURIComponent(projectMatch[1]) },
   ];
 
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
   if (portfolioMatch) return [
-    { label: "Project Management", path: "/execution-board" },
+    { label: "Execution", path: "/execution-board" },
     { label: "Portfolios", path: "/portfolios" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];

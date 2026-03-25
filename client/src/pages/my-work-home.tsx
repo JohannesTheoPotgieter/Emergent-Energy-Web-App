@@ -6,12 +6,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { format, parseISO } from "date-fns";
+import { trackFeatureUse } from "@/lib/nav-analytics";
 import {
   CheckCircle2,
   Circle,
@@ -30,6 +32,7 @@ import {
   MessageSquare,
   Bell,
   Zap,
+  Sparkles,
 } from "lucide-react";
 
 interface TaskItem {
@@ -158,6 +161,16 @@ export default function MyWorkHomePage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  const [groupingMode, setGroupingMode] = useState<"source" | "priority">(
+    () => (localStorage.getItem("ee_mywork_grouping") as "source" | "priority") || "source"
+  );
+
+  const handleGroupingChange = (value: string) => {
+    const mode = value as "source" | "priority";
+    setGroupingMode(mode);
+    localStorage.setItem("ee_mywork_grouping", mode);
+    trackFeatureUse("mywork_grouping_toggle");
+  };
 
   const syncMutation = useMutation({
     mutationFn: async () => {
@@ -669,7 +682,37 @@ export default function MyWorkHomePage() {
     return counts;
   }, [openTasks]);
 
-  const groupedTasks = useMemo(() => {
+  const doneToday = useMemo(() => {
+    return tasks.filter(t => {
+      if (!DONE_STATUSES.includes(t.status)) return false;
+      const due = t.dueAt || t.plannedForDate;
+      if (!due) return false;
+      return due.startsWith(today);
+    }).length;
+  }, [tasks]);
+
+  const focusNowItems = useMemo(() => {
+    const now = new Date();
+    const urgent = openTasks
+      .map(t => {
+        let urgencyScore = 0;
+        if (t.dueAt) {
+          const due = new Date(t.dueAt);
+          if (due < now) urgencyScore = 3; // overdue
+          else if (t.dueAt.startsWith(today)) urgencyScore = 2; // due today
+        }
+        if (t.priority === "critical") urgencyScore = Math.max(urgencyScore, 2.5);
+        if (t.priority === "high") urgencyScore = Math.max(urgencyScore, 1.5);
+        return { task: t, urgencyScore };
+      })
+      .filter(x => x.urgencyScore > 0)
+      .sort((a, b) => b.urgencyScore - a.urgencyScore)
+      .slice(0, 3)
+      .map(x => x.task);
+    return urgent;
+  }, [openTasks]);
+
+  const groupedByProject = useMemo(() => {
     const groups: Record<string, TaskItem[]> = {};
     filteredTasks.forEach(t => {
       const key = t.projectName || "No Project";
@@ -689,6 +732,24 @@ export default function MyWorkHomePage() {
     );
     return sortedGroups;
   }, [filteredTasks]);
+
+  const groupedByPriority = useMemo(() => {
+    const priorityOrder = ["critical", "high", "normal", "low"];
+    const priorityLabels: Record<string, string> = { critical: "Critical", high: "High", normal: "Normal", low: "Low" };
+    const groups: Record<string, TaskItem[]> = {};
+    filteredTasks.forEach(t => {
+      const key = t.priority || "normal";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+    const sortedGroups: Record<string, TaskItem[]> = {};
+    for (const p of priorityOrder) {
+      if (groups[p]) sortedGroups[priorityLabels[p] || p] = groups[p];
+    }
+    return sortedGroups;
+  }, [filteredTasks]);
+
+  const groupedTasks = groupingMode === "priority" ? groupedByPriority : groupedByProject;
 
   const sortedEvents = useMemo(() =>
     [...calendarEvents].sort((a, b) => {
@@ -746,12 +807,13 @@ export default function MyWorkHomePage() {
       />
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5" data-testid="my-work-focus-summary">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" data-testid="my-work-focus-summary">
         {[
           { label: "Actions", value: myDaySummary.urgentActions, icon: Zap, color: "text-orange-600", bg: "bg-orange-50 border-orange-200" },
           { label: "Due Today", value: myDaySummary.dueToday, icon: Target, color: "text-red-600", bg: "bg-red-50 border-red-200" },
           { label: "Meetings", value: myDaySummary.upcomingMeetings, icon: Calendar, color: "text-blue-600", bg: "bg-blue-50 border-blue-200" },
           { label: "Open Tasks", value: myDaySummary.openTasks, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200" },
+          { label: "Done Today", value: doneToday, icon: Sparkles, color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-300" },
           { label: "Alerts", value: myDaySummary.escalatedCount, icon: Bell, color: "text-amber-600", bg: "bg-amber-50 border-amber-200" },
         ].map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className={`flex items-center gap-3 rounded-lg border px-3.5 py-2.5 ${bg}`}>
@@ -763,6 +825,59 @@ export default function MyWorkHomePage() {
           </div>
         ))}
       </div>
+
+      {/* Focus Now — urgent items highlight */}
+      {!tasksLoading && (
+        <div className="mb-5" data-testid="focus-now-section">
+          {focusNowItems.length > 0 ? (
+            <div className="space-y-1.5">
+              <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                Focus Now
+              </h2>
+              {focusNowItems.map(task => {
+                const isOverdue = task.dueAt ? new Date(task.dueAt) < new Date() : false;
+                return (
+                  <div
+                    key={task.id}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg border cursor-pointer transition-colors group ${
+                      isOverdue
+                        ? "border-l-4 border-l-red-400 border-red-200 bg-red-50/40 hover:bg-red-50/70"
+                        : "border-l-4 border-l-amber-400 border-amber-200 bg-amber-50/40 hover:bg-amber-50/70"
+                    }`}
+                    onClick={() => handleTaskClick(task)}
+                    data-testid={`focus-item-${task.id}`}
+                  >
+                    <StatusIcon status={task.status} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate group-hover:text-foreground">{task.title}</p>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        {task.projectName && <span>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
+                        {task.dueAt && (
+                          <span className={isOverdue ? "text-red-600 font-medium" : "text-amber-600"}>
+                            {isOverdue ? "Overdue" : "Due today"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {task.sourceLabel && (
+                      <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 ${SOURCE_BADGE_COLORS[task.source || ""] || ""}`}>
+                        {task.sourceLabel}
+                      </Badge>
+                    )}
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-foreground shrink-0" />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border border-emerald-200 bg-emerald-50/40">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+              <p className="text-sm text-emerald-700">You're caught up — no urgent items right now.</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main 2-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5" data-testid="my-work-grid">
@@ -796,24 +911,32 @@ export default function MyWorkHomePage() {
                   </Badge>
                 </div>
               </div>
-              <ScrollArea className="w-full">
-                <div className="flex gap-1 pt-1 pb-0.5">
-                  {SOURCE_FILTERS.filter(f => f.key === "all" || (sourceCounts[f.key] || 0) > 0).map(f => (
-                    <button
-                      key={f.key}
-                      onClick={() => setSourceFilter(f.key)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors border ${
-                        sourceFilter === f.key
-                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                          : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
-                      }`}
-                      data-testid={`filter-${f.key}`}
-                    >
-                      {f.label} {(sourceCounts[f.key] || 0) > 0 ? `(${sourceCounts[f.key]})` : ""}
-                    </button>
-                  ))}
-                </div>
-              </ScrollArea>
+              <div className="flex items-center gap-3 pt-1 pb-0.5">
+                <ScrollArea className="flex-1">
+                  <div className="flex gap-1">
+                    {SOURCE_FILTERS.filter(f => f.key === "all" || (sourceCounts[f.key] || 0) > 0).map(f => (
+                      <button
+                        key={f.key}
+                        onClick={() => setSourceFilter(f.key)}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors border ${
+                          sourceFilter === f.key
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
+                        }`}
+                        data-testid={`filter-${f.key}`}
+                      >
+                        {f.label} {(sourceCounts[f.key] || 0) > 0 ? `(${sourceCounts[f.key]})` : ""}
+                      </button>
+                    ))}
+                  </div>
+                </ScrollArea>
+                <Tabs value={groupingMode} onValueChange={handleGroupingChange}>
+                  <TabsList className="h-7">
+                    <TabsTrigger value="source" className="text-[11px] px-2 py-0.5 h-5" data-testid="group-by-source">By Source</TabsTrigger>
+                    <TabsTrigger value="priority" className="text-[11px] px-2 py-0.5 h-5" data-testid="group-by-priority">By Priority</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
             </CardHeader>
             <CardContent className="pt-0">
               {tasksLoading ? (
@@ -882,7 +1005,12 @@ export default function MyWorkHomePage() {
             </CardContent>
           </Card>
 
-          {/* Action Required — full width below tasks */}
+        </div>
+
+        {/* RIGHT: Timeline + Sidebar — takes 2/5 width */}
+        <div className="lg:col-span-2 space-y-5" data-testid="my-work-sidebar">
+
+          {/* Action Required — promoted to sidebar top */}
           {(actionItems.length > 0 || actionsLoading) && (
             <Card className="border-border/60" data-testid="card-action-required">
               <CardHeader className="pb-2">
@@ -900,12 +1028,12 @@ export default function MyWorkHomePage() {
               </CardHeader>
               <CardContent className="pt-0">
                 {actionsLoading ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="space-y-2">
                     {[1, 2].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {actionItems.slice(0, 6).map(item => (
+                  <div className="space-y-1.5">
+                    {actionItems.slice(0, 5).map(item => (
                       <div
                         key={item.id}
                         className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border/60 hover:border-orange-200 hover:bg-orange-50/30 transition-colors cursor-pointer group"
@@ -924,27 +1052,20 @@ export default function MyWorkHomePage() {
                             )}
                           </div>
                           <p className="text-xs font-medium truncate group-hover:text-orange-700">{item.title}</p>
-                          {item.subtitle && (
-                            <p className="text-[10px] text-muted-foreground truncate">{item.subtitle}</p>
-                          )}
                         </div>
                         <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-orange-600 shrink-0 mt-1 transition-colors" />
                       </div>
                     ))}
                   </div>
                 )}
-                {actionItems.length > 6 && (
+                {actionItems.length > 5 && (
                   <p className="text-[11px] text-orange-600 mt-2 cursor-pointer hover:underline" onClick={() => navigate("/my-work/tasks")}>
-                    +{actionItems.length - 6} more items needing attention
+                    +{actionItems.length - 5} more items needing attention
                   </p>
                 )}
               </CardContent>
             </Card>
           )}
-        </div>
-
-        {/* RIGHT: Timeline + Sidebar — takes 2/5 width */}
-        <div className="lg:col-span-2 space-y-5" data-testid="my-work-sidebar">
 
           {/* Today's Schedule */}
           <Card className="border-border/60">
