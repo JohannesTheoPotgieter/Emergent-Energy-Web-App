@@ -63,8 +63,8 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
       }
       await db.execute(sql.raw(sqlContent));
       log(`${file.name} synced (db.execute)`, "Startup:Schema");
-    } catch (err: any) {
-      log(`${file.name} warning (non-fatal): ${err.message}`, "Startup:Schema");
+    } catch (err: unknown) {
+      log(`${file.name} warning (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:Schema");
     }
   }
 }
@@ -81,8 +81,8 @@ async function runAdditiveSchemaAlignments() {
   async function safeExec(label: string, rawSql: string) {
     try {
       await db.execute(sql.raw(rawSql));
-    } catch (err: any) {
-      console.error(`[Schema] ${label} error:`, err.message);
+    } catch (err: unknown) {
+      console.error(`[Schema] ${label} error:`, (err instanceof Error ? err.message : String(err)));
     }
   }
 
@@ -1325,8 +1325,8 @@ export async function runStartupOrchestrator(options: {
         log("PostgreSQL project_info is empty — auto-enabling data seed migration", "Startup:DataSeed");
         effectiveDataSeedEnabled = true;
       }
-    } catch (err: any) {
-      log(`Could not check project_info count (${err.message}) — auto-enabling data seed`, "Startup:DataSeed");
+    } catch (err: unknown) {
+      log(`Could not check project_info count (${(err instanceof Error ? err.message : String(err))}) — auto-enabling data seed`, "Startup:DataSeed");
       effectiveDataSeedEnabled = true;
     }
   }
@@ -1337,8 +1337,8 @@ export async function runStartupOrchestrator(options: {
   try {
     const { runIntegrityGuard } = await import("./backfills/integrity-guard");
     await runIntegrityGuard(log);
-  } catch (err: any) {
-    log(`Integrity guard error (non-fatal): ${err.message}`, "Startup:IntegrityGuard");
+  } catch (err: unknown) {
+    log(`Integrity guard error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:IntegrityGuard");
   }
 
   await runStartupBackfills({

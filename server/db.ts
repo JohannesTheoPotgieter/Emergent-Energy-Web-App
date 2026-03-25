@@ -95,7 +95,7 @@ async function initializeDatabase(): Promise<void> {
         });
         // Robust pool error handling for Replit - prevent unhandled errors from crashing
         pool.on('error', (err) => {
-          console.error('[DB] Pool background error (non-fatal):', err.message);
+          console.error('[DB] Pool background error (non-fatal):', (err instanceof Error ? err.message : String(err)));
         });
         db = drizzle(pool, { schema });
         dbMode = 'postgres';
@@ -165,11 +165,11 @@ async function initializeDatabase(): Promise<void> {
         isInitialized = true;
         return;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (isProduction) {
-        throw new Error(`[DB] PostgreSQL connection failed in production: ${err.message}`);
+        throw new Error(`[DB] PostgreSQL connection failed in production: ${(err instanceof Error ? err.message : String(err))}`);
       }
-      console.warn(`[DB] ⚠ Postgres connection error (${err.message}), falling back to SQLite`);
+      console.warn(`[DB] ⚠ Postgres connection error (${(err instanceof Error ? err.message : String(err))}), falling back to SQLite`);
     }
 
     if (isProduction) {
@@ -1201,8 +1201,8 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN import_run_id INTEGER`)); } catch {}
 
     console.log('[DB] SQLite schema verified');
-  } catch (err: any) {
-    console.error('[DB] Error creating SQLite schema:', err.message);
+  } catch (err: unknown) {
+    console.error('[DB] Error creating SQLite schema:', (err instanceof Error ? err.message : String(err)));
   }
 }
 

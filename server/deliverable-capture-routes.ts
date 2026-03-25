@@ -34,7 +34,7 @@ function getUser(req: Request): AuthenticatedUser | null {
 export function registerDeliverableCaptureRoutes(app: Express) {
   app.get("/api/deliverable-capture/linkable-items/:projectId", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const [taskRows, costRows, revenueRows] = await Promise.all([
@@ -214,7 +214,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
 
   app.get("/api/deliverable-capture/list/:projectId", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const rows = await db.execute(sql`
@@ -253,7 +253,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
 
   app.get("/api/deliverable-capture/download/:id", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const rows = await db.execute(sql`
         SELECT file_path, original_file_name, mime_type
         FROM deliverables WHERE id = ${id}

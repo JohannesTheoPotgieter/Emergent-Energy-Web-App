@@ -39,7 +39,7 @@ function rowsFromResult(result: unknown): Record<string, unknown>[] {
 export function registerCommissioningRoutes(app: Express): void {
   app.get("/api/commissioning/project/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const typeFilter = req.query.itemType as string | undefined;
@@ -65,7 +65,7 @@ export function registerCommissioningRoutes(app: Express): void {
 
   app.get("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const rows = await db.execute(sql.raw(`
         SELECT ci.*, u.name as owner_name, p.project_name
@@ -117,7 +117,7 @@ export function registerCommissioningRoutes(app: Express): void {
 
   app.patch("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
@@ -232,7 +232,7 @@ export function registerCommissioningRoutes(app: Express): void {
 
   app.delete("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
@@ -255,7 +255,7 @@ export function registerCommissioningRoutes(app: Express): void {
 
   app.get("/api/commissioning/progress/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const rows = await db.execute(sql.raw(`
@@ -281,7 +281,7 @@ export function registerCommissioningRoutes(app: Express): void {
   /** Check if commissioning is unlocked for a project (Handover Pack gate) */
   app.get("/api/commissioning/gate-status/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
       const hp = await isHandoverPackComplete(projectId);
       res.json({ unlocked: hp.complete, handoverPack: hp });
@@ -292,7 +292,7 @@ export function registerCommissioningRoutes(app: Express): void {
 
   app.post("/api/commissioning/:id/evidence", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const [item] = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
       if (!item) return res.status(404).json({ error: "Not found" });
@@ -340,7 +340,7 @@ export function registerCommissioningRoutes(app: Express): void {
 
   app.get("/api/commissioning/:id/evidence-evaluation", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const [item] = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
       if (!item) return res.status(404).json({ error: "Not found" });

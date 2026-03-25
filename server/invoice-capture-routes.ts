@@ -39,7 +39,7 @@ function oldInvoiceRefFallback(id: number): string {
 export function registerInvoiceCaptureRoutes(app: Express): void {
   app.get("/api/invoice-captures/project/:projectId", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const rows = await db.execute(sql.raw(`
@@ -123,7 +123,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
 
   app.patch("/api/invoice-captures/:id", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(invoiceCaptures).where(eq(invoiceCaptures.id, id));
@@ -179,7 +179,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
 
   app.delete("/api/invoice-captures/:id", jwtAuth, requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(invoiceCaptures).where(eq(invoiceCaptures.id, id));

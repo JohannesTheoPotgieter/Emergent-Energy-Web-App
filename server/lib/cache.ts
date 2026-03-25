@@ -154,9 +154,9 @@ async function getBackend(): Promise<CacheBackend> {
       _isRedis = true;
       logger.info("[cache] Redis cache backend active");
       return backend;
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.warn(
-        `[cache] Redis connection failed (${err.message}), falling back to in-memory cache`,
+        `[cache] Redis connection failed (${(err instanceof Error ? err.message : String(err))}), falling back to in-memory cache`,
       );
     }
   }

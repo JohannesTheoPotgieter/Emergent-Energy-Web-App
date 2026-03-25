@@ -30,7 +30,7 @@ function rowsFromResult(result: unknown): Record<string, unknown>[] {
 export function registerProcurementRoutes(app: Express): void {
   app.get("/api/procurement/project/:projectId", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const statusFilter = req.query.status as string | undefined;
@@ -66,7 +66,7 @@ export function registerProcurementRoutes(app: Express): void {
 
   app.get("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const rows = await db.execute(sql`
         SELECT pi2.*, u1.name as requested_by_name, u2.name as owner_name, c.name_canonical as supplier_name, p.project_name
@@ -144,7 +144,7 @@ export function registerProcurementRoutes(app: Express): void {
 
   app.patch("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(procurementItems).where(eq(procurementItems.id, id));
@@ -220,7 +220,7 @@ export function registerProcurementRoutes(app: Express): void {
 
   app.delete("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(procurementItems).where(eq(procurementItems.id, id));

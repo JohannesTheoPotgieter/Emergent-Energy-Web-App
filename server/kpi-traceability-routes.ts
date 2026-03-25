@@ -137,9 +137,9 @@ export function registerKpiTraceabilityRoutes(app: Express) {
       for (const k of enrichedKpis) (k as any).lastComputed = now;
 
       res.json({ kpis: enrichedKpis, generatedAt: now, totalKpis: enrichedKpis.length });
-    } catch (err: any) {
-      console.error("[KPI Traceability] Error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[KPI Traceability] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 }

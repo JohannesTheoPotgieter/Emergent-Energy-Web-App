@@ -246,8 +246,8 @@ router.get("/api/admin/control-center/health", requireAuth, requireAdmin, async 
         effective: startupEffectiveModes,
       },
     });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch system health", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to fetch system health", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -262,7 +262,7 @@ router.get("/api/admin/control-center/feature-flags", requireAuth, requireAdmin,
       updatedAt: s.updatedAt,
     }));
     res.json(flags);
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.status(500).json({ error: "Failed to fetch feature flags" });
   }
 });
@@ -296,7 +296,7 @@ router.put("/api/admin/control-center/feature-flags/:key", requireAuth, requireA
     });
 
     res.json({ success: true, key, value: normalizedValue });
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.status(500).json({ error: "Failed to update feature flag" });
   }
 });
@@ -314,7 +314,7 @@ router.get("/api/admin/control-center/rollout-foundation", requireAuth, requireA
         value: flags[flag.key],
       })),
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.status(500).json({ error: "Failed to fetch rollout foundation" });
   }
 });
@@ -346,7 +346,7 @@ router.get("/api/admin/control-center/enums", requireAuth, requireAdmin, async (
       projectPhases: statusValues,
       workstreams: workstreamValues,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     res.status(500).json({ error: "Failed to fetch enums" });
   }
 });
@@ -366,8 +366,8 @@ router.get("/api/admin/control-center/integrations", requireAuth, requireAdmin, 
       sharepointStatus: byType.sharepoint?.status || "not_connected",
       teamsStatus: byType.teams?.status || "not_connected",
     });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch integration status", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to fetch integration status", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -382,8 +382,8 @@ router.post("/api/admin/control-center/dangerous/clear-sessions", requireAuth, r
       changesJson: { action: "Cleared all user sessions" },
     });
     res.json({ success: true, message: "All sessions cleared" });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to clear sessions", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to clear sessions", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -399,8 +399,8 @@ router.post("/api/admin/control-center/dangerous/clear-audit-log", requireAuth, 
       changesJson: { olderThanDays: days },
     });
     res.json({ success: true, message: `Audit events older than ${days} days cleared` });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to clear audit log", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to clear audit log", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -444,8 +444,8 @@ router.get("/api/admin/control-center/active-sessions", requireAuth, requireAdmi
     }));
 
     res.json({ count: enriched.length, sessions: enriched });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch sessions", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to fetch sessions", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -460,8 +460,8 @@ router.delete("/api/admin/control-center/sessions/:sid", requireAuth, requireAdm
       changesJson: { sessionId: sid },
     });
     res.json({ success: true, message: "Session terminated" });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to delete session", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to delete session", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -506,8 +506,8 @@ router.get("/api/admin/control-center/recent-import-failures", requireAuth, requ
     }
 
     res.json(enriched);
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch import failures", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to fetch import failures", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -609,8 +609,8 @@ router.get("/api/admin/control-center/import-governance", requireAuth, requireAd
           run.recordsFailed > 0,
       ),
     });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch import governance", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to fetch import governance", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -637,8 +637,8 @@ router.get("/api/admin/control-center/recent-issues", requireAuth, requireAdmin,
       details: r.changes_json,
       requestPath: r.request_path,
     })));
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch recent issues", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to fetch recent issues", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -646,8 +646,8 @@ router.get("/api/admin/control-center/integration-health", requireAuth, requireA
   try {
     const snapshot = await buildMicrosoftIntegrationSnapshot();
     res.json(snapshot.surfaces);
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch integration health", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to fetch integration health", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -692,8 +692,8 @@ router.get("/api/admin/control-center/operational-exceptions", requireAuth, requ
         count: parseInt(r.count || "0"),
       })),
     });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch operational exceptions", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to fetch operational exceptions", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -793,8 +793,8 @@ router.get("/api/admin/control-center/permission-enforcement", requireAuth, requ
       ownershipScoping,
       applicationLogicOnly,
     });
-  } catch (err: any) {
-    res.status(500).json({ error: "Failed to fetch permission enforcement data", message: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to fetch permission enforcement data", message: (err instanceof Error ? err.message : String(err)) });
   }
 });
 

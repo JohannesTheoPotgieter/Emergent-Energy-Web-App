@@ -5,7 +5,7 @@ import { listProjectEvents } from "./services/project-event-service";
 export function registerProjectEventsRoutes(app: Express): void {
   app.get("/api/project-events/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId, 10);
+      const projectId = parseInt(String(req.params.projectId), 10);
       if (Number.isNaN(projectId)) {
         return res.status(400).json({ error: "Invalid projectId" });
       }

@@ -264,7 +264,7 @@ export function registerPoRoutes(app: Express) {
 
   app.get("/api/po/:projectName/:poId/pdf", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(req.params.poId);
+      const poIdNum = parseInt(String(req.params.poId));
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const result = await db.execute(sql`
@@ -285,7 +285,7 @@ export function registerPoRoutes(app: Express) {
 
   app.patch("/api/po/:poId/status", jwtAuth, requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(req.params.poId);
+      const poIdNum = parseInt(String(req.params.poId));
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const { status } = req.body;
@@ -323,7 +323,7 @@ export function registerPoRoutes(app: Express) {
 
   app.delete("/api/po/:poId", jwtAuth, requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(req.params.poId);
+      const poIdNum = parseInt(String(req.params.poId));
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       await db.execute(sql`DELETE FROM purchase_orders WHERE id = ${poIdNum} AND status = 'draft'`);

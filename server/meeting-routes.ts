@@ -14,7 +14,6 @@ import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { z } from "zod";
 import { requirePermission } from "./permission-middleware";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
-}
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
@@ -183,7 +182,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.get("/api/meetings/:id", requireAuth, requirePermission("meetings", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const [meeting] = await db.select().from(meetingSummaries).where(eq(meetingSummaries.id, id));
       if (!meeting) return res.status(404).json({ error: "Meeting not found" });
 
@@ -216,7 +215,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.delete("/api/meetings/:id", requireAuth, requirePermission("meetings", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       await db.delete(meetingSummaries).where(eq(meetingSummaries.id, id));
       res.json({ ok: true });
     } catch (err: unknown) {
@@ -228,7 +227,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.patch("/api/meetings/action-items/:id/dismiss", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const [updated] = await db
         .update(meetingActionItems)
         .set({ status: "dismissed" })
@@ -245,7 +244,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.post("/api/meetings/action-items/:id/convert-to-task", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const actionItemId = parseInt(req.params.id);
+      const actionItemId = parseInt(String(req.params.id));
       const userId = getEffectiveUser(req)?.id;
 
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
@@ -328,7 +327,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.post("/api/meetings/action-items/:id/convert-to-priority", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const actionItemId = parseInt(req.params.id);
+      const actionItemId = parseInt(String(req.params.id));
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
       if (!actionItem) return res.status(404).json({ error: "Action item not found" });
       if (actionItem.status === "converted") return res.status(400).json({ error: "Already converted" });
@@ -363,7 +362,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.post("/api/meetings/action-items/:id/convert-to-project", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const actionItemId = parseInt(req.params.id);
+      const actionItemId = parseInt(String(req.params.id));
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
       if (!actionItem) return res.status(404).json({ error: "Action item not found" });
       if (actionItem.status === "converted") return res.status(400).json({ error: "Already converted" });

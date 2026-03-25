@@ -12,7 +12,7 @@ export function registerRaidRoutes(app: Express): void {
 
   app.get("/api/raid/project/:projectId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const conditions: ReturnType<typeof eq>[] = [eq(raidItems.projectId, projectId)];
@@ -77,7 +77,7 @@ export function registerRaidRoutes(app: Express): void {
 
   app.get("/api/raid/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const [item] = await db.select().from(raidItems).where(eq(raidItems.id, id));
@@ -133,7 +133,7 @@ export function registerRaidRoutes(app: Express): void {
 
   app.patch("/api/raid/:id", requireAuth, requirePermission('projects', 'edit'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const [existing] = await db.select().from(raidItems).where(eq(raidItems.id, id));
@@ -190,7 +190,7 @@ export function registerRaidRoutes(app: Express): void {
 
   app.delete("/api/raid/:id", requireAuth, requirePermission('projects', 'delete'), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
       const [existing] = await db.select().from(raidItems).where(eq(raidItems.id, id));
