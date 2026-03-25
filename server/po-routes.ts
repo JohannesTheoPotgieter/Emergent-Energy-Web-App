@@ -181,8 +181,8 @@ export function registerPoRoutes(app: Express) {
 
       let subtotal = 0;
       const parsedItems = lineItems.map((item: Record<string, unknown>) => {
-        const qty = parseFloat(item.qty) || 0;
-        const price = parseFloat(item.pricePerUnit) || 0;
+        const qty = parseFloat(String(item.qty)) || 0;
+        const price = parseFloat(String(item.pricePerUnit)) || 0;
         subtotal += qty * price;
         return { ...item, qty, pricePerUnit: price };
       });
