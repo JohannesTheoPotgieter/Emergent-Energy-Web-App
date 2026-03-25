@@ -278,15 +278,18 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
         headers,
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to save expense date override");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Failed (${res.status})`);
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       toast({ title: "Expense date override saved" });
     },
-    onError: () => {
-      toast({ title: "Failed to save override", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Failed to save override", description: err.message, variant: "destructive" });
     },
   });
 
@@ -301,15 +304,18 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
         headers,
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to save inflow date override");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Failed (${res.status})`);
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       toast({ title: "Inflow date override saved" });
     },
-    onError: () => {
-      toast({ title: "Failed to save override", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Failed to save override", description: err.message, variant: "destructive" });
     },
   });
   const params = new URLSearchParams({ week: weekStart });
