@@ -9,6 +9,7 @@ import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
+import { classifyCosStatus } from "./lib/calculations/stateClassifier";
 import { requirePermission } from "./permission-middleware";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle-stage-gate-service";
@@ -787,7 +788,13 @@ export function registerLifecycleRoutes(app: Express) {
         const basePaid = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
         const confirmedPaid = Boolean(row.paidDateConfirmed);
         const cosOverrideStatus = cosOverrideByKey.get(`${row.projectName}::${row.sourceRow}`);
-        const isRealised = cosOverrideStatus ? cosOverrideStatus === 'COS Realised' : (row as any).cosRealised === true;
+        const isRealised = cosOverrideStatus === 'COS Realised' || (!cosOverrideStatus && classifyCosStatus({
+          expenseInvoiceNumber: row.invoiceNumber,
+          expenseInvoicedDate: row.invoiceDate,
+          expensePoNumber: row.poNumber,
+          invoiceDateConfirmed: row.invoiceDateConfirmed,
+          invoiceDateFontColor: row.invoiceDateFontColor,
+        }) === 'COS Realised');
         const paid = basePaid || (hasText(row.invoiceNumber) && confirmedPaid) || isRealised;
 
         const addTo = (entry: ReturnType<typeof emptyFin>) => {

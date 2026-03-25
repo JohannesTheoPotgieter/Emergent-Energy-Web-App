@@ -921,7 +921,7 @@ function extractCostLines(
       }
     }
 
-    const cosRealised = !!(invoiceNumber && invoiceDate);
+    const cosRealised = !!(invoiceNumber && invoiceDate && (invoiceDateFontColor === 'black' || (invoiceDateConfirmed && invoiceDateFontColor !== 'red')));
     const cashflowConfirmed = !!(invoiceNumber && poNumber && paidDateConfirmed);
 
     // Extract sub-project name from category in multi-project trackers

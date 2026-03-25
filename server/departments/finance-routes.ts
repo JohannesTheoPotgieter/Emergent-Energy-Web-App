@@ -30,6 +30,7 @@ import {
   extractMonthKey,
   allocateRevenue,
   isCosRealised as isCosRealisedShared,
+  classifyCosStatusFull,
   normalizeProjectName,
   mapToSortedArray,
   currentMonthKey as getCurrentMonthKey,
@@ -1490,6 +1491,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     const cosByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+    const committedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
 
     const nowDate = new Date();
     const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1520,8 +1522,9 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       cosBucket.total += amount;
       cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
 
-      const hasInvoice = !!exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim() !== '';
-      const isRealised = hasInvoice && isCosRealised(exp) && monthKey <= currentMonthKey;
+      const cosStatus = classifyCosStatusFull(exp);
+      const isRealised = cosStatus === 'COS Realised' && monthKey <= currentMonthKey;
+      const isCommitted = cosStatus === 'Committed';
 
       if (isRealised) {
         if (!realisedByMonth.has(monthKey)) {
@@ -1531,6 +1534,15 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         realBucket.total += amount;
         realBucket.projects.set(pName, (realBucket.projects.get(pName) || 0) + amount);
       }
+
+      if (isCommitted) {
+        if (!committedByMonth.has(monthKey)) {
+          committedByMonth.set(monthKey, { total: 0, projects: new Map() });
+        }
+        const commitBucket = committedByMonth.get(monthKey)!;
+        commitBucket.total += amount;
+        commitBucket.projects.set(pName, (commitBucket.projects.get(pName) || 0) + amount);
+      }
     }
 
     // Uses shared static COS budget from financeUtils.ts (single source of truth)
@@ -1539,7 +1551,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
 
-    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdRevRealised = 0;
+    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdRevRealised = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1553,6 +1565,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
       const realisedBucket = realisedByMonth.get(monthKey);
       const realisedCOS = realisedBucket?.total ?? 0;
+      const committedBucket = committedByMonth.get(monthKey);
+      const committedCOS = committedBucket?.total ?? 0;
       const unrealisedCOS = totalCOS - realisedCOS;
 
       const manual = manualMap.get(monthKey);
@@ -1564,6 +1578,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const revRealised = revByMonth.get(monthKey) ?? 0;
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
+      ytdCommitted += committedCOS;
       ytdBudget += budget;
       ytdRevRealised += revRealised;
       const ytdUnrealised = ytdCOS - ytdRealised;
@@ -1575,6 +1590,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
         totalCOS,
         realisedCOS,
+        committedCOS,
         unrealisedCOS,
         budget,
         variance,
@@ -1582,6 +1598,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         revRealised,
         ytdCOS,
         ytdRealised,
+        ytdCommitted,
         ytdUnrealised,
         ytdBudget,
         ytdVariance,
@@ -1589,6 +1606,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         ytdRevRealised,
         cosProjects: mapToSortedArray(bucket?.projects ?? new Map()),
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
+        committedProjects: mapToSortedArray(committedBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const cosPs = bucket?.projects ?? new Map<string, number>();
           const realPs = realisedBucket?.projects ?? new Map<string, number>();
@@ -1616,6 +1634,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
     const cosByMonth = new Map<string, number>();
     const realisedByMonth = new Map<string, number>();
+    const committedByMonth = new Map<string, number>();
     const itemsByMonth = new Map<string, any[]>();
 
     const nowDate = new Date();
@@ -1640,11 +1659,14 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
 
-      const hasInvoice = !!exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim() !== '';
-      const isRealised = hasInvoice && isCosRealised(exp) && monthKey <= currentMonthKey;
-      const isCommitted = hasInvoice && !isRealised;
+      const cosStatus = classifyCosStatusFull(exp);
+      const isRealised = cosStatus === 'COS Realised' && monthKey <= currentMonthKey;
+      const isCommitted = cosStatus === 'Committed';
       if (isRealised) {
         realisedByMonth.set(monthKey, (realisedByMonth.get(monthKey) || 0) + amount);
+      }
+      if (isCommitted) {
+        committedByMonth.set(monthKey, (committedByMonth.get(monthKey) || 0) + amount);
       }
 
       if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
@@ -1683,7 +1705,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
-    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0;
+    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1694,6 +1716,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
       const totalCOS = cosByMonth.get(monthKey) ?? 0;
       const realisedCOS = realisedByMonth.get(monthKey) ?? 0;
+      const committedCOS = committedByMonth.get(monthKey) ?? 0;
       const unrealisedCOS = totalCOS - realisedCOS;
       const budget = budgetByMonth.get(monthKey) ?? 0;
       const variance = totalCOS - budget;
@@ -1701,6 +1724,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
+      ytdCommitted += committedCOS;
       ytdBudget += budget;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
@@ -1713,12 +1737,14 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
         monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
         totalCOS,
         realisedCOS,
+        committedCOS,
         unrealisedCOS,
         budget,
         variance,
         variancePct,
         ytdCOS,
         ytdRealised,
+        ytdCommitted,
         ytdUnrealised,
         ytdBudget,
         ytdVariance,
@@ -1792,15 +1818,12 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const nowD = new Date();
       const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
-      const isRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
+      const fullCosStatus = classifyCosStatusFull(exp);
+      const isRealised = fullCosStatus === 'COS Realised' && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
+      const isCommitted = fullCosStatus === 'Committed';
 
-      // COS state is purely invoice-date driven (not payment date)
-      let cosState = 'Planned';
-      if (isRealised) {
-        cosState = 'COS Realised';
-      } else if (exp.expensePoNumber || (exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim())) {
-        cosState = 'Committed';
-      }
+      // COS state derived from classifyCosStatusFull
+      const cosState = isRealised ? 'COS Realised' : fullCosStatus;
 
       // Cashflow payment status (4-state model)
       const hasInv = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
@@ -1829,6 +1852,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
       if (project && pName !== project) continue;
       if (stateFilter === 'realised' && !isRealised) continue;
+      if (stateFilter === 'committed' && !isCommitted) continue;
       if (stateFilter === 'unrealised' && isRealised) continue;
 
       items.push({
@@ -1848,12 +1872,16 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         realisedMonth,
         cosState,
         paymentStatus,
+        hasOverride: !!(exp as any)._cosOverrideStatus,
+        overrideStatus: (exp as any)._cosOverrideStatus || null,
+        overrideReason: (exp as any)._cosOverrideReason || null,
       });
     }
 
     items.sort((a, b) => b.amount - a.amount);
 
     const realisedTotal = items.filter(i => i.isRealised).reduce((s, i) => s + i.amount, 0);
+    const committedTotal = items.filter(i => i.cosState === 'Committed').reduce((s, i) => s + i.amount, 0);
     const unrealisedTotal = items.filter(i => !i.isRealised).reduce((s, i) => s + i.amount, 0);
 
     res.json({
@@ -1861,8 +1889,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       lineCount: items.length,
       totalAmount: items.reduce((s, i) => s + i.amount, 0),
       realisedTotal,
+      committedTotal,
       unrealisedTotal,
       realisedCount: items.filter(i => i.isRealised).length,
+      committedCount: items.filter(i => i.cosState === 'Committed').length,
       unrealisedCount: items.filter(i => !i.isRealised).length,
       items,
     });
@@ -1912,6 +1942,68 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
   } catch (error) {
     console.error("Toggle realised error:", error);
     res.status(500).json({ error: "Failed to toggle realised status" });
+  }
+});
+
+// ==================== ADMIN COS STATUS OVERRIDE ====================
+
+router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(String(req.params.id || ""), 10);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
+
+    const { cosStatus, invoiceDate, invoiceDateConfirmed: invoiceDateConfirmedOverride, reason, expectedUpdatedAt } = req.body as {
+      cosStatus: string | null;
+      invoiceDate?: string;
+      invoiceDateConfirmed?: boolean;
+      reason: string;
+      expectedUpdatedAt?: string;
+    };
+
+    // Validate cosStatus
+    const validStatuses = ['Planned', 'Committed', 'COS Realised', null];
+    if (!validStatuses.includes(cosStatus)) {
+      return res.status(400).json({ error: "cosStatus must be 'Planned', 'Committed', 'COS Realised', or null (to clear override)" });
+    }
+
+    if (cosStatus !== null && (!reason || !reason.trim())) {
+      return res.status(400).json({ error: "A reason is required when setting an override" });
+    }
+
+    const allExpenses = await storage.getAllProgramExpenses();
+    const expense = allExpenses.find(e => e.id === id);
+    if (!expense) return res.status(404).json({ error: "Expense not found" });
+
+    const fields: Record<string, any> = {
+      cosStatusOverride: cosStatus,
+      cosStatusOverrideBy: cosStatus !== null ? req.user?.id ?? null : null,
+      cosStatusOverrideAt: cosStatus !== null ? new Date() : null,
+      cosStatusOverrideReason: cosStatus !== null ? reason : null,
+    };
+
+    // Optional date override
+    if (invoiceDate !== undefined) {
+      fields.expenseInvoicedDate = invoiceDate;
+    }
+    if (invoiceDateConfirmedOverride !== undefined) {
+      fields.invoiceDateConfirmed = invoiceDateConfirmedOverride;
+    }
+
+    const updated = await storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to update expense fields" });
+    }
+
+    const newState = classifyExpenseState(updated as any);
+    await storage.updateProgramExpenseFields(id, { computedState: newState });
+
+    res.json({ success: true, id, cosStatus, overrideCleared: cosStatus === null });
+
+    if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
+  } catch (error: any) {
+    if (error.status === 409) return res.status(409).json({ error: error.message });
+    console.error("COS status override error:", error);
+    res.status(500).json({ error: "Failed to override COS status" });
   }
 });
 
