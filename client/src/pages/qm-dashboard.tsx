@@ -249,7 +249,12 @@ export default function QmDashboardPage() {
   const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
     queryKey: ["projects-summary-names"],
     queryFn: () => qFetch("/api/projects-summary").then((data: any[]) =>
-      data.map((p: any) => ({ project_name: p.project_name }))
+      data
+        .filter((p: any) =>
+          p?.is_active !== false &&
+          (String(p?.phase || "").toLowerCase() !== "completed")
+        )
+        .map((p: any) => ({ project_name: p.project_name }))
         .sort((a: any, b: any) => a.project_name.localeCompare(b.project_name))
     ),
     enabled: startQmOpen,

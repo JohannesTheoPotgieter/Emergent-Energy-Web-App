@@ -2468,7 +2468,10 @@ export async function registerRoutes(
           phase_updated_at: info?.phaseUpdatedAt || null,
           has_tracker_import: nameVariants.some(v => importedProjectNames.has(v)) || importedProjectNames.has(cleanName),
           last_import_at: nameVariants.reduce<string | null>((acc, v) => acc || lastImportByProject.get(v) || null, null) || lastImportByProject.get(cleanName) || null,
-          is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
+          is_active: info?.deletedAt == null
+            && info?.isActive !== false
+            && info?.phase?.toLowerCase() !== "gone"
+            && (info?.executionPhase || info?.phase || "").toLowerCase() !== "completed",
           pd_pm_handover_status: handover?.status || "DRAFT",
           pd_pm_handover_rejection_reason: handover?.rejection_reason || null,
           next_open_inflow_milestone: (() => {
