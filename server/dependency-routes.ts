@@ -1,29 +1,10 @@
-// @ts-nocheck
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { eq, and, sql, inArray } from "drizzle-orm";
-import { workItemDependencies, workItems, projectInfo, insertWorkItemDependencySchema } from "@shared/schema";
-import { verifyToken } from "./jwt";
+import { workItemDependencies, workItems, insertWorkItemDependencySchema } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
+import { jwtAuth, requireAuth } from "./auth-context";
 
 async function detectCircular(predecessorId: number, successorId: number): Promise<boolean> {
   const allDeps = await db.select({
@@ -52,7 +33,7 @@ async function detectCircular(predecessorId: number, successorId: number): Promi
   return false;
 }
 
-export function registerDependencyRoutes(app: Express) {
+export function registerDependencyRoutes(app: Express): void {
   app.use("/api/dependencies", jwtAuth);
 
   app.get("/api/work-items", jwtAuth, requireAuth, requirePermission("work_items", "view"), async (req: Request, res: Response) => {
@@ -65,9 +46,10 @@ export function registerDependencyRoutes(app: Express) {
         .where(and(eq(workItems.projectId, projectId), sql`${workItems.deletedAt} IS NULL`));
 
       res.json(items);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[WorkItems] GET error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -111,9 +93,10 @@ export function registerDependencyRoutes(app: Express) {
         .where(inArray(workItemDependencies.predecessorId, taskIds));
 
       res.json({ dependencies: deps });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Dependencies] GET error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -146,9 +129,10 @@ export function registerDependencyRoutes(app: Express) {
         );
 
       res.json({ dependencies: deps });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Dependencies] GET by project name error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -199,9 +183,10 @@ export function registerDependencyRoutes(app: Express) {
       });
 
       res.status(201).json(created);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Dependencies] POST error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -242,9 +227,10 @@ export function registerDependencyRoutes(app: Express) {
       });
 
       res.json(updated);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Dependencies] PATCH error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -266,9 +252,10 @@ export function registerDependencyRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Dependencies] DELETE error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 }
