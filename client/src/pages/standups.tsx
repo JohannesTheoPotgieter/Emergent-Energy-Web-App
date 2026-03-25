@@ -444,6 +444,158 @@ function QuickSubmitForm({ scheduleId, onSubmitted }: {
   );
 }
 
+// ── Task Priority Panel ──────────────────────────────────────────────────────
+
+function TaskCard({ task, todayStr }: { task: TaskItem; todayStr: string }) {
+  const isOverdue = task.endDate ? task.endDate < todayStr : false;
+  const days = task.endDate ? daysUntil(task.endDate) : null;
+  const isDueSoon = days !== null && days >= 0 && days <= 7 && !isOverdue;
+
+  return (
+    <div className="flex items-start gap-2 py-1.5 px-2 rounded-md hover:bg-muted/50 group">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <p className="text-xs font-medium truncate max-w-[240px]">{task.title}</p>
+          <PriorityBadge priority={task.priority} />
+          {isOverdue && (
+            <Badge variant="outline" className="text-[8px] px-1 py-0 bg-red-100 text-red-700 border-red-200 font-bold">
+              OVERDUE
+            </Badge>
+          )}
+          {isDueSoon && (
+            <Badge variant="outline" className="text-[8px] px-1 py-0 bg-amber-100 text-amber-700 border-amber-200 font-bold">
+              DUE {days}d
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2 mt-0.5">
+          <TaskStatusBadge status={task.status} />
+          {task.endDate && (
+            <span className={`text-[10px] ${isOverdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+              Due {formatDateShort(task.endDate)}
+            </span>
+          )}
+          {task.projectName && (
+            <span className="text-[10px] text-muted-foreground truncate max-w-[140px]">
+              {task.projectName}
+            </span>
+          )}
+          {task.percentComplete != null && task.percentComplete > 0 && (
+            <span className="text-[10px] text-muted-foreground font-mono">{Math.round(task.percentComplete)}%</span>
+          )}
+        </div>
+        {task.linkedPriority && (
+          <div className="mt-0.5">
+            <CompanyPriorityBadge priority={task.linkedPriority} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TaskPriorityPanel({ tasks }: { tasks: MeetingParticipant["tasks"] }) {
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // Collect all tasks that are linked to company priorities
+  const allTasks = [
+    ...tasks.byPriority.urgent,
+    ...tasks.byPriority.high,
+    ...tasks.byPriority.med,
+    ...tasks.byPriority.low,
+  ];
+  const priorityLinked = allTasks.filter((t) => t.linkedPriority);
+
+  // Group priority-linked tasks by priority
+  const byCompanyPriority = new Map<number, { priority: LinkedPriority; tasks: TaskItem[] }>();
+  for (const t of priorityLinked) {
+    const lp = t.linkedPriority!;
+    const existing = byCompanyPriority.get(lp.id);
+    if (existing) {
+      existing.tasks.push(t);
+    } else {
+      byCompanyPriority.set(lp.id, { priority: lp, tasks: [t] });
+    }
+  }
+
+  const groups = [
+    { key: "urgent" as const, label: "Urgent", items: tasks.byPriority.urgent, color: "border-l-red-500" },
+    { key: "high" as const, label: "High", items: tasks.byPriority.high, color: "border-l-orange-500" },
+    { key: "med" as const, label: "Medium", items: tasks.byPriority.med, color: "border-l-amber-500" },
+    { key: "low" as const, label: "Low", items: tasks.byPriority.low, color: "border-l-slate-400" },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {/* Summary counters */}
+      <div className="flex items-center gap-3 text-xs">
+        <span className="font-semibold text-muted-foreground">{tasks.total} tasks</span>
+        {tasks.overdue.length > 0 && (
+          <Badge variant="outline" className="text-[10px] bg-red-50 text-red-700 border-red-200 gap-1">
+            <AlertTriangle className="h-2.5 w-2.5" /> {tasks.overdue.length} overdue
+          </Badge>
+        )}
+        {tasks.dueSoon.length > 0 && (
+          <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 gap-1">
+            <Clock className="h-2.5 w-2.5" /> {tasks.dueSoon.length} due soon
+          </Badge>
+        )}
+        {tasks.onHold.length > 0 && (
+          <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 gap-1">
+            <Pause className="h-2.5 w-2.5" /> {tasks.onHold.length} on hold
+          </Badge>
+        )}
+      </div>
+
+      {/* Company priority alignment section */}
+      {byCompanyPriority.size > 0 && (
+        <Card className="border-purple-200 bg-purple-50/30">
+          <CardContent className="px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-purple-700 mb-1.5 flex items-center gap-1">
+              <Target className="h-3 w-3" /> Linked to Company Priorities
+            </p>
+            {Array.from(byCompanyPriority.values()).map(({ priority, tasks: pTasks }) => (
+              <div key={priority.id} className="mb-1.5 last:mb-0">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <Badge variant="outline" className={`text-[9px] px-1.5 py-0 font-semibold gap-1 ${SEVERITY_COLORS[priority.severity] || SEVERITY_COLORS.normal}`}>
+                    <Flag className="h-2 w-2" />
+                    {priority.severity}
+                  </Badge>
+                  <span className="text-[11px] font-semibold text-purple-900">{priority.title}</span>
+                  <span className="text-[10px] text-purple-600">({pTasks.length} task{pTasks.length !== 1 ? "s" : ""})</span>
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Task groups by priority */}
+      <ScrollArea className="max-h-[320px]">
+        <div className="space-y-2">
+          {groups.map(({ key, label, items, color }) => (
+            items.length > 0 && (
+              <div key={key} className={`border-l-3 ${color} pl-2`}>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground mb-0.5">
+                  {label} ({items.length})
+                </p>
+                {items.map((task) => (
+                  <TaskCard key={task.id} task={task} todayStr={todayStr} />
+                ))}
+              </div>
+            )
+          ))}
+          {tasks.total === 0 && (
+            <div className="text-center py-4 text-xs text-muted-foreground">
+              No active tasks assigned
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
 // ── PLACEHOLDER: More components below ───────────────────────────────────────
 
 export default function StandupsPage() {
