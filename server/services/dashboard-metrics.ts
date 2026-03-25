@@ -257,6 +257,9 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
         last_refreshed_at = EXCLUDED.last_refreshed_at
     `);
   }
+
+  // Invalidate cache after successful refresh
+  await cacheDelete(`dashboard:metrics:${projectId}`);
 }
 
 // ─── Refresh all projects ──────────────────────────────────────────
@@ -376,6 +379,9 @@ export async function refreshProgramMetrics(): Promise<void> {
     await db.delete(dashboardProgramMetrics);
     await db.insert(dashboardProgramMetrics).values(row);
   }
+
+  // Invalidate cache after successful refresh
+  await cacheDelete("dashboard:program-metrics");
 }
 
 // ─── Cached metric readers ──────────────────────────────────────────
