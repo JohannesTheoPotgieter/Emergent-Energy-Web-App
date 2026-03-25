@@ -8155,10 +8155,15 @@ export async function registerRoutes(
 
   app.post("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { expenseId, taskId } = req.body;
-      if (!expenseId || taskId === undefined) {
-        return res.status(400).json({ error: "expenseId and taskId are required" });
+      const expenseTaskLinkSchema = z.object({
+        expenseId: z.number({ required_error: "expenseId is required" }),
+        taskId: z.number({ required_error: "taskId is required" }),
+      });
+      const parsedLink = expenseTaskLinkSchema.safeParse(req.body);
+      if (!parsedLink.success) {
+        return res.status(400).json({ error: parsedLink.error.issues.map(i => i.message).join("; ") });
       }
+      const { expenseId, taskId } = parsedLink.data;
       const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
 
       logAuditFromReq(req, { entityType: "expense_link", action: "create", projectName: req.params.projectName, changesJson: { description: "Expense linked to task", expenseId, taskId } });
@@ -8302,10 +8307,16 @@ export async function registerRoutes(
 
   app.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { projectName, taskId, expenseCategory } = req.body;
-      if (!projectName || !taskId || !expenseCategory) {
-        return res.status(400).json({ error: "projectName, taskId, and expenseCategory are required" });
+      const insertTaskAsLineSchema = z.object({
+        projectName: z.string().min(1, "projectName is required"),
+        taskId: z.number({ required_error: "taskId is required" }),
+        expenseCategory: z.string().min(1, "expenseCategory is required"),
+      });
+      const parsedInsert = insertTaskAsLineSchema.safeParse(req.body);
+      if (!parsedInsert.success) {
+        return res.status(400).json({ error: parsedInsert.error.issues.map(i => i.message).join("; ") });
       }
+      const { projectName, taskId, expenseCategory } = parsedInsert.data;
       const [opTasks, planTasks] = await Promise.all([
         storage.getOperationalTasksByProject(projectName),
         storage.getProjectPlansByProject(projectName),
