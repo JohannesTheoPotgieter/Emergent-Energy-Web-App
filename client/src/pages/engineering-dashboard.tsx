@@ -14,10 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useLocation, Link } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
-import { useToast } from "@/hooks/use-toast";
 import { TASK_PRIORITIES } from "@shared/schema";
 import { TASK_STATUSES, getTaskStatusBadgeClass, getTaskStatusBarClass, getTaskStatusLabel, isTaskComplete } from "@shared/task-status";
-import { bucketEngineeringStandupTasks } from "@shared/engineering-standup";
 import {
   AlertTriangle,
   Wrench,
@@ -50,7 +48,6 @@ import {
   ArrowLeft,
   MoreHorizontal,
   ArrowRightLeft,
-  ClipboardCopy,
 } from "lucide-react";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
@@ -504,717 +501,6 @@ interface TaskActivity {
   createdAt: string;
 }
 
-function StandupTaskDrawer({
-  task,
-  onClose,
-  onUpdate,
-}: {
-  task: FullTask;
-  onClose: () => void;
-  onUpdate: (id: number, updates: Record<string, any>) => void;
-}) {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
-  const [commentText, setCommentText] = useState("");
-  const [activeTab, setActiveTab] = useState<"updates" | "activity">("updates");
-  const [activityLimit, setActivityLimit] = useState(20);
-
-  const { data: comments = [] } = useQuery<TaskComment[]>({
-    queryKey: ["standup-task-comments", task.id],
-    queryFn: () => engFetch(`/api/eng/tasks/${task.id}/comments`),
-  });
-
-  const { data: activity = [] } = useQuery<TaskActivity[]>({
-    queryKey: ["standup-task-activity", task.id],
-    queryFn: () => engFetch(`/api/eng/tasks/${task.id}/activity`),
-  });
-
-  const visibleActivity = useMemo(
-    () => [...activity].reverse().slice(0, activityLimit),
-    [activity, activityLimit]
-  );
-
-
-  const addComment = async () => {
-    if (!commentText.trim()) return;
-    try {
-      await engPost(`/api/eng/tasks/${task.id}/comments`, { body: commentText.trim() });
-      setCommentText("");
-      queryClient.invalidateQueries({ queryKey: ["standup-task-comments", task.id] });
-      toast({ title: "Comment posted" });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    }
-  };
-
-  const handleFieldUpdate = (updates: Record<string, any>) => {
-    onUpdate(task.id, updates);
-    queryClient.invalidateQueries({ queryKey: ["standup-task-activity", task.id] });
-  };
-
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isTaskComplete(task.status);
-
-  return (
-    <div className="flex flex-col h-full" data-testid="standup-task-drawer">
-      <div className="flex items-center gap-3 pb-4 border-b">
-        <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0 shrink-0" data-testid="btn-drawer-back">
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm truncate" data-testid="text-drawer-title">{task.title}</h3>
-          <p className="text-[10px] text-muted-foreground truncate">{displayProject(task.projectName)}</p>
-        </div>
-        {isOverdue && (
-          <Badge className="bg-red-100 text-red-700 text-[9px] shrink-0">Overdue</Badge>
-        )}
-      </div>
-
-      <ScrollArea className="flex-1 -mx-6 px-6">
-        <div className="space-y-4 py-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Status</label>
-              <SearchableSelect
-                value={task.status}
-                onValueChange={(val) => handleFieldUpdate({ status: val })}
-                triggerClassName="h-8 text-xs mt-1"
-                options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
-                data-testid="drawer-status-select"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Priority</label>
-              <SearchableSelect
-                value={task.priority}
-                onValueChange={(val) => handleFieldUpdate({ priority: val })}
-                triggerClassName="h-8 text-xs mt-1"
-                options={TASK_PRIORITIES.map(p => ({ value: p, label: p }))}
-                data-testid="drawer-priority-select"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Due Date</label>
-              <Input
-                type="date"
-                value={task.dueDate || ""}
-                onChange={(e) => handleFieldUpdate({ dueDate: e.target.value || null })}
-                className="h-8 text-xs mt-1"
-                data-testid="drawer-due-date"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Assignee</label>
-              <div className="mt-1" data-testid="drawer-assignee-select">
-                <UserAssignmentPicker
-                  taskId={task.id}
-                  taskSource="engineering_task"
-                  resolvedUsers={task.resolvedAssignees || null}
-                  textNames={task.assignees || null}
-                  mode="single"
-                  size="xs"
-                  invalidateKeys={["eng-standup-all-tasks", "eng-standup"]}
-                  onSuccess={() => {
-                    queryClient.invalidateQueries({ queryKey: ["standup-task-activity", task.id] });
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {(task.holdReason || task.blockerReason) && (
-            <div className="bg-red-50 border border-red-200 rounded-lg p-2.5">
-              <p className="text-[10px] font-medium text-red-700 uppercase tracking-wider mb-1">
-                {task.holdReason ? "Hold Reason" : "Blocker"}
-              </p>
-              <p className="text-xs text-red-600">{task.holdReason || task.blockerReason}</p>
-              {task.blockedType && (
-                <Badge className="mt-1 text-[8px] bg-orange-100 text-orange-700">{task.blockedType}</Badge>
-              )}
-            </div>
-          )}
-
-          {task.description && (
-            <div>
-              <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Description</label>
-              <p className="text-xs text-foreground mt-1 whitespace-pre-wrap">{task.description}</p>
-            </div>
-          )}
-
-          <Separator />
-
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "updates" | "activity")}>
-            <TabsList className="h-7 w-full">
-              <TabsTrigger value="updates" className="text-[10px] flex-1 gap-1 h-6">
-                <MessageSquare className="h-3 w-3" />
-                Updates ({comments.length})
-              </TabsTrigger>
-              <TabsTrigger value="activity" className="text-[10px] flex-1 gap-1 h-6">
-                <Activity className="h-3 w-3" />
-                Activity ({activity.length})
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="updates" className="mt-3 space-y-3">
-              <div className="flex gap-2">
-                <Textarea
-                  placeholder="Add a standup note..."
-                  value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addComment(); } }}
-                  className="text-xs min-h-[60px] resize-none"
-                  data-testid="drawer-comment-input"
-                />
-              </div>
-              <Button
-                size="sm"
-                className="h-7 text-[10px] gap-1"
-                onClick={addComment}
-                disabled={!commentText.trim()}
-                data-testid="drawer-comment-send"
-              >
-                <Send className="h-3 w-3" /> Post
-              </Button>
-
-              {comments.length === 0 ? (
-                <p className="text-[10px] text-muted-foreground text-center py-4">No updates yet</p>
-              ) : (
-                <div className="space-y-2">
-                  {[...comments].reverse().map((c: TaskComment) => (
-                    <div key={c.id} className="bg-muted/40 rounded-lg p-2.5" data-testid={`drawer-comment-${c.id}`}>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <div className={`w-4 h-4 rounded-full ${getAvatarColor(c.authorName)} flex items-center justify-center`}>
-                          <span className="text-[6px] font-bold text-white">{getInitials(c.authorName)}</span>
-                        </div>
-                        <span className="text-[10px] font-medium">{c.authorName}</span>
-                        <span className="text-[9px] text-muted-foreground ml-auto">
-                          {new Date(c.createdAt).toLocaleDateString("en-ZA", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
-                      <p className="text-xs whitespace-pre-wrap">{c.body}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </TabsContent>
-
-            <TabsContent value="activity" className="mt-3">
-              {activity.length === 0 ? (
-                <p className="text-[10px] text-muted-foreground text-center py-4">No activity recorded</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {visibleActivity.map((a: TaskActivity) => (
-                    <div key={a.id} className="flex items-start gap-2 text-[10px]" data-testid={`drawer-activity-${a.id}`}>
-                      <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-1.5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <span className="font-medium">{a.changedBy}</span>
-                        <span className="text-muted-foreground"> changed </span>
-                        <span className="font-medium">{a.field}</span>
-                        {a.oldValue && <span className="text-muted-foreground"> from {a.oldValue}</span>}
-                        <span className="text-muted-foreground"> to </span>
-                        <span className="font-medium">{a.newValue}</span>
-                      </div>
-                      <span className="text-[9px] text-muted-foreground shrink-0">
-                        {new Date(a.createdAt).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}
-                      </span>
-                    </div>
-                  ))}
-                  {activity.length > activityLimit && (
-                    <button
-                      onClick={() => setActivityLimit(prev => prev + 20)}
-                      className="w-full text-center text-[10px] text-blue-600 hover:text-blue-800 py-1.5 hover:bg-muted/50 rounded"
-                    >
-                      Show more ({activity.length - activityLimit} remaining)
-                    </button>
-                  )}
-                </div>
-              )}
-            </TabsContent>
-          </Tabs>
-        </div>
-      </ScrollArea>
-    </div>
-  );
-}
-
-const PRIORITY_ORDER: Record<string, number> = { "Urgent": 0, "High": 1, "Med": 2, "Low": 3 };
-
-function sortByPriorityThenDue(a: FullTask, b: FullTask) {
-  const pa = PRIORITY_ORDER[a.priority] ?? 4;
-  const pb = PRIORITY_ORDER[b.priority] ?? 4;
-  if (pa !== pb) return pa - pb;
-  if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
-  if (a.dueDate) return -1;
-  if (b.dueDate) return 1;
-  return 0;
-}
-
-function groupByAssignee(tasks: FullTask[]): Map<string, FullTask[]> {
-  const map = new Map<string, FullTask[]>();
-  for (const t of tasks) {
-    const assigneeLabel = getTaskAssigneeLabel(t);
-    if (!map.has(assigneeLabel)) map.set(assigneeLabel, []);
-    map.get(assigneeLabel)!.push(t);
-  }
-  const sorted = new Map([...map.entries()].sort(([a], [b]) => {
-    if (a === "Unassigned") return 1;
-    if (b === "Unassigned") return -1;
-    if (a === "Assigned (unknown user)") return 1;
-    if (b === "Assigned (unknown user)") return -1;
-    return a.localeCompare(b);
-  }));
-  return sorted;
-}
-
-function InlineTaskRow({ task, onUpdate, onOpenTask }: { task: FullTask; onUpdate: (id: number, updates: Record<string, any>) => void; onOpenTask?: (task: FullTask) => void }) {
-  const [, setLocation] = useLocation();
-  const [quickNote, setQuickNote] = useState("");
-  const [showNote, setShowNote] = useState(false);
-  const isOverdue = task.dueDate && new Date(task.dueDate) < new Date() && !isTaskComplete(task.status);
-  const isDueSoon = task.dueDate && !isOverdue && (() => {
-    const diff = Math.round((new Date(task.dueDate!).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-    return diff <= 2;
-  })();
-  const { toast } = useToast();
-  const assignee = getTaskAssigneeLabel(task);
-
-  const handleQuickNote = async () => {
-    if (!quickNote.trim()) return;
-    try {
-      await engPost(`/api/eng/tasks/${task.id}/comments`, { body: `[Quick Note] ${quickNote.trim()}` });
-      setQuickNote("");
-      setShowNote(false);
-      toast({ title: "Note posted" });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    }
-  };
-
-  return (
-    <div
-      className={`border-b last:border-b-0 hover:bg-muted/30 transition-all text-xs border-l-3 ${priorityBorderDash[task.priority] || "border-l-gray-200"} ${isOverdue ? "bg-red-50/30" : ""}`}
-      data-testid={`standup-inline-task-${task.id}`}
-    >
-      <div className="flex items-center gap-2 px-3 py-2.5">
-        {assignee && assignee !== "Unassigned" && assignee !== "Assigned (unknown user)" && (
-          <div className={`w-6 h-6 rounded-full ${getAvatarColor(assignee)} flex items-center justify-center shrink-0`} title={assignee}>
-            <span className="text-[8px] font-bold text-white leading-none">{getInitials(assignee)}</span>
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="font-medium truncate text-foreground">
-              {task.title}
-            </span>
-            {task.blockedType && (
-              <Badge className={`text-[8px] px-1 py-0 shrink-0 ${task.blockedType === "External" ? "bg-orange-100 text-orange-700" : "bg-purple-100 text-purple-700"}`}>
-                {task.blockedType}
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-[10px] text-muted-foreground truncate">{displayProject(task.projectName)}</span>
-            {(task.holdReason || task.blockerReason) && (
-              <span className="text-[10px] text-red-500 truncate max-w-[120px] sm:max-w-[180px]">{task.holdReason || task.blockerReason}</span>
-            )}
-          </div>
-        </div>
-
-        <div className="hidden sm:flex items-center gap-1 shrink-0">
-          <SearchableSelect
-            value={task.priority}
-            onValueChange={(val) => onUpdate(task.id, { priority: val })}
-            triggerClassName="h-6 w-[60px] text-[10px] px-1.5 border-dashed"
-            options={TASK_PRIORITIES.map(p => ({ value: p, label: p }))}
-            data-testid={`priority-select-${task.id}`}
-          />
-
-          <SearchableSelect
-            value={task.status}
-            onValueChange={(val) => onUpdate(task.id, { status: val })}
-            triggerClassName="h-6 w-[100px] text-[10px] px-1.5 border-dashed"
-            options={TASK_STATUSES.map(s => ({ value: s, label: getTaskStatusLabel(s) }))}
-            data-testid={`status-select-${task.id}`}
-          />
-
-          <Input
-            type="date"
-            value={task.dueDate || ""}
-            onChange={(e) => onUpdate(task.id, { dueDate: e.target.value || null })}
-            className="h-6 w-[110px] text-[10px] px-1.5 border-dashed"
-            data-testid={`due-date-input-${task.id}`}
-          />
-
-          {task.dueDate && (
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-md min-w-[44px] text-center ${
-              isOverdue ? "text-red-700 bg-red-100 font-bold" :
-              isDueSoon ? "text-amber-700 bg-amber-100 font-semibold" :
-              "text-muted-foreground"
-            }`}>
-              {daysFromNow(task.dueDate)}
-            </span>
-          )}
-
-          <UserAssignmentPicker
-            taskId={task.id}
-            taskSource="engineering_task"
-            resolvedUsers={task.resolvedAssignees || null}
-            textNames={task.assignees || null}
-            mode="single"
-            size="xs"
-            invalidateKeys={["eng-standup-all-tasks", "eng-standup"]}
-          />
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
-            onClick={(e) => { e.stopPropagation(); setShowNote(!showNote); }}
-            title="Add note"
-            data-testid={`toggle-note-${task.id}`}
-          >
-            <Edit3 className="h-3 w-3" />
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0 opacity-60 hover:opacity-100"
-            onClick={(e) => { e.stopPropagation(); if (onOpenTask) onOpenTask(task); else setLocation(`/engineering/tasks?taskId=${task.id}`); }}
-            data-testid={`open-detail-${task.id}`}
-          >
-            <ExternalLink className="h-3 w-3" />
-          </Button>
-        </div>
-
-        <div className="flex sm:hidden items-center gap-1 shrink-0">
-          {task.dueDate && (
-            <span className={`text-[9px] px-1 py-0.5 rounded ${
-              isOverdue ? "text-red-700 bg-red-100 font-bold" :
-              isDueSoon ? "text-amber-700 bg-amber-100 font-semibold" :
-              "text-muted-foreground"
-            }`}>
-              {daysFromNow(task.dueDate)}
-            </span>
-          )}
-          <Badge className={`text-[8px] px-1 py-0 ${getTaskStatusBadgeClass(task.status)}`}>
-            {getTaskStatusLabel(task.status)}
-          </Badge>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0"
-            onClick={(e) => { e.stopPropagation(); if (onOpenTask) onOpenTask(task); else setLocation(`/engineering/tasks?taskId=${task.id}`); }}
-            data-testid={`open-detail-mobile-${task.id}`}
-          >
-            <ExternalLink className="h-3 w-3" />
-          </Button>
-        </div>
-      </div>
-
-      {showNote && (
-        <div className="flex items-center gap-1.5 px-3 pb-2 sm:pl-11">
-          <Input
-            placeholder="Add a quick note..."
-            value={quickNote}
-            onChange={(e) => setQuickNote(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleQuickNote(); if (e.key === "Escape") setShowNote(false); }}
-            className="h-6 text-[10px] flex-1 border-dashed"
-            autoFocus
-            data-testid={`quick-note-input-${task.id}`}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 px-2 text-[10px] gap-1"
-            onClick={handleQuickNote}
-            disabled={!quickNote.trim()}
-            data-testid={`quick-note-send-${task.id}`}
-          >
-            <Send className="h-3 w-3" />
-            Post
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AssigneeGroup({ name, tasks, onUpdate, defaultOpen, onOpenTask }: { name: string; tasks: FullTask[]; onUpdate: (id: number, updates: Record<string, any>) => void; defaultOpen: boolean; onOpenTask?: (task: FullTask) => void }) {
-  const [open, setOpen] = useState(defaultOpen);
-  const overdueCount = tasks.filter(t => t.dueDate && new Date(t.dueDate) < new Date() && !isTaskComplete(t.status)).length;
-
-  return (
-    <div data-testid={`assignee-group-${name}`}>
-      <button
-        className="w-full flex items-center gap-2 px-4 py-2 text-left hover:bg-muted/30 transition-colors bg-muted/10 border-b"
-        onClick={() => setOpen(!open)}
-        data-testid={`toggle-assignee-${name}`}
-      >
-        <div className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`}>
-          <ChevronRight className="h-3 w-3 text-muted-foreground" />
-        </div>
-        <div className={`w-5 h-5 rounded-full ${name === "Unassigned" ? "bg-gray-400" : getAvatarColor(name)} flex items-center justify-center shrink-0`}>
-          <span className="text-[7px] font-bold text-white leading-none">{name === "Unassigned" ? "?" : getInitials(name)}</span>
-        </div>
-        <span className="font-medium text-xs">{name}</span>
-        {overdueCount > 0 && (
-          <span className="text-[9px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded-full">{overdueCount} overdue</span>
-        )}
-        <span className="text-[10px] text-muted-foreground ml-auto">{tasks.length}</span>
-      </button>
-      {open && (
-        <div>
-          {tasks.sort(sortByPriorityThenDue).map(t => (
-            <InlineTaskRow key={t.id} task={t} onUpdate={onUpdate} onOpenTask={onOpenTask} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StandupBucket({
-  title, icon, tasks, color, open, onToggle, testId, onUpdate, onOpenTask, assigneeCount,
-}: {
-  title: string;
-  icon: React.ReactNode;
-  tasks: FullTask[];
-  color: string;
-  open: boolean;
-  onToggle: () => void;
-  testId: string;
-  onUpdate: (id: number, updates: Record<string, any>) => void;
-  onOpenTask?: (task: FullTask) => void;
-  assigneeCount?: number;
-}) {
-  const grouped = groupByAssignee(tasks);
-
-  const countBg = color.includes("red") ? "bg-red-100 text-red-700" :
-    color.includes("amber") ? "bg-amber-100 text-amber-700" :
-    color.includes("indigo") ? "bg-indigo-100 text-indigo-700" :
-    color.includes("blue") ? "bg-blue-100 text-blue-700" :
-    "bg-muted text-muted-foreground";
-
-  return (
-    <Card className="overflow-hidden shadow-sm" data-testid={testId}>
-      <button
-        className="w-full flex items-center gap-2.5 px-4 py-3 text-left hover:bg-muted/30 transition-all"
-        onClick={onToggle}
-        data-testid={`toggle-${testId}`}
-      >
-        <div className={`transition-transform duration-200 ${open ? "rotate-90" : ""}`}>
-          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-        </div>
-        <span className={`shrink-0 ${color}`}>{icon}</span>
-        <span className="font-semibold text-sm flex-1">{title}</span>
-        <span className="text-[10px] text-muted-foreground mr-1">{(assigneeCount ?? grouped.size)} assignee{(assigneeCount ?? grouped.size) !== 1 ? "s" : ""}</span>
-        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${countBg}`}>{tasks.length}</span>
-      </button>
-      {open && (
-        <div className="border-t min-h-14">
-          {tasks.length === 0 ? (
-            <p className="text-xs text-muted-foreground p-4">No standup items in this group</p>
-          ) : (
-            [...grouped.entries()].map(([name, assigneeTasks]) => (
-              <AssigneeGroup
-                key={name}
-                name={name}
-                tasks={assigneeTasks}
-                onUpdate={onUpdate}
-                onOpenTask={onOpenTask}
-                defaultOpen={grouped.size <= 5}
-              />
-            ))
-          )}
-        </div>
-      )}
-    </Card>
-  );
-}
-
-function StandupModeView() {
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-  const blockersRef = useRef<HTMLDivElement>(null);
-  const [selectedTask, setSelectedTask] = useState<FullTask | null>(null);
-
-  const { data: allTasks = [], isLoading, isError, error, refetch, isFetching } = useQuery<FullTask[]>({
-    queryKey: ["eng-standup-all-tasks"],
-    queryFn: () => engFetch("/api/eng/tasks"),
-    refetchOnMount: "always",
-    staleTime: 10_000,
-  });
-
-  const [openBuckets, setOpenBuckets] = useState<Record<string, boolean>>({});
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, updates }: { id: number; updates: Record<string, any> }) =>
-      engPatch(`/api/eng/tasks/${id}`, updates),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ["eng-standup-all-tasks"] });
-      queryClient.invalidateQueries({ queryKey: ["eng-standup"] });
-      if (selectedTask && selectedTask.id === variables.id) {
-        const updatedTask = allTasks.find(t => t.id === variables.id);
-        if (updatedTask) {
-          setSelectedTask({ ...updatedTask, ...variables.updates });
-        }
-      }
-    },
-    onError: (err: Error) => {
-      toast({ title: "Update failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const handleUpdate = useCallback((id: number, updates: Record<string, any>) => {
-    updateMutation.mutate({ id, updates });
-  }, [updateMutation]);
-
-  const handleOpenTask = useCallback((task: FullTask) => {
-    setSelectedTask(task);
-  }, []);
-
-  const today = new Date().toISOString().split("T")[0];
-  const { groups: bucketedGroups, assigneeCounts } = useMemo(() => bucketEngineeringStandupTasks(allTasks, today, 7), [allTasks, today]);
-
-  const overdueTasks = bucketedGroups.overdue;
-  const dueSoonTasks = bucketedGroups.dueSoon;
-  const holdTasks = bucketedGroups.onHold;
-  const inProgressTasks = bucketedGroups.inProgress;
-  const unassignedTasks = bucketedGroups.unassigned;
-  const everythingElse = bucketedGroups.everythingElse;
-  const nonComplete = [...overdueTasks, ...dueSoonTasks, ...holdTasks, ...inProgressTasks, ...unassignedTasks, ...everythingElse];
-
-  const blockerCount = overdueTasks.length + holdTasks.length;
-
-  const groups = useMemo(() => ([
-    { key: "overdue", title: "Overdue", icon: <AlertTriangle className="h-4 w-4" />, tasks: overdueTasks, color: "text-red-600", defaultOpen: true, testId: "standup-bucket-overdue" },
-    { key: "dueSoon", title: "Due Soon (7 days)", icon: <Timer className="h-4 w-4" />, tasks: dueSoonTasks, color: "text-indigo-600", defaultOpen: true, testId: "standup-bucket-due-soon" },
-    { key: "hold", title: "On Hold", icon: <PauseCircle className="h-4 w-4" />, tasks: holdTasks, color: "text-amber-600", defaultOpen: true, testId: "standup-bucket-hold" },
-    { key: "inProgress", title: "In Progress", icon: <Zap className="h-4 w-4" />, tasks: inProgressTasks, color: "text-blue-600", defaultOpen: false, testId: "standup-bucket-in-progress" },
-    { key: "unassigned", title: "Unassigned / Needs Triage", icon: <User className="h-4 w-4" />, tasks: unassignedTasks, color: "text-slate-600", defaultOpen: true, testId: "standup-bucket-unassigned" },
-    { key: "everythingElse", title: "Everything Else", icon: <ListTodo className="h-4 w-4" />, tasks: everythingElse, color: "text-muted-foreground", defaultOpen: false, testId: "standup-bucket-everything-else" },
-  ]), [dueSoonTasks, everythingElse, holdTasks, inProgressTasks, overdueTasks, unassignedTasks]);
-
-  useEffect(() => {
-    if (Object.keys(openBuckets).length > 0) return;
-    const firstNonEmpty = groups.find((group) => group.tasks.length > 0)?.key;
-    const nextState: Record<string, boolean> = {};
-    for (const group of groups) {
-      nextState[group.key] = firstNonEmpty ? group.key === firstNonEmpty : group.defaultOpen;
-    }
-    setOpenBuckets(nextState);
-  }, [groups, openBuckets]);
-
-  const scrollToBlockers = () => {
-    blockersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
-
-  const currentTask = selectedTask ? allTasks.find(t => t.id === selectedTask.id) || selectedTask : null;
-
-  if (isLoading) {
-    return (
-      <div className="space-y-3" data-testid="standup-body-loading">
-        <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          Loading standup task groups...
-        </div>
-        {[1, 2, 3, 4].map(i => <div key={i} className="h-32 bg-muted animate-pulse rounded-xl" />)}
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <Card className="border-red-200" data-testid="standup-body-error">
-        <CardContent className="py-8 px-4 space-y-3 text-center">
-          <AlertTriangle className="h-8 w-8 text-red-600 mx-auto" />
-          <p className="text-sm font-semibold">Could not load standup task details</p>
-          <p className="text-xs text-muted-foreground">{(error as Error)?.message || "Unknown error"}</p>
-          <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => refetch()} data-testid="retry-standup-body">
-            Retry
-          </Button>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (nonComplete.length === 0) {
-    return (
-      <Card data-testid="standup-body-empty">
-        <CardContent className="py-8 text-center">
-          <CheckCircle2 className="h-8 w-8 text-emerald-600 mx-auto mb-2" />
-          <p className="text-sm font-semibold">No open standup tasks</p>
-          <p className="text-xs text-muted-foreground">All engineering tasks are complete.</p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {blockerCount > 0 && (
-        <button
-          onClick={scrollToBlockers}
-          className="flex items-center gap-2 text-red-700 bg-red-50 border border-red-200 px-4 py-2 rounded-xl text-xs font-bold hover:bg-red-100 transition-all w-fit shadow-sm"
-          data-testid="standup-blocker-badge"
-        >
-          <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center">
-            <ShieldAlert className="h-3.5 w-3.5" />
-          </div>
-          {blockerCount} blocker{blockerCount !== 1 ? "s" : ""} need attention
-          <ChevronDown className="h-3.5 w-3.5 ml-1 animate-bounce" />
-        </button>
-      )}
-
-      <div className="space-y-4" data-testid="standup-body-groups">
-        {groups.map((group, index) => {
-          const bucket = (
-            <StandupBucket
-              key={group.key}
-              title={group.title}
-              icon={group.icon}
-              tasks={group.tasks}
-              color={group.color}
-              open={!!openBuckets[group.key]}
-              onToggle={() => setOpenBuckets((prev) => ({ ...prev, [group.key]: !prev[group.key] }))}
-              testId={group.testId}
-              onUpdate={handleUpdate}
-              onOpenTask={handleOpenTask}
-              assigneeCount={assigneeCounts[group.key as keyof typeof assigneeCounts]}
-            />
-          );
-          if (index === 0) {
-            return <div key={group.key} ref={blockersRef}>{bucket}</div>;
-          }
-          return bucket;
-        })}
-      </div>
-
-      {isFetching && (
-        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground px-1">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Refreshing standup task details...
-        </div>
-      )}
-
-      <Sheet open={!!selectedTask} onOpenChange={(open) => { if (!open) setSelectedTask(null); }}>
-        <SheetContent side="right" className="w-full sm:max-w-lg p-6" data-testid="standup-sheet-drawer">
-          {currentTask && (
-            <StandupTaskDrawer
-              task={currentTask}
-              onClose={() => setSelectedTask(null)}
-              onUpdate={handleUpdate}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
-    </div>
-  );
-}
-
 interface CompanyPriority {
   id: number;
   title: string;
@@ -1404,17 +690,15 @@ export default function EngineeringDashboard() {
   const userRole = (user as any)?.role || "";
   const managerRoles = ["admin", "eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
   const isManagerRole = isAdmin || managerRoles.includes(userRole);
-  const { toast } = useToast();
   const [showAllTasks, setShowAllTasks] = useState(isManagerRole);
-  const [standupMode, setStandupMode] = useState(false);
   const fullName = user?.name || "";
   const firstName = fullName.split(/\s+/)[0];
 
   const assigneeParam = (!showAllTasks && firstName) ? `?assignee=${encodeURIComponent(firstName)}` : "";
 
   const { data, isLoading, error } = useQuery<StandupData>({
-    queryKey: ["eng-standup", assigneeParam],
-    queryFn: () => engFetch(`/api/eng/dashboard/standup${assigneeParam}`),
+    queryKey: ["eng-overview", assigneeParam],
+    queryFn: () => engFetch(`/api/eng/dashboard/overview${assigneeParam}`),
     refetchOnMount: "always",
     staleTime: 10_000,
   });
@@ -1452,7 +736,7 @@ export default function EngineeringDashboard() {
         <SectionHeader
           icon={<Wrench className="h-5 w-5" />}
           title="Engineering Overview & Team Ops"
-          description="Loading standup and team operations data..."
+          description="Loading team operations data..."
         />
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-2">
           {[1,2,3,4,5,6,7].map(i => <div key={i} className="h-[72px] bg-muted animate-pulse rounded-xl" />)}
@@ -1470,7 +754,7 @@ export default function EngineeringDashboard() {
         <SectionHeader
           icon={<Wrench className="h-5 w-5" />}
           title="Engineering Overview & Team Ops"
-          description="Engineering standup and task coordination"
+          description="Engineering overview and task coordination"
         />
         <Card className="border border-red-200 bg-red-50/40">
           <CardContent className="py-10 px-6 text-center">
@@ -1487,13 +771,11 @@ export default function EngineeringDashboard() {
   return (
     <ErrorBoundary>
     <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
-      {!standupMode && (
-        <SectionHeader
-          icon={<Wrench className="h-5 w-5" />}
-          title={showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
-          description={todayFormatted}
-        />
-      )}
+      <SectionHeader
+        icon={<Wrench className="h-5 w-5" />}
+        title={showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
+        description={todayFormatted}
+      />
 
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div className="flex items-center gap-3">
@@ -1502,7 +784,7 @@ export default function EngineeringDashboard() {
           </div>
           <div>
             <h2 className="text-xl sm:text-2xl font-heading font-bold tracking-tight" data-testid="text-standup-title">
-              {standupMode ? "Engineering Standup & Team Triage" : showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
+              {showAllTasks ? "Engineering Overview & Team Ops" : `${firstName}'s Dashboard`}
             </h2>
             <p className="text-xs text-muted-foreground flex items-center gap-1.5">
               <Clock className="h-3 w-3" />
@@ -1517,18 +799,6 @@ export default function EngineeringDashboard() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {isManagerRole && (
-            <Button
-              variant={standupMode ? "default" : "outline"}
-              size="sm"
-              className={`h-8 text-xs gap-1.5 font-semibold ${standupMode ? "bg-orange-600 hover:bg-orange-700 shadow-sm" : ""}`}
-              onClick={() => setStandupMode(!standupMode)}
-              data-testid="toggle-standup-mode"
-            >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              {standupMode ? "Exit Standup" : "Standup Mode"}
-            </Button>
-          )}
           {isAdmin && (
             <Link href="/engineering/audit">
               <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-audit-log">
@@ -1537,54 +807,13 @@ export default function EngineeringDashboard() {
               </Button>
             </Link>
           )}
-          {standupMode && data && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs gap-1.5"
-              onClick={() => {
-                const s = data.summary;
-                const lines = [
-                  `**Engineering Standup — ${new Date().toLocaleDateString("en-ZA", { weekday: "long", day: "2-digit", month: "short", year: "numeric" })}**`,
-                  "",
-                  `Projects: ${s.totalProjects} | Active: ${s.activeTasks} | Overdue: ${s.overdueTasks} | On Hold: ${s.holdTasks}`,
-                  "",
-                ];
-                if (data.blockers.overdue.length > 0) {
-                  lines.push(`**Overdue (${data.blockers.overdue.length}):**`);
-                  data.blockers.overdue.slice(0, 10).forEach(t => lines.push(`- ${t.title}${t.assignees?.length ? ` (${t.assignees[0]})` : ""}`));
-                  lines.push("");
-                }
-                if (data.blockers.hold.length > 0) {
-                  lines.push(`**On Hold (${data.blockers.hold.length}):**`);
-                  data.blockers.hold.slice(0, 10).forEach(t => lines.push(`- ${t.title}: ${t.holdReason || "no reason"}`));
-                  lines.push("");
-                }
-                if (data.needsApproval.length > 0) {
-                  lines.push(`**Needs Approval (${data.needsApproval.length}):**`);
-                  data.needsApproval.slice(0, 5).forEach(t => lines.push(`- ${t.title}`));
-                  lines.push("");
-                }
-                if (data.upcomingThisWeek.length > 0) {
-                  lines.push(`**Due This Week (${data.upcomingThisWeek.length}):**`);
-                  data.upcomingThisWeek.slice(0, 10).forEach(t => lines.push(`- ${t.title}${t.dueDate ? ` (${new Date(t.dueDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })})` : ""}`));
-                }
-                navigator.clipboard.writeText(lines.join("\n")).then(() => {
-                  toast({ title: "Standup copied", description: "Summary copied to clipboard" });
-                });
-              }}
-              data-testid="btn-copy-standup"
-            >
-              <ClipboardCopy className="h-3.5 w-3.5" /> Copy Standup
-            </Button>
-          )}
-          {!standupMode && totalBlockers > 0 && (
+          {totalBlockers > 0 && (
             <div className="flex items-center gap-1.5 text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg text-xs font-bold" data-testid="blocker-alert">
               <ShieldAlert className="h-3.5 w-3.5" />
               {totalBlockers} blocker{totalBlockers !== 1 ? "s" : ""}
             </div>
           )}
-          {!standupMode && firstName && isManagerRole && (
+          {firstName && isManagerRole && (
             <Popover>
               <PopoverTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="eng-more-controls">
@@ -1611,45 +840,22 @@ export default function EngineeringDashboard() {
         </div>
       </div>
 
-      {!standupMode && (
-        <Card className="shadow-sm border-blue-200/70 bg-gradient-to-r from-blue-50/70 to-transparent" data-testid="engineering-workspace-handoff">
-          <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Workspace intent</p>
-              <p className="text-sm font-medium">This page is for standup, blockers, approvals and team coordination.</p>
-              <p className="text-xs text-muted-foreground">Use the task board for active execution, detailed updates, and delivery flow.</p>
-            </div>
-            <Link href="/engineering/tasks">
-              <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-open-task-execution-board">
-                <ArrowRightLeft className="h-3.5 w-3.5" />
-                Go to Task Execution Board
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-      )}
+      <Card className="shadow-sm border-blue-200/70 bg-gradient-to-r from-blue-50/70 to-transparent" data-testid="engineering-workspace-handoff">
+        <CardContent className="p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">Workspace intent</p>
+            <p className="text-sm font-medium">This page is for standup, blockers, approvals and team coordination.</p>
+            <p className="text-xs text-muted-foreground">Use the task board for active execution, detailed updates, and delivery flow.</p>
+          </div>
+          <Link href="/engineering/tasks">
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" data-testid="btn-open-task-execution-board">
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Go to Task Execution Board
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
 
-      {standupMode ? (
-        <>
-        <Card className="mb-4 border-primary/30 bg-primary/5">
-          <CardContent className="p-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Users className="h-4 w-4 text-primary" />
-              <span className="text-sm font-medium">New: Unified Standup System</span>
-              <span className="text-xs text-muted-foreground">Bi-daily async standups with team views and analytics</span>
-            </div>
-            <Link href="/standups">
-              <Button size="sm" variant="outline" className="gap-1.5 text-xs">
-                <ArrowUpRight className="h-3.5 w-3.5" />
-                Go to Standups
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-        <StandupModeView />
-        </>
-      ) : (
-      <>
       <AttentionBadges items={engAttentionItems} threshold={5} testId="eng-attention-needed" />
       <KpiStrip summary={summary} />
 
@@ -1893,8 +1099,6 @@ export default function EngineeringDashboard() {
         </div>
         <ProjectHealthGrid projects={projectHealth} />
       </div>
-      </>
-      )}
     </PageShell>
     </ErrorBoundary>
   );
