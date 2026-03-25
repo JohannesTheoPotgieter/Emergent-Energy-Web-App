@@ -7696,10 +7696,15 @@ export async function registerRoutes(
       const today = new Date().toISOString().split('T')[0];
 
       const milestones = inflows.filter(isRealMilestone).map((r: any) => {
-        const hasInvoice = !!(r.milestoneInvoiceNumber && r.milestoneInvoiceNumber.trim());
-        const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
-        const hasPaymentReceived = !!(r.paymentReceivedDate && r.paymentReceivedDate.trim() && r.paymentReceivedDate !== '-');
-        const inBank = manualInBank || (hasPaymentReceived && hasInvoice);
+      const hasInvoice = !!(r.milestoneInvoiceNumber && r.milestoneInvoiceNumber.trim());
+      const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
+      const hasPaymentReceived = !!(r.paymentReceivedDate && r.paymentReceivedDate.trim() && r.paymentReceivedDate !== '-');
+      const confirmedByColor = typeof r.paymentReceivedDateFontColor === "string"
+        ? r.paymentReceivedDateFontColor.toLowerCase() === "black"
+        : false;
+      const confirmedByFlag = r.paymentReceivedDateConfirmed === true;
+      const paymentConfirmed = confirmedByFlag || confirmedByColor;
+      const inBank = manualInBank || (hasPaymentReceived && hasInvoice && paymentConfirmed);
 
         const date = r.paymentReceivedDate || r.plannedPaymentDate || null;
         const isConfirmed = inBank && hasInvoice;
@@ -7713,7 +7718,11 @@ export async function registerRoutes(
           status = 'inBank';
         } else if (isRed && hasInvoice) {
           status = 'invoiced';
-          flags.push('Invoice raised, payment outstanding');
+          if (hasPaymentReceived && !paymentConfirmed) {
+            flags.push('Payment date present but not confirmed — treated as outstanding');
+          } else {
+            flags.push('Invoice raised, payment outstanding');
+          }
         } else if (isRed && !hasInvoice && isPast) {
           status = 'overdue';
           flags.push('Payment date has passed without invoice');
