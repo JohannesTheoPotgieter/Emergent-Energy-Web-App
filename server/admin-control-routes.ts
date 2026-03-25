@@ -424,8 +424,9 @@ router.get("/api/admin/control-center/active-sessions", requireAuth, requireAdmi
     if (userIds.length > 0) {
       const idList = userIds.map((id: number) => Number(id)).filter((n: number) => !isNaN(n));
       if (idList.length > 0) {
+        const placeholders = sql.join(idList.map(id => sql`${id}`), sql`, `);
         const userRows: any[] = await db.execute(
-          sql.raw(`SELECT id, name, username, role FROM users WHERE id IN (${idList.join(",")})`)
+          sql`SELECT id, name, username, role FROM users WHERE id IN (${placeholders})`
         ).then((r: any) => r.rows || r);
         for (const u of userRows) {
           userMap[u.id] = { name: u.name, username: u.username, role: u.role };
