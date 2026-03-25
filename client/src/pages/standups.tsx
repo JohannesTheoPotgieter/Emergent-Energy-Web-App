@@ -696,6 +696,157 @@ function ParticipantSpotlight({ participant, scheduleId, onSubmitted }: {
   );
 }
 
+// ── Meeting View (Carousel) ──────────────────────────────────────────────────
+
+function MeetingView({ scheduleId }: { scheduleId: number }) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerKey, setTimerKey] = useState(0); // forces timer reset on navigate
+  const queryClient = useQueryClient();
+
+  const { data: meeting, isLoading } = useQuery<MeetingData>({
+    queryKey: ["standup-meeting", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/meeting/${scheduleId}`),
+    refetchInterval: 30000, // refresh every 30s for live updates
+  });
+
+  const participants = meeting?.participants || [];
+  const current = participants[currentIdx];
+
+  const goTo = useCallback((idx: number) => {
+    const clamped = Math.max(0, Math.min(idx, participants.length - 1));
+    setCurrentIdx(clamped);
+    setTimerRunning(false);
+    setTimerKey((k) => k + 1); // reset timer
+  }, [participants.length]);
+
+  const goNext = useCallback(() => {
+    if (currentIdx < participants.length - 1) goTo(currentIdx + 1);
+  }, [currentIdx, participants.length, goTo]);
+
+  const goPrev = useCallback(() => {
+    if (currentIdx > 0) goTo(currentIdx - 1);
+  }, [currentIdx, goTo]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
+      if (e.key === "ArrowRight") goNext();
+      else if (e.key === "ArrowLeft") goPrev();
+      else if (e.key === " ") { e.preventDefault(); setTimerRunning((r) => !r); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [goNext, goPrev]);
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["standup-meeting", scheduleId] });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!meeting || participants.length === 0) {
+    return (
+      <div className="ee-empty-state">
+        <Users className="h-10 w-10 text-muted-foreground/30 mb-3" />
+        <p className="text-sm font-semibold">No participants in this schedule</p>
+        <p className="text-xs text-muted-foreground mt-1">Add team members to start using meeting mode.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Pre-meeting summary bar */}
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-3">
+          <Badge variant="outline" className="gap-1.5 text-xs font-semibold">
+            <Users className="h-3.5 w-3.5" />
+            {meeting.summary.submitted}/{meeting.summary.total} submitted
+          </Badge>
+          {meeting.summary.blockerCount > 0 && (
+            <Badge variant="outline" className="gap-1.5 text-xs font-semibold bg-orange-50 text-orange-700 border-orange-200">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              {meeting.summary.blockerCount} blocker{meeting.summary.blockerCount !== 1 ? "s" : ""}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <MeetingTimer
+            key={timerKey}
+            durationSec={120}
+            running={timerRunning}
+            onToggle={() => setTimerRunning((r) => !r)}
+            onExpired={goNext}
+          />
+        </div>
+      </div>
+
+      {/* Navigation + Current person */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 w-8 p-0"
+          disabled={currentIdx === 0}
+          onClick={goPrev}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <span className="text-xs font-semibold text-muted-foreground flex-1 text-center">
+          {currentIdx + 1} of {participants.length}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 w-8 p-0"
+          disabled={currentIdx === participants.length - 1}
+          onClick={goNext}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Spotlight */}
+      {current && (
+        <ParticipantSpotlight
+          participant={current}
+          scheduleId={scheduleId}
+          onSubmitted={handleRefresh}
+        />
+      )}
+
+      {/* Dot navigation */}
+      <div className="flex items-center justify-center gap-1.5 pt-2">
+        {participants.map((p, idx) => (
+          <button
+            key={p.userId}
+            onClick={() => goTo(idx)}
+            className={`w-3 h-3 rounded-full transition-all border-2 ${
+              idx === currentIdx
+                ? "border-primary bg-primary scale-110"
+                : p.hasSubmitted
+                  ? "border-emerald-400 bg-emerald-400"
+                  : "border-slate-300 bg-slate-300"
+            }`}
+            title={`${p.userName || "?"} ${p.hasSubmitted ? "(submitted)" : "(pending)"}`}
+          />
+        ))}
+      </div>
+      <p className="text-[10px] text-center text-muted-foreground">
+        Use <kbd className="px-1 py-0.5 rounded bg-muted text-[9px] font-mono">←</kbd> <kbd className="px-1 py-0.5 rounded bg-muted text-[9px] font-mono">→</kbd> to navigate, <kbd className="px-1 py-0.5 rounded bg-muted text-[9px] font-mono">Space</kbd> to pause/resume timer
+      </p>
+    </div>
+  );
+}
+
 // ── PLACEHOLDER: More components below ───────────────────────────────────────
 
 export default function StandupsPage() {
