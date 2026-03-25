@@ -970,35 +970,29 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
     const userId = (req as any).user?.id;
     const now = new Date();
 
-    // Update normalizedCostLines (primary source of truth)
-    const updated = await db.update(normalizedCostLines)
-      .set({
-        adminDateOverride: dateOverride || null,
-        adminDateOverrideReason: reason || null,
-        adminDateOverrideBy: userId || null,
-        adminDateOverrideAt: dateOverride ? now : null,
-      })
-      .where(eq(normalizedCostLines.id, expenseId))
+    const overrideFields = {
+      adminDateOverride: dateOverride || null,
+      adminDateOverrideReason: reason || null,
+      adminDateOverrideBy: userId || null,
+      adminDateOverrideAt: dateOverride ? now : null,
+    };
+
+    const updated = await db.update(programExpense)
+      .set(overrideFields)
+      .where(eq(programExpense.id, expenseId))
       .returning();
 
     if (updated.length === 0) {
       return res.status(404).json({ error: "Expense line not found" });
     }
 
-    // Also update programExpense if a matching row exists
     const row = updated[0];
-    if (row.projectName && row.sourceRow != null) {
-      await db.update(programExpense)
-        .set({
-          adminDateOverride: dateOverride || null,
-          adminDateOverrideReason: reason || null,
-          adminDateOverrideBy: userId || null,
-          adminDateOverrideAt: dateOverride ? now : null,
-        })
+    if (row.projectName && row.rowNumber != null) {
+      await db.update(normalizedCostLines)
+        .set(overrideFields)
         .where(and(
-          eq(programExpense.projectName, row.projectName),
-          eq(programExpense.rowNumber, row.sourceRow),
-          isNull(programExpense.effectiveTo),
+          eq(normalizedCostLines.projectName, row.projectName),
+          eq(normalizedCostLines.sourceRow, row.rowNumber),
         ));
     }
 
@@ -1006,14 +1000,14 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
     if (dateOverride) {
       const existingFlag = await db.select().from(manualEditFlags)
         .where(and(
-          eq(manualEditFlags.entityType, "normalized_cost_lines"),
-          eq(manualEditFlags.entityId, expenseId),
+          eq(manualEditFlags.entityType, "program_expense"),
+          eq(manualEditFlags.entityId, String(expenseId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
       if (existingFlag.length === 0) {
         await db.insert(manualEditFlags).values({
-          entityType: "normalized_cost_lines",
-          entityId: expenseId,
+          entityType: "program_expense",
+          entityId: String(expenseId),
           fieldName: "adminDateOverride",
           editedByUserId: userId,
           editedAt: now,
@@ -1027,11 +1021,10 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
           .where(eq(manualEditFlags.id, existingFlag[0].id));
       }
     } else {
-      // Clearing override — remove the flag
       await db.delete(manualEditFlags)
         .where(and(
-          eq(manualEditFlags.entityType, "normalized_cost_lines"),
-          eq(manualEditFlags.entityId, expenseId),
+          eq(manualEditFlags.entityType, "program_expense"),
+          eq(manualEditFlags.entityId, String(expenseId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
     }
@@ -1075,34 +1068,29 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     const userId = (req as any).user?.id;
     const now = new Date();
 
-    // Update normalizedRevenueLines (primary source of truth)
-    const updated = await db.update(normalizedRevenueLines)
-      .set({
-        adminDateOverride: dateOverride || null,
-        adminDateOverrideReason: reason || null,
-        adminDateOverrideBy: userId || null,
-        adminDateOverrideAt: dateOverride ? now : null,
-      })
-      .where(eq(normalizedRevenueLines.id, inflowId))
+    const overrideFields = {
+      adminDateOverride: dateOverride || null,
+      adminDateOverrideReason: reason || null,
+      adminDateOverrideBy: userId || null,
+      adminDateOverrideAt: dateOverride ? now : null,
+    };
+
+    const updated = await db.update(programInflows)
+      .set(overrideFields)
+      .where(eq(programInflows.id, inflowId))
       .returning();
 
     if (updated.length === 0) {
       return res.status(404).json({ error: "Inflow line not found" });
     }
 
-    // Also update programInflows if a matching row exists
     const row = updated[0];
-    if (row.projectName && row.sourceRow != null) {
-      await db.update(programInflows)
-        .set({
-          adminDateOverride: dateOverride || null,
-          adminDateOverrideReason: reason || null,
-          adminDateOverrideBy: userId || null,
-          adminDateOverrideAt: dateOverride ? now : null,
-        })
+    if (row.projectName && row.rowNumber != null) {
+      await db.update(normalizedRevenueLines)
+        .set(overrideFields)
         .where(and(
-          eq(programInflows.projectName, row.projectName),
-          eq(programInflows.rowNumber, row.sourceRow),
+          eq(normalizedRevenueLines.projectName, row.projectName),
+          eq(normalizedRevenueLines.sourceRow, row.rowNumber),
         ));
     }
 
@@ -1110,14 +1098,14 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     if (dateOverride) {
       const existingFlag = await db.select().from(manualEditFlags)
         .where(and(
-          eq(manualEditFlags.entityType, "normalized_revenue_lines"),
-          eq(manualEditFlags.entityId, inflowId),
+          eq(manualEditFlags.entityType, "program_inflows"),
+          eq(manualEditFlags.entityId, String(inflowId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
       if (existingFlag.length === 0) {
         await db.insert(manualEditFlags).values({
-          entityType: "normalized_revenue_lines",
-          entityId: inflowId,
+          entityType: "program_inflows",
+          entityId: String(inflowId),
           fieldName: "adminDateOverride",
           editedByUserId: userId,
           editedAt: now,
@@ -1133,8 +1121,8 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     } else {
       await db.delete(manualEditFlags)
         .where(and(
-          eq(manualEditFlags.entityType, "normalized_revenue_lines"),
-          eq(manualEditFlags.entityId, inflowId),
+          eq(manualEditFlags.entityType, "program_inflows"),
+          eq(manualEditFlags.entityId, String(inflowId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
     }
