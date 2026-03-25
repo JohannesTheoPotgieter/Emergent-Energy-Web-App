@@ -12,11 +12,11 @@ import {
   qcPostmortem, qcPostmortemMetricValue, qcPostmortemSummary,
   qcAccessChallenge, calendarHoliday,
   users, projectInfo, projectExecutionState,
-  notifications,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
+import { createNotification } from "./services/notification-service";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
@@ -93,21 +93,21 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required" });
 }
 
-/** Insert an in-app notification for QM events. Silently no-ops on error. */
 async function createQmNotification(
   recipientUserId: number, eventType: string, title: string, body: string | null,
   opts: { projectName?: string; linkedTaskId?: number; } = {}
 ) {
   try {
-    const [row] = await db.insert(notifications).values({
+    return await createNotification({
       recipientUserId,
       eventType,
       title,
-      body,
-      projectName: opts.projectName ?? null,
-      linkedTaskId: opts.linkedTaskId ?? null,
-    }).returning();
-    return row;
+      body: body || undefined,
+      projectName: opts.projectName,
+      linkedTaskId: opts.linkedTaskId,
+      relatedEntityType: "quality",
+      relatedEntityId: opts.linkedTaskId,
+    });
   } catch (err) {
     console.error("[QM Notifications] Failed to create notification:", err);
     return null;

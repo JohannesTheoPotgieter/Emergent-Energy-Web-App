@@ -179,9 +179,9 @@ export function registerHandoverRoutes(app: Express) {
 
       if (!project) return res.status(404).json({ error: "Project not found" });
 
-      const gateRows: any[] = await db.execute(sql.raw(
-        `SELECT * FROM project_handover_gates WHERE project_id = ${projectId} ORDER BY id`
-      )).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const gateRows: any[] = await db.execute(
+        sql`SELECT * FROM project_handover_gates WHERE project_id = ${projectId} ORDER BY id`
+      ).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
 
       const gateMap = new Map<string, any>();
       for (const row of gateRows) {
@@ -249,25 +249,27 @@ export function registerHandoverRoutes(app: Express) {
       const userName = ((req as any).user as any)?.name || "Unknown";
       const userRole = ((req as any).user as any)?.role || "unknown";
 
-      const existingRows: any[] = await db.execute(sql.raw(
-        `SELECT id, status FROM project_handover_gates WHERE project_id = ${projectId} AND gate_id = '${gateId}'`
-      )).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const existingRows: any[] = await db.execute(
+        sql`SELECT id, status FROM project_handover_gates WHERE project_id = ${projectId} AND gate_id = ${gateId}`
+      ).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
 
       const checkedJson = JSON.stringify(checkedItems);
+      const notesValue = notes ? String(notes) : null;
 
       if (existingRows.length > 0) {
-        await db.execute(sql.raw(
-          `UPDATE project_handover_gates SET status = 'COMPLETE', checked_items = '${checkedJson}'::jsonb, completed_at = NOW(), completed_by_user_id = ${userId}, completed_by_name = '${userName.replace(/'/g, "''")}', notes = ${notes ? `'${String(notes).replace(/'/g, "''")}'` : "NULL"}, updated_at = NOW() WHERE project_id = ${projectId} AND gate_id = '${gateId}'`
-        ));
+        await db.execute(
+          sql`UPDATE project_handover_gates SET status = 'COMPLETE', checked_items = ${checkedJson}::jsonb, completed_at = NOW(), completed_by_user_id = ${userId}, completed_by_name = ${userName}, notes = ${notesValue}, updated_at = NOW() WHERE project_id = ${projectId} AND gate_id = ${gateId}`
+        );
       } else {
-        await db.execute(sql.raw(
-          `INSERT INTO project_handover_gates (project_id, gate_id, status, checked_items, completed_at, completed_by_user_id, completed_by_name, notes) VALUES (${projectId}, '${gateId}', 'COMPLETE', '${checkedJson}'::jsonb, NOW(), ${userId}, '${userName.replace(/'/g, "''")}', ${notes ? `'${String(notes).replace(/'/g, "''")}'` : "NULL"})`
-        ));
+        await db.execute(
+          sql`INSERT INTO project_handover_gates (project_id, gate_id, status, checked_items, completed_at, completed_by_user_id, completed_by_name, notes) VALUES (${projectId}, ${gateId}, 'COMPLETE', ${checkedJson}::jsonb, NOW(), ${userId}, ${userName}, ${notesValue})`
+        );
       }
 
-      await db.execute(sql.raw(
-        `INSERT INTO project_handover_history (project_id, gate_id, action, performed_by_user_id, performed_by_name, performed_by_role, details) VALUES (${projectId}, '${gateId}', 'GATE_COMPLETED', ${userId}, '${userName.replace(/'/g, "''")}', '${userRole}', '${JSON.stringify({ checkedItems, notes: notes || null }).replace(/'/g, "''")}'::jsonb)`
-      ));
+      const historyDetails = JSON.stringify({ checkedItems, notes: notes || null });
+      await db.execute(
+        sql`INSERT INTO project_handover_history (project_id, gate_id, action, performed_by_user_id, performed_by_name, performed_by_role, details) VALUES (${projectId}, ${gateId}, 'GATE_COMPLETED', ${userId}, ${userName}, ${userRole}, ${historyDetails}::jsonb)`
+      );
 
       logAuditFromReq(req, {
         entityType: "handover_gate",
@@ -300,18 +302,18 @@ export function registerHandoverRoutes(app: Express) {
 
       const checkedJson = JSON.stringify(checkedItems);
 
-      const existingRows: any[] = await db.execute(sql.raw(
-        `SELECT id FROM project_handover_gates WHERE project_id = ${projectId} AND gate_id = '${gateId}'`
-      )).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const existingRows: any[] = await db.execute(
+        sql`SELECT id FROM project_handover_gates WHERE project_id = ${projectId} AND gate_id = ${gateId}`
+      ).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
 
       if (existingRows.length > 0) {
-        await db.execute(sql.raw(
-          `UPDATE project_handover_gates SET checked_items = '${checkedJson}'::jsonb, updated_at = NOW() WHERE project_id = ${projectId} AND gate_id = '${gateId}'`
-        ));
+        await db.execute(
+          sql`UPDATE project_handover_gates SET checked_items = ${checkedJson}::jsonb, updated_at = NOW() WHERE project_id = ${projectId} AND gate_id = ${gateId}`
+        );
       } else {
-        await db.execute(sql.raw(
-          `INSERT INTO project_handover_gates (project_id, gate_id, status, checked_items) VALUES (${projectId}, '${gateId}', 'PENDING', '${checkedJson}'::jsonb)`
-        ));
+        await db.execute(
+          sql`INSERT INTO project_handover_gates (project_id, gate_id, status, checked_items) VALUES (${projectId}, ${gateId}, 'PENDING', ${checkedJson}::jsonb)`
+        );
       }
 
       res.json({ success: true });
@@ -342,13 +344,14 @@ export function registerHandoverRoutes(app: Express) {
       const userRole = role;
       const { reason } = req.body;
 
-      await db.execute(sql.raw(
-        `UPDATE project_handover_gates SET status = 'PENDING', completed_at = NULL, completed_by_user_id = NULL, completed_by_name = NULL, updated_at = NOW() WHERE project_id = ${projectId} AND gate_id = '${gateId}'`
-      ));
+      await db.execute(
+        sql`UPDATE project_handover_gates SET status = 'PENDING', completed_at = NULL, completed_by_user_id = NULL, completed_by_name = NULL, updated_at = NOW() WHERE project_id = ${projectId} AND gate_id = ${gateId}`
+      );
 
-      await db.execute(sql.raw(
-        `INSERT INTO project_handover_history (project_id, gate_id, action, performed_by_user_id, performed_by_name, performed_by_role, details) VALUES (${projectId}, '${gateId}', 'GATE_REOPENED', ${userId}, '${userName.replace(/'/g, "''")}', '${userRole}', '${JSON.stringify({ reason: reason || null }).replace(/'/g, "''")}'::jsonb)`
-      ));
+      const reopenDetails = JSON.stringify({ reason: reason || null });
+      await db.execute(
+        sql`INSERT INTO project_handover_history (project_id, gate_id, action, performed_by_user_id, performed_by_name, performed_by_role, details) VALUES (${projectId}, ${gateId}, 'GATE_REOPENED', ${userId}, ${userName}, ${userRole}, ${reopenDetails}::jsonb)`
+      );
 
       logAuditFromReq(req, {
         entityType: "handover_gate",
@@ -370,9 +373,9 @@ export function registerHandoverRoutes(app: Express) {
       const projectId = parseInt(req.params.id);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
-      const rows: any[] = await db.execute(sql.raw(
-        `SELECT * FROM project_handover_history WHERE project_id = ${projectId} ORDER BY performed_at DESC LIMIT 50`
-      )).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      const rows: any[] = await db.execute(
+        sql`SELECT * FROM project_handover_history WHERE project_id = ${projectId} ORDER BY performed_at DESC LIMIT 50`
+      ).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
 
       const history = rows.map(r => ({
         id: r.id,

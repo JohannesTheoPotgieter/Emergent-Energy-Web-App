@@ -13,7 +13,6 @@ import {
   financialEditRequests,
   msObjects,
   normalizedRevenueLines,
-  notifications,
   OVERRIDE_CATEGORIES,
   projectInfo,
   users,
@@ -33,6 +32,7 @@ import {
 import { recordOverride } from "../lib/audit/diff-engine";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
+import { createNotification } from "../services/notification-service";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
@@ -69,7 +69,25 @@ async function createPendingEditRequest(
     status: "pending",
   }).returning();
 
-  // Notifications feature removed - financial edit request notifications are now no-ops
+  // Notify financial approvers about the pending edit request
+  try {
+    const approvers = await db.select({ id: users.id, role: users.role }).from(users)
+      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
+    for (const approver of approvers) {
+      if (approver.id === userId) continue; // don't notify the requester
+      await createNotification({
+        recipientUserId: approver.id,
+        eventType: "financial.edit_request_pending",
+        title: `Financial edit request: ${projectName}`,
+        body: editSummary,
+        projectName,
+        relatedEntityType: "financial_edit_request",
+        relatedEntityId: saved.id,
+      });
+    }
+  } catch (err) {
+    console.error("[finance] Failed to send edit request notifications:", err);
+  }
 
   return saved;
 }
