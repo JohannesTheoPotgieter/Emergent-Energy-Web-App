@@ -847,6 +847,67 @@ function MeetingView({ scheduleId }: { scheduleId: number }) {
   );
 }
 
+// ── Blocker Board ────────────────────────────────────────────────────────────
+
+function BlockerBoard({ scheduleId }: { scheduleId: number }) {
+  const { data: meeting, isLoading } = useQuery<MeetingData>({
+    queryKey: ["standup-meeting", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/meeting/${scheduleId}`),
+  });
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  const blockers = meeting?.summary.blockers || [];
+
+  if (blockers.length === 0) {
+    return (
+      <div className="ee-empty-state">
+        <CheckCircle2 className="h-10 w-10 text-emerald-500/30 mb-3" />
+        <p className="text-sm font-semibold">No blockers today</p>
+        <p className="text-xs text-muted-foreground mt-1">The team is unblocked and moving forward.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Badge variant="outline" className="gap-1.5 text-xs font-semibold bg-orange-50 text-orange-700 border-orange-200">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          {blockers.length} blocker{blockers.length !== 1 ? "s" : ""} reported today
+        </Badge>
+      </div>
+      <div className="space-y-2">
+        {blockers.map((b, i) => {
+          const borderColor = b.mood === "blocked" ? "border-l-red-500" : b.mood === "struggling" ? "border-l-orange-500" : "border-l-amber-400";
+          return (
+            <Card key={i} className={`border-l-4 ${borderColor}`}>
+              <CardContent className="px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Avatar className="h-5 w-5">
+                        <AvatarFallback className="text-[8px] font-bold">
+                          {getInitials(b.userName || "?")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="text-sm font-semibold">{b.userName}</span>
+                      <MoodBadge mood={b.mood} />
+                    </div>
+                    <p className="text-sm text-orange-800 whitespace-pre-line">{b.blockers}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── PLACEHOLDER: More components below ───────────────────────────────────────
 
 export default function StandupsPage() {
