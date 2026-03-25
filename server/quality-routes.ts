@@ -67,6 +67,10 @@ function isAdminRole(role: string) {
   return role === "COO_ADMIN" || role === "CEO_ADMIN";
 }
 
+function normalizeProjectName(projectName: string): string {
+  return projectName.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
 
 async function resolveProjectIdForItemInstance(itemInstanceId: number): Promise<number | null> {
   const rows = await db.execute(sql`
@@ -528,15 +532,33 @@ export function registerQualityRoutes(app: Express) {
 
   app.get("/api/quality/project/:projectName/checklist", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
-      const projectName = decodeURIComponent(String(req.params.projectName));
-      let [checklist] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
+      const requestedProjectName = decodeURIComponent(String(req.params.projectName));
+      const [project] = await db
+        .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+        .from(projectInfo)
+        .where(sql`LOWER(TRIM(${projectInfo.projectName})) = LOWER(TRIM(${requestedProjectName}))`)
+        .limit(1);
+      const projectId = project?.id ?? null;
+      const canonicalProjectName = project?.projectName ?? requestedProjectName;
+      const normalizedProjectName = normalizeProjectName(canonicalProjectName);
+
+      const matchingChecklists = projectId
+        ? await db.select().from(qcChecklist).where(eq(qcChecklist.projectId, projectId))
+        : await db.select().from(qcChecklist)
+            .where(sql`LOWER(TRIM(${qcChecklist.projectName})) = ${normalizedProjectName}`);
+      let checklist = matchingChecklists
+        .sort((left, right) => right.id - left.id)[0];
 
       if (!checklist) {
         const [activeTemplate] = await db.select().from(qcTemplate).where(eq(qcTemplate.isActive, true));
         if (!activeTemplate) return res.json({ checklist: null, phases: [], items: [], riskQuestions: [], riskAnswers: [], evidence: [] });
+        if (!projectId) return res.status(404).json({ error: "Project not found" });
 
         [checklist] = await db.insert(qcChecklist).values({
-          projectName, templateId: activeTemplate.id, status: "active",
+          projectId,
+          projectName: canonicalProjectName,
+          templateId: activeTemplate.id,
+          status: "active",
         }).returning();
 
         const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, activeTemplate.id));
@@ -1488,7 +1510,18 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/checklists", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const allChecklists = await db.select().from(qcChecklist);
-      const projectIds = uniqueNumberList(allChecklists.map((checklist) => checklist.projectId));
+      const checklistByProject = new Map<string, QcChecklistRow>();
+      for (const checklist of allChecklists) {
+        const key = checklist.projectId
+          ? `id:${checklist.projectId}`
+          : `name:${normalizeProjectName(checklist.projectName)}`;
+        const existing = checklistByProject.get(key);
+        if (!existing || checklist.id > existing.id) {
+          checklistByProject.set(key, checklist);
+        }
+      }
+      const dedupedChecklists = [...checklistByProject.values()];
+      const projectIds = uniqueNumberList(dedupedChecklists.map((checklist) => checklist.projectId));
       const allProjectRows = projectIds.length > 0
         ? await db.select().from(projectInfo)
             .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
@@ -1548,7 +1581,7 @@ export function registerQualityRoutes(app: Express) {
         evidenceCountMap.set(evidence.itemInstanceId, (evidenceCountMap.get(evidence.itemInstanceId) || 0) + 1);
       }
 
-      const result = await Promise.all(allChecklists.map(async (cl) => {
+      const result = await Promise.all(dedupedChecklists.map(async (cl) => {
         const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, cl.templateId));
         const clItems = allItems.filter(i => i.checklistId === cl.id);
         const project = projectMap.get(cl.projectId);
@@ -1591,6 +1624,14 @@ export function registerQualityRoutes(app: Express) {
             groupName: group?.groupName || null,
           };
         });
+        const hasLoggedActivity = governanceItems.some((item) => (
+          item.qmStatus !== "not_started" ||
+          item.approved ||
+          Boolean(item.endDate) ||
+          Boolean(item.scheduledDate) ||
+          Boolean(item.approvalComment) ||
+          item.evidenceCount > 0
+        ));
 
         const storedProjectWarnings = allWarnings.filter((warning) => warning.projectName === cl.projectName);
         const syntheticWarningCount = Math.max(0, (warningsByProject[cl.projectName] || 0) - storedProjectWarnings.length);
@@ -1622,6 +1663,8 @@ export function registerQualityRoutes(app: Express) {
           createdAt: cl.createdAt,
           updatedAt: (cl as any).updatedAt,
           phases: phaseData,
+          checklistItemCount: clItems.length,
+          hasLoggedActivity,
           warningCount: warningsByProject[cl.projectName] || 0,
           overdueCount: riskSummary.exposures.overdueCount,
           resubmissionCount: riskSummary.exposures.resubmissionCount,
@@ -1996,15 +2039,29 @@ export function registerQualityRoutes(app: Express) {
 
       const results: { project: string; status: string }[] = [];
 
-      for (const projectName of projectNames) {
-        const [existing] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
+      for (const projectNameRaw of projectNames) {
+        const requestedProjectName = String(projectNameRaw ?? "");
+        const [project] = await db
+          .select({ id: projectInfo.id, projectName: projectInfo.projectName })
+          .from(projectInfo)
+          .where(sql`LOWER(TRIM(${projectInfo.projectName})) = LOWER(TRIM(${requestedProjectName}))`)
+          .limit(1);
+        if (!project) {
+          results.push({ project: requestedProjectName, status: "project not found" });
+          continue;
+        }
+
+        const [existing] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectId, project.id));
         if (existing) {
-          results.push({ project: projectName, status: "already exists" });
+          results.push({ project: project.projectName, status: "already exists" });
           continue;
         }
 
         const [checklist] = await db.insert(qcChecklist).values({
-          projectName, templateId: activeTemplate.id, status: "active",
+          projectId: project.id,
+          projectName: project.projectName,
+          templateId: activeTemplate.id,
+          status: "active",
         }).returning();
 
         if (templateItems.length) {
@@ -2019,7 +2076,7 @@ export function registerQualityRoutes(app: Express) {
           );
         }
 
-        results.push({ project: projectName, status: "created" });
+        results.push({ project: project.projectName, status: "created" });
       }
 
       logAuditFromReq(req, { entityType: "quality_template", entityId: "0", action: "create", changesJson: { description: "Bulk checklists created", count: results.filter(r => r.status === "created").length } });
