@@ -103,8 +103,8 @@ export function registerMeetingRoutes(app: Express) {
         .orderBy(desc(meetingSummaries.createdAt))
         .limit(50);
 
-      const meetingIds = meetings.map((m) => m.id);
-      let allItems: any[] = [];
+      const meetingIds = meetings.map((m: { id: number }) => m.id);
+      let allItems: Array<{ meetingId: number | null; title: string; status: string; assignee: string | null; dueDate: string | null; id: number }> = [];
       if (meetingIds.length > 0) {
         allItems = await db
           .select()
