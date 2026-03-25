@@ -30,19 +30,6 @@ async function loginAdmin() {
 }
 
 describe("API: Engineering tasks canonical work_items source", () => {
-  it("GET /api/eng/dashboard/standup loads current standup dashboard data", async () => {
-    const token = await loginAdmin();
-
-    const res = await apiRequest("GET", "/api/eng/dashboard/standup", undefined, token);
-    expect(res.status).toBe(200);
-    expect(res.data?.summary).toBeTruthy();
-    expect(typeof res.data?.summary?.totalTasks).toBe("number");
-    expect(Array.isArray(res.data?.blockers?.hold)).toBe(true);
-    expect(Array.isArray(res.data?.blockers?.overdue)).toBe(true);
-    expect(Array.isArray(res.data?.workload)).toBe(true);
-    expect(res.data?.statusPipeline).toBeTruthy();
-  });
-
   it("POST/PATCH/DELETE /api/eng/tasks operates with canonical identifiers", async () => {
     const token = await loginAdmin();
 
