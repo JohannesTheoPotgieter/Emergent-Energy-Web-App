@@ -1498,20 +1498,200 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
   );
 }
 
-// ── PLACEHOLDER: Main page below ─────────────────────────────────────────────
+// ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function StandupsPage() {
+  const [selectedScheduleId, setSelectedScheduleId] = useState<number | null>(null);
+  const [tab, setTab] = useState("meeting");
+  const queryClient = useQueryClient();
+
+  const { data: schedules, isLoading: schedulesLoading } = useQuery<StandupSchedule[]>({
+    queryKey: ["standup-schedules"],
+    queryFn: () => apiFetch("/api/standups/schedules"),
+  });
+
+  const { data: allSchedules } = useQuery<StandupSchedule[]>({
+    queryKey: ["standup-schedules-all"],
+    queryFn: () => apiFetch("/api/standups/schedules/all"),
+  });
+
+  const { data: todayStandups } = useQuery<TodayStandup[]>({
+    queryKey: ["standups-today"],
+    queryFn: () => apiFetch("/api/standups/today"),
+  });
+
+  useEffect(() => {
+    if (!selectedScheduleId && schedules && schedules.length > 0) {
+      setSelectedScheduleId(schedules[0].id);
+    }
+  }, [schedules, selectedScheduleId]);
+
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["standups-today"] });
+    queryClient.invalidateQueries({ queryKey: ["standup-schedules"] });
+    queryClient.invalidateQueries({ queryKey: ["standup-meeting"] });
+    queryClient.invalidateQueries({ queryKey: ["standup-analytics"] });
+    queryClient.invalidateQueries({ queryKey: ["standup-trends"] });
+    queryClient.invalidateQueries({ queryKey: ["standup-per-person"] });
+  };
+
+  const displaySchedules = allSchedules || schedules || [];
+
+  // Deadline countdown
+  const pendingStandups = todayStandups?.filter((t) => !t.hasSubmitted) || [];
+  const firstPending = pendingStandups[0];
+  let timeRemaining = "";
+  if (firstPending?.schedule.deadlineTime) {
+    const tz = firstPending.schedule.deadlineTimezone || "Africa/Johannesburg";
+    const nowStr = new Date().toLocaleString("en-US", { timeZone: tz });
+    const nowLocal = new Date(nowStr);
+    const [dh, dm] = firstPending.schedule.deadlineTime.split(":").map(Number);
+    const deadline = new Date(nowLocal);
+    deadline.setHours(dh, dm, 0, 0);
+    const diffMs = deadline.getTime() - nowLocal.getTime();
+    if (diffMs > 0) {
+      const hrs = Math.floor(diffMs / 3600000);
+      const mins = Math.floor((diffMs % 3600000) / 60000);
+      timeRemaining = hrs > 0 ? ` (${hrs}h ${mins}m remaining)` : ` (${mins}m remaining)`;
+    } else {
+      timeRemaining = " (overdue!)";
+    }
+  }
+
   return (
     <PageShell>
       <SectionHeader
         icon={<Users className="h-5 w-5" />}
         title="Standups"
-        description="Interactive engineering standup meeting mode."
+        description="Interactive engineering standup meeting mode. Cycle through each team member, review tasks and priorities, and flag blockers."
+        actions={<CreateScheduleDialog onCreated={handleRefresh} />}
       />
-      <div className="flex items-center justify-center py-20">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Building new meeting mode...</span>
-      </div>
+
+      {schedulesLoading ? (
+        <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+      ) : displaySchedules.length === 0 ? (
+        <div className="ee-empty-state">
+          <Users className="h-10 w-10 text-muted-foreground/30 mb-3" />
+          <p className="text-sm font-semibold">No standup schedules configured</p>
+          <p className="text-xs text-muted-foreground mt-1 mb-4">Create your first standup schedule to begin.</p>
+          <CreateScheduleDialog onCreated={handleRefresh} />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {/* Schedule selector */}
+          {displaySchedules.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {displaySchedules.map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setSelectedScheduleId(s.id)}
+                  className={`ee-subnav-pill shrink-0 ${selectedScheduleId === s.id ? "ee-subnav-pill-active" : ""}`}
+                >
+                  {s.name}
+                  {s.teamLabel && <span className="text-[10px] ml-1 opacity-70">({s.teamLabel})</span>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Pending submission banner */}
+          {pendingStandups.length > 0 && (
+            <WorkspaceNotice
+              tone="warning"
+              icon={<MessageSquare className="h-4 w-4" />}
+              title="Standup submission pending"
+              description={`You have ${pendingStandups.length} standup(s) due today${timeRemaining}`}
+              actions={
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (firstPending) { setSelectedScheduleId(firstPending.schedule.id); setTab("meeting"); }
+                  }}
+                >
+                  Go to Meeting
+                </Button>
+              }
+            />
+          )}
+
+          {/* Tabs */}
+          <Tabs value={tab} onValueChange={setTab}>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <TabsList>
+                <TabsTrigger value="meeting" className="gap-1.5">
+                  <Users className="h-4 w-4" />
+                  Meeting
+                </TabsTrigger>
+                <TabsTrigger value="blockers" className="gap-1.5">
+                  <AlertTriangle className="h-4 w-4" />
+                  Blockers
+                </TabsTrigger>
+                <TabsTrigger value="digest" className="gap-1.5">
+                  <ClipboardCopy className="h-4 w-4" />
+                  Digest
+                </TabsTrigger>
+                <TabsTrigger value="analytics" className="gap-1.5">
+                  <BarChart3 className="h-4 w-4" />
+                  Analytics
+                </TabsTrigger>
+              </TabsList>
+              {selectedScheduleId && (
+                <ManageParticipantsDialog scheduleId={selectedScheduleId} />
+              )}
+            </div>
+
+            <TabsContent value="meeting" className="mt-4">
+              {selectedScheduleId ? (
+                <MeetingView scheduleId={selectedScheduleId} />
+              ) : (
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to start the meeting</p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="blockers" className="mt-4">
+              {selectedScheduleId ? (
+                <BlockerBoard scheduleId={selectedScheduleId} />
+              ) : (
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to view blockers</p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="digest" className="mt-4">
+              {selectedScheduleId ? (
+                <DigestView scheduleId={selectedScheduleId} />
+              ) : (
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to generate digest</p>
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="analytics" className="mt-4">
+              {selectedScheduleId ? (
+                <div className="space-y-8">
+                  <AnalyticsView scheduleId={selectedScheduleId} />
+                  <Separator />
+                  <div>
+                    <h3 className="text-sm font-bold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                      <Star className="h-4 w-4" /> Per-Person Stats
+                    </h3>
+                    <PersonAnalyticsView scheduleId={selectedScheduleId} />
+                  </div>
+                </div>
+              ) : (
+                <div className="ee-empty-state">
+                  <p className="text-sm font-medium">Select a schedule to view analytics</p>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </div>
+      )}
     </PageShell>
   );
 }
