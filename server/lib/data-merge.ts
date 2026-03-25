@@ -104,6 +104,10 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     noRevenueLinked: cost.noRevenueLinked ?? false,
     subProjectName: (cost as any).subProjectName ?? null,
     revenueRecognitionAmount: (cost as any).revenueRecognitionAmount ?? null,
+    adminDateOverride: (cost as any).adminDateOverride ?? null,
+    adminDateOverrideReason: (cost as any).adminDateOverrideReason ?? null,
+    adminDateOverrideBy: (cost as any).adminDateOverrideBy ?? null,
+    adminDateOverrideAt: (cost as any).adminDateOverrideAt ?? null,
     _isNormalized: true,
     _sourceRow: (cost as any).sourceRow || cost.id,
     _cosRealisedFlag: (cost as any).cosRealised ?? false,
@@ -135,6 +139,10 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     inBank,
     effectiveDate: rev.paidDate || rev.inBankDate || rev.expectedPaymentDate || rev.invoiceDate,
     subProjectName: (rev as any).subProjectName ?? null,
+    adminDateOverride: (rev as any).adminDateOverride ?? null,
+    adminDateOverrideReason: (rev as any).adminDateOverrideReason ?? null,
+    adminDateOverrideBy: (rev as any).adminDateOverrideBy ?? null,
+    adminDateOverrideAt: (rev as any).adminDateOverrideAt ?? null,
     _isNormalized: true,
   };
 }

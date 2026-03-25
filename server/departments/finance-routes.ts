@@ -898,8 +898,10 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
       .map(e => {
         const originalDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         const effectiveDate = (e as any).adminDateOverride || originalDate;
+        // adaptCostToExpense adds 900000 to normalizedCostLines IDs; reverse that offset
+        const realId = e.id >= 900000 ? e.id - 900000 : e.id;
         return {
-          expenseId: e.id,
+          expenseId: realId,
           projectName: e.projectName,
           expenseCategory: e.expenseCategory,
           expenseLineItem: e.expenseLineItem,
@@ -930,8 +932,10 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           const pay = new Date(inf.paymentReceivedDate);
           daysToReceipt = Math.round((pay.getTime() - inv.getTime()) / (1000 * 60 * 60 * 24));
         }
+        // adaptRevenueToInflow adds 900000 to normalizedRevenueLines IDs; reverse that offset
+        const realInflowId = inf.id >= 900000 ? inf.id - 900000 : inf.id;
         return {
-          inflowId: inf.id,
+          inflowId: realInflowId,
           projectName: inf.projectName,
           milestoneName: inf.milestoneName,
           milestoneInvoiceNumber: inf.milestoneInvoiceNumber,
@@ -981,25 +985,39 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
       .where(eq(normalizedCostLines.id, expenseId))
       .returning();
 
-    if (updated.length === 0) {
-      return res.status(404).json({ error: "Expense line not found" });
-    }
-
-    // Also update programExpense if a matching row exists
-    const row = updated[0];
-    if (row.projectName && row.sourceRow != null) {
-      await db.update(programExpense)
+    let row: any;
+    if (updated.length > 0) {
+      row = updated[0];
+      // Also update programExpense if a matching row exists
+      if (row.projectName && row.sourceRow != null) {
+        await db.update(programExpense)
+          .set({
+            adminDateOverride: dateOverride || null,
+            adminDateOverrideReason: reason || null,
+            adminDateOverrideBy: userId || null,
+            adminDateOverrideAt: dateOverride ? now : null,
+          })
+          .where(and(
+            eq(programExpense.projectName, row.projectName),
+            eq(programExpense.rowNumber, row.sourceRow),
+            isNull(programExpense.effectiveTo),
+          ));
+      }
+    } else {
+      // Fallback: try updating programExpense directly (legacy rows without normalizedCostLines)
+      const peUpdated = await db.update(programExpense)
         .set({
           adminDateOverride: dateOverride || null,
           adminDateOverrideReason: reason || null,
           adminDateOverrideBy: userId || null,
           adminDateOverrideAt: dateOverride ? now : null,
         })
-        .where(and(
-          eq(programExpense.projectName, row.projectName),
-          eq(programExpense.rowNumber, row.sourceRow),
-          isNull(programExpense.effectiveTo),
-        ));
+        .where(and(eq(programExpense.id, expenseId), isNull(programExpense.effectiveTo)))
+        .returning();
+      if (peUpdated.length === 0) {
+        return res.status(404).json({ error: "Expense line not found" });
+      }
+      row = peUpdated[0];
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
@@ -1086,24 +1104,38 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
       .where(eq(normalizedRevenueLines.id, inflowId))
       .returning();
 
-    if (updated.length === 0) {
-      return res.status(404).json({ error: "Inflow line not found" });
-    }
-
-    // Also update programInflows if a matching row exists
-    const row = updated[0];
-    if (row.projectName && row.sourceRow != null) {
-      await db.update(programInflows)
+    let row: any;
+    if (updated.length > 0) {
+      row = updated[0];
+      // Also update programInflows if a matching row exists
+      if (row.projectName && row.sourceRow != null) {
+        await db.update(programInflows)
+          .set({
+            adminDateOverride: dateOverride || null,
+            adminDateOverrideReason: reason || null,
+            adminDateOverrideBy: userId || null,
+            adminDateOverrideAt: dateOverride ? now : null,
+          })
+          .where(and(
+            eq(programInflows.projectName, row.projectName),
+            eq(programInflows.rowNumber, row.sourceRow),
+          ));
+      }
+    } else {
+      // Fallback: try updating programInflows directly (legacy rows without normalizedRevenueLines)
+      const piUpdated = await db.update(programInflows)
         .set({
           adminDateOverride: dateOverride || null,
           adminDateOverrideReason: reason || null,
           adminDateOverrideBy: userId || null,
           adminDateOverrideAt: dateOverride ? now : null,
         })
-        .where(and(
-          eq(programInflows.projectName, row.projectName),
-          eq(programInflows.rowNumber, row.sourceRow),
-        ));
+        .where(eq(programInflows.id, inflowId))
+        .returning();
+      if (piUpdated.length === 0) {
+        return res.status(404).json({ error: "Inflow line not found" });
+      }
+      row = piUpdated[0];
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
