@@ -263,6 +263,7 @@ export type WorkingPlanDependencyOverride = typeof workingPlanDependencyOverride
 
 export const scheduleChangeNotice = pgTable("schedule_change_notice", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   summary: text("summary").notNull(),
@@ -434,6 +435,7 @@ export type CounterpartyContact = typeof counterpartyContacts.$inferSelect;
 export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   description: text("description"),
   milestoneName: text("milestone_name"),
@@ -468,6 +470,7 @@ export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 export const normalizedCostLines = pgTable("normalized_cost_lines", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   costCategory: text("cost_category"),
   counterpartyId: integer("counterparty_id").references(() => counterparties.id),
