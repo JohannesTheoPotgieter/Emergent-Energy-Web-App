@@ -63,8 +63,8 @@ export async function seedRoleCredentials() {
       });
     }
     console.log("[ROLE-AUTH] Seeded role credentials from SEED_ADMIN_PASSWORD");
-  } catch (err: any) {
-    console.error("[ROLE-AUTH] Error seeding role credentials:", err.message);
+  } catch (err: unknown) {
+    console.error("[ROLE-AUTH] Error seeding role credentials:", (err instanceof Error ? err.message : String(err)));
     throw err;
   }
 }
@@ -150,8 +150,8 @@ export function registerRoleAuthRoutes(app: Express) {
         label,
         isAdmin: (ADMIN_ROLES as readonly string[]).includes(role),
       });
-    } catch (err: any) {
-      console.error("[ROLE-AUTH] Login error:", err.message);
+    } catch (err: unknown) {
+      console.error("[ROLE-AUTH] Login error:", (err instanceof Error ? err.message : String(err)));
       logApiError("POST /api/role-auth/login", err);
       return sendError(res, serverError("Login failed"));
     }
@@ -165,8 +165,8 @@ export function registerRoleAuthRoutes(app: Express) {
       }
       await seedRoleCredentials();
       return res.json({ message: "Role credentials seeded successfully", count: COMPANY_ROLES.length });
-    } catch (err: any) {
-      console.error("[ROLE-AUTH] Seed error:", err.message);
+    } catch (err: unknown) {
+      console.error("[ROLE-AUTH] Seed error:", (err instanceof Error ? err.message : String(err)));
       logApiError("POST /api/role-auth/seed", err);
       return sendError(res, serverError("Seed failed"));
     }
@@ -186,7 +186,7 @@ export function registerRoleAuthRoutes(app: Express) {
       const role = (payload as any).role as string;
       const label = isValidCompanyRole(role) ? COMPANY_ROLE_LABELS[role] : role;
       return res.json({ role, label });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logApiError("GET /api/role-auth/me", err);
       return sendError(res, serverError("Failed to get session"));
     }
@@ -249,8 +249,8 @@ export function registerRoleAuthRoutes(app: Express) {
       });
 
       return res.json({ message: `Password updated for ${targetRole}` });
-    } catch (err: any) {
-      console.error("[ROLE-AUTH] Password change error:", err.message);
+    } catch (err: unknown) {
+      console.error("[ROLE-AUTH] Password change error:", (err instanceof Error ? err.message : String(err)));
       logApiError("PATCH /api/role-auth/password", err);
       return sendError(res, serverError("Password change failed"));
     }
@@ -275,7 +275,7 @@ export function registerRoleAuthRoutes(app: Express) {
       }).from(roleCredentials);
 
       return res.json(creds);
-    } catch (err: any) {
+    } catch (err: unknown) {
       logApiError("GET /api/role-auth/passwords", err);
       return sendError(res, serverError("Failed to fetch passwords"));
     }

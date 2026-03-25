@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";

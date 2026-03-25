@@ -54,8 +54,8 @@ export async function runStartupSeeds(options: {
         await setFeatureFlag("unified_work_v1", true, "system");
       }
     }
-  } catch (err: any) {
-    log(`[Seed] Feature flag seed error: ${err.message}`, "Startup");
+  } catch (err: unknown) {
+    log(`[Seed] Feature flag seed error: ${(err instanceof Error ? err.message : String(err))}`, "Startup");
   }
 
   const { bootImportCheck, seedStoryLifecycleData, seedStoryDemoData } = await import("../ee-info-routes");

@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck — large file needs systematic type fixes
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";

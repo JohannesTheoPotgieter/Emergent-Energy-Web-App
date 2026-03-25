@@ -125,8 +125,8 @@ async function tryRefreshToken(account: typeof msAccounts.$inferSelect): Promise
 
     console.log(`[MS Token] Successfully refreshed token for user ${account.userId}`);
     return result.accessToken;
-  } catch (err: any) {
-    console.error(`[MS Token] Refresh failed for user ${account.userId}:`, err.message);
+  } catch (err: unknown) {
+    console.error(`[MS Token] Refresh failed for user ${account.userId}:`, (err instanceof Error ? err.message : String(err)));
     return null;
   }
 }

@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin } from './shared-middleware';

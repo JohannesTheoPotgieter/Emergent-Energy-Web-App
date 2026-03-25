@@ -1883,8 +1883,8 @@ router.get("/api/key-date-mappings/:projectName", requireAuth, requireAdmin, asy
   try {
     const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName as string));
     res.json(mappings);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1892,8 +1892,8 @@ router.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Req
   try {
     const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: (req.user as any)?.id });
     res.json(mapping);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1901,8 +1901,8 @@ router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req
   try {
     const updated = await storage.updateKeyDateMapping(parseInt(req.params.id as string), req.body);
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1910,8 +1910,8 @@ router.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (re
   try {
     await storage.deleteKeyDateMapping(parseInt(req.params.id as string));
     res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1984,8 +1984,8 @@ router.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res:
     });
 
     res.json(results);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 

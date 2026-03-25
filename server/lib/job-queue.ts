@@ -60,14 +60,14 @@ function startMemoryProcessor(): void {
 
       try {
         await handler(job.data);
-      } catch (err: any) {
+      } catch (err: unknown) {
         job.attempts++;
         if (job.attempts < job.maxAttempts) {
           job.processAfter = Date.now() + 1000 * job.attempts; // exponential-ish backoff
           memoryQueues.push(job);
         } else {
           logger.warn(
-            `[job-queue:memory] Job ${job.id} in "${job.queueName}" failed after ${job.maxAttempts} attempts: ${err.message}`,
+            `[job-queue:memory] Job ${job.id} in "${job.queueName}" failed after ${job.maxAttempts} attempts: ${(err instanceof Error ? err.message : String(err))}`,
           );
         }
       }
@@ -131,9 +131,9 @@ async function initBull(): Promise<boolean> {
     _useBull = true;
     logger.info("[job-queue] BullMQ backend active");
     return true;
-  } catch (err: any) {
+  } catch (err: unknown) {
     logger.warn(
-      `[job-queue] BullMQ init failed (${err.message}), using in-memory queue`,
+      `[job-queue] BullMQ init failed (${(err instanceof Error ? err.message : String(err))}), using in-memory queue`,
     );
     return false;
   }
@@ -184,9 +184,9 @@ export async function enqueueJob(
         backoff: { type: "exponential", delay: 1000 },
       });
       return;
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.warn(
-        `[job-queue] BullMQ enqueue failed (${err.message}), falling back to memory`,
+        `[job-queue] BullMQ enqueue failed (${(err instanceof Error ? err.message : String(err))}), falling back to memory`,
       );
     }
   }
@@ -215,15 +215,15 @@ export async function registerWorker(
       );
       worker.on("failed", (job, err) => {
         logger.warn(
-          `[job-queue] Job ${job?.id} in "${queueName}" failed: ${err.message}`,
+          `[job-queue] Job ${job?.id} in "${queueName}" failed: ${(err instanceof Error ? err.message : String(err))}`,
         );
       });
       if (!bullWorkers) bullWorkers = new Map();
       bullWorkers.set(queueName, worker);
       return;
-    } catch (err: any) {
+    } catch (err: unknown) {
       logger.warn(
-        `[job-queue] BullMQ worker registration failed (${err.message}), using memory worker`,
+        `[job-queue] BullMQ worker registration failed (${(err instanceof Error ? err.message : String(err))}), using memory worker`,
       );
     }
   }

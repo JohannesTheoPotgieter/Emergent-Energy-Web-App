@@ -405,9 +405,9 @@ export function registerReportRoutes(app: Express) {
       if (!month) return res.status(400).json({ error: "month query parameter required (YYYY-MM)" });
       const result = await calculateKPIs(month);
       res.json(result);
-    } catch (err: any) {
-      console.error("[Reports] Error:", err.message);
-      res.status(400).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -465,9 +465,9 @@ export function registerReportRoutes(app: Express) {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", 'attachment; filename="operational-overview.pdf"');
       res.send(pdfBytes);
-    } catch (err: any) {
-      console.error("[Reports] PDF error:", err.message);
-      res.status(400).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] PDF error:", (err instanceof Error ? err.message : String(err)));
+      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -610,9 +610,9 @@ export function registerReportRoutes(app: Express) {
       }
 
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
-    } catch (err: any) {
-      console.error("[Reports] Project plan error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Project plan error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -717,9 +717,9 @@ export function registerReportRoutes(app: Express) {
         aggregates: { totalActuals, totalCosRealized, totalUnrealized: totalActuals - totalCosRealized },
         meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS },
       });
-    } catch (err: any) {
-      console.error("[Reports] Cost report error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Cost report error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -769,9 +769,9 @@ export function registerReportRoutes(app: Express) {
       }
 
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
-    } catch (err: any) {
-      console.error("[Reports] Quality report error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Quality report error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -866,9 +866,9 @@ export function registerReportRoutes(app: Express) {
       }
 
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
-    } catch (err: any) {
-      console.error("[Reports] Resource allocation error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Resource allocation error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 

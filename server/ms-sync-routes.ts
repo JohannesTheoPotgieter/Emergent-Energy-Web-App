@@ -97,9 +97,9 @@ export function registerMsSyncRoutes(app: Express) {
 
       const result = await tagToProject(msObjectId, parsed.data.projectId, userId, parsed.data.note);
       res.json(result);
-    } catch (err: any) {
-      const status = err.message?.includes("not found") ? 404 : err.message?.includes("only") ? 403 : 500;
-      res.status(status).json({ error: err.message });
+    } catch (err: unknown) {
+      const status = (err instanceof Error ? err.message : String(err))?.includes("not found") ? 404 : (err instanceof Error ? err.message : String(err))?.includes("only") ? 403 : 500;
+      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -113,9 +113,9 @@ export function registerMsSyncRoutes(app: Express) {
 
       await untagFromProject(msObjectId, userId);
       res.json({ success: true });
-    } catch (err: any) {
-      const status = err.message?.includes("not found") ? 404 : err.message?.includes("only") ? 403 : 500;
-      res.status(status).json({ error: err.message });
+    } catch (err: unknown) {
+      const status = (err instanceof Error ? err.message : String(err))?.includes("not found") ? 404 : (err instanceof Error ? err.message : String(err))?.includes("only") ? 403 : 500;
+      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -136,8 +136,8 @@ export function registerMsSyncRoutes(app: Express) {
 
       const visibleItems = await filterMicrosoftItemsForRequest(req, items);
       res.json(visibleItems);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -152,8 +152,8 @@ export function registerMsSyncRoutes(app: Express) {
       const items = await getProjectLinkedItems(projectId, userId);
       const visibleItems = await filterMicrosoftItemsForRequest(req, items);
       res.json(visibleItems);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -168,9 +168,9 @@ export function registerMsSyncRoutes(app: Express) {
       const { projectId } = req.body || {};
       const result = await convertToTask(msObjectId, userId, projectId ? parseInt(String(projectId)) : undefined);
       res.json(result);
-    } catch (err: any) {
-      const status = err.message?.includes("not found") ? 404 : err.message?.includes("only") ? 403 : 500;
-      res.status(status).json({ error: err.message });
+    } catch (err: unknown) {
+      const status = (err instanceof Error ? err.message : String(err))?.includes("not found") ? 404 : (err instanceof Error ? err.message : String(err))?.includes("only") ? 403 : 500;
+      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -193,8 +193,8 @@ export function registerMsSyncRoutes(app: Express) {
       });
 
       res.json(result);
-    } catch (err: any) {
-      const msg = err.message || "Failed to create follow-up";
+    } catch (err: unknown) {
+      const msg = (err instanceof Error ? err.message : String(err)) || "Failed to create follow-up";
       const status = msg.includes("not found") ? 404 : msg.includes("only") ? 403 : msg.includes("already exists") ? 409 : 500;
       res.status(status).json({ error: msg });
     }
@@ -232,8 +232,8 @@ export function registerMsSyncRoutes(app: Express) {
 
       const visibleRows = await filterMicrosoftItemsForRequest(req, rows);
       res.json(visibleRows);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -253,8 +253,8 @@ export function registerMsSyncRoutes(app: Express) {
         .limit(100);
 
       res.json(items);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -266,8 +266,8 @@ export function registerMsSyncRoutes(app: Express) {
       if (!userId) return res.status(401).json({ error: "auth_required" });
       await db.update(msObjects).set({ dismissed: true }).where(and(eq(msObjects.id, msObjectId), eq(msObjects.userId, userId)));
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -277,7 +277,7 @@ export function registerMsSyncRoutes(app: Express) {
       if (!userId) return res.status(401).json({ error: "auth_required" });
       const status = await getSyncStatus(userId);
       res.json(status);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to get sync status" });
     }
   });
@@ -313,9 +313,9 @@ export function registerMsSyncRoutes(app: Express) {
         results = await syncAllForUser(userId);
       }
       res.json({ success: true, results });
-    } catch (err: any) {
-      console.error("[MS Sync] Trigger error:", err.message);
-      res.status(500).json({ error: "Sync failed: " + err.message });
+    } catch (err: unknown) {
+      console.error("[MS Sync] Trigger error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: "Sync failed: " + (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -333,8 +333,8 @@ export function registerMsSyncRoutes(app: Express) {
           email: entry.secondaryLabel || undefined,
         }));
       res.json(internal);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -350,8 +350,8 @@ export function registerMsSyncRoutes(app: Express) {
       }
       const assignments = await getAssignmentsForEntity(entityType, entityId);
       res.json(assignments);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -363,8 +363,8 @@ export function registerMsSyncRoutes(app: Express) {
         ? await listAssignableDirectoryForTaskSource(taskSource, search)
         : await listAssignableDirectory(search);
       res.json(assignable);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -507,10 +507,10 @@ export function registerMsSyncRoutes(app: Express) {
         } : null,
         assignments,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Reassign] Assignment update failed", err?.message, err?.stack?.split("\n").slice(0, 8).join("\n"));
       const status = err?.message?.toLowerCase().includes("permission") ? 403 : err?.message?.toLowerCase().includes("not found") ? 404 : err?.message?.toLowerCase().includes("required") ? 400 : 500;
-      res.status(status).json({ error: err.message || "Assignment update failed", _debug: { body: req.body, stack: err?.stack?.split("\n").slice(0, 8) } });
+      res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) || "Assignment update failed", _debug: { body: req.body, stack: err?.stack?.split("\n").slice(0, 8) } });
     }
   });
 
@@ -958,9 +958,9 @@ export function registerMsSyncRoutes(app: Express) {
         }),
         userMap: Object.fromEntries(userMap),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[MyWork AllTasks] Error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -1067,9 +1067,9 @@ export function registerMsSyncRoutes(app: Express) {
           };
         }),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[MS Teams Project Chat] Error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -1089,9 +1089,9 @@ export function registerMsSyncRoutes(app: Express) {
         .where(and(eq(msObjects.linkedProjectId, projectId), eq(msObjects.type, "teams")));
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[MS Teams Unlink] Error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -1122,7 +1122,7 @@ export function registerMsSyncRoutes(app: Express) {
       });
 
       res.json(groups);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Chat Groups] Error:", err);
       res.status(500).json({ error: "Failed to fetch chat groups" });
     }
@@ -1138,7 +1138,7 @@ export function registerMsSyncRoutes(app: Express) {
         console.log("[Graph Webhook] Received:", notification.changeType, notification.resource);
       }
       res.status(202).json({ status: "accepted" });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Graph Webhook] Error:", err);
       res.status(202).json({ status: "accepted" });
     }

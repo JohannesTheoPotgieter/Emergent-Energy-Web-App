@@ -151,8 +151,8 @@ export async function seedTrRegisterData() {
       }
     }
     console.log(`[Seed] TR Register: ${created} created, ${updated} updated.`);
-  } catch (err: any) {
-    console.error("[Seed] TR Register error:", err.message);
+  } catch (err: unknown) {
+    console.error("[Seed] TR Register error:", (err instanceof Error ? err.message : String(err)));
   }
 }
 
@@ -240,8 +240,8 @@ export function registerTrRegisterRoutes(app: Express) {
         };
       });
       res.json(enriched);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -268,8 +268,8 @@ export function registerTrRegisterRoutes(app: Express) {
         .where(eq(trItemProjectLinks.trItemId, id));
 
       res.json({ ...item, linkedProjects: links });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -319,8 +319,8 @@ export function registerTrRegisterRoutes(app: Express) {
       }
 
       res.json(item);
-    } catch (err: any) {
-      res.status(400).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -402,8 +402,8 @@ export function registerTrRegisterRoutes(app: Express) {
       }
 
       res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -414,8 +414,8 @@ export function registerTrRegisterRoutes(app: Express) {
       if (!existing) return res.status(404).json({ error: "TR item not found" });
       await db.delete(trItems).where(eq(trItems.id, id));
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -463,8 +463,8 @@ export function registerTrRegisterRoutes(app: Express) {
         .returning();
 
       res.json({ link: updatedLink, task });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -481,8 +481,8 @@ export function registerTrRegisterRoutes(app: Express) {
 
       await db.delete(trItemProjectLinks).where(eq(trItemProjectLinks.id, linkId));
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -521,8 +521,8 @@ export function registerTrRegisterRoutes(app: Express) {
       }).where(eq(trItems.id, id)).returning();
 
       res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -614,8 +614,8 @@ export function registerTrRegisterRoutes(app: Express) {
 
       scored.sort((a: ScoredProject, b: ScoredProject) => b.score - a.score);
       res.json(scored.slice(0, 8));
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -686,8 +686,8 @@ export function registerTrRegisterRoutes(app: Express) {
       }
 
       res.json({ success: true, decision, linkResult });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 

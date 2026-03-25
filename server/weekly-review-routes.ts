@@ -32,7 +32,7 @@ export function registerWeeklyReviewRoutes(app: Express): void {
       const reviews = await db
         .select()
         .from(weeklyReviews)
-        .where(eq(weeklyReviews.projectName, projectName))
+        .where(eq(weeklyReviews.projectName, String(projectName)))
         .orderBy(desc(weeklyReviews.weekStarting));
       res.json(reviews);
     } catch (err: unknown) {

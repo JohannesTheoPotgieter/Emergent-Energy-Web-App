@@ -408,7 +408,7 @@ export function registerQualityRoutes(app: Express) {
         return res.status(429).json({ error: "Too many failed attempts. Locked for 15 minutes.", locked: true });
       }
       return res.status(401).json({ error: "Invalid access code", attemptsRemaining: 5 - newCount });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Access verify error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -421,7 +421,7 @@ export function registerQualityRoutes(app: Express) {
       const userRole = getUserRole(req);
       const needsChallenge = (userRole === "quality_manager") && !challenged;
       res.json({ hasCode, challenged, needsChallenge, role: userRole });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -473,7 +473,7 @@ export function registerQualityRoutes(app: Express) {
         return res.status(429).json({ error: "Too many failed attempts. Locked for 15 minutes.", locked: true });
       }
       return res.status(401).json({ error: "Invalid access code", attemptsRemaining: 5 - newCount });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -486,7 +486,7 @@ export function registerQualityRoutes(app: Express) {
       const userRole = getUserRole(req);
       const needsChallenge = (userRole === "eng_program_manager") && !challenged;
       res.json({ hasCode, challenged, needsChallenge, role: userRole });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -498,7 +498,7 @@ export function registerQualityRoutes(app: Express) {
     try {
       const templates = await db.select().from(qcTemplate);
       res.json(templates);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -520,7 +520,7 @@ export function registerQualityRoutes(app: Express) {
       const metrics = await db.select().from(qcTemplatePostmortemMetric);
 
       res.json({ template: tmpl, phases, groups, items, riskQuestions, metrics });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -596,7 +596,7 @@ export function registerQualityRoutes(app: Express) {
         riskAnswers,
         evidence,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -712,7 +712,7 @@ export function registerQualityRoutes(app: Express) {
         },
       });
       res.json({ ...updated, assignments, primaryAssignment: assignments[0] || null });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -763,7 +763,7 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: approved ? "approve" : "update", projectName: pName, changesJson: { description: approved ? "Quality item approved" : "Quality item approval revoked" } });
       res.json(updated);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -784,7 +784,7 @@ export function registerQualityRoutes(app: Express) {
       }).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(String(req.params.projectName)), changesJson: { description: "Evidence added", evidenceUrl } });
       res.json(evidence);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -809,7 +809,7 @@ export function registerQualityRoutes(app: Express) {
       }).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "update", projectName: decodeURIComponent(String(req.params.projectName)), changesJson: { description: "Evidence file uploaded", fileName: file.originalname } });
       res.json(evidence);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -828,7 +828,7 @@ export function registerQualityRoutes(app: Express) {
       const folderId = req.query.folderId as string | undefined;
       const items = await browseFolders(settings.driveId, folderId || undefined);
       res.json({ driveId: settings.driveId, items });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -850,7 +850,7 @@ export function registerQualityRoutes(app: Express) {
       const meta = await getFileMetadata(settings.driveId, itemId);
       const webUrl = meta.webUrl || meta["@microsoft.graph.downloadUrl"] || "";
       res.json({ name: meta.name, webUrl, size: meta.size });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -901,7 +901,7 @@ export function registerQualityRoutes(app: Express) {
         ...updated,
         uploadedFile: file ? { filename: file.filename, originalName: file.originalname, size: file.size } : null,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[QM] Send for approval error:", err);
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
@@ -913,7 +913,7 @@ export function registerQualityRoutes(app: Express) {
       await db.delete(qcItemEvidence).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10)));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -963,7 +963,7 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(item.id), action: "create", projectName: pName, changesJson: { description: "Quality item created", itemName } });
       res.json(item);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -993,7 +993,7 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: "delete", projectName: pName, changesJson: { description: "Quality item deleted" } });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1016,7 +1016,7 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "qc_risk_answer", entityId: String(riskAnswerId), action: "update", projectName: pName, changesJson: { description: "Risk answer updated", answerYesno, answerText } });
       res.json(updated);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1031,7 +1031,7 @@ export function registerQualityRoutes(app: Express) {
         .where(eq(qcWarning.projectName, projectName))
         .orderBy(desc(qcWarning.createdAt));
       res.json(warnings);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1086,7 +1086,7 @@ export function registerQualityRoutes(app: Express) {
       }
 
       res.json(warnings);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1107,7 +1107,7 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", projectName: warning?.projectName, changesJson: { description: "QC warning acknowledged", warningType: warning?.warningType } });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1128,7 +1128,7 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "qc_warning", entityId: String(warningId), action: "update", changesJson: { description: "QC warning resolved" } });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1141,7 +1141,7 @@ export function registerQualityRoutes(app: Express) {
       const projectName = decodeURIComponent(String(req.params.projectName));
       const links = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
       res.json(links);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1159,7 +1159,7 @@ export function registerQualityRoutes(app: Express) {
       recalculateWarnings(projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(link.id), action: "create", projectName, changesJson: { description: "Plan link created", planItemId } });
       res.json(link);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1172,7 +1172,7 @@ export function registerQualityRoutes(app: Express) {
       if (deletedLink) recalculateWarnings(deletedLink.projectName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.linkId), action: "delete", projectName: deletedLink?.projectName, changesJson: { description: "Plan link deleted" } });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1302,7 +1302,7 @@ export function registerQualityRoutes(app: Express) {
           }),
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1365,7 +1365,7 @@ export function registerQualityRoutes(app: Express) {
           qualityContext: item.qualityContext,
         })),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] workspace error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1479,7 +1479,7 @@ export function registerQualityRoutes(app: Express) {
       }
 
       res.json(items);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] all-items error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1636,7 +1636,7 @@ export function registerQualityRoutes(app: Express) {
       }));
 
       res.json(result);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1757,7 +1757,7 @@ export function registerQualityRoutes(app: Express) {
         topRiskProjects: projectsAtRisk.slice(0, 5),
         outstandingPostmortems,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1771,7 +1771,7 @@ export function registerQualityRoutes(app: Express) {
       const count = await recalculateWarnings(projectName);
       logAuditFromReq(req, { entityType: "qc_warning", entityId: "0", action: "create", projectName, changesJson: { description: "Warnings recalculated", warningsGenerated: count } });
       res.json({ success: true, warningsGenerated: count });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1790,7 +1790,7 @@ export function registerQualityRoutes(app: Express) {
       const metrics = await db.select().from(qcTemplatePostmortemMetric);
 
       res.json({ postmortem: pm, metricValues, summary, metrics });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1873,7 +1873,7 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(pm.id), action: "create", projectName, changesJson: { description: "Post-mortem completed", contractorScore, engineeringScore, redFlag } });
       res.json({ success: true, contractorScore, engineeringScore, redFlag });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1885,7 +1885,7 @@ export function registerQualityRoutes(app: Express) {
     try {
       const holidays = await db.select().from(calendarHoliday);
       res.json(holidays);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1897,7 +1897,7 @@ export function registerQualityRoutes(app: Express) {
       const [h] = await db.insert(calendarHoliday).values({ date, name, countryCode: countryCode || "ZA" }).returning();
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(h.id), action: "create", changesJson: { description: "Holiday created", date, name } });
       res.json(h);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1908,7 +1908,7 @@ export function registerQualityRoutes(app: Express) {
       await db.delete(calendarHoliday).where(eq(calendarHoliday.id, parseInt(String(req.params.id), 10)));
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(req.params.id), action: "delete", changesJson: { description: "Holiday deleted" } });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1934,7 +1934,7 @@ export function registerQualityRoutes(app: Express) {
         }
       }
       res.json(byPlanItem);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1947,7 +1947,7 @@ export function registerQualityRoutes(app: Express) {
       const { users } = await import("@shared/schema");
       const allUsers = await db.select({ id: users.id, email: users.email, name: users.name, role: users.role }).from(users);
       res.json(allUsers);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -1966,7 +1966,7 @@ export function registerQualityRoutes(app: Express) {
       const [updated] = await db.update(users).set({ role: newRole }).where(eq(users.id, userId)).returning();
       logAuditFromReq(req, { entityType: "quality_template", entityId: String(userId), action: "update", changesJson: { description: "User role updated", newRole, userName: updated.name } });
       res.json({ id: updated.id, email: updated.email, name: updated.name, role: updated.role });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -2026,7 +2026,7 @@ export function registerQualityRoutes(app: Express) {
 
       logAuditFromReq(req, { entityType: "quality_template", entityId: "0", action: "create", changesJson: { description: "Bulk checklists created", count: results.filter(r => r.status === "created").length } });
       res.json({ success: true, results });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Quality] Bulk Create Checklists error:", err);
       res.status(500).json({ error: "Internal server error" });
     }

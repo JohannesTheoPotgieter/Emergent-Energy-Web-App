@@ -364,8 +364,8 @@ export async function listFlaggedMessages(top: number = 50, userAccessToken?: st
       hasAttachments: msg.hasAttachments,
       flagStatus: msg.flag?.flagStatus || null,
     }));
-  } catch (err: any) {
-    console.log(`[Outlook] Flagged messages query failed (non-fatal): ${err.message}`);
+  } catch (err: unknown) {
+    console.log(`[Outlook] Flagged messages query failed (non-fatal): ${(err instanceof Error ? err.message : String(err))}`);
     return [];
   }
 }
@@ -460,8 +460,8 @@ export async function getJoinedTeams(ssoToken?: string | null): Promise<any[]> {
       displayName: t.displayName,
       description: t.description || null,
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch joined teams:", err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch joined teams:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -476,8 +476,8 @@ export async function getTeamChannels(teamId: string, ssoToken?: string | null):
       description: ch.description || null,
       membershipType: ch.membershipType || "standard",
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch channels for team", teamId, err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch channels for team", teamId, (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -496,8 +496,8 @@ export async function getMyChats(top: number = 30, ssoToken?: string | null): Pr
         email: m.email,
       })),
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch chats:", err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch chats:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -515,8 +515,8 @@ export async function getChatMessages(chatId: string, top: number = 50, ssoToken
       bodyType: m.body?.contentType || "text",
       attachments: (m.attachments || []).map((a: any) => ({ name: a.name, contentUrl: a.contentUrl })),
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch chat messages:", err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch chat messages:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -534,8 +534,8 @@ export async function getChannelMessages(teamId: string, channelId: string, top:
       bodyType: m.body?.contentType || "text",
       attachments: (m.attachments || []).map((a: any) => ({ name: a.name, contentUrl: a.contentUrl })),
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch channel messages:", err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch channel messages:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -582,8 +582,8 @@ export async function discoverSharePointSites(userAccessToken?: string | null): 
       displayName: site.displayName,
       webUrl: site.webUrl,
     }));
-  } catch (err: any) {
-    console.warn("[SharePoint] Failed to discover sites:", err.message);
+  } catch (err: unknown) {
+    console.warn("[SharePoint] Failed to discover sites:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -597,8 +597,8 @@ export async function getSiteDrives(siteId: string, userAccessToken?: string | n
       driveType: d.driveType,
       webUrl: d.webUrl,
     }));
-  } catch (err: any) {
-    console.warn("[SharePoint] Failed to get drives for site", siteId, err.message);
+  } catch (err: unknown) {
+    console.warn("[SharePoint] Failed to get drives for site", siteId, (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }

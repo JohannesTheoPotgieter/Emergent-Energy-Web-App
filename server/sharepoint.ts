@@ -35,8 +35,8 @@ export async function testConnection(siteId: string, driveId: string): Promise<{
     const site = await graphGet(`https://graph.microsoft.com/v1.0/sites/${siteId}`);
     const drive = await graphGet(`https://graph.microsoft.com/v1.0/drives/${driveId}`);
     return { ok: true, success: true, siteName: site.displayName, driveName: drive.name };
-  } catch (err: any) {
-    return { ok: false, success: false, error: err.message };
+  } catch (err: unknown) {
+    return { ok: false, success: false, error: (err instanceof Error ? err.message : String(err)) };
   }
 }
 
