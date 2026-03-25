@@ -1260,7 +1260,245 @@ function PersonAnalyticsView({ scheduleId }: { scheduleId: number }) {
   );
 }
 
-// ── PLACEHOLDER: More components below ───────────────────────────────────────
+// ── Manage Participants Dialog ────────────────────────────────────────────────
+
+function ManageParticipantsDialog({ scheduleId }: { scheduleId: number }) {
+  const [open, setOpen] = useState(false);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: participants, isLoading } = useQuery<Participant[]>({
+    queryKey: ["standup-participants", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/schedules/${scheduleId}/participants`),
+    enabled: open,
+  });
+
+  const { data: allUsers } = useQuery<TeamMember[]>({
+    queryKey: ["team-members"],
+    queryFn: () => apiFetch("/api/eng/team-members"),
+    enabled: open,
+  });
+
+  const addMutation = useMutation({
+    mutationFn: ({ userId, isRequired }: { userId: number; isRequired: boolean }) =>
+      apiFetch(`/api/standups/schedules/${scheduleId}/participants`, {
+        method: "POST",
+        body: JSON.stringify({ userId, isRequired }),
+      }),
+    onSuccess: () => {
+      toast({ title: "Participant added" });
+      queryClient.invalidateQueries({ queryKey: ["standup-participants", scheduleId] });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: (userId: number) =>
+      apiFetch(`/api/standups/schedules/${scheduleId}/participants/${userId}`, { method: "DELETE" }),
+    onSuccess: () => {
+      toast({ title: "Participant removed" });
+      queryClient.invalidateQueries({ queryKey: ["standup-participants", scheduleId] });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const participantUserIds = new Set((participants || []).map((p) => p.userId));
+  const availableUsers = (allUsers || []).filter((u) => !participantUserIds.has(u.id));
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs">
+          <Settings className="h-3.5 w-3.5" />
+          Manage Team
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Manage Participants</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Members ({participants?.length || 0})</Label>
+            {isLoading ? (
+              <div className="flex justify-center py-4"><Loader2 className="h-4 w-4 animate-spin" /></div>
+            ) : (
+              <div className="space-y-1.5 max-h-[200px] overflow-y-auto">
+                {(participants || []).map((p) => (
+                  <div key={p.userId} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-muted/50">
+                    <div className="flex items-center gap-2">
+                      <Avatar className="h-6 w-6">
+                        <AvatarFallback className="text-[10px] font-semibold">
+                          {getInitials(p.userName || "?")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <p className="text-sm font-medium">{p.userName || p.userEmail}</p>
+                        <Badge variant="outline" className={`text-[9px] px-1 py-0 ${p.isRequired ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500"}`}>
+                          {p.isRequired ? "Required" : "Optional"}
+                        </Badge>
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-red-600"
+                      onClick={() => removeMutation.mutate(p.userId)}
+                      disabled={removeMutation.isPending}
+                    >
+                      <UserMinus className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {availableUsers.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Add Member</Label>
+              <ScrollArea className="max-h-[180px]">
+                <div className="space-y-1">
+                  {availableUsers.map((u) => (
+                    <div key={u.id} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-muted/50">
+                      <div>
+                        <p className="text-sm font-medium">{u.name}</p>
+                        <p className="text-[10px] text-muted-foreground">{u.role}</p>
+                      </div>
+                      <div className="flex gap-1">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-[10px] gap-1"
+                          onClick={() => addMutation.mutate({ userId: u.id, isRequired: true })}
+                          disabled={addMutation.isPending}
+                        >
+                          <UserPlus className="h-3 w-3" /> Required
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-[10px] gap-1"
+                          onClick={() => addMutation.mutate({ userId: u.id, isRequired: false })}
+                          disabled={addMutation.isPending}
+                        >
+                          <UserPlus className="h-3 w-3" /> Optional
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Create Schedule Dialog ───────────────────────────────────────────────────
+
+function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [teamLabel, setTeamLabel] = useState("");
+  const [cadenceDays, setCadenceDays] = useState("2");
+  const [deadlineTime, setDeadlineTime] = useState("10:00");
+  const [deadlineTimezone, setDeadlineTimezone] = useState("Africa/Johannesburg");
+  const { toast } = useToast();
+
+  const createMutation = useMutation({
+    mutationFn: () =>
+      apiFetch("/api/standups/schedules", {
+        method: "POST",
+        body: JSON.stringify({
+          name,
+          teamLabel: teamLabel || null,
+          cadenceDays: parseInt(cadenceDays),
+          cadence: cadenceDays === "1" ? "DAILY" : cadenceDays === "2" ? "EVERY_2_DAYS" : cadenceDays === "3" ? "EVERY_3_DAYS" : "WEEKLY",
+          deadlineTime,
+          deadlineTimezone,
+          anchorDate: new Date().toISOString().split("T")[0],
+        }),
+      }),
+    onSuccess: () => {
+      toast({ title: "Standup schedule created" });
+      setOpen(false);
+      setName("");
+      setTeamLabel("");
+      onCreated();
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" className="gap-1.5">
+          <Plus className="h-4 w-4" />
+          New Schedule
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Create Standup Schedule</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Schedule Name</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Engineering Bi-Daily" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Team / Department</Label>
+            <Input value={teamLabel} onChange={(e) => setTeamLabel(e.target.value)} placeholder="e.g. Engineering, PM, Quality" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Frequency</Label>
+              <Select value={cadenceDays} onValueChange={setCadenceDays}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">Daily</SelectItem>
+                  <SelectItem value="2">Every 2 days</SelectItem>
+                  <SelectItem value="3">Every 3 days</SelectItem>
+                  <SelectItem value="7">Weekly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Submission Deadline</Label>
+              <Input type="time" value={deadlineTime} onChange={(e) => setDeadlineTime(e.target.value)} />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Deadline Timezone</Label>
+            <Select value={deadlineTimezone} onValueChange={setDeadlineTimezone}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Africa/Johannesburg">Africa/Johannesburg (SAST)</SelectItem>
+                <SelectItem value="Europe/London">Europe/London (GMT/BST)</SelectItem>
+                <SelectItem value="America/New_York">America/New York (EST/EDT)</SelectItem>
+                <SelectItem value="America/Chicago">America/Chicago (CST/CDT)</SelectItem>
+                <SelectItem value="America/Los_Angeles">America/Los Angeles (PST/PDT)</SelectItem>
+                <SelectItem value="Asia/Dubai">Asia/Dubai (GST)</SelectItem>
+                <SelectItem value="Asia/Kolkata">Asia/Kolkata (IST)</SelectItem>
+                <SelectItem value="Australia/Sydney">Australia/Sydney (AEST/AEDT)</SelectItem>
+                <SelectItem value="UTC">UTC</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={() => createMutation.mutate()} disabled={!name.trim() || createMutation.isPending} className="w-full">
+            {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+            Create Schedule
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── PLACEHOLDER: Main page below ─────────────────────────────────────────────
 
 export default function StandupsPage() {
   return (
