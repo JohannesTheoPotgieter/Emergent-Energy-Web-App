@@ -3475,6 +3475,18 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='forecast_payment_date') THEN
     ALTER TABLE "normalized_cost_lines" ADD COLUMN "forecast_payment_date" TEXT;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='admin_date_override') THEN
+    ALTER TABLE "normalized_cost_lines" ADD COLUMN "admin_date_override" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='admin_date_override_reason') THEN
+    ALTER TABLE "normalized_cost_lines" ADD COLUMN "admin_date_override_reason" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='admin_date_override_by') THEN
+    ALTER TABLE "normalized_cost_lines" ADD COLUMN "admin_date_override_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='admin_date_override_at') THEN
+    ALTER TABLE "normalized_cost_lines" ADD COLUMN "admin_date_override_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='sub_project_name') THEN
     ALTER TABLE "normalized_cost_lines" ADD COLUMN "sub_project_name" TEXT;
   END IF;
@@ -3654,6 +3666,18 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='turnaround_days') THEN
     ALTER TABLE "normalized_revenue_lines" ADD COLUMN "turnaround_days" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='admin_date_override') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "admin_date_override" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='admin_date_override_reason') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "admin_date_override_reason" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='admin_date_override_by') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "admin_date_override_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='admin_date_override_at') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "admin_date_override_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='sub_project_name') THEN
     ALTER TABLE "normalized_revenue_lines" ADD COLUMN "sub_project_name" TEXT;
@@ -4510,6 +4534,18 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_expense') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_expense' AND column_name='computed_forecast_payment_date') THEN
     ALTER TABLE "program_expense" ADD COLUMN "computed_forecast_payment_date" TEXT;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_expense') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_expense' AND column_name='admin_date_override') THEN
+    ALTER TABLE "program_expense" ADD COLUMN "admin_date_override" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_expense') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_expense' AND column_name='admin_date_override_reason') THEN
+    ALTER TABLE "program_expense" ADD COLUMN "admin_date_override_reason" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_expense') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_expense' AND column_name='admin_date_override_by') THEN
+    ALTER TABLE "program_expense" ADD COLUMN "admin_date_override_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_expense') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_expense' AND column_name='admin_date_override_at') THEN
+    ALTER TABLE "program_expense" ADD COLUMN "admin_date_override_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_expense') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_expense' AND column_name='supplier_name') THEN
     ALTER TABLE "program_expense" ADD COLUMN "supplier_name" TEXT;
   END IF;
@@ -4599,6 +4635,18 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='computed_forecast_receipt_date') THEN
     ALTER TABLE "program_inflows" ADD COLUMN "computed_forecast_receipt_date" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='admin_date_override') THEN
+    ALTER TABLE "program_inflows" ADD COLUMN "admin_date_override" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='admin_date_override_reason') THEN
+    ALTER TABLE "program_inflows" ADD COLUMN "admin_date_override_reason" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='admin_date_override_by') THEN
+    ALTER TABLE "program_inflows" ADD COLUMN "admin_date_override_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='admin_date_override_at') THEN
+    ALTER TABLE "program_inflows" ADD COLUMN "admin_date_override_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='sub_project_name') THEN
     ALTER TABLE "program_inflows" ADD COLUMN "sub_project_name" TEXT;
