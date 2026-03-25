@@ -84,7 +84,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         costLines: costRows,
         revenueLines: revenueRows,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] Linkable items error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -99,7 +99,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         .from(projectInfo)
         .orderBy(asc(projectInfo.projectName));
       res.json(projects);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] Projects error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -206,7 +206,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         linkedRevenueLineId,
         fileName: file?.originalname,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] Upload error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -236,7 +236,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         ORDER BY d.created_at DESC
       `);
 
-      const serializedRows = (rows.rows || []) as any[];
+      const serializedRows = ((rows as Record<string, unknown>).rows || []) as Record<string, unknown>[];
       const deliverableIds = serializedRows.map((row) => Number(row.id));
       const assignmentMap = await getAssignmentsForEntities("deliverable", deliverableIds);
 
@@ -245,7 +245,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         assignments: assignmentMap.get(Number(row.id)) || [],
         primaryAssignment: (assignmentMap.get(Number(row.id)) || [])[0] || null,
       })));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] List error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -258,7 +258,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         SELECT file_path, original_file_name, mime_type
         FROM deliverables WHERE id = ${id}
       `);
-      const row = (rows.rows || [])[0] as any;
+      const row = (((rows as Record<string, unknown>).rows || []) as Record<string, unknown>[])[0];
       if (!row?.file_path) return res.status(404).json({ error: "File not found" });
 
       if (!fs.existsSync(row.file_path)) return res.status(404).json({ error: "File not found on disk" });
@@ -266,7 +266,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
       res.setHeader("Content-Disposition", `attachment; filename="${row.original_file_name || "file"}"`);
       res.setHeader("Content-Type", row.mime_type || "application/octet-stream");
       fs.createReadStream(row.file_path).pipe(res);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] Download error:", err);
       res.status(500).json({ error: "Internal server error" });
     }

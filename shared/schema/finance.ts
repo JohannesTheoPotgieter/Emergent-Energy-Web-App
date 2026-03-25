@@ -28,6 +28,7 @@ export const rowSourceEnum = pgEnum("row_source", ["imported", "manual", "import
 
 export const programExpense = pgTable("program_expense", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   rowNumber: integer("row_number"),
   rowType: text("row_type").default("item"),
@@ -82,6 +83,7 @@ export type ProgramExpense = typeof programExpense.$inferSelect;
 
 export const programInflows = pgTable("program_inflows", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   rowNumber: integer("row_number"),
   milestoneNo: text("milestone_no"),
