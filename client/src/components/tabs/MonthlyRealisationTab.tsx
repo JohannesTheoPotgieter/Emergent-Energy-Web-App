@@ -44,12 +44,14 @@ interface ProjectMonthData {
   monthLabel: string;
   totalCOS: number;
   realisedCOS: number;
+  committedCOS: number;
   unrealisedCOS: number;
   budget: number;
   variance: number;
   variancePct: number;
   ytdCOS: number;
   ytdRealised: number;
+  ytdCommitted: number;
   ytdUnrealised: number;
   ytdBudget: number;
   ytdVariance: number;
@@ -89,19 +91,21 @@ const ROW_DEFS: {
 }[] = [
   { key: "totalCOS", label: "COS (Finance)", dataKey: "totalCOS", colorClass: "text-foreground font-bold", group: "monthly", clickable: true },
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", colorClass: "text-foreground font-bold", group: "monthly", clickable: true },
+  { key: "committedCOS", label: "Committed COS", dataKey: "committedCOS", colorClass: "text-amber-600 font-semibold", group: "monthly", clickable: true },
   { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", colorClass: "text-red-600 font-semibold", group: "monthly", clickable: true },
   { key: "budget", label: "Costed", dataKey: "budget", colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", colorClass: "text-foreground font-bold", group: "ytd" },
+  { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", colorClass: "text-amber-600", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", colorClass: "text-red-600", group: "ytd" },
   { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", colorClass: "", group: "ytd", colorCoded: true },
 ];
 
-function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: ProjectMonthData; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised" }) {
+function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: ProjectMonthData; onClose: () => void; defaultFilter?: "all" | "realised" | "committed" | "unrealised" }) {
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised">(defaultFilter);
 
@@ -251,7 +255,7 @@ function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: P
 }
 
 export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProps) {
-  const [drawerMonth, setDrawerMonth] = useState<{ month: ProjectMonthData; defaultFilter: "all" | "realised" | "unrealised" } | null>(null);
+  const [drawerMonth, setDrawerMonth] = useState<{ month: ProjectMonthData; defaultFilter: "all" | "realised" | "committed" | "unrealised" } | null>(null);
 
   const { data: months = [], isLoading } = useQuery<ProjectMonthData[]>({
     queryKey: ["cos-tracker-project", projectName],
@@ -271,6 +275,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
     () => months.map((m) => ({
       month: m.monthLabel,
       "Realised": m.realisedCOS,
+      "Committed": m.committedCOS,
       "Unrealised": m.unrealisedCOS,
       Costed: m.budget,
     })),
@@ -392,6 +397,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                 />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
                 <Bar dataKey="Realised" stackId="cos" fill="#1e293b" radius={[0, 0, 0, 0]} />
+                <Bar dataKey="Committed" stackId="cos" fill="#f59e0b" radius={[0, 0, 0, 0]} />
                 <Bar dataKey="Unrealised" stackId="cos" fill="#dc2626" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="Costed" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
               </ComposedChart>
@@ -449,7 +455,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
                               className={`px-4 py-2.5 text-right font-mono text-sm ${colorClass} ${isClickable && val !== 0 ? "cursor-pointer hover:bg-blue-50/80 hover:underline decoration-blue-300 underline-offset-2 transition-colors rounded" : ""}`}
                               onClick={isClickable && val !== 0 ? () => setDrawerMonth({
                                 month: m,
-                                defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'unrealisedCOS' ? 'unrealised' : 'all'
+                                defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'committedCOS' ? 'committed' : row.key === 'unrealisedCOS' ? 'unrealised' : 'all'
                               }) : undefined}
                               data-testid={`cell-${row.key}-${m.monthKey}`}
                             >

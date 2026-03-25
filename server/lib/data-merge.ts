@@ -111,6 +111,10 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     _isNormalized: true,
     _sourceRow: (cost as any).sourceRow || cost.id,
     _cosRealisedFlag: (cost as any).cosRealised ?? false,
+    _cosOverrideStatus: (cost as any).cosStatusOverride ?? null,
+    _cosOverrideBy: (cost as any).cosStatusOverrideBy ?? null,
+    _cosOverrideAt: (cost as any).cosStatusOverrideAt ?? null,
+    _cosOverrideReason: (cost as any).cosStatusOverrideReason ?? null,
   };
 }
 

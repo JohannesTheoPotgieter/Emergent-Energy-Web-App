@@ -9,6 +9,7 @@ import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExe
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth as sharedRequireAuth } from "../auth-context";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
+import { classifyCosStatus } from "../lib/calculations/stateClassifier";
 
 const requireAuth = sharedRequireAuth;
 
@@ -301,7 +302,13 @@ export function registerDashboardRoutes(app: Express) {
         if (dateKey && dateKey.slice(0, 7) === currentMonthKey) {
           cosPlannedMonth += amt;
           const cosOverrideStatus = cosOverrideByKey.get(`${c.projectName}::${c.sourceRow}`);
-          const isRealised = cosOverrideStatus ? cosOverrideStatus === 'COS Realised' : c.cosRealised === true;
+          const isRealised = cosOverrideStatus === 'COS Realised' || (!cosOverrideStatus && classifyCosStatus({
+            expenseInvoiceNumber: c.invoiceNumber,
+            expenseInvoicedDate: c.invoiceDate,
+            expensePoNumber: c.poNumber,
+            invoiceDateConfirmed: c.invoiceDateConfirmed,
+            invoiceDateFontColor: c.invoiceDateFontColor,
+          }) === 'COS Realised');
           if (isRealised) cosRealisedMonth += amt;
         }
       }
