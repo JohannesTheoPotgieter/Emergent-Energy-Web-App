@@ -349,7 +349,7 @@ export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProp
           <div>
             <p className="font-semibold text-amber-900 text-sm">COS Realisation Guide</p>
             <p className="text-sm text-amber-700/90 mt-0.5 leading-relaxed">
-              Planned = all line items (invoice captured or not). Committed = invoice captured but invoice date is not confirmed black. Realised = invoice captured + invoice date confirmed in <strong className="text-foreground">black font colour</strong>. <strong className="text-red-600">Red font</strong> = not yet paid. Click any month cell to see individual line items.
+              Planned = all line items (invoice captured or not). Committed = invoice captured, but the invoice date is not yet confirmed in black font. Realised = invoice captured + invoice date confirmed in <strong className="text-foreground">black font colour</strong>. <strong className="text-red-600">Red font</strong> = not yet paid. Click any month cell to see individual line items.
             </p>
           </div>
         </CardContent>
