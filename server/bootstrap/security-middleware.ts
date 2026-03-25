@@ -2,6 +2,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import helmet from "helmet";
 import path from "path";
 import { verifyToken } from "../jwt";
+import { getRedisClient, isRedisCache } from "../lib/cache";
 
 type RateLimitEntry = {
   count: number;
@@ -11,6 +12,7 @@ type RateLimitEntry = {
 
 const authLimiterStore = new Map<string, RateLimitEntry>();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_WINDOW_SECONDS = Math.ceil(AUTH_WINDOW_MS / 1000);
 const AUTH_MAX_REQUESTS = 20;
 const AUTH_STORE_TTL_MS = 60 * 60 * 1000;
 
@@ -41,7 +43,45 @@ function cleanupAuthLimiter(now: number): void {
   }
 }
 
-function authRateLimit(req: Request, res: Response, next: NextFunction): void {
+// ─── Redis-backed rate limiting ─────────────────────────────────────
+
+async function redisRateLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (!AUTH_ENDPOINTS.has(req.path)) {
+    next();
+    return;
+  }
+
+  const redis = getRedisClient();
+  if (!redis) {
+    // Redis disappeared — fall back to in-memory
+    memoryRateLimit(req, res, next);
+    return;
+  }
+
+  const key = `ratelimit:auth:${getClientKey(req)}`;
+
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) {
+      // First request in window — set the expiry
+      await redis.expire(key, AUTH_WINDOW_SECONDS);
+    }
+
+    if (count > AUTH_MAX_REQUESTS) {
+      res.status(429).json({ message: "Too many authentication attempts. Please retry later." });
+      return;
+    }
+
+    next();
+  } catch {
+    // Redis error — fall back to in-memory check
+    memoryRateLimit(req, res, next);
+  }
+}
+
+// ─── In-memory rate limiting (fallback) ─────────────────────────────
+
+function memoryRateLimit(req: Request, res: Response, next: NextFunction): void {
   if (!AUTH_ENDPOINTS.has(req.path)) {
     next();
     return;
@@ -71,6 +111,15 @@ function authRateLimit(req: Request, res: Response, next: NextFunction): void {
   current.lastSeenAt = now;
   authLimiterStore.set(key, current);
   next();
+}
+
+function authRateLimit(req: Request, res: Response, next: NextFunction): void {
+  if (isRedisCache()) {
+    // Use Redis-backed rate limiter — handles its own fallback on error
+    redisRateLimit(req, res, next).catch(() => memoryRateLimit(req, res, next));
+  } else {
+    memoryRateLimit(req, res, next);
+  }
 }
 
 export function applySecurityAndParsingMiddleware(app: Express): void {
