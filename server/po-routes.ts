@@ -1,20 +1,10 @@
-// @ts-nocheck
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { logAuditFromReq } from "./audit-logger";
 import { requirePermission } from "./permission-middleware";
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import PDFDocument from "pdfkit";
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token) return res.status(401).json({ error: "Not authenticated" });
-  const user = verifyToken(token);
-  if (!user) return res.status(401).json({ error: "Invalid token" });
-  (req as any).user = user;
-  next();
-}
 
 const EMERGENT_HEADER = {
   tel: "+27 21 828 4202 / +27 11 028 8060",

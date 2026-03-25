@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Express } from "express";
 import passport from "passport";
 import { db } from "../db";
@@ -27,7 +26,7 @@ async function enforceSessionLimit(userId: number, currentSessionId: string, lim
     const result = await db.execute(
       sql`SELECT sid, sess, expire FROM "session" WHERE expire > NOW() ORDER BY expire DESC`
     );
-    const rows = (result as any).rows || result;
+    const rows = ((result as Record<string, unknown>).rows || result) as Record<string, unknown>[];
     const userSessions: { sid: string; expire: Date }[] = [];
     for (const row of rows) {
       const sess = typeof row.sess === "string" ? JSON.parse(row.sess) : row.sess;
