@@ -16,12 +16,11 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import {
-  Users, Calendar, BarChart3, Plus, Loader2, Send, Clock,
+  Users, BarChart3, Plus, Loader2, Send, Clock,
   CheckCircle2, AlertTriangle, MessageSquare,
-  Smile, Meh, Frown, ThumbsUp, XCircle, History, TrendingUp,
+  Smile, Meh, Frown, ThumbsUp, XCircle, TrendingUp,
   Settings, UserPlus, UserMinus, Copy, Download, Flame, Star, ClipboardCopy,
   ChevronLeft, ChevronRight, Play, Pause, Target, Flag,
-  Timer, ArrowRight, Circle,
 } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
