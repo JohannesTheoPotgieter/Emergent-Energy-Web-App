@@ -701,6 +701,7 @@ export type ExpenseTaskLink = typeof expenseTaskLinks.$inferSelect;
 export const writebackMappings = pgTable("writeback_mappings", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id),
   workbookPath: text("workbook_path").notNull(),
@@ -742,6 +743,7 @@ export type WritebackAuditLog = typeof writebackAuditLog.$inferSelect;
 
 export const financialEditRequests = pgTable("financial_edit_requests", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   requestedByUserId: integer("requested_by_user_id").notNull().references(() => users.id),
@@ -766,6 +768,7 @@ export type FinancialEditRequest = typeof financialEditRequests.$inferSelect;
 
 export const financialIntegrationRules = pgTable("financial_integration_rules", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   ruleType: text("rule_type").notNull(),
@@ -842,6 +845,7 @@ export type ProcurementItem = typeof procurementItems.$inferSelect;
 export const fyeBudgets = pgTable("fye_budgets", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projectInfo.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   fye: text("fye").notNull(),
   monthKey: text("month_key").notNull(),
