@@ -123,7 +123,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
       if (!params.taskType || params.taskType === "work_item") {
         let query = db.select().from(workItems);
-        const conditions: any[] = [];
+        const conditions: ReturnType<typeof eq>[] = [];
         if (searchTerm) conditions.push(ilike(workItems.title, searchTerm));
         if (params.status) conditions.push(eq(workItems.status, params.status));
         if (params.assigneeUserId) conditions.push(eq(workItems.ownerUserId, parseInt(params.assigneeUserId)));
