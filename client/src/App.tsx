@@ -71,6 +71,7 @@ const PMOnTheGoProject = lazy(() => import("@/pages/pm-on-the-go-project"));
 const MyWorkHomePage = lazy(() => import("@/pages/my-work-home"));
 const MyWorkTasksPage = lazy(() => import("@/pages/my-work-tasks"));
 const MyWorkCalendarPage = lazy(() => import("@/pages/my-work-calendar"));
+const InboxPage = lazy(() => import("@/pages/inbox"));
 const ApprovalsPage = lazy(() => import("@/pages/admin-approvals"));
 const PMDeliverablesPage = lazy(() => import("@/pages/pm-deliverables"));
 const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
@@ -168,6 +169,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   MyWorkHomePage,
   MyWorkCalendarPage,
   MyWorkTasksPage,
+  InboxPage,
   ApprovalsPage,
   PMDeliverablesPage,
   DatabaseMigrationPage,
