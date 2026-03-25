@@ -155,9 +155,9 @@ export function registerPoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/po/generate", requireAuth, requirePermission('procurement', 'edit'), async (req, res) => {
+  app.post("/api/po/generate", jwtAuth, requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
+      const user = getEffectiveUser(req);
       const {
         projectName, supplierName, supplierVat, supplierAddress, supplierContact,
         lineItems, paymentTerms, deliveryDate, deliveryAddress, siteContact,
