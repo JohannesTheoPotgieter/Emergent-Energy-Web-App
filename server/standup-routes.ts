@@ -3,7 +3,8 @@ import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
 import {
   standupSchedules, standupParticipants, standupEntries,
-  users, projectInfo, workItems, workItemStatusHistory, notifications,
+  users, projectInfo, workItems, workItemStatusHistory, notifications, workItemAssignments,
+  priorityProjects, mytoolCompanyPriorities,
   type InsertStandupSchedule, type InsertStandupEntry, type InsertStandupParticipant,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
@@ -920,6 +921,238 @@ export function registerStandupRoutes(app: Express) {
       res.json({ whatIDid, whatImDoing });
     } catch (err: unknown) {
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    }
+  });
+
+  // ── Meeting Mode ────────────────────────────────────────────────────────
+
+  /** Get meeting data: all participants with their entries + assigned tasks for the meeting carousel */
+  app.get("/api/standups/meeting/:scheduleId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const scheduleId = parseInt(req.params.scheduleId as string);
+      const date = (req.query.date as string) || today();
+
+      // Get all participants
+      const participants = await db
+        .select({
+          userId: standupParticipants.userId,
+          isRequired: standupParticipants.isRequired,
+          userName: users.name,
+          userEmail: users.email,
+        })
+        .from(standupParticipants)
+        .leftJoin(users, eq(standupParticipants.userId, users.id))
+        .where(eq(standupParticipants.scheduleId, scheduleId))
+        .orderBy(asc(users.name));
+
+      // Get all entries for this date
+      const entries = await db
+        .select({
+          id: standupEntries.id,
+          scheduleId: standupEntries.scheduleId,
+          userId: standupEntries.userId,
+          standupDate: standupEntries.standupDate,
+          whatIDid: standupEntries.whatIDid,
+          whatImDoing: standupEntries.whatImDoing,
+          blockers: standupEntries.blockers,
+          mood: standupEntries.mood,
+          isLate: standupEntries.isLate,
+          submittedAt: standupEntries.submittedAt,
+          userName: users.name,
+          userEmail: users.email,
+        })
+        .from(standupEntries)
+        .leftJoin(users, eq(standupEntries.userId, users.id))
+        .where(and(
+          eq(standupEntries.scheduleId, scheduleId),
+          eq(standupEntries.standupDate, date)
+        ))
+        .orderBy(asc(standupEntries.submittedAt));
+
+      const entryByUser = new Map(entries.map((e) => [e.userId, e]));
+
+      // For each participant, get their assigned work items (tasks)
+      const todayStr = today();
+      const meetingParticipants = await Promise.all(
+        participants.map(async (p) => {
+          // Get tasks owned by or assigned to this user
+          const ownedTasks = await db
+            .select({
+              id: workItems.id,
+              title: workItems.title,
+              status: workItems.status,
+              priority: workItems.priority,
+              endDate: workItems.endDate,
+              percentComplete: workItems.percentComplete,
+              projectId: workItems.projectId,
+              projectName: projectInfo.name,
+            })
+            .from(workItems)
+            .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+            .where(and(
+              eq(workItems.ownerUserId, p.userId),
+              sql`${workItems.deletedAt} IS NULL`,
+              sql`UPPER(${workItems.status}) NOT IN ('COMPLETE', 'COMPLETED', 'DONE', 'CANCELLED', 'CANCELED')`
+            ))
+            .orderBy(
+              sql`CASE ${workItems.priority}
+                WHEN 'Urgent' THEN 0
+                WHEN 'High' THEN 1
+                WHEN 'Med' THEN 2
+                WHEN 'Low' THEN 3
+                ELSE 4
+              END`,
+              asc(workItems.endDate)
+            )
+            .limit(25);
+
+          // Also get tasks assigned via work_item_assignments
+          const assignedTaskIds = await db
+            .select({ workItemId: workItemAssignments.workItemId })
+            .from(workItemAssignments)
+            .where(eq(workItemAssignments.userId, p.userId));
+
+          const assignedIds = assignedTaskIds.map((r) => r.workItemId);
+          const ownedIds = new Set(ownedTasks.map((t) => t.id));
+
+          let additionalTasks: typeof ownedTasks = [];
+          if (assignedIds.length > 0) {
+            const missingIds = assignedIds.filter((id) => !ownedIds.has(id));
+            if (missingIds.length > 0) {
+              additionalTasks = await db
+                .select({
+                  id: workItems.id,
+                  title: workItems.title,
+                  status: workItems.status,
+                  priority: workItems.priority,
+                  endDate: workItems.endDate,
+                  percentComplete: workItems.percentComplete,
+                  projectId: workItems.projectId,
+                  projectName: projectInfo.name,
+                })
+                .from(workItems)
+                .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+                .where(and(
+                  inArray(workItems.id, missingIds),
+                  sql`${workItems.deletedAt} IS NULL`,
+                  sql`UPPER(${workItems.status}) NOT IN ('COMPLETE', 'COMPLETED', 'DONE', 'CANCELLED', 'CANCELED')`
+                ))
+                .orderBy(
+                  sql`CASE ${workItems.priority}
+                    WHEN 'Urgent' THEN 0
+                    WHEN 'High' THEN 1
+                    WHEN 'Med' THEN 2
+                    WHEN 'Low' THEN 3
+                    ELSE 4
+                  END`,
+                  asc(workItems.endDate)
+                )
+                .limit(15);
+            }
+          }
+
+          const rawTasks = [...ownedTasks, ...additionalTasks];
+
+          // Look up company priorities linked to each task's project
+          const projectIds = [...new Set(rawTasks.map((t) => t.projectId).filter(Boolean))] as number[];
+          let priorityByProject = new Map<number, { id: number; title: string; severity: string }>();
+          if (projectIds.length > 0) {
+            const ppRows = await db
+              .select({
+                projectId: priorityProjects.projectId,
+                priorityId: mytoolCompanyPriorities.id,
+                priorityTitle: mytoolCompanyPriorities.title,
+                severity: mytoolCompanyPriorities.severity,
+              })
+              .from(priorityProjects)
+              .innerJoin(mytoolCompanyPriorities, eq(priorityProjects.priorityId, mytoolCompanyPriorities.id))
+              .where(and(
+                inArray(priorityProjects.projectId, projectIds),
+                sql`${mytoolCompanyPriorities.status} != 'closed'`
+              ));
+            for (const row of ppRows) {
+              // Keep the highest-severity priority per project
+              const existing = priorityByProject.get(row.projectId);
+              const sevRank = (s: string) => s === "critical" ? 2 : s === "important" ? 1 : 0;
+              if (!existing || sevRank(row.severity) > sevRank(existing.severity)) {
+                priorityByProject.set(row.projectId, {
+                  id: row.priorityId,
+                  title: row.priorityTitle,
+                  severity: row.severity,
+                });
+              }
+            }
+          }
+
+          // Enrich tasks with company priority linkage
+          const allTasks = rawTasks.map((t) => ({
+            ...t,
+            linkedPriority: t.projectId ? (priorityByProject.get(t.projectId) || null) : null,
+          }));
+
+          // Classify tasks
+          const overdue = allTasks.filter((t) => t.endDate && t.endDate < todayStr);
+          const dueSoon = allTasks.filter((t) => {
+            if (!t.endDate || t.endDate < todayStr) return false;
+            const soon = new Date(`${todayStr}T00:00:00Z`);
+            soon.setUTCDate(soon.getUTCDate() + 7);
+            return t.endDate <= soon.toISOString().split("T")[0];
+          });
+          const inProgress = allTasks.filter((t) => {
+            const s = (t.status || "").toUpperCase();
+            return ["IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK"].includes(s);
+          });
+          const onHold = allTasks.filter((t) => {
+            const s = (t.status || "").toUpperCase();
+            return ["HOLD", "ON HOLD"].includes(s);
+          });
+
+          return {
+            userId: p.userId,
+            userName: p.userName,
+            userEmail: p.userEmail,
+            isRequired: p.isRequired,
+            entry: entryByUser.get(p.userId) || null,
+            hasSubmitted: entryByUser.has(p.userId),
+            tasks: {
+              total: allTasks.length,
+              overdue,
+              dueSoon,
+              inProgress,
+              onHold,
+              byPriority: {
+                urgent: allTasks.filter((t) => t.priority === "Urgent"),
+                high: allTasks.filter((t) => t.priority === "High"),
+                med: allTasks.filter((t) => t.priority === "Med"),
+                low: allTasks.filter((t) => t.priority === "Low"),
+              },
+            },
+          };
+        })
+      );
+
+      // Aggregate blockers across all entries
+      const allBlockers = entries
+        .filter((e) => e.blockers && e.blockers.trim())
+        .map((e) => ({
+          userId: e.userId,
+          userName: e.userName,
+          blockers: e.blockers!,
+          mood: e.mood,
+        }));
+
+      res.json({
+        date,
+        participants: meetingParticipants,
+        summary: {
+          total: participants.length,
+          submitted: entries.length,
+          blockerCount: allBlockers.length,
+          blockers: allBlockers,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
