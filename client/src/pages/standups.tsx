@@ -1015,6 +1015,251 @@ function DigestView({ scheduleId }: { scheduleId: number }) {
   );
 }
 
+// ── Analytics View ───────────────────────────────────────────────────────────
+
+function AnalyticsView({ scheduleId }: { scheduleId: number }) {
+  const { data: analytics, isLoading } = useQuery<StandupAnalytics>({
+    queryKey: ["standup-analytics", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/analytics/${scheduleId}`),
+  });
+
+  const { data: trends } = useQuery<StandupTrends>({
+    queryKey: ["standup-trends", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/analytics/${scheduleId}/trends?days=30`),
+  });
+
+  if (isLoading || !analytics) {
+    return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  const onTimeRate = analytics.totalEntries > 0
+    ? Math.round(((analytics.totalEntries - analytics.lateEntries) / analytics.totalEntries) * 100)
+    : 0;
+
+  const trendData = (trends?.series || []).map((d) => ({
+    ...d,
+    dateLabel: formatDateShort(d.date),
+  }));
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card><CardContent className="px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Total Entries</p>
+          <p className="text-2xl font-bold tracking-tight mt-1">{analytics.totalEntries}</p>
+        </CardContent></Card>
+        <Card><CardContent className="px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Participants</p>
+          <p className="text-2xl font-bold tracking-tight mt-1">{analytics.totalParticipants}</p>
+        </CardContent></Card>
+        <Card><CardContent className="px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600">On-Time Rate</p>
+          <p className="text-2xl font-bold tracking-tight mt-1">{onTimeRate}%</p>
+        </CardContent></Card>
+        <Card><CardContent className="px-4 py-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600">Late Entries</p>
+          <p className="text-2xl font-bold tracking-tight mt-1">{analytics.lateEntries}</p>
+        </CardContent></Card>
+      </div>
+
+      {trendData.length > 1 && (
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2">
+            <CardTitle className="text-xs font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+              <TrendingUp className="h-4 w-4" /> Participation Trend (30 days)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-2 pb-3">
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={trendData}>
+                <defs>
+                  <linearGradient id="participationGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.05} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
+                <Tooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  formatter={(value: number) => [`${value}%`, "Participation"]}
+                  labelFormatter={(label) => `Date: ${label}`}
+                />
+                <Area type="monotone" dataKey="participationRate" stroke="#10b981" fill="url(#participationGrad)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {trendData.length > 1 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="px-4 py-3 pb-2">
+              <CardTitle className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Team Mood Score</CardTitle>
+              <p className="text-[10px] text-muted-foreground">5 = Great, 1 = Blocked</p>
+            </CardHeader>
+            <CardContent className="px-2 pb-3">
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={trendData.filter((d) => d.avgMoodScore !== null)}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                  <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
+                  <YAxis domain={[1, 5]} tick={{ fontSize: 10 }} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(value: number) => [value.toFixed(1), "Avg Mood"]} />
+                  <Line type="monotone" dataKey="avgMoodScore" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="px-4 py-3 pb-2">
+              <CardTitle className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Blockers Over Time</CardTitle>
+            </CardHeader>
+            <CardContent className="px-2 pb-3">
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border/50" />
+                  <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} formatter={(value: number) => [value, "Blockers"]} />
+                  <Bar dataKey="blockers" fill="#f97316" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {analytics.moodDistribution.length > 0 && (
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2"><CardTitle className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Mood Distribution</CardTitle></CardHeader>
+          <CardContent className="px-4 pb-3">
+            <div className="flex flex-wrap gap-4">
+              {analytics.moodDistribution.map((m) => {
+                const opt = MOOD_OPTIONS.find((o) => o.value === m.mood);
+                return (
+                  <div key={m.mood} className="flex items-center gap-2 text-sm">
+                    <span className={opt?.color || ""}>{opt?.icon}</span>
+                    <span className="font-semibold tabular-nums">{m.count}</span>
+                    <span className="text-muted-foreground">{opt?.label || m.mood}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {analytics.recentBlockers.length > 0 && (
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2"><CardTitle className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Recent Blockers</CardTitle></CardHeader>
+          <CardContent className="px-4 pb-3">
+            <div className="space-y-2">
+              {analytics.recentBlockers.map((b, i) => (
+                <div key={i} className="flex items-start gap-2 border-l-3 border-l-orange-500 pl-3 py-1">
+                  <div>
+                    <p className="text-sm text-orange-700 font-medium">{b.blockers}</p>
+                    <p className="text-[11px] text-muted-foreground">{b.userName} &middot; {b.standupDate}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ── Per-Person Analytics ─────────────────────────────────────────────────────
+
+function PersonAnalyticsView({ scheduleId }: { scheduleId: number }) {
+  const { data, isLoading } = useQuery<PerPersonAnalytics>({
+    queryKey: ["standup-per-person", scheduleId],
+    queryFn: () => apiFetch(`/api/standups/analytics/${scheduleId}/per-person`),
+  });
+
+  if (isLoading || !data) {
+    return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  }
+
+  const sorted = [...data.members].sort((a, b) => b.participationRate - a.participationRate);
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">{data.totalStandups} standup sessions tracked</p>
+      <div className="space-y-2">
+        {sorted.map((m) => {
+          const moodLabel = m.avgMoodScore !== null
+            ? m.avgMoodScore >= 4.5 ? "Great" : m.avgMoodScore >= 3.5 ? "Good" : m.avgMoodScore >= 2.5 ? "Okay" : m.avgMoodScore >= 1.5 ? "Low" : "Critical"
+            : "—";
+          const moodColor = m.avgMoodScore !== null
+            ? m.avgMoodScore >= 4.5 ? "text-emerald-600" : m.avgMoodScore >= 3.5 ? "text-emerald-500" : m.avgMoodScore >= 2.5 ? "text-amber-500" : m.avgMoodScore >= 1.5 ? "text-orange-600" : "text-red-600"
+            : "text-muted-foreground";
+
+          return (
+            <Card key={m.userId}>
+              <CardContent className="px-4 py-3">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-7 w-7">
+                      <AvatarFallback className="text-[10px] font-semibold">
+                        {getInitials(m.userName || "?")}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <p className="text-sm font-semibold">{m.userName}</p>
+                      <Badge variant="outline" className={`text-[9px] px-1 py-0 ${m.isRequired ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500"}`}>
+                        {m.isRequired ? "Required" : "Optional"}
+                      </Badge>
+                    </div>
+                  </div>
+                  {m.currentStreak > 0 && (
+                    <div className="flex items-center gap-1 text-xs font-semibold text-orange-500">
+                      <Flame className="h-3.5 w-3.5" />
+                      {m.currentStreak} streak
+                    </div>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className="text-lg font-bold tracking-tight">{m.participationRate}%</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">Participation</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className="text-lg font-bold tracking-tight">{m.onTimeRate}%</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">On-Time</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className="text-lg font-bold tracking-tight">{m.totalSubmissions}</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">Submitted</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className="text-lg font-bold tracking-tight">{m.blockerCount}</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">Blockers</p>
+                  </div>
+                  <div className="rounded-lg bg-muted/50 px-2 py-1.5">
+                    <p className={`text-lg font-bold tracking-tight ${moodColor}`}>{moodLabel}</p>
+                    <p className="text-[9px] text-muted-foreground font-semibold uppercase">Avg Mood</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+        {sorted.length === 0 && (
+          <div className="ee-empty-state">
+            <Users className="h-8 w-8 text-muted-foreground/30 mb-2" />
+            <p className="text-sm font-medium">No participants yet</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── PLACEHOLDER: More components below ───────────────────────────────────────
 
 export default function StandupsPage() {
