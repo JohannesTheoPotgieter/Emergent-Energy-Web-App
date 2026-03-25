@@ -253,13 +253,10 @@ export default function QmDashboardPage() {
     enabled: startQmOpen,
   });
 
-  const existingQmProjects = useMemo(() => {
+  const projectsWithChecklist = useMemo(() => {
     return new Set(checklists.map(c => c.projectName));
   }, [checklists]);
 
-  const availableProjects = useMemo(() => {
-    return allProjects.filter(p => !existingQmProjects.has(p.project_name));
-  }, [allProjects, existingQmProjects]);
 
   const startQmMutation = useMutation({
     mutationFn: (projectName: string) =>
@@ -1207,7 +1204,7 @@ export default function QmDashboardPage() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Select a project to start the quality management process. Only projects without an existing quality checklist are shown.
+              Select a project to start the quality management process. Projects with an existing quality checklist are shown but cannot be selected.
             </p>
             <div>
               <label className="text-sm font-medium block mb-1.5">Project</label>
@@ -1230,19 +1227,24 @@ export default function QmDashboardPage() {
                     <CommandList>
                       <CommandEmpty>No projects available</CommandEmpty>
                       <CommandGroup>
-                        {availableProjects.map((project) => {
+                        {allProjects.map((project) => {
                           const name = project.project_name;
+                          const hasChecklist = projectsWithChecklist.has(name);
                           return (
                             <CommandItem
                               key={name}
+                              value={name}
+                              disabled={hasChecklist}
                               onSelect={() => {
+                                if (hasChecklist) return;
                                 setStartQmProject(name);
                                 setStartQmPopoverOpen(false);
                               }}
                               data-testid={`qm-project-option-${name}`}
                             >
                               <Check className={`mr-2 h-4 w-4 ${startQmProject === name ? "opacity-100" : "opacity-0"}`} />
-                              {name}
+                              <span className={hasChecklist ? "text-muted-foreground" : undefined}>{name}</span>
+                              {hasChecklist && <span className="ml-auto text-xs text-muted-foreground">Checklist exists</span>}
                             </CommandItem>
                           );
                         })}
@@ -1252,9 +1254,9 @@ export default function QmDashboardPage() {
                 </PopoverContent>
               </Popover>
             </div>
-            {availableProjects.length === 0 && allProjects.length > 0 && (
+            {allProjects.length === 0 && (
               <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
-                All projects already have quality checklists.
+                No projects available.
               </p>
             )}
           </div>
