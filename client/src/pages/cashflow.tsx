@@ -58,6 +58,7 @@ import {
 import { format, parseISO } from "date-fns";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { usePermission } from "@/hooks/use-permissions";
+import { DateOverridePopover } from "@/components/cashflow/DateOverridePopover";
 
 interface OutflowByStatus {
   outOfBank: number;
@@ -98,21 +99,33 @@ interface BalanceHistoryEntry {
 }
 
 interface DetailInflow {
+  inflowId: number;
   projectName: string;
   milestoneName: string;
   milestoneInvoiceNumber: string;
   paymentReceivedDate: string;
+  originalDate: string | null;
+  hasAdminOverride: boolean;
+  adminDateOverride: string | null;
+  adminDateOverrideReason: string | null;
+  adminDateOverrideAt: string | null;
   milestoneAmount: number;
   invoiceRaisedDate: string;
   daysToReceipt: number;
 }
 
 interface DetailOutflow {
+  expenseId: number;
   projectName: string;
   expenseCategory: string;
   expenseLineItem: string;
   expenseInvoiceNumber: string;
   expensePaymentDate: string;
+  originalDate: string | null;
+  hasAdminOverride: boolean;
+  adminDateOverride: string | null;
+  adminDateOverrideReason: string | null;
+  adminDateOverrideAt: string | null;
   expenseActualTotal: number;
   paymentStatus: string;
 }
@@ -251,6 +264,54 @@ function KpiCard({
 
 function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; project: string; colSpan?: number }) {
   const [detailSearch, setDetailSearch] = useState("");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const overrideExpenseDate = useMutation({
+    mutationFn: async (data: { expenseId: number; dateOverride: string | null; reason?: string }) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${CASHFLOW_API_BASE}/expense-date-override`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to save expense date override");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      toast({ title: "Expense date override saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save override", variant: "destructive" });
+    },
+  });
+
+  const overrideInflowDate = useMutation({
+    mutationFn: async (data: { inflowId: number; dateOverride: string | null; reason?: string }) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${CASHFLOW_API_BASE}/inflow-date-override`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to save inflow date override");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      toast({ title: "Inflow date override saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save override", variant: "destructive" });
+    },
+  });
   const params = new URLSearchParams({ week: weekStart });
   if (project !== "all") params.set("project", project);
 
@@ -354,7 +415,19 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                           <td className="px-3 py-2 font-medium text-foreground">{inf.projectName}</td>
                           <td className="px-3 py-2 text-muted-foreground">{inf.milestoneName}</td>
                           <td className="px-3 py-2 font-mono text-muted-foreground text-[11px]">{inf.milestoneInvoiceNumber || "—"}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{inf.paymentReceivedDate ? format(parseISO(inf.paymentReceivedDate), "dd MMM") : "—"}</td>
+                          <td className="px-3 py-2">
+                            <DateOverridePopover
+                              currentDate={inf.paymentReceivedDate}
+                              originalDate={inf.originalDate}
+                              hasOverride={inf.hasAdminOverride}
+                              overrideReason={inf.adminDateOverrideReason}
+                              overrideAt={inf.adminDateOverrideAt}
+                              onSave={(dateOverride, reason) =>
+                                overrideInflowDate.mutate({ inflowId: inf.inflowId, dateOverride, reason })
+                              }
+                              testId={`date-override-inflow-${weekStart}-${i}`}
+                            />
+                          </td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-emerald-700">{formatRand(inf.milestoneAmount)}</td>
                           <td className="px-3 py-2 text-right font-mono text-muted-foreground">{inf.daysToReceipt ?? "—"}</td>
                         </tr>
@@ -401,7 +474,19 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                           <td className="px-3 py-2 text-muted-foreground">{out.expenseCategory}</td>
                           <td className="px-3 py-2 text-muted-foreground">{out.expenseLineItem}</td>
                           <td className="px-3 py-2 font-mono text-muted-foreground text-[11px]">{out.expenseInvoiceNumber || "—"}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{out.expensePaymentDate ? format(parseISO(out.expensePaymentDate), "dd MMM") : "—"}</td>
+                          <td className="px-3 py-2">
+                            <DateOverridePopover
+                              currentDate={out.expensePaymentDate}
+                              originalDate={out.originalDate}
+                              hasOverride={out.hasAdminOverride}
+                              overrideReason={out.adminDateOverrideReason}
+                              overrideAt={out.adminDateOverrideAt}
+                              onSave={(dateOverride, reason) =>
+                                overrideExpenseDate.mutate({ expenseId: out.expenseId, dateOverride, reason })
+                              }
+                              testId={`date-override-outflow-${weekStart}-${i}`}
+                            />
+                          </td>
                           <td className="px-3 py-2 text-center">
                             <span className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${statusColors[out.paymentStatus] || "bg-muted"}`}>
                               {out.paymentStatus}

@@ -1551,7 +1551,7 @@ export default function ProjectDetailPage() {
           {activeSubTab === "monthly-realisation" && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
           {activeSubTab === "revenue-tracker" && canViewSubTab.cosTracker && <RevenueTrackerTab projectName={projectName} />}
           {activeSubTab === "gp-tracker" && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
-          {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
+          {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
           {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
           {activeSubTab === "change-control" && projectInfoId && <ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} />}
