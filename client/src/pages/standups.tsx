@@ -908,6 +908,113 @@ function BlockerBoard({ scheduleId }: { scheduleId: number }) {
   );
 }
 
+// ── Digest View ──────────────────────────────────────────────────────────────
+
+function DigestView({ scheduleId }: { scheduleId: number }) {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [date, setDate] = useState(todayStr);
+  const { toast } = useToast();
+
+  const { data: digest, isLoading } = useQuery<DigestResponse>({
+    queryKey: ["standup-digest", scheduleId, date],
+    queryFn: () => apiFetch(`/api/standups/digest/${scheduleId}?date=${date}`),
+  });
+
+  const copyText = () => {
+    if (digest) {
+      navigator.clipboard.writeText(digest.text);
+      toast({ title: "Copied to clipboard", description: "Plain text digest copied" });
+    }
+  };
+
+  const copyMarkdown = () => {
+    if (digest) {
+      navigator.clipboard.writeText(digest.markdown);
+      toast({ title: "Copied to clipboard", description: "Markdown digest copied" });
+    }
+  };
+
+  const downloadCsv = () => {
+    if (!digest) return;
+    apiFetch(`/api/standups/entries/${scheduleId}?date=${date}`).then((entries: StandupEntry[]) => {
+      const rows = [["Name", "Completed", "Working On", "Blockers", "Mood", "Late"].join(",")];
+      for (const e of entries) {
+        rows.push([
+          `"${e.userName || ""}"`,
+          `"${(e.whatIDid || "").replace(/"/g, '""')}"`,
+          `"${(e.whatImDoing || "").replace(/"/g, '""')}"`,
+          `"${(e.blockers || "").replace(/"/g, '""')}"`,
+          `"${e.mood || ""}"`,
+          e.isLate ? "Yes" : "No",
+        ].join(","));
+      }
+      const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `standup-${date}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast({ title: "CSV downloaded" });
+    });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-[180px] h-8 text-xs" />
+        <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={copyText} disabled={!digest}>
+          <ClipboardCopy className="h-3.5 w-3.5" /> Copy Text
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={copyMarkdown} disabled={!digest}>
+          <Copy className="h-3.5 w-3.5" /> Copy Markdown
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={downloadCsv} disabled={!digest}>
+          <Download className="h-3.5 w-3.5" /> CSV
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : digest ? (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <Card><CardContent className="px-3 py-2 text-center">
+              <p className="text-xl font-bold">{digest.submissionCount}/{digest.participantCount}</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Submitted</p>
+            </CardContent></Card>
+            <Card><CardContent className="px-3 py-2 text-center">
+              <p className="text-xl font-bold text-orange-600">{digest.blockerCount}</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Blockers</p>
+            </CardContent></Card>
+            <Card><CardContent className="px-3 py-2 text-center">
+              <p className="text-xl font-bold text-red-600">{digest.missingCount}</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Missing</p>
+            </CardContent></Card>
+            <Card><CardContent className="px-3 py-2 text-center">
+              <p className="text-xl font-bold text-emerald-600">{digest.participantCount > 0 ? Math.round((digest.submissionCount / digest.participantCount) * 100) : 0}%</p>
+              <p className="text-[10px] text-muted-foreground font-semibold uppercase">Rate</p>
+            </CardContent></Card>
+          </div>
+
+          <Card>
+            <CardHeader className="px-4 py-3 pb-2">
+              <CardTitle className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Preview</CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-3">
+              <pre className="text-xs whitespace-pre-wrap font-mono bg-muted/50 rounded-lg p-3 max-h-[400px] overflow-y-auto">{digest.text}</pre>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div className="ee-empty-state">
+          <p className="text-sm font-medium">No entries for this date</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── PLACEHOLDER: More components below ───────────────────────────────────────
 
 export default function StandupsPage() {
