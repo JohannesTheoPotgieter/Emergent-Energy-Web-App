@@ -521,6 +521,10 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   adminDateOverrideBy: integer("admin_date_override_by").references(() => users.id),
   adminDateOverrideAt: timestamp("admin_date_override_at"),
   subProjectName: text("sub_project_name"),
+  cosStatusOverride: text("cos_status_override"),
+  cosStatusOverrideBy: integer("cos_status_override_by").references(() => users.id),
+  cosStatusOverrideAt: timestamp("cos_status_override_at"),
+  cosStatusOverrideReason: text("cos_status_override_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   // Temporal columns (Prompt 9)

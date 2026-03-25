@@ -1212,6 +1212,10 @@ export class DatabaseStorage implements IStorage {
       paymentDateConfirmed: 'paidDateConfirmed',
       paymentDateFontColor: 'paidDateFontColor',
       noRevenueLinked: 'noRevenueLinked',
+      cosStatusOverride: 'cosStatusOverride',
+      cosStatusOverrideBy: 'cosStatusOverrideBy',
+      cosStatusOverrideAt: 'cosStatusOverrideAt',
+      cosStatusOverrideReason: 'cosStatusOverrideReason',
     };
     const validDbColumns = new Set(Object.values(fieldMap));
     for (const [key, value] of Object.entries(fields)) {
