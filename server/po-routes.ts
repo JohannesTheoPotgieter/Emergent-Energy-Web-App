@@ -177,7 +177,7 @@ export function registerPoRoutes(app: Express) {
       const poRef = `PO${poNumber}-${projectCode}-${dateStr}-${supplierCode}`;
 
       let subtotal = 0;
-      const parsedItems = lineItems.map((item: any) => {
+      const parsedItems = lineItems.map((item: Record<string, unknown>) => {
         const qty = parseFloat(item.qty) || 0;
         const price = parseFloat(item.pricePerUnit) || 0;
         subtotal += qty * price;
@@ -187,7 +187,7 @@ export function registerPoRoutes(app: Express) {
       const total = Math.round((subtotal + vatAmount) * 100) / 100;
 
       const defaultPaymentTerms = `All invoicing is to be sent to ${EMERGENT_HEADER.accountsEmail}`;
-      const pmName = projectManager || user.name;
+      const pmName = projectManager || user?.name;
 
       const poData = {
         po_ref: poRef,
