@@ -683,6 +683,7 @@ export type MilestoneTaskLink = typeof milestoneTaskLinks.$inferSelect;
 
 export const expenseTaskLinks = pgTable("expense_task_links", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   expenseId: integer("expense_id").notNull().references(() => programExpense.id, { onDelete: "cascade" }),
