@@ -2475,7 +2475,10 @@ export async function registerRoutes(
           phase_updated_at: info?.phaseUpdatedAt || null,
           has_tracker_import: nameVariants.some(v => importedProjectNames.has(v)) || importedProjectNames.has(cleanName),
           last_import_at: nameVariants.reduce<string | null>((acc, v) => acc || lastImportByProject.get(v) || null, null) || lastImportByProject.get(cleanName) || null,
-          is_active: info?.isActive !== false && info?.phase?.toLowerCase() !== "gone",
+          is_active: info?.deletedAt == null
+            && info?.isActive !== false
+            && info?.phase?.toLowerCase() !== "gone"
+            && (info?.executionPhase || info?.phase || "").toLowerCase() !== "completed",
           pd_pm_handover_status: handover?.status || "DRAFT",
           pd_pm_handover_rejection_reason: handover?.rejection_reason || null,
           next_open_inflow_milestone: (() => {
@@ -3412,9 +3415,16 @@ export async function registerRoutes(
         const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
         if (isNaN(amount) || amount === 0) continue;
 
-        const invDate = exp.expenseInvoicedDate as string | null;
-        if (!invDate) continue;
-        const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+        const dateSource = (
+          exp.expenseInvoicedDate
+          || (exp as any).forecastPaymentDate
+          || (exp as any).computedForecastPaymentDate
+          || exp.expensePaymentDate
+          || (exp as any).startDate
+          || null
+        ) as string | null;
+        if (!dateSource) continue;
+        const dateMatch = String(dateSource).match(/^(\d{4})-(\d{2})/);
         if (!dateMatch) continue;
         const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
@@ -3443,6 +3453,8 @@ export async function registerRoutes(
       const startMonth = new Date(Date.UTC(2025, 8, 1));
 
       let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdRevRealised = 0;
+      const now = new Date();
+      const currentMonthKey = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
 
       function mapToArray(m: Map<string, number>): { projectName: string; value: number }[] {
         const arr: { projectName: string; value: number }[] = [];
@@ -3471,10 +3483,12 @@ export async function registerRoutes(
         const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
         const revRealised = revByMonth.get(monthKey) ?? 0;
-        ytdCOS += totalCOS;
-        ytdRealised += realisedCOS;
-        ytdBudget += budget;
-        ytdRevRealised += revRealised;
+        if (monthKey <= currentMonthKey) {
+          ytdCOS += totalCOS;
+          ytdRealised += realisedCOS;
+          ytdBudget += budget;
+          ytdRevRealised += revRealised;
+        }
         const ytdUnrealised = ytdCOS - ytdRealised;
         const ytdVariance = ytdCOS - ytdBudget;
         const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
