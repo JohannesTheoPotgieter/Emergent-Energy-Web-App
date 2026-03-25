@@ -329,10 +329,10 @@ export function registerPoRoutes(app: Express) {
       await db.execute(sql`DELETE FROM purchase_orders WHERE id = ${poIdNum} AND status = 'draft'`);
 
       logAuditFromReq(req, {
-        entity: "purchase_order",
-        entityId: poIdNum,
+        entityType: "purchase_order",
+        entityId: String(poIdNum),
         action: "delete",
-        details: {},
+        changesJson: {},
       });
 
       res.json({ success: true });
