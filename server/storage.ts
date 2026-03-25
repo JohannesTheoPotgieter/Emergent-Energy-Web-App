@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck — file has 2.4k lines; incrementally type-fix and re-enable checking
 // @ts-nocheck
 import { db, getDbMode } from "./db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";

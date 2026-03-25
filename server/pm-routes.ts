@@ -93,8 +93,8 @@ export function registerPmRoutes(app: Express) {
          ORDER BY u.name`
       ));
       res.json({ users: result.rows });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -194,9 +194,9 @@ export function registerPmRoutes(app: Express) {
       };
 
       res.json({ projects: enrichedProjects, summary });
-    } catch (err: any) {
-      console.error("[PM Dashboard] Error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[PM Dashboard] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -315,9 +315,9 @@ export function registerPmRoutes(app: Express) {
       });
 
       res.json({ items });
-    } catch (err: any) {
-      console.error("[PM Priority] Error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[PM Priority] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -390,9 +390,9 @@ export function registerPmRoutes(app: Express) {
       events.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
       res.json({ events });
-    } catch (err: any) {
-      console.error("[PM Calendar] Error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[PM Calendar] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 }

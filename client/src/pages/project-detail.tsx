@@ -149,7 +149,7 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
         body: JSON.stringify({ toPhase, reason, overrideSequence }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await res.json().catch((e: unknown) => { console.error("Failed to parse phase update error response:", e); return {}; });
         throw new Error(err.message || err.error || "Failed to update phase");
       }
       return res.json();
@@ -352,7 +352,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
         }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await res.json().catch((e: unknown) => { console.error("Failed to parse create task error response:", e); return {}; });
         throw new Error(err.error || "Failed to create task");
       }
       return res.json();
@@ -377,7 +377,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
         body: JSON.stringify(updates),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await res.json().catch((e: unknown) => { console.error("Failed to parse update task error response:", e); return {}; });
         throw new Error(err.error || "Failed to update task");
       }
       return res.json();
@@ -393,7 +393,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     mutationFn: async (taskId: number) => {
       const res = await engFetch(`/api/eng/tasks/${taskId}`, { method: "DELETE" });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await res.json().catch((e: unknown) => { console.error("Failed to parse delete task error response:", e); return {}; });
         throw new Error(err.error || "Failed to delete task");
       }
       return res.json();
@@ -410,7 +410,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     mutationFn: async () => {
       const res = await engFetch(`/api/projects/${projectInfoId}/generate-eng-tasks`, { method: "POST" });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
+        const err = await res.json().catch((e: unknown) => { console.error("Failed to parse generate tasks error response:", e); return {}; });
         throw new Error(err.error || "Failed to generate tasks");
       }
       return res.json();

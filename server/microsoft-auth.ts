@@ -20,6 +20,7 @@ const SCOPES = [
   "Team.ReadBasic.All",
   "Channel.ReadBasic.All",
   "ChannelMessage.Read.All",
+  "ChannelMessage.Send",
   "offline_access",
 ];
 
@@ -154,8 +155,8 @@ export async function refreshTokenSilent(serializedCache: string, msUserId: stri
       expiresOn: response.expiresOn,
       tokenCache: updatedCache,
     };
-  } catch (err: any) {
-    console.error("[MS Auth] Silent token refresh failed:", err.message);
+  } catch (err: unknown) {
+    console.error("[MS Auth] Silent token refresh failed:", (err instanceof Error ? err.message : String(err)));
     return null;
   }
 }

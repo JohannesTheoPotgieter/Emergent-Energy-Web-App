@@ -10,7 +10,12 @@ export interface RolloutFeatureFlagState {
 }
 
 export async function fetchRolloutFeatureFlags(): Promise<RolloutFeatureFlagState[]> {
-  const response = await fetch("/api/feature-flags/rollout", { credentials: "include" });
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const response = await fetch("/api/feature-flags/rollout", { credentials: "include", headers });
   if (!response.ok) {
     throw new Error("Failed to fetch rollout feature flags");
   }

@@ -1,20 +1,10 @@
-// @ts-nocheck
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { logAuditFromReq } from "./audit-logger";
 import { requirePermission } from "./permission-middleware";
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import PDFDocument from "pdfkit";
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const token = req.headers.authorization?.replace("Bearer ", "");
-  if (!token) return res.status(401).json({ error: "Not authenticated" });
-  const user = verifyToken(token);
-  if (!user) return res.status(401).json({ error: "Invalid token" });
-  (req as any).user = user;
-  next();
-}
 
 const EMERGENT_HEADER = {
   tel: "+27 21 828 4202 / +27 11 028 8060",
@@ -31,7 +21,7 @@ function formatCurrency(amount: number): string {
   return amount.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function generatePdf(po: any): Promise<Buffer> {
+function generatePdf(po: Record<string, unknown>): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     const chunks: Buffer[] = [];
@@ -85,30 +75,32 @@ function generatePdf(po: any): Promise<Buffer> {
 
     doc.font("Helvetica").fontSize(8);
     let rowY = tableTop + 22;
-    const lineItems = po.line_items || [];
-    lineItems.forEach((item: any, idx: number) => {
+    const lineItems = (Array.isArray(po.line_items) ? po.line_items : []) as Record<string, unknown>[];
+    lineItems.forEach((item: Record<string, unknown>, idx: number) => {
       if (rowY > 700) {
         doc.addPage();
         rowY = 50;
       }
-      const lineSubtotal = (item.qty || 0) * (item.pricePerUnit || 0);
+      const qty = Number(item.qty) || 0;
+      const price = Number(item.pricePerUnit) || 0;
+      const lineSubtotal = qty * price;
       doc.text(String(idx + 1), colX[0] + 2, rowY, { width: colWidths[0] - 4 });
-      doc.text(item.description || "", colX[1] + 2, rowY, { width: colWidths[1] - 4 });
-      doc.text(item.partNumber || "", colX[2] + 2, rowY, { width: colWidths[2] - 4 });
-      doc.text(String(item.qty || 0), colX[3] + 2, rowY, { width: colWidths[3] - 4, align: "right" });
-      doc.text(item.unit || "", colX[4] + 2, rowY, { width: colWidths[4] - 4, align: "right" });
-      doc.text(`R ${formatCurrency(item.pricePerUnit || 0)}`, colX[5] + 2, rowY, { width: colWidths[5] - 4, align: "right" });
+      doc.text(String(item.description || ""), colX[1] + 2, rowY, { width: colWidths[1] - 4 });
+      doc.text(String(item.partNumber || ""), colX[2] + 2, rowY, { width: colWidths[2] - 4 });
+      doc.text(String(qty), colX[3] + 2, rowY, { width: colWidths[3] - 4, align: "right" });
+      doc.text(String(item.unit || ""), colX[4] + 2, rowY, { width: colWidths[4] - 4, align: "right" });
+      doc.text(`R ${formatCurrency(price)}`, colX[5] + 2, rowY, { width: colWidths[5] - 4, align: "right" });
       doc.text(`R ${formatCurrency(lineSubtotal)}`, colX[6] + 2, rowY, { width: colWidths[6] - 4, align: "right" });
-      rowY += Math.max(20, doc.heightOfString(item.description || "", { width: colWidths[1] - 4 }) + 8);
+      rowY += Math.max(20, doc.heightOfString(String(item.description || ""), { width: colWidths[1] - 4 }) + 8);
     });
 
     rowY += 10;
     doc.font("Helvetica-Bold").fontSize(9);
-    doc.text(`Sub-Total: R ${formatCurrency(po.subtotal || 0)}`, 350, rowY, { width: 190, align: "right" });
+    doc.text(`Sub-Total: R ${formatCurrency(Number(po.subtotal) || 0)}`, 350, rowY, { width: 190, align: "right" });
     rowY += 14;
-    doc.text(`VAT: R ${formatCurrency(po.vat_amount || 0)}`, 350, rowY, { width: 190, align: "right" });
+    doc.text(`VAT: R ${formatCurrency(Number(po.vat_amount) || 0)}`, 350, rowY, { width: 190, align: "right" });
     rowY += 14;
-    doc.text(`Total: R ${formatCurrency(po.total || 0)}`, 350, rowY, { width: 190, align: "right" });
+    doc.text(`Total: R ${formatCurrency(Number(po.total) || 0)}`, 350, rowY, { width: 190, align: "right" });
 
     rowY += 30;
     doc.font("Helvetica").fontSize(8);
@@ -120,19 +112,19 @@ function generatePdf(po: any): Promise<Buffer> {
       rowY += Math.max(16, doc.heightOfString(value, { width: 370 }) + 8);
     };
 
-    sectionRow("Payment Terms", po.payment_terms || `All invoicing is to be sent to ${EMERGENT_HEADER.accountsEmail}`);
+    sectionRow("Payment Terms", String(po.payment_terms || `All invoicing is to be sent to ${EMERGENT_HEADER.accountsEmail}`));
     sectionRow("Delivery Instructions", [
       po.delivery_date ? `Delivery date: ${po.delivery_date}` : "",
       po.delivery_address ? `Delivery address: ${po.delivery_address}` : "",
       po.site_contact ? `Site Contact: ${po.site_contact}` : "",
     ].filter(Boolean).join("\n"));
-    if (po.comments) sectionRow("Comments", po.comments);
+    if (po.comments) sectionRow("Comments", String(po.comments));
 
     rowY += 20;
     if (po.project_manager) {
       doc.font("Helvetica-Bold").text("Project Manager:", 50, rowY, { width: 120 });
-      doc.font("Helvetica").text(po.project_manager, 170, rowY);
-      doc.text(po.created_date || new Date().toISOString().slice(0, 10).replace(/-/g, "/"), 400, rowY);
+      doc.font("Helvetica").text(String(po.project_manager), 170, rowY);
+      doc.text(String(po.created_date || new Date().toISOString().slice(0, 10).replace(/-/g, "/")), 400, rowY);
     }
 
     doc.end();
@@ -146,7 +138,7 @@ function makeProjectCode(projectName: string): string {
 }
 
 export function registerPoRoutes(app: Express) {
-  app.get("/api/po/:projectName", requireAuth, async (req, res) => {
+  app.get("/api/po/:projectName", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const { projectName } = req.params;
       const rows = await db.execute(sql`
@@ -159,15 +151,16 @@ export function registerPoRoutes(app: Express) {
         ORDER BY created_at DESC
       `);
       res.json(rows.rows || []);
-    } catch (err: any) {
-      console.error("[PO] List error:", err.message);
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      console.error("[PO] List error:", errMessage);
       res.status(500).json({ error: "Failed to list POs" });
     }
   });
 
-  app.post("/api/po/generate", requireAuth, requirePermission('procurement', 'edit'), async (req, res) => {
+  app.post("/api/po/generate", jwtAuth, requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
+      const user = getEffectiveUser(req);
       const {
         projectName, supplierName, supplierVat, supplierAddress, supplierContact,
         lineItems, paymentTerms, deliveryDate, deliveryAddress, siteContact,
@@ -187,9 +180,9 @@ export function registerPoRoutes(app: Express) {
       const poRef = `PO${poNumber}-${projectCode}-${dateStr}-${supplierCode}`;
 
       let subtotal = 0;
-      const parsedItems = lineItems.map((item: any) => {
-        const qty = parseFloat(item.qty) || 0;
-        const price = parseFloat(item.pricePerUnit) || 0;
+      const parsedItems = lineItems.map((item: Record<string, unknown>) => {
+        const qty = parseFloat(String(item.qty)) || 0;
+        const price = parseFloat(String(item.pricePerUnit)) || 0;
         subtotal += qty * price;
         return { ...item, qty, pricePerUnit: price };
       });
@@ -197,7 +190,7 @@ export function registerPoRoutes(app: Express) {
       const total = Math.round((subtotal + vatAmount) * 100) / 100;
 
       const defaultPaymentTerms = `All invoicing is to be sent to ${EMERGENT_HEADER.accountsEmail}`;
-      const pmName = projectManager || user.name;
+      const pmName = projectManager || user?.name;
 
       const poData = {
         po_ref: poRef,
@@ -241,7 +234,7 @@ export function registerPoRoutes(app: Express) {
           ${siteContact || null},
           ${comments || null},
           ${pmName},
-          'draft', ${user.userId},
+          'draft', ${user?.id},
           ${pdfBuffer}
         ) RETURNING id
       `);
@@ -249,10 +242,10 @@ export function registerPoRoutes(app: Express) {
       const poId = insertResult.rows[0]?.id;
 
       logAuditFromReq(req, {
-        entity: "purchase_order",
-        entityId: poId,
+        entityType: "purchase_order",
+        entityId: String(poId),
         action: "create",
-        details: { poRef, projectName, supplierName, total },
+        changesJson: { poRef, projectName, supplierName, total },
       });
 
       res.json({
@@ -264,15 +257,16 @@ export function registerPoRoutes(app: Express) {
         total,
         pdfBase64: pdfBuffer.toString("base64"),
       });
-    } catch (err: any) {
-      console.error("[PO] Generate error:", err.message);
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      console.error("[PO] Generate error:", errMessage);
       res.status(500).json({ error: "Failed to generate PO" });
     }
   });
 
-  app.get("/api/po/:projectName/:poId/pdf", requireAuth, async (req, res) => {
+  app.get("/api/po/:projectName/:poId/pdf", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(req.params.poId);
+      const poIdNum = parseInt(String(req.params.poId));
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const result = await db.execute(sql`
@@ -284,15 +278,16 @@ export function registerPoRoutes(app: Express) {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${row.po_ref}.pdf"`);
       res.send(row.pdf_data);
-    } catch (err: any) {
-      console.error("[PO] PDF download error:", err.message);
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      console.error("[PO] PDF download error:", errMessage);
       res.status(500).json({ error: "Failed to download PO PDF" });
     }
   });
 
-  app.patch("/api/po/:poId/status", requireAuth, requirePermission('procurement', 'edit'), async (req, res) => {
+  app.patch("/api/po/:poId/status", jwtAuth, requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(req.params.poId);
+      const poIdNum = parseInt(String(req.params.poId));
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const { status } = req.body;
@@ -314,36 +309,38 @@ export function registerPoRoutes(app: Express) {
       }
 
       logAuditFromReq(req, {
-        entity: "purchase_order",
-        entityId: poIdNum,
+        entityType: "purchase_order",
+        entityId: String(poIdNum),
         action: "update_status",
-        details: { status },
+        changesJson: { status },
       });
 
       res.json({ success: true });
-    } catch (err: any) {
-      console.error("[PO] Status update error:", err.message);
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      console.error("[PO] Status update error:", errMessage);
       res.status(500).json({ error: "Failed to update PO status" });
     }
   });
 
-  app.delete("/api/po/:poId", requireAuth, requirePermission('procurement', 'delete'), async (req, res) => {
+  app.delete("/api/po/:poId", jwtAuth, requireAuth, requirePermission('procurement', 'delete'), async (req: Request, res: Response) => {
     try {
-      const poIdNum = parseInt(req.params.poId);
+      const poIdNum = parseInt(String(req.params.poId));
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       await db.execute(sql`DELETE FROM purchase_orders WHERE id = ${poIdNum} AND status = 'draft'`);
 
       logAuditFromReq(req, {
-        entity: "purchase_order",
-        entityId: poIdNum,
+        entityType: "purchase_order",
+        entityId: String(poIdNum),
         action: "delete",
-        details: {},
+        changesJson: {},
       });
 
       res.json({ success: true });
-    } catch (err: any) {
-      console.error("[PO] Delete error:", err.message);
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
+      console.error("[PO] Delete error:", errMessage);
       res.status(500).json({ error: "Failed to delete PO" });
     }
   });

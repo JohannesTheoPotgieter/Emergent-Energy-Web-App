@@ -67,9 +67,9 @@ export function registerAuditRoutes(app: Express) {
         items,
         pagination: { page, limit, total, totalPages: Math.ceil(Number(total) / limit) },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] project-history error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -104,9 +104,9 @@ export function registerAuditRoutes(app: Express) {
         items,
         pagination: { page, limit, total, totalPages: Math.ceil(Number(total) / limit) },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] project-history-by-name error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -122,9 +122,9 @@ export function registerAuditRoutes(app: Express) {
       const fields = await db.select().from(fieldChanges).where(eq(fieldChanges.changeSetId, id));
 
       res.json({ ...cs, fieldChanges: fields });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] changeset detail error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -245,9 +245,9 @@ export function registerAuditRoutes(app: Express) {
           userNames: (filterData.user_names || []).filter(Boolean),
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] activity-log error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -337,9 +337,9 @@ export function registerAuditRoutes(app: Express) {
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="activity-log-${new Date().toISOString().slice(0, 10)}.csv"`);
       res.send(csvContent);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] activity-log export error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 

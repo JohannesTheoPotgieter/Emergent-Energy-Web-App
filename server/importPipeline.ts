@@ -155,11 +155,11 @@ export async function processLedgerEntry(entry: ChangeLedger): Promise<void> {
       snapshotId: snapshot.id,
     });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     await storage.updateChangeLedgerEntry(entry.id, {
       importStatus: "failed",
       errorCode: "IMPORT_ERROR",
-      errorMessage: err.message?.substring(0, 500) || "Unknown error",
+      errorMessage: (err instanceof Error ? err.message : String(err))?.substring(0, 500) || "Unknown error",
     });
   }
 }
@@ -224,11 +224,11 @@ export async function runFullImport(
     });
 
     return { runId: run.id, summary };
-  } catch (err: any) {
+  } catch (err: unknown) {
     await storage.updateImportRun(run.id, {
       status: "fail",
       finishedAt: new Date(),
-      summaryJson: { error: err.message },
+      summaryJson: { error: (err instanceof Error ? err.message : String(err)) },
     });
     throw err;
   }
@@ -333,8 +333,8 @@ export async function createSnapshotFromUpload(
     }
 
     return { snapshotId: snapshot.id, status: "created" };
-  } catch (err: any) {
-    console.error("[Snapshot] Failed to create snapshot from upload:", err.message);
+  } catch (err: unknown) {
+    console.error("[Snapshot] Failed to create snapshot from upload:", (err instanceof Error ? err.message : String(err)));
     return { snapshotId: null, status: "failed" };
   }
 }

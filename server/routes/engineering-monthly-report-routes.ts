@@ -74,9 +74,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         publishedBy: publishedByName,
         publishedAt: snapshot.publishedAt,
       });
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] Error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -111,9 +111,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       }));
 
       res.json({ data: history });
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] History error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] History error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -136,9 +136,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       }).where(eq(monthlyReportSnapshots.id, id));
 
       res.json({ success: true, status: "reviewed" });
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] Review error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] Review error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -162,9 +162,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       }).where(eq(monthlyReportSnapshots.id, id));
 
       res.json({ success: true, status: "published" });
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] Publish error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] Publish error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -185,9 +185,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       }).where(eq(monthlyReportSnapshots.id, id));
 
       res.json({ success: true, status: "draft" });
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] Revert error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] Revert error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -215,9 +215,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         generatedAt: updated.generatedAt,
         regeneratedAt: updated.regeneratedAt,
       });
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] Regenerate error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] Regenerate error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -233,9 +233,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="Engineering_Monthly_Report_${snapshot.reportMonth}.pdf"`);
       res.send(pdfBuffer);
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] PDF export error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] PDF export error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -248,9 +248,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
 
       const { generateReportExcel } = await import("../services/monthly-report-excel-service");
       await generateReportExcel(REPORT_TYPE, snapshot.data as any, snapshot.reportMonth, res);
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] Excel export error:", err.message);
-      if (!res.headersSent) res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] Excel export error:", (err instanceof Error ? err.message : String(err)));
+      if (!res.headersSent) res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -283,9 +283,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         monthB: { month: monthB, status: snapshotB.status, data: snapshotB.data },
         deltas: computeKpiDeltas(kpisA, kpisB),
       });
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] Compare error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] Compare error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -308,9 +308,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       };
 
       res.json(projectData);
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] Project drill-down error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] Project drill-down error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -342,9 +342,9 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
         return writeDrilldownExcel(res, `engineering_monthly_drilldown_${snapshot.reportMonth}.xlsx`, payload);
       }
       res.json(payload);
-    } catch (err: any) {
-      console.error("[Engineering Monthly Report] Drill-down error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Engineering Monthly Report] Drill-down error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 }

@@ -29,8 +29,8 @@ export async function runIntegrityGuard(
     if (count > 0) {
       log(`Backfilled ${count} missing project_execution_state rows`, SRC);
     }
-  } catch (err: any) {
-    log(`project_execution_state backfill error: ${err.message}`, SRC);
+  } catch (err: unknown) {
+    log(`project_execution_state backfill error: ${(err instanceof Error ? err.message : String(err))}`, SRC);
   }
 
   // ── 1:1 coverage: project_settings ─────────────────────────────────
@@ -47,8 +47,8 @@ export async function runIntegrityGuard(
     if (count > 0) {
       log(`Backfilled ${count} missing project_settings rows`, SRC);
     }
-  } catch (err: any) {
-    log(`project_settings backfill error: ${err.message}`, SRC);
+  } catch (err: unknown) {
+    log(`project_settings backfill error: ${(err instanceof Error ? err.message : String(err))}`, SRC);
   }
 
   // ── Dashboard metrics coverage ─────────────────────────────────────
@@ -75,7 +75,7 @@ export async function runIntegrityGuard(
     if (count > 0) {
       log(`Backfilled ${count} missing dashboard_project_metrics rows`, SRC);
     }
-  } catch (err: any) {
-    log(`dashboard_project_metrics backfill error: ${err.message}`, SRC);
+  } catch (err: unknown) {
+    log(`dashboard_project_metrics backfill error: ${(err instanceof Error ? err.message : String(err))}`, SRC);
   }
 }

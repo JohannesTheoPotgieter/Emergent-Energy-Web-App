@@ -1,8 +1,9 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { clients, pdTickets, workItems, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig } from "@shared/schema";
-import { eq, ilike, sql, and, desc, asc, or, count, isNull } from "drizzle-orm";
+import { eq, ilike, sql, and, desc, asc, or, count, isNull, inArray } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
 import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middleware";
@@ -363,7 +364,7 @@ export function registerPdRoutes(app: Express) {
       let recentActivity: any[] = [];
       if (taskIds.length > 0) {
         recentActivity = await db.select().from(taskActivityLog)
-          .where(sql`${taskActivityLog.workItemId} IN (${sql.raw(taskIds.join(","))})`)
+          .where(inArray(taskActivityLog.workItemId, taskIds))
           .orderBy(desc(taskActivityLog.createdAt))
           .limit(20);
       }

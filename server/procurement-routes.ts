@@ -1,30 +1,11 @@
-// @ts-nocheck
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, sql, desc } from "drizzle-orm";
-import { verifyToken } from "./jwt";
-import { procurementItems, projectInfo, users, counterparties, approvals, invoiceCaptures } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
+import { procurementItems, approvals } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   requested: ['quoted', 'approved', 'closed'],
@@ -37,11 +18,19 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   closed: [],
 };
 
+function rowsFromResult(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown[] }).rows;
+    return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+  }
+  return [];
+}
 
-export function registerProcurementRoutes(app: Express) {
+export function registerProcurementRoutes(app: Express): void {
   app.get("/api/procurement/project/:projectId", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const statusFilter = req.query.status as string | undefined;
@@ -66,17 +55,18 @@ export function registerProcurementRoutes(app: Express) {
         WHERE ${whereClause}
         ORDER BY pi2.created_at DESC
       `);
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       res.json(items);
-    } catch (err: any) {
-      console.error("[Procurement] List error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Procurement] List error:", message);
       res.status(500).json({ error: "Failed to fetch procurement items" });
     }
   });
 
   app.get("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const rows = await db.execute(sql`
         SELECT pi2.*, u1.name as requested_by_name, u2.name as owner_name, c.name_canonical as supplier_name, p.project_name
@@ -87,17 +77,17 @@ export function registerProcurementRoutes(app: Express) {
         LEFT JOIN project_info p ON pi2.project_id = p.id
         WHERE pi2.id = ${id}
       `);
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       if (items.length === 0) return res.status(404).json({ error: "Not found" });
       res.json(items[0]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to fetch procurement item" });
     }
   });
 
   app.post("/api/procurement", jwtAuth, requireAuth, requirePermission("procurement", "create"), async (req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
+      const user = getEffectiveUser(req);
       const { projectId, title, description, category, quantity, unit, expectedCost, supplierId, ownerUserId, requiredDate, linkedTaskId, notes, budgetLine, linkedDeliverableId, linkedMilestone, progressPercent, receiptRef, paymentStatus } = req.body;
       if (!projectId || !title) return res.status(400).json({ error: "projectId and title required" });
 
@@ -110,7 +100,7 @@ export function registerProcurementRoutes(app: Express) {
         unit: unit || null,
         expectedCost: expectedCost || null,
         supplierId: supplierId || null,
-        requestedByUserId: user.id,
+        requestedByUserId: user?.id,
         ownerUserId: ownerUserId || null,
         status: 'requested',
         requiredDate: requiredDate || null,
@@ -145,22 +135,23 @@ export function registerProcurementRoutes(app: Express) {
       });
 
       res.status(201).json(result[0]);
-    } catch (err: any) {
-      console.error("[Procurement] Create error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Procurement] Create error:", message);
       res.status(500).json({ error: "Failed to create procurement item" });
     }
   });
 
   app.patch("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(procurementItems).where(eq(procurementItems.id, id));
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
       const old = existing[0];
 
-      const updates: any = { updatedAt: new Date() };
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
       const fields = ['title', 'description', 'category', 'quantity', 'unit', 'expectedCost', 'actualCost', 'supplierId', 'ownerUserId', 'requiredDate', 'poId', 'invoiceRef', 'linkedTaskId', 'notes', 'budgetLine', 'linkedDeliverableId', 'linkedMilestone', 'progressPercent', 'receiptRef', 'paymentStatus', 'linkedInvoiceCaptureId'];
       for (const f of fields) {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
@@ -175,20 +166,21 @@ export function registerProcurementRoutes(app: Express) {
 
         if (req.body.status === 'approved' && !old.approvalId) {
           try {
-            const user = (req as any).user;
+            const user = getEffectiveUser(req);
             const approvalResult = await db.insert(approvals).values({
               type: 'procurement',
               title: `Procurement: ${old.title}`,
               description: `Category: ${old.category}, Expected cost: ${old.expectedCost || 'N/A'}`,
               status: 'approved',
-              requestedBy: old.requestedByUserId || user.id,
-              decidedBy: user.id,
+              requestedBy: old.requestedByUserId || user?.id,
+              decidedBy: user?.id,
               decidedAt: new Date(),
               projectId: old.projectId,
             }).returning();
             updates.approvalId = approvalResult[0].id;
-          } catch (approvalErr: any) {
-            console.warn("[Procurement] Approval creation failed:", approvalErr.message);
+          } catch (approvalErr: unknown) {
+            const msg = approvalErr instanceof Error ? approvalErr.message : String(approvalErr);
+            console.warn("[Procurement] Approval creation failed:", msg);
           }
         }
       }
@@ -219,15 +211,16 @@ export function registerProcurementRoutes(app: Express) {
       });
 
       res.json(result[0]);
-    } catch (err: any) {
-      console.error("[Procurement] Update error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Procurement] Update error:", message);
       res.status(500).json({ error: "Failed to update procurement item" });
     }
   });
 
   app.delete("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(procurementItems).where(eq(procurementItems.id, id));
@@ -243,7 +236,7 @@ export function registerProcurementRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to delete procurement item" });
     }
   });
@@ -260,9 +253,9 @@ export function registerProcurementRoutes(app: Express) {
         GROUP BY pi2.status, pi2.category, p.project_name
         ORDER BY p.project_name, pi2.status
       `));
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       res.json(items);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to fetch pipeline summary" });
     }
   });

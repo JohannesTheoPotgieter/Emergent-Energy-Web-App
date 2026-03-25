@@ -1,15 +1,15 @@
-// @ts-nocheck
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
-import { verifyToken } from "./jwt";
-import { invoiceCaptures, projectInfo, users, counterparties, procurementItems } from "@shared/schema";
+import { invoiceCaptures, procurementItems } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 
 const uploadDir = path.resolve("uploads/invoices");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -17,39 +17,29 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadDir),
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`),
   }),
   limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: allowedFileFilter,
 });
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
+function rowsFromResult(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown[] }).rows;
+    return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
   }
-  next();
+  return [];
 }
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
-
-
 
 function oldInvoiceRefFallback(id: number): string {
   return `INV-${id}`;
 }
 
-export function registerInvoiceCaptureRoutes(app: Express) {
+export function registerInvoiceCaptureRoutes(app: Express): void {
   app.get("/api/invoice-captures/project/:projectId", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const rows = await db.execute(sql.raw(`
@@ -61,16 +51,16 @@ export function registerInvoiceCaptureRoutes(app: Express) {
         WHERE ic.project_id = ${projectId}
         ORDER BY ic.created_at DESC
       `));
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       res.json(items);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to fetch invoices" });
     }
   });
 
   app.post("/api/invoice-captures", jwtAuth, requireAuth, requirePermission("procurement", "create"), upload.single("document"), async (req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
+      const user = getEffectiveUser(req);
       const { projectId, supplierId, invoiceNumber, invoiceDate, amount, vatAmount, linkedPoId, linkedProcurementItemId, notes } = req.body;
       if (!projectId) return res.status(400).json({ error: "projectId required" });
 
@@ -86,7 +76,7 @@ export function registerInvoiceCaptureRoutes(app: Express) {
         linkedPoId: linkedPoId ? parseInt(linkedPoId) : null,
         linkedProcurementItemId: linkedProcurementItemId ? parseInt(linkedProcurementItemId) : null,
         status: 'captured',
-        capturedByUserId: user.id,
+        capturedByUserId: user?.id,
         documentPath,
         notes: notes || null,
       }).returning();
@@ -99,7 +89,7 @@ export function registerInvoiceCaptureRoutes(app: Express) {
             linkedInvoiceCaptureId: result[0].id,
             paymentStatus: 'pending_approval',
             updatedAt: new Date(),
-          } as any)
+          } as Record<string, unknown>)
           .where(eq(procurementItems.id, result[0].linkedProcurementItemId));
       }
 
@@ -124,22 +114,23 @@ export function registerInvoiceCaptureRoutes(app: Express) {
       });
 
       res.status(201).json(result[0]);
-    } catch (err: any) {
-      console.error("[InvoiceCapture] Create error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[InvoiceCapture] Create error:", message);
       res.status(500).json({ error: "Failed to capture invoice" });
     }
   });
 
   app.patch("/api/invoice-captures/:id", jwtAuth, requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(invoiceCaptures).where(eq(invoiceCaptures.id, id));
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
       const old = existing[0];
 
-      const updates: any = { updatedAt: new Date() };
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
       const fields = ['supplierId', 'invoiceNumber', 'invoiceDate', 'amount', 'vatAmount', 'linkedPoId', 'linkedProcurementItemId', 'status', 'notes'];
       for (const f of fields) {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
@@ -169,7 +160,7 @@ export function registerInvoiceCaptureRoutes(app: Express) {
             invoiceRef: result[0].invoiceNumber || old.invoiceNumber || `INV-${result[0].id}`,
             linkedInvoiceCaptureId: result[0].id,
             updatedAt: new Date(),
-          } as any)
+          } as Record<string, unknown>)
           .where(eq(procurementItems.id, result[0].linkedProcurementItemId));
       }
 
@@ -181,21 +172,21 @@ export function registerInvoiceCaptureRoutes(app: Express) {
       });
 
       res.json(result[0]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to update invoice" });
     }
   });
 
   app.delete("/api/invoice-captures/:id", jwtAuth, requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(invoiceCaptures).where(eq(invoiceCaptures.id, id));
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
 
       if (existing[0].documentPath) {
-        try { fs.unlinkSync(existing[0].documentPath); } catch {}
+        try { fs.unlinkSync(existing[0].documentPath); } catch { /* ignore */ }
       }
 
       await db.delete(invoiceCaptures).where(eq(invoiceCaptures.id, id));
@@ -208,7 +199,7 @@ export function registerInvoiceCaptureRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to delete invoice" });
     }
   });

@@ -1093,8 +1093,8 @@ function GlobalUsersView() {
 
   const handleResetPassword = async () => {
     if (!showPasswordDialog || !newPassword) return;
-    if (newPassword.length < 4) {
-      toast({ title: "Password too short", description: "Must be at least 4 characters", variant: "destructive" });
+    if (newPassword.length < 8) {
+      toast({ title: "Password too short", description: "Must be at least 8 characters", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -1347,7 +1347,7 @@ function GlobalUsersView() {
               type={showPassword ? "text" : "password"}
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Enter new password (min 4 characters)"
+              placeholder="Enter new password (min 8 characters)"
               data-testid="input-new-password"
             />
             <button
@@ -1360,7 +1360,7 @@ function GlobalUsersView() {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setShowPasswordDialog(null); setNewPassword(""); setShowPassword(false); }} data-testid="button-cancel-password">Cancel</Button>
-            <Button onClick={handleResetPassword} disabled={saving || newPassword.length < 4} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-password">
+            <Button onClick={handleResetPassword} disabled={saving || newPassword.length < 8} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-password">
               {saving ? "Saving..." : "Reset Password"}
             </Button>
           </DialogFooter>

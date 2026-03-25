@@ -407,8 +407,8 @@ export async function runPdTicketSeed() {
       console.log(`[PD-Seed] ${existing} PD tickets already exist, skipping seed`);
       return;
     }
-  } catch (err: any) {
-    console.log(`[PD-Seed] Could not check pd_tickets count (${err.message}), skipping seed`);
+  } catch (err: unknown) {
+    console.log(`[PD-Seed] Could not check pd_tickets count (${(err instanceof Error ? err.message : String(err))}), skipping seed`);
     return;
   }
 
@@ -443,14 +443,14 @@ export async function runPdTicketSeed() {
         }).returning();
         id = created.id;
         console.log(`[PD-Seed] Created user "${name}" (${role}) with id ${id}`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Username might already exist with different name — try to resolve again
         const [existing] = await db.select().from(users).where(eq(users.username, username));
         if (existing) {
           id = existing.id;
           console.log(`[PD-Seed] Found existing user by username "${username}" with id ${id}`);
         } else {
-          console.warn(`[PD-Seed] Could not create user "${name}": ${err.message}`);
+          console.warn(`[PD-Seed] Could not create user "${name}": ${(err instanceof Error ? err.message : String(err))}`);
         }
       }
     }
@@ -485,8 +485,8 @@ export async function runPdTicketSeed() {
         }).returning();
         clientNameToId[clientName] = created.id;
         console.log(`[PD-Seed] Created client "${clientName}" (${clientCode}) with id ${created.id}`);
-      } catch (err: any) {
-        console.warn(`[PD-Seed] Could not create client "${clientName}": ${err.message}`);
+      } catch (err: unknown) {
+        console.warn(`[PD-Seed] Could not create client "${clientName}": ${(err instanceof Error ? err.message : String(err))}`);
         clientNameToId[clientName] = null;
       }
     }
@@ -517,8 +517,8 @@ export async function runPdTicketSeed() {
         }).returning();
         projectNameToId[projName] = created.id;
         console.log(`[PD-Seed] Created project "${projName}" with id ${created.id}`);
-      } catch (err: any) {
-        console.warn(`[PD-Seed] Could not create project "${projName}": ${err.message}`);
+      } catch (err: unknown) {
+        console.warn(`[PD-Seed] Could not create project "${projName}": ${(err instanceof Error ? err.message : String(err))}`);
         projectNameToId[projName] = null;
       }
     }

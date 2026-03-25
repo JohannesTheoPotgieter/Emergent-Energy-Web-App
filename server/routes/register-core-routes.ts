@@ -26,13 +26,13 @@ export async function registerCoreRoutes(app: Express) {
   try {
     const { registerPmMonthlyReportRoutes } = await import("./pm-monthly-report-routes");
     registerPmMonthlyReportRoutes(app);
-  } catch (err: any) {
-    console.error("[Startup:Routes] Failed to register PM monthly report routes:", err.message);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register PM monthly report routes:", (err instanceof Error ? err.message : String(err)));
   }
   try {
     const { registerEngineeringMonthlyReportRoutes } = await import("./engineering-monthly-report-routes");
     registerEngineeringMonthlyReportRoutes(app);
-  } catch (err: any) {
-    console.error("[Startup:Routes] Failed to register Engineering monthly report routes:", err.message);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Engineering monthly report routes:", (err instanceof Error ? err.message : String(err)));
   }
 }
