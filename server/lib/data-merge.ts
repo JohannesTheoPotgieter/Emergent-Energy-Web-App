@@ -76,8 +76,6 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   const effectivePaidDateFontColor = cost.paidDate ? paymentDateFontColor : ((cost as any).forecastPaymentDate ? (paymentDateFontColor || "red") : null);
   const effectivePaidDateConfirmed = cost.paidDate ? (rawPaidDateConfirmed ?? false) : ((cost as any).forecastPaymentDate ? (rawPaidDateConfirmed ?? false) : false);
 
-  const isActualSpend = computedState === "Invoiced" || computedState === "Paid";
-
   return {
     id: cost.id + 900000,
     projectName: resolvedName,
@@ -88,14 +86,15 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     expenseInvoiceNumber: cost.invoiceNumber,
     expenseInvoicedDate: cost.invoiceDate,
     expensePaymentDate: effectivePaidDate,
-    expenseActualTotal: isActualSpend ? cost.amountExVat : null,
+    expenseActualTotal: cost.amountExVat,
     quotedTotal: cost.amountExVat,
     expensePoNumber: cost.poNumber,
     budgetQty: (cost as any).budgetQty ?? null,
     budgetRateUnit: (cost as any).budgetRate ?? null,
     budgetTotal: (cost as any).budgetTotal ?? null,
     budgetCosTotal: (cost as any).budgetCos ?? null,
-    actualCosTotal: isActualSpend ? cost.amountExVat : null,
+    actualCosTotal: cost.amountExVat,
+    approvedDate: cost.approvedDate ?? null,
     forecastPaymentDate: (cost as any).forecastPaymentDate ?? null,
     computedForecastPaymentDate: null,
     computedState,
