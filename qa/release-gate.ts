@@ -22,10 +22,10 @@ type ReconciliationEvidence = {
 
 const REPORTS_DIR = path.join(process.cwd(), "qa", "reports");
 const RECONCILIATION_FILE = process.env.RELEASE_RECONCILIATION_FILE || path.join(REPORTS_DIR, "reconciliation-status.json");
-const CRITICAL_DEFECT_FILE = process.env.CRITICAL_DEFECT_FILE || path.join(process.cwd(), "FINAL_DEFECT_REGISTER.md");
+const CRITICAL_DEFECT_FILE = process.env.CRITICAL_DEFECT_FILE || path.join(process.cwd(), "docs", "archive", "FINAL_DEFECT_REGISTER.md");
 const REQUIRE_CRITICAL_DEFECT_FILE = process.env.REQUIRE_CRITICAL_DEFECT_FILE === "true";
 const WORKFLOW_TEST_COMMAND = process.env.WORKFLOW_TEST_COMMAND || "npm run test:workflows";
-const ROLE_AUDIT_FILE = process.env.ROLE_AUDIT_FILE || path.join(process.cwd(), "docs", "qa", "results", "latest", "role-permission-audit.md");
+const ROLE_AUDIT_FILE = process.env.ROLE_AUDIT_FILE || path.join(process.cwd(), "docs", "archive", "docs", "qa", "results", "latest", "role-permission-audit.md");
 const CRITICAL_ROUTES = ["/projects", "/project/:projectName", "/cashflow", "/quality", "/engineering/tasks", "/pm-dashboard", "/admin/control-center", "/handover-control"];
 
 const REQUIRED_COMMAND_CHECKS = [
