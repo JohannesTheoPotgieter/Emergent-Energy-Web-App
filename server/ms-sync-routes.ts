@@ -652,6 +652,7 @@ export function registerMsSyncRoutes(app: Express) {
                      wi.external_ref,
                      wi.wbs_code as parent_task_no,
                      wi.workstream,
+                     wi.source,
                      (SELECT wia.role::text FROM work_item_assignments wia
                       WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}
                       LIMIT 1) as assignment_role
@@ -770,194 +771,267 @@ export function registerMsSyncRoutes(app: Express) {
 
       const visibleMicrosoftItems = await filterMicrosoftItemsForRequest(req, microsoftItems);
 
-      res.json({
-        personal: personalTasks.map(t => withSourceLinks("personal", {
+      const personal = personalTasks.map(t => withSourceLinks("personal", {
+        ...t,
+        resolvedOwner: resolveUserId(t.ownerUserId),
+      }, {
+        itemKey: `personal-${t.id}`,
+        rawId: t.id,
+        projectName: t.projectName,
+      }));
+
+      const operational = opTasks.map(t => {
+        const isOwnerOrAssignee = t.ownerUserId === userId;
+        const isCreator = t.createdBy === userId;
+        const trackingRole = isOwnerOrAssignee && isCreator ? "both" : isOwnerOrAssignee ? "assignee" : "creator";
+        return withSourceLinks("operational", {
           ...t,
-          resolvedOwner: resolveUserId(t.ownerUserId),
-        }, {
-          itemKey: `personal-${t.id}`,
-          rawId: t.id,
-          projectName: t.projectName,
-        })),
-        operational: opTasks.map(t => {
-          const isOwnerOrAssignee = t.ownerUserId === userId;
-          const isCreator = t.createdBy === userId;
-          const trackingRole = isOwnerOrAssignee && isCreator ? "both" : isOwnerOrAssignee ? "assignee" : "creator";
-          return withSourceLinks("operational", {
-            ...t,
-            status: normalizeTaskStatus(t.status),
-            subtaskCount: subtaskCounts[t.id] || 0,
-            resolvedAssignees: [] as ResolvedUser[],
-            resolvedOwner: resolveUserId(t.ownerUserId),
-            trackingRole,
-          }, {
-            itemKey: `op-${t.id}`,
-            rawId: t.id,
-            projectName: null,
-          });
-        }),
-        trRegister: trRegisterItems.map(t => {
-          const isOwner = (t.owners || []).includes(userName);
-          const isCreatorByEmail = t.createdBy === userEmail || t.createdBy === userName || t.createdBy === username;
-          const trackingRole = isOwner && isCreatorByEmail ? "both" : isOwner ? "assignee" : "creator";
-          return withSourceLinks("tr_register", {
-            ...t,
-            resolvedOwners: mergeResolvedWithTextNames(resolveUserIds(t.ownerUserIds), t.owners, userMap),
-            trackingRole,
-          }, {
-            itemKey: `tr-${t.id}`,
-            rawId: t.id,
-          });
-        }),
-        approvals: {
-          engineering: approvalData.engApprovals.map((a: any) => withSourceLinks("approvals", {
-            id: a.id,
-            projectId: a.projectId,
-            title: `${a.stageName} — ${a.approverRole}`,
-            projectName: a.projectName,
-            status: a.status,
-            createdAt: a.createdAt,
-            type: "engineering" as const,
-          }, {
-            itemKey: `approval-eng-${a.id}`,
-            rawId: a.id,
-            projectName: a.projectName,
-            sourceType: "engineering",
-          })),
-          quality: approvalData.qcItems.map((q: any) => withSourceLinks("approvals", {
-            id: q.id,
-            projectId: q.projectId,
-            title: q.itemName,
-            projectName: q.projectName,
-            status: "review",
-            createdAt: q.lastUpdatedAt,
-            type: "quality" as const,
-          }, {
-            itemKey: `approval-qc-${q.id}`,
-            rawId: q.id,
-            projectName: q.projectName,
-            sourceType: "quality",
-          })),
-          general: (approvalData.generalApprovals || []).map((approval: any) => {
-            const primaryAssignment = approval.assignments?.[0] || null;
-            return withSourceLinks("approvals", {
-              id: approval.id,
-              title: approval.title,
-              projectId: approval.projectId,
-              projectName: approval.projectName,
-              status: approval.status,
-              createdAt: approval.requestedAt,
-              type: "general" as const,
-              approvalCategory: approval.approvalCategory,
-              relatedEntityType: approval.relatedEntityType,
-              relatedEntityId: approval.relatedEntityId,
-              assignments: approval.assignments || [],
-              assigneeDisplay: primaryAssignment?.displayLabel || (approval.assignedApprover ? resolveUserId(approval.assignedApprover)?.name || null : null),
-            }, {
-              itemKey: `approval-gen-${approval.id}`,
-              rawId: approval.id,
-              projectName: approval.projectName,
-              sourceType: "general",
-            });
-          }),
-        },
-        deliverables: deliverableItems.map((d: any) => withSourceLinks("deliverables", {
-          ...d,
-          resolvedOwner: resolveUserId(d.ownerUserId),
-          resolvedReviewer: resolveUserId(d.reviewerUserId),
-          resolvedQcReviewer: resolveUserId(d.qcReviewerUserId),
-        }, {
-          itemKey: `del-${d.id}`,
-          rawId: d.id,
-          projectName: d.projectName,
-        })),
-        planTasks: (planTasks as any[]).map((t: any) => {
-          const isOwner = t.assignee_user_id === userId;
-          const role = t.assignment_role;
-          const isViewer = role === 'VIEWER';
-          const isAdminOverview = !role && !isOwner && isAdmin;
-          const trackingRole = isViewer ? "viewer" : isAdminOverview ? "admin_overview" : isOwner ? "assignee" : role ? "assignee" : "assignee";
-          return withSourceLinks("plan", {
-            id: t.id,
-            title: t.task_name,
-            status: normalizeTaskStatus(t.status),
-            projectId: t.project_id,
-            projectName: t.project_name,
-            owner: t.owner,
-            phase: t.phase,
-            startDate: t.start_date,
-            endDate: t.end_date,
-            pctComplete: t.pct_complete,
-            assigneeUserId: t.assignee_user_id,
-            resolvedAssignee: resolveUserId(t.assignee_user_id) || resolveTextNameToUser(t.owner),
-            scheduledDate: t.scheduled_date || null,
-            scheduledStartTime: t.scheduled_start_time || null,
-            scheduledEndTime: t.scheduled_end_time || null,
-            workstream: t.workstream || "PM",
-            trackingRole,
-            _source: "plan",
-          }, {
-            itemKey: `plan-${t.id}`,
-            rawId: t.id,
-            projectName: t.project_name,
-          });
-        }),
-        engineeringTasks: engTasks.map((t: any) => withSourceLinks("engineering_task", {
-          id: t.id,
-          title: t.title,
           status: normalizeTaskStatus(t.status),
-          projectId: t.projectId ?? null,
-          projectName: t.projectName,
-          lifecyclePhase: t.lifecyclePhaseTag,
-          assigneeUserId: t.assigneeUserId,
-          assigneeName: t.assigneeName,
-          resolvedAssignee: resolveUserId(t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
-          scheduledDate: t.scheduledDate || null,
-          scheduledStartTime: t.scheduledStartTime || null,
-          scheduledEndTime: t.scheduledEndTime || null,
-          _source: "engineering_task",
+          subtaskCount: subtaskCounts[t.id] || 0,
+          resolvedAssignees: [] as ResolvedUser[],
+          resolvedOwner: resolveUserId(t.ownerUserId),
+          trackingRole,
         }, {
-          itemKey: `eng-${t.id}`,
+          itemKey: `op-${t.id}`,
           rawId: t.id,
-          projectName: t.projectName,
-        })),
-        qualityTasks: (qualityTasks as any[]).map((t: any) => withSourceLinks("quality_task", {
+          projectName: null,
+        });
+      });
+
+      const trRegister = trRegisterItems.map(t => {
+        const isOwner = (t.owners || []).includes(userName);
+        const isCreatorByEmail = t.createdBy === userEmail || t.createdBy === userName || t.createdBy === username;
+        const trackingRole = isOwner && isCreatorByEmail ? "both" : isOwner ? "assignee" : "creator";
+        return withSourceLinks("tr_register", {
+          ...t,
+          resolvedOwners: mergeResolvedWithTextNames(resolveUserIds(t.ownerUserIds), t.owners, userMap),
+          trackingRole,
+        }, {
+          itemKey: `tr-${t.id}`,
+          rawId: t.id,
+        });
+      });
+
+      const approvalsEngineering = approvalData.engApprovals.map((a: any) => withSourceLinks("approvals", {
+        id: a.id,
+        projectId: a.projectId,
+        title: `${a.stageName} — ${a.approverRole}`,
+        projectName: a.projectName,
+        status: a.status,
+        createdAt: a.createdAt,
+        type: "engineering" as const,
+      }, {
+        itemKey: `approval-eng-${a.id}`,
+        rawId: a.id,
+        projectName: a.projectName,
+        sourceType: "engineering",
+      }));
+
+      const approvalsQuality = approvalData.qcItems.map((q: any) => withSourceLinks("approvals", {
+        id: q.id,
+        projectId: q.projectId,
+        title: q.itemName,
+        projectName: q.projectName,
+        status: "review",
+        createdAt: q.lastUpdatedAt,
+        type: "quality" as const,
+      }, {
+        itemKey: `approval-qc-${q.id}`,
+        rawId: q.id,
+        projectName: q.projectName,
+        sourceType: "quality",
+      }));
+
+      const approvalsGeneral = (approvalData.generalApprovals || []).map((approval: any) => {
+        const primaryAssignment = approval.assignments?.[0] || null;
+        return withSourceLinks("approvals", {
+          id: approval.id,
+          title: approval.title,
+          projectId: approval.projectId,
+          projectName: approval.projectName,
+          status: approval.status,
+          createdAt: approval.requestedAt,
+          type: "general" as const,
+          approvalCategory: approval.approvalCategory,
+          relatedEntityType: approval.relatedEntityType,
+          relatedEntityId: approval.relatedEntityId,
+          assignments: approval.assignments || [],
+          assigneeDisplay: primaryAssignment?.displayLabel || (approval.assignedApprover ? resolveUserId(approval.assignedApprover)?.name || null : null),
+        }, {
+          itemKey: `approval-gen-${approval.id}`,
+          rawId: approval.id,
+          projectName: approval.projectName,
+          sourceType: "general",
+        });
+      });
+
+      const deliverablesMapped = deliverableItems.map((d: any) => withSourceLinks("deliverables", {
+        ...d,
+        resolvedOwner: resolveUserId(d.ownerUserId),
+        resolvedReviewer: resolveUserId(d.reviewerUserId),
+        resolvedQcReviewer: resolveUserId(d.qcReviewerUserId),
+      }, {
+        itemKey: `del-${d.id}`,
+        rawId: d.id,
+        projectName: d.projectName,
+      }));
+
+      const planTasksMapped = (planTasks as any[]).map((t: any) => {
+        const isOwner = t.assignee_user_id === userId;
+        const role = t.assignment_role;
+        const isViewer = role === 'VIEWER';
+        const isAdminOverview = !role && !isOwner && isAdmin;
+        const trackingRole = isViewer ? "viewer" : isAdminOverview ? "admin_overview" : isOwner ? "assignee" : role ? "assignee" : "assignee";
+        return withSourceLinks("plan", {
           id: t.id,
-          title: t.item_name,
-          status: normalizeTaskStatus(t.qm_status || "not_started"),
+          title: t.task_name,
+          status: normalizeTaskStatus(t.status),
           projectId: t.project_id,
           projectName: t.project_name,
+          owner: t.owner,
+          phase: t.phase,
           startDate: t.start_date,
           endDate: t.end_date,
+          pctComplete: t.pct_complete,
           assigneeUserId: t.assignee_user_id,
-          resolvedAssignee: resolveUserId(t.assignee_user_id),
+          resolvedAssignee: resolveUserId(t.assignee_user_id) || resolveTextNameToUser(t.owner),
           scheduledDate: t.scheduled_date || null,
           scheduledStartTime: t.scheduled_start_time || null,
           scheduledEndTime: t.scheduled_end_time || null,
-          _source: "quality_task",
+          workstream: t.workstream || "PM",
+          source: t.source || null,
+          trackingRole,
+          _source: "plan",
         }, {
-          itemKey: `qc-${t.id}`,
+          itemKey: `plan-${t.id}`,
           rawId: t.id,
           projectName: t.project_name,
-        })),
-        microsoftItems: visibleMicrosoftItems.map((item: any) => {
-          const linkedTaskType = item.linkedTaskId ? (item.linkedProjectId ? "operational" : "personal") : null;
-          return withSourceLinks("microsoft", {
-            ...item,
-            linkedTaskType,
-          }, {
-            itemKey: `ms-${item.id}`,
-            rawId: item.id,
-            projectName: item.linkedProjectName,
-            sourceType: item.type,
-            linkedTaskId: item.linkedTaskId,
-            linkedTaskType,
-            linkedQualityItemInstanceId: item.linkedQualityItemInstanceId,
-            webLink: item.webLink,
-          });
-        }),
-        userMap: Object.fromEntries(userMap),
+        });
       });
+
+      const engineeringTasksMapped = engTasks.map((t: any) => withSourceLinks("engineering_task", {
+        id: t.id,
+        title: t.title,
+        status: normalizeTaskStatus(t.status),
+        projectId: t.projectId ?? null,
+        projectName: t.projectName,
+        lifecyclePhase: t.lifecyclePhaseTag,
+        assigneeUserId: t.assigneeUserId,
+        assigneeName: t.assigneeName,
+        resolvedAssignee: resolveUserId(t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
+        scheduledDate: t.scheduledDate || null,
+        scheduledStartTime: t.scheduledStartTime || null,
+        scheduledEndTime: t.scheduledEndTime || null,
+        workstream: t.workstream || "ENG",
+        source: t.source || null,
+        _source: "engineering_task",
+      }, {
+        itemKey: `eng-${t.id}`,
+        rawId: t.id,
+        projectName: t.projectName,
+      }));
+
+      const qualityTasksMapped = (qualityTasks as any[]).map((t: any) => withSourceLinks("quality_task", {
+        id: t.id,
+        title: t.item_name,
+        status: normalizeTaskStatus(t.qm_status || "not_started"),
+        projectId: t.project_id,
+        projectName: t.project_name,
+        startDate: t.start_date,
+        endDate: t.end_date,
+        assigneeUserId: t.assignee_user_id,
+        resolvedAssignee: resolveUserId(t.assignee_user_id),
+        scheduledDate: t.scheduled_date || null,
+        scheduledStartTime: t.scheduled_start_time || null,
+        scheduledEndTime: t.scheduled_end_time || null,
+        _source: "quality_task",
+      }, {
+        itemKey: `qc-${t.id}`,
+        rawId: t.id,
+        projectName: t.project_name,
+      }));
+
+      const microsoftItemsMapped = visibleMicrosoftItems.map((item: any) => {
+        const linkedTaskType = item.linkedTaskId ? (item.linkedProjectId ? "operational" : "personal") : null;
+        return withSourceLinks("microsoft", {
+          ...item,
+          linkedTaskType,
+        }, {
+          itemKey: `ms-${item.id}`,
+          rawId: item.id,
+          projectName: item.linkedProjectName,
+          sourceType: item.type,
+          linkedTaskId: item.linkedTaskId,
+          linkedTaskType,
+          linkedQualityItemInstanceId: item.linkedQualityItemInstanceId,
+          webLink: item.webLink,
+        });
+      });
+
+      const workItemPriority: Record<string, number> = { operational: 1, plan: 2, engineering_task: 3 };
+      const canonicalCategory = (task: any): string => {
+        const source = task?._source;
+        const workstream = String(task?.workstream || "").toUpperCase();
+        const sourceSystem = String(task?.source || "").toUpperCase();
+        if (source === "personal") return "personal";
+        if (source === "quality_task") return "quality";
+        if (source === "engineering_task" || workstream === "ENG") return "engineering";
+        if (source === "plan" || workstream === "PM") return "project_plan";
+        if (source === "operational" && (sourceSystem === "SMART_IMPORT" || sourceSystem === "INTEGRATION")) return "external";
+        if (source === "operational") return "internal";
+        if (source === "approvals") return "approval";
+        if (source === "tr_register") return "action";
+        if (source === "deliverables") return "deliverable";
+        if (source === "microsoft") return "external";
+        return "internal";
+      };
+      const canonicalTasks = (() => {
+        const all = [
+          ...personal,
+          ...operational,
+          ...planTasksMapped,
+          ...engineeringTasksMapped,
+          ...qualityTasksMapped,
+          ...trRegister,
+          ...deliverablesMapped,
+          ...approvalsEngineering,
+          ...approvalsQuality,
+          ...approvalsGeneral,
+          ...microsoftItemsMapped,
+        ];
+        const merged = new Map<string, any>();
+        for (let idx = 0; idx < all.length; idx++) {
+          const task = all[idx];
+          const source = task?._source || "unknown";
+          const rawId = task?.rawId ?? task?.id ?? null;
+          const isWorkItemFamily = source === "operational" || source === "plan" || source === "engineering_task";
+          const stableFallback = task?.itemKey || task?._key || `${source}:${task?.title || "untitled"}:${idx}`;
+          const key = isWorkItemFamily && rawId != null ? `work_item:${rawId}` : `${source}:${rawId ?? stableFallback}`;
+          const existing = merged.get(key);
+          if (!existing) {
+            merged.set(key, task);
+            continue;
+          }
+          if (!isWorkItemFamily) continue;
+          const currentRank = workItemPriority[existing?._source || ""] ?? 0;
+          const candidateRank = workItemPriority[source] ?? 0;
+          if (candidateRank > currentRank) {
+            merged.set(key, task);
+          }
+        }
+        return Array.from(merged.values()).map((task: any) => ({
+          ...task,
+          category: canonicalCategory(task),
+          canonicalSource: "tasks",
+        }));
+      })();
+
+      const basePayload: Record<string, any> = {
+        tasks: canonicalTasks,
+        userMap: Object.fromEntries(userMap),
+      };
+
+      res.json(basePayload);
     } catch (err: any) {
       console.error("[MyWork AllTasks] Error:", err);
       res.status(500).json({ error: err.message });
