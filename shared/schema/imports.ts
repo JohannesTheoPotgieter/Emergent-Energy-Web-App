@@ -44,7 +44,8 @@ export const spFiles = pgTable("sp_files", {
   spLastModifiedAt: timestamp("sp_last_modified_at"),
   spLastModifiedByName: text("sp_last_modified_by_name"),
   spLastModifiedByEmail: text("sp_last_modified_by_email"),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -364,7 +365,8 @@ export const intakeTaskTemplates = pgTable("intake_task_templates", {
   description: text("description"),
   dodItems: jsonb("dod_items"),
   sortOrder: integer("sort_order").notNull().default(0),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertIntakeTaskTemplateSchema = createInsertSchema(intakeTaskTemplates).omit({ id: true, createdAt: true } as any);

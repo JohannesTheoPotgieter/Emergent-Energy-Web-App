@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
@@ -5,6 +6,7 @@ import { eq, and, desc, asc, sql, inArray, isNull, lt, gt, or, ne } from "drizzl
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import {
   taskComments, taskActivityLog, taskWatchers, taskDeliverables,
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
@@ -37,9 +39,10 @@ if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recur
 const approvalUpload = multer({
   storage: multer.diskStorage({
     destination: approvalUploadsDir,
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_')}`),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`),
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: allowedFileFilter,
 });
 
 type AppUser = { id: number; email: string; name: string; role: string; };

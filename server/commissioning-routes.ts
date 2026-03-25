@@ -1,11 +1,10 @@
-// @ts-nocheck
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, sql, desc, ilike } from "drizzle-orm";
-import { verifyToken } from "./jwt";
-import { commissioningItems, projectInfo, users, approvals, projectEngStages, engStageTemplates } from "@shared/schema";
+import { eq, and, sql, ilike } from "drizzle-orm";
+import { commissioningItems, projectEngStages, engStageTemplates, approvals } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { jwtAuth, requireAuth, getEffectiveUser, type AuthenticatedUser } from "./auth-context";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
 
 /** Check whether the Handover Pack engineering stage is complete for a project. */
@@ -20,24 +19,6 @@ async function isHandoverPackComplete(projectId: number): Promise<{ complete: bo
   return { complete: stage.status === "complete", stageName: stage.name, status: stage.status };
 }
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
-
 const VALID_TRANSITIONS: Record<string, string[]> = {
   not_started: ['in_progress'],
   in_progress: ['ready_for_review', 'not_started'],
@@ -46,11 +27,19 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   closed: [],
 };
 
+function rowsFromResult(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown[] }).rows;
+    return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+  }
+  return [];
+}
 
-export function registerCommissioningRoutes(app: Express) {
+export function registerCommissioningRoutes(app: Express): void {
   app.get("/api/commissioning/project/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const typeFilter = req.query.itemType as string | undefined;
@@ -65,17 +54,18 @@ export function registerCommissioningRoutes(app: Express) {
         ${whereClause}
         ORDER BY ci.category, ci.sort_order, ci.created_at
       `));
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       res.json(items);
-    } catch (err: any) {
-      console.error("[Commissioning] List error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] List error:", message);
       res.status(500).json({ error: "Failed to fetch commissioning items" });
     }
   });
 
   app.get("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const rows = await db.execute(sql.raw(`
         SELECT ci.*, u.name as owner_name, p.project_name
@@ -84,17 +74,16 @@ export function registerCommissioningRoutes(app: Express) {
         LEFT JOIN project_info p ON ci.project_id = p.id
         WHERE ci.id = ${id}
       `));
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       if (items.length === 0) return res.status(404).json({ error: "Not found" });
       res.json(items[0]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to fetch commissioning item" });
     }
   });
 
   app.post("/api/commissioning", jwtAuth, requireAuth, requirePermission("commissioning", "create"), async (req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
       const { projectId, itemType, title, description, ownerUserId, dueDate, gateId, category, sortOrder } = req.body;
       if (!projectId || !title) return res.status(400).json({ error: "projectId and title required" });
 
@@ -119,22 +108,23 @@ export function registerCommissioningRoutes(app: Express) {
       });
 
       res.status(201).json(result[0]);
-    } catch (err: any) {
-      console.error("[Commissioning] Create error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] Create error:", message);
       res.status(500).json({ error: "Failed to create commissioning item" });
     }
   });
 
   app.patch("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
       const old = existing[0];
 
-      const updates: any = { updatedAt: new Date() };
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
       const fields = ['title', 'description', 'ownerUserId', 'dueDate', 'evidenceNotes', 'gateId', 'category', 'sortOrder', 'itemType'];
       for (const f of fields) {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
@@ -160,7 +150,7 @@ export function registerCommissioningRoutes(app: Express) {
         updates.status = req.body.status;
 
         if (req.body.status === 'approved' || req.body.status === 'closed') {
-          const user = (req as any).user as any;
+          const user = getEffectiveUser(req);
           const overrideReason = String(req.body?.evidenceOverrideReason || "").trim();
           const wantsOverride = !!overrideReason;
 
@@ -206,18 +196,19 @@ export function registerCommissioningRoutes(app: Express) {
 
         if (req.body.status === 'ready_for_review' && !old.approvalId) {
           try {
-            const user = (req as any).user;
+            const user = getEffectiveUser(req);
             const approvalResult = await db.insert(approvals).values({
               type: old.itemType || 'commissioning',
               title: `${old.itemType === 'closeout' ? 'Closeout' : 'Commissioning'}: ${old.title}`,
               description: old.description || '',
               status: 'pending',
-              requestedBy: user.id,
+              requestedBy: user?.id,
               projectId: old.projectId,
             }).returning();
             updates.approvalId = approvalResult[0].id;
-          } catch (approvalErr: any) {
-            console.warn("[Commissioning] Approval creation failed:", approvalErr.message);
+          } catch (approvalErr: unknown) {
+            const msg = approvalErr instanceof Error ? approvalErr.message : String(approvalErr);
+            console.warn("[Commissioning] Approval creation failed:", msg);
           }
         }
       }
@@ -232,15 +223,16 @@ export function registerCommissioningRoutes(app: Express) {
       });
 
       res.json(result[0]);
-    } catch (err: any) {
-      console.error("[Commissioning] Update error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] Update error:", message);
       res.status(500).json({ error: "Failed to update commissioning item" });
     }
   });
 
   app.delete("/api/commissioning/:id", jwtAuth, requireAuth, requirePermission("commissioning", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
@@ -256,18 +248,18 @@ export function registerCommissioningRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to delete commissioning item" });
     }
   });
 
   app.get("/api/commissioning/progress/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const rows = await db.execute(sql.raw(`
-        SELECT 
+        SELECT
           category,
           item_type,
           COUNT(*)::int as total,
@@ -279,9 +271,9 @@ export function registerCommissioningRoutes(app: Express) {
         GROUP BY category, item_type
         ORDER BY category
       `));
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       res.json(items);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to fetch progress" });
     }
   });
@@ -289,22 +281,22 @@ export function registerCommissioningRoutes(app: Express) {
   /** Check if commissioning is unlocked for a project (Handover Pack gate) */
   app.get("/api/commissioning/gate-status/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
       const hp = await isHandoverPackComplete(projectId);
       res.json({ unlocked: hp.complete, handoverPack: hp });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to check gate status" });
     }
   });
 
   app.post("/api/commissioning/:id/evidence", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const [item] = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
       if (!item) return res.status(404).json({ error: "Not found" });
-      const user = (req as any).user as any;
+      const user = getEffectiveUser(req);
 
       const payload = req.body || {};
       await upsertEvidenceItem({
@@ -339,19 +331,20 @@ export function registerCommissioningRoutes(app: Express) {
       });
 
       res.status(201).json({ success: true, evidence });
-    } catch (err: any) {
-      console.error("[Commissioning] evidence add error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Commissioning] evidence add error:", message);
       res.status(500).json({ error: "Failed to add evidence" });
     }
   });
 
   app.get("/api/commissioning/:id/evidence-evaluation", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const [item] = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
       if (!item) return res.status(404).json({ error: "Not found" });
-      const user = (req as any).user as any;
+      const user = getEffectiveUser(req);
       const evidence = await evaluateEvidence({
         projectId: item.projectId,
         completionType: "commissioning_item_close",
@@ -362,7 +355,7 @@ export function registerCommissioningRoutes(app: Express) {
         evaluatorName: user?.name,
       });
       res.json(evidence);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to evaluate evidence" });
     }
   });

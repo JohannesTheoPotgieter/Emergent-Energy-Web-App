@@ -13,6 +13,7 @@ import path from "path";
 import fs from "fs";
 // import { isOutlookConfigured, sendMail } from "./outlook"; // removed with notifications
 import { logAuditFromReq } from "./audit-logger";
+import { sanitizeFilename } from "./lib/upload-security";
 
 const photoUploadDir = path.join(process.cwd(), "uploads", "pm-photos");
 if (!fs.existsSync(photoUploadDir)) {
@@ -24,8 +25,7 @@ const photoUpload = multer({
     destination: (_req, _file, cb) => cb(null, photoUploadDir),
     filename: (_req, file, cb) => {
       const ts = Date.now();
-      const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, "_");
-      cb(null, `${ts}_${sanitized}`);
+      cb(null, `${ts}_${sanitizeFilename(file.originalname)}`);
     },
   }),
   limits: { fileSize: 20 * 1024 * 1024 },
@@ -91,8 +91,8 @@ async function requirePmAssignment(req: Request, res: Response, next: NextFuncti
       return res.status(403).json({ error: "You are not assigned to this project" });
     }
     next();
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 }
 
@@ -149,8 +149,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
           .where(eq(pmModePreferences.userId, user.id))
           .limit(1);
         res.json({ mode: rows.length > 0 ? rows[0].preferredMode : "full_detail" });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -180,8 +180,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
         }
         logAuditFromReq(req, { entityType: "pm_mode_preference", entityId: String(user.id), action: "update", changesJson: { description: "Mode preference updated", mode } });
         res.json({ mode });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -262,9 +262,9 @@ export function registerPmOnTheGoRoutes(app: Express) {
         });
 
         res.json({ projects: result });
-      } catch (err: any) {
-        console.error("[PM-OTG] Projects error:", err.message);
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        console.error("[PM-OTG] Projects error:", (err instanceof Error ? err.message : String(err)));
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -357,9 +357,9 @@ export function registerPmOnTheGoRoutes(app: Express) {
           daysBehindAhead: daysDelta,
           safetyStatus,
         });
-      } catch (err: any) {
-        console.error("[PM-OTG] Snapshot error:", err.message);
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        console.error("[PM-OTG] Snapshot error:", (err instanceof Error ? err.message : String(err)));
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -429,9 +429,9 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(visit.id), action: "create", projectName: pName, changesJson: { description: "Site visit logged", safetyStatus, photoCount: photoIds.length } });
         res.json({ success: true, visit });
-      } catch (err: any) {
-        console.error("[PM-OTG] Site visit error:", err.message);
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        console.error("[PM-OTG] Site visit error:", (err instanceof Error ? err.message : String(err)));
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -479,8 +479,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "PO request generated", poNumber, amount, supplier } });
         res.json({ success: true, action });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -527,8 +527,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Invoice linked", invoiceNumber, amount, poReference } });
         res.json({ success: true, action });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -576,8 +576,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Variation order raised", amount, justification } });
         res.json({ success: true, action });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -624,8 +624,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Delay logged", daysDelayed, impact } });
         res.json({ success: true, action });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -672,8 +672,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Risk logged", severity, mitigationNotes } });
         res.json({ success: true, action });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -714,8 +714,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Photo uploaded", caption } });
         res.json({ success: true, action, photoUrl });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -776,8 +776,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Progress updated", progressPercent: pct, notes } });
         res.json({ success: true, action });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -829,8 +829,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_otg_action", entityId: String(action.id), action: "create", projectName: pName, changesJson: { description: "Escalation raised", escalationLevel, urgency } });
         res.json({ success: true, action });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -878,8 +878,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
           weeklyProgressDone: row.weekly_progress_done || false,
           weeklyRiskDone: row.weekly_risk_done || false,
         });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );
@@ -910,8 +910,8 @@ export function registerPmOnTheGoRoutes(app: Express) {
 
         logAuditFromReq(req, { entityType: "pm_compliance", entityId: String(projectId), action: "update", changesJson: { description: "Weekly risk compliance confirmed", weekStart } });
         res.json({ success: true });
-      } catch (err: any) {
-        res.status(500).json({ error: err.message });
+      } catch (err: unknown) {
+        res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
       }
     }
   );

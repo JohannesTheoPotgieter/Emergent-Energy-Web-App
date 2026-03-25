@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth, requireAdmin, requirePriorityAdmin } from './shared-middleware';
@@ -10,6 +11,7 @@ import { projectInfo, priorityLinks, priorityProjects, mytoolCompanyPriorities }
 import path from "path";
 import fs from "fs";
 import multer from "multer";
+import { sanitizeFilename, allowedFileFilter } from "../lib/upload-security";
 
 const router = Router();
 
@@ -1576,10 +1578,10 @@ const chatStorage = multer.diskStorage({
   },
   filename: (_req, file, cb) => {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
-    cb(null, `${unique}-${file.originalname}`);
+    cb(null, `${unique}-${sanitizeFilename(file.originalname)}`);
   },
 });
-const chatUpload = multer({ storage: chatStorage, limits: { fileSize: 25 * 1024 * 1024 } });
+const chatUpload = multer({ storage: chatStorage, limits: { fileSize: 25 * 1024 * 1024 }, fileFilter: allowedFileFilter });
 
 router.post("/api/teams/groups/:id/files", requireAuth, chatUpload.single("file"), async (req: any, res) => {
   try {

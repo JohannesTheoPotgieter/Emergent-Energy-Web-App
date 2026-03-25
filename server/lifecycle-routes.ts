@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";

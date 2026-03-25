@@ -1777,8 +1777,8 @@ async function seedFyeData() {
       }
       console.log("[FYE Seed] Inserted 24 budget rows (12 revenue + 12 COS) for FYE 2026");
     }
-  } catch (err: any) {
-    console.error("[FYE Seed] Error:", err.message);
+  } catch (err: unknown) {
+    console.error("[FYE Seed] Error:", (err instanceof Error ? err.message : String(err)));
   }
 }
 

@@ -15,7 +15,11 @@ export async function ensureMsAccount(
   const effectiveTenant = tenantId || CONFIGURED_TENANT_ID;
 
   if (CONFIGURED_TENANT_ID && effectiveTenant && effectiveTenant !== CONFIGURED_TENANT_ID) {
-    throw new Error(`Tenant mismatch: expected ${CONFIGURED_TENANT_ID}, got ${effectiveTenant}`);
+    const isProduction = process.env.NODE_ENV === "production" || !!process.env.REPLIT_DOMAINS;
+    if (isProduction) {
+      throw new Error(`Tenant mismatch: expected ${CONFIGURED_TENANT_ID}, got ${effectiveTenant}. Sign-in rejected.`);
+    }
+    console.warn(`[MS Account] Tenant mismatch in development: expected ${CONFIGURED_TENANT_ID}, got ${effectiveTenant}. Allowing for dev purposes.`);
   }
 
   const tokenFields: Record<string, any> = {};
@@ -121,8 +125,8 @@ async function tryRefreshToken(account: typeof msAccounts.$inferSelect): Promise
 
     console.log(`[MS Token] Successfully refreshed token for user ${account.userId}`);
     return result.accessToken;
-  } catch (err: any) {
-    console.error(`[MS Token] Refresh failed for user ${account.userId}:`, err.message);
+  } catch (err: unknown) {
+    console.error(`[MS Token] Refresh failed for user ${account.userId}:`, (err instanceof Error ? err.message : String(err)));
     return null;
   }
 }

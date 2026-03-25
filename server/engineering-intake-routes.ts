@@ -1,14 +1,14 @@
-// @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql } from "drizzle-orm";
-import { syncAuditLog, intakeRequests, projectInfo, spListConfig } from "@shared/schema";
+import { syncAuditLog, intakeRequests, projectInfo } from "@shared/schema";
 import { getConnector, getConfig, mapSpFieldsToApp, normalizeClientKey, hashFields } from "./intake-connector";
-import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { getEffectiveUser, jwtAuth, requireAuth, type AuthenticatedUser } from "./auth-context";
 import { logAuditFromReq } from "./audit-logger";
 
-function getUser(req: Request) {
-  return getEffectiveUser(req) || { id: 0, name: "Unknown", role: "viewer" };
+function getUser(req: Request): { id: number; name: string; role: string } {
+  const user = getEffectiveUser(req);
+  return user ? { id: user.id, name: user.name, role: user.role } : { id: 0, name: "Unknown", role: "viewer" };
 }
 
 function requireCOO(req: Request, res: Response, next: NextFunction) {
@@ -50,9 +50,10 @@ export function registerEngineeringIntakeRoutes(app: Express) {
           lastModified: item.lastModifiedDateTime,
         })),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[EngIntake] Fetch items error:", err);
-      res.status(500).json({ error: err.message || "Failed to fetch intake items", code: "CONNECTOR_ERROR" });
+      res.status(500).json({ error: errMsg || "Failed to fetch intake items", code: "CONNECTOR_ERROR" });
     }
   });
 
@@ -74,9 +75,10 @@ export function registerEngineeringIntakeRoutes(app: Express) {
         ...item,
         columns,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[EngIntake] Get item error:", err);
-      res.status(500).json({ error: err.message || "Failed to get intake item", code: "CONNECTOR_ERROR" });
+      res.status(500).json({ error: errMsg || "Failed to get intake item", code: "CONNECTOR_ERROR" });
     }
   });
 
@@ -98,7 +100,7 @@ export function registerEngineeringIntakeRoutes(app: Express) {
 
       for (const item of items) {
         try {
-          const fields = item.fields as Record<string, any>;
+          const fields = item.fields as Record<string, unknown>;
           const clientName = fields.Client || fields.Title || "Unknown";
           const clientKey = normalizeClientKey(clientName);
           const spItemId = item.id;
@@ -134,12 +136,12 @@ export function registerEngineeringIntakeRoutes(app: Express) {
             // Check for conflicts on shared fields
             const sharedFields = ["status", "comments", "priority"];
             let hasConflict = false;
-            const conflictFields: Record<string, { sp: any; app: any }> = {};
+            const conflictFields: Record<string, { sp: unknown; app: unknown }> = {};
 
             if (existing.lastAppEditAt && existing.lastPulledAt && existing.lastAppEditAt > existing.lastPulledAt) {
               for (const field of sharedFields) {
-                const spVal = (mapped as any)[field];
-                const appVal = (existing as any)[field];
+                const spVal = (mapped as Record<string, unknown>)[field];
+                const appVal = (existing as Record<string, unknown>)[field];
                 if (spVal && appVal && String(spVal) !== String(appVal)) {
                   hasConflict = true;
                   conflictFields[field] = { sp: spVal, app: appVal };
@@ -170,8 +172,9 @@ export function registerEngineeringIntakeRoutes(app: Express) {
               updatedRequests++;
             }
           }
-        } catch (itemErr: any) {
-          errors.push(`Item ${item.id}: ${itemErr.message}`);
+        } catch (itemErr: unknown) {
+          const itemErrMsg = itemErr instanceof Error ? itemErr.message : String(itemErr);
+          errors.push(`Item ${item.id}: ${itemErrMsg}`);
         }
       }
 
@@ -201,9 +204,10 @@ export function registerEngineeringIntakeRoutes(app: Express) {
         conflicts,
         errors,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[EngIntake] Pull error:", err);
-      res.status(500).json({ error: err.message || "Pull failed", code: "SYNC_ERROR" });
+      res.status(500).json({ error: errMsg || "Pull failed", code: "SYNC_ERROR" });
     }
   });
 
@@ -225,7 +229,7 @@ export function registerEngineeringIntakeRoutes(app: Express) {
         try {
           if (!req.spItemId) continue;
 
-          const pushFields: Record<string, any> = {
+          const pushFields: Record<string, unknown> = {
             AppProjectKey: req.clientKey || "",
             AppLastPushed: new Date().toISOString(),
             AppSyncStatus: req.syncConflict ? "CONFLICT" : "SYNCED",
@@ -244,8 +248,9 @@ export function registerEngineeringIntakeRoutes(app: Express) {
           }).where(eq(intakeRequests.id, req.id));
 
           pushed++;
-        } catch (itemErr: any) {
-          errors.push(`Request ${req.id}: ${itemErr.message}`);
+        } catch (itemErr: unknown) {
+          const itemErrMsg = itemErr instanceof Error ? itemErr.message : String(itemErr);
+          errors.push(`Request ${req.id}: ${itemErrMsg}`);
         }
       }
 
@@ -271,9 +276,10 @@ export function registerEngineeringIntakeRoutes(app: Express) {
         pushed,
         errors,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[EngIntake] Push error:", err);
-      res.status(500).json({ error: err.message || "Push failed", code: "SYNC_ERROR" });
+      res.status(500).json({ error: errMsg || "Push failed", code: "SYNC_ERROR" });
     }
   });
 
@@ -299,7 +305,8 @@ export function registerEngineeringIntakeRoutes(app: Express) {
         totalRequests: requestCount?.count || 0,
         conflictsCount: conflictCount?.count || 0,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[EngIntake] Status error:", err);
       res.status(500).json({ error: "Failed to get intake status", code: "INTERNAL_ERROR" });
     }

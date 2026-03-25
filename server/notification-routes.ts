@@ -28,8 +28,8 @@ export function registerNotificationRoutes(app: Express) {
       const unreadCount = rows.filter(r => !r.isRead).length;
 
       res.json({ notifications: rows, unreadCount });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -45,8 +45,8 @@ export function registerNotificationRoutes(app: Express) {
         .where(and(eq(notifications.id, id), eq(notifications.recipientUserId, user.id)));
 
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -61,8 +61,8 @@ export function registerNotificationRoutes(app: Express) {
         .where(and(eq(notifications.recipientUserId, user.id), eq(notifications.isRead, false)));
 
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 }

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import type { Express } from "express";
 import passport from "passport";
 import { db } from "../db";
@@ -27,7 +26,7 @@ async function enforceSessionLimit(userId: number, currentSessionId: string, lim
     const result = await db.execute(
       sql`SELECT sid, sess, expire FROM "session" WHERE expire > NOW() ORDER BY expire DESC`
     );
-    const rows = (result as any).rows || result;
+    const rows = ((result as Record<string, unknown>).rows || result) as Record<string, unknown>[];
     const userSessions: { sid: string; expire: Date }[] = [];
     for (const row of rows) {
       const sess = typeof row.sess === "string" ? JSON.parse(row.sess) : row.sess;
@@ -55,14 +54,11 @@ async function enforceSessionLimit(userId: number, currentSessionId: string, lim
 export async function registerAuthRoutes(app: Express): Promise<void> {
   app.get("/api/auth/status", async (req, res) => {
     try {
-      const { dbMode } = await import("../db");
-      const { getDbConfigStatus } = await import("../db-config");
-      const dbStatus = getDbConfigStatus();
       const authHeader = req.headers.authorization;
       const user = await resolveAuthenticatedUser(req);
       const sessionAuth = Boolean(req.isAuthenticated?.());
 
-      res.json({
+      const response: Record<string, unknown> = {
         authenticated: Boolean(user),
         user: user
           ? {
@@ -76,9 +72,18 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
         hasAuthHeader: Boolean(authHeader),
         jwtValid: Boolean(authHeader && authHeader.startsWith("Bearer ") && user),
         sessionAuth,
-        dbMode,
-        dbConnected: dbStatus.connected,
-      });
+      };
+
+      // Only expose infrastructure details in non-production environments
+      if (process.env.NODE_ENV !== "production") {
+        const { dbMode } = await import("../db");
+        const { getDbConfigStatus } = await import("../db-config");
+        const dbStatus = getDbConfigStatus();
+        response.dbMode = dbMode;
+        response.dbConnected = dbStatus.connected;
+      }
+
+      res.json(response);
     } catch (error) {
       logApiError("GET /api/auth/status", error);
       return sendError(res, serverError("Failed to get auth status"));

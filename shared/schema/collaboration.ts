@@ -766,7 +766,8 @@ export const standupSchedules = pgTable("standup_schedules", {
   anchorDate: text("anchor_date").notNull(),
   deadlineTime: text("deadline_time").default("10:00"),
   deadlineTimezone: text("deadline_timezone").notNull().default("Africa/Johannesburg"),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -827,7 +828,8 @@ export const eventSubscriptions = pgTable("event_subscriptions", {
   id: serial("id").primaryKey(),
   eventType: text("event_type").notNull(),
   handlerName: text("handler_name").notNull(),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export type EventSubscription = typeof eventSubscriptions.$inferSelect;

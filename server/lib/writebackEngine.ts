@@ -223,8 +223,8 @@ export async function writeToWorkbook(
     await workbook.xlsx.writeFile(outPath);
 
     return { success: true, previousValues };
-  } catch (err: any) {
-    return { success: false, previousValues, error: err.message };
+  } catch (err: unknown) {
+    return { success: false, previousValues, error: (err instanceof Error ? err.message : String(err)) };
   }
 }
 

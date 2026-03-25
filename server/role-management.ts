@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
@@ -555,6 +556,9 @@ export function registerRoleManagementRoutes(app: Express) {
       if (!username || !name || !email || !password) {
         return res.status(400).json({ error: "Username, name, email, and password are required" });
       }
+      if (typeof password !== "string" || password.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters" });
+      }
 
       const [existingUser] = await db.select().from(users).where(eq(users.username, username));
       if (existingUser) return res.status(409).json({ error: "Username already exists" });
@@ -623,8 +627,8 @@ export function registerRoleManagementRoutes(app: Express) {
     try {
       const userId = parseInt(req.params.userId as string);
       const { password } = req.body;
-      if (!password || password.length < 4) {
-        return res.status(400).json({ error: "Password must be at least 4 characters" });
+      if (!password || password.length < 8) {
+        return res.status(400).json({ error: "Password must be at least 8 characters" });
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);

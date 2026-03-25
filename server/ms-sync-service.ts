@@ -82,9 +82,9 @@ export async function syncUserCalendar(userId: number): Promise<SyncResult> {
             last_synced_at = NOW()
         `);
         result.synced++;
-      } catch (err: any) {
+      } catch (err: unknown) {
         errorCount++;
-        result.errors.push(`Event ${evt.id}: ${err.message}`);
+        result.errors.push(`Event ${evt.id}: ${(err instanceof Error ? err.message : String(err))}`);
         if (shouldAbortSync(result.synced, errorCount, i + 1)) {
           result.errors.push(`Aborting calendar sync early: ${errorCount}/${i + 1} items failed. Token may need refresh.`);
           result.abortedEarly = true;
@@ -92,8 +92,8 @@ export async function syncUserCalendar(userId: number): Promise<SyncResult> {
         }
       }
     }
-  } catch (err: any) {
-    result.errors.push(`Calendar sync failed: ${err.message}`);
+  } catch (err: unknown) {
+    result.errors.push(`Calendar sync failed: ${(err instanceof Error ? err.message : String(err))}`);
   }
 
   return result;
@@ -113,8 +113,8 @@ export async function syncUserEmail(userId: number): Promise<SyncResult> {
     let flagged: any[] = [];
     try {
       flagged = await listFlaggedMessages(20, ssoToken);
-    } catch (err: any) {
-      console.log(`[MS Sync] Flagged messages fetch failed (non-fatal): ${err.message}`);
+    } catch (err: unknown) {
+      console.log(`[MS Sync] Flagged messages fetch failed (non-fatal): ${(err instanceof Error ? err.message : String(err))}`);
     }
 
     const flaggedIds = new Set(flagged.map((f: any) => f.id));
@@ -153,9 +153,9 @@ export async function syncUserEmail(userId: number): Promise<SyncResult> {
             last_synced_at = NOW()
         `);
         result.synced++;
-      } catch (err: any) {
+      } catch (err: unknown) {
         errorCount++;
-        result.errors.push(`Email ${msg.id}: ${err.message}`);
+        result.errors.push(`Email ${msg.id}: ${(err instanceof Error ? err.message : String(err))}`);
         if (shouldAbortSync(result.synced, errorCount, i + 1)) {
           result.errors.push(`Aborting email sync early: ${errorCount}/${i + 1} items failed. Token may need refresh.`);
           result.abortedEarly = true;
@@ -163,8 +163,8 @@ export async function syncUserEmail(userId: number): Promise<SyncResult> {
         }
       }
     }
-  } catch (err: any) {
-    result.errors.push(`Email sync failed: ${err.message}`);
+  } catch (err: unknown) {
+    result.errors.push(`Email sync failed: ${(err instanceof Error ? err.message : String(err))}`);
   }
 
   return result;
@@ -208,9 +208,9 @@ export async function syncUserTeams(userId: number): Promise<SyncResult> {
             last_synced_at = NOW()
         `);
         result.synced++;
-      } catch (err: any) {
+      } catch (err: unknown) {
         errorCount++;
-        result.errors.push(`Chat ${chat.id}: ${err.message}`);
+        result.errors.push(`Chat ${chat.id}: ${(err instanceof Error ? err.message : String(err))}`);
         if (shouldAbortSync(result.synced, errorCount, i + 1)) {
           result.errors.push(`Aborting Teams sync early: ${errorCount}/${i + 1} items failed. Token may need refresh.`);
           result.abortedEarly = true;
@@ -218,8 +218,8 @@ export async function syncUserTeams(userId: number): Promise<SyncResult> {
         }
       }
     }
-  } catch (err: any) {
-    result.errors.push(`Teams sync failed: ${err.message}`);
+  } catch (err: unknown) {
+    result.errors.push(`Teams sync failed: ${(err instanceof Error ? err.message : String(err))}`);
   }
 
   return result;
@@ -287,10 +287,10 @@ export function startPeriodicSync() {
           and(eq(msAccounts.status, "active"), isNotNull(msAccounts.ssoAccessToken))
         );
         break;
-      } catch (err: any) {
-        const isTransient = TRANSIENT_ERROR_RE.test(err.message);
+      } catch (err: unknown) {
+        const isTransient = TRANSIENT_ERROR_RE.test((err instanceof Error ? err.message : String(err)));
         if (!isTransient || attempt === 3) {
-          console.error("[MS Sync] Periodic sync loop error:", err.message);
+          console.error("[MS Sync] Periodic sync loop error:", (err instanceof Error ? err.message : String(err)));
           return;
         }
         const delay = 2000 * Math.pow(2, attempt - 1);
@@ -303,8 +303,8 @@ export function startPeriodicSync() {
     for (const account of accounts) {
       try {
         await syncAllForUser(account.userId);
-      } catch (err: any) {
-        console.error(`[MS Sync] Periodic sync failed for user ${account.userId}:`, err.message);
+      } catch (err: unknown) {
+        console.error(`[MS Sync] Periodic sync failed for user ${account.userId}:`, (err instanceof Error ? err.message : String(err)));
       }
     }
   }, SYNC_INTERVAL_MS);
