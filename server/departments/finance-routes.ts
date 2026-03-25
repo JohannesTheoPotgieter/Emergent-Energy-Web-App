@@ -2300,12 +2300,21 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
       .map(([name, data]) => ({ projectName: name, ...data }))
       .sort((a, b) => b.gp - a.gp);
 
-    const totalRevenue = Array.from(revByProject.values()).reduce((s, v) => s + v, 0);
-    const totalCOS = Array.from(cosByProject.values()).reduce((s, v) => s + v, 0);
+    // Sum totals from FY-filtered monthly data (not all-time project totals)
+    const totalRevenue = months.reduce((s: number, m: any) => s + m.totalRevenue, 0);
+    const totalCOS = months.reduce((s: number, m: any) => s + m.totalCOS, 0);
     const totalGP = totalRevenue - totalCOS;
     const overallGpPct = totalRevenue !== 0 ? (totalGP / totalRevenue) * 100 : 0;
 
-    res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct });
+    // Find the current month's YTD values (not full-year cumulative)
+    const currentMonth = months.find((m: any) => m.monthKey === currentMonthKey);
+    const lastDataMonth = currentMonth || months[months.length - 1];
+    const ytdGP = lastDataMonth?.ytdGP ?? 0;
+    const ytdBudget = lastDataMonth?.ytdBudget ?? 0;
+    const ytdVariance = lastDataMonth?.ytdVariance ?? 0;
+    const ytdGpPct = lastDataMonth?.ytdGpPct ?? 0;
+
+    res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct, ytdGP, ytdBudget, ytdVariance, ytdGpPct });
   } catch (error) {
     console.error("Portfolio GP tracker error:", error);
     res.status(500).json({ error: "Failed to fetch GP tracker data" });

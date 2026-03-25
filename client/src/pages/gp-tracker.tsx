@@ -248,11 +248,11 @@ export default function GpTrackerPage() {
   const totalGP = data?.totalGP || 0;
   const overallGpPct = data?.overallGpPct || 0;
 
-  const lastMonth = months.length > 0 ? months[months.length - 1] : null;
-  const ytdGP = lastMonth?.ytdGP || 0;
-  const ytdBudget = lastMonth?.ytdBudget || 0;
-  const ytdVariance = lastMonth?.ytdVariance || 0;
-  const ytdGpPct = lastMonth?.ytdGpPct || 0;
+  // Use backend-provided YTD values (calculated through current month, not full year)
+  const ytdGP = data?.ytdGP || 0;
+  const ytdBudget = data?.ytdBudget || 0;
+  const ytdVariance = data?.ytdVariance || 0;
+  const ytdGpPct = data?.ytdGpPct || 0;
 
   const monthlyRows = ROW_DEFS.filter(r => r.group === "monthly");
   const ytdRows = ROW_DEFS.filter(r => r.group === "ytd");
