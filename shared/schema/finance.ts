@@ -887,6 +887,7 @@ export type FiscalPeriod = typeof fiscalPeriods.$inferSelect;
 export const forecastPipeline = pgTable("forecast_pipeline", {
   id: serial("id").primaryKey(),
   fyeYear: integer("fye_year").notNull().default(2026),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   projectDeveloper: text("project_developer"),
