@@ -1480,6 +1480,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       isRealised: boolean;
       realisedMonth: string | null;
       cosState: string;
+      paymentStatus: string;
     }
 
     const items: LineItem[] = [];
@@ -1506,15 +1507,26 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
       const isRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
-      const isConfirmedPayment = isCashflowConfirmed(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
 
+      // COS state is purely invoice-date driven (not payment date)
       let cosState = 'Planned';
-      if (isConfirmedPayment) {
-        cosState = 'Paid';
-      } else if (isRealised) {
-        cosState = 'Invoiced';
-      } else if (exp.expensePoNumber) {
+      if (isRealised) {
+        cosState = 'COS Realised';
+      } else if (exp.expensePoNumber || (exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim())) {
         cosState = 'Committed';
+      }
+
+      // Cashflow payment status (4-state model)
+      const hasInv = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
+      const hasPayD = !!(payDate && String(payDate).trim());
+      const payDBlack = hasPayD && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
+      let paymentStatus = 'Planned';
+      if (payDBlack && hasInv) {
+        paymentStatus = 'Out of Bank';
+      } else if (payDBlack && !hasInv) {
+        paymentStatus = 'Risk';
+      } else if (hasPayD && !payDBlack && hasInv) {
+        paymentStatus = 'Outstanding';
       }
 
       if (itemMonthKey !== monthKey) continue;
@@ -1544,11 +1556,12 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         invoiceDate: invDate,
         invoiceDateConfirmed: isRealised,
         paymentDate: payDate,
-        paymentDateConfirmed: isConfirmedPayment,
+        paymentDateConfirmed: !!(payDate && String(payDate).trim()) && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor),
         supplier: exp.supplierName || null,
         isRealised,
         realisedMonth,
         cosState,
+        paymentStatus,
       });
     }
 
@@ -4010,8 +4023,10 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       let paymentStatus: string;
       if (paymentDateBlack && hasInvoice) {
         paymentStatus = 'Out of Bank';
-      } else if (hasPayDate && !paymentDateBlack) {
-        paymentStatus = 'Payment Planned';
+      } else if (paymentDateBlack && !hasInvoice) {
+        paymentStatus = 'Risk';
+      } else if (hasPayDate && !paymentDateBlack && hasInvoice) {
+        paymentStatus = 'Outstanding';
       } else {
         paymentStatus = 'Planned';
       }

@@ -59,6 +59,13 @@ import { format, parseISO } from "date-fns";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { usePermission } from "@/hooks/use-permissions";
 
+interface OutflowByStatus {
+  outOfBank: number;
+  outstanding: number;
+  risk: number;
+  planned: number;
+}
+
 interface CashflowWeek {
   weekStart: string;
   weekEnd: string;
@@ -71,6 +78,7 @@ interface CashflowWeek {
   computedOpex: number;
   hasOpexOverride: boolean;
   projectOutflows: number;
+  outflowByStatus?: OutflowByStatus;
   closingBalance: number;
   availablePayment: number;
   computedAvailablePayment: number;
@@ -106,6 +114,7 @@ interface DetailOutflow {
   expenseInvoiceNumber: string;
   expensePaymentDate: string;
   expenseActualTotal: number;
+  paymentStatus: string;
 }
 
 interface WeekDetail {
@@ -374,20 +383,34 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Line Item</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Invoice #</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                        <th className="text-center px-3 py-2 font-medium text-muted-foreground">Status</th>
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredOutflows.map((out, i) => (
+                      {filteredOutflows.map((out, i) => {
+                        const statusColors: Record<string, string> = {
+                          "Out of Bank": "bg-emerald-50 text-emerald-700 border-emerald-300",
+                          "Outstanding": "bg-amber-50 text-amber-700 border-amber-300",
+                          "Risk": "bg-red-50 text-red-700 border-red-300",
+                          "Planned": "bg-muted text-muted-foreground border-border",
+                        };
+                        return (
                         <tr key={i} className="border-b border-border hover:bg-muted/50 transition-colors" data-testid={`row-outflow-${weekStart}-${i}`}>
                           <td className="px-3 py-2 font-medium text-foreground">{out.projectName}</td>
                           <td className="px-3 py-2 text-muted-foreground">{out.expenseCategory}</td>
                           <td className="px-3 py-2 text-muted-foreground">{out.expenseLineItem}</td>
                           <td className="px-3 py-2 font-mono text-muted-foreground text-[11px]">{out.expenseInvoiceNumber || "—"}</td>
                           <td className="px-3 py-2 text-muted-foreground">{out.expensePaymentDate ? format(parseISO(out.expensePaymentDate), "dd MMM") : "—"}</td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${statusColors[out.paymentStatus] || "bg-muted"}`}>
+                              {out.paymentStatus}
+                            </span>
+                          </td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-red-700">{formatRand(out.expenseActualTotal)}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1287,7 +1310,15 @@ export default function CashflowPage() {
                                 className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-red-500"
                                 data-testid={`text-proj-outflows-${week.weekStart}`}
                               >
-                                {formatRand(week.projectOutflows)}
+                                <div>{formatRand(week.projectOutflows)}</div>
+                                {week.outflowByStatus && week.projectOutflows > 0 && (
+                                  <div className="flex justify-end gap-1 mt-0.5">
+                                    {week.outflowByStatus.outOfBank > 0 && <span className="text-[8px] px-1 py-0 rounded bg-emerald-50 text-emerald-700 border border-emerald-300" title="Out of Bank (Paid)">Paid {formatRand(week.outflowByStatus.outOfBank)}</span>}
+                                    {week.outflowByStatus.outstanding > 0 && <span className="text-[8px] px-1 py-0 rounded bg-amber-50 text-amber-700 border border-amber-300" title="Outstanding (invoiced, not yet paid)">Outstd {formatRand(week.outflowByStatus.outstanding)}</span>}
+                                    {week.outflowByStatus.risk > 0 && <span className="text-[8px] px-1 py-0 rounded bg-red-50 text-red-700 border border-red-300" title="Risk (no invoice)">Risk {formatRand(week.outflowByStatus.risk)}</span>}
+                                    {week.outflowByStatus.planned > 0 && <span className="text-[8px] px-1 py-0 rounded bg-muted text-muted-foreground border border-border" title="Planned">Plan {formatRand(week.outflowByStatus.planned)}</span>}
+                                  </div>
+                                )}
                               </td>
                               <td
                                 className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] font-semibold text-red-700"
