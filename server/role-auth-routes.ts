@@ -106,25 +106,20 @@ export function registerRoleAuthRoutes(app: Express) {
         if (newAttempts >= 5) {
           updates.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
         }
-        await db.update(roleCredentials).set(updates).where(eq(roleCredentials.id, cred.id));
-
-        await db.insert(auditEvents).values({
-          actorRole: role,
-          source: "UI",
-          entityType: "role_auth",
-          entityId: role,
-          action: "login_failed",
-          changesJson: { failedAttempts: newAttempts },
+        await db.transaction(async (tx) => {
+          await tx.update(roleCredentials).set(updates).where(eq(roleCredentials.id, cred.id));
+          await tx.insert(auditEvents).values({
+            actorRole: role,
+            source: "UI",
+            entityType: "role_auth",
+            entityId: role,
+            action: "login_failed",
+            changesJson: { failedAttempts: newAttempts },
+          });
         });
 
         return sendError(res, new ApiError(401, "INVALID_PASSWORD", "Invalid password"));
       }
-
-      await db.update(roleCredentials).set({
-        failedAttempts: 0,
-        lockedUntil: null,
-        updatedAt: new Date(),
-      }).where(eq(roleCredentials.id, cred.id));
 
       const label = COMPANY_ROLE_LABELS[role];
       const token = generateToken({
@@ -134,12 +129,19 @@ export function registerRoleAuthRoutes(app: Express) {
         role: role as any,
       });
 
-      await db.insert(auditEvents).values({
-        actorRole: role,
-        source: "UI",
-        entityType: "role_auth",
-        entityId: role,
-        action: "login_success",
+      await db.transaction(async (tx) => {
+        await tx.update(roleCredentials).set({
+          failedAttempts: 0,
+          lockedUntil: null,
+          updatedAt: new Date(),
+        }).where(eq(roleCredentials.id, cred.id));
+        await tx.insert(auditEvents).values({
+          actorRole: role,
+          source: "UI",
+          entityType: "role_auth",
+          entityId: role,
+          action: "login_success",
+        });
       });
 
       return res.json({
