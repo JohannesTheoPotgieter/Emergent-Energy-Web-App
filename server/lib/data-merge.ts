@@ -54,17 +54,15 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   const hasPO = !!(cost.poNumber);
   const hasPaidDate = !!(cost.paidDate);
 
-  const hasInvoiceColorInfo = rawInvoiceDateConfirmed != null || invoiceDateFontColor != null;
+  // Use the canonical isDateBlack check: red text = unconfirmed, black text = confirmed.
+  // When no color info exists, default to unconfirmed (red) — not confirmed.
   const invoiceDateActual = hasInvoiceDate && (
     rawInvoiceDateConfirmed === true ||
-    invoiceDateFontColor === 'black' ||
-    !hasInvoiceColorInfo
+    invoiceDateFontColor === 'black'
   );
-  const hasPaymentColorInfo = rawPaidDateConfirmed != null || paymentDateFontColor != null;
   const paidDateActual = hasPaidDate && (
     rawPaidDateConfirmed === true ||
-    paymentDateFontColor === 'black' ||
-    !hasPaymentColorInfo
+    paymentDateFontColor === 'black'
   );
 
   let computedState = "Planned";
