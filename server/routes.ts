@@ -1,4 +1,3 @@
-// TODO: remove @ts-nocheck — file has 15k+ lines; incrementally type-fix and re-enable checking
 // @ts-nocheck
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
@@ -9,6 +8,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { randomUUID } from "crypto";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { fileTypeFromBuffer } from "file-type";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
@@ -2674,11 +2674,11 @@ export async function registerRoutes(
       destination: (_req, _file, cb) => cb(null, docUploadDir),
       filename: (_req, file, cb) => {
         const ts = Date.now();
-        const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
-        cb(null, `${ts}_${sanitized}`);
+        cb(null, `${ts}_${sanitizeFilename(file.originalname)}`);
       },
     }),
     limits: { fileSize: 20 * 1024 * 1024 },
+    fileFilter: allowedFileFilter,
   });
 
   app.post("/api/financial-close/upload", requireAuth, requireAdmin, docUpload.single("file"), (req, res) => {
@@ -8155,15 +8155,10 @@ export async function registerRoutes(
 
   app.post("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const expenseTaskLinkSchema = z.object({
-        expenseId: z.number({ required_error: "expenseId is required" }),
-        taskId: z.number({ required_error: "taskId is required" }),
-      });
-      const parsedLink = expenseTaskLinkSchema.safeParse(req.body);
-      if (!parsedLink.success) {
-        return res.status(400).json({ error: parsedLink.error.issues.map(i => i.message).join("; ") });
+      const { expenseId, taskId } = req.body;
+      if (!expenseId || taskId === undefined) {
+        return res.status(400).json({ error: "expenseId and taskId are required" });
       }
-      const { expenseId, taskId } = parsedLink.data;
       const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
 
       logAuditFromReq(req, { entityType: "expense_link", action: "create", projectName: req.params.projectName, changesJson: { description: "Expense linked to task", expenseId, taskId } });
@@ -8307,16 +8302,10 @@ export async function registerRoutes(
 
   app.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const insertTaskAsLineSchema = z.object({
-        projectName: z.string().min(1, "projectName is required"),
-        taskId: z.number({ required_error: "taskId is required" }),
-        expenseCategory: z.string().min(1, "expenseCategory is required"),
-      });
-      const parsedInsert = insertTaskAsLineSchema.safeParse(req.body);
-      if (!parsedInsert.success) {
-        return res.status(400).json({ error: parsedInsert.error.issues.map(i => i.message).join("; ") });
+      const { projectName, taskId, expenseCategory } = req.body;
+      if (!projectName || !taskId || !expenseCategory) {
+        return res.status(400).json({ error: "projectName, taskId, and expenseCategory are required" });
       }
-      const { projectName, taskId, expenseCategory } = parsedInsert.data;
       const [opTasks, planTasks] = await Promise.all([
         storage.getOperationalTasksByProject(projectName),
         storage.getProjectPlansByProject(projectName),
@@ -9665,20 +9654,11 @@ export async function registerRoutes(
   app.patch("/api/working-plan/tasks/:taskId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { taskId } = req.params;
-      const workingPlanUpdateSchema = z.object({
-        projectName: z.string().min(1, "projectName is required"),
-        startDate: z.string().nullable().optional(),
-        endDate: z.string().nullable().optional(),
-        name: z.string().nullable().optional(),
-        taskNo: z.string().nullable().optional(),
-        comment: z.string().nullable().optional(),
-        percentComplete: z.union([z.number(), z.string()]).nullable().optional(),
-      });
-      const parsed = workingPlanUpdateSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ error: "validation_error", message: parsed.error.issues.map(i => i.message).join("; ") });
+      const { projectName, startDate, endDate, name, taskNo, comment, percentComplete } = req.body;
+
+      if (!projectName) {
+        return res.status(400).json({ error: "validation_error", message: "projectName is required" });
       }
-      const { projectName, startDate, endDate, name, taskNo, comment, percentComplete } = parsed.data;
 
       const scenario = await storage.getOrCreateActiveScenario(projectName);
       const id = parseInt(taskId);
@@ -9755,21 +9735,14 @@ export async function registerRoutes(
   // Create new task in working plan
   app.post("/api/working-plan/tasks", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const workingPlanCreateSchema = z.object({
-        projectName: z.string().min(1, "projectName is required"),
-        startDate: z.string().min(1, "startDate is required"),
-        endDate: z.string().min(1, "endDate is required"),
-        name: z.string().min(1, "name is required"),
-        taskNo: z.string().nullable().optional(),
-      });
-      const parsed = workingPlanCreateSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({
-          error: "validation_error",
-          message: parsed.error.issues.map(i => i.message).join("; "),
+      const { projectName, startDate, endDate, name, taskNo } = req.body;
+
+      if (!projectName || !startDate || !endDate || !name) {
+        return res.status(400).json({ 
+          error: "validation_error", 
+          message: "projectName, startDate, endDate, and name are required" 
         });
       }
-      const { projectName, startDate, endDate, name, taskNo } = parsed.data;
 
       const scenario = await storage.getOrCreateActiveScenario(projectName);
 
@@ -11863,15 +11836,7 @@ export async function registerRoutes(
 
   app.post("/api/operational-tasks/bulk-update", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const bulkUpdateSchema = z.object({
-        taskIds: z.array(z.number()).min(1, "taskIds must contain at least one ID").max(500, "Too many task IDs"),
-        updates: z.record(z.unknown()).refine(obj => Object.keys(obj).length > 0, "updates must contain at least one field"),
-      });
-      const parsedBulk = bulkUpdateSchema.safeParse(req.body);
-      if (!parsedBulk.success) {
-        return sendError(res, badRequest(parsedBulk.error.issues.map(i => i.message).join("; ")));
-      }
-      const { taskIds, updates } = parsedBulk.data as { taskIds: number[]; updates: Record<string, any> };
+      const { taskIds, updates } = req.body as { taskIds: number[]; updates: Record<string, any> };
       if (updates.status) updates.status = normalizeStatus(updates.status);
       if (updates.priority) updates.priority = normalizePriority(updates.priority);
       const results = [];
@@ -13055,16 +13020,14 @@ export async function registerRoutes(
       const results: Array<{ id: number; success: boolean; error?: string }> = [];
 
       if (operation === "delete") {
-        await db.transaction(async (tx) => {
-          for (const id of taskIds) {
-            try {
-              await tx.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
-              results.push({ id, success: true });
-            } catch (e: any) {
-              results.push({ id, success: false, error: e.message });
-            }
+        for (const id of taskIds) {
+          try {
+            await db.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
+            results.push({ id, success: true });
+          } catch (e: any) {
+            results.push({ id, success: false, error: e.message });
           }
-        });
+        }
       } else if (operation === "indent") {
         for (const id of taskIds) {
           try {
@@ -13128,10 +13091,8 @@ export async function registerRoutes(
               if (swapIdx >= 0 && swapIdx < sorted.length) {
                 const curOrder = sorted[idx].sortOrder ?? idx * 10;
                 const swapOrder = sorted[swapIdx].sortOrder ?? swapIdx * 10;
-                await db.transaction(async (tx) => {
-                  await tx.update(workItems).set({ sortOrder: swapOrder }).where(eq(workItems.id, sorted[idx].id));
-                  await tx.update(workItems).set({ sortOrder: curOrder }).where(eq(workItems.id, sorted[swapIdx].id));
-                });
+                await db.update(workItems).set({ sortOrder: swapOrder }).where(eq(workItems.id, sorted[idx].id));
+                await db.update(workItems).set({ sortOrder: curOrder }).where(eq(workItems.id, sorted[swapIdx].id));
                 results.push({ id, success: true });
               } else {
                 results.push({ id, success: false, error: `Cannot move ${operation === "moveUp" ? "up" : "down"}` });

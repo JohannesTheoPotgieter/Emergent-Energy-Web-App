@@ -6,6 +6,7 @@ import { verifyToken } from "./jwt";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import {
   engStageTemplates,
   engTaskTemplates,
@@ -32,11 +33,10 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
   filename: (_req, file, cb) => {
-    const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-    cb(null, `${Date.now()}_${sanitized}`);
+    cb(null, `${Date.now()}_${sanitizeFilename(file.originalname)}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 }, fileFilter: allowedFileFilter });
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {
   if ((req as any).user) return next();

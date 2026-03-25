@@ -3,6 +3,7 @@ import { type Express, type Request, type Response } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { db } from "./db";
 import { sql, eq, and, isNull, asc } from "drizzle-orm";
 import { deliverables, projectInfo, normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
@@ -19,11 +20,11 @@ const deliverableUpload = multer({
     destination: (_req, _file, cb) => cb(null, uploadDir),
     filename: (_req, file, cb) => {
       const ts = Date.now();
-      const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.\-]/g, "_");
-      cb(null, `${ts}_${sanitized}`);
+      cb(null, `${ts}_${sanitizeFilename(file.originalname)}`);
     },
   }),
   limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: allowedFileFilter,
 });
 
 function getUser(req: Request): any {
