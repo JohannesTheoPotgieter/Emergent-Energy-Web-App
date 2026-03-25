@@ -136,12 +136,12 @@ export function registerEngineeringIntakeRoutes(app: Express) {
             // Check for conflicts on shared fields
             const sharedFields = ["status", "comments", "priority"];
             let hasConflict = false;
-            const conflictFields: Record<string, { sp: any; app: any }> = {};
+            const conflictFields: Record<string, { sp: unknown; app: unknown }> = {};
 
             if (existing.lastAppEditAt && existing.lastPulledAt && existing.lastAppEditAt > existing.lastPulledAt) {
               for (const field of sharedFields) {
-                const spVal = (mapped as any)[field];
-                const appVal = (existing as any)[field];
+                const spVal = (mapped as Record<string, unknown>)[field];
+                const appVal = (existing as Record<string, unknown>)[field];
                 if (spVal && appVal && String(spVal) !== String(appVal)) {
                   hasConflict = true;
                   conflictFields[field] = { sp: spVal, app: appVal };
@@ -229,7 +229,7 @@ export function registerEngineeringIntakeRoutes(app: Express) {
         try {
           if (!req.spItemId) continue;
 
-          const pushFields: Record<string, any> = {
+          const pushFields: Record<string, unknown> = {
             AppProjectKey: req.clientKey || "",
             AppLastPushed: new Date().toISOString(),
             AppSyncStatus: req.syncConflict ? "CONFLICT" : "SYNCED",
