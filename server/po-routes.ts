@@ -149,7 +149,8 @@ export function registerPoRoutes(app: Express) {
         ORDER BY created_at DESC
       `);
       res.json(rows.rows || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
       console.error("[PO] List error:", err.message);
       res.status(500).json({ error: "Failed to list POs" });
     }
@@ -231,7 +232,7 @@ export function registerPoRoutes(app: Express) {
           ${siteContact || null},
           ${comments || null},
           ${pmName},
-          'draft', ${user.userId},
+          'draft', ${user?.id},
           ${pdfBuffer}
         ) RETURNING id
       `);
@@ -254,7 +255,8 @@ export function registerPoRoutes(app: Express) {
         total,
         pdfBase64: pdfBuffer.toString("base64"),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
       console.error("[PO] Generate error:", err.message);
       res.status(500).json({ error: "Failed to generate PO" });
     }
@@ -274,7 +276,8 @@ export function registerPoRoutes(app: Express) {
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader("Content-Disposition", `attachment; filename="${row.po_ref}.pdf"`);
       res.send(row.pdf_data);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
       console.error("[PO] PDF download error:", err.message);
       res.status(500).json({ error: "Failed to download PO PDF" });
     }
@@ -311,7 +314,8 @@ export function registerPoRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
       console.error("[PO] Status update error:", err.message);
       res.status(500).json({ error: "Failed to update PO status" });
     }
@@ -332,7 +336,8 @@ export function registerPoRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMessage = err instanceof Error ? err.message : String(err);
       console.error("[PO] Delete error:", err.message);
       res.status(500).json({ error: "Failed to delete PO" });
     }
