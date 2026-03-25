@@ -173,6 +173,8 @@ function resolveInflowEffectiveDates(
   operationalTasks: any[],
   planTasks: any[]
 ): any[] {
+  const normalizeProjectName = (value: unknown): string => String(value || "").trim().toLowerCase();
+
   if (taskLinks.length === 0) {
     return inflows.map(inf => ({
       ...inf,
@@ -181,8 +183,17 @@ function resolveInflowEffectiveDates(
   }
 
   const linkMap = new Map<string, any>();
+  const normalizedLinkMap = new Map<string, any>();
+  const linksByRowNumber = new Map<number, any[]>();
   for (const link of taskLinks) {
     linkMap.set(`${link.projectName}::${link.milestoneRowNumber}`, link);
+    normalizedLinkMap.set(`${normalizeProjectName(link.projectName)}::${link.milestoneRowNumber}`, link);
+    const rowNumber = Number(link.milestoneRowNumber);
+    if (Number.isFinite(rowNumber)) {
+      const existing = linksByRowNumber.get(rowNumber) || [];
+      existing.push(link);
+      linksByRowNumber.set(rowNumber, existing);
+    }
   }
 
   const opTaskMap = new Map<number, any>();
@@ -197,7 +208,14 @@ function resolveInflowEffectiveDates(
 
   return inflows.map(inf => {
     const key = `${inf.projectName}::${inf.rowNumber}`;
-    const link = linkMap.get(key);
+    const normalizedKey = `${normalizeProjectName(inf.projectName)}::${inf.rowNumber}`;
+    const link =
+      linkMap.get(key) ||
+      normalizedLinkMap.get(normalizedKey) ||
+      (() => {
+        const sameRowLinks = linksByRowNumber.get(Number(inf.rowNumber)) || [];
+        return sameRowLinks.length === 1 ? sameRowLinks[0] : null;
+      })();
 
     if (inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate)) {
       return { ...inf, effectiveDate: inf.paymentReceivedDate };
