@@ -98,6 +98,11 @@ import { actorFromReq, createProjectEvent } from "./services/project-event-servi
 import { getPlatformProjectSummaryMap } from "./services/project-platform-summary-service";
 import { classifyProjectInfoPayload } from "./services/source-of-truth-policy";
 import { mytoolTaskIdempotencyStore } from "./lib/mytool-task-idempotency";
+import { registerWorkingPlanRoutes } from "./routes/working-plan-routes";
+import { registerOperationalTasksRoutes } from "./routes/operational-tasks-routes";
+import { registerCosControlRoutes } from "./routes/cos-control-routes";
+import { registerPlanningTasksRoutes } from "./routes/planning-tasks-routes";
+import { registerDashboardRoutes } from "./routes/dashboard-routes";
 
 const CANONICAL_TO_MYTOOL_STATUS: Record<string, string> = {
   todo: "planned",
