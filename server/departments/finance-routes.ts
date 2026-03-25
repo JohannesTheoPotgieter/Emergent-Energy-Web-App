@@ -981,15 +981,16 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
       adminDateOverrideAt: dateOverride ? now : null,
     };
 
-    const updated = await db.update(programExpense)
+    // Try normalizedCostLines first (IDs from the detail endpoint come from this table)
+    const updated = await db.update(normalizedCostLines)
       .set(overrideFields)
-      .where(eq(programExpense.id, expenseId))
+      .where(eq(normalizedCostLines.id, expenseId))
       .returning();
 
     let row: any;
     if (updated.length > 0) {
       row = updated[0];
-      // Also update programExpense if a matching row exists
+      // Also sync override to programExpense if a matching legacy row exists
       if (row.projectName && row.sourceRow != null) {
         await db.update(programExpense)
           .set({
@@ -1005,7 +1006,7 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
           ));
       }
     } else {
-      // Fallback: try updating programExpense directly (legacy rows without normalizedCostLines)
+      // Fallback: try updating programExpense directly (legacy rows not in normalizedCostLines)
       const peUpdated = await db.update(programExpense)
         .set({
           adminDateOverride: dateOverride || null,
@@ -1073,7 +1074,7 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
       console.warn("[audit] Expense admin date override audit failed:", auditErr.message);
     }
 
-    res.json({ success: true, updated: updated[0] });
+    res.json({ success: true, updated: row });
   } catch (error) {
     console.error("Expense date override error:", error);
     res.status(500).json({ error: "Failed to save expense date override" });
@@ -1100,15 +1101,16 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
       adminDateOverrideAt: dateOverride ? now : null,
     };
 
-    const updated = await db.update(programInflows)
+    // Try normalizedRevenueLines first (IDs from the detail endpoint come from this table)
+    const updated = await db.update(normalizedRevenueLines)
       .set(overrideFields)
-      .where(eq(programInflows.id, inflowId))
+      .where(eq(normalizedRevenueLines.id, inflowId))
       .returning();
 
     let row: any;
     if (updated.length > 0) {
       row = updated[0];
-      // Also update programInflows if a matching row exists
+      // Also sync override to programInflows if a matching legacy row exists
       if (row.projectName && row.sourceRow != null) {
         await db.update(programInflows)
           .set({
@@ -1123,7 +1125,7 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
           ));
       }
     } else {
-      // Fallback: try updating programInflows directly (legacy rows without normalizedRevenueLines)
+      // Fallback: try updating programInflows directly (legacy rows not in normalizedRevenueLines)
       const piUpdated = await db.update(programInflows)
         .set({
           adminDateOverride: dateOverride || null,
@@ -1191,7 +1193,7 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
       console.warn("[audit] Inflow admin date override audit failed:", auditErr.message);
     }
 
-    res.json({ success: true, updated: updated[0] });
+    res.json({ success: true, updated: row });
   } catch (error) {
     console.error("Inflow date override error:", error);
     res.status(500).json({ error: "Failed to save inflow date override" });
