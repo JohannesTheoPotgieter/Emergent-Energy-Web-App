@@ -87,7 +87,7 @@ export function registerMeetingRoutes(app: Express) {
       }
 
       res.status(200).json({ status: "ok", meetingId: meeting.id, actionItemCount: actionItems.length });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Read.ai Webhook] Error:", err.message);
       res.status(500).json({ error: "webhook_processing_failed" });
     }
@@ -136,7 +136,7 @@ export function registerMeetingRoutes(app: Express) {
       });
 
       res.json(result);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -164,7 +164,7 @@ export function registerMeetingRoutes(app: Express) {
         pendingItems,
         convertedItems,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -176,7 +176,7 @@ export function registerMeetingRoutes(app: Express) {
       const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
       const webhookUrl = `${protocol}://${host}/api/webhooks/read-ai`;
       res.json({ webhookUrl });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -209,7 +209,7 @@ export function registerMeetingRoutes(app: Express) {
         highlights: highlights.filter(Boolean),
         actionItems: items,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -219,7 +219,7 @@ export function registerMeetingRoutes(app: Express) {
       const id = parseInt(req.params.id);
       await db.delete(meetingSummaries).where(eq(meetingSummaries.id, id));
       res.json({ ok: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -236,7 +236,7 @@ export function registerMeetingRoutes(app: Express) {
         .returning();
       if (!updated) return res.status(404).json({ error: "Action item not found" });
       res.json(updated);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -256,7 +256,7 @@ export function registerMeetingRoutes(app: Express) {
 
       const overrides = req.body || {};
 
-      const userEmail = (req as any).user?.email;
+      const userEmail = getEffectiveUser(req)?.email;
       let ownerUserId: number | null = null;
       if (userEmail) {
         const [dbUser] = await db.select().from(users).where(eq(users.email, userEmail));
@@ -321,7 +321,7 @@ export function registerMeetingRoutes(app: Express) {
         .where(eq(meetingActionItems.id, actionItemId));
 
       res.json({ task, actionItem: { id: actionItemId, status: "converted", convertedToType, convertedToId: task.id } });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -356,7 +356,7 @@ export function registerMeetingRoutes(app: Express) {
         .where(eq(meetingActionItems.id, actionItemId));
 
       res.json({ priority, actionItem: { id: actionItemId, status: "converted", convertedToType: "company_priority", convertedToId: priority.id } });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -390,7 +390,7 @@ export function registerMeetingRoutes(app: Express) {
         .where(eq(meetingActionItems.id, actionItemId));
 
       res.json({ project, actionItem: { id: actionItemId, status: "converted", convertedToType: "project", convertedToId: project.id } });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -439,7 +439,7 @@ export function registerMeetingRoutes(app: Express) {
 
       const items = await db.select().from(meetingActionItems).where(eq(meetingActionItems.meetingId, meeting.id));
       res.json({ ...meeting, actionItems: items });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err.name === "ZodError") return res.status(400).json({ error: "Validation failed", details: err.errors });
       res.status(500).json({ error: err.message });
     }
@@ -482,7 +482,7 @@ export function registerMeetingRoutes(app: Express) {
       });
 
       res.json({ ok: true, meetingId: meeting.id, message: "Test meeting created successfully" });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: err.message });
     }
   });
