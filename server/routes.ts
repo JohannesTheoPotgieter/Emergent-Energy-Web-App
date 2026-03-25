@@ -13055,14 +13055,16 @@ export async function registerRoutes(
       const results: Array<{ id: number; success: boolean; error?: string }> = [];
 
       if (operation === "delete") {
-        for (const id of taskIds) {
-          try {
-            await db.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
-            results.push({ id, success: true });
-          } catch (e: any) {
-            results.push({ id, success: false, error: e.message });
+        await db.transaction(async (tx) => {
+          for (const id of taskIds) {
+            try {
+              await tx.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
+              results.push({ id, success: true });
+            } catch (e: any) {
+              results.push({ id, success: false, error: e.message });
+            }
           }
-        }
+        });
       } else if (operation === "indent") {
         for (const id of taskIds) {
           try {
@@ -13126,8 +13128,10 @@ export async function registerRoutes(
               if (swapIdx >= 0 && swapIdx < sorted.length) {
                 const curOrder = sorted[idx].sortOrder ?? idx * 10;
                 const swapOrder = sorted[swapIdx].sortOrder ?? swapIdx * 10;
-                await db.update(workItems).set({ sortOrder: swapOrder }).where(eq(workItems.id, sorted[idx].id));
-                await db.update(workItems).set({ sortOrder: curOrder }).where(eq(workItems.id, sorted[swapIdx].id));
+                await db.transaction(async (tx) => {
+                  await tx.update(workItems).set({ sortOrder: swapOrder }).where(eq(workItems.id, sorted[idx].id));
+                  await tx.update(workItems).set({ sortOrder: curOrder }).where(eq(workItems.id, sorted[swapIdx].id));
+                });
                 results.push({ id, success: true });
               } else {
                 results.push({ id, success: false, error: `Cannot move ${operation === "moveUp" ? "up" : "down"}` });

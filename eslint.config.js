@@ -21,7 +21,7 @@ export default [
     rules: {
       ...tseslint.configs.recommended.rules,
       'no-console': 'warn',
-      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-explicit-any': 'warn', // TODO: upgrade to 'error' once any count is below 500
       '@typescript-eslint/no-unused-vars': 'error',
     },
   },
