@@ -1,37 +1,17 @@
-// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, and, or, sql, desc, ilike, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, sql, desc, ilike, isNull, isNotNull } from "drizzle-orm";
 import { z } from "zod";
-import { verifyToken } from "./jwt";
 import { logAuditFromReq } from "./audit-logger";
 import {
   mytoolTasks, workItems,
-  smartImportRuns, importIssues, projectInfo, users, pdTickets, qcItemInstance,
+  smartImportRuns, importIssues, projectInfo, users,
 } from "@shared/schema";
 import { normalizeStatus } from "./lib/canonical-task-engine";
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role;
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const role = getEffectiveUser(req)?.role;
   if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
   res.status(403).json({ error: "admin_required", message: "Admin access required" });
 }
@@ -90,11 +70,11 @@ export function registerAdminRecoveryRoutes(app: Express) {
       const offset = parseInt(params.offset || "0");
       const searchTerm = params.q ? `%${params.q}%` : null;
 
-      const results: any[] = [];
+      const results: Record<string, unknown>[] = [];
 
       if (!params.taskType || params.taskType === "operational") {
         let query = db.select().from(workItems);
-        const conditions: any[] = [isNull(workItems.deletedAt)];
+        const conditions: ReturnType<typeof eq>[] = [isNull(workItems.deletedAt)];
         if (searchTerm) conditions.push(ilike(workItems.title, searchTerm));
         if (params.status) conditions.push(eq(workItems.status, params.status));
         if (params.projectName) conditions.push(sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${params.projectName})`);
@@ -109,7 +89,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
       if (!params.taskType || params.taskType === "personal") {
         let query = db.select().from(mytoolTasks);
-        const conditions: any[] = [];
+        const conditions: ReturnType<typeof eq>[] = [];
         if (searchTerm) conditions.push(ilike(mytoolTasks.title, searchTerm));
         if (params.status) conditions.push(eq(mytoolTasks.status, params.status));
         if (params.projectName) conditions.push(eq(mytoolTasks.projectName, params.projectName));
@@ -126,8 +106,8 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
       if (!params.taskType || params.taskType === "engineering") {
         let query = db.select().from(workItems);
-        const conditions: any[] = [];
-        conditions.push(eq(workItems.workstream, 'ENG' as any));
+        const conditions: ReturnType<typeof eq>[] = [];
+        conditions.push(eq(workItems.workstream, 'ENG'));
         if (searchTerm) conditions.push(ilike(workItems.title, searchTerm));
         if (params.status) conditions.push(eq(workItems.status, params.status));
         if (params.projectName) conditions.push(sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${params.projectName})`);
