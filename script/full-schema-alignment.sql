@@ -538,6 +538,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='counterparties') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='counterparties' AND column_name='is_active') THEN
     ALTER TABLE "counterparties" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='counterparties') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='counterparties' AND column_name='deleted_at') THEN
+    ALTER TABLE "counterparties" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='counterparties') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='counterparties' AND column_name='role_tags') THEN
     ALTER TABLE "counterparties" ADD COLUMN "role_tags" TEXT[];
   END IF;
@@ -606,6 +609,9 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='counterparty_contacts') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='counterparty_contacts' AND column_name='is_active') THEN
     ALTER TABLE "counterparty_contacts" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='counterparty_contacts') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='counterparty_contacts' AND column_name='deleted_at') THEN
+    ALTER TABLE "counterparty_contacts" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='counterparty_contacts') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='counterparty_contacts' AND column_name='notes') THEN
     ALTER TABLE "counterparty_contacts" ADD COLUMN "notes" TEXT;
@@ -960,6 +966,9 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='derived_project_kpis') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='derived_project_kpis' AND column_name='is_active') THEN
     ALTER TABLE "derived_project_kpis" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='derived_project_kpis') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='derived_project_kpis' AND column_name='deleted_at') THEN
+    ALTER TABLE "derived_project_kpis" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='derived_project_kpis') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='derived_project_kpis' AND column_name='total_planned_revenue') THEN
     ALTER TABLE "derived_project_kpis" ADD COLUMN "total_planned_revenue" NUMERIC(15,2);
@@ -1339,6 +1348,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='eng_stage_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='eng_stage_templates' AND column_name='is_active') THEN
     ALTER TABLE "eng_stage_templates" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='eng_stage_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='eng_stage_templates' AND column_name='deleted_at') THEN
+    ALTER TABLE "eng_stage_templates" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='eng_stage_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='eng_stage_templates' AND column_name='created_by') THEN
     ALTER TABLE "eng_stage_templates" ADD COLUMN "created_by" INTEGER;
   END IF;
@@ -1458,6 +1470,9 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='event_subscriptions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='event_subscriptions' AND column_name='is_active') THEN
     ALTER TABLE "event_subscriptions" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='event_subscriptions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='event_subscriptions' AND column_name='deleted_at') THEN
+    ALTER TABLE "event_subscriptions" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='event_subscriptions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='event_subscriptions' AND column_name='created_at') THEN
     ALTER TABLE "event_subscriptions" ADD COLUMN "created_at" TIMESTAMP;
@@ -1875,6 +1890,9 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='financial_integration_rules') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='financial_integration_rules' AND column_name='is_active') THEN
     ALTER TABLE "financial_integration_rules" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='financial_integration_rules') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='financial_integration_rules' AND column_name='deleted_at') THEN
+    ALTER TABLE "financial_integration_rules" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='financial_integration_rules') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='financial_integration_rules' AND column_name='created_by_user_id') THEN
     ALTER TABLE "financial_integration_rules" ADD COLUMN "created_by_user_id" INTEGER;
@@ -2386,6 +2404,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='intake_task_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='intake_task_templates' AND column_name='is_active') THEN
     ALTER TABLE "intake_task_templates" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='intake_task_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='intake_task_templates' AND column_name='deleted_at') THEN
+    ALTER TABLE "intake_task_templates" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='intake_task_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='intake_task_templates' AND column_name='created_at') THEN
     ALTER TABLE "intake_task_templates" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
@@ -2550,6 +2571,9 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='invoice_pattern_rules') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_pattern_rules' AND column_name='is_active') THEN
     ALTER TABLE "invoice_pattern_rules" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='invoice_pattern_rules') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_pattern_rules' AND column_name='deleted_at') THEN
+    ALTER TABLE "invoice_pattern_rules" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='issue_resolution_rules') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='issue_resolution_rules' AND column_name='project_name') THEN
     ALTER TABLE "issue_resolution_rules" ADD COLUMN "project_name" TEXT;
@@ -3763,6 +3787,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='organizations') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='organizations' AND column_name='is_active') THEN
     ALTER TABLE "organizations" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='organizations') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='organizations' AND column_name='deleted_at') THEN
+    ALTER TABLE "organizations" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='payment_terms') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='payment_terms' AND column_name='entity_type') THEN
     ALTER TABLE "payment_terms" ADD COLUMN "entity_type" TEXT;
   END IF;
@@ -3942,6 +3969,9 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='phase_template') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='phase_template' AND column_name='is_active') THEN
     ALTER TABLE "phase_template" ADD COLUMN "is_active" BOOLEAN DEFAULT false;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='phase_template') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='phase_template' AND column_name='deleted_at') THEN
+    ALTER TABLE "phase_template" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='phase_template') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='phase_template' AND column_name='created_by_user_id') THEN
     ALTER TABLE "phase_template" ADD COLUMN "created_by_user_id" INTEGER;
@@ -4894,6 +4924,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='is_active') THEN
     ALTER TABLE "project_execution_state" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='deleted_at') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='archived_status') THEN
     ALTER TABLE "project_execution_state" ADD COLUMN "archived_status" TEXT DEFAULT 'ACTIVE';
   END IF;
@@ -5629,6 +5662,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='qc_template') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='qc_template' AND column_name='is_active') THEN
     ALTER TABLE "qc_template" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='qc_template') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='qc_template' AND column_name='deleted_at') THEN
+    ALTER TABLE "qc_template" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='qc_template') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='qc_template' AND column_name='created_at') THEN
     ALTER TABLE "qc_template" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
@@ -6073,6 +6109,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='sp_files') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sp_files' AND column_name='is_active') THEN
     ALTER TABLE "sp_files" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='sp_files') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sp_files' AND column_name='deleted_at') THEN
+    ALTER TABLE "sp_files" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='sp_files') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sp_files' AND column_name='created_at') THEN
     ALTER TABLE "sp_files" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
@@ -6175,6 +6214,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_gate_definitions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_gate_definitions' AND column_name='is_active') THEN
     ALTER TABLE "stage_gate_definitions" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_gate_definitions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_gate_definitions' AND column_name='deleted_at') THEN
+    ALTER TABLE "stage_gate_definitions" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_gate_definitions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_gate_definitions' AND column_name='created_at') THEN
     ALTER TABLE "stage_gate_definitions" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
@@ -6207,6 +6249,9 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_gate_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_gate_overrides' AND column_name='is_active') THEN
     ALTER TABLE "stage_gate_overrides" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_gate_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_gate_overrides' AND column_name='deleted_at') THEN
+    ALTER TABLE "stage_gate_overrides" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_gate_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_gate_overrides' AND column_name='created_at') THEN
     ALTER TABLE "stage_gate_overrides" ADD COLUMN "created_at" TIMESTAMP;
@@ -6282,6 +6327,9 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='standup_schedules') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='standup_schedules' AND column_name='is_active') THEN
     ALTER TABLE "standup_schedules" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='standup_schedules') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='standup_schedules' AND column_name='deleted_at') THEN
+    ALTER TABLE "standup_schedules" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='standup_schedules') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='standup_schedules' AND column_name='created_by') THEN
     ALTER TABLE "standup_schedules" ADD COLUMN "created_by" INTEGER;
@@ -7312,6 +7360,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='working_plan_dependency_override') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_dependency_override' AND column_name='deleted_flag') THEN
     ALTER TABLE "working_plan_dependency_override" ADD COLUMN "deleted_flag" BOOLEAN DEFAULT false;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='working_plan_dependency_override') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_dependency_override' AND column_name='deleted_at') THEN
+    ALTER TABLE "working_plan_dependency_override" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='working_plan_dependency_override') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_dependency_override' AND column_name='created_at') THEN
     ALTER TABLE "working_plan_dependency_override" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
@@ -7329,6 +7380,9 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='working_plan_scenario') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_scenario' AND column_name='is_active') THEN
     ALTER TABLE "working_plan_scenario" ADD COLUMN "is_active" BOOLEAN DEFAULT true;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='working_plan_scenario') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_scenario' AND column_name='deleted_at') THEN
+    ALTER TABLE "working_plan_scenario" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='working_plan_scenario') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_scenario' AND column_name='created_at') THEN
     ALTER TABLE "working_plan_scenario" ADD COLUMN "created_at" TIMESTAMP;
