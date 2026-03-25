@@ -12,13 +12,18 @@ import {
   changeSets,
   fieldChanges,
   financialEditRequests,
+  manualEditFlags,
   msObjects,
+  normalizedCostLines,
   normalizedRevenueLines,
   OVERRIDE_CATEGORIES,
+  programExpense,
+  programInflows,
   projectInfo,
   users,
 } from "@shared/schema";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { recordManualEdit } from "../lib/audit/diff-engine";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import {
   STATIC_COS_BUDGET_FY26,
@@ -178,7 +183,7 @@ function resolveInflowEffectiveDates(
   if (taskLinks.length === 0) {
     return inflows.map(inf => ({
       ...inf,
-      effectiveDate: inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
+      effectiveDate: inf.adminDateOverride || inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
     }));
   }
 
@@ -207,6 +212,11 @@ function resolveInflowEffectiveDates(
   }
 
   return inflows.map(inf => {
+    // Admin date override takes highest priority
+    if (inf.adminDateOverride && /^\d{4}-\d{2}-\d{2}/.test(inf.adminDateOverride)) {
+      return { ...inf, effectiveDate: inf.adminDateOverride };
+    }
+
     const key = `${inf.projectName}::${inf.rowNumber}`;
     const normalizedKey = `${normalizeProjectName(inf.projectName)}::${inf.rowNumber}`;
     const link =
@@ -787,8 +797,8 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
         // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
         if (expense.rowType !== 'item') continue;
         if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
-        // Use effective payment date: actual payment date, then computed forecast, then forecast, then invoice date
-        const d = expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
+        // Use effective payment date: admin override first, then actual payment date, then computed forecast, then forecast, then invoice date
+        const d = (expense as any).adminDateOverride || expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
         // Use actual total with budget fallback, matching project-detail level logic
         const amt = parseFloat(expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
@@ -881,18 +891,25 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         // Bottom-up: only leaf-node (item) rows, matching project-detail level logic
         if (e.rowType !== 'item') return false;
         if (projectFilters && !projectFilters.has(e.projectName || "")) return false;
-        const pd = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+        const pd = (e as any).adminDateOverride || e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
         return pd >= weekStart && pd < weekEnd;
       })
       .map(e => {
-        const effectiveDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+        const originalDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+        const effectiveDate = (e as any).adminDateOverride || originalDate;
         return {
+          expenseId: e.id,
           projectName: e.projectName,
           expenseCategory: e.expenseCategory,
           expenseLineItem: e.expenseLineItem,
           expenseInvoiceNumber: e.expenseInvoiceNumber,
           expensePaymentDate: effectiveDate,
+          originalDate,
+          hasAdminOverride: !!(e as any).adminDateOverride,
+          adminDateOverride: (e as any).adminDateOverride || null,
+          adminDateOverrideReason: (e as any).adminDateOverrideReason || null,
+          adminDateOverrideAt: (e as any).adminDateOverrideAt || null,
           expenseActualTotal: parseFloat(e.expenseActualTotal || (e as any).budgetTotal || '0') || 0,
         };
       });
@@ -914,10 +931,16 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           daysToReceipt = Math.round((pay.getTime() - inv.getTime()) / (1000 * 60 * 60 * 24));
         }
         return {
+          inflowId: inf.id,
           projectName: inf.projectName,
           milestoneName: inf.milestoneName,
           milestoneInvoiceNumber: inf.milestoneInvoiceNumber,
           paymentReceivedDate: inf.effectiveDate,
+          originalDate: inf.adminDateOverride ? (inf.paymentReceivedDate || inf.plannedPaymentDate || null) : null,
+          hasAdminOverride: !!inf.adminDateOverride,
+          adminDateOverride: inf.adminDateOverride || null,
+          adminDateOverrideReason: inf.adminDateOverrideReason || null,
+          adminDateOverrideAt: inf.adminDateOverrideAt || null,
           milestoneAmount: inf.milestoneAmount ? parseFloat(inf.milestoneAmount) : 0,
           invoiceRaisedDate: inf.invoiceRaisedDate,
           daysToReceipt,
@@ -929,6 +952,216 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
   } catch (error) {
     console.error("Cashflow 2026 detail error:", error);
     res.status(500).json({ error: "Failed to fetch cashflow detail", message: "Failed to fetch cashflow detail" });
+  }
+});
+
+// ==================== ADMIN DATE OVERRIDE ENDPOINTS ====================
+
+router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+  try {
+    const { expenseId, dateOverride, reason } = req.body;
+    if (!expenseId) {
+      return res.status(400).json({ error: "expenseId is required" });
+    }
+    if (dateOverride && !/^\d{4}-\d{2}-\d{2}$/.test(dateOverride)) {
+      return res.status(400).json({ error: "dateOverride must be YYYY-MM-DD format or null" });
+    }
+
+    const userId = (req as any).user?.id;
+    const now = new Date();
+
+    // Update normalizedCostLines (primary source of truth)
+    const updated = await db.update(normalizedCostLines)
+      .set({
+        adminDateOverride: dateOverride || null,
+        adminDateOverrideReason: reason || null,
+        adminDateOverrideBy: userId || null,
+        adminDateOverrideAt: dateOverride ? now : null,
+      })
+      .where(eq(normalizedCostLines.id, expenseId))
+      .returning();
+
+    if (updated.length === 0) {
+      return res.status(404).json({ error: "Expense line not found" });
+    }
+
+    // Also update programExpense if a matching row exists
+    const row = updated[0];
+    if (row.projectName && row.sourceRow != null) {
+      await db.update(programExpense)
+        .set({
+          adminDateOverride: dateOverride || null,
+          adminDateOverrideReason: reason || null,
+          adminDateOverrideBy: userId || null,
+          adminDateOverrideAt: dateOverride ? now : null,
+        })
+        .where(and(
+          eq(programExpense.projectName, row.projectName),
+          eq(programExpense.rowNumber, row.sourceRow),
+          isNull(programExpense.effectiveTo),
+        ));
+    }
+
+    // Insert/update manualEditFlags for smart import conflict detection
+    if (dateOverride) {
+      const existingFlag = await db.select().from(manualEditFlags)
+        .where(and(
+          eq(manualEditFlags.entityType, "normalized_cost_lines"),
+          eq(manualEditFlags.entityId, expenseId),
+          eq(manualEditFlags.fieldName, "adminDateOverride"),
+        ));
+      if (existingFlag.length === 0) {
+        await db.insert(manualEditFlags).values({
+          entityType: "normalized_cost_lines",
+          entityId: expenseId,
+          fieldName: "adminDateOverride",
+          editedByUserId: userId,
+          editedAt: now,
+          isProtected: true,
+          protectedAt: now,
+          protectedByUserId: userId,
+        });
+      } else {
+        await db.update(manualEditFlags)
+          .set({ editedByUserId: userId, editedAt: now, isProtected: true, protectedAt: now, protectedByUserId: userId })
+          .where(eq(manualEditFlags.id, existingFlag[0].id));
+      }
+    } else {
+      // Clearing override — remove the flag
+      await db.delete(manualEditFlags)
+        .where(and(
+          eq(manualEditFlags.entityType, "normalized_cost_lines"),
+          eq(manualEditFlags.entityId, expenseId),
+          eq(manualEditFlags.fieldName, "adminDateOverride"),
+        ));
+    }
+
+    // Audit trail
+    try {
+      await recordManualEdit({
+        actorUserId: userId,
+        actorRole: (req as any).user?.role,
+        entityType: "expense_admin_date_override",
+        entityId: `${row.projectName}|expense${expenseId}`,
+        projectName: row.projectName,
+        action: dateOverride ? "EXPENSE_DATE_OVERRIDDEN" : "EXPENSE_DATE_OVERRIDE_CLEARED",
+        summary: dateOverride
+          ? `Admin overrode expense ${expenseId} date to ${dateOverride}${reason ? ` (${reason})` : ''}`
+          : `Admin cleared expense ${expenseId} date override`,
+        oldRecord: {},
+        newRecord: { expenseId, dateOverride, reason },
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Expense admin date override audit failed:", auditErr.message);
+    }
+
+    res.json({ success: true, updated: updated[0] });
+  } catch (error) {
+    console.error("Expense date override error:", error);
+    res.status(500).json({ error: "Failed to save expense date override" });
+  }
+});
+
+router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+  try {
+    const { inflowId, dateOverride, reason } = req.body;
+    if (!inflowId) {
+      return res.status(400).json({ error: "inflowId is required" });
+    }
+    if (dateOverride && !/^\d{4}-\d{2}-\d{2}$/.test(dateOverride)) {
+      return res.status(400).json({ error: "dateOverride must be YYYY-MM-DD format or null" });
+    }
+
+    const userId = (req as any).user?.id;
+    const now = new Date();
+
+    // Update normalizedRevenueLines (primary source of truth)
+    const updated = await db.update(normalizedRevenueLines)
+      .set({
+        adminDateOverride: dateOverride || null,
+        adminDateOverrideReason: reason || null,
+        adminDateOverrideBy: userId || null,
+        adminDateOverrideAt: dateOverride ? now : null,
+      })
+      .where(eq(normalizedRevenueLines.id, inflowId))
+      .returning();
+
+    if (updated.length === 0) {
+      return res.status(404).json({ error: "Inflow line not found" });
+    }
+
+    // Also update programInflows if a matching row exists
+    const row = updated[0];
+    if (row.projectName && row.sourceRow != null) {
+      await db.update(programInflows)
+        .set({
+          adminDateOverride: dateOverride || null,
+          adminDateOverrideReason: reason || null,
+          adminDateOverrideBy: userId || null,
+          adminDateOverrideAt: dateOverride ? now : null,
+        })
+        .where(and(
+          eq(programInflows.projectName, row.projectName),
+          eq(programInflows.rowNumber, row.sourceRow),
+        ));
+    }
+
+    // Insert/update manualEditFlags for smart import conflict detection
+    if (dateOverride) {
+      const existingFlag = await db.select().from(manualEditFlags)
+        .where(and(
+          eq(manualEditFlags.entityType, "normalized_revenue_lines"),
+          eq(manualEditFlags.entityId, inflowId),
+          eq(manualEditFlags.fieldName, "adminDateOverride"),
+        ));
+      if (existingFlag.length === 0) {
+        await db.insert(manualEditFlags).values({
+          entityType: "normalized_revenue_lines",
+          entityId: inflowId,
+          fieldName: "adminDateOverride",
+          editedByUserId: userId,
+          editedAt: now,
+          isProtected: true,
+          protectedAt: now,
+          protectedByUserId: userId,
+        });
+      } else {
+        await db.update(manualEditFlags)
+          .set({ editedByUserId: userId, editedAt: now, isProtected: true, protectedAt: now, protectedByUserId: userId })
+          .where(eq(manualEditFlags.id, existingFlag[0].id));
+      }
+    } else {
+      await db.delete(manualEditFlags)
+        .where(and(
+          eq(manualEditFlags.entityType, "normalized_revenue_lines"),
+          eq(manualEditFlags.entityId, inflowId),
+          eq(manualEditFlags.fieldName, "adminDateOverride"),
+        ));
+    }
+
+    // Audit trail
+    try {
+      await recordManualEdit({
+        actorUserId: userId,
+        actorRole: (req as any).user?.role,
+        entityType: "inflow_admin_date_override",
+        entityId: `${row.projectName}|inflow${inflowId}`,
+        projectName: row.projectName,
+        action: dateOverride ? "INFLOW_DATE_OVERRIDDEN" : "INFLOW_DATE_OVERRIDE_CLEARED",
+        summary: dateOverride
+          ? `Admin overrode inflow ${inflowId} date to ${dateOverride}${reason ? ` (${reason})` : ''}`
+          : `Admin cleared inflow ${inflowId} date override`,
+        oldRecord: {},
+        newRecord: { inflowId, dateOverride, reason },
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Inflow admin date override audit failed:", auditErr.message);
+    }
+
+    res.json({ success: true, updated: updated[0] });
+  } catch (error) {
+    console.error("Inflow date override error:", error);
+    res.status(500).json({ error: "Failed to save inflow date override" });
   }
 });
 
@@ -2561,7 +2794,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
         }
 
         for (const exp of projExpenses) {
-          const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate || exp.expenseInvoicedDate || null;
+          const d = exp.adminDateOverride || exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate || exp.expenseInvoicedDate || null;
           if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
           const amt = parseFloat(exp.expenseActualTotal || exp.budgetTotal || '0');
           if (amt === 0) continue;

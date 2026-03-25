@@ -33,7 +33,7 @@ function resolveInflowEffectiveDates(
   if (taskLinks.length === 0) {
     return inflows.map(inf => ({
       ...inf,
-      effectiveDate: inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
+      effectiveDate: inf.adminDateOverride || inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
     }));
   }
   const linkMap = new Map<string, any>();
@@ -46,6 +46,10 @@ function resolveInflowEffectiveDates(
   for (const t of planTasks) planTaskMap.set(t.id, t);
 
   return inflows.map(inf => {
+    // Admin date override takes highest priority
+    if (inf.adminDateOverride && /^\d{4}-\d{2}-\d{2}/.test(inf.adminDateOverride)) {
+      return { ...inf, effectiveDate: inf.adminDateOverride };
+    }
     const key = `${inf.projectName}::${inf.rowNumber}`;
     const link = linkMap.get(key);
     if (inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate)) {

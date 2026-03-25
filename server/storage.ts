@@ -1082,6 +1082,10 @@ export class DatabaseStorage implements IStorage {
           if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
           if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
           if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
+          if (pe.adminDateOverride != null) item.adminDateOverride = pe.adminDateOverride;
+          if (pe.adminDateOverrideReason != null) item.adminDateOverrideReason = pe.adminDateOverrideReason;
+          if (pe.adminDateOverrideBy != null) item.adminDateOverrideBy = pe.adminDateOverrideBy;
+          if (pe.adminDateOverrideAt != null) item.adminDateOverrideAt = pe.adminDateOverrideAt;
         }
       }
 
