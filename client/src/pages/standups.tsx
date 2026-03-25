@@ -596,6 +596,106 @@ function TaskPriorityPanel({ tasks }: { tasks: MeetingParticipant["tasks"] }) {
   );
 }
 
+// ── Participant Spotlight ─────────────────────────────────────────────────────
+
+function ParticipantSpotlight({ participant, scheduleId, onSubmitted }: {
+  participant: MeetingParticipant;
+  scheduleId: number;
+  onSubmitted: () => void;
+}) {
+  const entry = participant.entry;
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Avatar className="h-10 w-10">
+            <AvatarFallback className="text-sm font-bold">
+              {getInitials(participant.userName || "?")}
+            </AvatarFallback>
+          </Avatar>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-lg font-bold">{participant.userName}</h3>
+              <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${participant.isRequired ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-500"}`}>
+                {participant.isRequired ? "Required" : "Optional"}
+              </Badge>
+            </div>
+            {entry ? (
+              <p className="text-[11px] text-muted-foreground">
+                Submitted {new Date(entry.submittedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                {entry.isLate && (
+                  <Badge variant="outline" className="ml-1.5 text-[9px] px-1 py-0 border-orange-200 bg-orange-50 text-orange-700">
+                    Late
+                  </Badge>
+                )}
+              </p>
+            ) : (
+              <p className="text-[11px] text-amber-600 font-medium">Not submitted yet</p>
+            )}
+          </div>
+        </div>
+        {entry && <MoodBadge mood={entry.mood} />}
+      </div>
+
+      {/* Two-column layout: Entry + Tasks */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Left: Standup Entry or Quick Submit */}
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2">
+            <CardTitle className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+              Standup Update
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            {entry ? (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-emerald-600 flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3" /> Completed
+                  </p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">{entry.whatIDid || "—"}</p>
+                </div>
+                <Separator />
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600 flex items-center gap-1">
+                    <Clock className="h-3 w-3" /> Working On
+                  </p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">{entry.whatImDoing || "—"}</p>
+                </div>
+                <Separator />
+                <div className="space-y-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-orange-600 flex items-center gap-1">
+                    <AlertTriangle className="h-3 w-3" /> Blockers
+                  </p>
+                  <p className={`text-sm whitespace-pre-line ${entry.blockers ? "text-orange-700 font-medium" : "text-muted-foreground"}`}>
+                    {entry.blockers || "None"}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <QuickSubmitForm scheduleId={scheduleId} onSubmitted={onSubmitted} />
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Right: Tasks */}
+        <Card>
+          <CardHeader className="px-4 py-3 pb-2">
+            <CardTitle className="text-xs font-bold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+              <Flag className="h-3.5 w-3.5" /> Assigned Work
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <TaskPriorityPanel tasks={participant.tasks} />
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ── PLACEHOLDER: More components below ───────────────────────────────────────
 
 export default function StandupsPage() {
