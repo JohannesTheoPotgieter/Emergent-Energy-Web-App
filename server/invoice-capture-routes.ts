@@ -10,6 +10,7 @@ import { actorFromReq, createProjectEvent } from "./services/project-event-servi
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 
 const uploadDir = path.resolve("uploads/invoices");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -17,9 +18,10 @@ if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 const upload = multer({
   storage: multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, uploadDir),
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`),
   }),
   limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: allowedFileFilter,
 });
 
 function jwtAuth(req: Request, _res: Response, next: NextFunction) {

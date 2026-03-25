@@ -13,6 +13,7 @@ import path from "path";
 import fs from "fs";
 // import { isOutlookConfigured, sendMail } from "./outlook"; // removed with notifications
 import { logAuditFromReq } from "./audit-logger";
+import { sanitizeFilename } from "./lib/upload-security";
 
 const photoUploadDir = path.join(process.cwd(), "uploads", "pm-photos");
 if (!fs.existsSync(photoUploadDir)) {
@@ -24,8 +25,7 @@ const photoUpload = multer({
     destination: (_req, _file, cb) => cb(null, photoUploadDir),
     filename: (_req, file, cb) => {
       const ts = Date.now();
-      const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, "_");
-      cb(null, `${ts}_${sanitized}`);
+      cb(null, `${ts}_${sanitizeFilename(file.originalname)}`);
     },
   }),
   limits: { fileSize: 20 * 1024 * 1024 },

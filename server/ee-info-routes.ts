@@ -8,6 +8,7 @@ import * as path from "path";
 import * as crypto from "crypto";
 import multer from "multer";
 import { verifyToken } from "./jwt";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 
 const SEED_ZIP_PATH = path.join(process.cwd(), "seed", "ee-info", "Emergent Energy.zip");
 const ASSETS_DIR = path.join(process.cwd(), "uploads", "ee-info-assets");
@@ -319,7 +320,7 @@ export async function bootImportCheck(): Promise<void> {
   }
 }
 
-const assetUpload = multer({ dest: ASSETS_DIR });
+const assetUpload = multer({ dest: ASSETS_DIR, fileFilter: allowedFileFilter });
 
 export function registerEeInfoRoutes(app: Express) {
   app.get("/api/ee-info/nodes", requireAuth, async (_req, res) => {
@@ -545,14 +546,15 @@ export function registerEeInfoRoutes(app: Express) {
       if (!file) return res.status(400).json({ error: "No file uploaded" });
 
       const userId = String((req.user as any)?.id || "unknown");
-      const finalPath = path.join(ASSETS_DIR, file.originalname);
+      const safeName = sanitizeFilename(file.originalname);
+      const finalPath = path.join(ASSETS_DIR, safeName);
       fs.renameSync(file.path, finalPath);
 
       const assetId = generateId();
       await db.insert(eeInfoAssets).values({
         id: assetId,
         nodeId: id,
-        filename: file.originalname,
+        filename: safeName,
         mimeType: file.mimetype,
         storagePath: finalPath,
         uploadedBy: userId,

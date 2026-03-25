@@ -1,4 +1,5 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import helmet from "helmet";
 import path from "path";
 import { verifyToken } from "../jwt";
 
@@ -17,7 +18,6 @@ const AUTH_ENDPOINTS = new Set([
   "/api/auth/login",
   "/api/auth/microsoft",
   "/api/auth/microsoft/callback",
-  "/api/role-auth/login",
 ]);
 
 const LARGE_JSON_ROUTES = new Set([
@@ -77,8 +77,32 @@ export function applySecurityAndParsingMiddleware(app: Express): void {
   const isReplit = !!(process.env.REPLIT_DOMAINS || process.env.REPLIT_DEV_DOMAIN || process.env.REPL_ID);
   const isProduction = process.env.NODE_ENV === "production";
 
+  // Helmet provides secure defaults for many HTTP headers including CSP
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"], // unsafe-inline needed for Radix/shadcn
+          imgSrc: ["'self'", "data:", "blob:"],
+          fontSrc: ["'self'"],
+          connectSrc: ["'self'"],
+          frameSrc: ["'none'"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+        },
+      },
+      // Let our manual middleware below handle frame options for Replit compatibility
+      frameguard: false,
+      // Helmet sets these by default, but we keep explicit control below
+      referrerPolicy: false,
+    }),
+  );
+
+  // Manual headers that need environment-specific logic or that helmet doesn't cover
   app.use((_req, res, next) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
 

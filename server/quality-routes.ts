@@ -4,6 +4,7 @@ import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import {
   qcTemplate, qcTemplatePhase, qcTemplateGroup, qcTemplateItem,
   qcTemplateRiskQuestion, qcTemplatePostmortemMetric,
@@ -16,7 +17,6 @@ import {
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
-import { createNotification } from "./services/notification-service";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
@@ -35,9 +35,10 @@ if (!fs.existsSync(qmApprovalUploadsDir)) fs.mkdirSync(qmApprovalUploadsDir, { r
 const qmApprovalUpload = multer({
   storage: multer.diskStorage({
     destination: qmApprovalUploadsDir,
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_')}`),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`),
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: allowedFileFilter,
 });
 
 type AppUser = { id: number; email: string; name: string; role: string; };
@@ -93,25 +94,12 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required" });
 }
 
+// Notifications feature removed - createQmNotification is now a no-op
 async function createQmNotification(
-  recipientUserId: number, eventType: string, title: string, body: string | null,
-  opts: { projectName?: string; linkedTaskId?: number; } = {}
+  _recipientUserId: number, _eventType: string, _title: string, _body: string | null,
+  _opts: { projectName?: string; linkedTaskId?: number; } = {}
 ) {
-  try {
-    return await createNotification({
-      recipientUserId,
-      eventType,
-      title,
-      body: body || undefined,
-      projectName: opts.projectName,
-      linkedTaskId: opts.linkedTaskId,
-      relatedEntityType: "quality",
-      relatedEntityId: opts.linkedTaskId,
-    });
-  } catch (err) {
-    console.error("[QM Notifications] Failed to create notification:", err);
-    return null;
-  }
+  return null;
 }
 
 function businessDaysBetween(startStr: string, endStr: string, holidays: string[]): number {
