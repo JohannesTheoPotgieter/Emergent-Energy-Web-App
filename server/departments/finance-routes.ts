@@ -4010,8 +4010,10 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       let paymentStatus: string;
       if (paymentDateBlack && hasInvoice) {
         paymentStatus = 'Out of Bank';
-      } else if (hasPayDate && !paymentDateBlack) {
-        paymentStatus = 'Payment Planned';
+      } else if (paymentDateBlack && !hasInvoice) {
+        paymentStatus = 'Risk';
+      } else if (hasPayDate && !paymentDateBlack && hasInvoice) {
+        paymentStatus = 'Outstanding';
       } else {
         paymentStatus = 'Planned';
       }

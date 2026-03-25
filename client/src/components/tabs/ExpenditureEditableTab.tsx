@@ -254,7 +254,8 @@ const getCosStatusBadge = (status: string) => {
 const getPaymentStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
     "Out of Bank": "bg-emerald-50 text-emerald-700 border-emerald-300",
-    "Payment Planned": "bg-blue-50 text-blue-600 border-blue-200",
+    "Outstanding": "bg-amber-50 text-amber-700 border-amber-300",
+    "Risk": "bg-red-50 text-red-700 border-red-300",
     "Planned": "bg-muted text-muted-foreground border-border",
   };
   return (
@@ -683,7 +684,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     };
     const countByPayment = {
       "Out of Bank": editedItems.filter(e => e.paymentStatus === "Out of Bank").length,
-      "Payment Planned": editedItems.filter(e => e.paymentStatus === "Payment Planned").length,
+      "Outstanding": editedItems.filter(e => e.paymentStatus === "Outstanding").length,
+      "Risk": editedItems.filter(e => e.paymentStatus === "Risk").length,
       "Planned": editedItems.filter(e => e.paymentStatus === "Planned").length,
     };
     return { totalBudget, totalActual, cosRealised, totalOutOfBank, variance, countByCos, countByPayment, totalItems: editedItems.length };
@@ -1471,7 +1473,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             { value: "COS Realised", label: `COS Realised (${kpis.countByCos["COS Realised"]})` },
             { value: "Committed", label: `Committed (${kpis.countByCos["Committed"]})` },
             { value: "Out of Bank", label: `Out of Bank (${kpis.countByPayment["Out of Bank"]})` },
-            { value: "Payment Planned", label: `Payment Planned (${kpis.countByPayment["Payment Planned"]})` },
+            { value: "Outstanding", label: `Outstanding (${kpis.countByPayment["Outstanding"]})` },
+            { value: "Risk", label: `Risk (${kpis.countByPayment["Risk"]})` },
             { value: "Planned", label: `Planned (${kpis.countByCos.Planned})` },
           ]}
         />
@@ -1695,7 +1698,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                   options={[
                     { value: "all", label: "All" },
                     { value: "Out of Bank", label: "Out of Bank" },
-                    { value: "Payment Planned", label: "Payment Planned" },
+                    { value: "Outstanding", label: "Outstanding" },
+                    { value: "Risk", label: "Risk" },
                     { value: "Planned", label: "Planned" },
                   ]}
                 />
