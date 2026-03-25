@@ -1,7 +1,12 @@
 /**
- * Shared fetch utility for engineering endpoints.
- * Handles auth token injection, JSON content type, and error parsing.
+ * Engineering module fetch wrapper.
+ *
+ * Use this for engineering-specific API calls (e.g. /api/engineering/*).
+ * For React Query integration, prefer queryClient.ts (getQueryFn / fetchQueryFn).
+ * For legacy auth/project API calls, see api.ts.
  */
+
+import { parseApiError, networkError, ApiError } from "./api-error";
 
 /** Raw fetch with auth headers — returns the raw Response (caller handles .ok / .json()). */
 export function engFetchRaw(url: string, options?: RequestInit): Promise<Response> {
@@ -13,10 +18,31 @@ export function engFetchRaw(url: string, options?: RequestInit): Promise<Respons
 }
 
 export async function engFetch(url: string, options?: RequestInit) {
-  const res = await engFetchRaw(url, options);
+  let res: Response;
+  try {
+    res = await engFetchRaw(url, options);
+  } catch {
+    throw networkError();
+  }
+
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || `Request failed (${res.status})`);
+    // 401 — session expired, redirect to login
+    if (res.status === 401 && window.location.pathname !== "/auth/login") {
+      window.location.href = "/auth/login";
+    }
+
+    let body: any = {};
+    try {
+      body = await res.json();
+    } catch {
+      try {
+        const text = await res.text();
+        body = { message: text || res.statusText };
+      } catch {
+        body = { message: res.statusText || "Request failed" };
+      }
+    }
+    throw parseApiError(res, body);
   }
   return res.json();
 }

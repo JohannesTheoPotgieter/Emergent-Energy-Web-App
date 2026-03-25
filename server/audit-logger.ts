@@ -9,7 +9,7 @@ export interface AuditLogParams {
   entityType: string;
   entityId?: string;
   action: string;
-  changesJson?: Record<string, any>;
+  changesJson?: Record<string, unknown>;
   projectName?: string;
   source?: "UI" | "IMPORT" | "SETTINGS" | "DOCS" | "SYSTEM";
   req?: Request;
@@ -17,7 +17,7 @@ export interface AuditLogParams {
 
 export async function logAudit(params: AuditLogParams): Promise<void> {
   try {
-    const user = params.req?.user as any;
+    const user = params.req?.user as { id?: number; name?: string; username?: string; role?: string; companyRole?: string } | undefined;
     await db.insert(auditEvents).values({
       actorRole: params.actorRole || user?.role || user?.companyRole || "unknown",
       userId: params.userId || user?.id || null,
@@ -71,7 +71,7 @@ export function logTypeChange(req: Request, entityType: string, entityId: string
   });
 }
 
-export function logImportAction(req: Request, action: string, importRunId: number, details: Record<string, any>): void {
+export function logImportAction(req: Request, action: string, importRunId: number, details: Record<string, unknown>): void {
   logAuditFromReq(req, {
     entityType: "smart_import_run",
     entityId: String(importRunId),
@@ -81,7 +81,7 @@ export function logImportAction(req: Request, action: string, importRunId: numbe
   });
 }
 
-export function logAdminRecovery(req: Request, entityType: string, entityId: string | number, action: string, changes: Record<string, any>, projectName?: string): void {
+export function logAdminRecovery(req: Request, entityType: string, entityId: string | number, action: string, changes: Record<string, unknown>, projectName?: string): void {
   logAuditFromReq(req, {
     entityType,
     entityId: String(entityId),

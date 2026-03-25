@@ -17,9 +17,12 @@ import {
 } from "@shared/schema";
 import { workItems } from "@shared/schema";
 import { qcWarning, qcChecklist, qcItemInstance } from "@shared/schema";
+import { cacheGet, cacheSet, cacheDelete, cacheClear } from "../lib/cache";
+import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000; // Skip projects refreshed within 5 minutes
 const CONCURRENCY_LIMIT = 5; // Max parallel project refreshes
+const METRICS_CACHE_TTL = 60; // seconds
 
 function toNum(v: unknown): number {
   if (v === null || v === undefined || v === "") return 0;
@@ -375,22 +378,101 @@ export async function refreshProgramMetrics(): Promise<void> {
   }
 }
 
+// ─── Cached metric readers ──────────────────────────────────────────
+
+export async function getCachedProjectMetrics(projectId: number) {
+  const cacheKey = `dashboard:metrics:${projectId}`;
+  const cached = await cacheGet<Record<string, unknown>>(cacheKey);
+  if (cached) return cached;
+
+  const [row] = await db
+    .select()
+    .from(dashboardProjectMetrics)
+    .where(eq(dashboardProjectMetrics.projectId, projectId))
+    .limit(1);
+
+  if (row) {
+    await cacheSet(cacheKey, row, METRICS_CACHE_TTL);
+  }
+  return row ?? null;
+}
+
+export async function getCachedProgramMetrics() {
+  const cacheKey = "dashboard:program-metrics";
+  const cached = await cacheGet<Record<string, unknown>>(cacheKey);
+  if (cached) return cached;
+
+  const [row] = await db
+    .select()
+    .from(dashboardProgramMetrics)
+    .limit(1);
+
+  if (row) {
+    await cacheSet(cacheKey, row, METRICS_CACHE_TTL);
+  }
+  return row ?? null;
+}
+
+// ─── Cache invalidation after refresh ───────────────────────────────
+
+async function invalidateProjectMetricsCache(projectId: number): Promise<void> {
+  await cacheDelete(`dashboard:metrics:${projectId}`);
+  await cacheDelete("dashboard:program-metrics");
+}
+
+async function invalidateAllMetricsCache(): Promise<void> {
+  await cacheClear("dashboard:metrics:*");
+  await cacheDelete("dashboard:program-metrics");
+}
+
 // ─── Fire-and-forget wrapper (non-blocking) ────────────────────────
 
 export function refreshProjectMetricsAsync(projectId: number): void {
-  refreshProjectMetrics(projectId).catch((err) =>
-    console.warn(
-      `[dashboard-metrics] Async refresh failed for project ${projectId}:`,
-      err.message,
-    ),
-  );
+  // Try to enqueue via job queue; fall back to direct execution
+  enqueueJob(QUEUE_NAMES.METRICS_REFRESH, { type: "project", projectId }, {
+    jobId: `metrics-refresh-project-${projectId}`,
+    attempts: 2,
+  }).catch(() => {
+    // Job queue unavailable — run inline (original behavior)
+    refreshProjectMetrics(projectId)
+      .then(() => invalidateProjectMetricsCache(projectId))
+      .catch((err) =>
+        console.warn(
+          `[dashboard-metrics] Async refresh failed for project ${projectId}:`,
+          err.message,
+        ),
+      );
+  });
 }
 
 export function refreshProgramMetricsAsync(): void {
-  refreshProgramMetrics().catch((err) =>
-    console.warn(
-      `[dashboard-metrics] Async program refresh failed:`,
-      err.message,
-    ),
-  );
+  enqueueJob(QUEUE_NAMES.METRICS_REFRESH, { type: "program" }, {
+    jobId: `metrics-refresh-program`,
+    attempts: 2,
+  }).catch(() => {
+    // Job queue unavailable — run inline (original behavior)
+    refreshProgramMetrics()
+      .then(() => invalidateAllMetricsCache())
+      .catch((err) =>
+        console.warn(
+          `[dashboard-metrics] Async program refresh failed:`,
+          err.message,
+        ),
+      );
+  });
 }
+
+// ─── Register job queue worker for metrics refresh ──────────────────
+
+registerWorker(QUEUE_NAMES.METRICS_REFRESH, async (data) => {
+  const payload = data as { type: string; projectId?: number };
+  if (payload.type === "project" && payload.projectId) {
+    await refreshProjectMetrics(payload.projectId);
+    await invalidateProjectMetricsCache(payload.projectId);
+  } else if (payload.type === "program") {
+    await refreshProgramMetrics();
+    await invalidateAllMetricsCache();
+  }
+}).catch((err) => {
+  console.warn(`[dashboard-metrics] Failed to register metrics worker: ${err.message}`);
+});
