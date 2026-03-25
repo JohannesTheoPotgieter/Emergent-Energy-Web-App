@@ -617,7 +617,7 @@ export const trItems = pgTable("tr_items", {
   createdBy: text("created_by"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   updatedBy: text("updated_by"),
-  scheduledDate: text("scheduled_date"),
+  scheduledDate: date("scheduled_date"),
   scheduledStartTime: text("scheduled_start_time"),
   scheduledEndTime: text("scheduled_end_time"),
 });
@@ -927,7 +927,7 @@ export const fyeReportSnapshots = pgTable("fye_report_snapshots", {
   id: serial("id").primaryKey(),
   fyeYear: integer("fye_year").notNull(),
   snapshotMonth: integer("snapshot_month").notNull(),
-  snapshotDate: text("snapshot_date").notNull(),
+  snapshotDate: date("snapshot_date").notNull(),
   snapshotLabel: text("snapshot_label").notNull(),
   status: text("status").notNull().default("draft"),
   snapshotData: text("snapshot_data").notNull(),
