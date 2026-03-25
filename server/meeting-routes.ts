@@ -88,7 +88,7 @@ export function registerMeetingRoutes(app: Express) {
 
       res.status(200).json({ status: "ok", meetingId: meeting.id, actionItemCount: actionItems.length });
     } catch (err: unknown) {
-      console.error("[Read.ai Webhook] Error:", err.message);
+      console.error("[Read.ai Webhook] Error:", (err instanceof Error ? err.message : String(err)));
       res.status(500).json({ error: "webhook_processing_failed" });
     }
   });
@@ -137,7 +137,7 @@ export function registerMeetingRoutes(app: Express) {
 
       res.json(result);
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -165,7 +165,7 @@ export function registerMeetingRoutes(app: Express) {
         convertedItems,
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -177,7 +177,7 @@ export function registerMeetingRoutes(app: Express) {
       const webhookUrl = `${protocol}://${host}/api/webhooks/read-ai`;
       res.json({ webhookUrl });
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -210,7 +210,7 @@ export function registerMeetingRoutes(app: Express) {
         actionItems: items,
       });
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -220,7 +220,7 @@ export function registerMeetingRoutes(app: Express) {
       await db.delete(meetingSummaries).where(eq(meetingSummaries.id, id));
       res.json({ ok: true });
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -237,7 +237,7 @@ export function registerMeetingRoutes(app: Express) {
       if (!updated) return res.status(404).json({ error: "Action item not found" });
       res.json(updated);
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -322,7 +322,7 @@ export function registerMeetingRoutes(app: Express) {
 
       res.json({ task, actionItem: { id: actionItemId, status: "converted", convertedToType, convertedToId: task.id } });
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -357,7 +357,7 @@ export function registerMeetingRoutes(app: Express) {
 
       res.json({ priority, actionItem: { id: actionItemId, status: "converted", convertedToType: "company_priority", convertedToId: priority.id } });
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -391,7 +391,7 @@ export function registerMeetingRoutes(app: Express) {
 
       res.json({ project, actionItem: { id: actionItemId, status: "converted", convertedToType: "project", convertedToId: project.id } });
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -441,7 +441,7 @@ export function registerMeetingRoutes(app: Express) {
       res.json({ ...meeting, actionItems: items });
     } catch (err: unknown) {
       if (err.name === "ZodError") return res.status(400).json({ error: "Validation failed", details: err.errors });
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -483,7 +483,7 @@ export function registerMeetingRoutes(app: Express) {
 
       res.json({ ok: true, meetingId: meeting.id, message: "Test meeting created successfully" });
     } catch (err: unknown) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
