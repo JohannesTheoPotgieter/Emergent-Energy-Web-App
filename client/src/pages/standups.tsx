@@ -284,6 +284,67 @@ function daysUntil(dateStr: string): number {
   return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// ── Meeting Timer ────────────────────────────────────────────────────────────
+
+function MeetingTimer({ durationSec = 120, running, onToggle, onExpired }: {
+  durationSec?: number;
+  running: boolean;
+  onToggle: () => void;
+  onExpired: () => void;
+}) {
+  const [remaining, setRemaining] = useState(durationSec);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Reset when duration changes (e.g. navigating to next person)
+  useEffect(() => {
+    setRemaining(durationSec);
+  }, [durationSec]);
+
+  useEffect(() => {
+    if (running && remaining > 0) {
+      intervalRef.current = setInterval(() => {
+        setRemaining((prev) => {
+          if (prev <= 1) {
+            onExpired();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [running, remaining > 0]);
+
+  const mins = Math.floor(remaining / 60);
+  const secs = remaining % 60;
+  const pct = (remaining / durationSec) * 100;
+  const isLow = remaining <= 30;
+
+  return (
+    <div className="flex items-center gap-2">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7 p-0"
+        onClick={onToggle}
+      >
+        {running ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+      </Button>
+      <div className="flex items-center gap-2 min-w-[120px]">
+        <Progress
+          value={pct}
+          className={`h-2 flex-1 ${isLow ? "[&>div]:bg-red-500" : "[&>div]:bg-emerald-500"}`}
+        />
+        <span className={`text-xs font-mono font-semibold tabular-nums ${isLow ? "text-red-600" : "text-muted-foreground"}`}>
+          {mins}:{secs.toString().padStart(2, "0")}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // ── PLACEHOLDER: More components below ───────────────────────────────────────
 
 export default function StandupsPage() {
