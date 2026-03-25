@@ -203,7 +203,88 @@ interface TeamMember {
   role: string;
 }
 
-// ── PLACEHOLDER: Components below ────────────────────────────────────────────
+// ── Shared helpers ───────────────────────────────────────────────────────────
+
+const MOOD_OPTIONS = [
+  { value: "great", label: "Great", icon: <ThumbsUp className="h-4 w-4" />, color: "text-emerald-600" },
+  { value: "good", label: "Good", icon: <Smile className="h-4 w-4" />, color: "text-emerald-500" },
+  { value: "okay", label: "Okay", icon: <Meh className="h-4 w-4" />, color: "text-amber-500" },
+  { value: "struggling", label: "Struggling", icon: <Frown className="h-4 w-4" />, color: "text-orange-600" },
+  { value: "blocked", label: "Blocked", icon: <XCircle className="h-4 w-4" />, color: "text-red-600" },
+];
+
+function MoodBadge({ mood }: { mood: string | null }) {
+  if (!mood) return null;
+  const opt = MOOD_OPTIONS.find((m) => m.value === mood);
+  return opt ? (
+    <span className={`flex items-center gap-1 text-xs font-medium ${opt.color}`}>
+      {opt.icon} {opt.label}
+    </span>
+  ) : null;
+}
+
+function getInitials(name: string) {
+  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+}
+
+const PRIORITY_COLORS: Record<string, string> = {
+  Urgent: "bg-red-100 text-red-700 border-red-200",
+  High: "bg-orange-100 text-orange-700 border-orange-200",
+  Med: "bg-amber-100 text-amber-700 border-amber-200",
+  Low: "bg-slate-100 text-slate-600 border-slate-200",
+};
+
+const SEVERITY_COLORS: Record<string, string> = {
+  critical: "bg-red-100 text-red-700 border-red-200",
+  important: "bg-orange-100 text-orange-700 border-orange-200",
+  normal: "bg-blue-100 text-blue-700 border-blue-200",
+};
+
+function PriorityBadge({ priority }: { priority: string | null }) {
+  if (!priority) return null;
+  const cls = PRIORITY_COLORS[priority] || "bg-slate-100 text-slate-600 border-slate-200";
+  return (
+    <Badge variant="outline" className={`text-[9px] px-1.5 py-0 font-semibold ${cls}`}>
+      {priority}
+    </Badge>
+  );
+}
+
+function CompanyPriorityBadge({ priority }: { priority: LinkedPriority }) {
+  const cls = SEVERITY_COLORS[priority.severity] || SEVERITY_COLORS.normal;
+  return (
+    <Badge variant="outline" className={`text-[9px] px-1.5 py-0 font-semibold gap-1 ${cls}`}>
+      <Target className="h-2.5 w-2.5" />
+      {priority.title}
+    </Badge>
+  );
+}
+
+function TaskStatusBadge({ status }: { status: string }) {
+  const s = status.toUpperCase();
+  let cls = "bg-slate-100 text-slate-600";
+  if (["IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK"].includes(s)) cls = "bg-blue-100 text-blue-700";
+  else if (["HOLD", "ON HOLD"].includes(s)) cls = "bg-amber-100 text-amber-700";
+  else if (s === "NOT STARTED") cls = "bg-slate-100 text-slate-500";
+  return (
+    <Badge variant="outline" className={`text-[9px] px-1.5 py-0 font-medium border-0 ${cls}`}>
+      {status}
+    </Badge>
+  );
+}
+
+function formatDateShort(dateStr: string) {
+  return new Date(dateStr + "T00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function daysUntil(dateStr: string): number {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(dateStr + "T00:00");
+  return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// ── PLACEHOLDER: More components below ───────────────────────────────────────
 
 export default function StandupsPage() {
   return (
