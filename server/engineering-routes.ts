@@ -2148,9 +2148,9 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  // ========== ENGINEERING STANDUP DASHBOARD ==========
+  // ========== ENGINEERING OVERVIEW DASHBOARD ==========
 
-  app.get("/api/eng/dashboard/standup", requireAuth, async (req, res) => {
+  app.get("/api/eng/dashboard/overview", requireAuth, async (req, res) => {
     try {
       const role = getUserRole(req);
       const managerRoles = ["eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
