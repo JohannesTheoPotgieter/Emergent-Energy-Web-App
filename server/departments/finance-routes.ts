@@ -1507,14 +1507,12 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
       const isRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
-      const isConfirmedPayment = isCashflowConfirmed(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
 
+      // COS state is purely invoice-date driven (not payment date)
       let cosState = 'Planned';
-      if (isConfirmedPayment) {
-        cosState = 'Paid';
-      } else if (isRealised) {
-        cosState = 'Invoiced';
-      } else if (exp.expensePoNumber) {
+      if (isRealised) {
+        cosState = 'COS Realised';
+      } else if (exp.expensePoNumber || (exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim())) {
         cosState = 'Committed';
       }
 
@@ -1558,7 +1556,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         invoiceDate: invDate,
         invoiceDateConfirmed: isRealised,
         paymentDate: payDate,
-        paymentDateConfirmed: isConfirmedPayment,
+        paymentDateConfirmed: !!(payDate && String(payDate).trim()) && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor),
         supplier: exp.supplierName || null,
         isRealised,
         realisedMonth,
