@@ -345,6 +345,105 @@ function MeetingTimer({ durationSec = 120, running, onToggle, onExpired }: {
   );
 }
 
+// ── Quick Submit Form (inline, compact) ──────────────────────────────────────
+
+function QuickSubmitForm({ scheduleId, onSubmitted }: {
+  scheduleId: number;
+  onSubmitted: () => void;
+}) {
+  const [whatIDid, setWhatIDid] = useState("");
+  const [whatImDoing, setWhatImDoing] = useState("");
+  const [blockers, setBlockers] = useState("");
+  const [mood, setMood] = useState("");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const submitMutation = useMutation({
+    mutationFn: () =>
+      apiFetch("/api/standups/entries", {
+        method: "POST",
+        body: JSON.stringify({ scheduleId, whatIDid, whatImDoing, blockers, mood: mood || null }),
+      }),
+    onSuccess: () => {
+      toast({ title: "Standup submitted" });
+      queryClient.invalidateQueries({ queryKey: ["standup-meeting"] });
+      queryClient.invalidateQueries({ queryKey: ["standups-today"] });
+      onSubmitted();
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="space-y-3 p-4 rounded-lg border-2 border-dashed border-amber-200 bg-amber-50/30">
+      <p className="text-xs font-semibold uppercase tracking-wide text-amber-700 flex items-center gap-1.5">
+        <Send className="h-3 w-3" /> Quick Submit — No entry yet
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="space-y-1">
+          <Label className="text-[11px] flex items-center gap-1">
+            <CheckCircle2 className="h-3 w-3 text-emerald-600" /> Completed
+          </Label>
+          <Textarea
+            value={whatIDid}
+            onChange={(e) => setWhatIDid(e.target.value)}
+            placeholder="What did you accomplish?"
+            rows={2}
+            className="text-xs"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[11px] flex items-center gap-1">
+            <Clock className="h-3 w-3 text-blue-600" /> Working On
+          </Label>
+          <Textarea
+            value={whatImDoing}
+            onChange={(e) => setWhatImDoing(e.target.value)}
+            placeholder="What are you working on?"
+            rows={2}
+            className="text-xs"
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-[11px] flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3 text-orange-500" /> Blockers
+          </Label>
+          <Textarea
+            value={blockers}
+            onChange={(e) => setBlockers(e.target.value)}
+            placeholder="Any blockers?"
+            rows={2}
+            className="text-xs"
+          />
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex gap-1.5">
+          {MOOD_OPTIONS.map((opt) => (
+            <Button
+              key={opt.value}
+              variant={mood === opt.value ? "default" : "outline"}
+              size="sm"
+              className="gap-1 h-7 text-[10px] px-2"
+              onClick={() => setMood(mood === opt.value ? "" : opt.value)}
+            >
+              {opt.icon}
+            </Button>
+          ))}
+        </div>
+        <Button
+          size="sm"
+          className="gap-1.5 h-7"
+          onClick={() => submitMutation.mutate()}
+          disabled={submitMutation.isPending}
+        >
+          {submitMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+          Submit
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ── PLACEHOLDER: More components below ───────────────────────────────────────
 
 export default function StandupsPage() {
