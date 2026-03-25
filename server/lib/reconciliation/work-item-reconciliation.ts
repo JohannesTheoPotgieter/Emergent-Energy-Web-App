@@ -1,4 +1,3 @@
-// @ts-nocheck
 // NOTE: This reconciliation module references the legacy operational_tasks table for archive comparison.
 // It will gracefully degrade once operational_tasks is dropped — the legacy side will simply return 0 rows.
 import { and, eq, isNull } from "drizzle-orm";
@@ -71,7 +70,7 @@ const statusRank = (status: ReconciliationStatus) => (status === "fail" ? 2 : st
 
 export async function generateWorkItemReconciliationReport(workstream?: "ENG"): Promise<WorkItemReconciliationReport> {
   // Legacy operational_tasks table has been dropped; legacy side returns empty.
-  const legacyRows: any[] = [];
+  const legacyRows: Record<string, unknown>[] = [];
 
   const canonicalRows = await db
     .select({
@@ -96,7 +95,7 @@ export async function generateWorkItemReconciliationReport(workstream?: "ENG"): 
   const legacyByProject = new Map<number | null, TaskRecord[]>();
   const canonicalByProject = new Map<number | null, TaskRecord[]>();
 
-  for (const row of legacyRows as any[]) {
+  for (const row of legacyRows) {
     const task: TaskRecord = {
       id: Number(row.id),
       projectId: row.project_id != null ? Number(row.project_id) : null,
@@ -111,7 +110,7 @@ export async function generateWorkItemReconciliationReport(workstream?: "ENG"): 
     legacyByProject.set(task.projectId, [...(legacyByProject.get(task.projectId) || []), task]);
   }
 
-  for (const row of canonicalRows as any[]) {
+  for (const row of canonicalRows) {
     const task: TaskRecord = {
       id: Number(row.id),
       projectId: row.project_id != null ? Number(row.project_id) : null,
