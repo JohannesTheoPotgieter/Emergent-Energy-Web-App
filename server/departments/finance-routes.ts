@@ -1214,6 +1214,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       if (isNaN(amount) || amount === 0) continue;
 
       const dateSource = (exp.expenseInvoicedDate
+        || (exp as any).approvedDate
         || (exp as any).forecastPaymentDate
         || (exp as any).computedForecastPaymentDate
         || exp.expensePaymentDate
@@ -1340,6 +1341,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       if (isNaN(amount) || amount === 0) continue;
 
       const dateSource = (exp.expenseInvoicedDate
+        || (exp as any).approvedDate
         || (exp as any).forecastPaymentDate
         || (exp as any).computedForecastPaymentDate
         || exp.expensePaymentDate
@@ -1491,12 +1493,12 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const payDate = exp.expensePaymentDate as string | null;
       const forecastDate = exp.forecastPaymentDate as string | null;
 
+      const approvedDate = (exp as any).approvedDate as string | null;
+
       let itemMonthKey: string | null = null;
-      if (invDate) {
-        const dm = invDate.match(/^(\d{4})-(\d{2})/);
-        if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
-      } else if (forecastDate) {
-        const dm = forecastDate.match(/^(\d{4})-(\d{2})/);
+      const dateForMonth = invDate || approvedDate || forecastDate || payDate || null;
+      if (dateForMonth) {
+        const dm = String(dateForMonth).match(/^(\d{4})-(\d{2})/);
         if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
       }
 
