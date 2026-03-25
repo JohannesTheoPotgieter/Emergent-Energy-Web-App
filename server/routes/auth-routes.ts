@@ -1,5 +1,4 @@
-// @ts-nocheck
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import passport from "passport";
 import { db } from "../db";
 import { users } from "@shared/schema";

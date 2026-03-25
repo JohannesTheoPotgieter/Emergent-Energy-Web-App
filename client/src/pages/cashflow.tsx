@@ -466,9 +466,9 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg" data-testid="dialog-opex-budget">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold">OPEX Monthly Costed — FY26</DialogTitle>
+          <DialogTitle className="text-lg font-semibold">OPEX Monthly Costed — FY{CURRENT_FY}</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground mt-1">
-            Set monthly operating expense costed amounts for Sep 2025 – Aug 2026
+            Set monthly operating expense costed amounts for Sep {CURRENT_FY - 1} – Aug {CURRENT_FY}
           </DialogDescription>
         </DialogHeader>
         {isLoading ? (
@@ -635,10 +635,10 @@ export default function CashflowPage() {
 
   const opexMutation = useMutation({
     mutationFn: async (body: { weekStartDate: string; opexAmount: number }) => {
-      await apiRequest("POST", "/api/cashflow-2026/opex-weekly", body);
+      await apiRequest("POST", `${CASHFLOW_API_BASE}/opex-weekly`, body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       invalidateDashboardQueries(queryClient);
       setEditingOpex(null);
       toast({ title: "OPEX Saved", description: "Weekly OPEX updated and values recalculated" });
@@ -650,10 +650,10 @@ export default function CashflowPage() {
 
   const clearOpexMutation = useMutation({
     mutationFn: async (weekStartDate: string) => {
-      await apiRequest("DELETE", "/api/cashflow-2026/opex-weekly", { weekStartDate });
+      await apiRequest("DELETE", `${CASHFLOW_API_BASE}/opex-weekly`, { weekStartDate });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       invalidateDashboardQueries(queryClient);
       toast({ title: "OPEX Override Cleared", description: "Using monthly costed split value" });
     },
@@ -663,12 +663,12 @@ export default function CashflowPage() {
   });
 
   const { data: availPayHistory = [] } = useQuery<{ id: number; weekStartDate: string; previousValue: string | null; newValue: string; computedValue: string | null; reason: string | null; changedAt: string; changedBy: string | null }[]>({
-    queryKey: ["/api/cashflow-2026/available-payment-history", availPayHistoryWeek],
+    queryKey: [`${CASHFLOW_API_BASE}/available-payment-history`, availPayHistoryWeek],
     queryFn: async () => {
       const hToken = localStorage.getItem("auth_token");
       const hHeaders: Record<string, string> = {};
       if (hToken) hHeaders["Authorization"] = `Bearer ${hToken}`;
-      const res = await fetch(`/api/cashflow-2026/available-payment-history?week=${availPayHistoryWeek}`, { credentials: "include", headers: hHeaders });
+      const res = await fetch(`${CASHFLOW_API_BASE}/available-payment-history?week=${availPayHistoryWeek}`, { credentials: "include", headers: hHeaders });
       if (!res.ok) throw new Error("Failed to fetch history");
       return res.json();
     },
@@ -677,11 +677,11 @@ export default function CashflowPage() {
 
   const availPayMutation = useMutation({
     mutationFn: async (body: { weekStartDate: string; overrideValue: number; reason: string; computedValue: number }) => {
-      await apiRequest("POST", "/api/cashflow-2026/available-payment", body);
+      await apiRequest("POST", `${CASHFLOW_API_BASE}/available-payment`, body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/available-payment-history"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/available-payment-history`] });
       invalidateDashboardQueries(queryClient);
       setAvailPayEdit(null);
       setAvailPayValue("");
@@ -695,11 +695,11 @@ export default function CashflowPage() {
 
   const clearAvailPayMutation = useMutation({
     mutationFn: async (weekStartDate: string) => {
-      await apiRequest("DELETE", "/api/cashflow-2026/available-payment", { weekStartDate });
+      await apiRequest("DELETE", `${CASHFLOW_API_BASE}/available-payment`, { weekStartDate });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/available-payment-history"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/available-payment-history`] });
       invalidateDashboardQueries(queryClient);
       toast({ title: "Override Cleared", description: "Using computed available payment" });
     },
@@ -786,8 +786,8 @@ export default function CashflowPage() {
     <PageShell className="p-4 md:p-6" data-testid="page-cashflow">
       <SectionHeader
         icon={<Wallet className="h-5 w-5" />}
-        title="Cashflow FY26"
-        description="Weekly cashflow timeline for Sep 2025 to Aug 2026 with visible source, override, and variance relationships."
+        title={`Cashflow FY${CURRENT_FY}`}
+        description={`Weekly cashflow timeline for Sep ${CURRENT_FY - 1} to Aug ${CURRENT_FY} with visible source, override, and variance relationships.`}
         badges={[
           { label: scopeLabel, icon: <Wallet className="h-3.5 w-3.5" /> },
           { label: canEditCashflow ? "Manual overrides enabled" : "Read-only finance view", icon: <ArrowRight className="h-3.5 w-3.5" /> },
