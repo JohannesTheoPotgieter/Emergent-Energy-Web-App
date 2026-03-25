@@ -220,10 +220,10 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
     return res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV === "development") {
     app.get("/api/auth/dev-login", async (_req, res) => {
-      // Double-check at runtime — never allow in production even if route was registered
-      if (process.env.NODE_ENV === "production") {
+      // Double-check at runtime — only allow in explicit development mode
+      if (process.env.NODE_ENV !== "development") {
         return res.status(404).send("Not found");
       }
       try {
