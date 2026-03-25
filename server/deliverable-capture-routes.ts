@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { type Express, type Request, type Response } from "express";
 import multer from "multer";
 import path from "path";
@@ -8,7 +7,7 @@ import { db } from "./db";
 import { sql, eq, and, isNull, asc } from "drizzle-orm";
 import { deliverables, projectInfo, normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
-import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { getEffectiveUser, jwtAuth, requireAuth, type AuthenticatedUser } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
 
@@ -27,7 +26,7 @@ const deliverableUpload = multer({
   fileFilter: allowedFileFilter,
 });
 
-function getUser(req: Request): any {
+function getUser(req: Request): AuthenticatedUser | null {
   return getEffectiveUser(req);
 }
 

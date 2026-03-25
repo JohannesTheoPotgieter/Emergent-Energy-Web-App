@@ -431,3 +431,23 @@ ALTER TABLE lost_deals
       WHEN lost_date ~ '^\d{4}-\d{2}-\d{2}$' THEN lost_date::date
       ELSE NULL
     END;
+
+-- ===================== tr_items =====================
+
+ALTER TABLE tr_items
+  ALTER COLUMN scheduled_date TYPE date
+    USING CASE
+      WHEN scheduled_date IS NULL OR scheduled_date = '' THEN NULL
+      WHEN scheduled_date ~ '^\d{4}-\d{2}-\d{2}$' THEN scheduled_date::date
+      ELSE NULL
+    END;
+
+-- ===================== fye_report_snapshots =====================
+
+ALTER TABLE fye_report_snapshots
+  ALTER COLUMN snapshot_date TYPE date
+    USING CASE
+      WHEN snapshot_date IS NULL OR snapshot_date = '' THEN NULL
+      WHEN snapshot_date ~ '^\d{4}-\d{2}-\d{2}$' THEN snapshot_date::date
+      ELSE NULL
+    END;
