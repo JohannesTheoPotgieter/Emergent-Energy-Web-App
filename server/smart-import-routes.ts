@@ -1919,6 +1919,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         const oldInflows = await tx.select({
           rowNumber: programInflows.rowNumber,
           inBank: programInflows.inBank,
+          paymentReceivedDate: programInflows.paymentReceivedDate,
           milestoneName: programInflows.milestoneName,
           milestoneAmount: programInflows.milestoneAmount,
           source: programInflows.source,
@@ -1934,14 +1935,25 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           overwriteWarnings.push(msg);
         }
 
-        // Build composite key map: "milestoneName::amount" → { inBank, rowNumber }
-        const oldCompositeMap = new Map<string, { inBank: number | null; rowNumber: number | null }>();
-        const oldRowMap = new Map<number, number | null>();
+        // Build composite key map: "milestoneName::amount" → previous inflow row
+        const oldCompositeMap = new Map<string, { inBank: number | null; rowNumber: number | null; paymentReceivedDate: string | null; source: string | null }>();
+        const oldRowMap = new Map<number, { inBank: number | null; paymentReceivedDate: string | null; source: string | null }>();
         for (const r of oldInflows) {
-          if (r.rowNumber != null) oldRowMap.set(r.rowNumber, r.inBank);
+          if (r.rowNumber != null) {
+            oldRowMap.set(r.rowNumber, {
+              inBank: r.inBank,
+              paymentReceivedDate: r.paymentReceivedDate,
+              source: r.source || null,
+            });
+          }
           if (r.milestoneName) {
             const key = `${r.milestoneName}::${r.milestoneAmount || ""}`;
-            oldCompositeMap.set(key, { inBank: r.inBank, rowNumber: r.rowNumber });
+            oldCompositeMap.set(key, {
+              inBank: r.inBank,
+              rowNumber: r.rowNumber,
+              paymentReceivedDate: r.paymentReceivedDate,
+              source: r.source || null,
+            });
           }
         }
 
@@ -1962,10 +1974,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
               // Composite match first (name + amount), then fall back to row number
               let prevInBank: number | null | undefined = undefined;
+              let prevPaymentReceivedDate: string | null | undefined = undefined;
+              let prevSource: string | null | undefined = undefined;
               const compositeKey = name ? `${name}::${amount || ""}` : null;
               if (compositeKey && oldCompositeMap.has(compositeKey)) {
                 const match = oldCompositeMap.get(compositeKey)!;
                 prevInBank = match.inBank;
+                prevPaymentReceivedDate = match.paymentReceivedDate;
+                prevSource = match.source;
                 // Warn if the milestone moved rows
                 if (match.rowNumber != null && match.rowNumber !== r.sourceRow) {
                   console.log(`[SmartImport] Revenue milestone '${name}' moved from row ${match.rowNumber} to row ${r.sourceRow}. Status preserved.`);
@@ -1973,8 +1989,16 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               }
               // Fall back to row number match
               if (prevInBank === undefined && oldRowMap.has(r.sourceRow)) {
-                prevInBank = oldRowMap.get(r.sourceRow) ?? null;
+                const rowMatch = oldRowMap.get(r.sourceRow)!;
+                prevInBank = rowMatch.inBank ?? null;
+                prevPaymentReceivedDate = rowMatch.paymentReceivedDate ?? null;
+                prevSource = rowMatch.source;
               }
+
+              const preserveManualRow = prevSource === "imported_edited";
+              const paymentReceivedDate = preserveManualRow
+                ? (prevPaymentReceivedDate ?? null)
+                : (m.paidDate || null);
 
               return {
                 projectName,
@@ -1985,7 +2009,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 plannedPaymentDate: m.expectedPaymentDate || null,
                 milestoneInvoiceNumber: m.invoiceNumber || null,
                 invoiceRaisedDate: m.invoiceDate || null,
-                paymentReceivedDate: m.paidDate || null,
+                paymentReceivedDate,
                 inBank: prevInBank != null ? prevInBank : (m.inBankDate ? 1 : 0),
                 subProjectName: m.subProjectName || null,
                 dataSource: "SMART_IMPORT",
@@ -2173,7 +2197,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
 
       if (Array.isArray(norm.costLines) && projectName) {
-        const oldPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber, source: programExpense.source })
+        const oldPeRows = await tx.select({
+          id: programExpense.id,
+          rowNumber: programExpense.rowNumber,
+          source: programExpense.source,
+          expensePaymentDate: programExpense.expensePaymentDate,
+          paymentDateConfirmed: programExpense.paymentDateConfirmed,
+          paymentDateFontColor: programExpense.paymentDateFontColor,
+        })
           .from(programExpense)
           .where(eq(programExpense.projectName, projectName));
 
@@ -2192,12 +2223,28 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         if (norm.costLines.length > 0) {
           const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
           const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
+          const oldPeByRow = new Map(
+            oldPeRows
+              .filter((r) => r.rowNumber != null)
+              .map((r) => [r.rowNumber as number, r]),
+          );
           let currentCategory = "";
           const peValues = norm.costLines
             .filter((c: any) => !costIgnored.has(c.sourceRow))
             .map((c: any) => {
               const ov = costOverrides.get(c.sourceRow);
               const m = ov ? { ...c, ...ov } : c;
+              const previous = oldPeByRow.get(c.sourceRow);
+              const preserveManualRow = previous?.source === "imported_edited";
+              const expensePaymentDate = preserveManualRow
+                ? (previous?.expensePaymentDate || null)
+                : (m.paidDate || null);
+              const paymentDateConfirmed = preserveManualRow
+                ? Boolean(previous?.paymentDateConfirmed)
+                : m.paidDateFontColor === "black";
+              const paymentDateFontColor = preserveManualRow
+                ? (previous?.paymentDateFontColor || null)
+                : (m.paidDateFontColor || null);
               if (m.costCategory && m.costCategory !== currentCategory) currentCategory = m.costCategory;
               return {
                 projectName,
@@ -2216,9 +2263,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 expenseInvoicedDate: m.invoiceDate || null,
                 invoiceDateFontColor: m.invoiceDateFontColor || null,
                 invoiceDateConfirmed: m.invoiceDateFontColor === "black",
-                expensePaymentDate: m.paidDate || null,
-                paymentDateFontColor: m.paidDateFontColor || null,
-                paymentDateConfirmed: m.paidDateFontColor === "black",
+                expensePaymentDate,
+                paymentDateFontColor,
+                paymentDateConfirmed,
                 subProjectName: m.subProjectName || null,
                 dataSource: "SMART_IMPORT",
                 projectId: projectId || null,
