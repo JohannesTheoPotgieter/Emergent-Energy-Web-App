@@ -1380,7 +1380,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         row.invoiceDateConfirmed === true ||
         row.paidDateConfirmed === true ||
         row.noRevenueLinked === true ||
-        row.cashflowConfirmed === true
+        row.cashflowConfirmed === true ||
+        !!row.adminDateOverride
       );
 
       const manualEditChangeSets = await db
@@ -1495,12 +1496,51 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               editedAt: flagInfo?.editedAt?.toISOString() || undefined,
             });
           }
+          if (existing.adminDateOverride) {
+            const flagInfo = editFlagMap.get(`${existing.id}::adminDateOverride`);
+            const importDate = matchingImport?.forecastPaymentDate || matchingImport?.paidDate || "none";
+            conflicts.push({
+              sourceRow: existing.sourceRow || 0,
+              description: existing.description || "",
+              costCategory: existing.costCategory || "",
+              field: "Admin Date Override",
+              currentValue: `${existing.adminDateOverride}${existing.adminDateOverrideReason ? ` (${existing.adminDateOverrideReason})` : ""}`,
+              importValue: importDate,
+              editedByName: flagInfo?.editedByName || undefined,
+              editedAt: flagInfo?.editedAt?.toISOString() || existing.adminDateOverrideAt?.toISOString() || undefined,
+            });
+          }
         }
 
+        // Also check for revenue admin date overrides
+        const existingRevLines = await db.select().from(normalizedRevenueLines)
+          .where(and(eq(normalizedRevenueLines.projectId, run.projectId), isNull(normalizedRevenueLines.effectiveTo)));
+
+        const revWithOverrides = existingRevLines.filter(row => !!row.adminDateOverride);
+        if (revWithOverrides.length > 0) {
+          const importRevLines = norm?.revenueLines || [];
+          for (const existing of revWithOverrides) {
+            if (existing.sourceRow == null) continue;
+            const matchingImport = importRevLines.find((imp: any) => imp.sourceRow === existing.sourceRow);
+            const importDate = matchingImport?.expectedPaymentDate || matchingImport?.paidDate || "none";
+            conflicts.push({
+              sourceRow: existing.sourceRow,
+              description: existing.milestoneName || existing.description || "",
+              costCategory: "Revenue",
+              field: "Admin Date Override (Revenue)",
+              currentValue: `${existing.adminDateOverride}${existing.adminDateOverrideReason ? ` (${existing.adminDateOverrideReason})` : ""}`,
+              importValue: importDate,
+              editedByName: undefined,
+              editedAt: existing.adminDateOverrideAt?.toISOString() || undefined,
+            });
+          }
+        }
+
+        const totalEdits = manuallyModifiedRows.length + revWithOverrides.length;
         return res.status(409).json({
           error: "manual_edits_warning",
-          message: `This project has ${manuallyModifiedRows.length} cost line(s) with manual edits that will be affected by this import.`,
-          manualEditCount: manuallyModifiedRows.length,
+          message: `This project has ${totalEdits} line(s) with manual edits that will be affected by this import.`,
+          manualEditCount: totalEdits,
           changeSetCount,
           conflicts,
           hint: "Resolve each conflict individually: 'keep' to preserve your manual edit, 'import' to overwrite with Excel data.",
@@ -1651,6 +1691,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         paidDateConfirmed?: boolean;
         noRevenueLinked?: boolean;
         cashflowConfirmed?: boolean;
+        adminDateOverride?: string;
+        adminDateOverrideReason?: string;
+        adminDateOverrideBy?: number;
+        adminDateOverrideAt?: Date;
+      }>();
+
+      // Track revenue admin date overrides separately
+      const revenueAdminOverrides = new Map<number, {
+        adminDateOverride: string;
+        adminDateOverrideReason?: string;
+        adminDateOverrideBy?: number;
+        adminDateOverrideAt?: Date;
       }>();
 
       if (preserveManualEdits || conflictResolutions) {
@@ -1659,23 +1711,31 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           : await tx.select().from(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
 
         for (const row of existingCostRows) {
-          const hasManualEdits = row.cosRealised || row.invoiceDateConfirmed || row.paidDateConfirmed || row.noRevenueLinked || row.cashflowConfirmed;
+          const hasManualEdits = row.cosRealised || row.invoiceDateConfirmed || row.paidDateConfirmed || row.noRevenueLinked || row.cashflowConfirmed || row.adminDateOverride;
           if (!hasManualEdits || row.sourceRow == null) continue;
 
           if (conflictResolutions) {
-            const edits: Record<string, boolean> = {};
+            const edits: Record<string, any> = {};
             const fields: Record<string, string> = {
               cosRealised: "COS Realised",
               invoiceDateConfirmed: "Invoice Date Confirmed",
               paidDateConfirmed: "Paid Date Confirmed",
               noRevenueLinked: "No Revenue Linked",
               cashflowConfirmed: "Cashflow Confirmed",
+              adminDateOverride: "Admin Date Override",
             };
             for (const [dbField, label] of Object.entries(fields)) {
               if ((row as any)[dbField]) {
                 const key = `${row.sourceRow}::${label}`;
                 if (conflictResolutions[key] === "keep") {
-                  (edits as any)[dbField] = true;
+                  if (dbField === "adminDateOverride") {
+                    edits.adminDateOverride = row.adminDateOverride;
+                    edits.adminDateOverrideReason = row.adminDateOverrideReason || undefined;
+                    edits.adminDateOverrideBy = row.adminDateOverrideBy || undefined;
+                    edits.adminDateOverrideAt = row.adminDateOverrideAt || undefined;
+                  } else {
+                    edits[dbField] = true;
+                  }
                 }
               }
             }
@@ -1689,6 +1749,38 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               paidDateConfirmed: row.paidDateConfirmed || undefined,
               noRevenueLinked: row.noRevenueLinked || undefined,
               cashflowConfirmed: row.cashflowConfirmed || undefined,
+              adminDateOverride: row.adminDateOverride || undefined,
+              adminDateOverrideReason: row.adminDateOverrideReason || undefined,
+              adminDateOverrideBy: row.adminDateOverrideBy || undefined,
+              adminDateOverrideAt: row.adminDateOverrideAt || undefined,
+            });
+          }
+        }
+
+        // Also check revenue lines for admin date overrides
+        const existingRevRows = projectId
+          ? await tx.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, projectId))
+          : await tx.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, projectName));
+
+        for (const row of existingRevRows) {
+          if (!row.adminDateOverride || row.sourceRow == null) continue;
+
+          if (conflictResolutions) {
+            const key = `${row.sourceRow}::Admin Date Override (Revenue)`;
+            if (conflictResolutions[key] === "keep") {
+              revenueAdminOverrides.set(row.sourceRow, {
+                adminDateOverride: row.adminDateOverride,
+                adminDateOverrideReason: row.adminDateOverrideReason || undefined,
+                adminDateOverrideBy: row.adminDateOverrideBy || undefined,
+                adminDateOverrideAt: row.adminDateOverrideAt || undefined,
+              });
+            }
+          } else {
+            revenueAdminOverrides.set(row.sourceRow, {
+              adminDateOverride: row.adminDateOverride,
+              adminDateOverrideReason: row.adminDateOverrideReason || undefined,
+              adminDateOverrideBy: row.adminDateOverrideBy || undefined,
+              adminDateOverrideAt: row.adminDateOverrideAt || undefined,
             });
           }
         }
@@ -1911,6 +2003,27 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           });
         if (revValues.length > 0) {
           await tx.insert(normalizedRevenueLines).values(addTemporalColumns(revValues, runId, commitTimestamp) as any);
+
+          // Preserve admin date overrides on re-imported revenue lines
+          if (revenueAdminOverrides.size > 0) {
+            const insertedRevRows = projectId
+              ? await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo)))
+              : await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo)));
+
+            for (const inserted of insertedRevRows) {
+              if (inserted.sourceRow == null) continue;
+              const preserved = revenueAdminOverrides.get(inserted.sourceRow);
+              if (!preserved) continue;
+
+              await tx.update(normalizedRevenueLines).set({
+                adminDateOverride: preserved.adminDateOverride,
+                adminDateOverrideReason: preserved.adminDateOverrideReason || null,
+                adminDateOverrideBy: preserved.adminDateOverrideBy || null,
+                adminDateOverrideAt: preserved.adminDateOverrideAt || null,
+              }).where(eq(normalizedRevenueLines.id, inserted.id));
+              preservedManualEditsCount++;
+            }
+          }
         }
         counts.revenueLines = revValues.length;
       }
@@ -2151,12 +2264,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               const preserved = manualEditsToPreserve.get(inserted.sourceRow);
               if (!preserved) continue;
 
-              const updates: Record<string, boolean> = {};
+              const updates: Record<string, any> = {};
               if (preserved.cosRealised) updates.cosRealised = true;
               if (preserved.invoiceDateConfirmed) updates.invoiceDateConfirmed = true;
               if (preserved.paidDateConfirmed) updates.paidDateConfirmed = true;
               if (preserved.noRevenueLinked) updates.noRevenueLinked = true;
               if (preserved.cashflowConfirmed) updates.cashflowConfirmed = true;
+              if (preserved.adminDateOverride) {
+                updates.adminDateOverride = preserved.adminDateOverride;
+                updates.adminDateOverrideReason = preserved.adminDateOverrideReason || null;
+                updates.adminDateOverrideBy = preserved.adminDateOverrideBy || null;
+                updates.adminDateOverrideAt = preserved.adminDateOverrideAt || null;
+              }
 
               if (Object.keys(updates).length > 0) {
                 await tx.update(normalizedCostLines).set(updates).where(eq(normalizedCostLines.id, inserted.id));

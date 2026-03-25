@@ -366,7 +366,7 @@ function resolveInflowEffectiveDates(
   if (taskLinks.length === 0) {
     return inflows.map(inf => ({
       ...inf,
-      effectiveDate: inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
+      effectiveDate: inf.adminDateOverride || inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
     }));
   }
 
@@ -395,6 +395,11 @@ function resolveInflowEffectiveDates(
   }
 
   return inflows.map(inf => {
+    // Admin date override takes highest priority
+    if (inf.adminDateOverride && /^\d{4}-\d{2}-\d{2}/.test(inf.adminDateOverride)) {
+      return { ...inf, effectiveDate: inf.adminDateOverride };
+    }
+
     const key = `${inf.projectName}::${inf.rowNumber}`;
     const normalizedKey = `${normalizeProjectName(inf.projectName)}::${inf.rowNumber}`;
     const link =
