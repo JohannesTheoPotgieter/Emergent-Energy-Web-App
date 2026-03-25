@@ -1213,9 +1213,14 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const dateSource = (exp.expenseInvoicedDate
+        || (exp as any).forecastPaymentDate
+        || (exp as any).computedForecastPaymentDate
+        || exp.expensePaymentDate
+        || (exp as any).startDate
+        || null) as string | null;
+      if (!dateSource) continue;
+      const dateMatch = String(dateSource).match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
@@ -1228,7 +1233,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       cosBucket.total += amount;
       cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
 
-      const isRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      const hasInvoice = !!exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim() !== '';
+      const isRealised = hasInvoice && isCosRealised(exp) && monthKey <= currentMonthKey;
 
       if (isRealised) {
         if (!realisedByMonth.has(monthKey)) {
@@ -1333,15 +1339,22 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const dateSource = (exp.expenseInvoicedDate
+        || (exp as any).forecastPaymentDate
+        || (exp as any).computedForecastPaymentDate
+        || exp.expensePaymentDate
+        || (exp as any).startDate
+        || null) as string | null;
+      if (!dateSource) continue;
+      const dateMatch = String(dateSource).match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
 
-      const isRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      const hasInvoice = !!exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim() !== '';
+      const isRealised = hasInvoice && isCosRealised(exp) && monthKey <= currentMonthKey;
+      const isCommitted = hasInvoice && !isRealised;
       if (isRealised) {
         realisedByMonth.set(monthKey, (realisedByMonth.get(monthKey) || 0) + amount);
       }
@@ -1357,7 +1370,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
         invoiceDate: exp.expenseInvoicedDate || null,
         supplier: exp.supplierName || null,
         isRealised,
-        cosStatus: isRealised ? 'Realised' : (exp.expenseInvoiceNumber ? 'Invoiced' : (exp.expensePoNumber ? 'Committed' : 'Planned')),
+        cosStatus: isRealised ? 'Realised' : (isCommitted ? 'Committed' : 'Planned'),
         paymentDate: exp.expensePaymentDate || null,
       });
     }
@@ -1367,8 +1380,12 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       if (exp.rowType !== 'item') continue;
       const budgetAmt = exp.budgetTotal ? parseFloat(exp.budgetTotal as string) : 0;
       if (isNaN(budgetAmt) || budgetAmt === 0) continue;
-      const invDate = exp.expenseInvoicedDate as string | null;
-      const startDate = invDate || (exp as any).startDate || null;
+      const startDate = (exp.expenseInvoicedDate
+        || (exp as any).forecastPaymentDate
+        || (exp as any).computedForecastPaymentDate
+        || exp.expensePaymentDate
+        || (exp as any).startDate
+        || null) as string | null;
       if (!startDate) continue;
       const dateMatch = String(startDate).match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;

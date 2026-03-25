@@ -102,6 +102,8 @@ interface Checklist {
   blockedHandover?: boolean;
   qualityRiskScore?: number;
   qualityRiskLevel?: string;
+  checklistItemCount?: number;
+  hasLoggedActivity?: boolean;
 }
 
 interface Warning {
@@ -247,14 +249,23 @@ export default function QmDashboardPage() {
   const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
     queryKey: ["projects-summary-names"],
     queryFn: () => qFetch("/api/projects-summary").then((data: any[]) =>
-      data.map((p: any) => ({ project_name: p.project_name }))
+      data
+        .filter((p: any) =>
+          p?.is_active !== false &&
+          (String(p?.phase || "").toLowerCase() !== "completed")
+        )
+        .map((p: any) => ({ project_name: p.project_name }))
         .sort((a: any, b: any) => a.project_name.localeCompare(b.project_name))
     ),
     enabled: startQmOpen,
   });
 
   const projectsWithChecklist = useMemo(() => {
-    return new Set(checklists.map(c => c.projectName));
+    return new Set(
+      checklists
+        .filter((checklist) => checklist.hasLoggedActivity ?? true)
+        .map((checklist) => checklist.projectName)
+    );
   }, [checklists]);
 
 
@@ -1204,7 +1215,7 @@ export default function QmDashboardPage() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Select a project to start the quality management process. Projects with an existing quality checklist are shown but cannot be selected.
+              Select a project to start the quality management process. Projects with an active quality checklist and logged activity are shown but cannot be selected.
             </p>
             <div>
               <label className="text-sm font-medium block mb-1.5">Project</label>
@@ -1244,7 +1255,7 @@ export default function QmDashboardPage() {
                             >
                               <Check className={`mr-2 h-4 w-4 ${startQmProject === name ? "opacity-100" : "opacity-0"}`} />
                               <span className={hasChecklist ? "text-muted-foreground" : undefined}>{name}</span>
-                              {hasChecklist && <span className="ml-auto text-xs text-muted-foreground">Checklist exists</span>}
+                              {hasChecklist && <span className="ml-auto text-xs text-muted-foreground">Checklist active</span>}
                             </CommandItem>
                           );
                         })}
