@@ -576,6 +576,7 @@ export type OverrideCategory = typeof OVERRIDE_CATEGORIES[number];
 
 export const weeklyReviews = pgTable("weekly_reviews", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   weekStarting: date("week_starting").notNull(),
@@ -667,6 +668,7 @@ export type TrSuggestionDecision = typeof trItemSuggestionDecisions.$inferSelect
 
 export const milestoneTaskLinks = pgTable("milestone_task_links", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   milestoneRowNumber: integer("milestone_row_number").notNull(),
