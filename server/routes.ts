@@ -3619,14 +3619,12 @@ export async function registerRoutes(
         const _isFuture = itemMonthKey ? itemMonthKey > _cMK : false;
 
         const isRealised = isCosRealisedCheck(exp) && !_isFuture;
-        const isConfirmedPay = isCashflowConfirmedCheck(exp) && !_isFuture;
 
+        // COS state is purely invoice-date driven (not payment date)
         let cosState = 'Planned';
-        if (isConfirmedPay) {
-          cosState = 'Paid';
-        } else if (isRealised) {
-          cosState = 'Realised';
-        } else if (exp.expensePoNumber) {
+        if (isRealised) {
+          cosState = 'COS Realised';
+        } else if (exp.expensePoNumber || (exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim())) {
           cosState = 'Committed';
         }
 
