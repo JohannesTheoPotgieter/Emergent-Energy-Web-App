@@ -211,11 +211,11 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
       const fields = parsed.data;
       if (fields.status) fields.status = normalizeStatus(fields.status);
-      const changesJson: Record<string, any> = { taskId, taskSource, updates: fields };
+      const changesJson: Record<string, unknown> = { taskId, taskSource, updates: fields };
 
       switch (taskSource) {
         case "operational": {
-          const setObj: any = {};
+          const setObj: Record<string, unknown> = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
           if (fields.projectName !== undefined) setObj.projectName = fields.projectName;
@@ -230,7 +230,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
           break;
         }
         case "personal": {
-          const setObj: any = {};
+          const setObj: Record<string, unknown> = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
           if (fields.projectName !== undefined) setObj.projectName = fields.projectName;
@@ -241,7 +241,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
           break;
         }
         case "engineering_task": {
-          const setObj: any = {};
+          const setObj: Record<string, unknown> = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
           if (fields.projectId !== undefined) setObj.projectId = fields.projectId;
@@ -252,7 +252,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
           break;
         }
         case "plan": {
-          const setObj: any = {};
+          const setObj: Record<string, unknown> = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
           if (fields.projectId !== undefined) setObj.projectId = fields.projectId;
@@ -447,7 +447,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       if (!parsed.success) return res.status(400).json({ error: "Invalid project data", details: parsed.error.issues });
 
       const fields = parsed.data;
-      const setObj: any = {};
+      const setObj: Record<string, unknown> = {};
       if (fields.projectName !== undefined) setObj.projectName = fields.projectName;
       if (fields.pm !== undefined) setObj.pm = fields.pm;
       if (fields.pd !== undefined) setObj.pd = fields.pd;
