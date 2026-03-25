@@ -21,7 +21,7 @@ function formatCurrency(amount: number): string {
   return amount.toLocaleString("en-ZA", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function generatePdf(po: any): Promise<Buffer> {
+function generatePdf(po: Record<string, unknown>): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: 50 });
     const chunks: Buffer[] = [];
@@ -76,7 +76,7 @@ function generatePdf(po: any): Promise<Buffer> {
     doc.font("Helvetica").fontSize(8);
     let rowY = tableTop + 22;
     const lineItems = po.line_items || [];
-    lineItems.forEach((item: any, idx: number) => {
+    lineItems.forEach((item: Record<string, unknown>, idx: number) => {
       if (rowY > 700) {
         doc.addPage();
         rowY = 50;
@@ -136,7 +136,7 @@ function makeProjectCode(projectName: string): string {
 }
 
 export function registerPoRoutes(app: Express) {
-  app.get("/api/po/:projectName", requireAuth, async (req, res) => {
+  app.get("/api/po/:projectName", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const { projectName } = req.params;
       const rows = await db.execute(sql`
