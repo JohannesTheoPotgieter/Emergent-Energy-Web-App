@@ -1,3 +1,11 @@
+/**
+ * React Query integration (preferred for new code).
+ *
+ * Exports queryClient, getQueryFn, fetchQueryFn, and apiRequest.
+ * For engineering module calls, see eng-fetch.ts.
+ * For legacy auth/project API calls, see api.ts.
+ */
+
 import { QueryClient, QueryFunction, MutationCache, QueryCache } from "@tanstack/react-query";
 import { ApiError, parseApiError, networkError } from "./api-error";
 import { runAsyncAction } from "./async-action";
