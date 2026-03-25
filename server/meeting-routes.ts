@@ -16,15 +16,10 @@ import { requirePermission } from "./permission-middleware";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 }
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
-
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = ((req as any).user as any)?.role || "";
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const role = getEffectiveUser(req)?.role || "";
   if (ADMIN_ROLES.includes(role)) return next();
   res.status(403).json({ error: "forbidden" });
 }
@@ -251,7 +246,7 @@ export function registerMeetingRoutes(app: Express) {
   app.post("/api/meetings/action-items/:id/convert-to-task", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
       const actionItemId = parseInt(req.params.id);
-      const userId = (req as any).user.id;
+      const userId = getEffectiveUser(req)?.id;
 
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
       if (!actionItem) return res.status(404).json({ error: "Action item not found" });
