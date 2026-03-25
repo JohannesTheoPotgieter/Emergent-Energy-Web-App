@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
@@ -33,6 +34,9 @@ import {
   Bell,
   Zap,
   Sparkles,
+  Bookmark,
+  Save,
+  Trash2,
 } from "lucide-react";
 
 interface TaskItem {
@@ -161,12 +165,41 @@ export default function MyWorkHomePage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [groupingMode, setGroupingMode] = useState<"source" | "priority">(
-    () => (localStorage.getItem("ee_mywork_grouping") as "source" | "priority") || "source"
+  type GroupingMode = "source" | "priority" | "status" | "due_date";
+  const [groupingMode, setGroupingMode] = useState<GroupingMode>(
+    () => (localStorage.getItem("ee_mywork_grouping") as GroupingMode) || "source"
   );
 
+  // Saved views
+  const [savedViews, setSavedViews] = useState<Array<{ name: string; sourceFilter: string; grouping: GroupingMode }>>(() => {
+    try {
+      const raw = localStorage.getItem("ee_mywork_saved_views");
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+
+  const saveCurrentView = (name: string) => {
+    const updated = [...savedViews.filter(v => v.name !== name), { name, sourceFilter, grouping: groupingMode }];
+    setSavedViews(updated);
+    localStorage.setItem("ee_mywork_saved_views", JSON.stringify(updated));
+    toast({ title: "View saved", description: `"${name}" saved with current filters.` });
+  };
+
+  const loadView = (view: { name: string; sourceFilter: string; grouping: GroupingMode }) => {
+    setSourceFilter(view.sourceFilter);
+    setGroupingMode(view.grouping);
+    localStorage.setItem("ee_mywork_grouping", view.grouping);
+    toast({ title: "View loaded", description: `Loaded "${view.name}"` });
+  };
+
+  const deleteView = (name: string) => {
+    const updated = savedViews.filter(v => v.name !== name);
+    setSavedViews(updated);
+    localStorage.setItem("ee_mywork_saved_views", JSON.stringify(updated));
+  };
+
   const handleGroupingChange = (value: string) => {
-    const mode = value as "source" | "priority";
+    const mode = value as GroupingMode;
     setGroupingMode(mode);
     localStorage.setItem("ee_mywork_grouping", mode);
     trackFeatureUse("mywork_grouping_toggle");
@@ -749,7 +782,78 @@ export default function MyWorkHomePage() {
     return sortedGroups;
   }, [filteredTasks]);
 
-  const groupedTasks = groupingMode === "priority" ? groupedByPriority : groupedByProject;
+  const groupedByStatus = useMemo(() => {
+    const statusLabels: Record<string, string> = {
+      inbox: "Inbox", todo: "To Do", in_progress: "In Progress",
+      review: "In Review", blocked: "Blocked", waiting: "Waiting",
+      action_required: "Action Required",
+    };
+    const statusOrder = ["blocked", "action_required", "in_progress", "review", "waiting", "todo", "inbox"];
+    const groups: Record<string, TaskItem[]> = {};
+    filteredTasks.forEach(t => {
+      const key = t.status || "inbox";
+      const label = statusLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(t);
+    });
+    const sorted: Record<string, TaskItem[]> = {};
+    for (const s of statusOrder) {
+      const label = statusLabels[s];
+      if (label && groups[label]) sorted[label] = groups[label];
+    }
+    // Add any remaining groups not in the predefined order
+    for (const [label, tasks] of Object.entries(groups)) {
+      if (!sorted[label]) sorted[label] = tasks;
+    }
+    return sorted;
+  }, [filteredTasks]);
+
+  const groupedByDueDate = useMemo(() => {
+    const now = new Date();
+    const todayStr = format(now, "yyyy-MM-dd");
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = format(tomorrow, "yyyy-MM-dd");
+    const weekEnd = new Date(now);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    const weekEndStr = format(weekEnd, "yyyy-MM-dd");
+
+    const groups: Record<string, TaskItem[]> = {
+      "Overdue": [],
+      "Today": [],
+      "Tomorrow": [],
+      "This Week": [],
+      "Later": [],
+      "No Due Date": [],
+    };
+
+    filteredTasks.forEach(t => {
+      const due = t.dueAt;
+      if (!due) { groups["No Due Date"].push(t); return; }
+      const dueDate = due.split("T")[0];
+      if (dueDate < todayStr) groups["Overdue"].push(t);
+      else if (dueDate === todayStr) groups["Today"].push(t);
+      else if (dueDate === tomorrowStr) groups["Tomorrow"].push(t);
+      else if (dueDate <= weekEndStr) groups["This Week"].push(t);
+      else groups["Later"].push(t);
+    });
+
+    // Remove empty groups
+    const result: Record<string, TaskItem[]> = {};
+    for (const [k, v] of Object.entries(groups)) {
+      if (v.length > 0) result[k] = v;
+    }
+    return result;
+  }, [filteredTasks]);
+
+  const groupedTasks = useMemo(() => {
+    switch (groupingMode) {
+      case "priority": return groupedByPriority;
+      case "status": return groupedByStatus;
+      case "due_date": return groupedByDueDate;
+      default: return groupedByProject;
+    }
+  }, [groupingMode, groupedByProject, groupedByPriority, groupedByStatus, groupedByDueDate]);
 
   const sortedEvents = useMemo(() =>
     [...calendarEvents].sort((a, b) => {
@@ -840,10 +944,10 @@ export default function MyWorkHomePage() {
                 return (
                   <div
                     key={task.id}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg border cursor-pointer transition-colors group ${
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg border cursor-pointer transition-all touch-manipulation active:scale-[0.98] group ${
                       isOverdue
-                        ? "border-l-4 border-l-red-400 border-red-200 bg-red-50/40 hover:bg-red-50/70"
-                        : "border-l-4 border-l-amber-400 border-amber-200 bg-amber-50/40 hover:bg-amber-50/70"
+                        ? "border-l-4 border-l-red-400 border-red-200 bg-red-50/40 hover:bg-red-50/70 active:bg-red-50"
+                        : "border-l-4 border-l-amber-400 border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 active:bg-amber-50"
                     }`}
                     onClick={() => handleTaskClick(task)}
                     data-testid={`focus-item-${task.id}`}
@@ -932,10 +1036,41 @@ export default function MyWorkHomePage() {
                 </ScrollArea>
                 <Tabs value={groupingMode} onValueChange={handleGroupingChange}>
                   <TabsList className="h-7">
-                    <TabsTrigger value="source" className="text-[11px] px-2 py-0.5 h-5" data-testid="group-by-source">By Source</TabsTrigger>
-                    <TabsTrigger value="priority" className="text-[11px] px-2 py-0.5 h-5" data-testid="group-by-priority">By Priority</TabsTrigger>
+                    <TabsTrigger value="source" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-source">Source</TabsTrigger>
+                    <TabsTrigger value="priority" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-priority">Priority</TabsTrigger>
+                    <TabsTrigger value="status" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-status">Status</TabsTrigger>
+                    <TabsTrigger value="due_date" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-due-date">Due Date</TabsTrigger>
                   </TabsList>
                 </Tabs>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" title="Saved views">
+                      <Bookmark className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {savedViews.length > 0 ? (
+                      <>
+                        {savedViews.map(v => (
+                          <DropdownMenuItem key={v.name} className="flex items-center justify-between gap-2">
+                            <span className="truncate text-xs cursor-pointer flex-1" onClick={() => loadView(v)}>{v.name}</span>
+                            <button onClick={(e) => { e.stopPropagation(); deleteView(v.name); }} className="text-muted-foreground hover:text-destructive shrink-0">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                      </>
+                    ) : null}
+                    <DropdownMenuItem onClick={() => {
+                      const name = prompt("View name:");
+                      if (name?.trim()) saveCurrentView(name.trim());
+                    }}>
+                      <Save className="h-3.5 w-3.5 mr-2" />
+                      <span className="text-xs">Save current view</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
@@ -968,7 +1103,7 @@ export default function MyWorkHomePage() {
                           {projectTasks.slice(0, 8).map(task => (
                             <div
                               key={task.id}
-                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-emerald-50/60 transition-colors cursor-pointer group"
+                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-emerald-50/60 active:bg-emerald-50/80 active:scale-[0.99] transition-all cursor-pointer group touch-manipulation"
                               onClick={() => handleTaskClick(task)}
                               data-testid={`task-item-${task.id}`}
                             >
@@ -976,7 +1111,7 @@ export default function MyWorkHomePage() {
                               <PriorityDot priority={task.priority} />
                               <span className="text-sm truncate flex-1 group-hover:text-emerald-700">{task.title}</span>
                               {task.sourceLabel && (
-                                <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 ${SOURCE_BADGE_COLORS[task.source || ""] || "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                                <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 hidden sm:inline-flex ${SOURCE_BADGE_COLORS[task.source || ""] || "bg-gray-50 text-gray-600 border-gray-200"}`}>
                                   {task.sourceLabel}
                                 </Badge>
                               )}
@@ -1036,7 +1171,7 @@ export default function MyWorkHomePage() {
                     {actionItems.slice(0, 5).map(item => (
                       <div
                         key={item.id}
-                        className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border/60 hover:border-orange-200 hover:bg-orange-50/30 transition-colors cursor-pointer group"
+                        className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border/60 hover:border-orange-200 hover:bg-orange-50/30 active:bg-orange-50/50 active:scale-[0.99] transition-all cursor-pointer touch-manipulation group"
                         onClick={() => handleActionClick(item)}
                         data-testid={`action-item-${item.id}`}
                       >

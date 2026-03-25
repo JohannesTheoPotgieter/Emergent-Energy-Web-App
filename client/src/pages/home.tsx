@@ -12,6 +12,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { apiRequest } from "@/lib/queryClient";
 import { QueryErrorBanner } from "@/components/QueryErrorBanner";
 import { getVariant } from "@/lib/ab-test";
+import { trackFeatureUse } from "@/lib/nav-analytics";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -379,7 +380,11 @@ export default function HomePage() {
 
   const totalAttention = attentionItems.reduce((sum, item) => sum + item.value, 0);
   const quickLinks = useMemo(() => getCompactQuickLinks(roleCategory), [roleCategory]);
-  const layoutVariant = useMemo(() => getVariant("home_layout_2026", ["compact", "expanded"], (user as any)?.id), [user]);
+  const layoutVariant = useMemo(() => {
+    const variant = getVariant("home_layout_2026", ["compact", "expanded"], (user as any)?.id);
+    trackFeatureUse(`home_ab_variant_${variant}`);
+    return variant;
+  }, [user]);
 
   const visiblePriorities = companyPriorities?.slice(0, 3) || [];
   const hiddenPriorities = companyPriorities?.slice(3) || [];
