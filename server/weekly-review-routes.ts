@@ -73,7 +73,7 @@ export function registerWeeklyReviewRoutes(app: Express): void {
           snapshotMetrics: body.snapshotMetrics || null,
         })
         .returning();
-      logAuditFromReq(req, { entityType: "weekly_review", entityId: String(review.id), action: "create", projectName, changesJson: { description: "Weekly review created", weekStarting: body.weekStarting } });
+      logAuditFromReq(req, { entityType: "weekly_review", entityId: String(review.id), action: "create", projectName: String(projectName), changesJson: { description: "Weekly review created", weekStarting: body.weekStarting } });
       res.json(review);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -103,7 +103,7 @@ export function registerWeeklyReviewRoutes(app: Express): void {
         .set(updates)
         .where(eq(weeklyReviews.id, id))
         .returning();
-      logAuditFromReq(req, { entityType: "weekly_review", entityId: String(id), action: "update", projectName: req.params.projectName, changesJson: { description: "Weekly review updated", status: body.status } });
+      logAuditFromReq(req, { entityType: "weekly_review", entityId: String(id), action: "update", projectName: String(req.params.projectName), changesJson: { description: "Weekly review updated", status: body.status } });
       res.json(review);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
