@@ -1,8 +1,6 @@
-// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, desc, sql, inArray } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import {
   meetingSummaries,
   meetingActionItems,
@@ -15,19 +13,7 @@ import {
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { z } from "zod";
 import { requirePermission } from "./permission-middleware";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 }
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
