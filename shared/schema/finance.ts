@@ -314,7 +314,7 @@ export type AvailablePaymentOverride = typeof availablePaymentOverrides.$inferSe
 
 export const availablePaymentHistory = pgTable("available_payment_history", {
   id: serial("id").primaryKey(),
-  weekStartDate: text("week_start_date").notNull(),
+  weekStartDate: date("week_start_date").notNull(),
   previousValue: decimal("previous_value", { precision: 15, scale: 2 }),
   newValue: decimal("new_value", { precision: 15, scale: 2 }).notNull(),
   computedValue: decimal("computed_value", { precision: 15, scale: 2 }),
@@ -338,7 +338,7 @@ export type OpexBudgetMonthly = typeof opexBudgetMonthly.$inferSelect;
 
 export const opexWeeklyManual = pgTable("opex_weekly_manual", {
   id: serial("id").primaryKey(),
-  weekStartDate: text("week_start_date").notNull().unique(),
+  weekStartDate: date("week_start_date").notNull().unique(),
   opexAmount: decimal("opex_amount", { precision: 15, scale: 2 }).notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
