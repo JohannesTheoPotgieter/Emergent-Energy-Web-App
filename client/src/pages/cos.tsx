@@ -612,7 +612,7 @@ export default function CosTracker() {
   }
 
   const kpiCards = [
-    { id: "ytd-total-cos", label: "YTD COS (Finance)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date total Cost of Sales from the Finance COS sheet. Includes both realised (paid) and unrealised (unpaid) expenses." },
+    { id: "ytd-total-cos", label: "YTD COS (Planned)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date planned COS from all line items (invoice captured or not). Realised is the paid subset; unrealised is the remaining planned balance." },
     { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "COS where the invoice has been raised AND paid. These are confirmed, actual costs." },
     { id: "ytd-unrealised", label: "YTD Unrealised (Not Paid)", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "COS that is planned or committed but not yet paid. These are forecast costs still at risk of change." },
     { id: "ytd-budget", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "", tooltip: "The manually entered costed budget for COS. Editable in the grid below. Used to calculate variance." },
@@ -660,7 +660,7 @@ export default function CosTracker() {
             <div>
               <p className="font-semibold text-amber-900 text-sm">COS Realisation Tracker</p>
               <p className="text-sm text-amber-700/90 mt-0.5 leading-relaxed">
-                COS is "Realised" when the matching expenditure line has an Invoice Number AND the Invoice Raised Date has <strong className="text-foreground">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
+                Planned = all line items (invoice captured or not). Committed = invoice captured but invoice date not confirmed black. Realised = invoice captured + invoice date <strong className="text-foreground">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
               </p>
             </div>
           </CardContent>
