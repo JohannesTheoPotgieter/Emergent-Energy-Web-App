@@ -288,7 +288,7 @@ export type CashflowWeeklyManual = typeof cashflowWeeklyManual.$inferSelect;
 
 export const cashflowBalanceHistory = pgTable("cashflow_balance_history", {
   id: serial("id").primaryKey(),
-  weekStartDate: text("week_start_date").notNull(),
+  weekStartDate: date("week_start_date").notNull(),
   previousValue: decimal("previous_value", { precision: 15, scale: 2 }),
   newValue: decimal("new_value", { precision: 15, scale: 2 }).notNull(),
   computedValue: decimal("computed_value", { precision: 15, scale: 2 }),
@@ -302,7 +302,7 @@ export type CashflowBalanceHistory = typeof cashflowBalanceHistory.$inferSelect;
 
 export const availablePaymentOverrides = pgTable("available_payment_overrides", {
   id: serial("id").primaryKey(),
-  weekStartDate: text("week_start_date").notNull().unique(),
+  weekStartDate: date("week_start_date").notNull().unique(),
   overrideValue: decimal("override_value", { precision: 15, scale: 2 }).notNull(),
   reason: text("reason"),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

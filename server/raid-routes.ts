@@ -1,33 +1,13 @@
-// @ts-nocheck
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { eq, and, sql, desc } from "drizzle-orm";
-import { raidItems, insertRaidItemSchema, projectInfo, users } from "@shared/schema";
+import { raidItems, insertRaidItemSchema } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
-import { verifyToken } from "./jwt";
+import { jwtAuth, requireAuth, getEffectiveUser, type AuthenticatedUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
-
-export function registerRaidRoutes(app: Express) {
+export function registerRaidRoutes(app: Express): void {
   app.use("/api/raid", jwtAuth);
 
   app.get("/api/raid/project/:projectId", requireAuth, async (req: Request, res: Response) => {
@@ -35,19 +15,19 @@ export function registerRaidRoutes(app: Express) {
       const projectId = parseInt(req.params.projectId);
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
-      const conditions: any[] = [eq(raidItems.projectId, projectId)];
+      const conditions: ReturnType<typeof eq>[] = [eq(raidItems.projectId, projectId)];
 
       const typeFilter = req.query.type as string | undefined;
       const statusFilter = req.query.status as string | undefined;
       const priorityFilter = req.query.priority as string | undefined;
       if (typeFilter) {
-        conditions.push(eq(raidItems.type, typeFilter as any));
+        conditions.push(eq(raidItems.type, typeFilter as typeof raidItems.type.enumValues[number]));
       }
       if (statusFilter) {
-        conditions.push(eq(raidItems.status, statusFilter as any));
+        conditions.push(eq(raidItems.status, statusFilter as typeof raidItems.status.enumValues[number]));
       }
       if (priorityFilter) {
-        conditions.push(eq(raidItems.priority, priorityFilter as any));
+        conditions.push(eq(raidItems.priority, priorityFilter as typeof raidItems.priority.enumValues[number]));
       }
 
       const items = await db.select().from(raidItems)
@@ -55,39 +35,43 @@ export function registerRaidRoutes(app: Express) {
         .orderBy(desc(raidItems.createdAt));
 
       res.json(items);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[RAID] GET project items error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
   app.get("/api/raid/cross-project", requireAuth, async (req: Request, res: Response) => {
     try {
-      const rows: any[] = await db.execute(sql.raw(`
+      const rawResult = await db.execute(sql.raw(`
         SELECT r.type, r.status, r.priority, p.project_name, p.id as project_id, COUNT(*)::int as count
         FROM raid_items r
         JOIN project_info p ON r.project_id = p.id
         GROUP BY r.type, r.status, r.priority, p.project_name, p.id
         ORDER BY r.type, p.project_name
-      `)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      `));
+      const rows = Array.isArray(rawResult) ? rawResult : ((rawResult as Record<string, unknown>).rows as Record<string, unknown>[]) || [];
 
       const rollup: Record<string, { total: number; byStatus: Record<string, number>; byPriority: Record<string, number>; projects: Record<string, number> }> = {};
 
       for (const row of rows) {
-        const t = row.type;
+        const t = row.type as string;
         if (!rollup[t]) {
           rollup[t] = { total: 0, byStatus: {}, byPriority: {}, projects: {} };
         }
-        rollup[t].total += row.count;
-        rollup[t].byStatus[row.status] = (rollup[t].byStatus[row.status] || 0) + row.count;
-        rollup[t].byPriority[row.priority] = (rollup[t].byPriority[row.priority] || 0) + row.count;
-        rollup[t].projects[row.project_name] = (rollup[t].projects[row.project_name] || 0) + row.count;
+        const count = row.count as number;
+        rollup[t].total += count;
+        rollup[t].byStatus[row.status as string] = (rollup[t].byStatus[row.status as string] || 0) + count;
+        rollup[t].byPriority[row.priority as string] = (rollup[t].byPriority[row.priority as string] || 0) + count;
+        rollup[t].projects[row.project_name as string] = (rollup[t].projects[row.project_name as string] || 0) + count;
       }
 
       res.json(rollup);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[RAID] GET cross-project error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -100,9 +84,10 @@ export function registerRaidRoutes(app: Express) {
       if (!item) return res.status(404).json({ error: "RAID item not found" });
 
       res.json(item);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[RAID] GET item error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -113,7 +98,8 @@ export function registerRaidRoutes(app: Express) {
         return res.status(400).json({ error: "Validation failed", details: parsed.error.flatten() });
       }
 
-      const userId = (req as any).user?.id;
+      const user = getEffectiveUser(req);
+      const userId = user?.id;
       const values = { ...parsed.data, createdByUserId: userId };
 
       const [created] = await db.insert(raidItems).values(values).returning();
@@ -138,9 +124,10 @@ export function registerRaidRoutes(app: Express) {
         idempotencyKey: `raid-created:${created.id}`,
       });
       res.status(201).json(created);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[RAID] POST create error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -153,7 +140,7 @@ export function registerRaidRoutes(app: Express) {
       if (!existing) return res.status(404).json({ error: "RAID item not found" });
 
       const allowedFields = ["type", "title", "description", "ownerUserId", "status", "priority", "dueDate", "mitigationResponse", "linkedTaskId", "projectId"];
-      const updates: Record<string, any> = {};
+      const updates: Record<string, unknown> = {};
       for (const field of allowedFields) {
         if (req.body[field] !== undefined) {
           updates[field] = req.body[field];
@@ -194,9 +181,10 @@ export function registerRaidRoutes(app: Express) {
         });
       }
       res.json(updated);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[RAID] PATCH update error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 
@@ -224,9 +212,10 @@ export function registerRaidRoutes(app: Express) {
       });
 
       res.json({ success: true, action: hardDelete ? "hard_deleted" : "soft_deleted" });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[RAID] DELETE error:", err);
-      res.status(500).json({ error: err.message });
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ error: message });
     }
   });
 }
