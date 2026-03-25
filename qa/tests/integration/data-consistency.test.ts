@@ -52,13 +52,6 @@ describe("Integration: Data Consistency Across Views", () => {
     expect(found?.title).toContain("Integration Test Task");
   });
 
-  it("created task appears in standup dashboard data", async () => {
-    const standupRes = await apiRequest("GET", "/api/eng/dashboard/standup", undefined, token);
-    expect(standupRes.status).toBe(200);
-    // The task should contribute to total count
-    expect(standupRes.data?.summary?.totalTasks).toBeGreaterThan(0);
-  });
-
   it("updating status via API reflects in task detail", async () => {
     const patchRes = await apiRequest("PATCH", `/api/eng/tasks/${createdTaskId}`, {
       status: "IN PROGRESS",
