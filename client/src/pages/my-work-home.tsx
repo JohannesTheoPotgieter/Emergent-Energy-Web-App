@@ -95,7 +95,9 @@ interface MsObject {
   sourceTypeLabel?: string | null;
 }
 
-const today = format(new Date(), "yyyy-MM-dd");
+function getToday() {
+  return format(new Date(), "yyyy-MM-dd");
+}
 
 const SOURCE_BADGE_COLORS: Record<string, string> = {
   personal: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -163,6 +165,8 @@ export default function MyWorkHomePage() {
   const { canViewPath } = useAccessMatrix();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // Recompute on each render so it stays current past midnight
+  const today = getToday();
   const [, navigate] = useLocation();
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   type GroupingMode = "source" | "priority" | "status" | "due_date";
@@ -722,7 +726,7 @@ export default function MyWorkHomePage() {
       if (!due) return false;
       return due.startsWith(today);
     }).length;
-  }, [tasks]);
+  }, [tasks, today]);
 
   const focusNowItems = useMemo(() => {
     const now = new Date();
@@ -743,7 +747,7 @@ export default function MyWorkHomePage() {
       .slice(0, 3)
       .map(x => x.task);
     return urgent;
-  }, [openTasks]);
+  }, [openTasks, today]);
 
   const groupedByProject = useMemo(() => {
     const groups: Record<string, TaskItem[]> = {};
@@ -881,7 +885,7 @@ export default function MyWorkHomePage() {
       openTasks: openTasks.length,
       escalatedCount: escalatedItems.length,
     };
-  }, [actionItems.length, escalatedItems.length, openTasks, sortedEvents]);
+  }, [actionItems.length, escalatedItems.length, openTasks, sortedEvents, today]);
 
   return (
     <PageShell className="p-4 md:p-6 max-w-[1400px] mx-auto" data-testid="my-work-home">
