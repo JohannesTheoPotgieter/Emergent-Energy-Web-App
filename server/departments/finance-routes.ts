@@ -2770,7 +2770,12 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
           const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
           const hasInvoice = !!(r.milestoneInvoiceNumber && String(r.milestoneInvoiceNumber).trim());
           const hasPaymentReceived = !!(r.paymentReceivedDate && String(r.paymentReceivedDate).trim() && r.paymentReceivedDate !== '-');
-          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+          const confirmedByColor = typeof (r as any).paymentReceivedDateFontColor === "string"
+            ? (r as any).paymentReceivedDateFontColor.toLowerCase() === "black"
+            : false;
+          const confirmedByFlag = (r as any).paymentReceivedDateConfirmed === true;
+          const paymentConfirmed = confirmedByFlag || confirmedByColor;
+          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice && paymentConfirmed);
           const paidDateConfirmed = isInBank;
           const paidDateFontColor = isInBank ? 'black' : 'red';
           const paidDate = isInBank ? (r.paymentReceivedDate || r.plannedPaymentDate || null) : null;
@@ -2895,7 +2900,12 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
       const hasInvoice = !!(r.milestoneInvoiceNumber && r.milestoneInvoiceNumber.trim());
       const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
       const hasPaymentReceived = !!(r.paymentReceivedDate && r.paymentReceivedDate.trim() && r.paymentReceivedDate !== '-');
-      const inBank = manualInBank || (hasPaymentReceived && hasInvoice);
+      const confirmedByColor = typeof r.paymentReceivedDateFontColor === "string"
+        ? r.paymentReceivedDateFontColor.toLowerCase() === "black"
+        : false;
+      const confirmedByFlag = r.paymentReceivedDateConfirmed === true;
+      const paymentConfirmed = confirmedByFlag || confirmedByColor;
+      const inBank = manualInBank || (hasPaymentReceived && hasInvoice && paymentConfirmed);
 
       const date = r.paymentReceivedDate || r.plannedPaymentDate || null;
       const isConfirmed = inBank && hasInvoice;
@@ -2907,12 +2917,13 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
 
       if (inBank && hasInvoice) {
         status = 'inBank';
-      } else if (hasPaymentReceived && hasInvoice) {
-        status = 'received';
-        flags.push('Payment received, pending bank confirmation');
       } else if (hasInvoice) {
         status = 'invoiced';
-        flags.push('Invoice raised, payment outstanding');
+        if (hasPaymentReceived && !paymentConfirmed) {
+          flags.push('Payment date present but not confirmed — treated as outstanding');
+        } else {
+          flags.push('Invoice raised, payment outstanding');
+        }
       } else if (!hasInvoice && isPast) {
         status = 'overdue';
         flags.push('Payment date has passed without invoice');
