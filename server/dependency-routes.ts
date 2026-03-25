@@ -102,7 +102,7 @@ export function registerDependencyRoutes(app: Express): void {
 
   app.get("/api/dependencies/project-name/:projectName", requireAuth, requirePermission("projects", "view"), async (req: Request, res: Response) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(String(req.params.projectName));
       const projectTasks = await db.select({ id: workItems.id })
         .from(workItems)
         .where(and(
