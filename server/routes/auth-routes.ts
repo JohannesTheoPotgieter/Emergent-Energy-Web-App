@@ -21,15 +21,22 @@ import { ApiError, sendError, unauthorized, serverError, logApiError } from "../
 
 const MAX_SESSIONS_PER_USER = 3;
 
+interface SessionRow {
+  sid: string;
+  sess: string | { passport?: { user?: number } };
+  expire: Date;
+}
+
 async function enforceSessionLimit(userId: number, currentSessionId: string, limit: number = MAX_SESSIONS_PER_USER): Promise<void> {
   try {
     const result = await db.execute(
       sql`SELECT sid, sess, expire FROM "session" WHERE expire > NOW() ORDER BY expire DESC`
     );
-    const rows = (result as any).rows || result;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rows: SessionRow[] = (result as any).rows || result;
     const userSessions: { sid: string; expire: Date }[] = [];
     for (const row of rows) {
-      const sess = typeof row.sess === "string" ? JSON.parse(row.sess) : row.sess;
+      const sess = typeof row.sess === "string" ? JSON.parse(row.sess) as { passport?: { user?: number } } : row.sess;
       const passportUserId = sess?.passport?.user;
       if (Number(passportUserId) === userId) {
         userSessions.push({ sid: row.sid, expire: row.expire });
