@@ -75,30 +75,32 @@ function generatePdf(po: Record<string, unknown>): Promise<Buffer> {
 
     doc.font("Helvetica").fontSize(8);
     let rowY = tableTop + 22;
-    const lineItems = po.line_items || [];
+    const lineItems = (Array.isArray(po.line_items) ? po.line_items : []) as Record<string, unknown>[];
     lineItems.forEach((item: Record<string, unknown>, idx: number) => {
       if (rowY > 700) {
         doc.addPage();
         rowY = 50;
       }
-      const lineSubtotal = (item.qty || 0) * (item.pricePerUnit || 0);
+      const qty = Number(item.qty) || 0;
+      const price = Number(item.pricePerUnit) || 0;
+      const lineSubtotal = qty * price;
       doc.text(String(idx + 1), colX[0] + 2, rowY, { width: colWidths[0] - 4 });
-      doc.text(item.description || "", colX[1] + 2, rowY, { width: colWidths[1] - 4 });
-      doc.text(item.partNumber || "", colX[2] + 2, rowY, { width: colWidths[2] - 4 });
-      doc.text(String(item.qty || 0), colX[3] + 2, rowY, { width: colWidths[3] - 4, align: "right" });
-      doc.text(item.unit || "", colX[4] + 2, rowY, { width: colWidths[4] - 4, align: "right" });
-      doc.text(`R ${formatCurrency(item.pricePerUnit || 0)}`, colX[5] + 2, rowY, { width: colWidths[5] - 4, align: "right" });
+      doc.text(String(item.description || ""), colX[1] + 2, rowY, { width: colWidths[1] - 4 });
+      doc.text(String(item.partNumber || ""), colX[2] + 2, rowY, { width: colWidths[2] - 4 });
+      doc.text(String(qty), colX[3] + 2, rowY, { width: colWidths[3] - 4, align: "right" });
+      doc.text(String(item.unit || ""), colX[4] + 2, rowY, { width: colWidths[4] - 4, align: "right" });
+      doc.text(`R ${formatCurrency(price)}`, colX[5] + 2, rowY, { width: colWidths[5] - 4, align: "right" });
       doc.text(`R ${formatCurrency(lineSubtotal)}`, colX[6] + 2, rowY, { width: colWidths[6] - 4, align: "right" });
-      rowY += Math.max(20, doc.heightOfString(item.description || "", { width: colWidths[1] - 4 }) + 8);
+      rowY += Math.max(20, doc.heightOfString(String(item.description || ""), { width: colWidths[1] - 4 }) + 8);
     });
 
     rowY += 10;
     doc.font("Helvetica-Bold").fontSize(9);
-    doc.text(`Sub-Total: R ${formatCurrency(po.subtotal || 0)}`, 350, rowY, { width: 190, align: "right" });
+    doc.text(`Sub-Total: R ${formatCurrency(Number(po.subtotal) || 0)}`, 350, rowY, { width: 190, align: "right" });
     rowY += 14;
-    doc.text(`VAT: R ${formatCurrency(po.vat_amount || 0)}`, 350, rowY, { width: 190, align: "right" });
+    doc.text(`VAT: R ${formatCurrency(Number(po.vat_amount) || 0)}`, 350, rowY, { width: 190, align: "right" });
     rowY += 14;
-    doc.text(`Total: R ${formatCurrency(po.total || 0)}`, 350, rowY, { width: 190, align: "right" });
+    doc.text(`Total: R ${formatCurrency(Number(po.total) || 0)}`, 350, rowY, { width: 190, align: "right" });
 
     rowY += 30;
     doc.font("Helvetica").fontSize(8);
@@ -110,19 +112,19 @@ function generatePdf(po: Record<string, unknown>): Promise<Buffer> {
       rowY += Math.max(16, doc.heightOfString(value, { width: 370 }) + 8);
     };
 
-    sectionRow("Payment Terms", po.payment_terms || `All invoicing is to be sent to ${EMERGENT_HEADER.accountsEmail}`);
+    sectionRow("Payment Terms", String(po.payment_terms || `All invoicing is to be sent to ${EMERGENT_HEADER.accountsEmail}`));
     sectionRow("Delivery Instructions", [
       po.delivery_date ? `Delivery date: ${po.delivery_date}` : "",
       po.delivery_address ? `Delivery address: ${po.delivery_address}` : "",
       po.site_contact ? `Site Contact: ${po.site_contact}` : "",
     ].filter(Boolean).join("\n"));
-    if (po.comments) sectionRow("Comments", po.comments);
+    if (po.comments) sectionRow("Comments", String(po.comments));
 
     rowY += 20;
     if (po.project_manager) {
       doc.font("Helvetica-Bold").text("Project Manager:", 50, rowY, { width: 120 });
-      doc.font("Helvetica").text(po.project_manager, 170, rowY);
-      doc.text(po.created_date || new Date().toISOString().slice(0, 10).replace(/-/g, "/"), 400, rowY);
+      doc.font("Helvetica").text(String(po.project_manager), 170, rowY);
+      doc.text(String(po.created_date || new Date().toISOString().slice(0, 10).replace(/-/g, "/")), 400, rowY);
     }
 
     doc.end();
@@ -151,7 +153,7 @@ export function registerPoRoutes(app: Express) {
       res.json(rows.rows || []);
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : String(err);
-      console.error("[PO] List error:", err.message);
+      console.error("[PO] List error:", errMessage);
       res.status(500).json({ error: "Failed to list POs" });
     }
   });
@@ -257,7 +259,7 @@ export function registerPoRoutes(app: Express) {
       });
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : String(err);
-      console.error("[PO] Generate error:", err.message);
+      console.error("[PO] Generate error:", errMessage);
       res.status(500).json({ error: "Failed to generate PO" });
     }
   });
@@ -278,7 +280,7 @@ export function registerPoRoutes(app: Express) {
       res.send(row.pdf_data);
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : String(err);
-      console.error("[PO] PDF download error:", err.message);
+      console.error("[PO] PDF download error:", errMessage);
       res.status(500).json({ error: "Failed to download PO PDF" });
     }
   });
@@ -316,7 +318,7 @@ export function registerPoRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : String(err);
-      console.error("[PO] Status update error:", err.message);
+      console.error("[PO] Status update error:", errMessage);
       res.status(500).json({ error: "Failed to update PO status" });
     }
   });
@@ -338,7 +340,7 @@ export function registerPoRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : String(err);
-      console.error("[PO] Delete error:", err.message);
+      console.error("[PO] Delete error:", errMessage);
       res.status(500).json({ error: "Failed to delete PO" });
     }
   });
