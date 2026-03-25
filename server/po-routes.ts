@@ -262,7 +262,7 @@ export function registerPoRoutes(app: Express) {
     }
   });
 
-  app.get("/api/po/:projectName/:poId/pdf", requireAuth, async (req, res) => {
+  app.get("/api/po/:projectName/:poId/pdf", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const poIdNum = parseInt(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
@@ -283,7 +283,7 @@ export function registerPoRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/po/:poId/status", requireAuth, requirePermission('procurement', 'edit'), async (req, res) => {
+  app.patch("/api/po/:poId/status", jwtAuth, requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
     try {
       const poIdNum = parseInt(req.params.poId);
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
