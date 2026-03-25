@@ -17,6 +17,7 @@ const AUTH_ENDPOINTS = new Set([
   "/api/auth/login",
   "/api/auth/microsoft",
   "/api/auth/microsoft/callback",
+  "/api/role-auth/login",
 ]);
 
 const LARGE_JSON_ROUTES = new Set([

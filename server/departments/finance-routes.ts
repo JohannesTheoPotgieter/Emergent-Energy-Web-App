@@ -13,6 +13,7 @@ import {
   financialEditRequests,
   msObjects,
   normalizedRevenueLines,
+  notifications,
   OVERRIDE_CATEGORIES,
   projectInfo,
   users,

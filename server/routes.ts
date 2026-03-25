@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck — file has 15k+ lines; incrementally type-fix and re-enable checking
 // @ts-nocheck
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
@@ -9653,11 +9654,20 @@ export async function registerRoutes(
   app.patch("/api/working-plan/tasks/:taskId", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { taskId } = req.params;
-      const { projectName, startDate, endDate, name, taskNo, comment, percentComplete } = req.body;
-
-      if (!projectName) {
-        return res.status(400).json({ error: "validation_error", message: "projectName is required" });
+      const workingPlanUpdateSchema = z.object({
+        projectName: z.string().min(1, "projectName is required"),
+        startDate: z.string().nullable().optional(),
+        endDate: z.string().nullable().optional(),
+        name: z.string().nullable().optional(),
+        taskNo: z.string().nullable().optional(),
+        comment: z.string().nullable().optional(),
+        percentComplete: z.union([z.number(), z.string()]).nullable().optional(),
+      });
+      const parsed = workingPlanUpdateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "validation_error", message: parsed.error.issues.map(i => i.message).join("; ") });
       }
+      const { projectName, startDate, endDate, name, taskNo, comment, percentComplete } = parsed.data;
 
       const scenario = await storage.getOrCreateActiveScenario(projectName);
       const id = parseInt(taskId);
@@ -9734,14 +9744,21 @@ export async function registerRoutes(
   // Create new task in working plan
   app.post("/api/working-plan/tasks", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { projectName, startDate, endDate, name, taskNo } = req.body;
-
-      if (!projectName || !startDate || !endDate || !name) {
-        return res.status(400).json({ 
-          error: "validation_error", 
-          message: "projectName, startDate, endDate, and name are required" 
+      const workingPlanCreateSchema = z.object({
+        projectName: z.string().min(1, "projectName is required"),
+        startDate: z.string().min(1, "startDate is required"),
+        endDate: z.string().min(1, "endDate is required"),
+        name: z.string().min(1, "name is required"),
+        taskNo: z.string().nullable().optional(),
+      });
+      const parsed = workingPlanCreateSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "validation_error",
+          message: parsed.error.issues.map(i => i.message).join("; "),
         });
       }
+      const { projectName, startDate, endDate, name, taskNo } = parsed.data;
 
       const scenario = await storage.getOrCreateActiveScenario(projectName);
 
@@ -11835,7 +11852,15 @@ export async function registerRoutes(
 
   app.post("/api/operational-tasks/bulk-update", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const { taskIds, updates } = req.body as { taskIds: number[]; updates: Record<string, any> };
+      const bulkUpdateSchema = z.object({
+        taskIds: z.array(z.number()).min(1, "taskIds must contain at least one ID").max(500, "Too many task IDs"),
+        updates: z.record(z.unknown()).refine(obj => Object.keys(obj).length > 0, "updates must contain at least one field"),
+      });
+      const parsedBulk = bulkUpdateSchema.safeParse(req.body);
+      if (!parsedBulk.success) {
+        return sendError(res, badRequest(parsedBulk.error.issues.map(i => i.message).join("; ")));
+      }
+      const { taskIds, updates } = parsedBulk.data as { taskIds: number[]; updates: Record<string, any> };
       if (updates.status) updates.status = normalizeStatus(updates.status);
       if (updates.priority) updates.priority = normalizePriority(updates.priority);
       const results = [];

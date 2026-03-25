@@ -223,8 +223,8 @@ export function registerRoleAuthRoutes(app: Express) {
       if (!isValidCompanyRole(targetRole)) {
         return sendError(res, badRequest("Invalid target role"));
       }
-      if (newPassword.length < 4) {
-        return sendError(res, badRequest("Password must be at least 4 characters"));
+      if (newPassword.length < 8) {
+        return sendError(res, badRequest("Password must be at least 8 characters"));
       }
 
       const passwordHash = await bcrypt.hash(newPassword, 10);

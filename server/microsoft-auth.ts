@@ -20,6 +20,7 @@ const SCOPES = [
   "Team.ReadBasic.All",
   "Channel.ReadBasic.All",
   "ChannelMessage.Read.All",
+  "ChannelMessage.Send",
   "offline_access",
 ];
 

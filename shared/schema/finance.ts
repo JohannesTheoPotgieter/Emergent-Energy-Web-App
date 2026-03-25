@@ -213,7 +213,8 @@ export const workingPlanScenario = pgTable("working_plan_scenario", {
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   name: text("name").notNull().default("Working Plan"),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -243,7 +244,8 @@ export const workingPlanDependencyOverride = pgTable("working_plan_dependency_ov
   successorTaskId: integer("successor_task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
   dependencyType: text("dependency_type").notNull().default("FS"),
   lagDays: integer("lag_days").notNull().default(0),
-  deletedFlag: boolean("deleted_flag").notNull().default(false),
+  deletedFlag: boolean("deleted_flag").notNull().default(false), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -377,7 +379,8 @@ export const counterparties = pgTable("counterparties", {
   nameAliases: jsonb("name_aliases").notNull().default([]),
   typeDefault: counterpartyTypeEnum("type_default").notNull().default('OTHER'),
   isCore: boolean("is_core").notNull().default(false),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   roleTags: text("role_tags").array().notNull().default([]),
   vatNumber: text("vat_number"),
   registrationNumber: text("registration_number"),
@@ -407,7 +410,8 @@ export const counterpartyContacts = pgTable("counterparty_contacts", {
   phone: text("phone"),
   title: text("title"),
   roleTags: text("role_tags").array().notNull().default([]),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   notes: text("notes"),
   createdByUserId: integer("created_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -518,7 +522,8 @@ export const invoicePatternRules = pgTable("invoice_pattern_rules", {
   timesMatched: integer("times_matched").notNull().default(0),
   timesConfirmed: integer("times_confirmed").notNull().default(0),
   timesOverridden: integer("times_overridden").notNull().default(0),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
 });
 export const insertInvoicePatternRuleSchema = createInsertSchema(invoicePatternRules).omit({ id: true, createdAt: true, timesMatched: true, timesConfirmed: true, timesOverridden: true } as any);
 export type InsertInvoicePatternRule = z.infer<typeof insertInvoicePatternRuleSchema>;
@@ -751,7 +756,8 @@ export const financialIntegrationRules = pgTable("financial_integration_rules", 
   projectId: integer("project_id").references(() => projectInfo.id),
   ruleType: text("rule_type").notNull(),
   ruleConfig: text("rule_config").notNull(),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdByUserId: integer("created_by_user_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

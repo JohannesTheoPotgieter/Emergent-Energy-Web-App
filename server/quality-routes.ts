@@ -12,6 +12,7 @@ import {
   qcPostmortem, qcPostmortemMetricValue, qcPostmortemSummary,
   qcAccessChallenge, calendarHoliday,
   users, projectInfo, projectExecutionState,
+  notifications,
 } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
@@ -92,12 +93,25 @@ function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required" });
 }
 
-// Notifications feature removed - createQmNotification is now a no-op
+/** Insert an in-app notification for QM events. Silently no-ops on error. */
 async function createQmNotification(
-  _recipientUserId: number, _eventType: string, _title: string, _body: string | null,
-  _opts: { projectName?: string; linkedTaskId?: number; } = {}
+  recipientUserId: number, eventType: string, title: string, body: string | null,
+  opts: { projectName?: string; linkedTaskId?: number; } = {}
 ) {
-  return null;
+  try {
+    const [row] = await db.insert(notifications).values({
+      recipientUserId,
+      eventType,
+      title,
+      body,
+      projectName: opts.projectName ?? null,
+      linkedTaskId: opts.linkedTaskId ?? null,
+    }).returning();
+    return row;
+  } catch (err) {
+    console.error("[QM Notifications] Failed to create notification:", err);
+    return null;
+  }
 }
 
 function businessDaysBetween(startStr: string, endStr: string, holidays: string[]): number {

@@ -135,20 +135,37 @@ function formatWeek(dateStr: string): string {
   }
 }
 
-const FY26_MONTHS = [
-  { key: "2025-09", label: "Sep 2025" },
-  { key: "2025-10", label: "Oct 2025" },
-  { key: "2025-11", label: "Nov 2025" },
-  { key: "2025-12", label: "Dec 2025" },
-  { key: "2026-01", label: "Jan 2026" },
-  { key: "2026-02", label: "Feb 2026" },
-  { key: "2026-03", label: "Mar 2026" },
-  { key: "2026-04", label: "Apr 2026" },
-  { key: "2026-05", label: "May 2026" },
-  { key: "2026-06", label: "Jun 2026" },
-  { key: "2026-07", label: "Jul 2026" },
-  { key: "2026-08", label: "Aug 2026" },
-];
+/**
+ * Determine the fiscal year (Sep-Aug cycle) from the current date.
+ * FY runs Sep of (fyYear-1) through Aug of fyYear.
+ * e.g. in Mar 2026 -> FY2026 (Sep 2025 - Aug 2026)
+ */
+function getCurrentFiscalYear(): number {
+  const now = new Date();
+  const month = now.getMonth(); // 0-indexed: 0=Jan, 8=Sep
+  const year = now.getFullYear();
+  // If Sep or later, we're in the next FY
+  return month >= 8 ? year + 1 : year;
+}
+
+function generateFYMonths(fyYear: number): { key: string; label: string }[] {
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const months: { key: string; label: string }[] = [];
+  // FY starts in Sep of (fyYear - 1) and ends in Aug of fyYear
+  for (let i = 0; i < 12; i++) {
+    // Sep=8, Oct=9, Nov=10, Dec=11, Jan=0, Feb=1, ..., Aug=7
+    const monthIndex = (8 + i) % 12;
+    const year = monthIndex >= 8 ? fyYear - 1 : fyYear;
+    const key = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+    const label = `${monthNames[monthIndex]} ${year}`;
+    months.push({ key, label });
+  }
+  return months;
+}
+
+const CURRENT_FY = getCurrentFiscalYear();
+const FY_MONTHS = generateFYMonths(CURRENT_FY);
+const CASHFLOW_API_BASE = `/api/cashflow-${CURRENT_FY}`;
 
 function isCurrentWeek(weekStart: string, weekEnd: string): boolean {
   const now = new Date();
@@ -229,9 +246,9 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
   if (project !== "all") params.set("project", project);
 
   const { data, isLoading } = useQuery<WeekDetail>({
-    queryKey: ["/api/cashflow-2026/detail", weekStart, project],
+    queryKey: [`${CASHFLOW_API_BASE}/detail`, weekStart, project],
     queryFn: async () => {
-      const res = await fetch(`/api/cashflow-2026/detail?${params.toString()}`, {
+      const res = await fetch(`${CASHFLOW_API_BASE}/detail?${params.toString()}`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch detail");
@@ -389,9 +406,9 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
   const [editedValues, setEditedValues] = useState<Record<string, string>>({});
 
   const { data: opexData = [], isLoading } = useQuery<OpexEntry[]>({
-    queryKey: ["/api/cashflow-2026/opex-budget"],
+    queryKey: [`${CASHFLOW_API_BASE}/opex-budget`],
     queryFn: async () => {
-      const res = await fetch("/api/cashflow-2026/opex-budget", { credentials: "include" });
+      const res = await fetch(`${CASHFLOW_API_BASE}/opex-budget`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch OPEX budget");
       return res.json();
     },
@@ -401,12 +418,12 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
   const saveMutation = useMutation({
     mutationFn: async (entries: { monthKey: string; amount: number }[]) => {
       for (const entry of entries) {
-        await apiRequest("POST", "/api/cashflow-2026/opex-budget", entry);
+        await apiRequest("POST", `${CASHFLOW_API_BASE}/opex-budget`, entry);
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/opex-budget"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/opex-budget`] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       invalidateDashboardQueries(queryClient);
       setEditedValues({});
       toast({ title: "OPEX Costed Saved", description: "Costed values updated successfully." });
@@ -438,7 +455,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
     saveMutation.mutate(entries);
   };
 
-  const totalBudget = FY26_MONTHS.reduce((sum, m) => {
+  const totalBudget = FY_MONTHS.reduce((sum, m) => {
     const val = editedValues[m.key] !== undefined
       ? parseFloat(editedValues[m.key]) || 0
       : opexMap[m.key] ?? 0;
@@ -460,7 +477,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
           </div>
         ) : (
           <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
-            {FY26_MONTHS.map((m) => {
+            {FY_MONTHS.map((m) => {
               const currentVal = editedValues[m.key] ?? (opexMap[m.key]?.toString() || "0");
               return (
                 <div key={m.key} className="flex items-center gap-3 group hover:bg-muted rounded-lg px-2 py-1.5 transition-colors">
@@ -535,11 +552,11 @@ export default function CashflowPage() {
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(",") : undefined;
 
   const { data: cashflowData = [], isLoading } = useQuery<CashflowWeek[]>({
-    queryKey: ["/api/cashflow-2026", projectParam],
+    queryKey: [CASHFLOW_API_BASE, projectParam],
     queryFn: async () => {
       const url = projectParam
-        ? `/api/cashflow-2026?project=${encodeURIComponent(projectParam)}`
-        : "/api/cashflow-2026";
+        ? `${CASHFLOW_API_BASE}?project=${encodeURIComponent(projectParam)}`
+        : CASHFLOW_API_BASE;
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -550,11 +567,11 @@ export default function CashflowPage() {
   });
 
   const { data: balanceHistory = [] } = useQuery<BalanceHistoryEntry[]>({
-    queryKey: ["/api/cashflow-2026/balance-history", historyWeek],
+    queryKey: [`${CASHFLOW_API_BASE}/balance-history`, historyWeek],
     queryFn: async () => {
       const url = historyWeek
-        ? `/api/cashflow-2026/balance-history?week=${historyWeek}`
-        : "/api/cashflow-2026/balance-history";
+        ? `${CASHFLOW_API_BASE}/balance-history?week=${historyWeek}`
+        : `${CASHFLOW_API_BASE}/balance-history`;
       const bToken = localStorage.getItem("auth_token");
       const bHeaders: Record<string, string> = {};
       if (bToken) bHeaders["Authorization"] = `Bearer ${bToken}`;
@@ -587,11 +604,11 @@ export default function CashflowPage() {
 
   const balanceMutation = useMutation({
     mutationFn: async (body: { weekStartDate: string; openingBalance: number; computedValue: number; clearForward: boolean }) => {
-      await apiRequest("POST", "/api/cashflow-2026/opening-balance", body);
+      await apiRequest("POST", `${CASHFLOW_API_BASE}/opening-balance`, body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/balance-history"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/balance-history`] });
       invalidateDashboardQueries(queryClient);
       setEditingBalance(null);
       toast({ title: "Opening Balance Saved", description: "All forward weeks recalculated" });
@@ -603,11 +620,11 @@ export default function CashflowPage() {
 
   const clearOverrideMutation = useMutation({
     mutationFn: async (weekStartDate: string) => {
-      await apiRequest("DELETE", "/api/cashflow-2026/opening-balance", { weekStartDate });
+      await apiRequest("DELETE", `${CASHFLOW_API_BASE}/opening-balance`, { weekStartDate });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/balance-history"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/balance-history`] });
       invalidateDashboardQueries(queryClient);
       toast({ title: "Override Cleared", description: "Balance now uses cascaded value" });
     },

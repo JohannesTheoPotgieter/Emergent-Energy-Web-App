@@ -159,7 +159,7 @@ export const workItems = pgTable("work_items", {
   wbsCode: text("wbs_code"),
   outlineNumber: text("outline_number"),
   indentLevel: integer("indent_level").default(0),
-  parentId: integer("parent_id"),
+  parentId: integer("parent_id").references(() => workItems.id, { onDelete: "set null" }),
   isMilestone: boolean("is_milestone").default(false),
   phase: text("phase"),
   ownerUserId: integer("owner_user_id").references(() => users.id),
@@ -212,6 +212,7 @@ export const workItems = pgTable("work_items", {
   ownerUserIdIdx: index("work_items_owner_user_id_idx").on(table.ownerUserId),
   statusIdx: index("work_items_status_idx").on(table.status),
   endDateIdx: index("work_items_end_date_idx").on(table.endDate),
+  parentIdIdx: index("work_items_parent_id_idx").on(table.parentId),
 }));
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertWorkItem = z.infer<typeof insertWorkItemSchema>;
