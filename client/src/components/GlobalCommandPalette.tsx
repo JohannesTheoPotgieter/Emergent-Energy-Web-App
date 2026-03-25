@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
-import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command";
+import { CommandDialog, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem, CommandSeparator } from "@/components/ui/command";
 import { PAGE_REGISTRY } from "@/config/page-registry";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
-import { Navigation, Search } from "lucide-react";
+import { getAvailableQuickCreateActions } from "@/lib/action-access";
+import { Navigation, Search, Plus, ArrowRight, Zap } from "lucide-react";
 
 const NAV_ITEMS = PAGE_REGISTRY.filter(
   (p) => p.showInSidebar && p.routeComponentKey && !p.redirectTo
@@ -17,7 +18,11 @@ export function GlobalCommandPalette() {
   const [open, setOpen] = useState(false);
   const [recent, setRecent] = useState<Array<{ path: string; label: string }>>([]);
   const [, setLocation] = useLocation();
-  const { canViewPath } = useAccessMatrix();
+  const { canViewPath, canAccessEntityAction } = useAccessMatrix();
+
+  const quickActions = useMemo(() => {
+    return getAvailableQuickCreateActions({ canAccessEntityAction, canViewPath });
+  }, [canAccessEntityAction, canViewPath]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -68,11 +73,44 @@ export function GlobalCommandPalette() {
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search pages... (Ctrl+K)" />
+      <CommandInput placeholder="Search or take action... (Ctrl+K)" />
       <CommandList>
-        <CommandEmpty>No pages found.</CommandEmpty>
+        <CommandEmpty>No pages or actions found.</CommandEmpty>
+
+        {/* Quick Actions — create, launch */}
+        {quickActions.length > 0 && (
+          <CommandGroup heading="Quick Actions">
+            {quickActions.map((action) => (
+              <CommandItem
+                key={action.id}
+                value={`action ${action.label}`}
+                onSelect={() => handleSelect(action.path, action.label)}
+              >
+                <Plus className="h-4 w-4 mr-2 text-emerald-600" />
+                {action.label}
+              </CommandItem>
+            ))}
+            <CommandItem
+              value="action go to my work"
+              onSelect={() => handleSelect("/my-work", "My Work")}
+            >
+              <Zap className="h-4 w-4 mr-2 text-orange-600" />
+              Go to My Work
+            </CommandItem>
+            <CommandItem
+              value="action view notifications inbox"
+              onSelect={() => handleSelect("/inbox", "Inbox")}
+            >
+              <ArrowRight className="h-4 w-4 mr-2 text-blue-600" />
+              View Inbox
+            </CommandItem>
+          </CommandGroup>
+        )}
+
+        {quickActions.length > 0 && <CommandSeparator />}
+
         {recent.length > 0 && (
-          <CommandGroup heading="Recent Searches">
+          <CommandGroup heading="Recent">
             {recent.map((item) => (
               <CommandItem key={`recent-${item.path}`} value={`recent ${item.label}`} onSelect={() => handleSelect(item.path, item.label)}>
                 <Search className="h-4 w-4 mr-2 text-muted-foreground" />

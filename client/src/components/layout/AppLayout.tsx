@@ -8,16 +8,21 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor } from "lucide-react";
+import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
+import { useNavPreferences } from "@/hooks/use-nav-preferences";
 import { NotificationBell } from "@/components/NotificationBell";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
+import { NavOnboardingTour } from "@/components/layout/NavOnboardingTour";
+import { NavOrderCustomizer } from "@/components/layout/NavOrderCustomizer";
 import { useTheme } from "@/hooks/use-theme";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
+import { trackNavClick, trackPageView } from "@/lib/nav-analytics";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -45,6 +50,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { canAccessEntityAction, canViewPath } = useAccessMatrix();
   const { theme, setTheme } = useTheme();
   const { isMobile, isTablet } = useBreakpoint();
+  const { sectionOrder } = useNavPreferences();
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const subNavRef = useRef<HTMLDivElement>(null);
 
@@ -69,8 +75,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [location]);
 
   const visibleSections = useMemo(() => {
-    return buildVisibleTopSections({ canViewPath });
-  }, [canViewPath]);
+    const sections = buildVisibleTopSections({ canViewPath });
+    // Apply user's custom section order if set
+    if (sectionOrder.length > 0) {
+      return [...sections].sort((a, b) => {
+        const aIdx = sectionOrder.indexOf(a.label);
+        const bIdx = sectionOrder.indexOf(b.label);
+        if (aIdx === -1 && bIdx === -1) return 0;
+        if (aIdx === -1) return 1;
+        if (bIdx === -1) return -1;
+        return aIdx - bIdx;
+      });
+    }
+    return sections;
+  }, [canViewPath, sectionOrder]);
 
   const activeSection = useMemo(() => visibleSections.find((section) => section.match(location)) ?? visibleSections[0], [location, visibleSections]);
   const quickCreateActions = useMemo(() => {
@@ -79,6 +97,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const microsoftShortcuts = useMemo(() => {
     return MICROSOFT_SHORTCUTS.filter((shortcut) => canViewPath(shortcut.path));
   }, [canViewPath]);
+
+  // Track page views for analytics
+  useEffect(() => {
+    if (activeSection) {
+      trackPageView(location, activeSection.label);
+    }
+  }, [location, activeSection]);
 
   useEffect(() => {
     const trimmed = searchTerm.trim();
@@ -162,19 +187,33 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="mt-6 space-y-2">
                 {visibleSections.map((section) => {
                   const isActive = section.label === activeSection.label;
+                  const hasMany = section.secondary.length >= 4;
                   return (
                     <div key={section.label} className="space-y-1">
-                      <Link href={section.path} className={cn("block rounded-md px-3 py-2 text-sm font-medium transition-colors", isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}>{section.label}</Link>
+                      <Link
+                        href={section.path}
+                        className={cn("block rounded-md px-3 py-2 text-sm font-medium transition-colors", isActive ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground")}
+                        onClick={() => trackNavClick(section.label)}
+                      >
+                        {section.label}
+                      </Link>
                       {isActive ? (
-                        <div className="ml-3 border-l border-primary/30 pl-3 space-y-1">
-                          {section.secondary.map((item) => (
-                            item.disabled ? (
-                              <span key={item.path} className="block rounded px-2 py-1.5 text-xs text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
-                            ) : (
-                              <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-1.5 text-xs", linkIsActive(location, item.path) ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60")}>{item.label}</Link>
-                            )
-                          ))}
-                        </div>
+                        hasMany ? (
+                          <MobileCollapsibleSubNav
+                            items={section.secondary}
+                            location={location}
+                          />
+                        ) : (
+                          <div className="ml-3 border-l border-primary/30 pl-3 space-y-1">
+                            {section.secondary.map((item) => (
+                              item.disabled ? (
+                                <span key={item.path} className="block rounded px-2 py-1.5 text-xs text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
+                              ) : (
+                                <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-1.5 text-xs", linkIsActive(location, item.path) ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60")}>{item.label}</Link>
+                              )
+                            ))}
+                          </div>
+                        )
                       ) : null}
                     </div>
                   );
@@ -296,6 +335,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <DropdownMenuItem onClick={() => setTheme("dark")}><Moon className="h-4 w-4 mr-2" />Dark{theme === "dark" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setTheme("system")}><Monitor className="h-4 w-4 mr-2" />System{theme === "system" && <span className="ml-auto text-primary text-xs">Active</span>}</DropdownMenuItem>
               <DropdownMenuSeparator />
+              <NavOrderCustomizer visibleSections={visibleSections} />
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => logout()}><LogOut className="h-4 w-4 mr-2" />Log out</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -313,6 +354,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     "relative px-3.5 py-2 text-[13px] font-medium whitespace-nowrap transition-colors rounded-md",
                     active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
                   )}
+                  onClick={() => trackNavClick(section.label)}
                 >
                   {section.label}
                   {active && <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-primary rounded-full" />}
@@ -359,6 +401,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           linkIsActive(location, item.path) ? "ee-subnav-pill-active" : "",
                         )}
+                        onClick={() => trackNavClick(activeSection.label, item.label)}
                       >
                         {item.label}
                       </Link>
@@ -373,6 +416,47 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24")}>{children}</main>
       <GlobalCommandPalette />
+      <NavOnboardingTour />
+    </div>
+  );
+}
+
+/** Collapsible sub-nav for mobile drawer — shows first 2 items, collapses the rest */
+function MobileCollapsibleSubNav({ items, location }: { items: { label: string; path: string; disabled?: boolean }[]; location: string }) {
+  const [open, setOpen] = useState(false);
+  const visible = items.slice(0, 2);
+  const hidden = items.slice(2);
+
+  return (
+    <div className="ml-3 border-l border-primary/30 pl-3 space-y-1">
+      {visible.map((item) => (
+        item.disabled ? (
+          <span key={item.path} className="block rounded px-2 py-1.5 text-xs text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
+        ) : (
+          <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-1.5 text-xs", linkIsActive(location, item.path) ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60")}>{item.label}</Link>
+        )
+      ))}
+      {hidden.length > 0 && (
+        <Collapsible open={open} onOpenChange={setOpen}>
+          <CollapsibleContent>
+            <div className="space-y-1">
+              {hidden.map((item) => (
+                item.disabled ? (
+                  <span key={item.path} className="block rounded px-2 py-1.5 text-xs text-muted-foreground/60 cursor-not-allowed">{item.label}</span>
+                ) : (
+                  <Link key={item.path} href={item.path} className={cn("block rounded px-2 py-1.5 text-xs", linkIsActive(location, item.path) ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-muted/60")}>{item.label}</Link>
+                )
+              ))}
+            </div>
+          </CollapsibleContent>
+          <CollapsibleTrigger asChild>
+            <button className="flex items-center gap-1 px-2 py-1 text-[11px] text-primary hover:underline">
+              <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
+              {open ? "Show less" : `+${hidden.length} more`}
+            </button>
+          </CollapsibleTrigger>
+        </Collapsible>
+      )}
     </div>
   );
 }

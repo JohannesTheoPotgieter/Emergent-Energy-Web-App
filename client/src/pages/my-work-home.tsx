@@ -6,12 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { format, parseISO } from "date-fns";
+import { trackFeatureUse } from "@/lib/nav-analytics";
 import {
   CheckCircle2,
   Circle,
@@ -30,6 +33,10 @@ import {
   MessageSquare,
   Bell,
   Zap,
+  Sparkles,
+  Bookmark,
+  Save,
+  Trash2,
 } from "lucide-react";
 
 interface TaskItem {
@@ -88,7 +95,9 @@ interface MsObject {
   sourceTypeLabel?: string | null;
 }
 
-const today = format(new Date(), "yyyy-MM-dd");
+function getToday() {
+  return format(new Date(), "yyyy-MM-dd");
+}
 
 const SOURCE_BADGE_COLORS: Record<string, string> = {
   personal: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -156,8 +165,49 @@ export default function MyWorkHomePage() {
   const { canViewPath } = useAccessMatrix();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // Recompute on each render so it stays current past midnight
+  const today = getToday();
   const [, navigate] = useLocation();
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  type GroupingMode = "source" | "priority" | "status" | "due_date";
+  const [groupingMode, setGroupingMode] = useState<GroupingMode>(
+    () => (localStorage.getItem("ee_mywork_grouping") as GroupingMode) || "source"
+  );
+
+  // Saved views
+  const [savedViews, setSavedViews] = useState<Array<{ name: string; sourceFilter: string; grouping: GroupingMode }>>(() => {
+    try {
+      const raw = localStorage.getItem("ee_mywork_saved_views");
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+
+  const saveCurrentView = (name: string) => {
+    const updated = [...savedViews.filter(v => v.name !== name), { name, sourceFilter, grouping: groupingMode }];
+    setSavedViews(updated);
+    localStorage.setItem("ee_mywork_saved_views", JSON.stringify(updated));
+    toast({ title: "View saved", description: `"${name}" saved with current filters.` });
+  };
+
+  const loadView = (view: { name: string; sourceFilter: string; grouping: GroupingMode }) => {
+    setSourceFilter(view.sourceFilter);
+    setGroupingMode(view.grouping);
+    localStorage.setItem("ee_mywork_grouping", view.grouping);
+    toast({ title: "View loaded", description: `Loaded "${view.name}"` });
+  };
+
+  const deleteView = (name: string) => {
+    const updated = savedViews.filter(v => v.name !== name);
+    setSavedViews(updated);
+    localStorage.setItem("ee_mywork_saved_views", JSON.stringify(updated));
+  };
+
+  const handleGroupingChange = (value: string) => {
+    const mode = value as GroupingMode;
+    setGroupingMode(mode);
+    localStorage.setItem("ee_mywork_grouping", mode);
+    trackFeatureUse("mywork_grouping_toggle");
+  };
 
   const syncMutation = useMutation({
     mutationFn: async () => {
@@ -669,7 +719,37 @@ export default function MyWorkHomePage() {
     return counts;
   }, [openTasks]);
 
-  const groupedTasks = useMemo(() => {
+  const doneToday = useMemo(() => {
+    return tasks.filter(t => {
+      if (!DONE_STATUSES.includes(t.status)) return false;
+      const due = t.dueAt || t.plannedForDate;
+      if (!due) return false;
+      return due.startsWith(today);
+    }).length;
+  }, [tasks, today]);
+
+  const focusNowItems = useMemo(() => {
+    const now = new Date();
+    const urgent = openTasks
+      .map(t => {
+        let urgencyScore = 0;
+        if (t.dueAt) {
+          const due = new Date(t.dueAt);
+          if (due < now) urgencyScore = 3; // overdue
+          else if (t.dueAt.startsWith(today)) urgencyScore = 2; // due today
+        }
+        if (t.priority === "critical") urgencyScore = Math.max(urgencyScore, 2.5);
+        if (t.priority === "high") urgencyScore = Math.max(urgencyScore, 1.5);
+        return { task: t, urgencyScore };
+      })
+      .filter(x => x.urgencyScore > 0)
+      .sort((a, b) => b.urgencyScore - a.urgencyScore)
+      .slice(0, 3)
+      .map(x => x.task);
+    return urgent;
+  }, [openTasks, today]);
+
+  const groupedByProject = useMemo(() => {
     const groups: Record<string, TaskItem[]> = {};
     filteredTasks.forEach(t => {
       const key = t.projectName || "No Project";
@@ -689,6 +769,95 @@ export default function MyWorkHomePage() {
     );
     return sortedGroups;
   }, [filteredTasks]);
+
+  const groupedByPriority = useMemo(() => {
+    const priorityOrder = ["critical", "high", "normal", "low"];
+    const priorityLabels: Record<string, string> = { critical: "Critical", high: "High", normal: "Normal", low: "Low" };
+    const groups: Record<string, TaskItem[]> = {};
+    filteredTasks.forEach(t => {
+      const key = t.priority || "normal";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+    const sortedGroups: Record<string, TaskItem[]> = {};
+    for (const p of priorityOrder) {
+      if (groups[p]) sortedGroups[priorityLabels[p] || p] = groups[p];
+    }
+    return sortedGroups;
+  }, [filteredTasks]);
+
+  const groupedByStatus = useMemo(() => {
+    const statusLabels: Record<string, string> = {
+      inbox: "Inbox", todo: "To Do", in_progress: "In Progress",
+      review: "In Review", blocked: "Blocked", waiting: "Waiting",
+      action_required: "Action Required",
+    };
+    const statusOrder = ["blocked", "action_required", "in_progress", "review", "waiting", "todo", "inbox"];
+    const groups: Record<string, TaskItem[]> = {};
+    filteredTasks.forEach(t => {
+      const key = t.status || "inbox";
+      const label = statusLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(t);
+    });
+    const sorted: Record<string, TaskItem[]> = {};
+    for (const s of statusOrder) {
+      const label = statusLabels[s];
+      if (label && groups[label]) sorted[label] = groups[label];
+    }
+    // Add any remaining groups not in the predefined order
+    for (const [label, tasks] of Object.entries(groups)) {
+      if (!sorted[label]) sorted[label] = tasks;
+    }
+    return sorted;
+  }, [filteredTasks]);
+
+  const groupedByDueDate = useMemo(() => {
+    const now = new Date();
+    const todayStr = format(now, "yyyy-MM-dd");
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = format(tomorrow, "yyyy-MM-dd");
+    const weekEnd = new Date(now);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    const weekEndStr = format(weekEnd, "yyyy-MM-dd");
+
+    const groups: Record<string, TaskItem[]> = {
+      "Overdue": [],
+      "Today": [],
+      "Tomorrow": [],
+      "This Week": [],
+      "Later": [],
+      "No Due Date": [],
+    };
+
+    filteredTasks.forEach(t => {
+      const due = t.dueAt;
+      if (!due) { groups["No Due Date"].push(t); return; }
+      const dueDate = due.split("T")[0];
+      if (dueDate < todayStr) groups["Overdue"].push(t);
+      else if (dueDate === todayStr) groups["Today"].push(t);
+      else if (dueDate === tomorrowStr) groups["Tomorrow"].push(t);
+      else if (dueDate <= weekEndStr) groups["This Week"].push(t);
+      else groups["Later"].push(t);
+    });
+
+    // Remove empty groups
+    const result: Record<string, TaskItem[]> = {};
+    for (const [k, v] of Object.entries(groups)) {
+      if (v.length > 0) result[k] = v;
+    }
+    return result;
+  }, [filteredTasks]);
+
+  const groupedTasks = useMemo(() => {
+    switch (groupingMode) {
+      case "priority": return groupedByPriority;
+      case "status": return groupedByStatus;
+      case "due_date": return groupedByDueDate;
+      default: return groupedByProject;
+    }
+  }, [groupingMode, groupedByProject, groupedByPriority, groupedByStatus, groupedByDueDate]);
 
   const sortedEvents = useMemo(() =>
     [...calendarEvents].sort((a, b) => {
@@ -716,7 +885,7 @@ export default function MyWorkHomePage() {
       openTasks: openTasks.length,
       escalatedCount: escalatedItems.length,
     };
-  }, [actionItems.length, escalatedItems.length, openTasks, sortedEvents]);
+  }, [actionItems.length, escalatedItems.length, openTasks, sortedEvents, today]);
 
   return (
     <PageShell className="p-4 md:p-6 max-w-[1400px] mx-auto" data-testid="my-work-home">
@@ -746,12 +915,13 @@ export default function MyWorkHomePage() {
       />
 
       {/* Summary strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5" data-testid="my-work-focus-summary">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" data-testid="my-work-focus-summary">
         {[
           { label: "Actions", value: myDaySummary.urgentActions, icon: Zap, color: "text-orange-600", bg: "bg-orange-50 border-orange-200" },
           { label: "Due Today", value: myDaySummary.dueToday, icon: Target, color: "text-red-600", bg: "bg-red-50 border-red-200" },
           { label: "Meetings", value: myDaySummary.upcomingMeetings, icon: Calendar, color: "text-blue-600", bg: "bg-blue-50 border-blue-200" },
           { label: "Open Tasks", value: myDaySummary.openTasks, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200" },
+          { label: "Done Today", value: doneToday, icon: Sparkles, color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-300" },
           { label: "Alerts", value: myDaySummary.escalatedCount, icon: Bell, color: "text-amber-600", bg: "bg-amber-50 border-amber-200" },
         ].map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className={`flex items-center gap-3 rounded-lg border px-3.5 py-2.5 ${bg}`}>
@@ -763,6 +933,59 @@ export default function MyWorkHomePage() {
           </div>
         ))}
       </div>
+
+      {/* Focus Now — urgent items highlight */}
+      {!tasksLoading && (
+        <div className="mb-5" data-testid="focus-now-section">
+          {focusNowItems.length > 0 ? (
+            <div className="space-y-1.5">
+              <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                Focus Now
+              </h2>
+              {focusNowItems.map(task => {
+                const isOverdue = task.dueAt ? new Date(task.dueAt) < new Date() : false;
+                return (
+                  <div
+                    key={task.id}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg border cursor-pointer transition-all touch-manipulation active:scale-[0.98] group ${
+                      isOverdue
+                        ? "border-l-4 border-l-red-400 border-red-200 bg-red-50/40 hover:bg-red-50/70 active:bg-red-50"
+                        : "border-l-4 border-l-amber-400 border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 active:bg-amber-50"
+                    }`}
+                    onClick={() => handleTaskClick(task)}
+                    data-testid={`focus-item-${task.id}`}
+                  >
+                    <StatusIcon status={task.status} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate group-hover:text-foreground">{task.title}</p>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        {task.projectName && <span>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
+                        {task.dueAt && (
+                          <span className={isOverdue ? "text-red-600 font-medium" : "text-amber-600"}>
+                            {isOverdue ? "Overdue" : "Due today"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {task.sourceLabel && (
+                      <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 ${SOURCE_BADGE_COLORS[task.source || ""] || ""}`}>
+                        {task.sourceLabel}
+                      </Badge>
+                    )}
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-foreground shrink-0" />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border border-emerald-200 bg-emerald-50/40">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+              <p className="text-sm text-emerald-700">You're caught up — no urgent items right now.</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Main 2-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5" data-testid="my-work-grid">
@@ -796,24 +1019,63 @@ export default function MyWorkHomePage() {
                   </Badge>
                 </div>
               </div>
-              <ScrollArea className="w-full">
-                <div className="flex gap-1 pt-1 pb-0.5">
-                  {SOURCE_FILTERS.filter(f => f.key === "all" || (sourceCounts[f.key] || 0) > 0).map(f => (
-                    <button
-                      key={f.key}
-                      onClick={() => setSourceFilter(f.key)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors border ${
-                        sourceFilter === f.key
-                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                          : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
-                      }`}
-                      data-testid={`filter-${f.key}`}
-                    >
-                      {f.label} {(sourceCounts[f.key] || 0) > 0 ? `(${sourceCounts[f.key]})` : ""}
-                    </button>
-                  ))}
-                </div>
-              </ScrollArea>
+              <div className="flex items-center gap-3 pt-1 pb-0.5">
+                <ScrollArea className="flex-1">
+                  <div className="flex gap-1">
+                    {SOURCE_FILTERS.filter(f => f.key === "all" || (sourceCounts[f.key] || 0) > 0).map(f => (
+                      <button
+                        key={f.key}
+                        onClick={() => setSourceFilter(f.key)}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors border ${
+                          sourceFilter === f.key
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
+                        }`}
+                        data-testid={`filter-${f.key}`}
+                      >
+                        {f.label} {(sourceCounts[f.key] || 0) > 0 ? `(${sourceCounts[f.key]})` : ""}
+                      </button>
+                    ))}
+                  </div>
+                </ScrollArea>
+                <Tabs value={groupingMode} onValueChange={handleGroupingChange}>
+                  <TabsList className="h-7">
+                    <TabsTrigger value="source" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-source">Source</TabsTrigger>
+                    <TabsTrigger value="priority" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-priority">Priority</TabsTrigger>
+                    <TabsTrigger value="status" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-status">Status</TabsTrigger>
+                    <TabsTrigger value="due_date" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-due-date">Due Date</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" title="Saved views">
+                      <Bookmark className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {savedViews.length > 0 ? (
+                      <>
+                        {savedViews.map(v => (
+                          <DropdownMenuItem key={v.name} className="flex items-center justify-between gap-2">
+                            <span className="truncate text-xs cursor-pointer flex-1" onClick={() => loadView(v)}>{v.name}</span>
+                            <button onClick={(e) => { e.stopPropagation(); deleteView(v.name); }} className="text-muted-foreground hover:text-destructive shrink-0">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                      </>
+                    ) : null}
+                    <DropdownMenuItem onClick={() => {
+                      const name = prompt("View name:");
+                      if (name?.trim()) saveCurrentView(name.trim());
+                    }}>
+                      <Save className="h-3.5 w-3.5 mr-2" />
+                      <span className="text-xs">Save current view</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </CardHeader>
             <CardContent className="pt-0">
               {tasksLoading ? (
@@ -845,7 +1107,7 @@ export default function MyWorkHomePage() {
                           {projectTasks.slice(0, 8).map(task => (
                             <div
                               key={task.id}
-                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-emerald-50/60 transition-colors cursor-pointer group"
+                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-emerald-50/60 active:bg-emerald-50/80 active:scale-[0.99] transition-all cursor-pointer group touch-manipulation"
                               onClick={() => handleTaskClick(task)}
                               data-testid={`task-item-${task.id}`}
                             >
@@ -853,7 +1115,7 @@ export default function MyWorkHomePage() {
                               <PriorityDot priority={task.priority} />
                               <span className="text-sm truncate flex-1 group-hover:text-emerald-700">{task.title}</span>
                               {task.sourceLabel && (
-                                <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 ${SOURCE_BADGE_COLORS[task.source || ""] || "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                                <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 hidden sm:inline-flex ${SOURCE_BADGE_COLORS[task.source || ""] || "bg-gray-50 text-gray-600 border-gray-200"}`}>
                                   {task.sourceLabel}
                                 </Badge>
                               )}
@@ -882,7 +1144,12 @@ export default function MyWorkHomePage() {
             </CardContent>
           </Card>
 
-          {/* Action Required — full width below tasks */}
+        </div>
+
+        {/* RIGHT: Timeline + Sidebar — takes 2/5 width */}
+        <div className="lg:col-span-2 space-y-5" data-testid="my-work-sidebar">
+
+          {/* Action Required — promoted to sidebar top */}
           {(actionItems.length > 0 || actionsLoading) && (
             <Card className="border-border/60" data-testid="card-action-required">
               <CardHeader className="pb-2">
@@ -900,15 +1167,15 @@ export default function MyWorkHomePage() {
               </CardHeader>
               <CardContent className="pt-0">
                 {actionsLoading ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div className="space-y-2">
                     {[1, 2].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {actionItems.slice(0, 6).map(item => (
+                  <div className="space-y-1.5">
+                    {actionItems.slice(0, 5).map(item => (
                       <div
                         key={item.id}
-                        className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border/60 hover:border-orange-200 hover:bg-orange-50/30 transition-colors cursor-pointer group"
+                        className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border/60 hover:border-orange-200 hover:bg-orange-50/30 active:bg-orange-50/50 active:scale-[0.99] transition-all cursor-pointer touch-manipulation group"
                         onClick={() => handleActionClick(item)}
                         data-testid={`action-item-${item.id}`}
                       >
@@ -924,27 +1191,20 @@ export default function MyWorkHomePage() {
                             )}
                           </div>
                           <p className="text-xs font-medium truncate group-hover:text-orange-700">{item.title}</p>
-                          {item.subtitle && (
-                            <p className="text-[10px] text-muted-foreground truncate">{item.subtitle}</p>
-                          )}
                         </div>
                         <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-orange-600 shrink-0 mt-1 transition-colors" />
                       </div>
                     ))}
                   </div>
                 )}
-                {actionItems.length > 6 && (
+                {actionItems.length > 5 && (
                   <p className="text-[11px] text-orange-600 mt-2 cursor-pointer hover:underline" onClick={() => navigate("/my-work/tasks")}>
-                    +{actionItems.length - 6} more items needing attention
+                    +{actionItems.length - 5} more items needing attention
                   </p>
                 )}
               </CardContent>
             </Card>
           )}
-        </div>
-
-        {/* RIGHT: Timeline + Sidebar — takes 2/5 width */}
-        <div className="lg:col-span-2 space-y-5" data-testid="my-work-sidebar">
 
           {/* Today's Schedule */}
           <Card className="border-border/60">
