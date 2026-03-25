@@ -121,6 +121,7 @@ export type ProgramInflows = typeof programInflows.$inferSelect;
 
 export const projectPlan = pgTable("project_plan", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
   rowNumber: integer("row_number"),
@@ -145,6 +146,7 @@ export type ProjectPlan = typeof projectPlan.$inferSelect;
 
 export const cashflowPoints = pgTable("cashflow_points", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   seriesName: text("series_name").notNull(),
   pointDate: date("point_date").notNull(),
@@ -214,6 +216,7 @@ export type FinanceCosMonthly = typeof financeCosMonthly.$inferSelect;
 
 export const workingPlanScenario = pgTable("working_plan_scenario", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   name: text("name").notNull().default("Working Plan"),
@@ -228,6 +231,7 @@ export type WorkingPlanScenario = typeof workingPlanScenario.$inferSelect;
 
 export const projectPlanDependency = pgTable("project_plan_dependency", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   predecessorTaskId: integer("predecessor_task_id").notNull().references(() => projectPlan.id, { onDelete: "cascade" }),
