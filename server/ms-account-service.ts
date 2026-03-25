@@ -15,7 +15,11 @@ export async function ensureMsAccount(
   const effectiveTenant = tenantId || CONFIGURED_TENANT_ID;
 
   if (CONFIGURED_TENANT_ID && effectiveTenant && effectiveTenant !== CONFIGURED_TENANT_ID) {
-    throw new Error(`Tenant mismatch: expected ${CONFIGURED_TENANT_ID}, got ${effectiveTenant}`);
+    const isProduction = process.env.NODE_ENV === "production" || !!process.env.REPLIT_DOMAINS;
+    if (isProduction) {
+      throw new Error(`Tenant mismatch: expected ${CONFIGURED_TENANT_ID}, got ${effectiveTenant}. Sign-in rejected.`);
+    }
+    console.warn(`[MS Account] Tenant mismatch in development: expected ${CONFIGURED_TENANT_ID}, got ${effectiveTenant}. Allowing for dev purposes.`);
   }
 
   const tokenFields: Record<string, any> = {};

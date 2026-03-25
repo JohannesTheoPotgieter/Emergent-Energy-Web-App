@@ -9,9 +9,7 @@
     "build",
     "client/**/*",
     "dist",
-    "node_modules",
-    "server/routes.ts",
-    "server/storage.ts"
+    "node_modules"
   ],
   "compilerOptions": {
     "incremental": true,

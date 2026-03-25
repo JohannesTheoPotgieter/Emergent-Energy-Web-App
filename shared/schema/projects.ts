@@ -83,7 +83,8 @@ export const projectExecutionState = pgTable("project_execution_state", {
   ragUpdatedByUserId: integer("rag_updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
 
   // Active / archived
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   archivedStatus: text("archived_status").notNull().default("ACTIVE"),
 
   // Execution gate
@@ -508,7 +509,8 @@ export const phaseTemplate = pgTable("phase_template", {
   phase: text("phase").notNull(),
   name: text("name").notNull(),
   version: integer("version").notNull().default(1),
-  isActive: boolean("is_active").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(false), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdByUserId: integer("created_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -632,7 +634,8 @@ export const stageGateDefinitions = pgTable("stage_gate_definitions", {
   requirementConfig: jsonb("requirement_config").notNull().default({}),
   isRequired: boolean("is_required").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -664,7 +667,8 @@ export const stageGateOverrides = pgTable("stage_gate_overrides", {
   overriddenByRole: text("overridden_by_role").notNull(),
   note: text("note"),
   expiresAt: timestamp("expires_at"),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   revokedAt: timestamp("revoked_at"),
 });
@@ -822,7 +826,8 @@ export const derivedProjectKpis = pgTable("derived_project_kpis", {
   ragStatus: text("rag_status"),
   pm: text("pm"),
   pd: text("pd"),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   totalPlannedRevenue: decimal("total_planned_revenue", { precision: 15, scale: 2 }),
   totalActualRevenue: decimal("total_actual_revenue", { precision: 15, scale: 2 }),
   revenueRealised: decimal("revenue_realised", { precision: 15, scale: 2 }),

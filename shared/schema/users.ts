@@ -8,7 +8,8 @@ export const organizations = pgTable("organizations", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
 });
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = typeof organizations.$inferInsert;

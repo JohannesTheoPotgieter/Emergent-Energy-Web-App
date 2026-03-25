@@ -124,7 +124,8 @@ export const engStageTemplates = pgTable("eng_stage_templates", {
   stageGateRules: jsonb("stage_gate_rules"),
   sortOrder: integer("sort_order").notNull().default(0),
   version: integer("version").notNull().default(1),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

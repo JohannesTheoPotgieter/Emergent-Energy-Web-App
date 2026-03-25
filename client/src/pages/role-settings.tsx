@@ -994,8 +994,8 @@ export function RolePasswordsSection() {
   };
 
   const handleChangePassword = async (targetRole: string) => {
-    if (!newPassword || newPassword.length < 4) {
-      toast({ title: "Error", description: "Password must be at least 4 characters.", variant: "destructive" });
+    if (!newPassword || newPassword.length < 8) {
+      toast({ title: "Error", description: "Password must be at least 8 characters.", variant: "destructive" });
       return;
     }
     setSaving(true);
