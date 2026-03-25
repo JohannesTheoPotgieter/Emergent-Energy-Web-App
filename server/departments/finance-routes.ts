@@ -1480,6 +1480,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       isRealised: boolean;
       realisedMonth: string | null;
       cosState: string;
+      paymentStatus: string;
     }
 
     const items: LineItem[] = [];
@@ -1517,6 +1518,19 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         cosState = 'Committed';
       }
 
+      // Cashflow payment status (4-state model)
+      const hasInv = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
+      const hasPayD = !!(payDate && String(payDate).trim());
+      const payDBlack = hasPayD && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
+      let paymentStatus = 'Planned';
+      if (payDBlack && hasInv) {
+        paymentStatus = 'Out of Bank';
+      } else if (payDBlack && !hasInv) {
+        paymentStatus = 'Risk';
+      } else if (hasPayD && !payDBlack && hasInv) {
+        paymentStatus = 'Outstanding';
+      }
+
       if (itemMonthKey !== monthKey) continue;
 
       let realisedMonth: string | null = null;
@@ -1549,6 +1563,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         isRealised,
         realisedMonth,
         cosState,
+        paymentStatus,
       });
     }
 

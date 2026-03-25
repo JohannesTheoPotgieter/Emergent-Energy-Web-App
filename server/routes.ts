@@ -2899,6 +2899,7 @@ export async function registerRoutes(
         }
 
         let projectOutflowsSum = 0;
+        const outflowByStatus = { outOfBank: 0, outstanding: 0, risk: 0, planned: 0 };
         for (const expense of allExpenses) {
           // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
           if (expense.rowType !== 'item') continue;
@@ -2909,6 +2910,19 @@ export async function registerRoutes(
           const amt = parseFloat((expense as any).quotedTotal || expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
           if (d >= weekStart && d < weekEnd && amt > 0) {
             projectOutflowsSum += amt;
+            // Classify payment status
+            const hasInvoice = !!(expense.expenseInvoiceNumber && String(expense.expenseInvoiceNumber).trim());
+            const hasPayDate = !!(expense.expensePaymentDate && String(expense.expensePaymentDate).trim());
+            const payDateBlack = hasPayDate && isDateConfirmedCheck((expense as any).paymentDateConfirmed, (expense as any).paymentDateFontColor);
+            if (payDateBlack && hasInvoice) {
+              outflowByStatus.outOfBank += amt;
+            } else if (payDateBlack && !hasInvoice) {
+              outflowByStatus.risk += amt;
+            } else if (hasPayDate && !payDateBlack && hasInvoice) {
+              outflowByStatus.outstanding += amt;
+            } else {
+              outflowByStatus.planned += amt;
+            }
           }
         }
 
@@ -2937,6 +2951,7 @@ export async function registerRoutes(
           weekEnd,
           projectInflows: projectInflowsSum,
           projectOutflows: projectOutflowsSum,
+          outflowByStatus,
           openingBalance,
           computedOpening,
           hasManualOverride,
@@ -2992,14 +3007,30 @@ export async function registerRoutes(
           if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
           return pd >= weekStart && pd < weekEnd;
         })
-        .map((e: any) => ({
-          projectName: e.projectName,
-          expenseCategory: e.expenseCategory,
-          expenseLineItem: e.expenseLineItem,
-          expenseInvoiceNumber: e.expenseInvoiceNumber,
-          expensePaymentDate: e.expensePaymentDate,
-          expenseActualTotal: parseFloat(e.quotedTotal || e.expenseActualTotal || '0') || 0,
-        }));
+        .map((e: any) => {
+          const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
+          const hasPayDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
+          const payDateBlack = hasPayDate && isDateConfirmedCheck(e.paymentDateConfirmed, e.paymentDateFontColor);
+          let paymentStatus: string;
+          if (payDateBlack && hasInvoice) {
+            paymentStatus = 'Out of Bank';
+          } else if (payDateBlack && !hasInvoice) {
+            paymentStatus = 'Risk';
+          } else if (hasPayDate && !payDateBlack && hasInvoice) {
+            paymentStatus = 'Outstanding';
+          } else {
+            paymentStatus = 'Planned';
+          }
+          return {
+            projectName: e.projectName,
+            expenseCategory: e.expenseCategory,
+            expenseLineItem: e.expenseLineItem,
+            expenseInvoiceNumber: e.expenseInvoiceNumber,
+            expensePaymentDate: e.expensePaymentDate,
+            expenseActualTotal: parseFloat(e.quotedTotal || e.expenseActualTotal || '0') || 0,
+            paymentStatus,
+          };
+        });
 
       const inflows = resolvedInflows
         .filter((inf: any) => {
@@ -3599,6 +3630,19 @@ export async function registerRoutes(
           cosState = 'Committed';
         }
 
+        // Cashflow payment status (4-state model)
+        const _hasInv = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
+        const _hasPayD = !!(payDate && String(payDate).trim());
+        const _payDBlack = _hasPayD && isDateConfirmedCheck(exp.paymentDateConfirmed, exp.paymentDateFontColor);
+        let paymentStatus = 'Planned';
+        if (_payDBlack && _hasInv) {
+          paymentStatus = 'Out of Bank';
+        } else if (_payDBlack && !_hasInv) {
+          paymentStatus = 'Risk';
+        } else if (_hasPayD && !_payDBlack && _hasInv) {
+          paymentStatus = 'Outstanding';
+        }
+
         if (itemMonthKey !== monthKey) continue;
 
         let realisedMonth: string | null = null;
@@ -3631,6 +3675,7 @@ export async function registerRoutes(
           isRealised,
           realisedMonth,
           cosState,
+          paymentStatus,
         });
       }
 
