@@ -8,6 +8,12 @@ import { registerAdminSupportRoutes } from "./register-admin-routes";
 import { registerIntegrationRoutes } from "./register-integration-routes";
 import { registerInfoRoutes } from "./register-info-routes";
 import { registerSupportRoutes } from "./register-support-routes";
+// Extracted route modules (registered via registerRoutes in ../routes.ts):
+// - ./working-plan-routes.ts
+// - ./operational-tasks-routes.ts
+// - ./cos-control-routes.ts
+// - ./planning-tasks-routes.ts
+// - ./dashboard-routes.ts
 
 export async function registerAllRoutes(options: {
   app: Express;
