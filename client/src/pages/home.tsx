@@ -1,14 +1,17 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { apiRequest } from "@/lib/queryClient";
 import { QueryErrorBanner } from "@/components/QueryErrorBanner";
+import { getVariant } from "@/lib/ab-test";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -23,11 +26,7 @@ import {
   Clock,
   ArrowRight,
   Flame,
-  ClipboardCheck,
-  Receipt,
-  Truck,
-  Building2,
-  FileText,
+  ChevronDown,
 } from "lucide-react";
 
 const money = (n: number | null | undefined) =>
@@ -66,148 +65,6 @@ function getRoleLabel(role: string | undefined): string {
     KEY_ACCOUNTS_MANAGER: "Key Accounts Manager",
   };
   return map[role.toUpperCase()] || "Team Member";
-}
-
-const QUOTES: Record<RoleCategory, string[]> = {
-  executive: [
-    "Leadership is not about being in charge. It's about taking care of those in your charge.",
-    "The best way to predict the future is to create it.",
-    "Vision without execution is hallucination.",
-    "Great leaders don't set out to be a leader — they set out to make a difference.",
-    "Strategy is about making choices, trade-offs. It's about deliberately choosing to be different.",
-    "The measure of intelligence is the ability to change.",
-    "Innovation distinguishes between a leader and a follower.",
-    "Energy and persistence conquer all things.",
-    "A good plan violently executed now is better than a perfect plan executed next week.",
-    "Success usually comes to those who are too busy to be looking for it.",
-    "The best leaders are those most interested in surrounding themselves with people smarter than they are.",
-    "People buy into the leader before they buy into the vision.",
-    "Renewable energy is not just the future — it's the present, and we're building it.",
-    "Efficiency is doing things right; effectiveness is doing the right things.",
-  ],
-  finance: [
-    "Cash flow is the lifeblood of every project. Guard it wisely.",
-    "Numbers tell stories — make sure yours tells the right one.",
-    "Profit is a consequence of doing things well, not the goal.",
-    "A budget tells you where your money went. A forecast tells you where it's going.",
-    "Revenue is vanity, profit is sanity, cash is reality.",
-    "Financial discipline today builds project success tomorrow.",
-    "The best investment you can make is in the quality of your data.",
-    "Good financial controls don't slow progress — they protect it.",
-    "Every rand saved on a project is a rand earned for the next one.",
-    "Transparency in finances builds trust with every stakeholder.",
-    "Cost overruns are almost always symptoms of deeper project issues.",
-    "Accurate forecasting is the bridge between ambition and reality.",
-    "In renewable energy, every financial decision is also an environmental one.",
-    "Strong margins aren't luck — they're the result of disciplined execution.",
-  ],
-  project: [
-    "A project is complete when it starts working for you, rather than you working for it.",
-    "Plans are nothing; planning is everything.",
-    "Deliver today what you promised yesterday.",
-    "The secret of getting ahead is getting started.",
-    "Progress, not perfection, is what we should be asking of ourselves.",
-    "Scope creep is the silent killer of project timelines.",
-    "Good project management is not about avoiding problems — it's about solving them fast.",
-    "Every completed milestone is proof that renewable energy works.",
-    "The critical path is only as strong as its weakest dependency.",
-    "A well-run site today is a legacy for generations.",
-    "Communication is the real work of leadership on site.",
-    "Safety first, quality always, and delivery on time.",
-    "Every solar panel installed and turbine raised is a step toward a cleaner future.",
-    "The best project managers turn constraints into creative solutions.",
-  ],
-  engineering: [
-    "Engineering is the art of directing the great sources of power in nature for the use of man.",
-    "First, solve the problem. Then, write the code.",
-    "Quality means doing it right when no one is looking.",
-    "Good engineering is the difference between a project that works and one that lasts.",
-    "Simplicity is the ultimate sophistication in engineering design.",
-    "Measure twice, cut once — and document everything.",
-    "Great engineers don't just build systems — they build confidence.",
-    "Every technical problem has an elegant solution waiting to be found.",
-    "Standards exist because someone learned the hard way.",
-    "Renewable energy engineering isn't just a career — it's a calling.",
-    "The best engineers anticipate problems before they become emergencies.",
-    "Precision in engineering is precision in outcome.",
-    "Innovation thrives where technical excellence meets practical wisdom.",
-    "A well-engineered system speaks for itself — silently, reliably.",
-  ],
-  quality: [
-    "Quality is never an accident; it is always the result of intelligent effort.",
-    "Inspection does not improve the quality, nor guarantee quality.",
-    "Quality is everyone's responsibility.",
-    "The bitterness of poor quality remains long after the sweetness of meeting the schedule.",
-    "If you don't have time to do it right, when will you have time to do it over?",
-    "Quality in a service or product is not what you put into it. It's what the customer gets out of it.",
-    "Continuous improvement is better than delayed perfection.",
-    "A culture of quality is a culture of accountability.",
-    "Non-conformances aren't failures — they're opportunities to improve.",
-    "In renewable energy, quality isn't optional — it's structural.",
-    "The cost of prevention is always less than the cost of correction.",
-    "Excellence is not a skill. It is an attitude.",
-    "Quality assurance is the bridge between design intent and built reality.",
-    "Every checklist completed correctly is a guarantee kept.",
-  ],
-  business: [
-    "Opportunities don't happen. You create them.",
-    "Your network is your net worth in project development.",
-    "Every conversation is a chance to build a partnership.",
-    "The best deals are the ones where everyone walks away feeling like they won.",
-    "Pipeline today is revenue tomorrow.",
-    "Client relationships are the foundation of every successful project.",
-    "In renewable energy, every new project is a vote for the future.",
-    "The best developers see potential where others see obstacles.",
-    "Know your client's problems better than they do.",
-    "Strong client relationships aren't built in boardrooms — they're built in follow-through.",
-    "A well-qualified lead saves months of wasted effort.",
-    "Business development is a marathon, not a sprint.",
-    "Today's prospect is tomorrow's partner.",
-    "The energy transition is the biggest business opportunity of our generation.",
-  ],
-};
-
-function getDailyQuote(category: RoleCategory): string {
-  const dayOfYear = Math.floor(
-    (Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000
-  );
-  const quotes = QUOTES[category];
-  return quotes[dayOfYear % quotes.length];
-}
-
-
-function QuickLink({
-  href,
-  icon,
-  label,
-  description,
-  color,
-}: {
-  href: string;
-  icon: React.ReactNode;
-  label: string;
-  description: string;
-  color: string;
-}) {
-  return (
-    <Link href={href}>
-      <Card
-        className="hover:border-primary/30 transition-colors cursor-pointer border-border/50 h-full group"
-        data-testid={`link-${label.toLowerCase().replace(/\s+/g, "-")}`}
-      >
-        <CardContent className="p-3.5 flex items-center gap-3">
-          <div className={`w-9 h-9 rounded-md ${color} flex items-center justify-center shrink-0`}>
-            {icon}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-foreground">{label}</p>
-            <p className="text-xs text-muted-foreground">{description}</p>
-          </div>
-          <ArrowRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
-        </CardContent>
-      </Card>
-    </Link>
-  );
 }
 
 function StatCard({
@@ -271,95 +128,50 @@ function KpiCard({
   );
 }
 
-function getQuickLinksForRole(category: RoleCategory) {
-  const all = {
-    myWork: {
-      href: "/my-work",
-      icon: <CheckCircle2 className="w-5 h-5 text-emerald-600" />,
-      label: "My Work",
-      description: "Your tasks, approvals & calendar",
-      color: "bg-emerald-100",
-    },
-    lifecycle: {
-      href: "/project-lifecycle",
-      icon: <FolderOpen className="w-5 h-5 text-blue-600" />,
-      label: "Project Lifecycle",
-      description: "Lifecycle stages & stage gates",
-      color: "bg-blue-100",
-    },
-    pm: {
-      href: "/execution-board",
-      icon: <Briefcase className="w-5 h-5 text-violet-600" />,
-      label: "Project Management",
-      description: "Execution overview & controls",
-      color: "bg-violet-100",
-    },
-    engineering: {
-      href: "/engineering",
-      icon: <Wrench className="w-5 h-5 text-orange-600" />,
-      label: "Engineering",
-      description: "Engineering overview & tasks",
-      color: "bg-orange-100",
-    },
-    finance: {
-      href: "/cashflow",
-      icon: <DollarSign className="w-5 h-5 text-teal-600" />,
-      label: "Finance",
-      description: "Cashflow, COS, revenue & GP",
-      color: "bg-teal-100",
-    },
-    quality: {
-      href: "/quality",
-      icon: <ShieldCheck className="w-5 h-5 text-indigo-600" />,
-      label: "Quality",
-      description: "Quality dashboard & checklists",
-      color: "bg-indigo-100",
-    },
-    procurement: {
-      href: "/procurement",
-      icon: <Truck className="w-5 h-5 text-cyan-600" />,
-      label: "Procurement",
-      description: "Procurement pipeline & POs",
-      color: "bg-cyan-100",
-    },
-    projects: {
-      href: "/projects",
-      icon: <Building2 className="w-5 h-5 text-slate-600" />,
-      label: "All Projects",
-      description: "View full project portfolio",
-      color: "bg-slate-100",
-    },
-    approvals: {
-      href: "/approvals",
-      icon: <ClipboardCheck className="w-5 h-5 text-violet-600" />,
-      label: "Approvals",
-      description: "Pending approvals & decisions",
-      color: "bg-violet-100",
-    },
-    invoices: {
-      href: "/invoice-capture",
-      icon: <Receipt className="w-5 h-5 text-pink-600" />,
-      label: "Invoice Capture",
-      description: "Record & track invoices",
-      color: "bg-pink-100",
-    },
-  };
-
+function getCompactQuickLinks(category: RoleCategory): { href: string; label: string; icon: React.ReactNode }[] {
   switch (category) {
     case "executive":
-      return [all.myWork, all.projects, all.pm, all.finance, all.quality, all.engineering];
+      return [
+        { href: "/execution-board", label: "Execution Dashboard", icon: <Briefcase className="w-4 h-4" /> },
+        { href: "/cashflow", label: "Finance", icon: <DollarSign className="w-4 h-4" /> },
+        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
+      ];
     case "finance":
-      return [all.myWork, all.finance, all.invoices, all.procurement, all.projects, all.approvals];
+      return [
+        { href: "/cashflow", label: "Cashflow", icon: <DollarSign className="w-4 h-4" /> },
+        { href: "/cos", label: "Cost of Sales", icon: <TrendingUp className="w-4 h-4" /> },
+        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
+      ];
     case "project":
-      return [all.myWork, all.pm, all.procurement, all.engineering, all.quality, all.finance];
+      return [
+        { href: "/execution-board", label: "Execution Dashboard", icon: <Briefcase className="w-4 h-4" /> },
+        { href: "/engineering", label: "Engineering", icon: <Wrench className="w-4 h-4" /> },
+        { href: "/quality", label: "Quality", icon: <ShieldCheck className="w-4 h-4" /> },
+      ];
     case "engineering":
-      return [all.myWork, all.engineering, all.quality, all.pm, all.projects, all.procurement];
+      return [
+        { href: "/engineering", label: "Engineering Overview", icon: <Wrench className="w-4 h-4" /> },
+        { href: "/engineering/tasks", label: "Tasks", icon: <CheckCircle2 className="w-4 h-4" /> },
+        { href: "/quality", label: "Quality", icon: <ShieldCheck className="w-4 h-4" /> },
+      ];
     case "quality":
-      return [all.myWork, all.quality, all.engineering, all.pm, all.projects, all.approvals];
+      return [
+        { href: "/quality", label: "Quality Workspace", icon: <ShieldCheck className="w-4 h-4" /> },
+        { href: "/engineering", label: "Engineering", icon: <Wrench className="w-4 h-4" /> },
+        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
+      ];
     case "business":
-      return [all.myWork, all.lifecycle, all.projects, all.pm, all.finance, all.procurement];
+      return [
+        { href: "/project-lifecycle", label: "Project Lifecycle", icon: <FolderOpen className="w-4 h-4" /> },
+        { href: "/pd", label: "PD Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
+        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
+      ];
     default:
-      return [all.myWork, all.projects, all.pm, all.finance, all.engineering, all.quality];
+      return [
+        { href: "/execution-board", label: "Execution Dashboard", icon: <Briefcase className="w-4 h-4" /> },
+        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
+        { href: "/cashflow", label: "Finance", icon: <DollarSign className="w-4 h-4" /> },
+      ];
   }
 }
 
@@ -461,9 +273,8 @@ function getRoleKpis(
 
 export default function HomePage() {
   const { user } = useAuth();
+  const [prioritiesExpanded, setPrioritiesExpanded] = useState(false);
 
-  // Single source of truth: use execution-dashboard for ALL KPIs and stats
-  // This ensures Home page numbers match the Execution Dashboard exactly
   const { data: dashData, isLoading: dashLoading, isError: dashIsError, error: dashError } = useQuery<any>({
     queryKey: ["/api/lifecycle-board/execution-dashboard"],
     queryFn: async () => {
@@ -493,12 +304,10 @@ export default function HomePage() {
   const roleCategory = getRoleCategory(userRole);
   const roleLabel = getRoleLabel(userRole);
 
-  // Single source of truth: derive ALL stats from the execution-dashboard endpoint
-  // This ensures Home page KPIs match the Execution Dashboard exactly
   const stats = useMemo(() => {
     const projects: any[] = dashData?.projects || [];
     const totalProjects = projects.length;
-    const activeProjects = totalProjects; // all projects from execution-dashboard are already active
+    const activeProjects = totalProjects;
 
     const constructionPhases = new Set(["construction", "qa"]);
     const companyPhases = new Set(["compliance handover", "handover", "financial close", "commercial close out", "dlp"]);
@@ -534,9 +343,6 @@ export default function HomePage() {
     (user as any)?.name ||
     (user?.username ? user.username.charAt(0).toUpperCase() + user.username.slice(1) : "User");
 
-  const dailyQuote = useMemo(() => getDailyQuote(roleCategory), [roleCategory]);
-  const quickLinks = useMemo(() => getQuickLinksForRole(roleCategory), [roleCategory]);
-
   const myPendingActions = useMemo(() => {
     if (!myWorkData) return 0;
     const items: any[] = myWorkData.items || myWorkData.tasks || [];
@@ -547,6 +353,16 @@ export default function HomePage() {
         String(t.status || "").toLowerCase()
       );
       return isOverdue && isOpen;
+    }).length;
+  }, [myWorkData]);
+
+  const myOpenTasks = useMemo(() => {
+    if (!myWorkData) return 0;
+    const items: any[] = myWorkData.items || myWorkData.tasks || [];
+    return items.filter((t: any) => {
+      return !["complete", "done", "closed", "cancelled"].includes(
+        String(t.status || "").toLowerCase()
+      );
     }).length;
   }, [myWorkData]);
 
@@ -561,6 +377,13 @@ export default function HomePage() {
     return items;
   }, [stats, kpis, myPendingActions]);
 
+  const totalAttention = attentionItems.reduce((sum, item) => sum + item.value, 0);
+  const quickLinks = useMemo(() => getCompactQuickLinks(roleCategory), [roleCategory]);
+  const layoutVariant = useMemo(() => getVariant("home_layout_2026", ["compact", "expanded"], (user as any)?.id), [user]);
+
+  const visiblePriorities = companyPriorities?.slice(0, 3) || [];
+  const hiddenPriorities = companyPriorities?.slice(3) || [];
+
   return (
     <PageShell data-testid="home-page">
       {(dashIsError || prioritiesIsError || myWorkIsError) && (
@@ -570,80 +393,148 @@ export default function HomePage() {
           {myWorkIsError && <QueryErrorBanner error={myWorkError} />}
         </div>
       )}
-      <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
-              {greeting}, {displayName}
-            </h1>
-            <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
-          </div>
-          <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground/60 italic max-w-xs text-right" data-testid="text-daily-quote">
-            <p className="leading-relaxed">{dailyQuote}</p>
-          </div>
+
+      {/* Greeting Strip */}
+      <div className="mb-5">
+        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
+          {greeting}, {displayName}
+        </h1>
+        <div className="flex items-center gap-3 mt-0.5">
+          <p className="text-sm text-muted-foreground" data-testid="text-role-badge">{roleLabel}</p>
+          {!isLoading && totalAttention > 0 && (
+            <span className="text-xs text-amber-600 font-medium">{totalAttention} item{totalAttention !== 1 ? "s" : ""} need attention</span>
+          )}
         </div>
       </div>
 
-      {/* Company Priorities — Enriched Cards */}
-      {(companyPriorities && companyPriorities.length > 0) && (
-        <Card className="border-border/60 mb-6" data-testid="card-company-priorities">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2.5">
-                <Flame className="w-4 h-4 text-primary" />
-                <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
-                <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
-              </div>
-              <Link href="/priorities">
-                <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
-              </Link>
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">Showing {Math.min(companyPriorities.length, 6)} priorities for your role</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {companyPriorities.slice(0, 6).map((priority: any, i: number) => {
-                const healthDot = priority.effectiveHealth === "critical" ? "bg-red-500" : priority.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-emerald-500";
-                const healthBorder = priority.effectiveHealth === "critical" ? "border-l-red-500" : priority.effectiveHealth === "at_risk" ? "border-l-amber-500" : "border-l-emerald-500";
-                const sevBadge = priority.severity === "critical" ? "bg-red-100 text-red-700" : priority.severity === "important" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-600";
-                const sevLabel = priority.severity === "critical" ? "Critical" : priority.severity === "important" ? "High" : "Normal";
-                const days = priority.dueDate ? Math.ceil((new Date(priority.dueDate).getTime() - Date.now()) / 86400000) : null;
+      {/* Attention Badges — promoted to top */}
+      {!isLoading && (
+        <AttentionBadges items={attentionItems} threshold={0} />
+      )}
 
-                return (
-                  <Card key={priority.id || i} className={`border-l-4 ${healthBorder} hover:shadow-sm transition-all`}>
-                    <CardContent className="p-3" data-testid={`text-priority-${i}`}>
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className={`w-2 h-2 rounded-full ${healthDot} shrink-0`} />
-                        <Link href={`/priorities/${priority.id}`}>
-                          <span className="text-sm text-foreground font-medium leading-snug truncate hover:text-primary hover:underline cursor-pointer">{priority.title}</span>
-                        </Link>
-                        <Badge variant="secondary" className={`text-[10px] ml-auto shrink-0 ${sevBadge}`}>{sevLabel}</Badge>
+      {/* KPIs + Next Steps — A/B: compact (two-column) vs expanded (full-width stacked) */}
+      {layoutVariant === "expanded" ? (
+        <>
+          <div className="mb-6">
+            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+              Your Metrics
+            </h2>
+            {getRoleKpis(roleCategory, kpis, stats, isLoading)}
+          </div>
+          <div className="mb-6 flex items-center gap-3">
+            <Link href="/my-work">
+              <Button data-testid="link-my-work">
+                <CheckCircle2 className="w-4 h-4 mr-2" />
+                Go to My Work
+                {myOpenTasks > 0 && <Badge variant="secondary" className="ml-2 text-xs">{myOpenTasks} open</Badge>}
+              </Button>
+            </Link>
+            {quickLinks.map((link) => (
+              <Link key={link.href} href={link.href}>
+                <Button variant="outline" size="sm" className="gap-1.5">
+                  {link.icon}
+                  {link.label}
+                </Button>
+              </Link>
+            ))}
+          </div>
+        </>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-6">
+          {/* Left: KPIs (wider) */}
+          <div className="lg:col-span-3">
+            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+              Your Metrics
+            </h2>
+            {getRoleKpis(roleCategory, kpis, stats, isLoading)}
+          </div>
+
+          {/* Right: Next Steps */}
+          <div className="lg:col-span-2">
+            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+              Next Steps
+            </h2>
+            <Card className="border-border/50">
+              <CardContent className="p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
+                    <p className="text-xs text-muted-foreground">open tasks</p>
+                  </div>
+                  {myPendingActions > 0 && (
+                    <div className="text-right">
+                      <p className="text-2xl font-semibold font-mono text-rose-600" data-testid="text-overdue-count">{myPendingActions}</p>
+                      <p className="text-xs text-rose-600">overdue</p>
+                    </div>
+                  )}
+                </div>
+                <Link href="/my-work">
+                  <Button className="w-full" data-testid="link-my-work">
+                    <CheckCircle2 className="w-4 h-4 mr-2" />
+                    Go to My Work
+                    <ArrowRight className="w-4 h-4 ml-auto" />
+                  </Button>
+                </Link>
+                <div className="border-t border-border/50 pt-3 space-y-1.5">
+                  {quickLinks.map((link) => (
+                    <Link key={link.href} href={link.href}>
+                      <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors cursor-pointer group">
+                        {link.icon}
+                        <span>{link.label}</span>
+                        <ArrowRight className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-60 transition-opacity" />
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1.5">
-                        {priority.owner && <span>{priority.owner.name}</span>}
-                        {priority.assignedTo && !priority.owner && <span>{priority.assignedTo}</span>}
-                        {days != null && (
-                          <span className={days <= 7 ? "text-red-600 font-medium" : days <= 14 ? "text-amber-600" : ""}>
-                            {days < 0 ? `${Math.abs(days)}d overdue` : `${days}d`}
-                          </span>
-                        )}
-                        {priority.blockerCount > 0 && <span className="text-red-600 font-medium">{priority.blockerCount} blocker{priority.blockerCount > 1 ? "s" : ""}</span>}
-                      </div>
-                      <div className="h-1 bg-muted rounded-full overflow-hidden mb-1">
-                        <div className={`h-full rounded-full ${priority.effectiveHealth === "critical" ? "bg-red-500" : priority.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(priority.effectiveProgress || 0, 100)}%` }} />
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
-                        <span>{priority.effectiveProgress || 0}%{!priority.hasProjects && " (manual)"}</span>
-                        <span>{priority.hasProjects ? `${priority.projectCount} project${priority.projectCount !== 1 ? "s" : ""}` : "Standalone"}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+                    </Link>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      {/* Company Priorities — Collapsible */}
+      {(companyPriorities && companyPriorities.length > 0) && (
+        <Collapsible open={prioritiesExpanded} onOpenChange={setPrioritiesExpanded}>
+          <Card className="border-border/60 mb-6" data-testid="card-company-priorities">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <Flame className="w-4 h-4 text-primary" />
+                  <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
+                  <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
+                </div>
+                <Link href="/priorities">
+                  <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
+                </Link>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {visiblePriorities.map((priority: any, i: number) => (
+                  <PriorityCard key={priority.id || i} priority={priority} index={i} />
+                ))}
+              </div>
+              {hiddenPriorities.length > 0 && (
+                <>
+                  <CollapsibleContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                      {hiddenPriorities.map((priority: any, i: number) => (
+                        <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                  <CollapsibleTrigger asChild>
+                    <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${prioritiesExpanded ? "rotate-180" : ""}`} />
+                      {prioritiesExpanded ? "Show less" : `Show ${hiddenPriorities.length} more`}
+                    </button>
+                  </CollapsibleTrigger>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </Collapsible>
       )}
       {!companyPriorities && prioritiesLoading && (
-        <div>
+        <div className="mb-6">
           <Skeleton className="h-5 w-48 mb-2.5" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Skeleton className="h-24 w-full rounded-lg" />
@@ -658,61 +549,45 @@ export default function HomePage() {
           </CardContent>
         </Card>
       )}
-
-      {!isLoading && (
-        <AttentionBadges items={attentionItems} threshold={5} />
-      )}
-
-      <div className="mb-6">
-        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-          Key Metrics
-        </h2>
-        {getRoleKpis(roleCategory, kpis, stats, isLoading)}
-      </div>
-
-      {/* Monthly Reporting — COO only */}
-      {userRole?.toUpperCase() === "COO_ADMIN" && (
-        <div className="mb-6">
-          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-            Monthly Reporting
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            <QuickLink
-              href="/reports/pm/monthly"
-              icon={<FileText className="w-5 h-5 text-blue-600" />}
-              label="PM Monthly Report"
-              description="Project management monthly overview"
-              color="bg-blue-100"
-            />
-            <QuickLink
-              href="/reports/engineering/monthly"
-              icon={<FileText className="w-5 h-5 text-orange-600" />}
-              label="Engineering Monthly Report"
-              description="Engineering progress & metrics"
-              color="bg-orange-100"
-            />
-            <QuickLink
-              href="/reports/programme"
-              icon={<FileText className="w-5 h-5 text-violet-600" />}
-              label="Programme Reports"
-              description="Cross-programme reporting & analysis"
-              color="bg-violet-100"
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Quick Access */}
-      <div>
-        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-          Quick Access
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {quickLinks.map((link) => (
-            <QuickLink key={link.href} {...link} />
-          ))}
-        </div>
-      </div>
     </PageShell>
+  );
+}
+
+function PriorityCard({ priority, index }: { priority: any; index: number }) {
+  const healthDot = priority.effectiveHealth === "critical" ? "bg-red-500" : priority.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-emerald-500";
+  const healthBorder = priority.effectiveHealth === "critical" ? "border-l-red-500" : priority.effectiveHealth === "at_risk" ? "border-l-amber-500" : "border-l-emerald-500";
+  const sevBadge = priority.severity === "critical" ? "bg-red-100 text-red-700" : priority.severity === "important" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-600";
+  const sevLabel = priority.severity === "critical" ? "Critical" : priority.severity === "important" ? "High" : "Normal";
+  const days = priority.dueDate ? Math.ceil((new Date(priority.dueDate).getTime() - Date.now()) / 86400000) : null;
+
+  return (
+    <Card className={`border-l-4 ${healthBorder} hover:shadow-sm transition-all`}>
+      <CardContent className="p-3" data-testid={`text-priority-${index}`}>
+        <div className="flex items-center gap-2 mb-1.5">
+          <span className={`w-2 h-2 rounded-full ${healthDot} shrink-0`} />
+          <Link href={`/priorities/${priority.id}`}>
+            <span className="text-sm text-foreground font-medium leading-snug truncate hover:text-primary hover:underline cursor-pointer">{priority.title}</span>
+          </Link>
+          <Badge variant="secondary" className={`text-[10px] ml-auto shrink-0 ${sevBadge}`}>{sevLabel}</Badge>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1.5">
+          {priority.owner && <span>{priority.owner.name}</span>}
+          {priority.assignedTo && !priority.owner && <span>{priority.assignedTo}</span>}
+          {days != null && (
+            <span className={days <= 7 ? "text-red-600 font-medium" : days <= 14 ? "text-amber-600" : ""}>
+              {days < 0 ? `${Math.abs(days)}d overdue` : `${days}d`}
+            </span>
+          )}
+          {priority.blockerCount > 0 && <span className="text-red-600 font-medium">{priority.blockerCount} blocker{priority.blockerCount > 1 ? "s" : ""}</span>}
+        </div>
+        <div className="h-1 bg-muted rounded-full overflow-hidden mb-1">
+          <div className={`h-full rounded-full ${priority.effectiveHealth === "critical" ? "bg-red-500" : priority.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(priority.effectiveProgress || 0, 100)}%` }} />
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+          <span>{priority.effectiveProgress || 0}%{!priority.hasProjects && " (manual)"}</span>
+          <span>{priority.hasProjects ? `${priority.projectCount} project${priority.projectCount !== 1 ? "s" : ""}` : "Standalone"}</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
