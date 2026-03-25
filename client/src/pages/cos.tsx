@@ -660,7 +660,7 @@ export default function CosTracker() {
             <div>
               <p className="font-semibold text-amber-900 text-sm">COS Realisation Tracker</p>
               <p className="text-sm text-amber-700/90 mt-0.5 leading-relaxed">
-                Planned = all line items (invoice captured or not). Committed = invoice captured but invoice date not confirmed black. Realised = invoice captured + invoice date <strong className="text-foreground">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
+                Planned = all line items (invoice captured or not). Committed = invoice captured, but the invoice date is not yet confirmed in black font. Realised = invoice captured + invoice date shown in <strong className="text-foreground">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
               </p>
             </div>
           </CardContent>
