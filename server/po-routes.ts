@@ -240,10 +240,10 @@ export function registerPoRoutes(app: Express) {
       const poId = insertResult.rows[0]?.id;
 
       logAuditFromReq(req, {
-        entity: "purchase_order",
-        entityId: poId,
+        entityType: "purchase_order",
+        entityId: String(poId),
         action: "create",
-        details: { poRef, projectName, supplierName, total },
+        changesJson: { poRef, projectName, supplierName, total },
       });
 
       res.json({
@@ -307,10 +307,10 @@ export function registerPoRoutes(app: Express) {
       }
 
       logAuditFromReq(req, {
-        entity: "purchase_order",
-        entityId: poIdNum,
+        entityType: "purchase_order",
+        entityId: String(poIdNum),
         action: "update_status",
-        details: { status },
+        changesJson: { status },
       });
 
       res.json({ success: true });
