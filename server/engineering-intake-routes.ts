@@ -53,7 +53,7 @@ export function registerEngineeringIntakeRoutes(app: Express) {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[EngIntake] Fetch items error:", err);
-      res.status(500).json({ error: err.message || "Failed to fetch intake items", code: "CONNECTOR_ERROR" });
+      res.status(500).json({ error: errMsg || "Failed to fetch intake items", code: "CONNECTOR_ERROR" });
     }
   });
 
@@ -78,7 +78,7 @@ export function registerEngineeringIntakeRoutes(app: Express) {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[EngIntake] Get item error:", err);
-      res.status(500).json({ error: err.message || "Failed to get intake item", code: "CONNECTOR_ERROR" });
+      res.status(500).json({ error: errMsg || "Failed to get intake item", code: "CONNECTOR_ERROR" });
     }
   });
 
@@ -100,7 +100,7 @@ export function registerEngineeringIntakeRoutes(app: Express) {
 
       for (const item of items) {
         try {
-          const fields = item.fields as Record<string, any>;
+          const fields = item.fields as Record<string, unknown>;
           const clientName = fields.Client || fields.Title || "Unknown";
           const clientKey = normalizeClientKey(clientName);
           const spItemId = item.id;
@@ -172,8 +172,9 @@ export function registerEngineeringIntakeRoutes(app: Express) {
               updatedRequests++;
             }
           }
-        } catch (itemErr: any) {
-          errors.push(`Item ${item.id}: ${itemErr.message}`);
+        } catch (itemErr: unknown) {
+          const itemErrMsg = itemErr instanceof Error ? itemErr.message : String(itemErr);
+          errors.push(`Item ${item.id}: ${itemErrMsg}`);
         }
       }
 
@@ -206,7 +207,7 @@ export function registerEngineeringIntakeRoutes(app: Express) {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[EngIntake] Pull error:", err);
-      res.status(500).json({ error: err.message || "Pull failed", code: "SYNC_ERROR" });
+      res.status(500).json({ error: errMsg || "Pull failed", code: "SYNC_ERROR" });
     }
   });
 
@@ -247,8 +248,9 @@ export function registerEngineeringIntakeRoutes(app: Express) {
           }).where(eq(intakeRequests.id, req.id));
 
           pushed++;
-        } catch (itemErr: any) {
-          errors.push(`Request ${req.id}: ${itemErr.message}`);
+        } catch (itemErr: unknown) {
+          const itemErrMsg = itemErr instanceof Error ? itemErr.message : String(itemErr);
+          errors.push(`Request ${req.id}: ${itemErrMsg}`);
         }
       }
 
@@ -277,7 +279,7 @@ export function registerEngineeringIntakeRoutes(app: Express) {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       console.error("[EngIntake] Push error:", err);
-      res.status(500).json({ error: err.message || "Push failed", code: "SYNC_ERROR" });
+      res.status(500).json({ error: errMsg || "Push failed", code: "SYNC_ERROR" });
     }
   });
 

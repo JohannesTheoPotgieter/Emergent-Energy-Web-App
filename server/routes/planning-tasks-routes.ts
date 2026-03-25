@@ -1407,4 +1407,6 @@ export function registerPlanningTasksRoutes(app: Express) {
       res.json(await resolveKeyDates(projectId, projectName));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
 }
