@@ -111,15 +111,11 @@ export const DEPARTMENTS = [
 ];
 
 export const NAV_SECTIONS = [
-  { key: "COCKPIT", label: "Home", description: "Home, My Work" },
-  { key: "PROJECTS", label: "Project Lifecycle", description: "Overview, Lifecycle Board, Stage Gates, Clients" },
-  { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD Dashboard, PD Tickets" },
-  { key: "PROJECT_MANAGEMENT", label: "Project Management", description: "Execution Dashboard, Project List, Deliverables, PM Dashboard, PM On-The-Go" },
-  { key: "ENGINEERING", label: "Engineering", description: "Engineering Overview, Requests & Tasks" },
-  { key: "GOVERNANCE", label: "Quality", description: "Quality Workspace" },
-  { key: "MONEY", label: "Finance", description: "Cashflow, Cost of Sales, Revenue, Gross Profit, Procurement" },
-  { key: "INFORMATION", label: "Knowledge", description: "Lifecycle & SOP, Leaderboard, Training, Feedback" },
-  { key: "COLLABORATION", label: "Collaboration", description: "Project Chat & Meetings" },
+  { key: "HOME", label: "Home", description: "Home dashboard" },
+  { key: "MY_WORK", label: "My Work", description: "My Tasks, Approvals, Inbox, Calendar, Meetings" },
+  { key: "PROJECTS", label: "Projects", description: "Project List, Lifecycle, Engineering, Quality, PD, Construction, Handover" },
+  { key: "FINANCE", label: "Finance", description: "Cashflow, Costs, Revenue, GP Tracker, Procurement" },
+  { key: "REPORTS", label: "Reports", description: "Priorities, PM Reports, Eng Reports, SOPs, Training, Feedback" },
   { key: "ADMIN", label: "Admin", description: "Control Center, Smart Import, Roles & Permissions, Audit Log" },
 ];
 

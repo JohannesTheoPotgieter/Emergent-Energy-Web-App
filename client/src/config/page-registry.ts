@@ -168,28 +168,30 @@ export function getPermissionEntityForPath(pathname: string): PermissionEntity |
  * configured on each role in Admin → Roles & Permissions → Navigation.
  */
 const NAV_GROUP_TO_SECTION: Record<string, string> = {
-  MY_WORK: "COCKPIT",
-  EXCO: "COCKPIT",
+  MY_WORK: "MY_WORK",
+  EXCO: "MY_WORK",
   PROJECTS: "PROJECTS",
-  PROJECT_DEVELOPMENT: "PROJECT_DEVELOPMENT",
-  PROJECT_MANAGEMENT: "PROJECT_MANAGEMENT",
-  ENGINEERING: "ENGINEERING",
-  QUALITY: "GOVERNANCE",
-  FINANCE: "MONEY",
-  KNOWLEDGE: "INFORMATION",
-  FEEDBACK: "INFORMATION",
-  PORTFOLIO: "PROJECT_MANAGEMENT",
+  PROJECT_DEVELOPMENT: "PROJECTS",
+  PROJECT_MANAGEMENT: "PROJECTS",
+  ENGINEERING: "PROJECTS",
+  QUALITY: "PROJECTS",
+  FINANCE: "FINANCE",
+  KNOWLEDGE: "REPORTS",
+  FEEDBACK: "REPORTS",
+  PORTFOLIO: "PROJECTS",
+  REPORTS: "REPORTS",
   SYSTEM: "ADMIN",
-  // REPORTS is deliberately unmapped — controlled by entity permissions only,
-  // so removing PROJECT_MANAGEMENT from a role doesn't hide reports.
 };
 
 // Backward compatibility for older tests/modules.
 export const PAGES = PAGE_REGISTRY;
 
 export function getAppSectionForPath(pathname: string): string | undefined {
-  if (pathname === "/" || pathname === "/my-work" || pathname.startsWith("/my-work/")) {
-    return "COCKPIT";
+  if (pathname === "/") {
+    return "HOME";
+  }
+  if (pathname === "/my-work" || pathname.startsWith("/my-work/")) {
+    return "MY_WORK";
   }
   const sorted = [...PAGE_REGISTRY]
     .filter((page) => !!page.navGroup && !page.path.includes(":"))
