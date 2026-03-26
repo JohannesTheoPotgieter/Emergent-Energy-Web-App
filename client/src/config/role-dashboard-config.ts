@@ -21,6 +21,8 @@ export interface RoleDashboardConfig {
   kpis: RoleKpi[];
   attentionPriority: string[];
   quickActions: RoleQuickAction[];
+  cockpitPath: string;
+  cockpitLabel: string;
 }
 
 const COO_CEO_CONFIG: RoleDashboardConfig = {
@@ -36,6 +38,8 @@ const COO_CEO_CONFIG: RoleDashboardConfig = {
     { label: "Portfolio Overview", path: "/execution-board", iconKey: "LayoutDashboard" },
     { label: "GP Tracker", path: "/gp-tracker", iconKey: "Activity" },
   ],
+  cockpitPath: "/execution-board",
+  cockpitLabel: "Portfolio Overview",
 };
 
 const PROGRAM_MANAGER_CONFIG: RoleDashboardConfig = {
@@ -51,6 +55,8 @@ const PROGRAM_MANAGER_CONFIG: RoleDashboardConfig = {
     { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Programme Reports", path: "/reports/programme", iconKey: "FileText" },
   ],
+  cockpitPath: "/execution-board",
+  cockpitLabel: "Portfolio Overview",
 };
 
 const PM_CONFIG: RoleDashboardConfig = {
@@ -66,6 +72,8 @@ const PM_CONFIG: RoleDashboardConfig = {
     { label: "Approvals", path: "/pm/approvals", iconKey: "ClipboardCheck" },
     { label: "Deliverables", path: "/pm/deliverables", iconKey: "Package" },
   ],
+  cockpitPath: "/execution-board",
+  cockpitLabel: "Portfolio Overview",
 };
 
 const ENGINEER_CONFIG: RoleDashboardConfig = {
@@ -81,6 +89,8 @@ const ENGINEER_CONFIG: RoleDashboardConfig = {
     { label: "Standup", path: "/engineering/standup", iconKey: "Users" },
     { label: "My Tasks", path: "/my-work", iconKey: "ListChecks" },
   ],
+  cockpitPath: "/engineering",
+  cockpitLabel: "Engineering Overview",
 };
 
 const PD_CONFIG: RoleDashboardConfig = {
@@ -96,6 +106,8 @@ const PD_CONFIG: RoleDashboardConfig = {
     { label: "Create Ticket", path: "/pd/tickets/create", iconKey: "ClipboardList" },
     { label: "Clients", path: "/clients", iconKey: "Users" },
   ],
+  cockpitPath: "/pd",
+  cockpitLabel: "PD Dashboard",
 };
 
 const FINANCE_CONFIG: RoleDashboardConfig = {
@@ -111,6 +123,8 @@ const FINANCE_CONFIG: RoleDashboardConfig = {
     { label: "Revenue", path: "/revenue-tracker", iconKey: "TrendingUp" },
     { label: "Costs (COS)", path: "/cos", iconKey: "TrendingUp" },
   ],
+  cockpitPath: "/cashflow",
+  cockpitLabel: "Cashflow",
 };
 
 const QUALITY_CONFIG: RoleDashboardConfig = {
@@ -126,6 +140,8 @@ const QUALITY_CONFIG: RoleDashboardConfig = {
     { label: "NCR List", path: "/quality/ncrs", iconKey: "ListTodo" },
     { label: "My Tasks", path: "/my-work", iconKey: "ListChecks" },
   ],
+  cockpitPath: "/quality",
+  cockpitLabel: "Quality Dashboard",
 };
 
 const CONSTRUCTION_CONFIG: RoleDashboardConfig = {
@@ -141,6 +157,8 @@ const CONSTRUCTION_CONFIG: RoleDashboardConfig = {
     { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "My Tasks", path: "/my-work", iconKey: "ListChecks" },
   ],
+  cockpitPath: "/execution-board",
+  cockpitLabel: "Portfolio Overview",
 };
 
 const DEFAULT_CONFIG: RoleDashboardConfig = {
@@ -155,6 +173,8 @@ const DEFAULT_CONFIG: RoleDashboardConfig = {
     { label: "My Tasks", path: "/my-work", iconKey: "ListChecks" },
     { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
   ],
+  cockpitPath: "/execution-board",
+  cockpitLabel: "Portfolio Overview",
 };
 
 const ROLE_CONFIG_MAP: Partial<Record<CompanyRole, RoleDashboardConfig>> = {
