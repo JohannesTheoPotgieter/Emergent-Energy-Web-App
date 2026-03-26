@@ -154,8 +154,22 @@ export function RoleDetailPanel({
         <CardContent className="p-4">
           {activeTab === "overview" && <RoleOverviewCard role={{ ...role, ...draft } as RoleSummary} users={roleUsers} />}
           {activeTab === "navigation" && <RoleNavAccess role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />}
-          {activeTab === "permissions" && <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />}
-          {activeTab === "authority" && <RoleAuthorityConfig role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />}
+          {activeTab === "permissions" && (
+            <div className="space-y-3">
+              <div className="rounded-md border border-blue-100 bg-blue-50/50 px-3 py-2">
+                <p className="text-xs text-blue-700"><span className="font-semibold">Permissions</span> control <span className="font-semibold">what</span> this role can do — grant or deny specific actions (view, create, edit, approve, override, delete) on each entity.</p>
+              </div>
+              <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
+            </div>
+          )}
+          {activeTab === "authority" && (
+            <div className="space-y-3">
+              <div className="rounded-md border border-violet-100 bg-violet-50/50 px-3 py-2">
+                <p className="text-xs text-violet-700"><span className="font-semibold">Authority</span> controls <span className="font-semibold">how far</span> permissions reach — e.g., can this role manage only their own items, their department, assigned projects, or everything company-wide?</p>
+              </div>
+              <RoleAuthorityConfig role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
+            </div>
+          )}
           {activeTab === "users" && (
             <div className="space-y-3">
               <h4 className="text-sm font-semibold text-gray-800">Users with role: {role.label}</h4>

@@ -47,14 +47,22 @@ function requireAdmin(req: Request, res: Response, next: NextFunction) {
   res.status(403).json({ error: "Admin access required" });
 }
 
-const VALID_SECTIONS = new Set(["COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "COLLABORATION", "INFORMATION", "ADMIN"]);
-const SECTION_MIGRATION: Record<string, string> = {
-  EXCO: "COCKPIT",
-  MY_TOOL: "COCKPIT",
-  OPERATIONS: "PROJECTS",
-  FINANCE: "MONEY",
-  QUALITY: "GOVERNANCE",
-  FEEDBACK: "INFORMATION",
+const VALID_SECTIONS = new Set(["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"]);
+const SECTION_MIGRATION: Record<string, string[]> = {
+  COCKPIT: ["HOME", "MY_WORK"],
+  EXCO: ["HOME", "MY_WORK"],
+  MY_TOOL: ["HOME", "MY_WORK"],
+  OPERATIONS: ["PROJECTS"],
+  PROJECT_DEVELOPMENT: ["PROJECTS"],
+  PROJECT_MANAGEMENT: ["PROJECTS"],
+  ENGINEERING: ["PROJECTS"],
+  GOVERNANCE: ["PROJECTS"],
+  COLLABORATION: ["PROJECTS"],
+  QUALITY: ["PROJECTS"],
+  MONEY: ["FINANCE"],
+  FINANCE: ["FINANCE"],
+  INFORMATION: ["REPORTS"],
+  FEEDBACK: ["REPORTS"],
 };
 
 
@@ -173,7 +181,7 @@ async function ensureRolePermissionsSeeded() {
 }
 
 const SECTION_EXPANSION: Record<string, string[]> = {
-  DELIVERY: ["PROJECT_MANAGEMENT", "ENGINEERING"],
+  DELIVERY: ["PROJECTS"],
 };
 
 function migrateSections(sections: string[]): string[] {
@@ -184,7 +192,7 @@ function migrateSections(sections: string[]): string[] {
     } else if (SECTION_EXPANSION[s]) {
       for (const expanded of SECTION_EXPANSION[s]) migrated.add(expanded);
     } else if (SECTION_MIGRATION[s]) {
-      migrated.add(SECTION_MIGRATION[s]);
+      for (const mapped of SECTION_MIGRATION[s]) migrated.add(mapped);
     }
   }
   return [...migrated];
@@ -1270,7 +1278,7 @@ export function registerRoleManagementRoutes(app: Express) {
       for (const roleRec of roleRecords) {
         const sections = (roleRec as any).sections || [];
         navComparison[roleRec.role] = {};
-        for (const sec of ["COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "COLLABORATION", "INFORMATION", "ADMIN"]) {
+        for (const sec of ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"]) {
           navComparison[roleRec.role][sec] = sections.includes(sec);
         }
       }
