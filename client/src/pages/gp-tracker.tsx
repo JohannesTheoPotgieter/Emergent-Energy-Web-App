@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useQuery } from "@tanstack/react-query";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
@@ -224,7 +225,7 @@ export default function GpTrackerPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto page-enter" data-testid="gp-tracker-page">
+    <FinanceShell currentPage="gp-tracker"><div className="p-6 space-y-6 max-w-[1600px] mx-auto" data-testid="gp-tracker-page">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">GP Tracker</h1>
@@ -440,6 +441,6 @@ export default function GpTrackerPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </div></FinanceShell>
   );
 }

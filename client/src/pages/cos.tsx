@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback } from "react";
+import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
@@ -676,7 +677,7 @@ export default function CosTracker() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
+    <FinanceShell currentPage="cos"><div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
       <div className="bg-card border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-[1800px] mx-auto">
           <div>
@@ -966,6 +967,6 @@ export default function CosTracker() {
           onClose={() => setDrawerMonth(null)}
         />
       )}
-    </div>
+    </div></FinanceShell>
   );
 }
