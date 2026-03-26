@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { PageSkeleton } from "@/components/ui/page-states";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
   BarChart3, TrendingUp, DollarSign, PieChart, AlertTriangle,
   Users, Activity, Zap, Download,

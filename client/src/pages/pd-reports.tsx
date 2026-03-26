@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +40,7 @@ export default function PdReportsPage() {
   const [, navigate] = useLocation();
   const { allowed: canView, loading: permLoading } = usePermission('pd_dashboard', 'view');
 
-  const { data: report, isLoading } = useQuery<any>({
+  const { data: report, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/pd/reports"],
     queryFn: () => pdFetch("/api/pd/reports"),
   });
@@ -87,13 +88,8 @@ export default function PdReportsPage() {
     navigator.clipboard.writeText(lines.join("\n"));
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PD Reports" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   if (!report) return null;
 
