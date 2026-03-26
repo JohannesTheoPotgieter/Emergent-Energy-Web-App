@@ -717,6 +717,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
     const taskCountsByProject = new Map<string, Record<string, number>>();
     for (const task of allOpTasks) {
       const rawName = task.projectName;
+      if (!rawName) continue;
       const trackerName = rawName.replace(/ /g, "_") + (rawName.endsWith("_Tracker") ? "" : "_Tracker");
       const key = allProjectNames.has(trackerName) ? trackerName : rawName;
       if (!taskCountsByProject.has(key)) taskCountsByProject.set(key, {});
