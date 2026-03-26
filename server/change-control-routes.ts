@@ -6,6 +6,7 @@ import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
+import { createVoApproval } from "./services/approval-service";
 
 const VALID_STATUSES = ['draft', 'submitted', 'under_review', 'approved', 'rejected', 'implemented', 'closed'] as const;
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -77,7 +78,10 @@ export function registerChangeControlRoutes(app: Express): void {
   app.post("/api/change-requests", jwtAuth, requireAuth, requirePermission("projects", "create"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
-      const { projectId, title, description, changeType, ownerUserId, impactSummary, costImpact, scheduleImpactDays } = req.body;
+      const { projectId, title, description, changeType, ownerUserId, impactSummary, costImpact, scheduleImpactDays,
+        // B6: enriched VO fields
+        cause, clientLinked, revenueImpact, cosImpact, marginImpact, evidenceLink,
+      } = req.body;
       if (!projectId || !title || !changeType) return res.status(400).json({ error: "projectId, title, changeType required" });
 
       const result = await db.insert(changeRequests).values({
@@ -91,6 +95,13 @@ export function registerChangeControlRoutes(app: Express): void {
         costImpact: costImpact || null,
         scheduleImpact: scheduleImpactDays || null,
         status: 'draft',
+        // B6: enriched fields
+        cause: cause || null,
+        clientLinked: clientLinked ?? false,
+        revenueImpact: revenueImpact || null,
+        cosImpact: cosImpact || null,
+        marginImpact: marginImpact || null,
+        evidenceLink: evidenceLink || null,
       }).returning();
 
       logAuditFromReq(req, {
@@ -141,6 +152,15 @@ export function registerChangeControlRoutes(app: Express): void {
       if (costImpact !== undefined) updates.costImpact = costImpact;
       if (scheduleImpactDays !== undefined) updates.scheduleImpact = scheduleImpactDays;
 
+      // B6: Accept enriched fields on update too
+      if (req.body.cause !== undefined) updates.cause = req.body.cause;
+      if (req.body.clientLinked !== undefined) updates.clientLinked = req.body.clientLinked;
+      if (req.body.revenueImpact !== undefined) updates.revenueImpact = req.body.revenueImpact;
+      if (req.body.cosImpact !== undefined) updates.cosImpact = req.body.cosImpact;
+      if (req.body.marginImpact !== undefined) updates.marginImpact = req.body.marginImpact;
+      if (req.body.evidenceLink !== undefined) updates.evidenceLink = req.body.evidenceLink;
+      if (req.body.finalDecision !== undefined) updates.finalDecision = req.body.finalDecision;
+
       if (status !== undefined && status !== old.status) {
         const allowed = VALID_TRANSITIONS[old.status] || [];
         if (!allowed.includes(status)) {
@@ -151,15 +171,17 @@ export function registerChangeControlRoutes(app: Express): void {
         if (status === 'submitted') {
           try {
             const user = getEffectiveUser(req);
-            const approvalResult = await db.insert(approvals).values({
-              type: 'change_request',
-              title: `Change Request: ${old.title}`,
-              description: old.impactSummary || old.description || '',
-              status: 'pending',
-              requestedBy: user?.id,
+            // B8: Use universal approval service with VO-specific metadata
+            const revImpact = Number(old.revenueImpact || req.body.revenueImpact || old.costImpact || 0);
+            const approval = await createVoApproval({
               projectId: old.projectId,
-            }).returning();
-            updates.approvalId = approvalResult[0].id;
+              changeRequestId: old.id,
+              requestedByUserId: user?.id ?? 0,
+              approverUserId: user?.id ?? 0, // TODO: resolve from project role assignments
+              title: `Change Request: ${old.title}`,
+              revenueImpact: revImpact || undefined,
+            });
+            updates.approvalId = approval.id;
           } catch (approvalErr: unknown) {
             const msg = approvalErr instanceof Error ? approvalErr.message : String(approvalErr);
             console.warn("[ChangeControl] Approval creation failed:", msg);

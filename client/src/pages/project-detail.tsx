@@ -45,6 +45,7 @@ import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
 import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
 import { ProjectConstructionTab } from "@/components/tabs/ProjectConstructionTab";
 import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
+import { BudgetBaselineStrip } from "@/components/tabs/BudgetBaselineStrip";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
@@ -217,10 +218,19 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
       }
       return res.json();
     },
-    onSuccess: () => {
-      toast({ title: "Phase updated successfully" });
+    onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
       qc.invalidateQueries({ queryKey: ["phase-history", projectId] });
+      // D4: Show gate evaluation warnings if items were missing
+      if (data?.gateEvaluation && !data.gateEvaluation.allowed && data.gateEvaluation.missingItems?.length > 0) {
+        const missing = data.gateEvaluation.missingItems.map((m: any) => m.message).join(", ");
+        toast({
+          title: "Phase updated (with gate warnings)",
+          description: `Gate "${data.gateEvaluation.gateName}" has unmet criteria: ${missing}. Consider resolving these before proceeding.`,
+        });
+      } else {
+        toast({ title: "Phase updated successfully" });
+      }
       setToPhase("");
       setReason("");
       setOverrideSequence(false);
@@ -1591,6 +1601,8 @@ export default function ProjectDetailPage() {
 
       {activeSection === "commercial" && canViewTab.finance && (
         <div className="space-y-2" data-testid="commercial-section">
+          {/* B5: Budget baseline vs actual strip */}
+          {projectInfoId && <BudgetBaselineStrip projectId={projectInfoId} actualRevenue={totalRevenueActual} />}
           {urlTab && ["expenditure", "revenue-tracking", "monthly-realisation", "revenue-tracker", "gp-tracker"].includes(urlTab) && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="tracker-breadcrumb">
               <button
