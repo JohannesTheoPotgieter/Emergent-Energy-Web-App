@@ -3016,6 +3016,20 @@ export function registerEngineeringRoutes(app: Express) {
         }
       }
 
+      // D4: Evaluate stage gate in "warn" mode — log result but don't block
+      let gateEvaluation: any = null;
+      try {
+        const { evaluateStageGate } = await import("./services/lifecycle-stage-gate-service");
+        gateEvaluation = await evaluateStageGate({
+          projectId,
+          targetStage: toPhase,
+          actorUserId: user.id,
+          actorRole: user.role,
+        });
+      } catch (gateErr: any) {
+        console.warn("[Phase] Stage gate evaluation error (non-blocking):", gateErr.message);
+      }
+
       const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       res.json({
         project: updated,
@@ -3023,6 +3037,11 @@ export function registerEngineeringRoutes(app: Express) {
         tasksCreated,
         templateApplied,
         templateResult,
+        gateEvaluation: gateEvaluation ? {
+          allowed: gateEvaluation.allowed,
+          gateName: gateEvaluation.gateName,
+          missingItems: gateEvaluation.missingItems,
+        } : null,
       });
     } catch (err: any) {
       console.error("[Phase] Error:", err.message);
