@@ -6,6 +6,7 @@ import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
+import { createApproval } from "./services/approval-service";
 
 const VALID_TRANSITIONS: Record<string, string[]> = {
   requested: ['quoted', 'approved', 'closed'],
@@ -152,7 +153,9 @@ export function registerProcurementRoutes(app: Express): void {
       const old = existing[0];
 
       const updates: Record<string, unknown> = { updatedAt: new Date() };
-      const fields = ['title', 'description', 'category', 'quantity', 'unit', 'expectedCost', 'actualCost', 'supplierId', 'ownerUserId', 'requiredDate', 'poId', 'invoiceRef', 'linkedTaskId', 'notes', 'budgetLine', 'linkedDeliverableId', 'linkedMilestone', 'progressPercent', 'receiptRef', 'paymentStatus', 'linkedInvoiceCaptureId'];
+      const fields = ['title', 'description', 'category', 'quantity', 'unit', 'expectedCost', 'actualCost', 'supplierId', 'ownerUserId', 'requiredDate', 'poId', 'invoiceRef', 'linkedTaskId', 'notes', 'budgetLine', 'linkedDeliverableId', 'linkedMilestone', 'progressPercent', 'receiptRef', 'paymentStatus', 'linkedInvoiceCaptureId',
+        // C2: enriched procurement fields
+        'requisitionStatus', 'rfqSentDate', 'quoteReceivedDate', 'quoteAmount', 'boqReference', 'deliveryExpectedDate', 'deliveryActualDate', 'deliveryStatus', 'isLongLead'];
       for (const f of fields) {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
       }
@@ -167,17 +170,19 @@ export function registerProcurementRoutes(app: Express): void {
         if (req.body.status === 'approved' && !old.approvalId) {
           try {
             const user = getEffectiveUser(req);
-            const approvalResult = await db.insert(approvals).values({
-              type: 'procurement',
-              title: `Procurement: ${old.title}`,
-              description: `Category: ${old.category}, Expected cost: ${old.expectedCost || 'N/A'}`,
-              status: 'approved',
-              requestedBy: old.requestedByUserId || user?.id,
-              decidedBy: user?.id,
-              decidedAt: new Date(),
+            // B8: Use universal approval service
+            const approval = await createApproval({
+              approvalType: "procurement",
+              type: "procurement",
+              title: `Procurement approved: ${old.title}`,
+              description: `Category: ${old.category}, Expected cost: R${old.expectedCost || 'N/A'}`,
               projectId: old.projectId,
-            }).returning();
-            updates.approvalId = approvalResult[0].id;
+              requestedByUserId: old.requestedByUserId || user?.id || 0,
+              relatedEntityType: "procurement_item",
+              relatedEntityId: old.id,
+              urgency: Number(old.expectedCost || 0) > 100000 ? "high" : "normal",
+            });
+            updates.approvalId = approval.id;
           } catch (approvalErr: unknown) {
             const msg = approvalErr instanceof Error ? approvalErr.message : String(approvalErr);
             console.warn("[Procurement] Approval creation failed:", msg);
