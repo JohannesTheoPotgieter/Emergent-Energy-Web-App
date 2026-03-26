@@ -19,10 +19,80 @@ export const clients = pgTable("clients", {
   updatedBy: integer("updated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // B1: Enriched client fields
+  legalEntityName: text("legal_entity_name"),
+  tradingName: text("trading_name"),
+  clientType: text("client_type"),             // 'commercial', 'industrial', 'residential', 'government'
+  billingEntity: text("billing_entity"),
+  primaryContactName: text("primary_contact_name"),
+  primaryContactEmail: text("primary_contact_email"),
+  primaryContactPhone: text("primary_contact_phone"),
+  secondaryContactName: text("secondary_contact_name"),
+  secondaryContactEmail: text("secondary_contact_email"),
+  industry: text("industry"),
+  pipedriveOrgId: text("pipedrive_org_id"),
+  status: text("status").default("active"),    // 'active', 'inactive', 'prospect'
 });
 export const insertClientSchema = createInsertSchema(clients).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
+
+// ===================== SITES (B2) =====================
+
+export const sites = pgTable("sites", {
+  id: serial("id").primaryKey(),
+  clientId: integer("client_id").references(() => clients.id),
+  siteName: text("site_name").notNull(),
+  address: text("address"),
+  gpsLat: decimal("gps_lat", { precision: 10, scale: 7 }),
+  gpsLng: decimal("gps_lng", { precision: 10, scale: 7 }),
+  municipality: text("municipality"),
+  utilityAuthority: text("utility_authority"),
+  landlord: text("landlord"),
+  tenant: text("tenant"),
+  roofType: text("roof_type"),               // 'flat_roof', 'pitched_roof', 'ground_mount', 'carport', 'other'
+  siteConstraints: text("site_constraints"),
+  hseConstraints: text("hse_constraints"),
+  accessRules: text("access_rules"),
+  status: text("status").default("active"),  // 'active', 'inactive', 'decommissioned'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const insertSiteSchema = createInsertSchema(sites).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertSite = z.infer<typeof insertSiteSchema>;
+export type Site = typeof sites.$inferSelect;
+
+// ===================== OPPORTUNITIES (B3) =====================
+
+export const opportunities = pgTable("opportunities", {
+  id: serial("id").primaryKey(),
+  pipedriveDealId: text("pipedrive_deal_id"),
+  clientId: integer("client_id").references(() => clients.id),
+  siteId: integer("site_id").references(() => sites.id),
+  dealOwnerUserId: integer("deal_owner_user_id").references(() => users.id),
+  stage: text("stage").default("prospect"),              // 'prospect', 'qualification', 'proposal', 'negotiation', 'won', 'lost'
+  contractType: text("contract_type"),                   // 'PPA', 'EPC', 'lease', 'hybrid'
+  fundingType: text("funding_type"),                     // 'self_funded', 'third_party', 'blended'
+  estimatedValue: decimal("estimated_value", { precision: 15, scale: 2 }),
+  estimatedKwp: decimal("estimated_kwp", { precision: 12, scale: 2 }),
+  estimatedKwh: decimal("estimated_kwh", { precision: 15, scale: 2 }),
+  proposalIssuedDate: date("proposal_issued_date"),
+  expectedCloseDate: date("expected_close_date"),
+  signedDate: date("signed_date"),
+  handoverReadiness: text("handover_readiness").default("not_ready"), // 'not_ready', 'in_preparation', 'awaiting_approval', 'ready', 'submitted', 'accepted', 'returned'
+  commercialRisks: text("commercial_risks"),
+  notes: text("notes"),
+  status: text("status").default("active"),              // 'active', 'won', 'lost', 'on_hold'
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const insertOpportunitySchema = createInsertSchema(opportunities).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertOpportunity = z.infer<typeof insertOpportunitySchema>;
+export type Opportunity = typeof opportunities.$inferSelect;
 
 // ===================== PROJECT INFO =====================
 
@@ -41,6 +111,11 @@ export const projectInfo = pgTable("project_info", {
   pdUserId: integer("pd_user_id").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   deletedAt: timestamp("deleted_at"),
+  // B2/B3/B4: Entity linking and enrichment
+  siteId: integer("site_id").references(() => sites.id),
+  opportunityId: integer("opportunity_id").references(() => opportunities.id),
+  deliveryModel: text("delivery_model"),     // 'turnkey', 'design_build', 'epc', 'consulting'
+  projectCode: text("project_code"),
 });
 
 export const insertProjectInfoSchema = createInsertSchema(projectInfo).omit({ id: true, updatedAt: true } as any);
@@ -108,6 +183,22 @@ export const projectExecutionState = pgTable("project_execution_state", {
   // Task pack flags
   pmTaskPackCreated: boolean("pm_task_pack_created").notNull().default(false),
   engPostCpTaskPackCreated: boolean("eng_post_cp_task_pack_created").notNull().default(false),
+
+  // B4: Role assignments
+  constructionManagerUserId: integer("construction_manager_user_id").references(() => users.id),
+  qualityLeadUserId: integer("quality_lead_user_id").references(() => users.id),
+  engineeringLeadUserId: integer("engineering_lead_user_id").references(() => users.id),
+  programManagerUserId: integer("program_manager_user_id").references(() => users.id),
+  projectFinanceUserId: integer("project_finance_user_id").references(() => users.id),
+
+  // B4: Milestone targets
+  matriarchHandoverTarget: date("matriarch_handover_target"),
+  practicalCompletionTarget: date("practical_completion_target"),
+  practicalCompletionActual: date("practical_completion_actual"),
+
+  // B4: Financial baselines (quick reference — formal baselines in budget_baselines table)
+  costBaseline: decimal("cost_baseline", { precision: 15, scale: 2 }),
+  marginBaseline: decimal("margin_baseline", { precision: 8, scale: 4 }),
 
   // Timestamps
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -781,6 +872,14 @@ export const changeRequests = pgTable("change_requests", {
   approvalId: integer("approval_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // B6: VO/Change enrichment — revenue/COS/margin impact and formal decision
+  cause: text("cause"),
+  clientLinked: boolean("client_linked").default(false),
+  revenueImpact: decimal("revenue_impact", { precision: 15, scale: 2 }),
+  cosImpact: decimal("cos_impact", { precision: 15, scale: 2 }),
+  marginImpact: decimal("margin_impact", { precision: 15, scale: 2 }),
+  evidenceLink: text("evidence_link"),
+  finalDecision: text("final_decision"),       // 'approved', 'rejected', 'deferred'
 });
 export const insertChangeRequestSchema = createInsertSchema(changeRequests).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertChangeRequest = z.infer<typeof insertChangeRequestSchema>;

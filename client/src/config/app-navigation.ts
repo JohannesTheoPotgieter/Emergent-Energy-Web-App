@@ -16,80 +16,86 @@ function startsWithAny(pathname: string, prefixes: string[]) {
   return prefixes.some((prefix) => matchesPathPrefix(pathname, prefix));
 }
 
+/**
+ * Redesigned navigation (A1+A2):
+ *   Home | My Work | Projects | Finance | Reports | Admin
+ *
+ * - "Execution" items merged into "Projects"
+ * - "Operations" (Engineering, Quality) merged into "Projects"
+ * - "Insights" renamed to "Reports"
+ * - "Project Development" lives as sub-items under "Projects" (visible to PD roles)
+ * - Naming improvements applied throughout (A2)
+ */
 export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Home",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox"]),
+    match: (pathname) => pathname === "/",
     secondary: [
       { label: "Home", path: "/" },
-      { label: "My Work", path: "/my-work" },
+    ],
+  },
+  {
+    label: "My Work",
+    path: "/my-work",
+    match: (pathname) => startsWithAny(pathname, ["/my-work", "/inbox", "/pm/approvals"]),
+    secondary: [
+      { label: "My Tasks", path: "/my-work" },
+      { label: "Approvals", path: "/pm/approvals" },
       { label: "Inbox", path: "/inbox" },
     ],
   },
   {
     label: "Projects",
-    path: "/project-lifecycle",
-    match: (pathname) => startsWithAny(pathname, ["/project-lifecycle", "/lifecycle-board", "/project", "/clients"]),
+    path: "/projects",
+    match: (pathname) => startsWithAny(pathname, [
+      "/projects", "/project", "/project-lifecycle", "/lifecycle-board", "/clients",
+      "/execution-board", "/pm-dashboard", "/dashboard",
+      "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews",
+      "/pm/handover-review", "/portfolios", "/exceptions",
+      "/engineering", "/quality", "/construction", "/hse", "/handover",
+      "/sites", "/opportunities",
+      "/pd",
+    ]),
     secondary: [
-      { label: "Overview", path: "/project-lifecycle" },
+      { label: "Project List", path: "/projects" },
+      { label: "Sites", path: "/sites" },
+      { label: "Opportunities", path: "/opportunities" },
+      { label: "Portfolio Overview", path: "/execution-board" },
+      { label: "Portfolios", path: "/portfolios" },
       { label: "Lifecycle", path: "/lifecycle-board" },
       { label: "Stage Gates", path: "/project-lifecycle/stage-gates" },
-      { label: "Latest Updates", path: "/project-lifecycle/latest-updates" },
-      { label: "Clients", path: "/clients" },
-      { label: "Client Overview", path: "/project-lifecycle/client-overview" },
-    ],
-  },
-  {
-    label: "Project Development",
-    path: "/pd",
-    match: (pathname) => startsWithAny(pathname, ["/pd"]),
-    secondary: [
-      { label: "PD Dashboard", path: "/pd" },
-      { label: "PD Tickets", path: "/pd/tickets" },
-    ],
-  },
-  {
-    label: "Execution",
-    path: "/execution-board",
-    match: (pathname) => startsWithAny(pathname, ["/dashboard", "/pm-dashboard", "/projects", "/execution-board", "/pm/approvals", "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews", "/pm/handover-review", "/portfolios", "/exceptions"]),
-    secondary: [
-      { label: "Execution Dashboard", path: "/execution-board" },
-      { label: "Project List", path: "/projects" },
-      { label: "Portfolios", path: "/portfolios" },
       { label: "Exceptions", path: "/exceptions" },
       { label: "Deliverables", path: "/pm/deliverables" },
-      { label: "Site / Execution Controls", path: "/handover-control" },
-      { label: "PM On-The-Go", path: "/pm/on-the-go" },
-    ],
-  },
-  {
-    label: "Operations",
-    path: "/engineering",
-    match: (pathname) => startsWithAny(pathname, ["/engineering", "/quality"]),
-    secondary: [
-      { label: "Engineering Overview", path: "/engineering" },
-      { label: "Requests & Tasks", path: "/engineering/tasks" },
-      { label: "Quality Workspace", path: "/quality" },
-      { label: "Audit Log", path: "/engineering/audit" },
+      { label: "Construction", path: "/construction" },
+      { label: "Engineering", path: "/engineering" },
+      { label: "Quality & HSE", path: "/quality" },
+      { label: "HSE", path: "/hse" },
+      { label: "Handover & Closeout", path: "/handover" },
+      { label: "Site Controls", path: "/handover-control" },
+      { label: "PD Dashboard", path: "/pd" },
+      { label: "PD Tickets", path: "/pd/tickets" },
+      { label: "Clients", path: "/clients" },
+      { label: "Mobile View", path: "/pm/on-the-go" },
     ],
   },
   {
     label: "Finance",
     path: "/cashflow",
-    match: (pathname) => startsWithAny(pathname, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard", "/fye-revenue-tracking"]),
+    match: (pathname) => startsWithAny(pathname, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard", "/fye-revenue-tracking", "/procurement"]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
-      { label: "Cost of Sales", path: "/cos" },
+      { label: "Costs (COS)", path: "/cos" },
       { label: "Revenue", path: "/revenue-tracker" },
-      { label: "Gross Profit", path: "/gp-tracker" },
+      { label: "GP Tracker", path: "/gp-tracker" },
       { label: "FYE Revenue", path: "/fye-revenue-tracking" },
-      { label: "Procurement", path: "/subcontractor-dashboard" },
+      { label: "Procurement Hub", path: "/procurement" },
+      { label: "Subcontractors", path: "/subcontractor-dashboard" },
       { label: "Counterparties", path: "/counterparties" },
     ],
   },
   {
-    label: "Insights",
+    label: "Reports",
     path: "/priorities",
     match: (pathname) => startsWithAny(pathname, ["/priorities", "/reports", "/ee-info", "/leaderboard", "/feedback", "/training", "/department-scores"]),
     secondary: [
@@ -97,9 +103,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "PM Monthly Report", path: "/reports/pm/monthly" },
       { label: "Eng Monthly Report", path: "/reports/engineering/monthly" },
       { label: "Programme Reports", path: "/reports/programme" },
-      { label: "Lifecycle & SOP", path: "/ee-info" },
-      { label: "Leaderboard", path: "/leaderboard" },
-      { label: "Dept Scores", path: "/department-scores" },
+      { label: "Processes & SOPs", path: "/ee-info" },
       { label: "Training", path: "/training" },
       { label: "Feedback", path: "/feedback" },
     ],
@@ -152,26 +156,25 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   // Priority detail breadcrumb
   const priorityDetailMatch = pathname.match(/^\/priorities\/(\d+)/);
   if (priorityDetailMatch) return [
-    { label: "Insights", path: "/priorities" },
+    { label: "Reports", path: "/priorities" },
     { label: "Priorities", path: "/priorities" },
     { label: `Priority #${priorityDetailMatch[1]}` },
   ];
 
   // Priority list breadcrumb
   if (pathname === "/priorities") return [
-    { label: "Insights" },
+    { label: "Reports" },
   ];
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
   if (projectMatch) return [
-    { label: "Execution", path: "/execution-board" },
-    { label: "Project List", path: "/projects" },
+    { label: "Projects", path: "/projects" },
     { label: decodeURIComponent(projectMatch[1]) },
   ];
 
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
   if (portfolioMatch) return [
-    { label: "Execution", path: "/execution-board" },
+    { label: "Projects", path: "/projects" },
     { label: "Portfolios", path: "/portfolios" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];

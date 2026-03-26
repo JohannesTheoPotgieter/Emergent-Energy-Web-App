@@ -124,6 +124,10 @@ export const approvals = pgTable("approvals", {
   dueDate: timestamp("due_date"),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
   approvalCategory: text("approval_category"),
+  // B8: Universal approval engine extensions
+  approvalType: text("approval_type"),          // 'handover', 'budget', 'vo', 'procurement', 'gate', 'handover_pack', 'exception'
+  urgency: text("urgency").default("normal"),   // 'critical', 'high', 'normal', 'low'
+  evidenceLinks: text("evidence_links"),        // JSON array of evidence links
 });
 export const insertApprovalSchema = createInsertSchema(approvals).omit({ id: true, requestedAt: true, decidedAt: true } as any);
 export type InsertApproval = z.infer<typeof insertApprovalSchema>;
