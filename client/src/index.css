@@ -393,6 +393,13 @@ body {
   .ee-status-info { @apply border-blue-200 bg-blue-50 text-blue-700; }
 }
 
+/* Mobile: compact sub-nav pills for horizontal scroll */
+@media (max-width: 768px) {
+  .ee-subnav-pill {
+    @apply px-2 py-1 text-[12px];
+  }
+}
+
 @layer utilities {
   .transition-gpu {
     will-change: transform, opacity;

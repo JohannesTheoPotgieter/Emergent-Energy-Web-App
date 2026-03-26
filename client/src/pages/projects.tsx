@@ -1468,6 +1468,8 @@ export default function ProjectsSummary() {
     });
   }, [currentProjects]);
 
+  const currentUserName = (() => { try { const u = localStorage.getItem("user"); if (u) { const p = JSON.parse(u); return p.name || ""; } } catch {} return ""; })();
+
   const filtered = useMemo(() => {
     let result = [...currentProjects];
     // A4: Quick filter tabs
@@ -1494,8 +1496,6 @@ export default function ProjectsSummary() {
     }
     return result;
   }, [currentProjects, searchTerm, pmFilter, phaseFilter, priorityFilter, priorityProjectIds, quickFilter, currentUserName]);
-
-  const currentUserName = (() => { try { const u = localStorage.getItem("user"); if (u) { const p = JSON.parse(u); return p.name || ""; } } catch {} return ""; })();
 
   const sorted = useMemo(() => {
     const arr = [...filtered];

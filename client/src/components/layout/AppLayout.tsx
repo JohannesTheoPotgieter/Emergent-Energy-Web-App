@@ -383,7 +383,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
               )}
               {activeSection.secondary.length > 0 && (
-                <div ref={subNavRef} className="flex gap-1.5 overflow-x-auto pb-2 pt-0.5">
+                <div ref={subNavRef} className="flex gap-1.5 overflow-x-auto no-scrollbar pb-2 pt-0.5">
                   {activeSection.secondary.map((item) => (
                     item.disabled ? (
                       <span
