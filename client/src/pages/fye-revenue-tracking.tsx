@@ -1118,15 +1118,8 @@ function DetailTab({ fye }: { fye: number }) {
     pills.push({ label: `Period: ${cutoffLabel}`, onRemove: () => setCutoffMonth("") });
   }
 
-  if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32 w-full" />)}</div>;
-  if (error || !data) return (
-    <div className="text-center py-12">
-      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
-      <p className="text-sm font-medium text-foreground mb-1">Failed to load detail data</p>
-      <p className="text-xs text-muted-foreground mb-3">{(error as any)?.message || "Unknown error"}</p>
-      <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5 mr-1" />Retry</Button>
-    </div>
-  );
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError || !data) return <div className="p-4 md:p-6"><PageError title="Unable to load FYE Detail" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const pipelineFiltered = (pipeline || []).filter((p) => p.dealProbabilityPct >= 75);
 

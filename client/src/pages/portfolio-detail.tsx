@@ -517,7 +517,8 @@ export default function PortfolioDetailPage() {
     );
   }, [availableProjects, assignSearch]);
 
-  if (isLoading) return <div className="text-center py-20 text-muted-foreground">Loading portfolio...</div>;
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load portfolio" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
   if (!portfolio || portfolio.error) return <div className="text-center py-20 text-red-500">Portfolio not found</div>;
 
   const projects = portfolio.projects || [];

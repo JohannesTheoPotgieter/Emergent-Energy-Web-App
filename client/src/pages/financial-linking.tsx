@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -142,11 +143,11 @@ export default function FinancialLinkingPage() {
   const [expenseExpanded, setExpenseExpanded] = useState(true);
   const [insightsExpanded, setInsightsExpanded] = useState(true);
 
-  const { data: planTasks = [], isLoading: loadingPlan } = useQuery<PlanTask[]>({
+  const { data: planTasks = [], isLoading: loadingPlan, isError: isPlanError, error: planError, refetch: refetchPlan } = useQuery<PlanTask[]>({
     queryKey: ["project-plan", projectName],
     queryFn: async () => {
       const res = await engFetch(`/api/project-plan/${encodeURIComponent(projectName)}`);
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Failed to fetch data (" + res.status + ")");
       return res.json();
     },
     enabled: !!projectName,
@@ -325,6 +326,9 @@ export default function FinancialLinkingPage() {
   if (!projectName) {
     return <div className="p-8 text-center text-muted-foreground">No project specified</div>;
   }
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isPlanError) return <div className="p-4 md:p-6"><PageError title="Unable to load Financial Linking" message={planError instanceof Error ? planError.message : "Failed to fetch data"} onRetry={() => refetchPlan()} /></div>;
 
   const syncColor = syncStatus?.syncStatus === "good" ? "text-emerald-600" : syncStatus?.syncStatus === "partial" ? "text-amber-600" : "text-red-600";
   const syncBg = syncStatus?.syncStatus === "good" ? "bg-emerald-50" : syncStatus?.syncStatus === "partial" ? "bg-amber-50" : "bg-red-50";
