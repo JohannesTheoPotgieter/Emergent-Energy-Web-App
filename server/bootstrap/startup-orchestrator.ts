@@ -1285,6 +1285,83 @@ async function runAdditiveSchemaAlignments() {
       AND LOWER(TRIM(mcp.assigned_to)) = LOWER(TRIM(u.name));
   `);
 
+  // C1: Construction module tables
+  await safeExec("site_activities table", `
+    CREATE TABLE IF NOT EXISTS site_activities (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL DEFAULT 0,
+      site_id INTEGER,
+      activity_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      activity_type TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      reported_by_user_id INTEGER,
+      status TEXT DEFAULT 'open',
+      weather TEXT,
+      crew_count INTEGER,
+      photos TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
+  await safeExec("snags table", `
+    CREATE TABLE IF NOT EXISTS snags (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL DEFAULT 0,
+      site_id INTEGER,
+      title TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      severity TEXT DEFAULT 'minor',
+      location TEXT,
+      reported_by_user_id INTEGER,
+      assigned_to_user_id INTEGER,
+      due_date DATE,
+      status TEXT DEFAULT 'open',
+      resolution TEXT,
+      evidence_link TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
+  await safeExec("site_inspections table", `
+    CREATE TABLE IF NOT EXISTS site_inspections (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL DEFAULT 0,
+      site_id INTEGER,
+      inspection_type TEXT NOT NULL DEFAULT '',
+      inspector_user_id INTEGER,
+      inspection_date DATE,
+      result TEXT,
+      notes TEXT,
+      evidence_link TEXT,
+      linked_snag_ids TEXT,
+      status TEXT DEFAULT 'scheduled',
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
+  await safeExec("contractor_assignments table", `
+    CREATE TABLE IF NOT EXISTS contractor_assignments (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL DEFAULT 0,
+      counterparty_id INTEGER,
+      scope TEXT,
+      start_date DATE,
+      end_date DATE,
+      performance_rating INTEGER,
+      notes TEXT,
+      status TEXT DEFAULT 'active',
+      created_at TIMESTAMP DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
   console.log("[Schema] Additive alignments completed");
 }
 
