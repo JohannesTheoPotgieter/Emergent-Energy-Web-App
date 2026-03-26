@@ -7540,4 +7540,127 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='writeback_mappings') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='writeback_mappings' AND column_name='updated_at') THEN
     ALTER TABLE "writeback_mappings" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
+
+  -- ═══════════════════════════════════════════════════════════════
+  -- Architecture migration: Phase B enrichments on existing tables
+  -- ═══════════════════════════════════════════════════════════════
+
+  -- B1: Enrich clients
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='legal_entity_name') THEN ALTER TABLE "clients" ADD COLUMN "legal_entity_name" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='trading_name') THEN ALTER TABLE "clients" ADD COLUMN "trading_name" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='client_type') THEN ALTER TABLE "clients" ADD COLUMN "client_type" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='billing_entity') THEN ALTER TABLE "clients" ADD COLUMN "billing_entity" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='primary_contact_name') THEN ALTER TABLE "clients" ADD COLUMN "primary_contact_name" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='primary_contact_email') THEN ALTER TABLE "clients" ADD COLUMN "primary_contact_email" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='primary_contact_phone') THEN ALTER TABLE "clients" ADD COLUMN "primary_contact_phone" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='secondary_contact_name') THEN ALTER TABLE "clients" ADD COLUMN "secondary_contact_name" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='secondary_contact_email') THEN ALTER TABLE "clients" ADD COLUMN "secondary_contact_email" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='industry') THEN ALTER TABLE "clients" ADD COLUMN "industry" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='pipedrive_org_id') THEN ALTER TABLE "clients" ADD COLUMN "pipedrive_org_id" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clients' AND column_name='status') THEN ALTER TABLE "clients" ADD COLUMN "status" TEXT DEFAULT 'active'; END IF;
+
+  -- B2/B3: Link projects to sites and opportunities
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_info' AND column_name='site_id') THEN ALTER TABLE "project_info" ADD COLUMN "site_id" INTEGER; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_info' AND column_name='opportunity_id') THEN ALTER TABLE "project_info" ADD COLUMN "opportunity_id" INTEGER; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_info' AND column_name='delivery_model') THEN ALTER TABLE "project_info" ADD COLUMN "delivery_model" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_info' AND column_name='project_code') THEN ALTER TABLE "project_info" ADD COLUMN "project_code" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pd_tickets' AND column_name='opportunity_id') THEN ALTER TABLE "pd_tickets" ADD COLUMN "opportunity_id" INTEGER; END IF;
+
+  -- B4: Enrich project execution state
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='construction_manager_user_id') THEN ALTER TABLE "project_execution_state" ADD COLUMN "construction_manager_user_id" INTEGER; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='quality_lead_user_id') THEN ALTER TABLE "project_execution_state" ADD COLUMN "quality_lead_user_id" INTEGER; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='engineering_lead_user_id') THEN ALTER TABLE "project_execution_state" ADD COLUMN "engineering_lead_user_id" INTEGER; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='program_manager_user_id') THEN ALTER TABLE "project_execution_state" ADD COLUMN "program_manager_user_id" INTEGER; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='project_finance_user_id') THEN ALTER TABLE "project_execution_state" ADD COLUMN "project_finance_user_id" INTEGER; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='matriarch_handover_target') THEN ALTER TABLE "project_execution_state" ADD COLUMN "matriarch_handover_target" DATE; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='practical_completion_target') THEN ALTER TABLE "project_execution_state" ADD COLUMN "practical_completion_target" DATE; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='practical_completion_actual') THEN ALTER TABLE "project_execution_state" ADD COLUMN "practical_completion_actual" DATE; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='cost_baseline') THEN ALTER TABLE "project_execution_state" ADD COLUMN "cost_baseline" DECIMAL(15,2); END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='margin_baseline') THEN ALTER TABLE "project_execution_state" ADD COLUMN "margin_baseline" DECIMAL(8,4); END IF;
+
+  -- B6: Enrich change requests
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='cause') THEN ALTER TABLE "change_requests" ADD COLUMN "cause" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='client_linked') THEN ALTER TABLE "change_requests" ADD COLUMN "client_linked" BOOLEAN DEFAULT false; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='revenue_impact') THEN ALTER TABLE "change_requests" ADD COLUMN "revenue_impact" DECIMAL(15,2); END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='cos_impact') THEN ALTER TABLE "change_requests" ADD COLUMN "cos_impact" DECIMAL(15,2); END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='margin_impact') THEN ALTER TABLE "change_requests" ADD COLUMN "margin_impact" DECIMAL(15,2); END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='evidence_link') THEN ALTER TABLE "change_requests" ADD COLUMN "evidence_link" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='final_decision') THEN ALTER TABLE "change_requests" ADD COLUMN "final_decision" TEXT; END IF;
+
+  -- B8: Universalize approvals
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='approvals' AND column_name='approval_type') THEN ALTER TABLE "approvals" ADD COLUMN "approval_type" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='approvals' AND column_name='urgency') THEN ALTER TABLE "approvals" ADD COLUMN "urgency" TEXT DEFAULT 'normal'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='approvals' AND column_name='evidence_links') THEN ALTER TABLE "approvals" ADD COLUMN "evidence_links" TEXT; END IF;
+
+  -- C2: Enrich procurement items
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='requisition_status') THEN ALTER TABLE "procurement_items" ADD COLUMN "requisition_status" TEXT DEFAULT 'none'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='rfq_sent_date') THEN ALTER TABLE "procurement_items" ADD COLUMN "rfq_sent_date" DATE; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='quote_received_date') THEN ALTER TABLE "procurement_items" ADD COLUMN "quote_received_date" DATE; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='quote_amount') THEN ALTER TABLE "procurement_items" ADD COLUMN "quote_amount" DECIMAL(15,2); END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='boq_reference') THEN ALTER TABLE "procurement_items" ADD COLUMN "boq_reference" TEXT; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='delivery_expected_date') THEN ALTER TABLE "procurement_items" ADD COLUMN "delivery_expected_date" DATE; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='delivery_actual_date') THEN ALTER TABLE "procurement_items" ADD COLUMN "delivery_actual_date" DATE; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='delivery_status') THEN ALTER TABLE "procurement_items" ADD COLUMN "delivery_status" TEXT DEFAULT 'not_ordered'; END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='is_long_lead') THEN ALTER TABLE "procurement_items" ADD COLUMN "is_long_lead" BOOLEAN DEFAULT false; END IF;
+
+END $$;
+
+-- ═══════════════════════════════════════════════════════════════
+-- Architecture migration: new tables with full column definitions
+-- Runs after stub tables are created by pre-push-enums.sql
+-- ═══════════════════════════════════════════════════════════════
+
+DO $$ BEGIN
+  -- B2: Sites
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sites' AND column_name='site_name') THEN
+    ALTER TABLE "sites" ADD COLUMN "client_id" INTEGER, ADD COLUMN "site_name" TEXT NOT NULL DEFAULT '', ADD COLUMN "address" TEXT, ADD COLUMN "gps_lat" DECIMAL(10,7), ADD COLUMN "gps_lng" DECIMAL(10,7), ADD COLUMN "municipality" TEXT, ADD COLUMN "utility_authority" TEXT, ADD COLUMN "landlord" TEXT, ADD COLUMN "tenant" TEXT, ADD COLUMN "roof_type" TEXT, ADD COLUMN "site_constraints" TEXT, ADD COLUMN "hse_constraints" TEXT, ADD COLUMN "access_rules" TEXT, ADD COLUMN "status" TEXT DEFAULT 'active', ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- B3: Opportunities
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='opportunities' AND column_name='stage') THEN
+    ALTER TABLE "opportunities" ADD COLUMN "pipedrive_deal_id" TEXT, ADD COLUMN "client_id" INTEGER, ADD COLUMN "site_id" INTEGER, ADD COLUMN "deal_owner_user_id" INTEGER, ADD COLUMN "stage" TEXT DEFAULT 'prospect', ADD COLUMN "contract_type" TEXT, ADD COLUMN "funding_type" TEXT, ADD COLUMN "estimated_value" DECIMAL(15,2), ADD COLUMN "estimated_kwp" DECIMAL(12,2), ADD COLUMN "estimated_kwh" DECIMAL(15,2), ADD COLUMN "proposal_issued_date" DATE, ADD COLUMN "expected_close_date" DATE, ADD COLUMN "signed_date" DATE, ADD COLUMN "handover_readiness" TEXT DEFAULT 'not_ready', ADD COLUMN "commercial_risks" TEXT, ADD COLUMN "notes" TEXT, ADD COLUMN "status" TEXT DEFAULT 'active', ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- B5: Budget baselines
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='budget_baselines' AND column_name='version') THEN
+    ALTER TABLE "budget_baselines" ADD COLUMN "project_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "version" INTEGER NOT NULL DEFAULT 1, ADD COLUMN "revenue_baseline" DECIMAL(15,2), ADD COLUMN "cos_baseline" DECIMAL(15,2), ADD COLUMN "margin_baseline" DECIMAL(15,2), ADD COLUMN "contingency" DECIMAL(15,2), ADD COLUMN "approved_by_user_id" INTEGER, ADD COLUMN "approved_date" TIMESTAMP, ADD COLUMN "change_locked" BOOLEAN DEFAULT false, ADD COLUMN "notes" TEXT, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW();
+  END IF;
+  -- C1: Site activities
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='site_activities' AND column_name='activity_type') THEN
+    ALTER TABLE "site_activities" ADD COLUMN "project_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "site_id" INTEGER, ADD COLUMN "activity_date" DATE NOT NULL DEFAULT CURRENT_DATE, ADD COLUMN "activity_type" TEXT NOT NULL DEFAULT '', ADD COLUMN "title" TEXT NOT NULL DEFAULT '', ADD COLUMN "description" TEXT, ADD COLUMN "reported_by_user_id" INTEGER, ADD COLUMN "status" TEXT DEFAULT 'open', ADD COLUMN "weather" TEXT, ADD COLUMN "crew_count" INTEGER, ADD COLUMN "photos" TEXT, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- C1: Snags
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='snags' AND column_name='severity') THEN
+    ALTER TABLE "snags" ADD COLUMN "project_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "site_id" INTEGER, ADD COLUMN "title" TEXT NOT NULL DEFAULT '', ADD COLUMN "description" TEXT, ADD COLUMN "severity" TEXT DEFAULT 'minor', ADD COLUMN "location" TEXT, ADD COLUMN "reported_by_user_id" INTEGER, ADD COLUMN "assigned_to_user_id" INTEGER, ADD COLUMN "due_date" DATE, ADD COLUMN "status" TEXT DEFAULT 'open', ADD COLUMN "resolution" TEXT, ADD COLUMN "evidence_link" TEXT, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- C1: Site inspections
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='site_inspections' AND column_name='inspection_type') THEN
+    ALTER TABLE "site_inspections" ADD COLUMN "project_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "site_id" INTEGER, ADD COLUMN "inspection_type" TEXT NOT NULL DEFAULT '', ADD COLUMN "inspector_user_id" INTEGER, ADD COLUMN "inspection_date" DATE, ADD COLUMN "result" TEXT, ADD COLUMN "notes" TEXT, ADD COLUMN "evidence_link" TEXT, ADD COLUMN "linked_snag_ids" TEXT, ADD COLUMN "status" TEXT DEFAULT 'scheduled', ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- C1: Contractor assignments
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contractor_assignments' AND column_name='scope') THEN
+    ALTER TABLE "contractor_assignments" ADD COLUMN "project_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "counterparty_id" INTEGER, ADD COLUMN "scope" TEXT, ADD COLUMN "start_date" DATE, ADD COLUMN "end_date" DATE, ADD COLUMN "performance_rating" INTEGER, ADD COLUMN "notes" TEXT, ADD COLUMN "status" TEXT DEFAULT 'active', ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- C3: HSE incidents
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='hse_incidents' AND column_name='incident_type') THEN
+    ALTER TABLE "hse_incidents" ADD COLUMN "project_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "site_id" INTEGER, ADD COLUMN "incident_date" DATE NOT NULL DEFAULT CURRENT_DATE, ADD COLUMN "incident_type" TEXT NOT NULL DEFAULT '', ADD COLUMN "severity" TEXT NOT NULL DEFAULT 'low', ADD COLUMN "description" TEXT NOT NULL DEFAULT '', ADD COLUMN "reported_by_user_id" INTEGER, ADD COLUMN "location" TEXT, ADD COLUMN "root_cause" TEXT, ADD COLUMN "immediate_actions" TEXT, ADD COLUMN "status" TEXT DEFAULT 'open', ADD COLUMN "evidence_link" TEXT, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- C3: Corrective actions
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='corrective_actions' AND column_name='source_type') THEN
+    ALTER TABLE "corrective_actions" ADD COLUMN "source_type" TEXT NOT NULL DEFAULT '', ADD COLUMN "source_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "project_id" INTEGER, ADD COLUMN "title" TEXT NOT NULL DEFAULT '', ADD COLUMN "description" TEXT, ADD COLUMN "assigned_to_user_id" INTEGER, ADD COLUMN "due_date" DATE, ADD COLUMN "status" TEXT DEFAULT 'open', ADD COLUMN "completion_date" DATE, ADD COLUMN "evidence_link" TEXT, ADD COLUMN "verified_by_user_id" INTEGER, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- C4: Handover packs
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='handover_packs' AND column_name='pack_type') THEN
+    ALTER TABLE "handover_packs" ADD COLUMN "project_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "pack_type" TEXT NOT NULL DEFAULT '', ADD COLUMN "checklist_status" TEXT DEFAULT 'not_started', ADD COLUMN "document_completeness_pct" INTEGER DEFAULT 0, ADD COLUMN "open_snags_count" INTEGER DEFAULT 0, ADD COLUMN "final_reviewer_user_id" INTEGER, ADD COLUMN "client_submission_date" DATE, ADD COLUMN "client_acceptance_date" DATE, ADD COLUMN "matriarch_acceptance_date" DATE, ADD COLUMN "notes" TEXT, ADD COLUMN "status" TEXT DEFAULT 'draft', ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- C4: Handover checklist items
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='handover_checklist_items' AND column_name='item_name') THEN
+    ALTER TABLE "handover_checklist_items" ADD COLUMN "handover_pack_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "item_name" TEXT NOT NULL DEFAULT '', ADD COLUMN "category" TEXT, ADD COLUMN "required" BOOLEAN DEFAULT true, ADD COLUMN "status" TEXT DEFAULT 'pending', ADD COLUMN "evidence_link" TEXT, ADD COLUMN "completed_by_user_id" INTEGER, ADD COLUMN "completed_date" TIMESTAMP, ADD COLUMN "notes" TEXT;
+  END IF;
+  -- C4: SSEG items
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sseg_items' AND column_name='item_type') THEN
+    ALTER TABLE "sseg_items" ADD COLUMN "project_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "item_type" TEXT NOT NULL DEFAULT '', ADD COLUMN "authority" TEXT, ADD COLUMN "reference_number" TEXT, ADD COLUMN "submitted_date" DATE, ADD COLUMN "expected_date" DATE, ADD COLUMN "actual_date" DATE, ADD COLUMN "status" TEXT DEFAULT 'pending', ADD COLUMN "notes" TEXT, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  -- D1: Pipedrive sync log
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pipedrive_sync_log' AND column_name='sync_type') THEN
+    ALTER TABLE "pipedrive_sync_log" ADD COLUMN "sync_type" TEXT NOT NULL DEFAULT '', ADD COLUMN "started_at" TIMESTAMP NOT NULL DEFAULT NOW(), ADD COLUMN "completed_at" TIMESTAMP, ADD COLUMN "deals_processed" INTEGER DEFAULT 0, ADD COLUMN "deals_created" INTEGER DEFAULT 0, ADD COLUMN "deals_updated" INTEGER DEFAULT 0, ADD COLUMN "errors" TEXT, ADD COLUMN "status" TEXT DEFAULT 'running';
+  END IF;
 END $$;
