@@ -3026,6 +3026,20 @@ export function registerEngineeringRoutes(app: Express) {
           actorUserId: user.id,
           actorRole: user.role,
         });
+        // B8: Create gate approval when there are missing items
+        if (gateEvaluation && !gateEvaluation.allowed && gateEvaluation.missingItems?.length > 0) {
+          try {
+            const { createGateApproval } = await import("./services/approval-service");
+            await createGateApproval({
+              projectId,
+              gateName: gateEvaluation.gateName,
+              requestedByUserId: user.id,
+              approverUserId: user.id,
+            });
+          } catch (approvalErr: any) {
+            console.warn("[Phase] Gate approval creation failed (non-blocking):", approvalErr.message);
+          }
+        }
       } catch (gateErr: any) {
         console.warn("[Phase] Stage gate evaluation error (non-blocking):", gateErr.message);
       }
