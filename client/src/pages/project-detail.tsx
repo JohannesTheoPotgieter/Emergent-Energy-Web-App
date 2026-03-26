@@ -9,7 +9,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
@@ -52,7 +51,7 @@ import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
 import { PageShell } from "@/components/layout/page-shell";
-import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
+import { PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
 import { type NextMilestoneSummary } from "@/lib/next-milestone";
@@ -193,141 +192,6 @@ function LinkedEntityCards({ projectInfoId }: { projectInfoId: number }) {
   );
 }
 
-function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
-  projectId: number; currentPhase: string | null; open: boolean; onClose: () => void;
-}) {
-  const [toPhase, setToPhase] = useState<string>("");
-  const [reason, setReason] = useState("");
-  const [overrideSequence, setOverrideSequence] = useState(false);
-  const { toast } = useToast();
-  const qc = useQueryClient();
-
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/projects/${projectId}/phase`, {
-        method: "PATCH",
-        headers,
-        credentials: "include",
-        body: JSON.stringify({ toPhase, reason, overrideSequence }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || err.error || "Failed to update phase");
-      }
-      return res.json();
-    },
-    onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
-      qc.invalidateQueries({ queryKey: ["phase-history", projectId] });
-      // D4: Show gate evaluation warnings if items were missing
-      if (data?.gateEvaluation && !data.gateEvaluation.allowed && data.gateEvaluation.missingItems?.length > 0) {
-        const missing = data.gateEvaluation.missingItems.map((m: any) => m.message).join(", ");
-        toast({
-          title: "Phase updated (with gate warnings)",
-          description: `Gate "${data.gateEvaluation.gateName}" has unmet criteria: ${missing}. Consider resolving these before proceeding.`,
-        });
-      } else {
-        toast({ title: "Phase updated successfully" });
-      }
-      setToPhase("");
-      setReason("");
-      setOverrideSequence(false);
-      onClose();
-    },
-    onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
-  });
-
-  const currentIdx = PROJECT_PHASES.indexOf(currentPhase as any);
-  const toIdx = PROJECT_PHASES.indexOf(toPhase as any);
-  const needsOverride = currentIdx >= 0 && toIdx >= 0 && Math.abs(toIdx - currentIdx) > 1;
-  const isRegression = currentIdx >= 0 && toIdx >= 0 && toIdx < currentIdx;
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md" data-testid="dialog-phase-change">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <History className="h-5 w-5" />
-            Change Project Phase
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div>
-            <Label className="text-xs text-muted-foreground">Current Phase</Label>
-            <p className="text-sm font-medium mt-1">{getPhaseLabel(currentPhase)}</p>
-          </div>
-          <div>
-            <Label htmlFor="toPhase">New Phase</Label>
-            <SearchableSelect
-              value={toPhase}
-              onValueChange={setToPhase}
-              placeholder="Select phase..."
-              data-testid="select-to-phase"
-              options={LIFECYCLE_PHASES.map(p => ({
-                value: p,
-                label: PROJECT_PHASE_LABELS[p] || p,
-                disabled: p === currentPhase,
-              }))}
-            />
-          </div>
-          <div>
-            <Label htmlFor="reason">Reason (required)</Label>
-            <Textarea
-              id="reason"
-              value={reason}
-              onChange={e => setReason(e.target.value)}
-              placeholder="Explain why this phase change is happening..."
-              className="mt-1"
-              data-testid="input-phase-reason"
-            />
-          </div>
-          {/* A7: Phase regression warning */}
-          {isRegression && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200">
-              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <p className="font-medium text-red-800">Phase regression detected</p>
-                <p className="text-xs text-red-600 mt-0.5">
-                  Moving from {getPhaseLabel(currentPhase)} back to {toPhase ? getPhaseLabel(toPhase) : "an earlier phase"}.
-                  This is unusual and should be documented. A reason is required.
-                </p>
-              </div>
-            </div>
-          )}
-          {needsOverride && (
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <Switch
-                checked={overrideSequence}
-                onCheckedChange={setOverrideSequence}
-                data-testid="switch-override-sequence"
-              />
-              <div className="text-sm">
-                <p className="font-medium text-amber-800">Override sequential order</p>
-                <p className="text-xs text-amber-600 mt-0.5">Phases normally move one step at a time. Enable this to skip phases.</p>
-              </div>
-            </div>
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} data-testid="button-cancel-phase">Cancel</Button>
-          <Button
-            onClick={() => mutation.mutate()}
-            disabled={!toPhase || !reason.trim() || (needsOverride && !overrideSequence) || mutation.isPending}
-            data-testid="button-save-phase"
-          >
-            {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            Update Phase
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 function PhaseHistoryTimeline({ projectId }: { projectId: number }) {
   const { data } = useQuery({
@@ -1054,7 +918,7 @@ export default function ProjectDetailPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedTaskRole, setSelectedTaskRole] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [phaseModalOpen, setPhaseModalOpen] = useState(false);
+
 
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const urlTab = searchParams.get("tab");
@@ -1508,7 +1372,7 @@ export default function ProjectDetailPage() {
         canSetRag={canSetRag}
         pdAssignableUsers={pdAssignableUsers || []}
         pmAssignableUsers={pmAssignableUsers || []}
-        onPhaseChangeClick={() => setPhaseModalOpen(true)}
+
       />
 
       {/* Priority badges */}
@@ -1728,14 +1592,6 @@ export default function ProjectDetailPage() {
         trackingRole={selectedTaskRole === "VIEWER" ? "viewer" : selectedTaskRole === "OWNER" ? "assignee" : selectedTaskRole === "REVIEWER" ? "assignee" : null}
       />
 
-      {projectInfoId && (
-        <PhaseChangeModal
-          projectId={projectInfoId}
-          currentPhase={phase}
-          open={phaseModalOpen}
-          onClose={() => setPhaseModalOpen(false)}
-        />
-      )}
 
       <DataSourceDebug
         pageName="Project Detail"
