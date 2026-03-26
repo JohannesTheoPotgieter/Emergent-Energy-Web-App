@@ -268,59 +268,204 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
 
   if (!task) return null;
 
+  // A5: State-aware primary action
+  const primaryAction = (() => {
+    switch (form.status) {
+      case "inbox":
+      case "planned":
+        return { label: "Start Work", status: "in_progress" as TaskStatus, icon: <Play className="h-3.5 w-3.5 mr-1" />, variant: "default" as const };
+      case "in_progress":
+        return { label: "Complete", status: "done" as TaskStatus, icon: <CheckCircle2 className="h-3.5 w-3.5 mr-1" />, variant: "default" as const,
+          disabled: !form.definitionOfDone.trim(), tooltip: !form.definitionOfDone.trim() ? "Add Definition of Done first" : undefined };
+      case "blocked":
+      case "waiting":
+        return { label: "Unblock", status: "in_progress" as TaskStatus, icon: <Play className="h-3.5 w-3.5 mr-1" />, variant: "default" as const };
+      case "done":
+        return { label: "Reopen", status: "in_progress" as TaskStatus, icon: <Circle className="h-3.5 w-3.5 mr-1" />, variant: "outline" as const };
+      default:
+        return null;
+    }
+  })();
+
+  const isOverdue = form.dueAt && new Date(form.dueAt) < new Date() && form.status !== "done" && form.status !== "cancelled";
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full sm:max-w-lg overflow-y-auto p-0" side="right" data-testid="task-detail-drawer">
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-4">
+          {/* ═══ ZONE 1: Header — always visible, sticky feel ═══ */}
           <SheetHeader className="space-y-3">
-            <div className="flex items-center justify-between">
-              <SheetTitle className="text-base font-semibold text-foreground sr-only">Task Details</SheetTitle>
-              <div className="flex items-center gap-1">
-                {STATUS_OPTIONS.filter(s => ["planned", "in_progress", "done"].includes(s.value)).map((s) => (
-                  <Button
-                    key={s.value}
-                    variant={form.status === s.value ? "default" : "outline"}
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => handleStatusChange(s.value)}
-                    data-testid={`button-status-${s.value}`}
-                  >
-                    {s.label}
-                  </Button>
-                ))}
-              </div>
-            </div>
+            <SheetTitle className="text-base font-semibold text-foreground sr-only">Task Details</SheetTitle>
             <Input
               value={form.title}
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              className="text-lg font-medium border-0 px-0 shadow-none focus-visible:ring-0 h-auto"
+              className="text-lg font-semibold border-0 px-0 shadow-none focus-visible:ring-0 h-auto"
               placeholder="Task title..."
               data-testid="input-task-title"
             />
+            <div className="flex items-center justify-between gap-2">
+              <Badge variant={form.status === "done" ? "default" : form.status === "blocked" ? "destructive" : "secondary"} className="text-xs">
+                <StatusIcon status={form.status} className="h-3 w-3 mr-1" />
+                {STATUS_OPTIONS.find(s => s.value === form.status)?.label ?? form.status}
+              </Badge>
+              {primaryAction && (
+                <Button
+                  variant={primaryAction.variant}
+                  size="sm"
+                  className="h-8 text-xs font-medium"
+                  onClick={() => handleStatusChange(primaryAction.status)}
+                  disabled={primaryAction.disabled}
+                  title={primaryAction.tooltip}
+                  data-testid="button-primary-action"
+                >
+                  {primaryAction.icon}
+                  {primaryAction.label}
+                </Button>
+              )}
+            </div>
           </SheetHeader>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">Priority</Label>
-              <SearchableSelect
-                value={form.priority}
-                onValueChange={(v) => setForm((f) => ({ ...f, priority: v as TaskPriority }))}
-                triggerClassName="h-8 text-sm"
-                data-testid="select-priority"
-                options={PRIORITY_OPTIONS.map((p) => ({ value: p.value, label: p.label }))}
+          {/* ═══ ZONE 2: Context strip — compact, always visible ═══ */}
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <PriorityBadge priority={form.priority} />
+            {isOverdue && (
+              <Badge variant="destructive" className="text-[10px]">
+                <Clock className="h-3 w-3 mr-0.5" />Overdue
+              </Badge>
+            )}
+            {form.dueAt && (
+              <span className={isOverdue ? "text-red-500 font-medium" : ""}>
+                <Calendar className="h-3 w-3 inline mr-0.5" />
+                Due {form.dueAt}
+              </span>
+            )}
+            {form.projectName && (
+              <span>
+                <FolderOpen className="h-3 w-3 inline mr-0.5" />
+                {form.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+              </span>
+            )}
+          </div>
+
+          {/* Blocker banner */}
+          {(form.status === "blocked" || form.status === "waiting") && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-red-700">
+                <AlertCircle className="h-3.5 w-3.5" />
+                {form.status === "blocked" ? "Blocked" : "Waiting"}
+              </div>
+              <Input
+                value={form.blockedReason}
+                onChange={(e) => setForm((f) => ({ ...f, blockedReason: e.target.value }))}
+                placeholder="What's blocking this?"
+                className="text-sm h-8 bg-white"
+                data-testid="input-blocked-reason"
               />
             </div>
+          )}
+
+          {/* DoD required banner */}
+          {dodRequired && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+              <p className="text-xs text-amber-700 font-medium" data-testid="text-dod-required">
+                <Target className="h-3.5 w-3.5 inline mr-1" />
+                Add a Definition of Done to complete this task.
+              </p>
+            </div>
+          )}
+
+          <Separator />
+
+          {/* ═══ ZONE 3: Detail sections — progressive disclosure ═══ */}
+
+          {/* Next Step + DoD (most actionable — always visible) */}
+          <div className="space-y-3">
             <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
-              <SearchableSelect
-                value={form.status}
-                onValueChange={(v) => handleStatusChange(v as TaskStatus)}
-                triggerClassName="h-8 text-sm"
-                data-testid="select-status"
-                options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+              <Label className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                <Zap className="h-3 w-3" /> Next Step
+              </Label>
+              <Input
+                value={form.nextStep}
+                onChange={(e) => setForm((f) => ({ ...f, nextStep: e.target.value }))}
+                placeholder="What's the single next action?"
+                className="text-sm h-8"
+                data-testid="input-next-step"
               />
+            </div>
+            <div className={dodRequired ? "ring-2 ring-red-400 rounded-lg p-2 -m-2" : ""}>
+              <Label className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                <Target className="h-3 w-3" /> Definition of Done
+                <span className="text-[10px] text-muted-foreground/60 ml-1">(required to close)</span>
+              </Label>
+              <Textarea
+                value={form.definitionOfDone}
+                onChange={(e) => { setForm((f) => ({ ...f, definitionOfDone: e.target.value })); setDodRequired(false); }}
+                placeholder="What does 'done done' look like?"
+                className="text-sm min-h-[60px]"
+                data-testid="textarea-dod"
+              />
+              {dodTemplates.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1.5">
+                  {dodTemplates.map((t) => (
+                    <Button
+                      key={t.id}
+                      variant="outline" size="sm"
+                      className="h-6 text-[10px]"
+                      onClick={() => handleApplyDodTemplate(t.content)}
+                      data-testid={`button-dod-template-${t.id}`}
+                    >
+                      {t.name}
+                    </Button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+
+          {form.status === "done" && (
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Completion Note</Label>
+              <Textarea
+                value={form.completionNote}
+                onChange={(e) => setForm((f) => ({ ...f, completionNote: e.target.value }))}
+                placeholder="How was this resolved?"
+                className="text-sm min-h-[40px]"
+                data-testid="textarea-completion-note"
+              />
+            </div>
+          )}
+
+          <Separator />
+
+          {/* Details section (collapsible) */}
+          <details className="group">
+            <summary className="text-xs font-medium text-muted-foreground cursor-pointer select-none flex items-center gap-1">
+              <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+              Details
+            </summary>
+            <div className="mt-3 space-y-3 pl-1">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Priority</Label>
+                  <SearchableSelect
+                    value={form.priority}
+                    onValueChange={(v) => setForm((f) => ({ ...f, priority: v as TaskPriority }))}
+                    triggerClassName="h-8 text-sm"
+                    data-testid="select-priority"
+                    options={PRIORITY_OPTIONS.map((p) => ({ value: p.value, label: p.label }))}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1 block">Status</Label>
+                  <SearchableSelect
+                    value={form.status}
+                    onValueChange={(v) => handleStatusChange(v as TaskStatus)}
+                    triggerClassName="h-8 text-sm"
+                    data-testid="select-status"
+                    options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))}
+                  />
+                </div>
+              </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -437,114 +582,43 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-              <input type="checkbox" checked={form.isRecurring} onChange={(e) => setForm((f) => ({ ...f, isRecurring: e.target.checked }))} className="rounded border-border" />
-              Recurring
-            </label>
-            {form.isRecurring && (
-              <SearchableSelect
-                value={form.recurrenceFrequency}
-                onValueChange={(v) => setForm((f) => ({ ...f, recurrenceFrequency: v }))}
-                triggerClassName="h-8 text-sm"
-                options={[{ value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }]}
-              />
-            )}
-          </div>
-
-          {form.isRecurring && (
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Interval</Label>
-                <Input type="number" min={1} value={String(form.recurrenceInterval)} onChange={(e) => setForm((f) => ({ ...f, recurrenceInterval: Number(e.target.value || 1) }))} className="h-8 text-sm" />
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <input type="checkbox" checked={form.isRecurring} onChange={(e) => setForm((f) => ({ ...f, isRecurring: e.target.checked }))} className="rounded border-border" />
+                  Recurring
+                </label>
+                {form.isRecurring && (
+                  <SearchableSelect
+                    value={form.recurrenceFrequency}
+                    onValueChange={(v) => setForm((f) => ({ ...f, recurrenceFrequency: v }))}
+                    triggerClassName="h-8 text-sm"
+                    options={[{ value: "daily", label: "Daily" }, { value: "weekly", label: "Weekly" }, { value: "monthly", label: "Monthly" }]}
+                  />
+                )}
               </div>
-              <div className="col-span-2">
-                <Label className="text-xs text-muted-foreground mb-1 block">Weekly Days (0-6)</Label>
-                <Input value={form.recurrenceDaysOfWeek} onChange={(e) => setForm((f) => ({ ...f, recurrenceDaysOfWeek: e.target.value }))} placeholder="1,3,5" className="h-8 text-sm" />
-              </div>
+
+              {form.isRecurring && (
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Interval</Label>
+                    <Input type="number" min={1} value={String(form.recurrenceInterval)} onChange={(e) => setForm((f) => ({ ...f, recurrenceInterval: Number(e.target.value || 1) }))} className="h-8 text-sm" />
+                  </div>
+                  <div className="col-span-2">
+                    <Label className="text-xs text-muted-foreground mb-1 block">Weekly Days (0-6)</Label>
+                    <Input value={form.recurrenceDaysOfWeek} onChange={(e) => setForm((f) => ({ ...f, recurrenceDaysOfWeek: e.target.value }))} placeholder="1,3,5" className="h-8 text-sm" />
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+          </details>
 
-          <Separator />
-
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-              <Zap className="h-3 w-3" /> Next Step
-              <span className="text-[10px] text-muted-foreground/60 ml-1">(required before In Progress)</span>
-            </Label>
-            <Input
-              value={form.nextStep}
-              onChange={(e) => setForm((f) => ({ ...f, nextStep: e.target.value }))}
-              placeholder="What's the single next action?"
-              className="text-sm h-8"
-              data-testid="input-next-step"
-            />
-          </div>
-
-          <div className={dodRequired ? "ring-2 ring-red-400 rounded-lg p-2 -m-2" : ""}>
-            <Label className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-              <Target className="h-3 w-3" /> Definition of Done
-              <span className="text-[10px] text-muted-foreground/60 ml-1">(required to close)</span>
-            </Label>
-            <Textarea
-              value={form.definitionOfDone}
-              onChange={(e) => { setForm((f) => ({ ...f, definitionOfDone: e.target.value })); setDodRequired(false); }}
-              placeholder="What does 'done done' look like?"
-              className="text-sm min-h-[60px]"
-              data-testid="textarea-dod"
-            />
-            {dodRequired && (
-              <p className="text-xs text-red-500 mt-1" data-testid="text-dod-required">
-                Add a Definition of Done to close this task 100%.
-              </p>
-            )}
-            {dodTemplates.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                {dodTemplates.map((t) => (
-                  <Button
-                    key={t.id}
-                    variant="outline" size="sm"
-                    className="h-6 text-[10px]"
-                    onClick={() => handleApplyDodTemplate(t.content)}
-                    data-testid={`button-dod-template-${t.id}`}
-                  >
-                    {t.name}
-                  </Button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {form.status === "done" && (
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">Completion Note</Label>
-              <Textarea
-                value={form.completionNote}
-                onChange={(e) => setForm((f) => ({ ...f, completionNote: e.target.value }))}
-                placeholder="How was this resolved?"
-                className="text-sm min-h-[40px]"
-                data-testid="textarea-completion-note"
-              />
-            </div>
-          )}
-
-          {(form.status === "blocked" || form.status === "waiting") && (
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1 block">
-                <AlertCircle className="h-3 w-3 inline mr-1" />Blocked Reason
-              </Label>
-              <Input
-                value={form.blockedReason}
-                onChange={(e) => setForm((f) => ({ ...f, blockedReason: e.target.value }))}
-                placeholder="What's blocking this?"
-                className="text-sm h-8"
-                data-testid="input-blocked-reason"
-              />
-            </div>
-          )}
-
-          <Separator />
-
+          {/* Notes section (collapsible) */}
+          <details className="group">
+            <summary className="text-xs font-medium text-muted-foreground cursor-pointer select-none flex items-center gap-1">
+              <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
+              Notes
+            </summary>
+            <div className="mt-3 space-y-3 pl-1">
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">
               <FileText className="h-3 w-3 inline mr-1" />Notes
@@ -557,6 +631,10 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
               data-testid="textarea-notes"
             />
           </div>
+            </div>
+          </details>
+
+          <Separator />
 
           <div className="flex items-center gap-3">
             <label className="flex items-center gap-1.5 text-xs cursor-pointer">

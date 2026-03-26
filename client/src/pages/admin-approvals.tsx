@@ -211,6 +211,35 @@ export default function AdminApprovalsPage() {
       ? "All pending approvals across all projects"
       : "Your pending approvals";
 
+  // A6: Group by urgency
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekEnd = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const urgencyGroups = (() => {
+    const overdue: ApprovalItem[] = [];
+    const dueToday: ApprovalItem[] = [];
+    const thisWeek: ApprovalItem[] = [];
+    const later: ApprovalItem[] = [];
+
+    for (const item of filtered) {
+      const created = new Date(item.createdAt);
+      const ageDays = Math.floor((now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+
+      if (ageDays > 3) overdue.push(item);
+      else if (ageDays >= 1) dueToday.push(item);
+      else if (created >= today && created < weekEnd) thisWeek.push(item);
+      else later.push(item);
+    }
+
+    return [
+      { label: "Overdue (>3 days)", items: overdue, color: "text-red-600" },
+      { label: "Aging (1-3 days)", items: dueToday, color: "text-amber-600" },
+      { label: "Recent", items: thisWeek, color: "text-blue-600" },
+      { label: "New Today", items: later, color: "text-muted-foreground" },
+    ].filter(g => g.items.length > 0);
+  })();
+
   function openAction(item: ApprovalItem, action: "approve" | "reject", e: { stopPropagation: () => void }) {
     e.stopPropagation();
     setReason("");
@@ -384,8 +413,78 @@ export default function AdminApprovalsPage() {
         )}
 
         {!isLoading && !error && filtered.length > 0 && (
-          <div className="space-y-2">
-            {filtered.map(item => {
+          <div className="space-y-4">
+            {/* A6: Urgency-grouped approval cards */}
+            {urgencyGroups.map(group => (
+              <div key={group.label} className="space-y-2">
+                <h3 className={`text-xs font-semibold uppercase tracking-wide ${group.color}`}>
+                  {group.label} ({group.items.length})
+                </h3>
+                {group.items.map(item => {
+                  const config = typeConfig[item.type];
+                  const Icon = config.icon;
+                  const ageDays = Math.floor((now.getTime() - new Date(item.createdAt).getTime()) / (1000 * 60 * 60 * 24));
+                  return (
+                    <Card
+                      key={item.id}
+                      className="hover:shadow-md transition-shadow cursor-pointer"
+                      onClick={() => navigateToItem(item)}
+                      data-testid={`card-approval-${item.id}`}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-start gap-3">
+                          <div className={`p-2 rounded-lg ${config.bg} mt-0.5`}>
+                            <Icon className={`w-4 h-4 ${config.color}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-sm truncate" data-testid={`text-title-${item.id}`}>
+                                {item.title}
+                              </span>
+                              <Badge className={`text-[10px] ${config.badgeClass}`}>
+                                {config.label}
+                              </Badge>
+                              <Badge variant="secondary" className="text-[10px]">
+                                {ageDays === 0 ? "today" : `${ageDays}d ago`}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-4 mt-1.5 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <FolderOpen className="w-3 h-3" />
+                                {item.projectName}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                {item.assignee}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="outline" size="sm" className="h-7 text-xs gap-1 text-emerald-600 hover:text-emerald-700"
+                              onClick={(e) => openAction(item, "approve", e)}
+                              data-testid={`btn-approve-${item.id}`}
+                            >
+                              <ThumbsUp className="w-3 h-3" />
+                              Approve
+                            </Button>
+                            <Button
+                              variant="outline" size="sm" className="h-7 text-xs gap-1 text-red-600 hover:text-red-700"
+                              onClick={(e) => openAction(item, "reject", e)}
+                              data-testid={`btn-reject-${item.id}`}
+                            >
+                              <ThumbsDown className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ))}
+            {/* Legacy flat list fallback — hidden when urgency groups render */}
+            {urgencyGroups.length === 0 && filtered.map(item => {
               const config = typeConfig[item.type];
               const Icon = config.icon;
 
