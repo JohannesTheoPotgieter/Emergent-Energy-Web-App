@@ -855,6 +855,16 @@ export const procurementItems = pgTable("procurement_items", {
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // C2: Procurement standalone module enrichment
+  requisitionStatus: text("requisition_status").default("none"),          // 'none', 'requested', 'approved', 'rfq_sent', 'quoted', 'po_issued'
+  rfqSentDate: date("rfq_sent_date"),
+  quoteReceivedDate: date("quote_received_date"),
+  quoteAmount: decimal("quote_amount", { precision: 15, scale: 2 }),
+  boqReference: text("boq_reference"),
+  deliveryExpectedDate: date("delivery_expected_date"),
+  deliveryActualDate: date("delivery_actual_date"),
+  deliveryStatus: text("delivery_status").default("not_ordered"),         // 'not_ordered', 'ordered', 'shipped', 'delivered', 'partial'
+  isLongLead: boolean("is_long_lead").default(false),
 });
 export const insertProcurementItemSchema = createInsertSchema(procurementItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertProcurementItem = z.infer<typeof insertProcurementItemSchema>;
@@ -977,3 +987,26 @@ export const fyeReportSnapshots = pgTable("fye_report_snapshots", {
   approvedAt: timestamp("approved_at"),
 });
 export type FyeReportSnapshot = typeof fyeReportSnapshots.$inferSelect;
+
+// ===================== BUDGET BASELINES (B5) =====================
+
+export const budgetBaselines = pgTable("budget_baselines", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  version: integer("version").notNull().default(1),
+  revenueBaseline: decimal("revenue_baseline", { precision: 15, scale: 2 }),
+  cosBaseline: decimal("cos_baseline", { precision: 15, scale: 2 }),
+  marginBaseline: decimal("margin_baseline", { precision: 15, scale: 2 }),
+  contingency: decimal("contingency", { precision: 15, scale: 2 }),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+  approvedDate: timestamp("approved_date"),
+  changeLocked: boolean("change_locked").default(false),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => ({
+  projectVersionUnique: unique("budget_baselines_project_version_unique").on(table.projectId, table.version),
+}));
+
+export const insertBudgetBaselineSchema = createInsertSchema(budgetBaselines).omit({ id: true, createdAt: true } as any);
+export type InsertBudgetBaseline = z.infer<typeof insertBudgetBaselineSchema>;
+export type BudgetBaseline = typeof budgetBaselines.$inferSelect;

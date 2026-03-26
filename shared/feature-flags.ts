@@ -23,6 +23,18 @@ export const FEATURE_FLAG_KEYS = [
   "promoted_quality_read",
   "task_management_hub",
   "standup_system",
+
+  // A10: Non-core features gated for progressive disclosure
+  "nav_customizer",
+  "onboarding_tour",
+  "micro_walkthrough",
+  "gamification",
+  "leaderboard_nav",
+  "department_scores_nav",
+  "action_launchpad",
+  "phone_templates",
+  "training_page",
+  "feedback_page",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -174,6 +186,68 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     label: "Standup system",
     description: "Controls the bi-daily standup system with async submissions, team views, and analytics.",
     defaultValue: true,
+  },
+
+  // A10: Non-core helper features — gated to reduce default UI clutter
+  {
+    key: "nav_customizer",
+    label: "Navigation customizer",
+    description: "Controls the nav order customizer in user menu. De-emphasized until nav is stable.",
+    defaultValue: false,
+  },
+  {
+    key: "onboarding_tour",
+    label: "Onboarding tour",
+    description: "Controls the nav onboarding tour overlay. De-emphasized until nav is stable.",
+    defaultValue: false,
+  },
+  {
+    key: "micro_walkthrough",
+    label: "Micro walkthroughs",
+    description: "Controls contextual micro-walkthrough guidance overlays.",
+    defaultValue: false,
+  },
+  {
+    key: "gamification",
+    label: "Gamification",
+    description: "Controls gamification features and routes.",
+    defaultValue: false,
+  },
+  {
+    key: "leaderboard_nav",
+    label: "Leaderboard in nav",
+    description: "Controls leaderboard visibility in main navigation. Available via Reports > Team.",
+    defaultValue: false,
+  },
+  {
+    key: "department_scores_nav",
+    label: "Department scores in nav",
+    description: "Controls department scores visibility in main navigation. Available via Reports > Team.",
+    defaultValue: false,
+  },
+  {
+    key: "action_launchpad",
+    label: "Action launchpad",
+    description: "Controls the standalone action launchpad page. Content available via normal navigation.",
+    defaultValue: false,
+  },
+  {
+    key: "phone_templates",
+    label: "Phone templates",
+    description: "Controls phone templates page visibility. Available via Admin when enabled.",
+    defaultValue: false,
+  },
+  {
+    key: "training_page",
+    label: "Training page",
+    description: "Controls training page in main navigation. Available via user menu.",
+    defaultValue: false,
+  },
+  {
+    key: "feedback_page",
+    label: "Feedback page",
+    description: "Controls feedback page in main navigation. Available via user menu.",
+    defaultValue: false,
   },
 ];
 
