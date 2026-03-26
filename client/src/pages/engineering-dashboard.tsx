@@ -697,7 +697,7 @@ export default function EngineeringDashboard() {
 
   const assigneeParam = (!showAllTasks && firstName) ? `?assignee=${encodeURIComponent(firstName)}` : "";
 
-  const { data, isLoading, error } = useQuery<StandupData>({
+  const { data, isLoading, isError, error, refetch } = useQuery<StandupData>({
     queryKey: ["eng-overview", assigneeParam],
     queryFn: () => engFetch(`/api/eng/dashboard/overview${assigneeParam}`),
     refetchOnMount: "always",
@@ -749,22 +749,10 @@ export default function EngineeringDashboard() {
     );
   }
 
-  if (error || !data || !summary) {
+  if (isError || !data || !summary) {
     return (
       <PageShell className="p-4 md:p-6" data-testid="eng-dashboard">
-        <SectionHeader
-          icon={<Wrench className="h-5 w-5" />}
-          title="Engineering Overview & Team Ops"
-          description="Engineering overview and task coordination"
-        />
-        <Card className="border border-red-200 bg-red-50/40">
-          <CardContent className="py-10 px-6 text-center">
-            <AlertTriangle className="h-10 w-10 text-red-600 mx-auto mb-2" />
-            <p className="font-medium">Failed to load engineering overview data</p>
-            <p className="text-sm text-muted-foreground mt-1">{(error as Error)?.message || "Unknown error"}</p>
-            <p className="text-xs text-muted-foreground mt-1">Try refreshing this page. Core task execution remains available in /engineering/tasks.</p>
-          </CardContent>
-        </Card>
+        <PageError title="Unable to load Engineering Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} />
       </PageShell>
     );
   }

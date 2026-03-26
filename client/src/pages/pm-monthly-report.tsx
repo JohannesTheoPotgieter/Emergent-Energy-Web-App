@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Loader2 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import KPITileGrid from "@/components/reports/KPITileGrid";
 import RAGBadge from "@/components/reports/RAGBadge";
@@ -93,7 +94,7 @@ export default function PmMonthlyReport() {
 
   const previousMonth = prevMonth(month);
 
-  const { data: report, isLoading, error } = useQuery({
+  const { data: report, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/reports/pm/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/pm/monthly?month=${month}`, { headers: getAuthHeaders() });
@@ -183,6 +184,9 @@ export default function PmMonthlyReport() {
     if (summary.stale) actions.push("Refresh import pipeline before board pack is finalized.");
     return actions.slice(0, 5);
   }, [summary]);
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PM monthly report" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const kpiTiles: KPITile[] = [
     { label: "Active Projects", value: summary.activeProjects, onClick: () => setDrill({ title: "Active Projects", context: { tab: "projects" } }) },

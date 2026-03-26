@@ -332,14 +332,14 @@ const RAG_STATUSES = ["", "Green", "Amber", "Red"];
 export default function LifecycleBoardPage() {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
-  const { data: projects = [], isLoading: loading } = useQuery<ProjectInfo[]>({
+  const { data: projects = [], isLoading: loading, isError, error, refetch } = useQuery<ProjectInfo[]>({
     queryKey: ["/api/lifecycle-board/projects"],
     queryFn: async () => {
       const res = await fetch("/api/lifecycle-board/projects", {
         credentials: "include",
         headers: getAuthHeaders(),
       });
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
       return res.json();
     },
     refetchInterval: 30_000,
@@ -953,13 +953,8 @@ export default function LifecycleBoardPage() {
     { title: "Click for details", description: "Click a project card to see its summary, edit details, link records, or manage gate status." },
   ], []);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20" data-testid="lifecycle-board-loading">
-        <Loader2 className="w-6 h-6 animate-spin text-[#16a34a]" />
-      </div>
-    );
-  }
+  if (loading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Lifecycle Board" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
     <div className="space-y-4" data-testid="lifecycle-board-page">

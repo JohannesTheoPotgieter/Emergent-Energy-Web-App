@@ -41,6 +41,7 @@ import {
   Check,
   X,
 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -131,7 +132,7 @@ export default function PMOnTheGoProject() {
   const queryClient = useQueryClient();
   const [activeAction, setActiveAction] = useState<ActionType | null>(null);
 
-  const { data: snapshot, isLoading: snapshotLoading, refetch: refetchSnapshot } = useQuery<Snapshot>({
+  const { data: snapshot, isLoading: snapshotLoading, isError, error, refetch: refetchSnapshot } = useQuery<Snapshot>({
     queryKey: ["pm-otg-snapshot", projectId],
     queryFn: () => apiFetch(`/api/pm-otg/projects/${projectId}/snapshot`),
     enabled: projectId > 0,

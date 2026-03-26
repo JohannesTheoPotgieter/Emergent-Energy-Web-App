@@ -7,6 +7,7 @@ import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageEmpty } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import { RefreshCw, CheckCircle2, AlertTriangle, Clock, Loader2, Plug } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { apiRequest } from "@/lib/queryClient";
 
 interface SyncLogEntry {
@@ -47,7 +48,7 @@ export default function AdminPipedrivePage() {
     },
   });
 
-  const { data: syncLog = [], isLoading } = useQuery<SyncLogEntry[]>({
+  const { data: syncLog = [], isLoading, isError, error, refetch } = useQuery<SyncLogEntry[]>({
     queryKey: ["/api/admin/pipedrive/sync-log"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/admin/pipedrive/sync-log");
@@ -77,6 +78,9 @@ export default function AdminPipedrivePage() {
 
   const lastSync = syncLog[0];
   const isConfigured = status?.configured ?? false;
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Pipedrive sync data" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-admin-pipedrive">
