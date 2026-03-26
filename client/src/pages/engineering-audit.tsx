@@ -247,6 +247,9 @@ export default function EngineeringAuditPage() {
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const categoryCounts = data?.categoryCounts || {};
 
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Engineering Audit" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
+
   return (
     <ErrorBoundary>
     <div className="space-y-4 p-4 md:p-6" data-testid="engineering-audit-page">
