@@ -18,6 +18,7 @@ import {
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
   MessageSquare, FolderOpen, FileCheck, Search, X,
+  HardHat, Handshake,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -42,6 +43,8 @@ import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
 import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
+import { ProjectConstructionTab } from "@/components/tabs/ProjectConstructionTab";
+import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
@@ -171,6 +174,7 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
   const currentIdx = PROJECT_PHASES.indexOf(currentPhase as any);
   const toIdx = PROJECT_PHASES.indexOf(toPhase as any);
   const needsOverride = currentIdx >= 0 && toIdx >= 0 && Math.abs(toIdx - currentIdx) > 1;
+  const isRegression = currentIdx >= 0 && toIdx >= 0 && toIdx < currentIdx;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -211,6 +215,19 @@ function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
               data-testid="input-phase-reason"
             />
           </div>
+          {/* A7: Phase regression warning */}
+          {isRegression && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200">
+              <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="text-sm">
+                <p className="font-medium text-red-800">Phase regression detected</p>
+                <p className="text-xs text-red-600 mt-0.5">
+                  Moving from {getPhaseLabel(currentPhase)} back to {toPhase ? getPhaseLabel(toPhase) : "an earlier phase"}.
+                  This is unusual and should be documented. A reason is required.
+                </p>
+              </div>
+            </div>
+          )}
           {needsOverride && (
             <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
               <Switch
@@ -876,6 +893,8 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "local-files": { section: "collaboration", subTab: "local-files" },
   "approvals": { section: "collaboration", subTab: "approvals" },
   "collaboration": { section: "collaboration", subTab: "chat" },
+  "construction": { section: "construction", subTab: "" },
+  "handover": { section: "handover", subTab: "" },
 };
 
 const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
@@ -1458,6 +1477,8 @@ export default function ProjectDetailPage() {
           { key: "commercial", label: "Commercial", icon: DollarSign, visible: canViewTab.finance },
           { key: "engineering", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
           { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality },
+          { key: "construction", label: "Construction", icon: HardHat, visible: canViewTab.overview },
+          { key: "handover", label: "Handover", icon: Handshake, visible: canViewTab.overview },
           { key: "collaboration", label: "Records", icon: Users, visible: canViewSubTab.collaboration },
         ].filter(t => t.visible).map((tab) => {
           const Icon = tab.icon;
@@ -1567,6 +1588,18 @@ export default function ProjectDetailPage() {
       {activeSection === "quality" && canViewTab.quality && (
         <div className="space-y-2" data-testid="quality-section">
           <QualityTab projectName={projectName} />
+        </div>
+      )}
+
+      {activeSection === "construction" && (
+        <div className="space-y-2" data-testid="construction-section">
+          {projectInfoId && <ProjectConstructionTab projectId={projectInfoId} projectName={projectName} />}
+        </div>
+      )}
+
+      {activeSection === "handover" && (
+        <div className="space-y-2" data-testid="handover-section">
+          {projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
