@@ -84,14 +84,6 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register handover-routes:", err);
   }
 
-  // C5: Notification Triggers
-  try {
-    const { registerNotificationTriggerRoutes } = await import("../departments/notification-trigger-routes");
-    registerNotificationTriggerRoutes(app);
-  } catch (err) {
-    console.error("[Routes] Failed to register notification-trigger-routes:", err);
-  }
-
   // D1: Pipedrive Sync
   try {
     const { registerPipedriveRoutes } = await import("../departments/pipedrive-routes");
