@@ -111,6 +111,64 @@ router.post("/api/admin/backfill/sites-from-projects", requireAuth, async (_req:
   }
 });
 
+/**
+ * POST /api/admin/backfill/opportunities-from-pd-tickets
+ * Creates opportunity records from PD tickets that have handover data.
+ * Non-destructive: only creates opportunities that don't already exist.
+ */
+router.post("/api/admin/backfill/opportunities-from-pd-tickets", requireAuth, async (_req: Request, res: Response) => {
+  try {
+    const result = await db.execute(sql`
+      INSERT INTO opportunities (client_id, stage, notes, status, created_at, updated_at)
+      SELECT DISTINCT
+        pt.client_id,
+        CASE
+          WHEN pt.status = 'accepted' THEN 'won'
+          WHEN pt.status = 'submitted' THEN 'negotiation'
+          WHEN pt.status = 'in_progress' THEN 'proposal'
+          ELSE 'prospect'
+        END,
+        'Auto-created from PD ticket: ' || pt.title,
+        'active',
+        NOW(),
+        NOW()
+      FROM pd_tickets pt
+      WHERE pt.client_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM opportunities o WHERE o.client_id = pt.client_id
+        )
+      ON CONFLICT DO NOTHING
+      RETURNING id
+    `);
+    const created = (result as any).rows?.length ?? 0;
+
+    // Link PD tickets to opportunities
+    if (created > 0) {
+      await db.execute(sql`
+        UPDATE pd_tickets pt
+        SET opportunity_id = o.id
+        FROM opportunities o
+        WHERE pt.client_id = o.client_id
+          AND pt.opportunity_id IS NULL
+      `);
+    }
+
+    const linkResult = await db.execute(sql`
+      SELECT COUNT(*)::int as count FROM pd_tickets WHERE opportunity_id IS NOT NULL
+    `);
+    const linked = Number((linkResult as any).rows?.[0]?.count ?? 0);
+
+    res.json({
+      opportunitiesCreated: created,
+      ticketsLinked: linked,
+      message: `Created ${created} opportunities and linked ${linked} PD tickets`,
+    });
+  } catch (err) {
+    console.error("[Backfill] Opportunities backfill failed:", err);
+    res.status(500).json({ error: "Opportunities backfill failed" });
+  }
+});
+
 export function registerDataBackfillRoutes(app: Express) {
   app.use(router);
 }

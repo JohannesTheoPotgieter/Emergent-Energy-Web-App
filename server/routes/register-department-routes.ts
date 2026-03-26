@@ -92,6 +92,22 @@ export async function registerDepartmentRoutes(app: Express) {
     console.error("[Routes] Failed to register notification-trigger-routes:", err);
   }
 
+  // Board Pack PDF
+  try {
+    const { registerBoardPackRoutes } = await import("../departments/board-pack-routes");
+    registerBoardPackRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register board-pack-routes:", err);
+  }
+
+  // Drawing Register
+  try {
+    const { registerDrawingRegisterRoutes } = await import("../departments/drawing-register-routes");
+    registerDrawingRegisterRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register drawing-register-routes:", err);
+  }
+
   // Data Backfill
   try {
     const { registerDataBackfillRoutes } = await import("../departments/data-backfill-routes");
