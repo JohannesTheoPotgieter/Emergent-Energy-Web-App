@@ -46,6 +46,7 @@ import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningT
 import { ProjectConstructionTab } from "@/components/tabs/ProjectConstructionTab";
 import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
 import { BudgetBaselineStrip } from "@/components/tabs/BudgetBaselineStrip";
+import { DrawingRegisterTab } from "@/components/tabs/DrawingRegisterTab";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
@@ -1657,8 +1658,9 @@ export default function ProjectDetailPage() {
       )}
 
       {activeSection === "engineering" && canViewTab.engineering && (
-        <div className="space-y-2" data-testid="eng-section">
+        <div className="space-y-4" data-testid="eng-section">
           {canViewSubTab.engTasks && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} projectName={projectName} />}
+          {projectInfoId && <DrawingRegisterTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
