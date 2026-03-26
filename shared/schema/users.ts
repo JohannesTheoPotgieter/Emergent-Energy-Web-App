@@ -544,7 +544,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'execution_board',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1307,8 +1307,8 @@ export const WORKSTREAM_VISIBILITY_DEFAULTS: Record<string, { workstreams: strin
   KEY_ACCOUNTS_MANAGER: { workstreams: ['PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'INFORMATION'] },
 
   // PROJECT MANAGEMENT — CONSTRUCTION_MANAGER now PM + QUALITY focused
-  CONSTRUCTION_MANAGER: { workstreams: ['PM', 'QUALITY'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECT_MANAGEMENT', 'GOVERNANCE', 'INFORMATION'] },
-  PROJECT_MANAGER_SITE: { workstreams: ['PM', 'PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE'] },
+  CONSTRUCTION_MANAGER: { workstreams: ['PM', 'QUALITY'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'PROJECT_MANAGEMENT', 'GOVERNANCE', 'INFORMATION'] },
+  PROJECT_MANAGER_SITE: { workstreams: ['PM', 'PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
 
   // FINANCE
   CFO:                     { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'GOVERNANCE', 'INFORMATION'] },
@@ -1327,7 +1327,7 @@ export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
   { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Site project manager — view-only access to assigned projects, dates, financials, quality, engineering", sections: ["COLLABORATION", "PROJECTS", "MONEY", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
+  { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Site project manager — view-only access to assigned projects, dates, financials, quality, engineering", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
   { role: "PROJECT_DEVELOPER", label: "Project Developer", description: "Project developer — manages project development, cost proposals, and client relations", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "PROJECT_DEVELOPMENT", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "ENGINEER", label: "Engineer", description: "Engineering team member — engineering tasks, deliverables, stage checklists", sections: ["COCKPIT", "COLLABORATION", "ENGINEERING", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
   { role: "ACCOUNTANT", label: "Accountant", description: "Finance team — cashflow, COS tracking, invoice management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
