@@ -26,6 +26,18 @@ export default function AdminBackfillPage() {
     refetchInterval: 15000,
   });
 
+  const opportunityBackfill = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/backfill/opportunities-from-pd-tickets");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/backfill/status"] });
+      toast({ title: "Opportunities backfill complete", description: data.message });
+    },
+    onError: (err: Error) => toast({ title: "Backfill failed", description: err.message, variant: "destructive" }),
+  });
+
   const siteBackfill = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/admin/backfill/sites-from-projects");
@@ -110,6 +122,23 @@ export default function AdminBackfillPage() {
                 disabled={siteBackfill.isPending}
               >
                 {siteBackfill.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                Run
+              </Button>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Create Opportunities from PD Tickets</p>
+                <p className="text-xs text-muted-foreground">Creates opportunity records from PD tickets with client data. Links tickets to their opportunities.</p>
+              </div>
+              <Button
+                size="sm"
+                className="gap-1.5 shrink-0"
+                onClick={() => opportunityBackfill.mutate()}
+                disabled={opportunityBackfill.isPending}
+              >
+                {opportunityBackfill.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
                 Run
               </Button>
             </CardContent>

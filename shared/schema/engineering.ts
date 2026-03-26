@@ -227,3 +227,42 @@ export const projectEngApprovals = pgTable("project_eng_approvals", {
 export const insertProjectEngApprovalSchema = createInsertSchema(projectEngApprovals).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertProjectEngApproval = z.infer<typeof insertProjectEngApprovalSchema>;
 export type ProjectEngApproval = typeof projectEngApprovals.$inferSelect;
+
+// ===================== DRAWING REGISTER =====================
+
+export const drawingRegister = pgTable("drawing_register", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  drawingNumber: text("drawing_number").notNull(),
+  title: text("title").notNull(),
+  discipline: text("discipline"),           // 'electrical', 'structural', 'mechanical', 'civil', 'architectural'
+  currentRevision: text("current_revision").default("A"),
+  revisionDate: date("revision_date"),
+  status: text("status").default("draft"),  // 'draft', 'for_review', 'for_approval', 'approved', 'ifc', 'as_built', 'superseded'
+  authorUserId: integer("author_user_id").references(() => users.id),
+  reviewerUserId: integer("reviewer_user_id").references(() => users.id),
+  approverUserId: integer("approver_user_id").references(() => users.id),
+  sharepointLink: text("sharepoint_link"),
+  sheetSize: text("sheet_size"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const insertDrawingRegisterSchema = createInsertSchema(drawingRegister).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertDrawingRegister = z.infer<typeof insertDrawingRegisterSchema>;
+export type DrawingRegister = typeof drawingRegister.$inferSelect;
+
+export const drawingRevisions = pgTable("drawing_revisions", {
+  id: serial("id").primaryKey(),
+  drawingId: integer("drawing_id").notNull().references(() => drawingRegister.id),
+  revision: text("revision").notNull(),
+  revisionDate: date("revision_date").notNull(),
+  description: text("description"),
+  revisedByUserId: integer("revised_by_user_id").references(() => users.id),
+  sharepointLink: text("sharepoint_link"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type DrawingRevision = typeof drawingRevisions.$inferSelect;
