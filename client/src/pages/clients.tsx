@@ -60,16 +60,6 @@ interface Client {
   updatedAt: string;
   createdBy: number | null;
   updatedBy: number | null;
-  // B1: Enriched fields
-  legalEntityName: string | null;
-  tradingName: string | null;
-  clientType: string | null;
-  billingEntity: string | null;
-  primaryContactName: string | null;
-  primaryContactEmail: string | null;
-  primaryContactPhone: string | null;
-  industry: string | null;
-  status: string | null;
 }
 
 interface ProjectCount {
@@ -304,8 +294,6 @@ export default function ClientsPage() {
               <TableHead className="w-10" />
               <TableHead className="w-32">Client ID</TableHead>
               <TableHead>Name</TableHead>
-              <TableHead className="w-24">Type</TableHead>
-              <TableHead className="w-40">Contact</TableHead>
               <TableHead className="w-36">Created</TableHead>
               <TableHead className="w-32 text-center">Projects</TableHead>
               <TableHead className="w-20" />
@@ -314,13 +302,13 @@ export default function ClientsPage() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                   Loading clients...
                 </TableCell>
               </TableRow>
             ) : clients.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
                   {search ? "No clients match your search" : "No clients yet. Create your first client."}
                 </TableCell>
               </TableRow>
@@ -396,19 +384,6 @@ export default function ClientsPage() {
                           </span>
                         )}
                       </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {client.clientType ? (
-                          <Badge variant="outline" className="text-[10px]">{client.clientType}</Badge>
-                        ) : "—"}
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {client.primaryContactName || client.primaryContactEmail ? (
-                          <div>
-                            {client.primaryContactName && <div className="font-medium text-foreground">{client.primaryContactName}</div>}
-                            {client.primaryContactEmail && <div>{client.primaryContactEmail}</div>}
-                          </div>
-                        ) : "—"}
-                      </TableCell>
                       <TableCell className="text-muted-foreground text-sm" data-testid={`text-client-created-${client.id}`}>
                         {client.createdAt ? format(new Date(client.createdAt), "dd MMM yyyy") : "—"}
                       </TableCell>
@@ -441,7 +416,7 @@ export default function ClientsPage() {
                     </TableRow>
                     {isExpanded && (
                       <TableRow key={`${client.id}-expanded`}>
-                        <TableCell colSpan={8} className="bg-muted/30 p-0">
+                        <TableCell colSpan={6} className="bg-muted/30 p-0">
                           <div className="px-6 py-4 space-y-3">
                             <div className="flex items-center justify-between">
                               <h4 className="text-sm font-semibold text-muted-foreground">
@@ -509,9 +484,9 @@ export default function ClientsPage() {
           <DialogHeader>
             <DialogTitle>New Client</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="space-y-4 py-2">
             <Input
-              placeholder="Client name *"
+              placeholder="Client name"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
@@ -520,26 +495,6 @@ export default function ClientsPage() {
               autoFocus
               data-testid="input-new-client-name"
             />
-            {/* B1: Enriched fields — shown as optional details */}
-            <details className="group">
-              <summary className="text-xs font-medium text-muted-foreground cursor-pointer select-none flex items-center gap-1">
-                <ChevronRight className="h-3.5 w-3.5 transition-transform group-open:rotate-90" />
-                Additional Details (optional)
-              </summary>
-              <div className="mt-2 space-y-2 pl-1">
-                <Input placeholder="Legal entity name" className="text-sm h-8" data-testid="input-legal-entity" />
-                <Input placeholder="Trading name" className="text-sm h-8" />
-                <div className="grid grid-cols-2 gap-2">
-                  <Input placeholder="Industry" className="text-sm h-8" />
-                  <Input placeholder="Billing entity" className="text-sm h-8" />
-                </div>
-                <Input placeholder="Primary contact name" className="text-sm h-8" />
-                <div className="grid grid-cols-2 gap-2">
-                  <Input placeholder="Contact email" className="text-sm h-8" type="email" />
-                  <Input placeholder="Contact phone" className="text-sm h-8" type="tel" />
-                </div>
-              </div>
-            </details>
           </div>
           <DialogFooter>
             <Button
