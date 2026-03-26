@@ -54,10 +54,13 @@ export const TOP_SECTIONS: TopSection[] = [
       "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews",
       "/pm/handover-review", "/portfolios", "/exceptions",
       "/engineering", "/quality", "/construction", "/hse", "/handover",
+      "/sites", "/opportunities",
       "/pd",
     ]),
     secondary: [
       { label: "Project List", path: "/projects" },
+      { label: "Sites", path: "/sites" },
+      { label: "Opportunities", path: "/opportunities" },
       { label: "Portfolio Overview", path: "/execution-board" },
       { label: "Portfolios", path: "/portfolios" },
       { label: "Lifecycle", path: "/lifecycle-board" },
