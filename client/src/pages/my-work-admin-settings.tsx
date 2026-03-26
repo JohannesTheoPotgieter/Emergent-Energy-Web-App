@@ -108,7 +108,7 @@ function HorizonBadge({ horizon }: { horizon: string }) {
   );
 }
 
-export default function MyToolAdminSettingsPage() {
+export default function MyWorkAdminSettingsPage() {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
 
