@@ -1166,6 +1166,10 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN excel_tracker_link TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN canonical_project_id INTEGER`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN client_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN site_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN opportunity_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN delivery_model TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN project_code TEXT`)); } catch {}
 
     // Add missing columns to program_expense (safe ALTERs)
     try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN row_type TEXT DEFAULT 'item'`)); } catch {}
