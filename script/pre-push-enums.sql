@@ -289,3 +289,18 @@ CREATE TABLE IF NOT EXISTS "user_permission_overrides" (id SERIAL PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS "permission_audit_log" (id SERIAL PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS "monthly_report_snapshots" (id SERIAL PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS "workstream_visibility_config" (id SERIAL PRIMARY KEY);
+
+-- Architecture migration: new entity tables (Phase B/C/D)
+CREATE TABLE IF NOT EXISTS "sites" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "opportunities" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "budget_baselines" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "site_activities" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "snags" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "site_inspections" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "contractor_assignments" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "hse_incidents" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "corrective_actions" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "handover_packs" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "handover_checklist_items" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "sseg_items" (id SERIAL PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS "pipedrive_sync_log" (id SERIAL PRIMARY KEY);
