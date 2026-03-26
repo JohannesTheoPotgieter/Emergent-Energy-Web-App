@@ -21,6 +21,13 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
   if (mode !== "postgres") return;
   if (!process.env.DATABASE_URL) return;
 
+  // Wait for PostgreSQL to be fully ready before running schema sync
+  const ready = await waitForDbReady();
+  if (!ready) {
+    log("Database not accepting connections — skipping schema sync", "Startup:Schema");
+    return;
+  }
+
   const sqlFiles = [
     { name: "pre-push-enums.sql", path: "script/pre-push-enums.sql" },
     { name: "full-schema-alignment.sql", path: "script/full-schema-alignment.sql" },
@@ -47,8 +54,8 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
       const candidates = [
         path.resolve(process.cwd(), file.path),
         path.resolve(process.cwd(), `dist/${file.path}`),
-        path.resolve(__dirname, `../${file.path}`),
-        path.resolve(__dirname, `../../${file.path}`),
+        path.resolve(import.meta.dirname, `../${file.path}`),
+        path.resolve(import.meta.dirname, `../../${file.path}`),
       ];
       let sqlContent: string | null = null;
       for (const candidate of candidates) {
@@ -69,6 +76,22 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
   }
 }
 
+async function waitForDbReady(maxRetries = 5, baseDelayMs = 1000): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await db.execute(sql.raw('SELECT 1'));
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Schema] DB not ready (attempt ${attempt}/${maxRetries}): ${msg}`);
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, baseDelayMs * attempt));
+      }
+    }
+  }
+  return false;
+}
+
 async function runAdditiveSchemaAlignments() {
   const mode = getDbMode();
 
@@ -77,12 +100,28 @@ async function runAdditiveSchemaAlignments() {
     return;
   }
 
+  const ready = await waitForDbReady();
+  if (!ready) {
+    console.error("[Schema] Database not accepting connections after retries — skipping additive alignments");
+    return;
+  }
+
   // Helper: execute each SQL block independently so one failure doesn't abort others
   async function safeExec(label: string, rawSql: string) {
-    try {
-      await db.execute(sql.raw(rawSql));
-    } catch (err: unknown) {
-      console.error(`[Schema] ${label} error:`, (err instanceof Error ? err.message : String(err)));
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await db.execute(sql.raw(rawSql));
+        return;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isTransient = /connection|ECONNREFUSED|not yet accepting|timeout/i.test(msg);
+        if (isTransient && attempt < 2) {
+          console.warn(`[Schema] ${label} transient error, retrying in 2s: ${msg}`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        console.error(`[Schema] ${label} error:`, msg);
+      }
     }
   }
 

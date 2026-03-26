@@ -491,6 +491,11 @@ export function registerHandoverRoutes(app: Express) {
 
       res.json({ items });
     } catch (err: any) {
+      const msg = err?.message || '';
+      if (/relation.*does not exist|no such table/i.test(msg) || err?.code === '42P01') {
+        console.warn("[handover] control: table missing, returning empty");
+        return res.json({ items: [] });
+      }
       console.error("[handover] GET control error:", err);
       res.status(500).json({ error: "Could not load handover control view. Refresh and retry." });
     }
