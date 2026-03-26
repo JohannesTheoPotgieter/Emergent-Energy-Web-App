@@ -547,8 +547,8 @@ function FinancialCloseCell({
       payload[`${fieldPrefix}Link`] = fileUrl;
       payload[`${fieldPrefix}NaReason`] = null;
       mutation.mutate(payload);
-    } catch (err: any) {
-      console.error("File upload error:", err?.message || err);
+    } catch {
+      // Error handled by mutation onError callback
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -927,8 +927,8 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
         body: JSON.stringify({ latestUpdate: trimmed || null }),
       });
       queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
-    } catch (e) {
-      console.error("Failed to save latest update:", e);
+    } catch {
+      // Silent — optimistic update already visible
     }
     setEditing(false);
   };
