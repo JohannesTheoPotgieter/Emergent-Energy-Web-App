@@ -1,9 +1,16 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { ShieldAlert, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { ShieldAlert, AlertTriangle, CheckCircle2, Clock, Plus } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 interface HseIncidentSummary { id: number; incidentType: string; severity: string; description: string; status: string; incidentDate: string; }
@@ -29,8 +36,41 @@ function severityBadge(s: string) {
   return "bg-blue-100 text-blue-700";
 }
 
+const INCIDENT_TYPES = [
+  { value: "near_miss", label: "Near Miss" },
+  { value: "first_aid", label: "First Aid" },
+  { value: "medical", label: "Medical" },
+  { value: "lost_time", label: "Lost Time" },
+  { value: "environmental", label: "Environmental" },
+  { value: "property_damage", label: "Property Damage" },
+];
+const SEVERITIES = [
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "critical", label: "Critical" },
+];
+
 export default function HseDashboardPage() {
   const [tab, setTab] = useState<"incidents" | "corrective_actions">("incidents");
+  const [showCreate, setShowCreate] = useState(false);
+  const [form, setForm] = useState({ incidentType: "near_miss", severity: "low", description: "", location: "", evidenceLink: "", incidentDate: new Date().toISOString().slice(0, 10) });
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const createMutation = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/hse/incidents", body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hse/incidents"] });
+      toast({ title: "Incident reported" });
+      setShowCreate(false);
+      setForm({ incidentType: "near_miss", severity: "low", description: "", location: "", evidenceLink: "", incidentDate: new Date().toISOString().slice(0, 10) });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
 
   const { data: incidents = [], isLoading: incidentsLoading } = useQuery<HseIncidentSummary[]>({
     queryKey: ["/api/hse/incidents"],
@@ -59,6 +99,11 @@ export default function HseDashboardPage() {
         eyebrow="Quality & HSE"
         title="Health, Safety & Environment"
         description={`${openIncidents.length} open incidents, ${openActions.length} corrective actions pending`}
+        actions={
+          <Button size="sm" className="gap-1.5" onClick={() => setShowCreate(true)}>
+            <Plus className="h-4 w-4" /> Report Incident
+          </Button>
+        }
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -156,6 +201,26 @@ export default function HseDashboardPage() {
           ))}
         </div>
       )}
+      {/* Create Incident Dialog */}
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Report HSE Incident</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label className="text-xs">Type *</Label><SearchableSelect value={form.incidentType} onValueChange={v => setForm(f => ({ ...f, incidentType: v }))} options={INCIDENT_TYPES} /></div>
+              <div><Label className="text-xs">Severity *</Label><SearchableSelect value={form.severity} onValueChange={v => setForm(f => ({ ...f, severity: v }))} options={SEVERITIES} /></div>
+            </div>
+            <div><Label className="text-xs">Date</Label><Input type="date" value={form.incidentDate} onChange={e => setForm(f => ({ ...f, incidentDate: e.target.value }))} /></div>
+            <div><Label className="text-xs">Description *</Label><Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="What happened?" className="min-h-[80px]" /></div>
+            <div><Label className="text-xs">Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} placeholder="Where did it occur?" /></div>
+            <div><Label className="text-xs">Evidence Link</Label><Input value={form.evidenceLink} onChange={e => setForm(f => ({ ...f, evidenceLink: e.target.value }))} placeholder="https://sharepoint..." /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button onClick={() => createMutation.mutate({ projectId: 0, incidentType: form.incidentType, severity: form.severity, description: form.description, incidentDate: form.incidentDate, location: form.location || null, evidenceLink: form.evidenceLink || null })} disabled={!form.description.trim() || createMutation.isPending}>Report</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }
