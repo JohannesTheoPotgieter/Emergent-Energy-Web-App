@@ -11,6 +11,9 @@ import { Link, useSearch, useLocation } from "wouter";
 import { severityStyle, ragBadgeClasses } from "@/lib/status-colors";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageShell } from "@/components/layout/page-shell";
+import { getRoleDashboardConfig } from "@/config/role-dashboard-config";
+import type { CompanyRole } from "@shared/schema/users";
+import { PageSkeleton } from "@/components/ui/page-states";
 import { ImportHealthWidget, type ImportHealthResponse } from "@/components/dashboard/ImportHealthWidget";
 import { AttentionPanel, type AttentionItemsResponse } from "@/components/dashboard/AttentionPanel";
 import { FinancialSummaryTiles, type FinancialSummaryResponse } from "@/components/dashboard/FinancialSummaryTiles";
@@ -593,14 +596,14 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* ── Header with energy accent ── */}
+      {/* ── Header with energy accent + role-aware quick actions ── */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200/60 animate-solar-pulse">
             <Zap className="w-5 h-5 text-emerald-600" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Execution Dashboard</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Portfolio Overview</h1>
             {data?.meta && (
               <p className="text-muted-foreground text-sm mt-0.5 flex items-center gap-1.5">
                 <Leaf className="w-3 h-3 text-emerald-500" />
@@ -609,17 +612,29 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-        {hasActiveFilters && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setFilters(defaultFilters)}
-            className="gap-1.5 text-muted-foreground"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Clear filters
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* A9: Role-aware quick actions */}
+          {(() => {
+            const role = (localStorage.getItem("company_role") || "PROJECT_MANAGER_SITE") as CompanyRole;
+            const config = getRoleDashboardConfig(role);
+            return config.quickActions.slice(0, 3).map(action => (
+              <Button key={action.path} asChild variant="outline" size="sm" className="gap-1.5 text-xs hidden sm:inline-flex">
+                <Link href={action.path}>{action.label}</Link>
+              </Button>
+            ));
+          })()}
+          {hasActiveFilters && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setFilters(defaultFilters)}
+              className="gap-1.5 text-muted-foreground"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              Clear filters
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card className="border-border/50 animate-energy-flow">

@@ -1344,6 +1344,7 @@ export default function ProjectsSummary() {
   const canSuperAdmin = isSuperAdmin(user?.role, companyRole);
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
   const [viewTab, setViewTab] = useState<"active" | "archived">("active");
+  const [quickFilter, setQuickFilter] = useState<"all" | "behind_plan" | "needs_attention" | "my_projects">("all");
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
@@ -1469,6 +1470,14 @@ export default function ProjectsSummary() {
 
   const filtered = useMemo(() => {
     let result = [...currentProjects];
+    // A4: Quick filter tabs
+    if (quickFilter === "behind_plan") {
+      result = result.filter((p) => (p.delta_vs_expected ?? 0) < -0.1);
+    } else if (quickFilter === "needs_attention") {
+      result = result.filter((p) => p.rag_status === "Red" || p.rag_status === "Amber" || (p.escalation_level && p.escalation_level !== "None"));
+    } else if (quickFilter === "my_projects") {
+      result = result.filter((p) => p.pm === currentUserName);
+    }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter((p) => p.project_name.toLowerCase().includes(term));
@@ -1484,7 +1493,7 @@ export default function ProjectsSummary() {
       result = result.filter((p) => p.project_info_id != null && idSet.has(p.project_info_id));
     }
     return result;
-  }, [currentProjects, searchTerm, pmFilter, phaseFilter, priorityFilter, priorityProjectIds]);
+  }, [currentProjects, searchTerm, pmFilter, phaseFilter, priorityFilter, priorityProjectIds, quickFilter, currentUserName]);
 
   const currentUserName = (() => { try { const u = localStorage.getItem("user"); if (u) { const p = JSON.parse(u); return p.name || ""; } } catch {} return ""; })();
 
@@ -2187,7 +2196,7 @@ export default function ProjectsSummary() {
     <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
       <SectionHeader
         icon={<BarChart3 className="h-5 w-5" />}
-        eyebrow="Project Management"
+        eyebrow="Projects"
         title="Project List"
         description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) ? " (filtered)" : ""}`}
         actions={
@@ -2205,28 +2214,20 @@ export default function ProjectsSummary() {
       />
 
       <WorkspaceNotice
-        title="Project List is the execution directory inside Project Management"
-        description="Use this list with Execution Overview and the Work Plan / Board to move from portfolio scanning into action, latest updates, and tracker-fed delivery signals."
+        title="Project List is the primary project directory"
+        description="Use this list with Portfolio Overview to scan project status, latest updates, and tracker-fed delivery signals."
         icon={<BarChart3 className="h-4 w-4" />}
         actions={
           <>
             <Button asChild variant="outline" size="sm">
-              <Link href="/execution-board">Execution Overview</Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/execution-board">Open Work Plan / Board</Link>
+              <Link href="/execution-board">Portfolio Overview</Link>
             </Button>
           </>
         }
       >
         <Badge variant="secondary">Latest Update stays canonical</Badge>
         <Badge variant="secondary">Tracker-fed dates stay authoritative</Badge>
-        <Badge variant="secondary">Execution-first scanning</Badge>
       </WorkspaceNotice>
-
-      <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
-        Tracker-fed schedule and finance fields remain authoritative here. Latest Update stays app-managed, text only, and visible for execution scanning.
-      </div>
 
       <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">
         <button
@@ -2247,6 +2248,28 @@ export default function ProjectsSummary() {
         >
           Archived ({archivedProjects.length})
         </button>
+      </div>
+
+      {/* A4: Quick filter tabs for fast scanning */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {([
+          { key: "all" as const, label: "All" },
+          { key: "my_projects" as const, label: "My Projects" },
+          { key: "behind_plan" as const, label: "Behind Plan" },
+          { key: "needs_attention" as const, label: "Needs Attention" },
+        ]).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setQuickFilter(key)}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors border ${
+              quickFilter === key
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/30"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">

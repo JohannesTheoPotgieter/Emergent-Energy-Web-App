@@ -162,6 +162,37 @@ export function fromPersonal(t: any): CanonicalTask {
   };
 }
 
+/**
+ * B7: Extended workstreams to include construction
+ */
+export const EXTENDED_CANONICAL_WORKSTREAMS = ["PM", "ENG", "QUALITY", "CONSTRUCTION", "PROCUREMENT"] as const;
+
+export function fromConstruction(t: any): CanonicalTask {
+  return {
+    task_id: t.id,
+    project_id: t.projectId || t.project_id || null,
+    project_name: t.projectName || t.project_name || null,
+    task_type: "operational",
+    title: t.title || "",
+    description: t.description || null,
+    status: normalizeStatus(t.status),
+    priority: normalizePriority(t.severity || t.priority),
+    owner_user_id: t.assignedToUserId || t.assigned_to_user_id || null,
+    assignee_user_id: t.assignedToUserId || t.assigned_to_user_id || null,
+    viewer_user_ids: [],
+    reviewer_user_id: null,
+    due_date: t.dueDate || t.due_date || null,
+    workstream: "CONSTRUCTION",
+    created_by: t.reportedByUserId || t.reported_by_user_id || null,
+    updated_by: null,
+    created_at: t.createdAt || t.created_at || null,
+    updated_at: t.updatedAt || t.updated_at || null,
+    percent_complete: null,
+    source_table: "snags",
+    source_id: t.id,
+  };
+}
+
 export function fromQuality(t: any): CanonicalTask {
   return {
     task_id: t.id,
