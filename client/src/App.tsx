@@ -114,6 +114,7 @@ const HseDashboardPage = lazy(() => import("@/pages/hse-dashboard"));
 const HandoverDashboardPage = lazy(() => import("@/pages/handover-dashboard"));
 const SitesPage = lazy(() => import("@/pages/sites"));
 const OpportunitiesPage = lazy(() => import("@/pages/opportunities"));
+const AdminPipedrivePage = lazy(() => import("@/pages/admin-pipedrive"));
 
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement"];
 const PM_ALLOWED_PATHS = ["/", "/dashboard", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement"];
@@ -218,6 +219,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   HandoverDashboardPage,
   SitesPage,
   OpportunitiesPage,
+  AdminPipedrivePage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {

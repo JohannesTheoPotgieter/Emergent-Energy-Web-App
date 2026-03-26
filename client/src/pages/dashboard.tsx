@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageShell } from "@/components/layout/page-shell";
 import { getRoleDashboardConfig } from "@/config/role-dashboard-config";
 import type { CompanyRole } from "@shared/schema/users";
+import { PageSkeleton } from "@/components/ui/page-states";
 import { ImportHealthWidget, type ImportHealthResponse } from "@/components/dashboard/ImportHealthWidget";
 import { AttentionPanel, type AttentionItemsResponse } from "@/components/dashboard/AttentionPanel";
 import { FinancialSummaryTiles, type FinancialSummaryResponse } from "@/components/dashboard/FinancialSummaryTiles";

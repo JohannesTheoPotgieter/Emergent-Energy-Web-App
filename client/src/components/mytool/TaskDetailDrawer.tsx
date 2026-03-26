@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,6 +96,7 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
   });
 
   const [dodRequired, setDodRequired] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
     if (task) {
@@ -665,13 +667,22 @@ export default function TaskDetailDrawer({ task, open, onOpenChange, onInvalidat
             <Button
               variant="destructive" size="sm"
               className="h-8 text-xs"
-              onClick={() => deleteMutation.mutate()}
+              onClick={() => setShowDeleteConfirm(true)}
               disabled={deleteMutation.isPending}
               data-testid="button-delete-task"
             >
               <Trash2 className="h-3 w-3 mr-1" />
               Delete
             </Button>
+            <ConfirmDialog
+              open={showDeleteConfirm}
+              onOpenChange={setShowDeleteConfirm}
+              title="Delete this task?"
+              description="This action cannot be undone. The task and all its data will be permanently removed."
+              confirmLabel="Delete Task"
+              variant="destructive"
+              onConfirm={() => deleteMutation.mutate()}
+            />
             <div className="flex gap-2">
               <Button
                 variant="outline" size="sm"
