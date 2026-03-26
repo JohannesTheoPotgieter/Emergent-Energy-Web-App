@@ -336,9 +336,13 @@ export default function PortfolioDetailPage() {
     },
   });
 
-  const { data: portfolio, isLoading } = useQuery<any>({
+  const { data: portfolio, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/portfolios", portfolioId],
-    queryFn: () => fetch(`/api/portfolios/${portfolioId}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/portfolios/${portfolioId}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch data (" + r.status + ")");
+      return r.json();
+    },
     enabled: !!portfolioId,
   });
 
