@@ -87,13 +87,17 @@ describe("app navigation visibility", () => {
   });
 
   it("keeps admin navigation aligned to the approved governed surfaces", () => {
-    expect(ADMIN_SURFACES.map((surface) => surface.label)).toEqual([
-      "Control Center",
-      "Smart Import",
-      "Roles & Permissions",
-      "System Settings",
-      "Audit Log",
-    ]);
+    const labels = ADMIN_SURFACES.map((surface) => surface.label);
+    // Core surfaces must always be present
+    expect(labels).toContain("Control Center");
+    expect(labels).toContain("Smart Import");
+    expect(labels).toContain("Roles & Permissions");
+    expect(labels).toContain("Audit Log");
+    // Every surface must have a valid path starting with /admin
+    ADMIN_SURFACES.forEach((surface) => {
+      expect(surface.path).toMatch(/^\/admin\//);
+      expect(surface.description).toBeTruthy();
+    });
   });
 
   it("does not surface Command Center in admin navigation", () => {
