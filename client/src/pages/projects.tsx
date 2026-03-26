@@ -41,6 +41,9 @@ import {
   Trash2,
   LayoutGrid,
   Table2,
+  Plus,
+  Circle,
+  FileSpreadsheet as SpreadsheetIcon,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
@@ -52,13 +55,16 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { isSuperAdmin } from "@/lib/access-control";
+import { useAccessMatrix } from "@/hooks/use-access-matrix";
 
 interface ProjectSummary {
   project_info_id: number | null;
@@ -847,7 +853,8 @@ const COLUMN_WIDTHS: Record<string, string> = {
   project_pct_complete: "72px",
   expected_pct_complete: "42px",
   delta_vs_expected: "56px",
-  latest_update: "120px",
+  latest_update: "200px",
+  rag_status: "56px",
   comments: "130px",
   financial_summary: "84px",
   next_key_date: "80px",
@@ -856,7 +863,7 @@ const COLUMN_WIDTHS: Record<string, string> = {
 
 const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
   { label: "Project Info", keys: ["project_name", "client_name", "size_kwp", "pd", "pm"], color: "bg-muted text-muted-foreground", stickyFirst: true },
-  { label: "Execution", keys: ["pd_pm_handover_status", "execution_attention"], color: "bg-blue-50 text-blue-700" },
+  { label: "Execution", keys: ["rag_status", "pd_pm_handover_status", "execution_attention"], color: "bg-blue-50 text-blue-700" },
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
@@ -867,17 +874,15 @@ const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; sticky
 const ALL_COLUMN_KEYS_STATIC = COLUMN_GROUPS_META.flatMap(g => g.keys);
 const DEFAULT_DIRECTORY_COLUMNS = [
   "project_name",
-  "client_name",
   "phase",
   "pm",
-  "pd",
-  "pd_pm_handover_status",
+  "rag_status",
   "execution_attention",
   "latest_update",
-  "financial_close",
-  "financial_summary",
+  "delta_vs_expected",
   "project_pct_complete",
-  "next_key_date",
+  "client_name",
+  "financial_summary",
 ];
 
 function loadSavedViews(): SavedView[] {
@@ -900,23 +905,32 @@ function persistActiveView(name: string | null) {
   else localStorage.removeItem(ACTIVE_VIEW_KEY);
 }
 
+function formatRelativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+}
+
 function LatestUpdateCell({ project }: { project: ProjectSummary }) {
-  const [editing, setEditing] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [value, setValue] = useState(project.latest_update || "");
+  const [saving, setSaving] = useState(false);
   const queryClient = useQueryClient();
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setValue(project.latest_update || "");
   }, [project.latest_update]);
 
-  useEffect(() => {
-    if (editing && inputRef.current) inputRef.current.focus();
-  }, [editing]);
-
   const save = async () => {
     const trimmed = value.trim();
-    if (trimmed === (project.latest_update || "")) { setEditing(false); return; }
+    if (trimmed === (project.latest_update || "")) { setDialogOpen(false); return; }
+    setSaving(true);
     try {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -928,43 +942,73 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
       });
       queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
     } catch {
-      // Silent — optimistic update already visible
+      // Silent failure — will be visible on next refetch
     }
-    setEditing(false);
+    setSaving(false);
+    setDialogOpen(false);
   };
 
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} data-interactive="true">
-        <Input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-          className="h-6 text-[10px] px-1.5 py-0"
-          data-testid={`input-latest-update-${project.project_name}`}
-        />
-        <Button size="sm" variant="ghost" onClick={save} className="h-5 w-5 p-0 shrink-0">
-          <Check className="h-3 w-3 text-emerald-600" />
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => { setValue(project.latest_update || ""); setEditing(false); }} className="h-5 w-5 p-0 shrink-0">
-          <X className="h-3 w-3 text-muted-foreground" />
-        </Button>
-      </div>
-    );
-  }
+  const metaLine = [
+    project.latest_update_by,
+    project.latest_update_at ? formatRelativeTime(project.latest_update_at) : null,
+  ].filter(Boolean).join(", ");
 
   return (
-    <span
-      className="block truncate text-[10px] text-muted-foreground cursor-pointer hover:text-foreground group"
-      title={project.latest_update ? `${project.latest_update} (click to edit)` : "Click to add update"}
-      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-      data-interactive="true"
-      data-testid={`text-latest-update-${project.project_name}`}
-    >
-      {project.latest_update || "—"}
-      <Pencil className="inline-block ml-1 h-2.5 w-2.5 opacity-0 group-hover:opacity-60" />
-    </span>
+    <>
+      <div
+        className="cursor-pointer hover:bg-muted/40 rounded px-1 py-0.5 -mx-1 group"
+        onClick={(e) => { e.stopPropagation(); setDialogOpen(true); }}
+        data-interactive="true"
+        data-testid={`text-latest-update-${project.project_name}`}
+      >
+        {project.latest_update ? (
+          <>
+            <p className="text-[10px] text-foreground leading-snug line-clamp-2 whitespace-pre-line">
+              {project.latest_update}
+            </p>
+            {metaLine && (
+              <p className="text-[9px] text-muted-foreground mt-0.5">{metaLine}</p>
+            )}
+          </>
+        ) : (
+          <span className="text-[10px] text-muted-foreground italic">No update</span>
+        )}
+        <Pencil className="inline-block ml-1 h-2.5 w-2.5 opacity-0 group-hover:opacity-60 text-muted-foreground" />
+      </div>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setValue(project.latest_update || ""); setDialogOpen(false); } }}>
+        <DialogContent className="max-w-lg" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Pencil className="h-4 w-4" />
+              Update Status — {project.project_name.replace(/_Tracker$/i, "")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Textarea
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Write a status update for this project..."
+              className="min-h-[160px] text-sm"
+              autoFocus
+              data-testid={`input-latest-update-${project.project_name}`}
+            />
+            {metaLine && (
+              <p className="text-xs text-muted-foreground">Last updated: {metaLine}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setValue(project.latest_update || ""); setDialogOpen(false); }}>
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={saving} data-testid={`button-save-update-${project.project_name}`}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Save Update
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -1265,7 +1309,7 @@ function MobileProjectCard({ project, setLocation }: { project: ProjectSummary; 
         <div className="flex items-start justify-between gap-2">
           <button
             className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline text-sm leading-tight min-w-0 truncate"
-            onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}?tab=task-grid`)}
+            onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}`)}
             data-testid={`mobile-link-project-${project.project_name}`}
           >
             {cleanName(project.project_name)}
@@ -1336,10 +1380,12 @@ export default function ProjectsSummary() {
   });
   const [pmFilter, setPmFilter] = useState("all");
   const [phaseFilter, setPhaseFilter] = useState("all");
+  const [ragFilter, setRagFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("phase");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const { isAdmin, user } = useAuth();
+  const { canAccessEntityAction } = useAccessMatrix();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canSuperAdmin = isSuperAdmin(user?.role, companyRole);
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
@@ -1490,12 +1536,15 @@ export default function ProjectsSummary() {
     if (phaseFilter !== "all") {
       result = result.filter((p) => p.phase === phaseFilter);
     }
+    if (ragFilter !== "all") {
+      result = result.filter((p) => p.rag_status === ragFilter);
+    }
     if (priorityFilter !== "all" && priorityProjectIds) {
       const idSet = new Set(priorityProjectIds);
       result = result.filter((p) => p.project_info_id != null && idSet.has(p.project_info_id));
     }
     return result;
-  }, [currentProjects, searchTerm, pmFilter, phaseFilter, priorityFilter, priorityProjectIds, quickFilter, currentUserName]);
+  }, [currentProjects, searchTerm, pmFilter, phaseFilter, ragFilter, priorityFilter, priorityProjectIds, quickFilter, currentUserName]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -1740,7 +1789,7 @@ export default function ProjectsSummary() {
           <button
             data-testid={`link-project-${p.project_name}`}
             className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[180px] block text-[10px]"
-            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}
+            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
             title={cleanName(p.project_name)}
           >
             {cleanName(p.project_name)}
@@ -1748,7 +1797,7 @@ export default function ProjectsSummary() {
           <button
             type="button"
             className="inline-flex items-center text-[9px] text-blue-700 hover:text-blue-900 hover:underline gap-0.5"
-            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}
+            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
             data-testid={`button-open-details-${p.project_name}`}
           >
             <ExternalLink className="w-2.5 h-2.5" />
@@ -1777,7 +1826,9 @@ export default function ProjectsSummary() {
       key: "pm",
       header: "PM",
       render: (p) => isAdmin && p.project_info_id ? (
-        <div onClick={(e) => e.stopPropagation()}><SearchableSelect
+        <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5">
+          <SpreadsheetIcon className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" title="PM is managed via Excel import. Manual changes may be overwritten on next import." />
+          <SearchableSelect
           value={p.pm || "__unassigned"}
           placeholder={!p.pm ? "No PM" : undefined}
           onValueChange={(val) => {
@@ -1864,6 +1915,21 @@ export default function ProjectsSummary() {
             {achieved ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
             {achieved ? "Done" : "Open"}
           </span>
+        );
+      },
+    },
+    {
+      key: "rag_status",
+      header: "RAG",
+      render: (p) => {
+        const rag = p.rag_status;
+        if (!rag) return <span className="text-[10px] text-muted-foreground">—</span>;
+        const color = rag === "Green" ? "bg-emerald-500" : rag === "Amber" ? "bg-amber-500" : rag === "Red" ? "bg-red-500" : "bg-gray-300";
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2.5 h-2.5 rounded-full ${color} shrink-0`} />
+            <span className="text-[10px] font-medium">{rag}</span>
+          </div>
         );
       },
     },
@@ -2164,7 +2230,7 @@ export default function ProjectsSummary() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`); }}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLocation(`/project/${encodeURIComponent(p.project_name)}`); }}>
                     Open project detail
                   </DropdownMenuItem>
                   <DropdownMenuItem disabled={!p.project_info_id} onClick={(e) => { e.stopPropagation(); setEditProject(p); }}>
@@ -2200,16 +2266,30 @@ export default function ProjectsSummary() {
         title="Project List"
         description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) ? " (filtered)" : ""}`}
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExport}
-            data-testid="button-export"
-            className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-muted-foreground border-border hover:bg-muted shrink-0"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Export</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            {canAccessEntityAction("project_create", "create") && (
+              <Link href="/project-create">
+                <Button
+                  size="sm"
+                  data-testid="button-create-project"
+                  className="h-8 sm:h-9 gap-1 sm:gap-1.5 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">Create Project</span>
+                </Button>
+              </Link>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              data-testid="button-export"
+              className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-muted-foreground border-border hover:bg-muted shrink-0"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Export</span>
+            </Button>
+          </div>
         }
       />
 
@@ -2366,6 +2446,20 @@ export default function ProjectsSummary() {
           ]}
         />
 
+        <SearchableSelect
+          value={ragFilter}
+          onValueChange={setRagFilter}
+          placeholder="All RAG"
+          triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-28 text-sm border-border"
+          data-testid="select-rag-filter"
+          options={[
+            { value: "all", label: "All RAG" },
+            { value: "Green", label: "Green" },
+            { value: "Amber", label: "Amber" },
+            { value: "Red", label: "Red" },
+          ]}
+        />
+
         {allPriorities.length > 0 && (
           <SearchableSelect
             value={priorityFilter}
@@ -2489,7 +2583,7 @@ export default function ProjectsSummary() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); setPriorityFilter("all"); }}
+            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); setRagFilter("all"); setPriorityFilter("all"); }}
             className="h-9 text-xs text-muted-foreground hover:text-foreground"
           >
             <X className="w-3 h-3 mr-1" />
@@ -2587,7 +2681,7 @@ export default function ProjectsSummary() {
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
                     if (target.closest('button, a, input, select, textarea, [role="button"], [data-interactive="true"]')) return;
-                    setLocation(`/project/${encodeURIComponent(project.project_name)}?tab=task-grid`);
+                    setLocation(`/project/${encodeURIComponent(project.project_name)}`);
                   }}
                 >
                   {filteredColumns.map((col) => (
