@@ -83,4 +83,12 @@ export async function registerDepartmentRoutes(app: Express) {
   } catch (err) {
     console.error("[Routes] Failed to register handover-routes:", err);
   }
+
+  // D1: Pipedrive Sync
+  try {
+    const { registerPipedriveRoutes } = await import("../departments/pipedrive-routes");
+    registerPipedriveRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register pipedrive-routes:", err);
+  }
 }
