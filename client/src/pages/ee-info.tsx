@@ -1672,7 +1672,7 @@ const ROLE_SIMULATIONS: RoleSimConfig[] = [
       { label: "Portfolios", path: "/portfolios" },
       { label: "Projects", path: "/projects" },
       { label: "Execution Dashboard", path: "/execution-board" },
-      { label: "Collaboration Hub", path: "/collaboration" },
+      { label: "Collaboration Hub", path: "/my-work" },
     ],
     topActions: [
       { title: "Review client project statuses", description: "Check portfolio health for upcoming client meetings", urgency: "high" },
