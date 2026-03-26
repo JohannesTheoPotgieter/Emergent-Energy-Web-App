@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, AlertTriangle, ArrowUpRight, ArrowDownRight, Minus } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import KPITileGrid from "@/components/reports/KPITileGrid";
 import type { KPITile } from "@/components/reports/KPITileGrid";
@@ -108,7 +109,7 @@ export default function EngineeringMonthlyReport() {
   const { toast } = useToast();
   const prevMonth = useMemo(() => getPreviousMonth(month), [month]);
 
-  const { data: report, isLoading, error } = useQuery({
+  const { data: report, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/reports/engineering/monthly", month],
     queryFn: async () => {
       const res = await fetch(`/api/reports/engineering/monthly?month=${month}`, { headers: getAuthHeaders() });
@@ -182,6 +183,9 @@ export default function EngineeringMonthlyReport() {
     { item: "Pending approvals older than 7 days", count: overdueApprovals, owner: "Approvers" },
     { item: "Blocked stage-gates", count: blockedGates, owner: "Project Owners" },
   ].filter((row) => row.count > 0);
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load engineering monthly report" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const kpiTiles: KPITile[] = [
     { label: "Total Eng Tasks", value: kpis.totalEngineeringTasks ?? 0, onClick: () => setDrill({ title: "Engineering Tasks", context: { tab: "tasks" } }) },

@@ -45,6 +45,7 @@ import {
   X,
   AlertTriangle,
 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { format } from "date-fns";
 
 interface PriorityLink {
@@ -156,7 +157,7 @@ export default function MyToolPrioritiesPage() {
   const [linkTaskPicker, setLinkTaskPicker] = useState("");
   const [inlineEdit, setInlineEdit] = useState<{ id: number; field: string; value: string } | null>(null);
 
-  const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
+  const { data: priorities = [], isLoading, isError, error, refetch } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/mytool/company-priorities"],
   });
 
@@ -450,6 +451,9 @@ export default function MyToolPrioritiesPage() {
       </div>
     );
   }
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load priorities" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
     <div className="p-6">

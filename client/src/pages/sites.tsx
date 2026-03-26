@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { MapPin, Plus, Building2, Pencil, Search } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 interface SiteRow {
   id: number;
@@ -55,7 +56,7 @@ export default function SitesPage() {
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState(emptyForm);
 
-  const { data: sites = [], isLoading } = useQuery<SiteRow[]>({
+  const { data: sites = [], isLoading, isError, error, refetch } = useQuery<SiteRow[]>({
     queryKey: ["/api/sites"],
     queryFn: async () => { const res = await apiRequest("GET", "/api/sites"); return res.json(); },
   });
@@ -139,6 +140,9 @@ export default function SitesPage() {
     !search || s.siteName.toLowerCase().includes(search.toLowerCase()) ||
     (s.address && s.address.toLowerCase().includes(search.toLowerCase()))
   );
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6" data-testid="page-sites"><SectionHeader icon={<MapPin className="h-5 w-5" />} eyebrow="Projects" title="Sites" description="Physical locations" /><PageError title="Unable to load sites" message={error instanceof Error ? error.message : "Failed to fetch site data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-sites">

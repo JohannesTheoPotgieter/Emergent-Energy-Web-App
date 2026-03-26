@@ -22,6 +22,7 @@ import {
   Briefcase, Search, ArrowRightLeft, CheckCircle2, Flag, Layers, Clock, XCircle, Activity,
   LayoutList, GanttChart, Diamond,
 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import { CashflowTab } from "@/components/tabs/CashflowTab";
@@ -335,9 +336,13 @@ export default function PortfolioDetailPage() {
     },
   });
 
-  const { data: portfolio, isLoading } = useQuery<any>({
+  const { data: portfolio, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/portfolios", portfolioId],
-    queryFn: () => fetch(`/api/portfolios/${portfolioId}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/portfolios/${portfolioId}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to fetch data (" + r.status + ")");
+      return r.json();
+    },
     enabled: !!portfolioId,
   });
 
@@ -512,7 +517,8 @@ export default function PortfolioDetailPage() {
     );
   }, [availableProjects, assignSearch]);
 
-  if (isLoading) return <div className="text-center py-20 text-muted-foreground">Loading portfolio...</div>;
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load portfolio" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
   if (!portfolio || portfolio.error) return <div className="text-center py-20 text-red-500">Portfolio not found</div>;
 
   const projects = portfolio.projects || [];

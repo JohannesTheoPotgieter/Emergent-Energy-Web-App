@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { canReassignTask as canReassignTaskByRole, getTaskAssigneeNames, isTaskDueSoon, isTaskOverdue as isTaskOverdueLogic } from "@/pages/my-work-tasks-logic";
 import { useLocation } from "wouter";
@@ -295,7 +296,7 @@ export default function MyWorkTasksPage() {
     return () => clearTimeout(timer);
   }, [searchText]);
 
-  const { data: allTaskData, isLoading } = useQuery<any>({
+  const { data: allTaskData, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks", "canonical"],
     queryFn: async () => {
       const res = await fetch("/api/my-work/all-tasks", { headers: { ...getAuthHeaders() }, credentials: "include" });
@@ -882,6 +883,14 @@ export default function MyWorkTasksPage() {
           <Skeleton className="h-8 w-full rounded-lg" />
           <div className="space-y-1">{[1, 2, 3, 4, 5, 6, 7, 8].map(i => (<Skeleton key={i} className="h-10 w-full rounded" />))}</div>
         </div>
+      </PageShell>
+    );
+  }
+
+  if (isError) {
+    return (
+      <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
+        <PageError title="Unable to load My Tasks" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} />
       </PageShell>
     );
   }

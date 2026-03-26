@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 function authHeaders() {
   const token = localStorage.getItem("auth_token");
@@ -239,14 +240,14 @@ export default function MyWorkCalendarPage() {
     gcTime: 60_000,
   });
 
-  const { data: allTaskData, isLoading: tasksLoading } = useQuery<any>({
+  const { data: allTaskData, isLoading: tasksLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks"],
     queryFn: async () => {
       const res = await fetch("/api/my-work/all-tasks", {
         headers: authHeaders(),
         credentials: "include",
       });
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error("Failed to fetch data (" + res.status + ")");
       return res.json();
     },
     staleTime: 10_000,
@@ -670,6 +671,9 @@ export default function MyWorkCalendarPage() {
   });
 
   const isLoading = outlookLoading || tasksLoading;
+
+  if (isLoading) return <PageShell className="space-y-4 h-full flex flex-col"><PageSkeleton lines={5} /></PageShell>;
+  if (isError) return <PageShell className="space-y-4 h-full flex flex-col"><PageError title="Unable to load Calendar" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="space-y-4 h-full flex flex-col" data-testid="my-work-calendar">

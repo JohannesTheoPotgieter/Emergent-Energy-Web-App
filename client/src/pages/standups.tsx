@@ -15,6 +15,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
   Users, BarChart3, Plus, Loader2, Send, Clock,
   CheckCircle2, AlertTriangle, MessageSquare,
@@ -1504,7 +1505,7 @@ export default function StandupsPage() {
   const [tab, setTab] = useState("meeting");
   const queryClient = useQueryClient();
 
-  const { data: schedules, isLoading: schedulesLoading } = useQuery<StandupSchedule[]>({
+  const { data: schedules, isLoading: schedulesLoading, isError, error, refetch } = useQuery<StandupSchedule[]>({
     queryKey: ["standup-schedules"],
     queryFn: () => apiFetch("/api/standups/schedules"),
   });
@@ -1557,6 +1558,9 @@ export default function StandupsPage() {
     }
   }
 
+  if (schedulesLoading) return <PageShell><PageSkeleton lines={5} /></PageShell>;
+  if (isError) return <PageShell><PageError title="Unable to load Standups" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
+
   return (
     <PageShell>
       <SectionHeader
@@ -1566,9 +1570,7 @@ export default function StandupsPage() {
         actions={<CreateScheduleDialog onCreated={handleRefresh} />}
       />
 
-      {schedulesLoading ? (
-        <div className="flex items-center justify-center py-20"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-      ) : displaySchedules.length === 0 ? (
+      {displaySchedules.length === 0 ? (
         <div className="ee-empty-state">
           <Users className="h-10 w-10 text-muted-foreground/30 mb-3" />
           <p className="text-sm font-semibold">No standup schedules configured</p>

@@ -63,6 +63,7 @@ import { ActionBar } from "@/components/guidance/ActionBar";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
 import type { NextAction, BlockerInfo } from "@/hooks/use-guidance";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { QualityTab } from "@/components/tabs/QualityTab";
 
@@ -494,6 +495,8 @@ export default function QmDashboardPage() {
     warningFilter ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
+  if (checklistsLoading) return <PageSkeleton lines={5} />;
+  if (checklistsError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Quality Management" message="Failed to fetch data" onRetry={() => refetchChecklists()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="qm-dashboard-page">

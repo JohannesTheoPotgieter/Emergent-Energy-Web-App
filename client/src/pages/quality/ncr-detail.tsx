@@ -4,12 +4,14 @@ import { useRoute } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 async function api(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { ...options, headers, credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to fetch data (${res.status})`);
   return res.json();
 }
 
@@ -18,9 +20,12 @@ export default function NcrDetailPage() {
   const id = Number(params?.id || 0);
   const [comment, setComment] = useState("");
   const queryClient = useQueryClient();
-  const { data } = useQuery({ queryKey: ["ncr-detail", id], queryFn: () => api(`/api/quality/ncrs/${id}`), enabled: !!id });
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["ncr-detail", id], queryFn: () => api(`/api/quality/ncrs/${id}`), enabled: !!id });
   const addComment = useMutation({ mutationFn: () => api(`/api/quality/ncrs/${id}/comments`, { method: "POST", body: JSON.stringify({ comment }) }), onSuccess: () => { setComment(""); queryClient.invalidateQueries({ queryKey: ["ncr-detail", id] }); } });
   const transition = useMutation({ mutationFn: (status: string) => api(`/api/quality/ncrs/${id}`, { method: "PUT", body: JSON.stringify({ status }) }), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["ncr-detail", id] }) });
+
+  if (isLoading) return <PageSkeleton lines={4} />;
+  if (isError) return <div className="p-4 md:p-6 space-y-4"><h1 className="text-2xl font-semibold">NCR Detail</h1><PageError title="Unable to load NCR details" message={error instanceof Error ? error.message : "Failed to fetch NCR data"} onRetry={() => refetch()} /></div>;
 
   return <div className="p-4 md:p-6 space-y-4"><h1 className="text-2xl font-semibold">NCR Detail</h1>
     <Card><CardHeader><CardTitle>{data?.ncr?.title || "Loading..."}</CardTitle></CardHeader><CardContent className="space-y-2 text-sm">

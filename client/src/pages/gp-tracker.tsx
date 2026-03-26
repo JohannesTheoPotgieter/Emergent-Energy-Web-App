@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -190,58 +191,8 @@ export default function GpTrackerPage() {
     return projects.filter((p: any) => (p.projectName || "").toLowerCase().includes(q));
   }, [projects, search]);
 
-  if (isLoading) {
-    return (
-      <div className="p-6 space-y-6 max-w-[1600px] mx-auto" data-testid="gp-tracker-page">
-        <div>
-          <Skeleton className="h-8 w-48 mb-2" />
-          <Skeleton className="h-4 w-96" />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Card key={i}>
-              <CardContent className="p-4">
-                <Skeleton className="h-3 w-16 mb-2" />
-                <Skeleton className="h-6 w-20" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <Card>
-          <CardContent className="p-4">
-            <Skeleton className="h-[280px] w-full rounded-lg" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <Skeleton className="h-5 w-32 mb-3" />
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex gap-3 py-2">
-                <Skeleton className="h-4 w-28" />
-                {Array.from({ length: 5 }).map((_, j) => (
-                  <Skeleton key={j} className="h-4 w-16 ml-auto" />
-                ))}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="p-6 max-w-[1200px] mx-auto" data-testid="gp-tracker-error-state">
-        <Card className="border-red-200 bg-red-50/40">
-          <CardContent className="py-10 text-center space-y-2">
-            <p className="text-sm font-semibold text-red-700">GP tracker data failed to load.</p>
-            <p className="text-xs text-red-600/90">{(error as Error)?.message || "Please retry."}</p>
-            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-gp-tracker">Retry</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load GP Tracker" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const totalRevenue = data?.totalRevenue || 0;
   const totalCOS = data?.totalCOS || 0;

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { useToast } from "@/hooks/use-toast";
 import { Database, CheckCircle2, AlertTriangle, Loader2, Play } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { apiRequest } from "@/lib/queryClient";
 
 interface BackfillStatus {
@@ -17,7 +18,7 @@ export default function AdminBackfillPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: status, isLoading } = useQuery<BackfillStatus>({
+  const { data: status, isLoading, isError, error, refetch } = useQuery<BackfillStatus>({
     queryKey: ["/api/admin/backfill/status"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/admin/backfill/status");
@@ -52,6 +53,9 @@ export default function AdminBackfillPage() {
 
   const tables = status?.tableCounts ?? {};
   const enriched = status?.enrichedChecks ?? {};
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load backfill status" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-admin-backfill">

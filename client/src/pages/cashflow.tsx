@@ -57,6 +57,7 @@ import {
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { usePermission } from "@/hooks/use-permissions";
 import { DateOverridePopover } from "@/components/cashflow/DateOverridePopover";
 
@@ -665,7 +666,7 @@ export default function CashflowPage() {
 
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(",") : undefined;
 
-  const { data: cashflowData = [], isLoading } = useQuery<CashflowWeek[]>({
+  const { data: cashflowData = [], isLoading, isError, error, refetch } = useQuery<CashflowWeek[]>({
     queryKey: [CASHFLOW_API_BASE, projectParam],
     queryFn: async () => {
       const url = projectParam
@@ -895,6 +896,9 @@ export default function CashflowPage() {
     const forecastedEndOfFYPosition = lastWeek?.closingBalance ?? 0;
     return { totalInflows, totalOutflows, currentWeekOpeningBalance, forecastedEndOfFYPosition };
   }, [cashflowData]);
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load cashflow" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-cashflow">

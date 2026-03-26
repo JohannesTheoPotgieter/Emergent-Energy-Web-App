@@ -3,19 +3,24 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 async function api(url: string) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { headers, credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to fetch data (${res.status})`);
   return res.json();
 }
 
 export default function NcrListPage() {
   const [status, setStatus] = useState("open");
   const [severity, setSeverity] = useState("");
-  const { data } = useQuery<{ items: any[] }>({ queryKey: ["ncr-list", status, severity], queryFn: () => api(`/api/quality/ncrs?status=${status}${severity ? `&severity=${severity}` : ""}`) });
+  const { data, isLoading, isError, error, refetch } = useQuery<{ items: any[] }>({ queryKey: ["ncr-list", status, severity], queryFn: () => api(`/api/quality/ncrs?status=${status}${severity ? `&severity=${severity}` : ""}`) });
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6 space-y-4"><h1 className="text-2xl font-semibold">NCR List</h1><PageError title="Unable to load NCR list" message={error instanceof Error ? error.message : "Failed to fetch NCR data"} onRetry={() => refetch()} /></div>;
 
   return <div className="p-4 md:p-6 space-y-4"><h1 className="text-2xl font-semibold">NCR List</h1>
     <Card><CardHeader><CardTitle>Filters</CardTitle></CardHeader><CardContent className="grid md:grid-cols-2 grid-cols-1 gap-3">

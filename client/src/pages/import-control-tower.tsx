@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
   FileSpreadsheet,
   RefreshCw,
@@ -117,7 +118,7 @@ export default function ImportControlTowerPage() {
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [expandedRun, setExpandedRun] = useState<number | null>(null);
 
-  const { data: runs = [], isLoading } = useQuery<ImportRun[]>({
+  const { data: runs = [], isLoading, isError, error, refetch } = useQuery<ImportRun[]>({
     queryKey: ["/api/import-control-tower/history", typeFilter, statusFilter],
     queryFn: async () => {
       const token = localStorage.getItem("auth_token");
@@ -131,6 +132,9 @@ export default function ImportControlTowerPage() {
       return res.json();
     },
   });
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Import Control Tower" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const { data: runErrors, isLoading: errorsLoading } = useQuery<RunErrors>({
     queryKey: ["/api/import-control-tower/run", selectedRunId, "errors"],

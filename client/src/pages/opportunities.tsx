@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { PageEmpty } from "@/components/ui/page-states";
+import { PageEmpty, PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -75,9 +75,9 @@ export default function OpportunitiesPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  const { data: opportunities = [], isLoading } = useQuery<OpportunityRow[]>({
+  const { data: opportunities = [], isLoading, isError, error, refetch } = useQuery<OpportunityRow[]>({
     queryKey: ["/api/opportunities"],
-    queryFn: async () => { const res = await apiRequest("GET", "/api/opportunities"); return res.json(); },
+    queryFn: async () => { const res = await apiRequest("GET", "/api/opportunities"); if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')'); return res.json(); },
   });
 
   const { data: clients = [] } = useQuery<{ id: number; name: string }[]>({
@@ -123,6 +123,9 @@ export default function OpportunitiesPage() {
 
   const totalValue = filtered.reduce((sum, o) => sum + (o.estimatedValue ? Number(o.estimatedValue) : 0), 0);
   const totalKwp = filtered.reduce((sum, o) => sum + (o.estimatedKwp ? Number(o.estimatedKwp) : 0), 0);
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Opportunities" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-opportunities">
