@@ -48,7 +48,7 @@ const SubcontractorDashboardPage = lazy(() => import("@/pages/subcontractor-dash
 const CounterpartiesPage = lazy(() => import("@/pages/counterparties"));
 const SystemActivityLogPage = lazy(() => import("@/pages/system-activity-log"));
 const WeeklyReviewsPage = lazy(() => import("@/pages/weekly-reviews"));
-const AdminRolesPage = lazy(() => import("@/pages/admin-roles"));
+const AdminRolesPage = lazy(() => import("@/pages/admin-settings"));
 const LeaderboardPage = lazy(() => import("@/pages/leaderboard"));
 const FeedbackPage = lazy(() => import("@/pages/feedback"));
 const EeInfoPage = lazy(() => import("@/pages/ee-info"));
