@@ -31,9 +31,9 @@ const RevenueTrackerPage = lazy(() => import("@/pages/revenue-tracker"));
 const CostTracker = lazy(() => import("@/pages/cos"));
 const GpTrackerPage = lazy(() => import("@/pages/gp-tracker"));
 const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
-const MyToolAdminSettingsPage = lazy(() => import("@/pages/my-tool-admin-settings"));
-const MyToolPrioritiesPage = lazy(() => import("@/pages/my-tool-priorities"));
-const MyToolMeetingsPage = lazy(() => import("@/pages/my-tool-meetings"));
+const MyWorkAdminSettingsPage = lazy(() => import("@/pages/my-work-admin-settings"));
+const MyWorkPrioritiesPage = lazy(() => import("@/pages/my-work-priorities"));
+const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
 const QmDashboardPage = lazy(() => import("@/pages/qm-dashboard"));
 const EngineeringDashboardPage = lazy(() => import("@/pages/engineering-dashboard"));
 const EngineeringTasksPage = lazy(() => import("@/pages/engineering-tasks"));
@@ -137,15 +137,15 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   CostTracker,
   RevenueTrackerPage,
   GpTrackerPage,
-  MyToolPrioritiesPage,
-  MyToolAdminSettingsPage,
+  MyWorkPrioritiesPage,
+  MyWorkAdminSettingsPage,
   QmDashboardPage,
   EngineeringDashboardPage,
   EngineeringTasksPage,
   EngineeringAuditPage,
   LifecycleBoardPage,
   ExecutionBoardPage,
-  MyToolMeetingsPage,
+  MyWorkMeetingsPage,
   RoleSettingsPage,
   SmartImportPage,
   SharePointIntakePage,
