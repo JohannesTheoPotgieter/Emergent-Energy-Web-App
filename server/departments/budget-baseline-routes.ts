@@ -6,7 +6,6 @@ import { requireAuth } from "./shared-middleware";
 import { db } from "../db";
 import { eq, desc, and, max } from "drizzle-orm";
 import { budgetBaselines } from "@shared/schema/finance";
-import { createBudgetApproval } from "../services/approval-service";
 
 const router = Router();
 
@@ -69,20 +68,6 @@ router.post("/api/budget-baselines/:id/lock", requireAuth, async (req: Request, 
       .returning();
 
     if (!row) return res.status(404).json({ error: "Baseline not found or already locked" });
-
-    // B8: Create approval record for audit trail
-    try {
-      await createBudgetApproval({
-        projectId: row.projectId,
-        baselineId: row.id,
-        requestedByUserId: userId,
-        approverUserId: userId,
-        title: `Budget baseline v${row.version} locked`,
-      });
-    } catch (approvalErr) {
-      console.warn("[BudgetBaseline] Approval record creation failed (non-blocking):", approvalErr);
-    }
-
     res.json(row);
   } catch (err) {
     console.error("[BudgetBaseline] Failed to lock:", err);

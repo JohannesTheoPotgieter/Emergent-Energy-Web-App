@@ -405,9 +405,6 @@ export default function DashboardPage() {
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
   const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
   const [financialPeriod, setFinancialPeriod] = useState("ytd");
-  const [showFilters, setShowFilters] = useState(false);
-  const [showCharts, setShowCharts] = useState(false);
-  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   /* ── URL filter sync ── */
   const searchString = useSearch();
@@ -640,34 +637,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* A3: Filters collapsed by default — show active filter count */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5 text-xs"
-          onClick={() => setShowFilters(v => !v)}
-        >
-          <Filter className="w-3.5 h-3.5" />
-          Filters
-          {hasActiveFilters && (
-            <Badge variant="secondary" className="ml-1 text-[10px] h-4 min-w-[16px] px-1">
-              {Object.entries(filters).filter(([k, v]) => typeof v === "boolean" ? v : v !== "all" && v !== "").length}
-            </Badge>
-          )}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5 text-xs"
-          onClick={() => setShowCharts(v => !v)}
-        >
-          <BarChart3 className="w-3.5 h-3.5" />
-          {showCharts ? "Hide Charts" : "Show Charts"}
-        </Button>
-      </div>
-
-      {showFilters && (
       <Card className="border-border/50 animate-energy-flow">
         <CardContent className="p-3 space-y-2.5">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-2">
@@ -741,9 +710,11 @@ export default function DashboardPage() {
           </div>
         </CardContent>
       </Card>
-      )}
 
-      <p className="text-[13px] text-muted-foreground">Portfolio health at a glance — powered by live project data.</p>
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[13px] text-muted-foreground -mt-2">Portfolio health at a glance — powered by live project data.</p>
+        <Button variant="outline" size="sm" onClick={() => setCustomizeOpen((v) => !v)}>Customize Dashboard</Button>
+      </div>
       {customizeOpen && (
         <Card className="border-dashed">
           <CardContent className="p-3 text-sm space-y-2">
@@ -956,8 +927,8 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* ── Monthly Forecast Chart (A3: hidden by default behind "Show Charts" toggle) ── */}
-      {showCharts && (() => {
+      {/* ── Monthly Forecast Chart ── */}
+      {(() => {
         const ds = data?.charts?.datasets?.find((d: any) => d.id === "monthlyForecast");
         const rows = ds?.rows || [];
         if (isLoading && !data) return (
