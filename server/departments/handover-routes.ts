@@ -5,6 +5,7 @@ import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
 import { db } from "../db";
 import { eq, desc, and, isNull } from "drizzle-orm";
+import { createHandoverPackApproval } from "../services/approval-service";
 import {
   handoverPacks,
   handoverChecklistItems,
@@ -53,6 +54,23 @@ router.patch("/api/handover/packs/:id", requireAuth, async (req: Request, res: R
       .set({ ...req.body, updatedAt: new Date() })
       .where(eq(handoverPacks.id, Number(req.params.id)))
       .returning();
+
+    // B8: Create approval when pack is submitted for review
+    if (req.body.status === "submitted" && row) {
+      const userId = (req as any).user?.id;
+      try {
+        await createHandoverPackApproval({
+          projectId: row.projectId,
+          handoverPackId: row.id,
+          packType: row.packType,
+          requestedByUserId: userId,
+          approverUserId: userId, // TODO: resolve actual approver from project role assignments
+        });
+      } catch (approvalErr) {
+        console.warn("[Handover] Approval creation failed (non-blocking):", approvalErr);
+      }
+    }
+
     res.json(row);
   } catch (err) {
     console.error("[Handover] Failed to update pack:", err);

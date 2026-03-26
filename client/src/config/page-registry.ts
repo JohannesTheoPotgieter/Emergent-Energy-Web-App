@@ -130,6 +130,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "handoverDashboard", path: "/handover", label: "Handover & Closeout", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverDashboardPage" },
   // Admin integration pages (Phase D)
   { id: "adminPipedrive", path: "/admin/pipedrive", label: "Pipedrive Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminPipedrivePage" },
+  { id: "portfolioAnalytics", path: "/reports/portfolio-analytics", label: "Portfolio Analytics", iconKey: "BarChart3", navGroup: "REPORTS", permissionEntity: "reports", showInSidebar: true, routeComponentKey: "PortfolioAnalyticsPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY
