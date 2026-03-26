@@ -1963,7 +1963,15 @@ export async function registerRoutes(
           .groupBy(smartImportRuns.projectName)
           .catch((error: any) => { console.error("[projects-summary] lastImportRows failed:", error); throw error; }),
         (usePromotedProjectDetail ? listClientsFromPromotedCoreCompat() : db.select().from(clients)).catch((error: any) => { console.error("[projects-summary] clients failed:", error); throw error; }),
-        db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)).catch((error: any) => { console.error("[projects-summary] handover rows failed:", error); throw error; }),
+        db.execute(sql.raw(`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`)).catch((error: any) => {
+          const msg = error?.message || '';
+          if (/relation.*does not exist|no such table/i.test(msg) || error?.code === '42P01') {
+            console.warn("[projects-summary] project_pd_pm_handover table missing, returning empty");
+            return { rows: [] };
+          }
+          console.error("[projects-summary] handover rows failed:", error);
+          throw error;
+        }),
       ]);
       const allPlans = rawPlans;
       const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
@@ -9426,6 +9434,11 @@ export async function registerRoutes(
 
       res.json(escalated);
     } catch (err: any) {
+      const msg = err?.message || '';
+      if (/relation.*does not exist|no such table|column.*does not exist/i.test(msg) || err?.code === '42P01' || err?.code === '42703') {
+        console.warn("[escalated-priorities] Schema not ready, returning empty:", msg);
+        return res.json([]);
+      }
       res.status(500).json({ error: err.message });
     }
   });
