@@ -2309,12 +2309,12 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
     // Find the current month's YTD values (not full-year cumulative)
     const currentMonth = months.find((m: any) => m.monthKey === currentMonthKey);
     const lastDataMonth = currentMonth || months[months.length - 1];
-    const ytdGP = lastDataMonth?.ytdGP ?? 0;
-    const ytdBudget = lastDataMonth?.ytdBudget ?? 0;
-    const ytdVariance = lastDataMonth?.ytdVariance ?? 0;
-    const ytdGpPct = lastDataMonth?.ytdGpPct ?? 0;
+    const finalYtdGP = lastDataMonth?.ytdGP ?? 0;
+    const finalYtdBudget = lastDataMonth?.ytdBudget ?? 0;
+    const finalYtdVariance = lastDataMonth?.ytdVariance ?? 0;
+    const finalYtdGpPct = lastDataMonth?.ytdGpPct ?? 0;
 
-    res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct, ytdGP, ytdBudget, ytdVariance, ytdGpPct });
+    res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct, ytdGP: finalYtdGP, ytdBudget: finalYtdBudget, ytdVariance: finalYtdVariance, ytdGpPct: finalYtdGpPct });
   } catch (error) {
     console.error("Portfolio GP tracker error:", error);
     res.status(500).json({ error: "Failed to fetch GP tracker data" });
