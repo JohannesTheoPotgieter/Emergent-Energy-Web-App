@@ -152,7 +152,20 @@ export const ADMIN_SURFACES: AdminSurfaceMeta[] = [
   },
 ];
 
-export const ADMIN_NAV_ITEMS = ADMIN_SURFACES.map(({ label, path }) => ({ label, path }));
+// Essential admin tools shown as secondary nav pills. Other admin surfaces
+// remain accessible via command palette, direct URL, and Control Center page.
+const ADMIN_NAV_IDS: AdminSurfaceId[] = [
+  "control-center",
+  "smart-import",
+  "roles",
+  "audit-log",
+  "recovery",
+  "import-control-tower",
+];
+
+export const ADMIN_NAV_ITEMS = ADMIN_SURFACES
+  .filter((s) => ADMIN_NAV_IDS.includes(s.id))
+  .map(({ label, path }) => ({ label, path }));
 
 export function getAdminSurfaceMeta(surfaceId: AdminSurfaceId) {
   return ADMIN_SURFACES.find((surface) => surface.id === surfaceId);

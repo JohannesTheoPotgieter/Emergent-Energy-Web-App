@@ -1,7 +1,5 @@
 import type { PermissionEntity } from "@shared/schema";
 
-export type SidebarVariant = "legacy" | "redesigned" | "unified";
-
 export interface PageRegistryEntry {
   id: string;
   path: string;
@@ -14,7 +12,6 @@ export interface PageRegistryEntry {
   redirectTo?: string;
   aliases?: string[];
   roleLandingEligibility?: string[];
-  labels?: Partial<Record<SidebarVariant, string>>;
   matchSubRoutes?: boolean;
 }
 
@@ -42,44 +39,44 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "projectLifecycleStageGates", path: "/project-lifecycle/stage-gates", label: "Stage Gates", permissionEntity: "lifecycle", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleLatestUpdates", path: "/project-lifecycle/latest-updates", label: "Latest Updates", permissionEntity: "projects", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleClientOverview", path: "/project-lifecycle/client-overview", label: "Client Overview", permissionEntity: "pd_clients", routeComponentKey: "ProjectLifecyclePage" },
-  { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary", labels: { legacy: "Project Summary" } },
+  { id: "projects", path: "/projects", label: "Project List", iconKey: "FileSpreadsheet", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "ProjectsSummary" },
   { id: "projectFinancialLinking", path: "/project/:projectName/financial-linking", label: "Financial Linking", routeComponentKey: "FinancialLinkingPage" },
   { id: "projectDetail", path: "/project/:projectName", label: "Project Detail", routeComponentKey: "ProjectDetailPage" },
-  { id: "cashflow", path: "/cashflow", label: "Cashflow", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowPage", labels: { redesigned: "Cashflow Control" } },
-  { id: "cos", path: "/cos", label: "Costs (COS)", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker", labels: { redesigned: "COS Control" } },
-  { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue Tracker", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage", labels: { redesigned: "Revenue Control" } },
-  { id: "gpTracker", path: "/gp-tracker", label: "GP Tracker", iconKey: "Activity", navGroup: "FINANCE", permissionEntity: "gp_tracker", showInSidebar: true, routeComponentKey: "GpTrackerPage", labels: { redesigned: "Gross Profit Control" } },
+  { id: "cashflow", path: "/cashflow", label: "Cashflow", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "cashflow", showInSidebar: true, routeComponentKey: "CashflowPage", roleLandingEligibility: ["CFO", "PROGRAM_FINANCE_MANAGER", "ACCOUNTANT"] },
+  { id: "cos", path: "/cos", label: "Costs (COS)", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "cos", showInSidebar: true, routeComponentKey: "CostTracker" },
+  { id: "revenueTracker", path: "/revenue-tracker", label: "Revenue Tracker", iconKey: "TrendingUp", navGroup: "FINANCE", permissionEntity: "revenue_tracker", showInSidebar: true, routeComponentKey: "RevenueTrackerPage" },
+  { id: "gpTracker", path: "/gp-tracker", label: "GP Tracker", iconKey: "Activity", navGroup: "FINANCE", permissionEntity: "gp_tracker", showInSidebar: true, routeComponentKey: "GpTrackerPage" },
   { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "EXCO", permissionEntity: "company_priorities", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
   { id: "priorityDetail", path: "/priorities/:id", label: "Priority Detail", permissionEntity: "company_priorities", routeComponentKey: "PriorityDetailPage" },
   { id: "adminMyTool", path: "/admin/my-tool-settings", label: "Admin My Work Settings", permissionEntity: "admin", routeComponentKey: "MyToolAdminSettingsPage" },
   { id: "sharepointIntake", path: "/admin/sharepoint-intake", label: "SharePoint Intake", iconKey: "Cloud", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "SharePointIntakePage" },
-  { id: "quality", path: "/quality", label: "Quality Dashboard", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage" },
+  { id: "quality", path: "/quality", label: "Quality Dashboard", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage", roleLandingEligibility: ["QUALITY_MANAGER"] },
   { id: "qualityDashboardV2", path: "/quality/dashboard", label: "Quality Dashboard (Project)", permissionEntity: "quality", redirectTo: "/quality" },
   { id: "qualityNcrList", path: "/quality/ncrs", label: "NCR List", iconKey: "ListTodo", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "NcrListPage" },
   { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail", permissionEntity: "quality", showInSidebar: false, routeComponentKey: "NcrDetailPage" },
-  { id: "engineering", path: "/engineering", label: "Eng Overview", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage" },
+  { id: "engineering", path: "/engineering", label: "Eng Overview", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", roleLandingEligibility: ["ENGINEERING_MANAGER", "ENGINEER"] },
   { id: "engineeringTasks", path: "/engineering/tasks", label: "Task Execution", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
   { id: "engineeringStandup", path: "/engineering/standup", label: "Engineering Standup", iconKey: "Users", navGroup: "ENGINEERING", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "EngineeringStandupPage" },
   { id: "engineeringAudit", path: "/engineering/audit", label: "Eng Audit Log", iconKey: "Activity", navGroup: "ENGINEERING", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "EngineeringAuditPage" },
-  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "LifecycleBoardPage", labels: { legacy: "Exco" } },
-  { id: "executionBoard", path: "/execution-board", label: "Portfolio Overview", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], roleLandingEligibility: ["PROJECT_MANAGER_SITE"], labels: { legacy: "Work Plan / Board", redesigned: "Portfolio Overview" }, matchSubRoutes: true },
+  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "LifecycleBoardPage" },
+  { id: "executionBoard", path: "/execution-board", label: "Portfolio Overview", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], roleLandingEligibility: ["PROJECT_MANAGER_SITE", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"], matchSubRoutes: true },
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardConstruction", path: "/execution-board/construction", label: "Construction View", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardFinance", path: "/execution-board/finance", label: "Program Finance", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
   { id: "smartImport", path: "/admin/smart-import", label: "Smart Import", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "smart_import", showInSidebar: false, routeComponentKey: "SmartImportPage" },
-  { id: "invoicePatterns", path: "/invoice-patterns", label: "Invoice Patterns", iconKey: "FileSpreadsheet", navGroup: "FINANCE", permissionEntity: "invoice_patterns", showInSidebar: true, routeComponentKey: "InvoicePatternsPage", labels: { redesigned: "Invoice Pattern Library" } },
+  { id: "invoicePatterns", path: "/invoice-patterns", label: "Invoice Patterns", iconKey: "FileSpreadsheet", navGroup: "FINANCE", permissionEntity: "invoice_patterns", showInSidebar: true, routeComponentKey: "InvoicePatternsPage" },
   { id: "counterparties", path: "/counterparties", label: "Counterparties", iconKey: "Building2", navGroup: "FINANCE", permissionEntity: "counterparties", showInSidebar: true, routeComponentKey: "CounterpartiesPage" },
-  { id: "subcontractor", path: "/subcontractor-dashboard", label: "Procurement", iconKey: "Users", navGroup: "FINANCE", permissionEntity: "subcontractors", showInSidebar: true, routeComponentKey: "SubcontractorDashboardPage", labels: { redesigned: "Procurement Hub" } },
-  { id: "adminActivity", path: "/admin/activity-log", label: "Activity Log", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "activity_log", showInSidebar: false, routeComponentKey: "SystemActivityLogPage", labels: { legacy: "Change Audit" } },
+  { id: "subcontractor", path: "/subcontractor-dashboard", label: "Procurement", iconKey: "Users", navGroup: "FINANCE", permissionEntity: "subcontractors", showInSidebar: true, routeComponentKey: "SubcontractorDashboardPage" },
+  { id: "adminActivity", path: "/admin/activity-log", label: "Activity Log", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "activity_log", showInSidebar: false, routeComponentKey: "SystemActivityLogPage" },
   { id: "weeklyReviews", path: "/weekly-reviews", label: "Weekly Reviews", iconKey: "CalendarCheck", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "weekly_review_wizard", showInSidebar: true, routeComponentKey: "WeeklyReviewsPage" },
-  { id: "adminRoles", path: "/admin/roles", label: "Users & Roles", iconKey: "ShieldAlert", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "AdminRolesPage", labels: { legacy: "Roles & Permissions" } },
+  { id: "adminRoles", path: "/admin/roles", label: "Users & Roles", iconKey: "ShieldAlert", navGroup: "SYSTEM", permissionEntity: "admin_roles", showInSidebar: false, routeComponentKey: "AdminRolesPage" },
   { id: "leaderboard", path: "/leaderboard", label: "Leaderboard", iconKey: "Trophy", navGroup: "KNOWLEDGE", permissionEntity: "leaderboard", showInSidebar: false, routeComponentKey: "LeaderboardPage" },
   { id: "feedback", path: "/feedback", label: "Feedback & Support", iconKey: "MessageSquareText", navGroup: "KNOWLEDGE", permissionEntity: "feedback", showInSidebar: true, routeComponentKey: "FeedbackPage" },
   { id: "eeInfo", path: "/ee-info", label: "Processes & SOPs", iconKey: "Leaf", navGroup: "KNOWLEDGE", permissionEntity: "ee_info", showInSidebar: true, routeComponentKey: "EeInfoPage" },
   { id: "training", path: "/training", label: "Training", iconKey: "GraduationCap", navGroup: "KNOWLEDGE", permissionEntity: "training", showInSidebar: true, routeComponentKey: "TrainingPage" },
   { id: "portfolios", path: "/portfolios", label: "Portfolios", iconKey: "FolderOpen", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "portfolios", showInSidebar: true, routeComponentKey: "PortfoliosPage" },
   { id: "portfolioDetail", path: "/portfolios/:id", label: "Portfolio Detail", routeComponentKey: "PortfolioDetailPage" },
-  { id: "pdDashboard", path: "/pd", label: "PD Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdDashboardPage", aliases: ["/pd/dashboard"] },
+  { id: "pdDashboard", path: "/pd", label: "PD Dashboard", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdDashboardPage", aliases: ["/pd/dashboard"], roleLandingEligibility: ["CCO", "KEY_ACCOUNTS_MANAGER", "PROJECT_DEVELOPER"] },
   { id: "pdTickets", path: "/pd/tickets", label: "PD Tickets", iconKey: "ClipboardList", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_tickets", showInSidebar: true, routeComponentKey: "PdTicketsPage" },
   { id: "pdTicketCreate", path: "/pd/tickets/create", label: "Create PD Ticket", routeComponentKey: "PdTicketCreatePage" },
   { id: "pdTicketDetail", path: "/pd/tickets/:id", label: "PD Ticket Detail", routeComponentKey: "PdTicketDetailPage" },
@@ -120,13 +117,14 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pmApprovals", path: "/pm/approvals", label: "Approvals", iconKey: "ClipboardCheck", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "approvals", showInSidebar: true, routeComponentKey: "ApprovalsPage" },
   { id: "pmDeliverables", path: "/pm/deliverables", label: "Deliverables", iconKey: "Package", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "deliverables", showInSidebar: true, routeComponentKey: "PMDeliverablesPage" },
   { id: "handoverControl", path: "/handover-control", label: "Site Controls", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
-  { id: "taskManagement", path: "/tasks", label: "Task Hub", iconKey: "LayoutGrid", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "task_management", showInSidebar: true, routeComponentKey: "TaskManagementPage", labels: { redesigned: "Task Management Hub" } },
-  { id: "standups", path: "/standups", label: "Standups", iconKey: "Users", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "StandupsPage", labels: { redesigned: "Bi-Daily Standups" } },
+  { id: "taskManagement", path: "/tasks", label: "Task Hub", iconKey: "LayoutGrid", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "task_management", showInSidebar: true, routeComponentKey: "TaskManagementPage" },
+  { id: "standups", path: "/standups", label: "Standups", iconKey: "Users", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "StandupsPage" },
   { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
   { id: "phaseTemplates", path: "/admin/phase-templates", label: "Phase Templates", iconKey: "ListChecks", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "PhaseTemplatesPage" },
   { id: "projectCreate", path: "/project-create", label: "Create Project", permissionEntity: "project_create", routeComponentKey: "ProjectCreatePage" },
   { id: "departmentScores", path: "/department-scores", label: "Department Scores", iconKey: "BarChart3", navGroup: "KNOWLEDGE", permissionEntity: "leaderboard", showInSidebar: false, routeComponentKey: "DepartmentScoresPage" },
   { id: "engTemplateAdmin", path: "/admin/eng-templates", label: "Engineering Templates", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "EngTemplateAdminPage" },
+  { id: "exceptions", path: "/exceptions", label: "Exceptions", iconKey: "ShieldAlert", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExceptionsPage" },
   // New entity pages (Phase B)
   { id: "sites", path: "/sites", label: "Sites", iconKey: "MapPin", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "SitesPage" },
   { id: "opportunities", path: "/opportunities", label: "Opportunities", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "OpportunitiesPage" },

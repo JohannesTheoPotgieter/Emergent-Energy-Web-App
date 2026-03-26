@@ -3,30 +3,23 @@ import { buildVisibleTopSections, getBreadcrumbs } from "@/config/app-navigation
 import { ADMIN_SURFACES } from "@/config/admin-surfaces";
 
 describe("app navigation visibility", () => {
-  it("keeps Home secondary navigation limited to Home and My Work", () => {
+  it("keeps Home secondary navigation limited to Home", () => {
     const sections = buildVisibleTopSections({ canViewPath: () => true });
     const homeSection = sections.find((section) => section.label === "Home");
 
-    expect(homeSection?.secondary.map((item) => item.label)).toEqual(["Home", "My Work"]);
+    expect(homeSection?.secondary.map((item) => item.label)).toEqual(["Home"]);
   });
 
   it("filters inaccessible sections and secondary items by permission", () => {
     const sections = buildVisibleTopSections({
-      canViewPath: (path) => ["/", "/my-work", "/project-lifecycle", "/dashboard", "/projects", "/pm-dashboard"].includes(path),
+      canViewPath: (path) => ["/", "/my-work", "/projects"].includes(path),
     });
 
     expect(sections.some((section) => section.label === "Admin")).toBe(false);
-    expect(sections.some((section) => section.label === "Engineering")).toBe(false);
+    expect(sections.some((section) => section.label === "Finance")).toBe(false);
 
-    const projectLifecycle = sections.find((section) => section.label === "Project Lifecycle");
-    expect(projectLifecycle?.secondary.map((item) => item.label)).toEqual(["Overview"]);
-
-    const projectManagement = sections.find((section) => section.label === "Project Management");
-    expect(projectManagement?.secondary.map((item) => item.label)).toEqual([
-      "Execution Dashboard",
-      "Project List",
-      "Per Project Manager Dashboard",
-    ]);
+    const projects = sections.find((section) => section.label === "Projects");
+    expect(projects?.secondary.map((item) => item.label)).toEqual(["Project List"]);
   });
 
   it("retargets a section link to the first visible child when the root page is not permitted", () => {
@@ -48,42 +41,34 @@ describe("app navigation visibility", () => {
     expect(homeSection?.secondary.map((item) => item.label)).toEqual(["Home"]);
   });
 
-  it("exposes the approved Project Lifecycle sub-structure when permitted", () => {
+  it("exposes the Projects section with consolidated secondary items when permitted", () => {
     const sections = buildVisibleTopSections({ canViewPath: () => true });
-    const projectLifecycle = sections.find((section) => section.label === "Project Lifecycle");
+    const projects = sections.find((section) => section.label === "Projects");
 
-    expect(projectLifecycle?.secondary.map((item) => item.label)).toEqual([
-      "Overview",
-      "Lifecycle",
-      "Stage Gates",
-      "Latest Updates",
-      "Clients",
-      "Client Overview",
-    ]);
+    expect(projects).toBeDefined();
+    const labels = projects!.secondary.map((item) => item.label);
+    expect(labels).toContain("Project List");
+    expect(labels).toContain("Portfolio Overview");
+    expect(labels).toContain("Lifecycle");
+    expect(labels).toContain("Engineering");
+    expect(labels).toContain("Quality & HSE");
+    expect(labels).toContain("Construction");
+    // Verify consolidation: niche items removed from nav
+    expect(labels).not.toContain("Mobile View");
+    expect(labels).not.toContain("HSE"); // covered by "Quality & HSE"
+    expect(labels).not.toContain("Sites"); // accessible from Project List
   });
 
-  it("exposes the approved Project Management execution structure when permitted", () => {
+  it("maps project detail breadcrumbs back to Projects section", () => {
     const sections = buildVisibleTopSections({ canViewPath: () => true });
-    const projectManagement = sections.find((section) => section.label === "Project Management");
+    const projects = sections.find((section) => section.label === "Projects");
 
-    expect(projectManagement?.secondary.map((item) => item.label)).toEqual([
-      "Execution Dashboard",
-      "Project List",
-      "Work Plan / Board",
-      "Deliverables",
-      "Approvals",
-      "Site / Execution Controls",
-      "PM On-The-Go",
-      "Per Project Manager Dashboard",
+    expect(projects).toBeDefined();
+    const crumbs = getBreadcrumbs("/project/Alpha_Site", projects!);
+    expect(crumbs).toEqual([
+      { label: "Projects", path: "/projects" },
+      { label: "Alpha_Site" },
     ]);
-  });
-
-  it("maps project detail breadcrumbs back to Project Lifecycle", () => {
-    const sections = buildVisibleTopSections({ canViewPath: () => true });
-    const projectLifecycle = sections.find((section) => section.label === "Project Lifecycle");
-
-    expect(projectLifecycle).toBeDefined();
-    expect(getBreadcrumbs("/project/Alpha_Site", projectLifecycle!)).toEqual(["Project Lifecycle", "Alpha_Site"]);
   });
 
   it("keeps admin navigation aligned to the approved governed surfaces", () => {
@@ -105,5 +90,17 @@ describe("app navigation visibility", () => {
     const adminSection = sections.find((section) => section.label === "Admin");
 
     expect(adminSection?.secondary.some((item) => /command center/i.test(item.label))).toBe(false);
+  });
+
+  it("has six top-level sections", () => {
+    const sections = buildVisibleTopSections({ canViewPath: () => true });
+    expect(sections.map((s) => s.label)).toEqual([
+      "Home",
+      "My Work",
+      "Projects",
+      "Finance",
+      "Reports",
+      "Admin",
+    ]);
   });
 });
