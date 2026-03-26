@@ -681,9 +681,14 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
     for (const row of uploadMetaRows.rows) {
       const fileName = (row as any).file_name as string;
       if (!fileName) continue;
-      const stripped = fileName.replace(/\.(xlsx|xlsm|xls)$/i, '');
+      let stripped = fileName.replace(/\.(xlsx|xlsm|xls)$/i, '');
+      stripped = stripped.replace(/^\d+_/, '');
+      stripped = stripped.replace(/_Tracker$/i, '');
       importedProjectNames.add(stripped);
       importedProjectNames.add(stripped.replace(/ /g, '_'));
+      importedProjectNames.add(stripped.replace(/_/g, ' '));
+      importedProjectNames.add(stripped + '_Tracker');
+      importedProjectNames.add(stripped.replace(/ /g, '_') + '_Tracker');
     }
 
     const today = new Date().toISOString().split("T")[0];
