@@ -26,7 +26,7 @@ export function ProjectConstructionTab({ projectId, projectName }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: "", severity: "minor", location: "", dueDate: "" });
+  const [form, setForm] = useState({ title: "", severity: "minor", location: "", dueDate: "", evidenceLink: "" });
 
   const { data: snags = [], isLoading } = useQuery<SnagRow[]>({
     queryKey: ["/api/construction/snags", projectId],
@@ -45,7 +45,7 @@ export function ProjectConstructionTab({ projectId, projectName }: Props) {
       queryClient.invalidateQueries({ queryKey: ["/api/construction/snags", projectId] });
       toast({ title: "Snag created" });
       setShowCreate(false);
-      setForm({ title: "", severity: "minor", location: "", dueDate: "" });
+      setForm({ title: "", severity: "minor", location: "", dueDate: "", evidenceLink: "" });
     },
   });
 
@@ -94,10 +94,11 @@ export function ProjectConstructionTab({ projectId, projectName }: Props) {
               <div><Label className="text-xs">Location</Label><Input value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} /></div>
             </div>
             <div><Label className="text-xs">Due Date</Label><Input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))} /></div>
+            <div><Label className="text-xs">Evidence Link (SharePoint URL)</Label><Input value={form.evidenceLink} onChange={e => setForm(f => ({ ...f, evidenceLink: e.target.value }))} placeholder="https://..." /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
-            <Button onClick={() => createMutation.mutate({ projectId, title: form.title, severity: form.severity, location: form.location || null, dueDate: form.dueDate || null })} disabled={!form.title.trim() || createMutation.isPending}>Create</Button>
+            <Button onClick={() => createMutation.mutate({ projectId, title: form.title, severity: form.severity, location: form.location || null, dueDate: form.dueDate || null, evidenceLink: form.evidenceLink || null })} disabled={!form.title.trim() || createMutation.isPending}>Create</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
