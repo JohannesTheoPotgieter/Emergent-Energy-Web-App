@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { Handshake, FileCheck, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 interface HandoverPackSummary {
   id: number;
@@ -45,10 +46,11 @@ function statusBadge(s: string) {
 export default function HandoverDashboardPage() {
   const [tab, setTab] = useState<"packs" | "sseg">("packs");
 
-  const { data: packs = [], isLoading: packsLoading } = useQuery<HandoverPackSummary[]>({
+  const { data: packs = [], isLoading: packsLoading, isError, error, refetch } = useQuery<HandoverPackSummary[]>({
     queryKey: ["/api/handover/packs"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/handover/packs");
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
       return res.json();
     },
   });
@@ -64,6 +66,9 @@ export default function HandoverDashboardPage() {
   const activePacks = packs.filter(p => p.status !== "accepted");
   const overdueSseg = ssegItems.filter(s => s.expectedDate && new Date(s.expectedDate) < new Date() && s.status !== "complete" && s.status !== "approved");
   const pendingSseg = ssegItems.filter(s => s.status === "pending" || s.status === "submitted");
+
+  if (packsLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Handover Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-handover-dashboard">

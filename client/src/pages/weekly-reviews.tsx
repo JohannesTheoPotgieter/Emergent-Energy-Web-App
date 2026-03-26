@@ -9,6 +9,7 @@ import {
   ArrowRight, Loader2,
 } from "lucide-react";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { format, startOfWeek, addDays, differenceInDays } from "date-fns";
 
 interface ReviewRecord {
@@ -25,7 +26,7 @@ export default function WeeklyReviewsPage() {
   const [, setLocation] = useLocation();
   const { projectsSummary } = useProjectsSummary();
 
-  const { data: allReviews = [], isLoading } = useQuery<ReviewRecord[]>({
+  const { data: allReviews = [], isLoading, isError, error, refetch } = useQuery<ReviewRecord[]>({
     queryKey: ["/api/weekly-reviews-all"],
   });
 
@@ -92,9 +93,13 @@ export default function WeeklyReviewsPage() {
   };
 
   if (isLoading) {
+    return <PageSkeleton lines={5} />;
+  }
+
+  if (isError) {
     return (
-      <div className="flex items-center justify-center py-24" data-testid="loading-weekly-reviews">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      <div className="p-4 md:p-6">
+        <PageError title="Unable to load Weekly Reviews" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} />
       </div>
     );
   }

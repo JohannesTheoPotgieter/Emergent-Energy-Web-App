@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +26,7 @@ export default function PdDashboardPage() {
   const { allowed: canView, loading: permLoading } = usePermission('pd_dashboard', 'view');
   const [viewMode, setViewMode] = useState<"list" | "kanban">("list");
 
-  const { data: stats, isLoading } = useQuery<{
+  const { data: stats, isLoading, isError, error, refetch } = useQuery<{
     total: number; active: number; overdue: number; dueThisWeek: number; onHold: number; completed: number;
   }>({
     queryKey: ["/api/pd/dashboard"],
@@ -80,6 +81,9 @@ export default function PdDashboardPage() {
       </div>
     );
   }
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PD Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const totalOverdue = pipeline ? pipeline.overdue.week.length + pipeline.overdue.twoWeeks.length + pipeline.overdue.month.length : 0;
 

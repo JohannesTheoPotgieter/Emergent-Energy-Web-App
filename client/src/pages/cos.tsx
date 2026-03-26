@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from "react";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -646,68 +647,8 @@ export default function CosTracker() {
     return formatRand(val);
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50" data-testid="loading-indicator">
-        <div className="bg-card border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
-          <div className="max-w-[1800px] mx-auto">
-            <Skeleton className="h-8 w-72 mb-2" />
-            <Skeleton className="h-4 w-96" />
-          </div>
-        </div>
-        <div className="max-w-[1800px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="shadow-sm">
-                <CardContent className="pt-5 pb-4 px-4">
-                  <div className="flex items-start gap-3">
-                    <Skeleton className="h-10 w-10 rounded-xl" />
-                    <div className="flex-1">
-                      <Skeleton className="h-3 w-20 mb-2" />
-                      <Skeleton className="h-6 w-24" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <Card className="shadow-sm overflow-hidden">
-            <CardContent className="p-6">
-              <Skeleton className="h-[420px] w-full rounded-lg" />
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm overflow-hidden">
-            <CardContent className="p-0">
-              <div className="px-5 py-3 border-b"><Skeleton className="h-5 w-32" /></div>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="flex gap-2 px-5 py-2.5 border-b border-border/40">
-                  <Skeleton className="h-4 w-32" />
-                  {Array.from({ length: 6 }).map((_, j) => (
-                    <Skeleton key={j} className="h-4 w-20 ml-auto" />
-                  ))}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="p-6 max-w-[1200px] mx-auto" data-testid="cos-tracker-error-state">
-        <Card className="border-red-200 bg-red-50/40">
-          <CardContent className="py-10 text-center space-y-3">
-            <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
-            <p className="text-sm font-semibold text-red-700">COS tracker data failed to load.</p>
-            <p className="text-xs text-red-600/90">{(error as Error)?.message || "An unexpected error occurred."}</p>
-            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-cos-tracker">Retry</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load COS Tracker" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const kpiCards = [
     { id: "ytd-total-cos", label: "YTD COS (Planned)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date planned COS from all line items (invoice captured or not). Realised is the paid subset; unrealised is the remaining planned balance." },

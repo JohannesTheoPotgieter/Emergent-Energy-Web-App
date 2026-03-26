@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
-import { PageSkeleton } from "@/components/ui/page-states";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
   BarChart3, TrendingUp, DollarSign, PieChart, AlertTriangle,
   Users, Activity, Zap, Download,
@@ -63,10 +63,11 @@ const PHASE_COLORS: Record<string, string> = {
 };
 
 export default function PortfolioAnalyticsPage() {
-  const { data: projects = [], isLoading } = useQuery<ProjectSummary[]>({
+  const { data: projects = [], isLoading, isError, error, refetch } = useQuery<ProjectSummary[]>({
     queryKey: ["/api/projects-summary"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/projects-summary");
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
       return res.json();
     },
   });
@@ -160,7 +161,8 @@ export default function PortfolioAnalyticsPage() {
       .slice(0, 8),
   [active]);
 
-  if (isLoading) return <PageSkeleton />;
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Portfolio Analytics" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-portfolio-analytics">
