@@ -18,7 +18,7 @@ export function RoleNavAccess({ role, draft, onUpdateDraft, canManageRoles }: Ro
         <div>
           <h4 className="text-sm font-semibold text-gray-800">Navigation Sections</h4>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Control which top-level sections this role can see in the sidebar. {effectiveSections.length}/10 enabled.
+            Control which top-level sections this role can see in the sidebar. {effectiveSections.length}/{NAV_SECTIONS.length} enabled.
           </p>
         </div>
         {canManageRoles && (
