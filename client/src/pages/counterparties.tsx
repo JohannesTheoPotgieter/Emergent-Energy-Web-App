@@ -98,7 +98,7 @@ export default function CounterpartiesPage() {
   const [form, setForm] = useState<EditableCounterpartyFields>(EMPTY_FORM);
   const [contactForm, setContactForm] = useState<EditableContactFields>(EMPTY_CONTACT_FORM);
 
-  const { data: counterparties = [], isLoading, isError, error } = useQuery<CounterpartySummary[]>({
+  const { data: counterparties = [], isLoading, isError, error, refetch } = useQuery<CounterpartySummary[]>({
     queryKey: ["/api/counterparties/summary"],
     queryFn: async () => {
       const res = await fetch("/api/counterparties/summary", { headers: getAuthHeaders(), credentials: "include" });
@@ -265,6 +265,9 @@ export default function CounterpartiesPage() {
       </div>
     );
   }
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Counterparties" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
     <div className="space-y-6" data-testid="counterparties-page">

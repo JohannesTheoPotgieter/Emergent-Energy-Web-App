@@ -42,6 +42,7 @@ import {
   Play,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 interface ActionItem {
   id: number;
@@ -99,7 +100,7 @@ export default function MyToolMeetingsPage() {
   const [convertForm, setConvertForm] = useState<Record<string, string>>({});
   const [manualForm, setManualForm] = useState({ title: "", summary: "", actionItems: [{ text: "", owner: "", dueDate: "" }] });
 
-  const { data: meetings = [], isLoading } = useQuery<Meeting[]>({
+  const { data: meetings = [], isLoading, isError, error, refetch } = useQuery<Meeting[]>({
     queryKey: ["/api/meetings"],
     refetchInterval: 30_000,
   });
@@ -226,6 +227,9 @@ export default function MyToolMeetingsPage() {
       </div>
     );
   }
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load meetings" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
     <div className="p-6 max-w-5xl mx-auto">

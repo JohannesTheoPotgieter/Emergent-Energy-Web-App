@@ -283,9 +283,6 @@ export default function ProgrammeReports() {
   const firstError = projectPlanQuery.error || costQuery.error || qualityQuery.error || resourceQuery.error;
   const refetchAll = () => { projectPlanQuery.refetch(); costQuery.refetch(); qualityQuery.refetch(); resourceQuery.refetch(); };
 
-  if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load programme reports" message={firstError instanceof Error ? firstError.message : "Failed to fetch data"} onRetry={refetchAll} /></div>;
-
   const period = useMemo(() => {
     if (periodType === "custom") return { from: fromDate || undefined, to: toDate || undefined, month: null as string | null };
     const [year, m] = month.split("-").map(Number);
@@ -361,6 +358,9 @@ export default function ProgrammeReports() {
   }, [projectPlanQuery.data, costQuery.data, qualityQuery.data, resourceQuery.data, period]);
 
   const trendText = useMemo(() => `Margin at risk is ${formatCurrency(summary.financial.marginAtRisk)} with ${summary.risks.delivery} delivery exceptions and ${summary.risks.quality} quality exceptions in selected period.`, [summary]);
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load programme reports" message={firstError instanceof Error ? firstError.message : "Failed to fetch data"} onRetry={refetchAll} /></div>;
 
   const openDrill = (title: string, context: Record<string, any>) => {
     setDrill({ title, context: { ...context, dateFrom: period.from, dateTo: period.to } });

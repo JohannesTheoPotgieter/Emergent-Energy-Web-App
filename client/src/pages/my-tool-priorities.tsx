@@ -452,6 +452,9 @@ export default function MyToolPrioritiesPage() {
     );
   }
 
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load priorities" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
+
   return (
     <div className="p-6">
       <div className="space-y-4 max-w-[1400px] mx-auto" data-testid="company-priorities-page">
