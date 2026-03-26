@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { canReassignTask as canReassignTaskByRole, getTaskAssigneeNames, isTaskDueSoon, isTaskOverdue as isTaskOverdueLogic } from "@/pages/my-work-tasks-logic";
 import { useLocation } from "wouter";
@@ -295,7 +296,7 @@ export default function MyWorkTasksPage() {
     return () => clearTimeout(timer);
   }, [searchText]);
 
-  const { data: allTaskData, isLoading } = useQuery<any>({
+  const { data: allTaskData, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks", "canonical"],
     queryFn: async () => {
       const res = await fetch("/api/my-work/all-tasks", { headers: { ...getAuthHeaders() }, credentials: "include" });

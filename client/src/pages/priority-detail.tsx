@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, Plus, X, Search, DollarSign, ListTodo, MessageSquare, FolderOpen, CheckCircle2 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
 import { isPriorityAdminRole } from "@/config/priorities";
@@ -163,11 +164,11 @@ export default function PriorityDetailPage() {
 
   const isAdmin = isPriorityAdminRole(user?.role);
 
-  const { data: priority, isLoading } = useQuery<any>({
+  const { data: priority, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: [`/api/priorities/${priorityId}`],
     queryFn: async () => {
       const res = await fetch(`/api/priorities/${priorityId}`, { headers: { Authorization: `Bearer ${token()}` } });
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error("Failed to fetch data (" + res.status + ")");
       return res.json();
     },
     enabled: priorityId > 0,
@@ -246,9 +247,8 @@ export default function PriorityDetailPage() {
     },
   });
 
-  if (isLoading) {
-    return <PageShell><div className="flex items-center justify-center min-h-[40vh]"><div className="animate-spin h-6 w-6 border-2 border-primary border-t-transparent rounded-full" /></div></PageShell>;
-  }
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell><PageError title="Unable to load priority" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   if (!priority) {
     return <PageShell><p className="text-muted-foreground">Priority not found</p></PageShell>;

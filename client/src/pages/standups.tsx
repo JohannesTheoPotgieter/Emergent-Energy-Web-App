@@ -1571,7 +1571,6 @@ export default function StandupsPage() {
       />
 
       {displaySchedules.length === 0 ? (
-      ) : displaySchedules.length === 0 ? (
         <div className="ee-empty-state">
           <Users className="h-10 w-10 text-muted-foreground/30 mb-3" />
           <p className="text-sm font-semibold">No standup schedules configured</p>

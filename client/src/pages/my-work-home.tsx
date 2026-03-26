@@ -12,6 +12,7 @@ import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { format, parseISO } from "date-fns";
 import { trackFeatureUse } from "@/lib/nav-analytics";
@@ -300,14 +301,14 @@ export default function MyWorkHomePage() {
     },
   });
 
-  const { data: allTaskData, isLoading: allTasksLoading } = useQuery<any>({
+  const { data: allTaskData, isLoading: allTasksLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks"],
     queryFn: async () => {
       const res = await fetch("/api/my-work/all-tasks", {
         credentials: "include",
         headers: authHeaders(),
       });
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error("Failed to fetch data (" + res.status + ")");
       return res.json();
     },
   });
@@ -898,6 +899,9 @@ export default function MyWorkHomePage() {
       escalatedCount: escalatedItems.length,
     };
   }, [actionItems.length, escalatedItems.length, openTasks, sortedEvents, today]);
+
+  if (allTasksLoading) return <PageShell className="p-4 md:p-6 max-w-[1400px] mx-auto"><PageSkeleton lines={5} /></PageShell>;
+  if (isError) return <PageShell className="p-4 md:p-6 max-w-[1400px] mx-auto"><PageError title="Unable to load My Work" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6 max-w-[1400px] mx-auto" data-testid="my-work-home">

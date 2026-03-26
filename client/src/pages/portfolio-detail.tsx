@@ -22,6 +22,7 @@ import {
   Briefcase, Search, ArrowRightLeft, CheckCircle2, Flag, Layers, Clock, XCircle, Activity,
   LayoutList, GanttChart, Diamond,
 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { format } from "date-fns";
 import { CashflowTab } from "@/components/tabs/CashflowTab";

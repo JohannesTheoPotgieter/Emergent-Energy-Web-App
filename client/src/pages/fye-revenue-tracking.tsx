@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { Link, useSearch, useLocation } from "wouter";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -465,20 +466,13 @@ function BudgetEditorModal({ fye, months, open, onClose }: { fye: number; months
 function DashboardTab({ fye }: { fye: number }) {
   const [showBudgetModal, setShowBudgetModal] = useState(false);
   const canEdit = usePermission("fye_revenue_tracking", "edit");
-  const { data, isLoading, error, refetch } = useQuery<DashboardData>({
+  const { data, isLoading, isError, error, refetch } = useQuery<DashboardData>({
     queryKey: ["/api/fye-revenue-tracking/dashboard", fye],
     queryFn: fetchQueryFn(`/api/fye-revenue-tracking/dashboard?fye=${fye}`),
   });
 
-  if (isLoading) return <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-40 w-full" />)}</div>;
-  if (error || !data) return (
-    <div className="text-center py-12">
-      <AlertCircle className="h-8 w-8 mx-auto mb-2 text-red-500" />
-      <p className="text-sm font-medium text-foreground mb-1">Failed to load dashboard data</p>
-      <p className="text-xs text-muted-foreground mb-3">{(error as any)?.message || "Unknown error"}</p>
-      <Button variant="outline" size="sm" onClick={() => refetch()}><RefreshCw className="h-3.5 w-3.5 mr-1" />Retry</Button>
-    </div>
-  );
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError || !data) return <div className="p-4 md:p-6"><PageError title="Unable to load FYE Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const { months } = data;
 
