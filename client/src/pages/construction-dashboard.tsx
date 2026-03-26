@@ -7,6 +7,7 @@ import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { HardHat, AlertTriangle, ClipboardCheck, Users, Plus } from "lucide-react";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 interface SnagSummary { id: number; title: string; severity: string; status: string; projectId: number; }
 interface InspectionSummary { id: number; inspectionType: string; status: string; inspectionDate: string | null; projectId: number; }
@@ -28,10 +29,11 @@ function statusBadge(s: string) {
 export default function ConstructionDashboardPage() {
   const [tab, setTab] = useState<"snags" | "inspections" | "activities">("snags");
 
-  const { data: snags = [], isLoading: snagsLoading } = useQuery<SnagSummary[]>({
+  const { data: snags = [], isLoading: snagsLoading, isError, error, refetch } = useQuery<SnagSummary[]>({
     queryKey: ["/api/construction/snags"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/construction/snags");
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
       return res.json();
     },
   });
@@ -47,6 +49,9 @@ export default function ConstructionDashboardPage() {
   const openSnags = snags.filter(s => s.status === "open" || s.status === "in_progress");
   const criticalSnags = snags.filter(s => s.severity === "critical" && s.status !== "closed");
   const scheduledInspections = inspections.filter(i => i.status === "scheduled");
+
+  if (snagsLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Construction Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-construction-dashboard">

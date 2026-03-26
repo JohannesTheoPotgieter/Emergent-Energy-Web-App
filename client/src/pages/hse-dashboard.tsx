@@ -12,6 +12,7 @@ import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { useToast } from "@/hooks/use-toast";
 import { ShieldAlert, AlertTriangle, CheckCircle2, Clock, Plus } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 interface HseIncidentSummary { id: number; incidentType: string; severity: string; description: string; status: string; incidentDate: string; }
 interface CorrectiveActionSummary { id: number; title: string; sourceType: string; status: string; dueDate: string | null; }
@@ -72,10 +73,11 @@ export default function HseDashboardPage() {
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
   });
 
-  const { data: incidents = [], isLoading: incidentsLoading } = useQuery<HseIncidentSummary[]>({
+  const { data: incidents = [], isLoading: incidentsLoading, isError, error, refetch } = useQuery<HseIncidentSummary[]>({
     queryKey: ["/api/hse/incidents"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/hse/incidents");
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
       return res.json();
     },
   });
@@ -91,6 +93,9 @@ export default function HseDashboardPage() {
   const openIncidents = incidents.filter(i => i.status !== "closed");
   const openActions = actions.filter(a => a.status !== "completed" && a.status !== "verified");
   const overdueActions = actions.filter(a => a.dueDate && new Date(a.dueDate) < new Date() && a.status !== "completed" && a.status !== "verified");
+
+  if (incidentsLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load HSE Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-hse-dashboard">

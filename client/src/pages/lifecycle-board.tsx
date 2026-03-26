@@ -20,6 +20,7 @@ import { InlineTip } from "@/components/guidance/InlineTip";
 import { MicroWalkthrough, ReplayWalkthrough } from "@/components/guidance/MicroWalkthrough";
 import type { NextAction, BlockerInfo, OwnerInfo } from "@/hooks/use-guidance";
 import { usePermission } from "@/hooks/use-permissions";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 interface StageGateBlock {
   projectId: number;

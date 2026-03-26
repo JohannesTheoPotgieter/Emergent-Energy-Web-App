@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { Package, Truck, Clock, AlertTriangle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 interface ProcurementSummary {
   id: number;
@@ -30,11 +31,12 @@ function deliveryBadge(s: string | null) {
 export default function ProcurementDashboardPage() {
   const [tab, setTab] = useState<"requisitions" | "delivery" | "long_lead">("requisitions");
 
-  const { data: items = [], isLoading } = useQuery<ProcurementSummary[]>({
+  const { data: items = [], isLoading, isError, error, refetch } = useQuery<ProcurementSummary[]>({
     queryKey: ["/api/procurement-items-all"],
     queryFn: async () => {
       // Use the existing procurement items endpoint
       const res = await apiRequest("GET", "/api/procurement-items");
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
       return res.json();
     },
   });
@@ -46,6 +48,9 @@ export default function ProcurementDashboardPage() {
     i.deliveryExpectedDate && new Date(i.deliveryExpectedDate) < new Date() &&
     i.deliveryStatus !== "delivered" && i.deliveryStatus !== "not_ordered"
   );
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Procurement Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-procurement-dashboard">

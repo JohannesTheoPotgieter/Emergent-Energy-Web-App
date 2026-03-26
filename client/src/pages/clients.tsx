@@ -36,6 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 async function qFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -88,7 +89,7 @@ export default function ClientsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: clients = [], isLoading } = useQuery<Client[]>({
+  const { data: clients = [], isLoading, isError, error, refetch } = useQuery<Client[]>({
     queryKey: ["clients", search],
     queryFn: () =>
       qFetch(`/api/pd/clients${search ? `?search=${encodeURIComponent(search)}` : ""}`),
