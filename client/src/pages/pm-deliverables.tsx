@@ -10,6 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 type DeliverableRow = {
   id: number;
@@ -108,7 +109,7 @@ export default function PMDeliverablesPage() {
   const [, navigate] = useLocation();
   const [selectedProjectName, setSelectedProjectName] = useState("");
 
-  const { data: allProjects = [], isLoading: loadingProjects } = useQuery<ProjectListRow[]>({
+  const { data: allProjects = [], isLoading: loadingProjects, isError, error, refetch } = useQuery<ProjectListRow[]>({
     queryKey: ["/api/projects-summary", "pm-deliverables"],
     queryFn: () => fetchJson<ProjectListRow[]>("/api/projects-summary"),
     staleTime: 30_000,
@@ -167,6 +168,9 @@ export default function PMDeliverablesPage() {
   const latestUpdateAge = getRelativeTime(selectedProject?.latest_update_at);
   const lastImportAge = getRelativeTime(selectedProject?.last_import_at);
   const microsoftActionItems = microsoftItems.filter((item) => item.actionRequired);
+
+  if (loadingProjects) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load deliverables" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="pm-deliverables-page">

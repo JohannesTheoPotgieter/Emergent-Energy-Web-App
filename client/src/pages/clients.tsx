@@ -228,6 +228,9 @@ export default function ClientsPage() {
     });
   };
 
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Clients" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
+
   return (
     <PageShell className="max-w-6xl p-4 md:p-6" data-testid="clients-page">
       <SectionHeader

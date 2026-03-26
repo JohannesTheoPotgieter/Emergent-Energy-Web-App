@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, FileSpreadsheet, Search, Clock, ShieldAlert, CalendarDays, Building2, Briefcase, ChevronRight, FileText } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { ReportCard } from "@/components/reports/ReportCard";
 import DrilldownDrawer from "@/components/reports/shared/DrilldownDrawer";
 
@@ -82,19 +83,35 @@ function ReportMeta({ meta, lastImportAt, hasProtectedFields }: { meta: any; las
 function useProgrammeData() {
   const projectPlanQuery = useQuery({
     queryKey: ["/api/reports/project-plan"],
-    queryFn: async () => (await fetch("/api/reports/project-plan", { headers: getAuthHeaders() })).json(),
+    queryFn: async () => {
+      const res = await fetch("/api/reports/project-plan", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
+      return res.json();
+    },
   });
   const costQuery = useQuery({
     queryKey: ["/api/reports/cost"],
-    queryFn: async () => (await fetch("/api/reports/cost", { headers: getAuthHeaders() })).json(),
+    queryFn: async () => {
+      const res = await fetch("/api/reports/cost", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
+      return res.json();
+    },
   });
   const qualityQuery = useQuery({
     queryKey: ["/api/reports/quality"],
-    queryFn: async () => (await fetch("/api/reports/quality", { headers: getAuthHeaders() })).json(),
+    queryFn: async () => {
+      const res = await fetch("/api/reports/quality", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
+      return res.json();
+    },
   });
   const resourceQuery = useQuery({
     queryKey: ["/api/reports/resource-allocation"],
-    queryFn: async () => (await fetch("/api/reports/resource-allocation", { headers: getAuthHeaders() })).json(),
+    queryFn: async () => {
+      const res = await fetch("/api/reports/resource-allocation", { headers: getAuthHeaders() });
+      if (!res.ok) throw new Error('Failed to fetch data (' + res.status + ')');
+      return res.json();
+    },
   });
 
   return { projectPlanQuery, costQuery, qualityQuery, resourceQuery };
@@ -260,6 +277,14 @@ export default function ProgrammeReports() {
   const [toDate, setToDate] = useState("");
 
   const { projectPlanQuery, costQuery, qualityQuery, resourceQuery } = useProgrammeData();
+
+  const isLoading = projectPlanQuery.isLoading || costQuery.isLoading || qualityQuery.isLoading || resourceQuery.isLoading;
+  const isError = projectPlanQuery.isError || costQuery.isError || qualityQuery.isError || resourceQuery.isError;
+  const firstError = projectPlanQuery.error || costQuery.error || qualityQuery.error || resourceQuery.error;
+  const refetchAll = () => { projectPlanQuery.refetch(); costQuery.refetch(); qualityQuery.refetch(); resourceQuery.refetch(); };
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load programme reports" message={firstError instanceof Error ? firstError.message : "Failed to fetch data"} onRetry={refetchAll} /></div>;
 
   const period = useMemo(() => {
     if (periodType === "custom") return { from: fromDate || undefined, to: toDate || undefined, month: null as string | null };

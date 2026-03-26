@@ -11,6 +11,7 @@ import {
   Link2, Users, ChevronRight as ChevronRightIcon, RefreshCw,
 } from "lucide-react";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
   authHeaders, TagToProjectDialog, ConvertToTaskDialog, MsObjectActions,
 } from "./collaboration";
@@ -54,15 +55,17 @@ export default function CollabTeamsPage() {
   const [autoSyncDone, setAutoSyncDone] = useState(false);
   const syncMutation = useTeamsSync();
 
-  const { data: items = [], isLoading, isFetched } = useQuery<any[]>({
+  const { data: items = [], isLoading, isFetched, isError, error, refetch } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "teams"],
     queryFn: async () => {
       const res = await fetch("/api/ms-objects/mine?type=teams", { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Failed to fetch data (" + res.status + ")");
       return res.json();
     },
     staleTime: 30_000,
   });
+
+  if (isError) return <PageShell className="max-w-5xl p-4 md:p-6"><PageError title="Unable to load Teams Chat" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   useEffect(() => {
     if (isFetched && items.length === 0 && !autoSyncDone && !syncMutation.isPending) {

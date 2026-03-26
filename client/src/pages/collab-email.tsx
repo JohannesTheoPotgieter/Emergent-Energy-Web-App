@@ -11,6 +11,7 @@ import {
   CheckCheck, Link2, RefreshCw, ShieldAlert,
 } from "lucide-react";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
   authHeaders, TagToProjectDialog, ConvertToTaskDialog, MsObjectActions,
 } from "./collaboration";
@@ -62,16 +63,18 @@ export default function CollabEmailPage() {
     setSsoUnavailable(false);
   }, []);
 
-  const { data: items = [], isLoading, isFetched } = useQuery<any[]>({
+  const { data: items = [], isLoading, isFetched, isError, error, refetch } = useQuery<any[]>({
     queryKey: ["ms-objects-mine", "email"],
     queryFn: async () => {
       const res = await fetch("/api/ms-objects/mine?type=email", { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) return [];
+      if (!res.ok) throw new Error("Failed to fetch data (" + res.status + ")");
       return res.json();
     },
     staleTime: 10_000,
     gcTime: 60_000,
   });
+
+  if (isError) return <PageShell className="max-w-5xl p-4 md:p-6"><PageError title="Unable to load Outlook Email" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   useEffect(() => {
     if (isFetched && items.length === 0 && !autoSyncDone && !syncMutation.isPending) {

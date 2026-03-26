@@ -543,9 +543,13 @@ export default function PortfoliosPage() {
   const [formData, setFormData] = useState({ name: "", clientName: "", description: "", status: "Active", ownerUserId: "" });
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  const { data: dashboard, isLoading } = useQuery<any>({
+  const { data: dashboard, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/portfolio-dashboard", viewMode],
-    queryFn: () => fetch(`/api/portfolio-dashboard?view=${viewMode}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: async () => {
+      const r = await fetch(`/api/portfolio-dashboard?view=${viewMode}`, { credentials: "include" });
+      if (!r.ok) throw new Error('Failed to fetch data (' + r.status + ')');
+      return r.json();
+    },
   });
 
   const { data: allUsers = [] } = useQuery<{ id: number; name: string }[]>({
@@ -582,6 +586,9 @@ export default function PortfoliosPage() {
   const portfoliosList = (dashboard?.portfolios || []).filter((p: any) =>
     !search || p.name.toLowerCase().includes(search.toLowerCase()) || (p.clientName || "").toLowerCase().includes(search.toLowerCase())
   );
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Portfolios" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
     <div className="space-y-6" data-testid="page-portfolios">

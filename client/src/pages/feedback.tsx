@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
   Bug,
   Lightbulb,
@@ -84,7 +85,7 @@ export default function FeedbackPage() {
   const [adminNotes, setAdminNotes] = useState("");
   const [adminPriority, setAdminPriority] = useState("");
 
-  const { data: tickets = [], isLoading } = useQuery({
+  const { data: tickets = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/feedback"],
     queryFn: () => apiFetch("/api/feedback"),
   });
@@ -141,6 +142,9 @@ export default function FeedbackPage() {
     inProgress: tickets.filter((t: any) => t.status === "in_progress").length,
     resolved: tickets.filter((t: any) => t.status === "resolved" || t.status === "closed").length,
   };
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load feedback" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   if (!canView) {
     return (

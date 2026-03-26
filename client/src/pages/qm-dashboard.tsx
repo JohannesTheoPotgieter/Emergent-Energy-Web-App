@@ -495,6 +495,8 @@ export default function QmDashboardPage() {
     warningFilter ? 1 : 0,
   ].reduce((a, b) => a + b, 0);
 
+  if (checklistsLoading) return <PageSkeleton lines={5} />;
+  if (checklistsError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Quality Management" message="Failed to fetch data" onRetry={() => refetchChecklists()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="qm-dashboard-page">
