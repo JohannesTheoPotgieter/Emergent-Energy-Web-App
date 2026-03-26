@@ -998,7 +998,7 @@ function DetailTab({ fye }: { fye: number }) {
   const detailUrl = cutoffMonth
     ? `/api/fye-revenue-tracking/detail?fye=${fye}&cutoffMonth=${cutoffMonth}`
     : `/api/fye-revenue-tracking/detail?fye=${fye}`;
-  const { data, isLoading, error, refetch } = useQuery<DetailData>({
+  const { data, isLoading, isError, error, refetch } = useQuery<DetailData>({
     queryKey: ["/api/fye-revenue-tracking/detail", fye],
     queryFn: fetchQueryFn(`/api/fye-revenue-tracking/detail?fye=${fye}`),
   });

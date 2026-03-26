@@ -887,6 +887,14 @@ export default function MyWorkTasksPage() {
     );
   }
 
+  if (isError) {
+    return (
+      <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
+        <PageError title="Unable to load My Tasks" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} />
+      </PageShell>
+    );
+  }
+
   return (
     <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
 
