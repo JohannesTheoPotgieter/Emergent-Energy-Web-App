@@ -967,6 +967,37 @@ export function registerMsSyncRoutes(app: Express) {
           webLink: item.webLink,
         });
       });
+
+      const allTasks = [
+        ...personal.map((t: any) => ({ ...t, _source: "personal" })),
+        ...operational.map((t: any) => ({ ...t, _source: "operational" })),
+        ...trRegister.map((t: any) => ({ ...t, _source: "tr_register" })),
+        ...approvalsEngineering.map((t: any) => ({ ...t, _source: "approvals" })),
+        ...approvalsQuality.map((t: any) => ({ ...t, _source: "approvals" })),
+        ...approvalsGeneral.map((t: any) => ({ ...t, _source: "approvals" })),
+        ...deliverablesMapped.map((t: any) => ({ ...t, _source: "deliverables" })),
+        ...planTasksMapped,
+        ...engineeringTasksMapped,
+        ...qualityTasksMapped,
+        ...microsoftItemsMapped.map((t: any) => ({ ...t, _source: "microsoft" })),
+      ];
+
+      res.json({
+        tasks: allTasks,
+        personal,
+        operational,
+        trRegister,
+        approvals: {
+          engineering: approvalsEngineering,
+          quality: approvalsQuality,
+          general: approvalsGeneral,
+        },
+        deliverables: deliverablesMapped,
+        planTasks: planTasksMapped,
+        engineeringTasks: engineeringTasksMapped,
+        qualityTasks: qualityTasksMapped,
+        microsoftItems: microsoftItemsMapped,
+      });
     } catch (err: unknown) {
       console.error("[MyWork AllTasks] Error:", err);
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
