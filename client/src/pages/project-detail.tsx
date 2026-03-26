@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
   DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
-  ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
+  ArrowLeft, ExternalLink, User, CheckCircle, AlertCircle, Columns, CalendarDays,
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
@@ -834,7 +834,7 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
 
 const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
   delivery: "task-grid",
-  commercial: "procurement",
+  commercial: "revenue-tracking",
   engineering: "eng-tasks",
   quality: "quality",
   collaboration: "chat",
@@ -1414,12 +1414,12 @@ export default function ProjectDetailPage() {
       <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
         {[
           { key: "delivery", label: "Delivery", icon: CalendarDays, visible: canViewTab.overview },
-          { key: "commercial", label: "Commercial", icon: DollarSign, visible: canViewTab.finance },
+          { key: "commercial", label: "Finance", icon: DollarSign, visible: canViewTab.finance },
           { key: "engineering", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
           { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality },
           { key: "construction", label: "Construction", icon: HardHat, visible: canViewTab.overview },
           { key: "handover", label: "Handover", icon: Handshake, visible: canViewTab.overview },
-          { key: "collaboration", label: "Records", icon: Users, visible: canViewSubTab.collaboration },
+          { key: "collaboration", label: "Collaboration", icon: Users, visible: canViewSubTab.collaboration },
         ].filter(t => t.visible).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSection === tab.key;
@@ -1494,11 +1494,8 @@ export default function ProjectDetailPage() {
           )}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
             {[
-              { key: "revenue-tracking", label: "Inflows", icon: DollarSign, visible: canViewSubTab.revenue },
-              { key: "expenditure", label: "COS / Costs", icon: CreditCard, visible: canViewSubTab.expenditure },
-              { key: "monthly-realisation", label: "COS Tracker", icon: TrendingUp, visible: canViewSubTab.cosTracker },
-              { key: "revenue-tracker", label: "Revenue", icon: TrendingUp, visible: canViewSubTab.cosTracker },
-              { key: "gp-tracker", label: "GP", icon: BarChart3, visible: canViewSubTab.cosTracker },
+              { key: "revenue-tracking", label: "Revenue Milestones", icon: DollarSign, visible: canViewSubTab.revenue },
+              { key: "expenditure", label: "Cost Lines", icon: CreditCard, visible: canViewSubTab.expenditure },
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
               { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "change-control", label: "Changes", icon: FileCheck, visible: true },
@@ -1508,9 +1505,19 @@ export default function ProjectDetailPage() {
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
               </Button>
             ))}
+            {/* Cross-links to portfolio finance views */}
+            <div className="h-5 border-l border-border/50 mx-1" />
+            {canViewSubTab.cosTracker && (
+              <>
+                <Link href="/cos"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground whitespace-nowrap shrink-0 gap-1"><TrendingUp className="h-3 w-3" />COS Tracker<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+                <Link href="/revenue-tracker"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground whitespace-nowrap shrink-0 gap-1"><TrendingUp className="h-3 w-3" />Revenue Tracker<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+                <Link href="/gp-tracker"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground whitespace-nowrap shrink-0 gap-1"><BarChart3 className="h-3 w-3" />GP Tracker<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+              </>
+            )}
           </div>
           {activeSubTab === "revenue-tracking" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {activeSubTab === "expenditure" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
+          {/* Legacy sub-tab support: if user navigates via old URL, show the tab component */}
           {activeSubTab === "monthly-realisation" && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
           {activeSubTab === "revenue-tracker" && canViewSubTab.cosTracker && <RevenueTrackerTab projectName={projectName} />}
           {activeSubTab === "gp-tracker" && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
@@ -1536,12 +1543,18 @@ export default function ProjectDetailPage() {
 
       {activeSection === "construction" && (
         <div className="space-y-2" data-testid="construction-section">
+          <div className="flex justify-end">
+            <Link href="/construction"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground gap-1">Open Construction Dashboard<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+          </div>
           {projectInfoId && <ProjectConstructionTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
       {activeSection === "handover" && (
         <div className="space-y-2" data-testid="handover-section">
+          <div className="flex justify-end">
+            <Link href="/handover"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground gap-1">Open Handover Dashboard<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+          </div>
           {projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
