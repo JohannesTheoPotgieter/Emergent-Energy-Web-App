@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   ShieldCheck,
 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 type Horizon = "today" | "week" | "month" | "quarter";
 type Severity = "critical" | "important" | "normal";
@@ -122,7 +123,7 @@ export default function MyToolAdminSettingsPage() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<PriorityFormData>({ ...emptyPriorityForm });
 
-  const { data: settings, isLoading: settingsLoading } = useQuery<FeatureSettings>({
+  const { data: settings, isLoading: settingsLoading, isError: settingsError, error: settingsQueryError, refetch: refetchSettings } = useQuery<FeatureSettings>({
     queryKey: ["/api/mytool/settings"],
   });
 
@@ -237,10 +238,11 @@ export default function MyToolAdminSettingsPage() {
 
   const isLoading = settingsLoading || prioritiesLoading;
 
-  if (isLoading) {
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (settingsError) {
     return (
-      <div className="flex items-center justify-center py-20" data-testid="loading-spinner">
-        <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+      <div className="p-4 md:p-6">
+        <PageError title="Unable to load admin settings" message={settingsQueryError instanceof Error ? settingsQueryError.message : "Failed to fetch data"} onRetry={() => refetchSettings()} />
       </div>
     );
   }

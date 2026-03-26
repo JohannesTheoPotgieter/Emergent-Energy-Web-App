@@ -45,6 +45,7 @@ import {
   X,
   AlertTriangle,
 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { format } from "date-fns";
 
 interface PriorityLink {
@@ -156,7 +157,7 @@ export default function MyToolPrioritiesPage() {
   const [linkTaskPicker, setLinkTaskPicker] = useState("");
   const [inlineEdit, setInlineEdit] = useState<{ id: number; field: string; value: string } | null>(null);
 
-  const { data: priorities = [], isLoading } = useQuery<CompanyPriority[]>({
+  const { data: priorities = [], isLoading, isError, error, refetch } = useQuery<CompanyPriority[]>({
     queryKey: ["/api/mytool/company-priorities"],
   });
 
