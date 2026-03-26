@@ -867,6 +867,18 @@ export default function MyWorkHomePage() {
     }),
   [calendarEvents]);
 
+  // A6: Fetch pending approval count for My Work summary
+  const { data: approvalData } = useQuery<{ counts: { total: number } }>({
+    queryKey: ["/api/approvals/pending-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/approvals/pending", { credentials: "include", headers: authHeaders() });
+      if (!res.ok) return { counts: { total: 0 } };
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+  const pendingApprovals = approvalData?.counts?.total ?? 0;
+
   const myDaySummary = useMemo(() => {
     const urgentActions = actionItems.length;
     const dueToday = openTasks.filter((task) => {
@@ -922,7 +934,7 @@ export default function MyWorkHomePage() {
           { label: "Meetings", value: myDaySummary.upcomingMeetings, icon: Calendar, color: "text-blue-600", bg: "bg-blue-50 border-blue-200" },
           { label: "Open Tasks", value: myDaySummary.openTasks, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200" },
           { label: "Done Today", value: doneToday, icon: Sparkles, color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-300" },
-          { label: "Alerts", value: myDaySummary.escalatedCount, icon: Bell, color: "text-amber-600", bg: "bg-amber-50 border-amber-200" },
+          { label: "Approvals", value: pendingApprovals, icon: Bell, color: pendingApprovals > 0 ? "text-amber-600" : "text-muted-foreground", bg: pendingApprovals > 0 ? "bg-amber-50 border-amber-200" : "bg-muted/50 border-border" },
         ].map(({ label, value, icon: Icon, color, bg }) => (
           <div key={label} className={`flex items-center gap-3 rounded-lg border px-3.5 py-2.5 ${bg}`}>
             <Icon className={`h-4 w-4 ${color} shrink-0`} />

@@ -18,7 +18,7 @@ import {
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
   MessageSquare, FolderOpen, FileCheck, Search, X,
-  HardHat, Handshake,
+  HardHat, Handshake, MapPin,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -129,6 +129,66 @@ function engFetch(url: string, options?: RequestInit) {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
   return fetch(url, { ...options, headers: { ...headers, ...options?.headers }, credentials: "include" });
+}
+
+/** Linked entity info cards — shows site, opportunity, budget baseline if linked */
+function LinkedEntityCards({ projectInfoId }: { projectInfoId: number }) {
+  const { data: siteData } = useQuery({
+    queryKey: ["project-site", projectInfoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/sites?projectId_lookup=${projectInfoId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      const sites = await res.json();
+      return sites?.[0] || null;
+    },
+    staleTime: 60_000,
+  });
+
+  const { data: budgetData } = useQuery({
+    queryKey: ["project-budget-baselines", projectInfoId],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/budget-baselines?projectId=${projectInfoId}`, { credentials: "include", headers });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const latestBaseline = budgetData?.[0];
+  const hasSite = siteData && siteData.siteName;
+  const hasBaseline = latestBaseline && latestBaseline.id;
+
+  if (!hasSite && !hasBaseline) return null;
+
+  return (
+    <div className="flex flex-wrap gap-2" data-testid="linked-entity-cards">
+      {hasSite && (
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border bg-card text-xs">
+          <MapPin className="h-3 w-3 text-muted-foreground" />
+          <span className="font-medium">{siteData.siteName}</span>
+          {siteData.municipality && <span className="text-muted-foreground">({siteData.municipality})</span>}
+          {siteData.roofType && <Badge variant="outline" className="text-[9px] h-4">{siteData.roofType.replace(/_/g, " ")}</Badge>}
+        </div>
+      )}
+      {hasBaseline && (
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border bg-card text-xs">
+          <DollarSign className="h-3 w-3 text-muted-foreground" />
+          <span className="font-medium">Baseline v{latestBaseline.version}</span>
+          {latestBaseline.changeLocked ? (
+            <Badge variant="default" className="text-[9px] h-4 bg-green-100 text-green-700">Locked</Badge>
+          ) : (
+            <Badge variant="secondary" className="text-[9px] h-4">Draft</Badge>
+          )}
+          {latestBaseline.revenueBaseline && (
+            <span className="text-muted-foreground">R{Number(latestBaseline.revenueBaseline).toLocaleString()}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
@@ -1442,6 +1502,11 @@ export default function ProjectDetailPage() {
 
       {/* Priority badges */}
       <ProjectPriorityBadges projectId={projectInfoId ?? null} />
+
+      {/* Linked entity info cards (B2/B3/B5) */}
+      {projectInfoId && (
+        <LinkedEntityCards projectInfoId={projectInfoId} />
+      )}
 
       {/* GC-012: Contract value reconciliation warning — uses V2 finance summary */}
       {(() => {
