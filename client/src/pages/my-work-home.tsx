@@ -926,6 +926,11 @@ export default function MyWorkHomePage() {
                 All Tasks <ArrowRight className="h-3 w-3 ml-1" />
               </Button>
             </Link>
+            <Link href="/tasks">
+              <Button variant="ghost" size="sm" className="text-muted-foreground text-xs" data-testid="link-task-hub">
+                Task Hub
+              </Button>
+            </Link>
           </div>
         }
       />

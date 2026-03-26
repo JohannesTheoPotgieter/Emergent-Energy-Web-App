@@ -177,7 +177,7 @@ export default function PMDeliverablesPage() {
       <SectionHeader
         icon={<Package className="h-5 w-5" />}
         title="Deliverables"
-        description="Execution deliverable hub for post-handover projects. Deliverable-required work must use the deliverable flow only."
+        description="Browse and manage deliverables across projects. Select a project to view its deliverables, pending approvals, and linked items."
         actions={
           <div className="flex items-center gap-2">
             {selectedProjectId ? (
