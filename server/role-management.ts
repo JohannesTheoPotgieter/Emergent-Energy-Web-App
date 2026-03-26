@@ -1122,4 +1122,167 @@ export function registerRoleManagementRoutes(app: Express) {
       res.status(500).json({ error: err.message });
     }
   });
+
+  // GET /api/admin/users/:id/effective-permissions
+  // Computes the full effective permission matrix for a user by merging:
+  // 1. Hardcoded defaults (ENTITY_PERMISSION_DEFAULTS)
+  // 2. Role DB overrides (rolePermissions.entityPermissions)
+  // 3. User-level overrides (userPermissionOverrides)
+  app.get("/api/admin/users/:id/effective-permissions", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const userId = parseInt(req.params.id);
+      if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
+
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (!user) return res.status(404).json({ error: "User not found" });
+
+      const userRole = mapRole(user.role);
+
+      // Get role record
+      const allRoles = await ensureRolePermissionsSeeded();
+      const roleRecord = allRoles.find((r) => r.role === userRole) || null;
+
+      // Get user overrides (non-expired)
+      const overrides = await db.select({
+        entity: userPermissionOverrides.entity,
+        action: userPermissionOverrides.action,
+        allowed: userPermissionOverrides.allowed,
+      }).from(userPermissionOverrides).where(
+        and(
+          eq(userPermissionOverrides.userId, userId),
+          or(
+            isNull(userPermissionOverrides.expiresAt),
+            gte(userPermissionOverrides.expiresAt, new Date())
+          )
+        )
+      );
+
+      const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+      const permissions: Array<{
+        entity: string;
+        action: string;
+        allowed: boolean;
+        source: string;
+      }> = [];
+
+      for (const rule of ENTITY_PERMISSION_DEFAULTS) {
+        for (const action of ACTIONS) {
+          // 1. Check user override
+          const userOverride = overrides.find((o) => o.entity === rule.entity && o.action === action);
+          if (userOverride) {
+            permissions.push({
+              entity: rule.entity,
+              action,
+              allowed: userOverride.allowed,
+              source: userOverride.allowed ? "user_override_grant" : "user_override_deny",
+            });
+            continue;
+          }
+
+          // 2. Check role DB override
+          const evalResult = evaluatePermissionForRole({
+            role: userRole,
+            entity: rule.entity as PermissionEntity,
+            action,
+            roleRecord: roleRecord as any,
+          });
+
+          permissions.push({
+            entity: rule.entity,
+            action,
+            allowed: evalResult.allowed,
+            source: evalResult.source === "db_override" ? "role_override" : evalResult.source,
+          });
+        }
+      }
+
+      res.json({
+        userId,
+        userName: user.name,
+        role: userRole,
+        permissions,
+        overrideCount: overrides.length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/roles/compare?roles=ROLE1,ROLE2
+  // Returns side-by-side permission comparison for 2+ roles
+  app.get("/api/roles/compare", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const rolesParam = req.query.roles as string;
+      if (!rolesParam) return res.status(400).json({ error: "roles query parameter required" });
+
+      const roleNames = rolesParam.split(",").map((r) => r.trim()).filter(Boolean);
+      if (roleNames.length < 2) return res.status(400).json({ error: "At least 2 roles required" });
+      if (roleNames.length > 5) return res.status(400).json({ error: "Maximum 5 roles for comparison" });
+
+      const allRoles = await ensureRolePermissionsSeeded();
+      const roleRecords = roleNames.map((name) => allRoles.find((r) => r.role === name)).filter(Boolean);
+
+      if (roleRecords.length < 2) return res.status(404).json({ error: "One or more roles not found" });
+
+      const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
+
+      const comparison: Array<{
+        entity: string;
+        permissions: Record<string, Record<string, { allowed: boolean; source: string }>>;
+        hasDifference: boolean;
+      }> = [];
+
+      for (const rule of ENTITY_PERMISSION_DEFAULTS) {
+        const entityPerms: Record<string, Record<string, { allowed: boolean; source: string }>> = {};
+        let hasDiff = false;
+
+        for (const action of ACTIONS) {
+          const results: Array<{ allowed: boolean; source: string }> = [];
+
+          for (const roleRec of roleRecords) {
+            const evalResult = evaluatePermissionForRole({
+              role: roleRec.role,
+              entity: rule.entity as PermissionEntity,
+              action,
+              roleRecord: roleRec as any,
+            });
+
+            if (!entityPerms[roleRec.role]) entityPerms[roleRec.role] = {};
+            entityPerms[roleRec.role][action] = {
+              allowed: evalResult.allowed,
+              source: evalResult.source,
+            };
+
+            results.push({ allowed: evalResult.allowed, source: evalResult.source });
+          }
+
+          // Check if there's a difference across roles for this action
+          if (results.some((r) => r.allowed !== results[0].allowed)) {
+            hasDiff = true;
+          }
+        }
+
+        comparison.push({ entity: rule.entity, permissions: entityPerms, hasDifference: hasDiff });
+      }
+
+      // Also compare navigation sections
+      const navComparison: Record<string, Record<string, boolean>> = {};
+      for (const roleRec of roleRecords) {
+        const sections = (roleRec as any).sections || [];
+        navComparison[roleRec.role] = {};
+        for (const sec of ["COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "COLLABORATION", "INFORMATION", "ADMIN"]) {
+          navComparison[roleRec.role][sec] = sections.includes(sec);
+        }
+      }
+
+      res.json({
+        roles: roleRecords.map((r) => ({ role: r.role, label: (r as any).label || r.role })),
+        entityComparison: comparison,
+        navigationComparison: navComparison,
+        differenceCount: comparison.filter((c) => c.hasDifference).length,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 }
