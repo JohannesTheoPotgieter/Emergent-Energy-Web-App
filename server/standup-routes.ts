@@ -1,5 +1,5 @@
 import { Express, Request, Response } from "express";
-import { db } from "./db";
+import { db, getDbMode } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
 import {
   standupSchedules, standupParticipants, standupEntries,
@@ -71,6 +71,13 @@ async function notifyStandupParticipants(
   } catch (err) {
     console.error("[Standup] Failed to send notifications:", err);
   }
+}
+
+async function ensureStandupV2Table() {
+  const isPostgres = getDbMode() === "postgres";
+  const idCol = isPostgres ? "id SERIAL PRIMARY KEY" : "id INTEGER PRIMARY KEY AUTOINCREMENT";
+  const tsDefault = isPostgres ? "DEFAULT NOW()" : "DEFAULT CURRENT_TIMESTAMP";
+  await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS standup_entries_v2 (${idCol}, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TIMESTAMP NOT NULL ${tsDefault})`));
 }
 
 export function registerStandupRoutes(app: Express) {
@@ -262,7 +269,7 @@ export function registerStandupRoutes(app: Express) {
       if (req.query.team_id) {
         const date = new Date().toISOString().slice(0, 10);
         const teamId = Number(req.query.team_id);
-        await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+        await ensureStandupV2Table();
         const rows = await db.execute(sql`
           SELECT e.*, u.name as user_name, u.email as user_email
           FROM standup_entries_v2 e
@@ -1165,19 +1172,7 @@ export function registerStandupRoutes(app: Express) {
         return res.status(400).json({ error: "today field is required" });
       }
       const date = new Date().toISOString().slice(0, 10);
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS standup_entries_v2 (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          user_id INTEGER NOT NULL,
-          date TEXT NOT NULL,
-          yesterday TEXT,
-          today TEXT,
-          blockers TEXT,
-          project_id INTEGER,
-          team_id INTEGER,
-          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
+      await ensureStandupV2Table();
       await db.execute(sql`
         INSERT INTO standup_entries_v2 (user_id, date, yesterday, today, blockers, project_id, team_id, created_at)
         VALUES (${user.id}, ${date}, ${yesterday ?? null}, ${todayPlan}, ${blockers ?? null}, ${project_id ?? null}, ${team_id ?? null}, ${new Date().toISOString()})
@@ -1193,7 +1188,7 @@ export function registerStandupRoutes(app: Express) {
       const teamId = req.query.team_id ? Number(req.query.team_id) : null;
       const from = String(req.query.from || "1900-01-01");
       const to = String(req.query.to || "2999-12-31");
-      await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
+      await ensureStandupV2Table();
       const rows = await db.execute(sql`
         SELECT e.*, u.name as user_name, u.email as user_email
         FROM standup_entries_v2 e
@@ -1209,15 +1204,19 @@ export function registerStandupRoutes(app: Express) {
 
   app.get("/api/standups/blockers/active", requireAuth, async (_req: Request, res: Response) => {
     try {
-      await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)`);
-      const rows = await db.execute(sql`
+      await ensureStandupV2Table();
+      const isPostgres = getDbMode() === "postgres";
+      const ageDaysExpr = isPostgres
+        ? "EXTRACT(EPOCH FROM (NOW() - e.date::date)) / 86400"
+        : "CAST(julianday('now') - julianday(e.date) AS INTEGER)";
+      const rows = await db.execute(sql.raw(`
         SELECT e.id, e.date, e.blockers, e.project_id, e.team_id, e.user_id, u.name as owner_name,
-               CAST(julianday('now') - julianday(e.date) AS INTEGER) as age_days
+               ${ageDaysExpr} as age_days
         FROM standup_entries_v2 e
         LEFT JOIN users u ON u.id = e.user_id
         WHERE e.blockers IS NOT NULL AND TRIM(e.blockers) <> ''
         ORDER BY e.date ASC
-      `);
+      `));
       res.json({ items: rows.rows || [] });
     } catch (err: unknown) {
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
