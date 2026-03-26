@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { engFetch } from "@/lib/eng-fetch";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -235,7 +236,7 @@ export default function EngineeringAuditPage() {
   queryParams.set("limit", String(PAGE_SIZE));
   queryParams.set("offset", String(page * PAGE_SIZE));
 
-  const { data, isLoading, error, refetch } = useQuery<AuditResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<AuditResponse>({
     queryKey: ["eng-unified-audit", category, debouncedSearch, page],
     queryFn: () => engFetch(`/api/eng/unified-audit?${queryParams.toString()}`),
     staleTime: 10000,
