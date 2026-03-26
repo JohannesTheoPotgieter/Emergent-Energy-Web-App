@@ -26,7 +26,7 @@ export function useAccessMatrix() {
       return res.json();
     },
     enabled: !!effectiveRole,
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
 
   // Build a set of allowed sections from the role's section toggles

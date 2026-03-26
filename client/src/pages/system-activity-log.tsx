@@ -151,8 +151,8 @@ export default function SystemActivityLogPage() {
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("CSV export failed:", err);
+    } catch {
+      // Export failed — isExporting will reset in finally
     } finally {
       setIsExporting(false);
     }
