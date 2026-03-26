@@ -516,6 +516,10 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE project_info ADD COLUMN IF NOT EXISTS cp_evidence_ref TEXT;
     ALTER TABLE project_info ADD COLUMN IF NOT EXISTS pm_task_pack_created BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE project_info ADD COLUMN IF NOT EXISTS eng_post_cp_task_pack_created BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE project_info ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);
+    ALTER TABLE project_info ADD COLUMN IF NOT EXISTS opportunity_id INTEGER REFERENCES opportunities(id);
+    ALTER TABLE project_info ADD COLUMN IF NOT EXISTS delivery_model TEXT;
+    ALTER TABLE project_info ADD COLUMN IF NOT EXISTS project_code TEXT;
   `);
 
   // ── Core table column additions ──
@@ -1383,6 +1387,16 @@ async function runAdditiveSchemaAlignments() {
       updated_at TIMESTAMP DEFAULT NOW(),
       deleted_at TIMESTAMP
     );
+  `);
+
+  // Ensure construction tables have all required columns (may be missing if tables were created by an earlier version)
+  await safeExec("construction table columns", `
+    ALTER TABLE site_activities ADD COLUMN IF NOT EXISTS project_id INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE site_activities ADD COLUMN IF NOT EXISTS site_id INTEGER;
+    ALTER TABLE snags ADD COLUMN IF NOT EXISTS project_id INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE snags ADD COLUMN IF NOT EXISTS site_id INTEGER;
+    ALTER TABLE site_inspections ADD COLUMN IF NOT EXISTS project_id INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE site_inspections ADD COLUMN IF NOT EXISTS site_id INTEGER;
   `);
 
   await safeExec("contractor_assignments table", `
