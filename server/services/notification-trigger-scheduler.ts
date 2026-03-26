@@ -1,0 +1,49 @@
+/**
+ * C5: Notification trigger scheduler.
+ * Runs checkAllNotificationTriggers() every hour to create notifications
+ * for overdue snags, stalled handovers, late deliveries, etc.
+ */
+
+import { checkAllNotificationTriggers } from "./notification-triggers";
+
+let intervalHandle: ReturnType<typeof setInterval> | null = null;
+
+const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+
+export function startNotificationTriggerScheduler() {
+  if (intervalHandle) return; // already running
+
+  console.log("[NotificationScheduler] Starting — checks every 60 minutes");
+
+  // Run once on startup (delayed 30s to let DB settle)
+  setTimeout(async () => {
+    try {
+      const results = await checkAllNotificationTriggers();
+      const totalNotified = results.reduce((sum, r) => sum + r.notified, 0);
+      console.log(`[NotificationScheduler] Initial check complete — ${totalNotified} notifications sent`);
+    } catch (err) {
+      console.warn("[NotificationScheduler] Initial check failed:", err);
+    }
+  }, 30_000);
+
+  // Then run on interval
+  intervalHandle = setInterval(async () => {
+    try {
+      const results = await checkAllNotificationTriggers();
+      const totalNotified = results.reduce((sum, r) => sum + r.notified, 0);
+      if (totalNotified > 0) {
+        console.log(`[NotificationScheduler] Check complete — ${totalNotified} notifications sent`);
+      }
+    } catch (err) {
+      console.warn("[NotificationScheduler] Scheduled check failed:", err);
+    }
+  }, INTERVAL_MS);
+}
+
+export function stopNotificationTriggerScheduler() {
+  if (intervalHandle) {
+    clearInterval(intervalHandle);
+    intervalHandle = null;
+    console.log("[NotificationScheduler] Stopped");
+  }
+}

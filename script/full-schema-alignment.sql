@@ -7663,4 +7663,11 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pipedrive_sync_log' AND column_name='sync_type') THEN
     ALTER TABLE "pipedrive_sync_log" ADD COLUMN "sync_type" TEXT NOT NULL DEFAULT '', ADD COLUMN "started_at" TIMESTAMP NOT NULL DEFAULT NOW(), ADD COLUMN "completed_at" TIMESTAMP, ADD COLUMN "deals_processed" INTEGER DEFAULT 0, ADD COLUMN "deals_created" INTEGER DEFAULT 0, ADD COLUMN "deals_updated" INTEGER DEFAULT 0, ADD COLUMN "errors" TEXT, ADD COLUMN "status" TEXT DEFAULT 'running';
   END IF;
+  -- Drawing register
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drawing_register' AND column_name='drawing_number') THEN
+    ALTER TABLE "drawing_register" ADD COLUMN "project_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "drawing_number" TEXT NOT NULL DEFAULT '', ADD COLUMN "title" TEXT NOT NULL DEFAULT '', ADD COLUMN "discipline" TEXT, ADD COLUMN "current_revision" TEXT DEFAULT 'A', ADD COLUMN "revision_date" DATE, ADD COLUMN "status" TEXT DEFAULT 'draft', ADD COLUMN "author_user_id" INTEGER, ADD COLUMN "reviewer_user_id" INTEGER, ADD COLUMN "approver_user_id" INTEGER, ADD COLUMN "sharepoint_link" TEXT, ADD COLUMN "sheet_size" TEXT, ADD COLUMN "notes" TEXT, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "updated_at" TIMESTAMP DEFAULT NOW(), ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drawing_revisions' AND column_name='revision') THEN
+    ALTER TABLE "drawing_revisions" ADD COLUMN "drawing_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "revision" TEXT NOT NULL DEFAULT '', ADD COLUMN "revision_date" DATE NOT NULL DEFAULT CURRENT_DATE, ADD COLUMN "description" TEXT, ADD COLUMN "revised_by_user_id" INTEGER, ADD COLUMN "sharepoint_link" TEXT, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW();
+  END IF;
 END $$;
