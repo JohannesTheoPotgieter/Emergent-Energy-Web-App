@@ -1004,8 +1004,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             const key = query.queryKey[0];
             return typeof key === 'string' && (key.startsWith('/api/cos-tracker') || key.startsWith('/api/cashflow'));
           }});
-        } catch (err) {
-          console.error("Font color toggle failed:", err);
+        } catch {
+          // Font color toggle failed — non-critical, skip silently
         }
       }
     };
