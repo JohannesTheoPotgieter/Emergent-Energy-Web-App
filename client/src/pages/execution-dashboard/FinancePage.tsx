@@ -96,9 +96,9 @@ export default function FinancePage() {
 
       {/* KPI STRIP - Margin */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard label="Gross Profit" value={formatCurrencyCompact(kpis.grossProfitFy)} icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" />
-        <KpiCard label="Planned Margin" value={`${kpis.grossMarginPctFy ?? "—"}%`} icon={<BarChart3 className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" />
-        <KpiCard label="Actual Margin" value={`${kpis.actualMarginPctFy ?? "—"}%`} icon={<BarChart3 className="w-4 h-4 text-violet-600" />} iconBg="bg-violet-100" />
+        <KpiCard label="Gross Profit (Planned)" value={formatCurrencyCompact(kpis.grossProfitFy)} icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" sub="Planned revenue minus planned expenditure" />
+        <KpiCard label="Planned Margin" value={`${kpis.grossMarginPctFy ?? "—"}%`} icon={<BarChart3 className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" sub="Planned GP as % of planned revenue" />
+        <KpiCard label="Actual Margin" value={`${kpis.actualMarginPctFy ?? "—"}%`} icon={<BarChart3 className="w-4 h-4 text-violet-600" />} iconBg="bg-violet-100" sub="Actual received minus actual paid" />
         <KpiCard
           label="Margin Variance"
           value={kpis.marginVariancePct !== null ? `${kpis.marginVariancePct > 0 ? "+" : ""}${kpis.marginVariancePct}%` : "—"}
