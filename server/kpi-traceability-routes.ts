@@ -1,29 +1,10 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { KPI_DEFINITIONS } from "@shared/kpi-definitions";
 import { summarizeEngineeringStatuses, summarizeQualityStatuses } from "./services/kpi-service";
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-      return next();
-    }
-  }
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-  res.status(403).json({ error: "admin_required", message: "Admin access required" });
-}
+import { requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 function rows0(r: any): any {
   return (Array.isArray(r) ? r : (r as any).rows || [])[0] || {};

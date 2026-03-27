@@ -1,26 +1,10 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { projectInfo, projectExecutionState } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getCanonicalFinanceByProjectIds, getCanonicalTaskSummaryByProjectIds } from "./services/canonical-dashboard-kpi-service";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = payload;
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  res.status(401).json({ error: "Authentication required" });
-}
+import { jwtAuth, requireAuth } from "./auth-context";
 
 const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"];
 

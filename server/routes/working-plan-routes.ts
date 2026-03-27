@@ -7,17 +7,8 @@ import { eq, and, sql } from "drizzle-orm";
 import { workItems } from "@shared/schema";
 import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies } from "../cpmEngine";
 import { logAuditFromReq } from "../audit-logger";
-import { requireAuth as sharedRequireAuth } from "../auth-context";
-
-const requireAuth = sharedRequireAuth;
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = req.user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
-    return next();
-  }
-  res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
-}
+import { requireAuth } from "../auth-context";
+import { requireAdmin } from "../middleware/requireAdmin";
 
 export function registerWorkingPlanRoutes(app: Express) {
   // ==================== PROJECT PLAN SCHEDULING API ====================

@@ -8,13 +8,7 @@ import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
 import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middleware";
 
-function requireAuth(req: Request, res: Response, next: () => void) {
-  if (!req.isAuthenticated || !req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-  next();
-}
-
+import { requireAuth } from "./auth-context";
 import { isPdRole, canCreatePdTicket, canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
 
 /**
