@@ -67,7 +67,7 @@ export function configureSession(options: SessionBootstrapOptions): void {
       cookie: {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
-        sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+        sameSite: (process.env.COOKIE_SAMESITE as 'lax' | 'strict' | 'none') || 'lax',
         maxAge: SESSION_MAX_AGE,
       },
     }),
