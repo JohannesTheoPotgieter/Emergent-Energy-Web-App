@@ -186,10 +186,10 @@ export function registerQualityNcrRoutes(app: Express) {
         : "substr(created_at,1,7)";
 
       const bySeverity = await db.execute(sql`SELECT severity, COUNT(*) as count FROM ncr_reports WHERE project_id = ${projectId} AND status <> 'closed' GROUP BY severity`);
-      const avgClose = await db.execute(sql.raw(`SELECT AVG(${daysDiffExpr}) as avg_days FROM ncr_reports WHERE project_id = ${projectId} AND closed_at IS NOT NULL`));
-      const trend = await db.execute(sql.raw(`SELECT ${monthExpr} as month, COUNT(*) as opened, SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) as closed FROM ncr_reports WHERE project_id = ${projectId} GROUP BY ${monthExpr} ORDER BY month ASC`));
+      const avgClose = await db.execute(sql`SELECT AVG(${sql.raw(daysDiffExpr)}) as avg_days FROM ncr_reports WHERE project_id = ${projectId} AND closed_at IS NOT NULL`);
+      const trend = await db.execute(sql`SELECT ${sql.raw(monthExpr)} as month, COUNT(*) as opened, SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) as closed FROM ncr_reports WHERE project_id = ${projectId} GROUP BY ${sql.raw(monthExpr)} ORDER BY month ASC`);
       const openCount = Number(((bySeverity as any).rows || []).reduce((sum: number, r: any) => sum + Number(r.count || 0), 0));
-      const slaCompliant = await db.execute(sql.raw(`SELECT COUNT(*) as total, SUM(CASE WHEN (status='closed' AND (${daysDiffExpr}) <= 30) OR (status<>'closed' AND (${nowDiffExpr}) <= 30) THEN 1 ELSE 0 END) as compliant FROM ncr_reports WHERE project_id = ${projectId}`));
+      const slaCompliant = await db.execute(sql`SELECT COUNT(*) as total, SUM(CASE WHEN (status='closed' AND (${sql.raw(daysDiffExpr)}) <= 30) OR (status<>'closed' AND (${sql.raw(nowDiffExpr)}) <= 30) THEN 1 ELSE 0 END) as compliant FROM ncr_reports WHERE project_id = ${projectId}`);
       const total = Number((slaCompliant as any).rows?.[0]?.total || 0);
       const compliant = Number((slaCompliant as any).rows?.[0]?.compliant || 0);
       res.json({
