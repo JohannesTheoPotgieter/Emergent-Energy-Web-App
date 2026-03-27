@@ -8,21 +8,28 @@ export default function MsCallbackPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    const userStr = params.get("user");
+    const code = params.get("code");
 
-    if (token && userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        setAuthToken(token);
-        localStorage.setItem("company_role", user.role);
-        window.location.href = "/";
-      } catch {
-        setLocation("/auth/login?error=ms_parse_failed");
-      }
-    } else {
+    if (!code) {
       setLocation("/auth/login?error=ms_auth_failed");
+      return;
     }
+
+    fetch("/api/auth/exchange-code", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("exchange failed");
+        const data = await res.json();
+        setAuthToken(data.token);
+        localStorage.setItem("company_role", data.user.role);
+        window.location.href = "/";
+      })
+      .catch(() => {
+        setLocation("/auth/login?error=ms_auth_failed");
+      });
   }, []);
 
   return (
