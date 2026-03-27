@@ -694,7 +694,7 @@ export default function TaskManagementPage() {
     <PageShell>
       <SectionHeader
         icon={<LayoutGrid className="h-5 w-5" />}
-        title="Task Hub"
+        title="Task Management"
         description="Cross-project task management across all departments. Board, list, calendar, and metrics views."
         actions={
           <div className="flex items-center gap-2">
