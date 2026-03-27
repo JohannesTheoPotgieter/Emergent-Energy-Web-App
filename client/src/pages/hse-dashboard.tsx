@@ -101,7 +101,7 @@ export default function HseDashboardPage() {
     <PageShell className="p-4 md:p-6" data-testid="page-hse-dashboard">
       <SectionHeader
         icon={<ShieldAlert className="h-5 w-5" />}
-        eyebrow="Quality & HSE"
+        eyebrow="HSE"
         title="Health, Safety & Environment"
         description={`${openIncidents.length} open incidents, ${openActions.length} corrective actions pending`}
         actions={

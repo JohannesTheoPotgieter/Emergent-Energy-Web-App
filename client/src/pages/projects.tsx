@@ -310,7 +310,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
         <button data-interactive="true" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 min-w-[60px] w-full cursor-pointer hover:opacity-80 transition-opacity" data-testid={`btn-act-pct-${projectName}`}>
           <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${progressColor(currentPct)}`}
+              className={`h-full rounded-full transition-[width] duration-500 ${progressColor(currentPct)}`}
               style={{ width: `${Math.min(currentPct, 100)}%` }}
             />
           </div>
@@ -1331,7 +1331,7 @@ function MobileProjectCard({ project, setLocation }: { project: ProjectSummary; 
         <div className="flex items-center gap-2">
           <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${progressColor(pct)}`}
+              className={`h-full rounded-full transition-[width] duration-500 ${progressColor(pct)}`}
               style={{ width: `${Math.min(pct, 100)}%` }}
             />
           </div>
@@ -2315,12 +2315,12 @@ export default function ProjectsSummary() {
 
       <WorkspaceNotice
         title="Project List is the primary project directory"
-        description="Use this list with Portfolio Overview to scan project status, latest updates, and tracker-fed delivery signals."
+        description="Use this list with the Execution Board to scan project status, latest updates, and tracker-fed delivery signals."
         icon={<BarChart3 className="h-4 w-4" />}
         actions={
           <>
             <Button asChild variant="outline" size="sm">
-              <Link href="/execution-board">Portfolio Overview</Link>
+              <Link href="/execution-board">Execution Board</Link>
             </Button>
           </>
         }
@@ -2373,7 +2373,7 @@ export default function ProjectsSummary() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-1">
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
           <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Projects</span>
@@ -2381,12 +2381,12 @@ export default function ProjectsSummary() {
                 <BarChart3 className="w-4 h-4 text-blue-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-foreground animate-number-pop" data-testid="stat-total-projects">{stats.total}</div>
+            <div className="text-2xl font-bold text-foreground" data-testid="stat-total-projects">{stats.total}</div>
             <div className="text-xs text-muted-foreground mt-1">{stats.totalKwp.toLocaleString()} kWp total capacity</div>
           </CardContent>
         </Card>
 
-        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-2">
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
           <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Avg. Completion</span>
@@ -2394,14 +2394,14 @@ export default function ProjectsSummary() {
                 <Activity className="w-4 h-4 text-emerald-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-foreground animate-number-pop" data-testid="stat-avg-completion">{stats.avgCompletion.toFixed(0)}%</div>
+            <div className="text-2xl font-bold text-foreground" data-testid="stat-avg-completion">{stats.avgCompletion.toFixed(0)}%</div>
             <div className="w-full h-1.5 bg-muted rounded-full mt-2 overflow-hidden">
-              <div className={`h-full rounded-full animate-progress-fill ${progressColor(stats.avgCompletion)}`} style={{ width: `${Math.min(stats.avgCompletion, 100)}%` }} />
+              <div className={`h-full rounded-full ${progressColor(stats.avgCompletion)}`} style={{ width: `${Math.min(stats.avgCompletion, 100)}%` }} />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-3">
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
           <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Behind Schedule</span>
@@ -2409,14 +2409,14 @@ export default function ProjectsSummary() {
                 <TrendingDown className={`w-4 h-4 ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} />
               </div>
             </div>
-            <div className={`text-2xl font-bold animate-number-pop ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} data-testid="stat-behind-schedule">
+            <div className={`text-2xl font-bold ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} data-testid="stat-behind-schedule">
               {stats.behindSchedule}
             </div>
             <div className="text-xs text-muted-foreground mt-1">of {stats.total} projects ({stats.total > 0 ? ((stats.behindSchedule / stats.total) * 100).toFixed(0) : 0}%)</div>
           </CardContent>
         </Card>
 
-        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-4">
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
           <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financial Close</span>
@@ -2424,7 +2424,7 @@ export default function ProjectsSummary() {
                 <Zap className="w-4 h-4 text-violet-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-foreground animate-number-pop" data-testid="stat-fin-close">{stats.finCloseCount}</div>
+            <div className="text-2xl font-bold text-foreground" data-testid="stat-fin-close">{stats.finCloseCount}</div>
             <div className="text-xs text-muted-foreground mt-1">of {stats.total} achieved ({stats.total > 0 ? ((stats.finCloseCount / stats.total) * 100).toFixed(0) : 0}%)</div>
           </CardContent>
         </Card>
@@ -2470,7 +2470,7 @@ export default function ProjectsSummary() {
           value={ragFilter}
           onValueChange={setRagFilter}
           placeholder="All RAG"
-          triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-32 text-sm border-border"
+          triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-36 text-sm border-border"
           data-testid="select-rag-filter"
           options={[
             { value: "all", label: "All RAG" },
@@ -2645,7 +2645,7 @@ export default function ProjectsSummary() {
         </div>
       ) : (
 
-      <div className="border border-border rounded-xl overflow-hidden shadow-sm bg-card">
+      <div className="border border-border rounded-xl overflow-hidden shadow-sm bg-card" style={{ contain: "layout style" }}>
         <div ref={tableContainerRef} className="overflow-auto" style={{ maxHeight: `calc(100vh - ${tableTopOffset + 16}px)` }}>
           <table className="w-full text-[10px] border-collapse table-fixed" style={{ minWidth: "100%" }}>
             <colgroup>
@@ -2691,12 +2691,19 @@ export default function ProjectsSummary() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((project, idx) => (
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={filteredColumns.length} className="p-8 text-center text-sm text-muted-foreground">
+                    No projects match your filters
+                  </td>
+                </tr>
+              ) : sorted.map((project, idx) => (
                 <tr
                   key={project.project_name}
-                  className={`border-b border-border hover:bg-blue-50/40 transition-colors ${
+                  className={`border-b border-border hover:bg-blue-50/40 ${
                     idx % 2 === 0 ? "bg-card" : "bg-muted/30"
                   }`}
+                  style={{ contentVisibility: "auto", containIntrinsicHeight: "32px" }}
                   data-testid={`row-project-${idx}`}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
