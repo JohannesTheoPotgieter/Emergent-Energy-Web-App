@@ -1,7 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import {
   projectInfo,
   pmSiteVisits,
@@ -14,6 +13,7 @@ import fs from "fs";
 // import { isOutlookConfigured, sendMail } from "./outlook"; // removed with notifications
 import { logAuditFromReq } from "./audit-logger";
 import { sanitizeFilename } from "./lib/upload-security";
+import { jwtAuth, requireAuth } from "./auth-context";
 
 const photoUploadDir = path.join(process.cwd(), "uploads", "pm-photos");
 if (!fs.existsSync(photoUploadDir)) {
@@ -38,27 +38,6 @@ const photoUpload = multer({
   },
 });
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = {
-        id: payload.userId,
-        email: payload.email,
-        name: payload.name,
-        role: payload.role,
-      };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "Authentication required" });
-}
 
 const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
 

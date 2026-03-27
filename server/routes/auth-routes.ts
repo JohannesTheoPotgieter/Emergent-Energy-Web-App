@@ -55,9 +55,8 @@ async function enforceSessionLimit(userId: number, currentSessionId: string, lim
       .slice(limit - 1);
     if (toDelete.length > 0) {
       const sids = toDelete.map((s) => s.sid);
-      await db.execute(sql.raw(
-        `DELETE FROM "session" WHERE sid IN (${sids.map((s) => `'${s.replace(/'/g, "''")}'`).join(",")})`
-      ));
+      const sidParams = sids.map(s => sql`${s}`);
+      await db.execute(sql`DELETE FROM "session" WHERE sid IN (${sql.join(sidParams, sql`, `)})`);
       console.log(`[SESSION] Cleaned ${toDelete.length} old session(s) for user ${userId}, keeping ${limit}`);
     }
   } catch (err) {
@@ -257,6 +256,11 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
 
   app.get("/api/auth/microsoft/config", (_req, res) => {
     res.json({ enabled: msAuth.isMicrosoftAuthConfigured() });
+  });
+
+  app.get("/api/auth/login-modes", (_req, res) => {
+    const passwordLoginEnabled = process.env.PASSWORD_LOGIN_ENABLED === "true";
+    res.json({ passwordLoginEnabled });
   });
 
   app.get("/api/auth/microsoft", async (_req, res) => {

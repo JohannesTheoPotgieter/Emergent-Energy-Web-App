@@ -2,36 +2,8 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { changeSets, fieldChanges, auditEvents, OVERRIDE_CATEGORIES } from "@shared/schema";
 import { eq, desc, and, sql, gte, lte, or, like, count } from "drizzle-orm";
-import { verifyToken } from "./jwt";
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = {
-        id: payload.userId,
-        email: payload.email,
-        name: payload.name,
-        role: payload.role,
-      };
-      return next();
-    }
-  }
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
-    return next();
-  }
-  res.status(403).json({ error: "Admin access required" });
-}
+import { requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 export function registerAuditRoutes(app: Express) {
   // Project History Timeline - get all ChangeSets for a specific project

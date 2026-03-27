@@ -14,14 +14,7 @@ import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { z } from "zod";
 import { requirePermission } from "./permission-middleware";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
-
-const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
-
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = getEffectiveUser(req)?.role || "";
-  if (ADMIN_ROLES.includes(role)) return next();
-  res.status(403).json({ error: "forbidden" });
-}
+import { requireAdmin } from "./middleware/requireAdmin";
 
 export function registerMeetingRoutes(app: Express) {
 

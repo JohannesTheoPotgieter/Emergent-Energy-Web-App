@@ -31,6 +31,7 @@ import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineering
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 
@@ -2435,12 +2436,6 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== ADMIN AUDIT LOG (global activity across all tasks) ==========
 
-  function requireAdmin(req: Request, res: Response, next: NextFunction) {
-    const role = getUserRole(req);
-    if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-    sendError(res, forbidden("Admin access required"));
-  }
-
   app.get("/api/eng/unified-audit", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { category, search, limit: qLimit, offset: qOffset } = req.query;
@@ -2584,7 +2579,7 @@ export function registerEngineeringRoutes(app: Express) {
         const dataSql = sql`SELECT * FROM (${sql.raw(unionQuery)}) unified WHERE lower(summary) LIKE ${searchFilter} OR lower(detail) LIKE ${searchFilter} OR lower(actor_name) LIKE ${searchFilter} OR lower(project_name) LIKE ${searchFilter} ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`;
         dataResult = await db.execute(dataSql);
       } else {
-        countResult = await db.execute(sql.raw(`SELECT category, count(*)::int AS cnt FROM (${unionQuery}) unified GROUP BY category`));
+        countResult = await db.execute(sql`SELECT category, count(*)::int AS cnt FROM (${sql.raw(unionQuery)}) unified GROUP BY category`);
         dataResult = await db.execute(sql`SELECT * FROM (${sql.raw(unionQuery)}) unified ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`);
       }
 

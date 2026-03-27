@@ -835,7 +835,7 @@ router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 
 
     for (const table of tables) {
       try {
-        await db.execute(sql.raw(`TRUNCATE TABLE "${table}" CASCADE`));
+        await db.execute(sql`TRUNCATE TABLE ${sql.raw(`"${table}"`)} CASCADE`);
         truncated++;
       } catch (err: any) {
         if (err.message?.includes('does not exist')) {

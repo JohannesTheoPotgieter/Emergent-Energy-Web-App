@@ -22,6 +22,7 @@ import {
 } from "@shared/schema";
 import { evaluateAuthorityForRole, evaluatePermissionForRole } from "@shared/permission-resolver";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 import { invalidateEntityPermCache, invalidateUserOverrideCache } from "./permission-middleware";
 import bcrypt from "bcryptjs";
 import { logAuditFromReq } from "./audit-logger";
@@ -36,15 +37,6 @@ const LEGACY_ROLE_MAP: Record<string, string> = {
 
 function mapRole(raw: string): string {
   return normalizeRoleForPermissions(LEGACY_ROLE_MAP[raw] || raw);
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const user = getEffectiveUser(req);
-  if (!user) return res.status(401).json({ error: "Authentication required" });
-  const role = mapRole(user.role);
-  const adminRoles = ["COO_ADMIN", "CEO_ADMIN"];
-  if (adminRoles.includes(role)) return next();
-  res.status(403).json({ error: "Admin access required" });
 }
 
 const VALID_SECTIONS = new Set(["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"]);

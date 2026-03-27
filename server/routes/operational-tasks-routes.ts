@@ -6,22 +6,13 @@ import { db } from "../db";
 import { eq, and, sql, isNull } from "drizzle-orm";
 import { projectInfo, workItems, workItemAssignments, notifications } from "@shared/schema";
 import { logAuditFromReq } from "../audit-logger";
-import { requireAuth as sharedRequireAuth } from "../auth-context";
+import { requireAuth } from "../auth-context";
+import { requireAdmin } from "../middleware/requireAdmin";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "../lib/task-workflow-guard";
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError } from "../lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
 import { getWorkItemsAsOperationalTasks } from "../work-items-adapter";
-
-const requireAuth = sharedRequireAuth;
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = req.user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
-    return next();
-  }
-  res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
-}
 
 export function registerOperationalTasksRoutes(app: Express) {
   // ==================== OPERATIONAL TASKS ====================

@@ -1,12 +1,12 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Lock, User, Info, Zap, AlertCircle, KeyRound, ShieldCheck } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Lock, User, Info, Zap, AlertCircle, KeyRound } from "lucide-react";
 
 const MS_ERROR_MESSAGES: Record<string, string> = {
   ms_auth_failed: "Microsoft sign-in failed. Please try again.",
@@ -27,11 +27,8 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [showVersion, setShowVersion] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [accessCodeDialogOpen, setAccessCodeDialogOpen] = useState(false);
-  const [accessCode, setAccessCode] = useState("");
-  const [accessCodeError, setAccessCodeError] = useState("");
-  const accessCodeInputRef = useRef<HTMLInputElement>(null);
   const [msEnabled, setMsEnabled] = useState(false);
+  const [passwordLoginEnabled, setPasswordLoginEnabled] = useState(false);
   const [versionInfo, setVersionInfo] = useState({ version: "0.0.005", buildTime: "", buildNumber: "" });
   const [releaseNotes, setReleaseNotes] = useState<{ title: string; description: string }[]>([]);
 
@@ -56,6 +53,13 @@ export default function LoginPage() {
       .then((data) => setMsEnabled(data.enabled))
       .catch((err) => {
         if (import.meta.env.DEV) console.warn("MS config fetch failed:", err);
+      });
+
+    fetch("/api/auth/login-modes")
+      .then((r) => r.json())
+      .then((data) => setPasswordLoginEnabled(data.passwordLoginEnabled))
+      .catch((err) => {
+        if (import.meta.env.DEV) console.warn("Login modes fetch failed:", err);
       });
 
     const params = new URLSearchParams(window.location.search);
@@ -149,7 +153,7 @@ export default function LoginPage() {
                   Sign in using your company Microsoft account. Your email must match an existing account in the system.
                 </p>
 
-                {!showAdminLogin && (
+                {!showAdminLogin && passwordLoginEnabled && (
                   <div className="pt-1">
                     <div className="relative my-2">
                       <div className="absolute inset-0 flex items-center">
@@ -161,12 +165,7 @@ export default function LoginPage() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => {
-                        setAccessCode("");
-                        setAccessCodeError("");
-                        setAccessCodeDialogOpen(true);
-                        setTimeout(() => accessCodeInputRef.current?.focus(), 100);
-                      }}
+                      onClick={() => setShowAdminLogin(true)}
                       className="w-full flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground hover:text-emerald-600 transition-colors"
                       data-testid="button-toggle-admin"
                     >
@@ -304,66 +303,6 @@ export default function LoginPage() {
           </button>
         </div>
       </div>
-
-      <Dialog open={accessCodeDialogOpen} onOpenChange={(open) => { setAccessCodeDialogOpen(open); if (!open) { setAccessCode(""); setAccessCodeError(""); } }}>
-        <DialogContent className="max-w-xs" aria-describedby="access-code-description">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <ShieldCheck className="h-5 w-5 text-emerald-600" />
-              Access Code Required
-            </DialogTitle>
-          </DialogHeader>
-          <p id="access-code-description" className="text-sm text-muted-foreground">
-            Enter the access code to use username and password login.
-          </p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (accessCode === "2024") {
-                setAccessCodeDialogOpen(false);
-                setShowAdminLogin(true);
-                setAccessCode("");
-                setAccessCodeError("");
-              } else {
-                setAccessCodeError("Incorrect access code");
-              }
-            }}
-            className="space-y-3"
-          >
-            <div className="space-y-1.5">
-              <Label htmlFor="access-code" className="text-xs">Access Code</Label>
-              <Input
-                ref={accessCodeInputRef}
-                id="access-code"
-                type="password"
-                placeholder="Enter code"
-                value={accessCode}
-                onChange={(e) => { setAccessCode(e.target.value); setAccessCodeError(""); }}
-                autoComplete="off"
-                data-testid="input-access-code"
-              />
-              {accessCodeError && (
-                <p className="text-xs text-red-500 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />
-                  {accessCodeError}
-                </p>
-              )}
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" size="sm" onClick={() => setAccessCodeDialogOpen(false)}>Cancel</Button>
-              <Button
-                type="submit"
-                size="sm"
-                className="bg-[#16a34a] hover:bg-[#15803d]"
-                disabled={!accessCode}
-                data-testid="button-submit-access-code"
-              >
-                Continue
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={showVersion} onOpenChange={setShowVersion}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-hidden flex flex-col p-0" aria-describedby="version-dialog-description">

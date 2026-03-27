@@ -26,7 +26,8 @@ router.get("/api/admin/backfill/status", requireAuth, async (_req: Request, res:
     const counts: Record<string, number> = {};
     for (const table of tables) {
       try {
-        const result = await db.execute(sql.raw(`SELECT COUNT(*)::int as count FROM "${table}"`));
+        const result = await db.execute(sql`SELECT COUNT(*)::int as count FROM ${sql.raw(`"${table}"`)}`);
+
         counts[table] = Number((result as any).rows?.[0]?.count ?? 0);
       } catch {
         counts[table] = -1; // table doesn't exist yet

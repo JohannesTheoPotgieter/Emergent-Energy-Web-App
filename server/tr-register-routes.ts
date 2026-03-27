@@ -1,7 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, inArray, count, isNull, ne } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import {
   trItems, trItemProjectLinks, trItemSuggestionDecisions,
   insertTrItemSchema, projectInfo, workItems, entityAssignments,
@@ -9,6 +8,8 @@ import {
 } from "@shared/schema";
 import { resolveNameToUserId } from "./user-resolver";
 import { requirePermission } from "./permission-middleware";
+import { jwtAuth, requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -16,37 +17,11 @@ function getUser(req: Request): AppUser {
   return req.user as any as AppUser;
 }
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
-
 function requireManager(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as AppUser)?.role || "";
   const allowed = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
   if (allowed.includes(role)) return next();
   res.status(403).json({ error: "forbidden", message: "Manager access required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = ((req as any).user as AppUser)?.role || "";
-  const allowed = ["COO_ADMIN", "CEO_ADMIN"];
-  if (allowed.includes(role)) return next();
-  res.status(403).json({ error: "forbidden", message: "Admin access required" });
 }
 
 const ANCHOR_TOKENS = [

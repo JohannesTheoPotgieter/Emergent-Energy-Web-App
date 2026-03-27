@@ -2,33 +2,14 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectInfo, projectExecutionState, type ProjectInfo, smartImportRuns, normalizedCostLines, normalizedRevenueLines, workItems, manualEditFlags } from "@shared/schema";
 import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import ExcelJS from "exceljs";
 import { jsPDF } from "jspdf";
 import { requirePermission } from "./permission-middleware";
 import { isDateBlack } from "./lib/calculations/stateClassifier";
 import { randomUUID } from "crypto";
 import { getProgrammeDrilldownRows, writeDrilldownExcel } from "./services/report-drilldown-service";
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      req.user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role } as any;
-      return next();
-    }
-  }
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-  res.status(403).json({ error: "admin_required", message: "Admin access required" });
-}
+import { requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
 const ADVANCED_REPORT_TYPES = [

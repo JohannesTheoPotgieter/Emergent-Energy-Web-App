@@ -82,8 +82,11 @@ async function main() {
     for (const t of backup.pdTickets) {
       const cols = Object.keys(t).filter((k) => t[k] !== undefined);
       const colNames = cols.map((c) => `"${c}"`).join(", ");
-      const colValues = cols.map((c) => esc(t[c])).join(", ");
-      await tx.execute(sql.raw(`INSERT INTO pd_tickets (${colNames}) VALUES (${colValues})`));
+      const valParams = cols.map((c) => {
+        const v = t[c];
+        return typeof v === "object" && v !== null ? sql`${JSON.stringify(v)}::jsonb` : sql`${v}`;
+      });
+      await tx.execute(sql`INSERT INTO pd_tickets (${sql.raw(colNames)}) VALUES (${sql.join(valParams, sql`, `)})`);
     }
     console.log(`  Restored ${backup.pdTickets.length} pd_tickets.`);
 
@@ -92,8 +95,11 @@ async function main() {
       for (const w of backup.linkedWorkItems) {
         const cols = Object.keys(w).filter((k) => w[k] !== undefined);
         const colNames = cols.map((c) => `"${c}"`).join(", ");
-        const colValues = cols.map((c) => esc(w[c])).join(", ");
-        await tx.execute(sql.raw(`INSERT INTO work_items (${colNames}) VALUES (${colValues})`));
+        const valParams = cols.map((c) => {
+          const v = w[c];
+          return typeof v === "object" && v !== null ? sql`${JSON.stringify(v)}::jsonb` : sql`${v}`;
+        });
+        await tx.execute(sql`INSERT INTO work_items (${sql.raw(colNames)}) VALUES (${sql.join(valParams, sql`, `)})`);
       }
       console.log(`  Restored ${backup.linkedWorkItems.length} work_items.`);
     }

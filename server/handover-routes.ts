@@ -3,7 +3,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, desc, sql, and, inArray } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { projectInfo, projectPhaseHistory, users, projectExecutionState, projectPdPmHandover, projectHandoverHistory, clients, evidenceOverrideRecords } from "@shared/schema";
 import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { logAuditFromReq } from "./audit-logger";
@@ -14,6 +13,8 @@ import { requirePermission } from "./permission-middleware";
 import { notifyHandoverSubmitted, notifyHandoverAccepted, notifyHandoverRejected } from "./services/notification-service";
 import { PM_REVIEW_ROLES, canReviewHandover } from "@shared/roles/pd-roles";
 import { z } from "zod";
+import { jwtAuth, requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 const deliverableItemSchema = z.object({
   reference: z.string().optional(),
@@ -83,30 +84,6 @@ async function insertPdPmHandoverHistory(params: {
   });
 }
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-  res.status(403).json({ error: "Admin access required" });
-}
 
 const GATE_DEFINITIONS = [
   {

@@ -41,18 +41,20 @@ router.get("/api/admin/migration/status", jwtAuth, requireAuth, requireAdmin, as
 
     for (const table of LEGACY_TABLES) {
       const archivedName = table + ARCHIVE_SUFFIX;
-      const origExists = getRows(await db.execute(sql.raw(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${table}') as ex`
-      )))[0]?.ex === true;
-      const archExists = getRows(await db.execute(sql.raw(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${archivedName}') as ex`
-      )))[0]?.ex === true;
+      const origExists = getRows(await db.execute(
+        sql`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${table}) as ex`
+      ))[0]?.ex === true;
+      const archExists = getRows(await db.execute(
+        sql`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${archivedName}) as ex`
+      ))[0]?.ex === true;
 
       let rowCount = 0;
       if (origExists) {
-        rowCount = Number(getRows(await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM "${table}"`)))[0]?.cnt ?? 0);
+        const origRows = getRows(await db.execute(sql`SELECT COUNT(*) as cnt FROM ${sql.raw(`"${table}"`)}`));
+        rowCount = Number(origRows[0]?.cnt ?? 0);
       } else if (archExists) {
-        rowCount = Number(getRows(await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM "${archivedName}"`)))[0]?.cnt ?? 0);
+        const archRows = getRows(await db.execute(sql`SELECT COUNT(*) as cnt FROM ${sql.raw(`"${archivedName}"`)}`));
+        rowCount = Number(archRows[0]?.cnt ?? 0);
       }
 
       archiveStatus[table] = {
@@ -63,9 +65,9 @@ router.get("/api/admin/migration/status", jwtAuth, requireAuth, requireAdmin, as
       };
     }
 
-    const logs = getRows(await db.execute(sql.raw(
-      `SELECT * FROM migration_cleanup_log ORDER BY performed_at DESC LIMIT 50`
-    )));
+    const logs = getRows(await db.execute(
+      sql`SELECT * FROM migration_cleanup_log ORDER BY performed_at DESC LIMIT 50`
+    ));
 
     const backups = getRows(await db.execute(sql.raw(
       `SELECT * FROM migration_backups ORDER BY created_at DESC LIMIT 10`
@@ -108,11 +110,12 @@ router.get("/api/admin/migration/verify", jwtAuth, requireAuth, requireAdmin, as
     const legacyTableCounts: Record<string, number> = {};
     for (const table of LEGACY_TABLES) {
       try {
-        const exists = getRows(await db.execute(sql.raw(
-          `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${table}') as ex`
-        )))[0]?.ex === true;
+        const exists = getRows(await db.execute(
+          sql`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${table}) as ex`
+        ))[0]?.ex === true;
         if (exists) {
-          legacyTableCounts[table] = Number(getRows(await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM "${table}"`)))[0]?.cnt ?? 0);
+          const countRows = getRows(await db.execute(sql`SELECT COUNT(*) as cnt FROM ${sql.raw(`"${table}"`)}`));
+          legacyTableCounts[table] = Number(countRows[0]?.cnt ?? 0);
         } else {
           legacyTableCounts[table] = -1;
         }
@@ -242,19 +245,19 @@ router.post("/api/admin/migration/archive", jwtAuth, requireAuth, requireAdmin, 
         continue;
       }
 
-      const fkRefs = getRows(await db.execute(sql.raw(`
+      const fkRefs = getRows(await db.execute(sql`
         SELECT tc.constraint_name, tc.table_name as referencing_table, kcu.column_name
         FROM information_schema.table_constraints tc
         JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
         JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
-        WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = '${table}'
+        WHERE tc.constraint_type = 'FOREIGN KEY' AND ccu.table_name = ${table}
         AND tc.table_schema = 'public'
-      `)));
+      `));
 
       for (const fk of fkRefs) {
         if (!LEGACY_TABLES.includes(fk.referencing_table) && !fk.referencing_table.endsWith(ARCHIVE_SUFFIX)) {
           try {
-            await db.execute(sql.raw(`ALTER TABLE "${fk.referencing_table}" DROP CONSTRAINT IF EXISTS "${fk.constraint_name}"`));
+            await db.execute(sql`ALTER TABLE ${sql.raw(`"${fk.referencing_table}"`)} DROP CONSTRAINT IF EXISTS ${sql.raw(`"${fk.constraint_name}"`)}`);
             droppedConstraints.push(`${fk.referencing_table}.${fk.constraint_name}`);
           } catch (dropErr: any) {
             console.warn(`[Migration] Failed to drop FK ${fk.constraint_name}:`, dropErr.message);
@@ -262,18 +265,19 @@ router.post("/api/admin/migration/archive", jwtAuth, requireAuth, requireAdmin, 
         }
       }
 
-      const selfFkRefs = getRows(await db.execute(sql.raw(`
+      const selfFkRefs = getRows(await db.execute(sql`
         SELECT tc.constraint_name, tc.table_name as referencing_table
         FROM information_schema.table_constraints tc
         JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
         JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
-        WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = '${table}'
+        WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_name = ${table}
         AND tc.table_schema = 'public'
-      `)));
+      `));
 
       for (const fk of selfFkRefs) {
         try {
-          await db.execute(sql.raw(`ALTER TABLE "${fk.referencing_table}" DROP CONSTRAINT IF EXISTS "${fk.constraint_name}"`));
+          await db.execute(sql`ALTER TABLE ${sql.raw(`"${fk.referencing_table}"`)} DROP CONSTRAINT IF EXISTS ${sql.raw(`"${fk.constraint_name}"`)}`);
+
           droppedConstraints.push(`${fk.referencing_table}.${fk.constraint_name} (self)`);
         } catch (dropErr: any) {
           console.warn(`[Migration] Failed to drop self FK ${fk.constraint_name}:`, dropErr.message);
@@ -281,23 +285,25 @@ router.post("/api/admin/migration/archive", jwtAuth, requireAuth, requireAdmin, 
       }
 
       const archivedName = table + ARCHIVE_SUFFIX;
-      const archiveExists = getRows(await db.execute(sql.raw(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${archivedName}') as ex`
-      )))[0]?.ex === true;
+      const archiveExists = getRows(await db.execute(
+        sql`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${archivedName}) as ex`
+      ))[0]?.ex === true;
 
       if (archiveExists) {
         skipped.push(table);
         continue;
       }
 
-      const rowCount = Number(getRows(await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM "${table}"`)))[0]?.cnt ?? 0);
+      const rcRows = getRows(await db.execute(sql`SELECT COUNT(*) as cnt FROM ${sql.raw(`"${table}"`)}`));
+      const rowCount = Number(rcRows[0]?.cnt ?? 0);
 
-      await db.execute(sql.raw(`ALTER TABLE "${table}" RENAME TO "${archivedName}"`));
+      await db.execute(sql`ALTER TABLE ${sql.raw(`"${table}"`)} RENAME TO ${sql.raw(`"${archivedName}"`)}`);
 
-      await db.execute(sql.raw(`
+      const performedByName = currentUser.name || currentUser.username || "admin";
+      await db.execute(sql`
         INSERT INTO migration_cleanup_log (action, table_name, original_name, archived_name, row_count, performed_by_user_id, performed_by_name, backup_id, reversible)
-        VALUES ('ARCHIVE', '${table}', '${table}', '${archivedName}', ${rowCount}, ${currentUser.id}, '${(currentUser.name || currentUser.username || "admin").replace(/'/g, "''")}', '${(backupId || "").replace(/'/g, "''")}', true)
-      `));
+        VALUES ('ARCHIVE', ${table}, ${table}, ${archivedName}, ${rowCount}, ${currentUser.id}, ${performedByName}, ${backupId || ""}, true)
+      `);
 
       archived.push(table);
     }
@@ -320,30 +326,31 @@ router.post("/api/admin/migration/restore", jwtAuth, requireAuth, requireAdmin, 
 
     for (const table of tablesToRestore) {
       const archivedName = table + ARCHIVE_SUFFIX;
-      const archiveExists = getRows(await db.execute(sql.raw(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${archivedName}') as ex`
-      )))[0]?.ex === true;
+      const archiveExists = getRows(await db.execute(
+        sql`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${archivedName}) as ex`
+      ))[0]?.ex === true;
 
       if (!archiveExists) {
         skipped.push(table);
         continue;
       }
 
-      const origExists = getRows(await db.execute(sql.raw(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${table}') as ex`
-      )))[0]?.ex === true;
+      const origExists = getRows(await db.execute(
+        sql`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${table}) as ex`
+      ))[0]?.ex === true;
 
       if (origExists) {
         skipped.push(table);
         continue;
       }
 
-      await db.execute(sql.raw(`ALTER TABLE "${archivedName}" RENAME TO "${table}"`));
+      await db.execute(sql`ALTER TABLE ${sql.raw(`"${archivedName}"`)} RENAME TO ${sql.raw(`"${table}"`)}`);
 
-      await db.execute(sql.raw(`
+      const performedByName = currentUser.name || currentUser.username;
+      await db.execute(sql`
         INSERT INTO migration_cleanup_log (action, table_name, original_name, archived_name, row_count, performed_by_user_id, performed_by_name, reversible)
-        VALUES ('RESTORE', '${table}', '${table}', '${archivedName}', 0, ${currentUser.id}, '${(currentUser.name || currentUser.username).replace(/'/g, "''")}', true)
-      `));
+        VALUES ('RESTORE', ${table}, ${table}, ${archivedName}, 0, ${currentUser.id}, ${performedByName}, true)
+      `);
 
       restored.push(table);
     }
@@ -386,23 +393,25 @@ router.post("/api/admin/migration/drop-archived", jwtAuth, requireAuth, requireA
 
     for (const table of LEGACY_TABLES) {
       const archivedName = table + ARCHIVE_SUFFIX;
-      const archiveExists = getRows(await db.execute(sql.raw(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${archivedName}') as ex`
-      )))[0]?.ex === true;
+      const archiveExists = getRows(await db.execute(
+        sql`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${archivedName}) as ex`
+      ))[0]?.ex === true;
 
       if (!archiveExists) {
         skipped.push(table);
         continue;
       }
 
-      const rowCount = Number(getRows(await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM "${archivedName}"`)))[0]?.cnt ?? 0);
+      const dropRows = getRows(await db.execute(sql`SELECT COUNT(*) as cnt FROM ${sql.raw(`"${archivedName}"`)}`));
+      const rowCount = Number(dropRows[0]?.cnt ?? 0);
 
-      await db.execute(sql.raw(`DROP TABLE "${archivedName}" CASCADE`));
+      await db.execute(sql`DROP TABLE ${sql.raw(`"${archivedName}"`)} CASCADE`);
 
-      await db.execute(sql.raw(`
+      const performedByName = currentUser.name || currentUser.username;
+      await db.execute(sql`
         INSERT INTO migration_cleanup_log (action, table_name, original_name, archived_name, row_count, performed_by_user_id, performed_by_name, reversible)
-        VALUES ('DROP', '${table}', '${table}', '${archivedName}', ${rowCount}, ${currentUser.id}, '${(currentUser.name || currentUser.username).replace(/'/g, "''")}', false)
-      `));
+        VALUES ('DROP', ${table}, ${table}, ${archivedName}, ${rowCount}, ${currentUser.id}, ${performedByName}, false)
+      `);
 
       dropped.push(table);
     }
