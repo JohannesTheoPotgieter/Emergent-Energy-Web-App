@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, User, Activity, TrendingUp, DollarSign,
-  CalendarDays, Target, Loader2, ChevronDown,
+  CalendarDays, Target, Loader2, ChevronDown, ArrowUpRight,
   AlertTriangle, ShoppingCart, Shield, GitPullRequest, Wrench, CheckCircle2,
 } from "lucide-react";
 import { POGenerator } from "@/components/POGenerator";
@@ -57,7 +57,6 @@ interface CommandHeaderProps {
   canSetRag: boolean;
   pdAssignableUsers: { id: number; name: string; username: string; role: string }[];
   pmAssignableUsers: { id: number; name: string; username: string; role: string }[];
-  onPhaseChangeClick: () => void;
 }
 
 function RagIndicator({ color, label }: { color: "green" | "amber" | "red"; label: string }) {
@@ -258,7 +257,7 @@ export function ProjectCommandHeader({
   contractValue, revenueRealisedPct, cosRealisedPct, marginDelta,
   scheduleRag, costRag, qualityRag, ragStatus,
   nextMilestone, projectInfoId, isAdmin, canSetRag,
-  pdAssignableUsers, pmAssignableUsers, onPhaseChangeClick,
+  pdAssignableUsers, pmAssignableUsers,
 }: CommandHeaderProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -328,13 +327,14 @@ export function ProjectCommandHeader({
                     {displayName}
                   </h1>
                   <button
-                    onClick={onPhaseChangeClick}
+                    onClick={() => isAdmin && setLocation("/lifecycle-board")}
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-[var(--cmd-border)] bg-white text-[var(--cmd-text-secondary)] hover:bg-gray-50 transition-colors ${isAdmin ? "cursor-pointer" : "cursor-default"}`}
                     disabled={!isAdmin}
+                    title={isAdmin ? "Manage phase on Lifecycle Board" : undefined}
                     data-testid="badge-project-phase"
                   >
                     {getPhaseLabel(phase)}
-                    {isAdmin && <ChevronDown className="h-3 w-3 opacity-50" />}
+                    {isAdmin && <ArrowUpRight className="h-3 w-3 opacity-50" />}
                   </button>
                 </div>
 

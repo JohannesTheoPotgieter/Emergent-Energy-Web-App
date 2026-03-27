@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { FinanceShell } from "@/components/layout/FinanceShell";
 import { Link, useSearch, useLocation } from "wouter";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
@@ -1563,7 +1564,7 @@ export default function FyeRevenueTrackingPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="space-y-4">
+    <FinanceShell currentPage="fye-revenue-tracking"><div className="space-y-4">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -1616,6 +1617,6 @@ export default function FyeRevenueTrackingPage() {
 
       {/* Tab Content */}
       {activeTab === "dashboard" ? <DashboardTab fye={fye} /> : activeTab === "detail" ? <DetailTab fye={fye} /> : <SnapshotsTab fye={fye} />}
-    </div>
+    </div></FinanceShell>
   );
 }

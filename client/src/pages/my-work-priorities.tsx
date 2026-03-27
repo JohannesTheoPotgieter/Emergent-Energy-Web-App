@@ -138,7 +138,7 @@ const emptyForm = {
   accountableExecId: "",
 };
 
-export default function MyToolPrioritiesPage() {
+export default function MyWorkPrioritiesPage() {
   const { user, isAdmin } = useAuth();
   const { allowed: canView } = usePermission('company_priorities', 'view');
   const { allowed: canEditPerm } = usePermission('company_priorities', 'edit');

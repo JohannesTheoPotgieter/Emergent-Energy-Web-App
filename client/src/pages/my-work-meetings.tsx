@@ -90,7 +90,7 @@ const DEPARTMENTS = [
   "Project Delivery", "O&M",
 ];
 
-export default function MyToolMeetingsPage() {
+export default function MyWorkMeetingsPage() {
   const { allowed: canView } = usePermission('meetings', 'view');
   const { toast } = useToast();
   const [expandedMeetings, setExpandedMeetings] = useState<Set<number>>(new Set());
