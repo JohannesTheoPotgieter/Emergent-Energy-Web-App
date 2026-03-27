@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import passport from "passport";
+import crypto from "crypto";
 import { db } from "../db";
 import { users } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
@@ -20,6 +21,19 @@ import {
 import { ApiError, sendError, unauthorized, serverError, logApiError } from "../lib/api-error";
 
 const MAX_SESSIONS_PER_USER = 3;
+
+// Temporary store for one-time authorization codes (replaces token-in-URL pattern)
+const authCodes = new Map<string, { token: string; user: object; expiresAt: number }>();
+
+// Clean up expired codes every 60 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, entry] of authCodes) {
+    if (entry.expiresAt <= now) {
+      authCodes.delete(code);
+    }
+  }
+}, 60_000);
 
 async function enforceSessionLimit(userId: number, currentSessionId: string, limit: number = MAX_SESSIONS_PER_USER): Promise<void> {
   try {
@@ -311,7 +325,9 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
               role: dbUser.role,
               tokenVersion,
             });
-            res.redirect(`/auth/ms-callback?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify(sessionUser))}`);
+            const authCode = crypto.randomBytes(32).toString("hex");
+            authCodes.set(authCode, { token, user: sessionUser, expiresAt: Date.now() + 60_000 });
+            res.redirect(`/auth/ms-callback?code=${encodeURIComponent(authCode)}`);
           } catch (tokenError) {
             logApiError("GET /api/auth/microsoft/callback token", tokenError);
             res.redirect("/auth/login?error=ms_auth_failed");
@@ -322,6 +338,22 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
       logApiError("GET /api/auth/microsoft/callback", error);
       return res.redirect("/auth/login?error=ms_auth_failed");
     }
+  });
+
+  app.post("/api/auth/exchange-code", (req, res) => {
+    const { code } = req.body;
+    if (!code || typeof code !== "string") {
+      return sendError(res, new ApiError(400, "INVALID_CODE", "Authorization code is required"));
+    }
+
+    const entry = authCodes.get(code);
+    if (!entry || entry.expiresAt <= Date.now()) {
+      authCodes.delete(code);
+      return sendError(res, unauthorized("Invalid or expired authorization code"));
+    }
+
+    authCodes.delete(code);
+    res.json({ token: entry.token, user: entry.user });
   });
 
   app.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
