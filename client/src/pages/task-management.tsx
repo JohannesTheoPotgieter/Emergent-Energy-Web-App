@@ -694,8 +694,8 @@ export default function TaskManagementPage() {
     <PageShell>
       <SectionHeader
         icon={<LayoutGrid className="h-5 w-5" />}
-        title="Task Management"
-        description="Unified task hub across all departments. Track work items with board, list, calendar, and metrics views."
+        title="Task Hub"
+        description="Cross-project task management across all departments. Board, list, calendar, and metrics views."
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending} className="gap-1.5">

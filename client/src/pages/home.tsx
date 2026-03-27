@@ -11,8 +11,9 @@ import { AttentionBadges, type AttentionItem } from "@/components/dashboard/Atte
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { apiRequest } from "@/lib/queryClient";
 import { QueryErrorBanner } from "@/components/QueryErrorBanner";
-import { getVariant } from "@/lib/ab-test";
-import { trackFeatureUse } from "@/lib/nav-analytics";
+import { getRoleDashboardConfig } from "@/config/role-dashboard-config";
+import { COMPANY_ROLE_LABELS, normalizeRoleForPermissions } from "@shared/schema/users";
+import type { CompanyRole } from "@shared/schema/users";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -28,248 +29,127 @@ import {
   ArrowRight,
   Flame,
   ChevronDown,
+  ListChecks,
+  ListTodo,
+  ClipboardCheck,
+  ClipboardList,
+  Package,
+  FileSpreadsheet,
+  FileText,
+  CalendarCheck,
+  Users,
+  Sun,
+  Wallet,
+  Activity,
 } from "lucide-react";
 
 const money = (n: number | null | undefined) =>
   `R ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 
-type RoleCategory = "executive" | "finance" | "project" | "engineering" | "quality" | "business";
+/** Resolve iconKey strings from role-dashboard-config to Lucide components */
+const ICON_MAP: Record<string, React.ReactNode> = {
+  AlertTriangle: <AlertTriangle className="w-4 h-4" />,
+  LayoutDashboard: <LayoutDashboard className="w-4 h-4" />,
+  Activity: <Activity className="w-4 h-4" />,
+  ListChecks: <ListChecks className="w-4 h-4" />,
+  ClipboardCheck: <ClipboardCheck className="w-4 h-4" />,
+  Package: <Package className="w-4 h-4" />,
+  ListTodo: <ListTodo className="w-4 h-4" />,
+  Users: <Users className="w-4 h-4" />,
+  Sun: <Sun className="w-4 h-4" />,
+  ClipboardList: <ClipboardList className="w-4 h-4" />,
+  Wallet: <Wallet className="w-4 h-4" />,
+  TrendingUp: <TrendingUp className="w-4 h-4" />,
+  ShieldCheck: <ShieldCheck className="w-4 h-4" />,
+  FileSpreadsheet: <FileSpreadsheet className="w-4 h-4" />,
+  FileText: <FileText className="w-4 h-4" />,
+  CalendarCheck: <CalendarCheck className="w-4 h-4" />,
+  FolderOpen: <FolderOpen className="w-4 h-4" />,
+  Wrench: <Wrench className="w-4 h-4" />,
+  Briefcase: <Briefcase className="w-4 h-4" />,
+  DollarSign: <DollarSign className="w-4 h-4" />,
+  BarChart3: <BarChart3 className="w-4 h-4" />,
+};
 
-function getRoleCategory(role: string | undefined): RoleCategory {
-  if (!role) return "executive";
-  const r = role.toUpperCase();
-  if (["COO_ADMIN", "CEO_ADMIN", "CCO"].includes(r)) return "executive";
-  if (["CFO", "ACCOUNTANT", "PROGRAM_FINANCE_MANAGER"].includes(r)) return "finance";
-  if (["PROGRAM_MANAGER", "PROJECT_MANAGER_SITE", "CONSTRUCTION_MANAGER"].includes(r)) return "project";
-  if (["ENGINEER", "ENGINEERING_MANAGER"].includes(r)) return "engineering";
-  if (["QUALITY_MANAGER"].includes(r)) return "quality";
-  if (["PROJECT_DEVELOPER", "KEY_ACCOUNTS_MANAGER"].includes(r)) return "business";
-  return "executive";
+function resolveIcon(iconKey?: string): React.ReactNode {
+  return (iconKey && ICON_MAP[iconKey]) || <ArrowRight className="w-4 h-4" />;
 }
 
-function getRoleLabel(role: string | undefined): string {
-  if (!role) return "Team Member";
-  const map: Record<string, string> = {
-    COO_ADMIN: "Chief Operating Officer",
-    CEO_ADMIN: "Chief Executive Officer",
-    CCO: "Chief Commercial Officer",
-    CFO: "Chief Financial Officer",
-    ACCOUNTANT: "Accountant",
-    PROGRAM_FINANCE_MANAGER: "Finance Manager",
-    PROGRAM_MANAGER: "Program Manager",
-    PROJECT_MANAGER_SITE: "Project Manager",
-    CONSTRUCTION_MANAGER: "Construction Manager",
-    ENGINEER: "Engineer",
-    ENGINEERING_MANAGER: "Engineering Manager",
-    QUALITY_MANAGER: "Quality Manager",
-    PROJECT_DEVELOPER: "Project Developer",
-    KEY_ACCOUNTS_MANAGER: "Key Accounts Manager",
-  };
-  return map[role.toUpperCase()] || "Team Member";
-}
-
-function StatCard({
-  value,
-  label,
-  color,
-  loading,
-  testId,
-}: {
-  value: string | number;
-  label: string;
-  color?: string;
-  loading: boolean;
-  testId: string;
-}) {
-  return (
-    <Card className="border-border/50">
-      <CardContent className="p-3.5 text-center">
-        {loading ? (
-          <Skeleton className="h-7 w-10 mx-auto" />
-        ) : (
-          <p className={`text-xl font-semibold font-mono ${color || "text-foreground"}`} data-testid={testId}>
-            {value}
-          </p>
-        )}
-        <p className="text-[11px] text-muted-foreground mt-1 uppercase tracking-wide">{label}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-function KpiCard({
-  icon,
-  label,
-  value,
-  loading,
-  testId,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  loading: boolean;
-  testId: string;
-}) {
-  return (
-    <Card className="border-border/50">
-      <CardContent className="p-3.5">
-        <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
-          {icon}
-          <span className="text-[11px] uppercase tracking-wide">{label}</span>
-        </div>
-        {loading ? (
-          <Skeleton className="h-5 w-20" />
-        ) : (
-          <p className="text-base font-semibold font-mono text-foreground" data-testid={testId}>
-            {value}
-          </p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function getCompactQuickLinks(category: RoleCategory): { href: string; label: string; icon: React.ReactNode }[] {
-  switch (category) {
-    case "executive":
-      return [
-        { href: "/execution-board", label: "Execution Dashboard", icon: <Briefcase className="w-4 h-4" /> },
-        { href: "/cashflow", label: "Finance", icon: <DollarSign className="w-4 h-4" /> },
-        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
-      ];
-    case "finance":
-      return [
-        { href: "/cashflow", label: "Cashflow", icon: <DollarSign className="w-4 h-4" /> },
-        { href: "/cos", label: "Cost of Sales", icon: <TrendingUp className="w-4 h-4" /> },
-        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
-      ];
-    case "project":
-      return [
-        { href: "/execution-board", label: "Execution Dashboard", icon: <Briefcase className="w-4 h-4" /> },
-        { href: "/engineering", label: "Engineering", icon: <Wrench className="w-4 h-4" /> },
-        { href: "/quality", label: "Quality", icon: <ShieldCheck className="w-4 h-4" /> },
-      ];
-    case "engineering":
-      return [
-        { href: "/engineering", label: "Engineering Overview", icon: <Wrench className="w-4 h-4" /> },
-        { href: "/engineering/tasks", label: "Tasks", icon: <CheckCircle2 className="w-4 h-4" /> },
-        { href: "/quality", label: "Quality", icon: <ShieldCheck className="w-4 h-4" /> },
-      ];
-    case "quality":
-      return [
-        { href: "/quality", label: "Quality Workspace", icon: <ShieldCheck className="w-4 h-4" /> },
-        { href: "/engineering", label: "Engineering", icon: <Wrench className="w-4 h-4" /> },
-        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
-      ];
-    case "business":
-      return [
-        { href: "/project-lifecycle", label: "Project Lifecycle", icon: <FolderOpen className="w-4 h-4" /> },
-        { href: "/pd", label: "PD Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
-        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
-      ];
-    default:
-      return [
-        { href: "/execution-board", label: "Execution Dashboard", icon: <Briefcase className="w-4 h-4" /> },
-        { href: "/projects", label: "All Projects", icon: <FolderOpen className="w-4 h-4" /> },
-        { href: "/cashflow", label: "Finance", icon: <DollarSign className="w-4 h-4" /> },
-      ];
-  }
-}
-
-function getRoleKpis(
-  category: RoleCategory,
+/**
+ * Build a compact set of KPI cards from execution-dashboard data,
+ * selected by the role's config kpi keys as a guide.
+ */
+function getKpiCards(
+  config: ReturnType<typeof getRoleDashboardConfig>,
   kpis: any,
   stats: any,
-  isLoading: boolean
-): React.ReactNode {
-  switch (category) {
-    case "executive":
-      return (
-        <div className="space-y-2.5">
-          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
-            <StatCard value={stats.totalProjects} label="Total Projects" loading={isLoading} testId="text-total-projects" />
-            <StatCard value={stats.inConstruction} label="In Construction" color="text-emerald-600" loading={isLoading} testId="text-in-construction" />
-            <StatCard value={stats.inCompany} label="In Company" color="text-blue-600" loading={isLoading} testId="text-in-company" />
-            <StatCard value={stats.inPipeline} label="Pipeline" color="text-violet-600" loading={isLoading} testId="text-in-pipeline" />
-            <StatCard value={stats.greenProjects} label="Green RAG" color="text-emerald-600" loading={isLoading} testId="text-green-projects" />
-            <StatCard value={stats.amberProjects} label="Amber RAG" color="text-amber-600" loading={isLoading} testId="text-amber-projects" />
-            <StatCard value={stats.redProjects} label="Red RAG" color="text-red-600" loading={isLoading} testId="text-red-projects" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Inflow Received (FY)" value={money(kpis.receivedInflowFy)} loading={isLoading} testId="text-inflow-received" />
-            <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
-            <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Gross Profit (FY)" value={money(kpis.grossProfitFy)} loading={isLoading} testId="text-gross-profit" />
-            <KpiCard icon={<Clock className="w-4 h-4" />} label="Behind Plan" value={kpis.projectsBehindPlan ?? "—"} loading={isLoading} testId="text-behind-plan" />
-          </div>
-        </div>
-      );
+  isLoading: boolean,
+) {
+  // Map config kpi keys to actual data from the execution-dashboard response
+  const kpiKeyMap: Record<string, { label: string; value: string | number; icon: React.ReactNode }> = {
+    revenue_vs_target: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
+    gp_margin: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—", icon: <TrendingUp className="w-4 h-4" /> },
+    projects_off_track: { label: "Red RAG", value: stats.redProjects, icon: <AlertTriangle className="w-4 h-4" /> },
+    open_vos: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    projects_on_track: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    milestones_due: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
+    overdue_tasks: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    my_projects_rag: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    my_overdue_tasks: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
+    my_approvals_pending: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    my_deliverables_due: { label: "Open Expenditure (FY)", value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
+    my_eng_tasks: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    design_queue: { label: "Eng. Blockers", value: kpis.openEngineeringBlockers ?? "—", icon: <AlertTriangle className="w-4 h-4" /> },
+    review_queue: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
+    my_overdue_deliverables: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—", icon: <BarChart3 className="w-4 h-4" /> },
+    my_opportunities: { label: "Total Projects", value: stats.totalProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    handover_readiness: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    pd_tickets_open: { label: "Planned Revenue (FY)", value: money(kpis.plannedRevenueFy), icon: <DollarSign className="w-4 h-4" /> },
+    proposals_pending: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
+    revenue_this_month: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
+    cos_this_month: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—", icon: <TrendingUp className="w-4 h-4" /> },
+    cash_position: { label: "Gross Profit (FY)", value: money(kpis.grossProfitFy), icon: <DollarSign className="w-4 h-4" /> },
+    margin_drift: { label: "Open Expenditure (FY)", value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
+    open_ncrs: { label: "Quality Warnings", value: kpis.openQualityWarnings ?? "—", icon: <AlertTriangle className="w-4 h-4" /> },
+    snags_due: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    inspections_pending: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—", icon: <BarChart3 className="w-4 h-4" /> },
+    corrective_actions_open: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    active_sites: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    site_readiness: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
+    open_snags: { label: "Red RAG", value: stats.redProjects, icon: <AlertTriangle className="w-4 h-4" /> },
+    inspections_due: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    my_tasks: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
+    my_approvals: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    my_projects: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
+    upcoming_events: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—", icon: <BarChart3 className="w-4 h-4" /> },
+  };
 
-    case "finance":
-      return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Inflow Received (FY)" value={money(kpis.receivedInflowFy)} loading={isLoading} testId="text-inflow-received" />
-          <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Open Inflow (FY)" value={money(kpis.openInflowFy)} loading={isLoading} testId="text-open-inflow" />
-          <KpiCard icon={<TrendingUp className="w-4 h-4" />} label="Gross Margin" value={kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—"} loading={isLoading} testId="text-gp-pct" />
-          <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Gross Profit (FY)" value={money(kpis.grossProfitFy)} loading={isLoading} testId="text-gross-profit" />
-          <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Planned Revenue (FY)" value={money(kpis.plannedRevenueFy)} loading={isLoading} testId="text-planned-revenue" />
-          <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Paid Expenditure (FY)" value={money(kpis.paidExpenditureFy)} loading={isLoading} testId="text-paid-expenditure" />
-          <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Open Expenditure (FY)" value={money(kpis.openExpenditureFy)} loading={isLoading} testId="text-open-expenditure" />
-          <KpiCard icon={<AlertTriangle className="w-4 h-4" />} label="Stale Imports" value={kpis.staleImports ?? "—"} loading={isLoading} testId="text-stale-imports" />
-        </div>
-      );
-
-    case "project":
-      return (
-        <div className="space-y-2.5">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-            <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
-            <StatCard value={stats.inConstruction} label="In Construction" color="text-emerald-600" loading={isLoading} testId="text-in-construction" />
-            <StatCard value={stats.greenProjects} label="Green RAG" color="text-emerald-600" loading={isLoading} testId="text-green-projects" />
-            <StatCard value={stats.amberProjects} label="Amber RAG" color="text-amber-600" loading={isLoading} testId="text-amber-projects" />
-            <StatCard value={stats.redProjects} label="Red RAG" color="text-red-600" loading={isLoading} testId="text-red-projects" />
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <KpiCard icon={<BarChart3 className="w-4 h-4" />} label="Avg Progress" value={kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—"} loading={isLoading} testId="text-avg-progress" />
-            <KpiCard icon={<Clock className="w-4 h-4" />} label="Behind Plan" value={kpis.projectsBehindPlan ?? "—"} loading={isLoading} testId="text-behind-plan" />
-            <KpiCard icon={<CheckCircle2 className="w-4 h-4" />} label="Pending Approvals" value={kpis.pendingApprovals ?? "—"} loading={isLoading} testId="text-pending-approvals" />
-            <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Open Expenditure (FY)" value={money(kpis.openExpenditureFy)} loading={isLoading} testId="text-open-expenditure" />
-          </div>
-        </div>
-      );
-
-    case "engineering":
-      return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
-          <KpiCard icon={<BarChart3 className="w-4 h-4" />} label="Avg Progress" value={kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—"} loading={isLoading} testId="text-avg-progress" />
-          <KpiCard icon={<AlertTriangle className="w-4 h-4" />} label="Eng. Blockers" value={kpis.openEngineeringBlockers ?? "—"} loading={isLoading} testId="text-eng-blockers" />
-          <KpiCard icon={<Clock className="w-4 h-4" />} label="Behind Plan" value={kpis.projectsBehindPlan ?? "—"} loading={isLoading} testId="text-behind-plan" />
-        </div>
-      );
-
-    case "quality":
-      return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <StatCard value={stats.activeProjects} label="Active Projects" loading={isLoading} testId="text-active-projects" />
-          <KpiCard icon={<AlertTriangle className="w-4 h-4" />} label="Quality Warnings" value={kpis.openQualityWarnings ?? "—"} loading={isLoading} testId="text-quality-warnings" />
-          <KpiCard icon={<CheckCircle2 className="w-4 h-4" />} label="Pending Approvals" value={kpis.pendingApprovals ?? "—"} loading={isLoading} testId="text-pending-approvals" />
-          <KpiCard icon={<BarChart3 className="w-4 h-4" />} label="Avg Progress" value={kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—"} loading={isLoading} testId="text-avg-progress" />
-        </div>
-      );
-
-    case "business":
-      return (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <StatCard value={stats.totalProjects} label="Total Projects" loading={isLoading} testId="text-total-projects" />
-          <StatCard value={stats.activeProjects} label="Active" loading={isLoading} testId="text-active-projects" />
-          <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Planned Revenue (FY)" value={money(kpis.plannedRevenueFy)} loading={isLoading} testId="text-planned-revenue" />
-          <KpiCard icon={<DollarSign className="w-4 h-4" />} label="Inflow Received (FY)" value={money(kpis.receivedInflowFy)} loading={isLoading} testId="text-inflow-received" />
-        </div>
-      );
-
-    default:
-      return null;
+  // Deduplicate by label — some config kpi keys map to the same dashboard metric
+  const seen = new Set<string>();
+  const cards: Array<{ label: string; value: string | number; icon: React.ReactNode }> = [];
+  for (const kpi of config.kpis) {
+    const mapped = kpiKeyMap[kpi.key];
+    if (mapped && !seen.has(mapped.label)) {
+      seen.add(mapped.label);
+      cards.push(mapped);
+    }
   }
+
+  return cards.slice(0, 4).map((card) => (
+    <Card key={card.label} className="border-border/50">
+      <CardContent className="p-3.5">
+        <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
+          {card.icon}
+          <span className="text-[11px] uppercase tracking-wide">{card.label}</span>
+        </div>
+        {isLoading ? (
+          <Skeleton className="h-5 w-20" />
+        ) : (
+          <p className="text-base font-semibold font-mono text-foreground">{card.value}</p>
+        )}
+      </CardContent>
+    </Card>
+  ));
 }
 
 export default function HomePage() {
@@ -301,33 +181,20 @@ export default function HomePage() {
     },
   });
 
+  // Role config — single source of truth
   const userRole = (user as any)?.role;
-  const roleCategory = getRoleCategory(userRole);
-  const roleLabel = getRoleLabel(userRole);
+  const effectiveRole = normalizeRoleForPermissions(userRole) as CompanyRole;
+  const config = getRoleDashboardConfig(effectiveRole);
+  const roleLabel = COMPANY_ROLE_LABELS[effectiveRole] || "Team Member";
 
   const stats = useMemo(() => {
     const projects: any[] = dashData?.projects || [];
     const totalProjects = projects.length;
     const activeProjects = totalProjects;
-
-    const constructionPhases = new Set(["construction", "qa"]);
-    const companyPhases = new Set(["compliance handover", "handover", "financial close", "commercial close out", "dlp"]);
-
-    const getCategory = (phase: string | null | undefined) => {
-      const p = (phase || "").toLowerCase().trim();
-      if (constructionPhases.has(p)) return "construction";
-      if (companyPhases.has(p)) return "company";
-      return "pipeline";
-    };
-
-    const inConstruction = projects.filter((p: any) => getCategory(p.executionPhase) === "construction").length;
-    const inCompany = projects.filter((p: any) => getCategory(p.executionPhase) === "company").length;
-    const inPipeline = projects.filter((p: any) => getCategory(p.executionPhase) === "pipeline").length;
-
     const greenProjects = projects.filter((p: any) => p.rag === "Green").length;
     const amberProjects = projects.filter((p: any) => p.rag === "Amber").length;
     const redProjects = projects.filter((p: any) => p.rag === "Red").length;
-    return { totalProjects, activeProjects, inConstruction, inCompany, inPipeline, greenProjects, amberProjects, redProjects };
+    return { totalProjects, activeProjects, greenProjects, amberProjects, redProjects };
   }, [dashData]);
 
   const kpis = dashData?.kpis || {};
@@ -371,20 +238,12 @@ export default function HomePage() {
     const items: AttentionItem[] = [];
     if (stats.redProjects > 0) items.push({ label: "Red RAG Projects", value: stats.redProjects, color: "text-red-600 bg-red-50 border-red-200", href: "/projects" });
     if (Number(kpis.projectsBehindPlan) > 0) items.push({ label: "Behind Plan", value: Number(kpis.projectsBehindPlan), color: "text-amber-700 bg-amber-50 border-amber-200", href: "/execution-board" });
-    if (Number(kpis.pendingApprovals) > 0) items.push({ label: "Pending Approvals", value: Number(kpis.pendingApprovals), color: "text-blue-700 bg-blue-50 border-blue-200", href: "/approvals" });
+    if (Number(kpis.pendingApprovals) > 0) items.push({ label: "Pending Approvals", value: Number(kpis.pendingApprovals), color: "text-blue-700 bg-blue-50 border-blue-200", href: "/pm/approvals" });
     if (Number(kpis.openEngineeringBlockers) > 0) items.push({ label: "Eng. Blockers", value: Number(kpis.openEngineeringBlockers), color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering" });
     if (Number(kpis.openQualityWarnings) > 0) items.push({ label: "Quality Warnings", value: Number(kpis.openQualityWarnings), color: "text-orange-700 bg-orange-50 border-orange-200", href: "/quality" });
     if (myPendingActions > 0) items.push({ label: "My Overdue Actions", value: myPendingActions, color: "text-rose-700 bg-rose-50 border-rose-200", href: "/my-work/tasks" });
     return items;
   }, [stats, kpis, myPendingActions]);
-
-  const totalAttention = attentionItems.reduce((sum, item) => sum + item.value, 0);
-  const quickLinks = useMemo(() => getCompactQuickLinks(roleCategory), [roleCategory]);
-  const layoutVariant = useMemo(() => {
-    const variant = getVariant("home_layout_2026", ["compact", "expanded"], (user as any)?.id);
-    trackFeatureUse(`home_ab_variant_${variant}`);
-    return variant;
-  }, [user]);
 
   const visiblePriorities = companyPriorities?.slice(0, 3) || [];
   const hiddenPriorities = companyPriorities?.slice(3) || [];
@@ -399,105 +258,92 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Greeting Strip */}
+      {/* 1. Greeting */}
       <div className="mb-5">
         <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
           {greeting}, {displayName}
         </h1>
-        <div className="flex items-center gap-3 mt-0.5">
-          <p className="text-sm text-muted-foreground" data-testid="text-role-badge">{roleLabel}</p>
-          {!isLoading && totalAttention > 0 && (
-            <span className="text-xs text-amber-600 font-medium">{totalAttention} item{totalAttention !== 1 ? "s" : ""} need attention</span>
-          )}
-        </div>
+        <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
       </div>
 
-      {/* Attention Badges — promoted to top */}
+      {/* 2. Attention Badges — what needs action now */}
       {!isLoading && (
         <AttentionBadges items={attentionItems} threshold={0} />
       )}
 
-      {/* KPIs + Next Steps — A/B: compact (two-column) vs expanded (full-width stacked) */}
-      {layoutVariant === "expanded" ? (
-        <>
-          <div className="mb-6">
-            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-              Your Metrics
-            </h2>
-            {getRoleKpis(roleCategory, kpis, stats, isLoading)}
-          </div>
-          <div className="mb-6 flex items-center gap-3">
-            <Link href="/my-work">
-              <Button data-testid="link-my-work">
-                <CheckCircle2 className="w-4 h-4 mr-2" />
-                Go to My Work
-                {myOpenTasks > 0 && <Badge variant="secondary" className="ml-2 text-xs">{myOpenTasks} open</Badge>}
-              </Button>
-            </Link>
-            {quickLinks.map((link) => (
-              <Link key={link.href} href={link.href}>
-                <Button variant="outline" size="sm" className="gap-1.5">
-                  {link.icon}
-                  {link.label}
-                </Button>
+      {/* 3. Quick Actions + Cockpit Launch + My Work */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-6">
+        {/* Left: Quick Actions */}
+        <div className="lg:col-span-3">
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+            Quick Actions
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {config.quickActions.map((action) => (
+              <Link key={action.path} href={action.path}>
+                <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
+                  <CardContent className="p-3.5 flex items-center gap-3">
+                    <div className="text-muted-foreground group-hover:text-primary transition-colors">
+                      {resolveIcon(action.iconKey)}
+                    </div>
+                    <span className="text-sm font-medium text-foreground">{action.label}</span>
+                    <ArrowRight className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-primary/60 transition-colors" />
+                  </CardContent>
+                </Card>
               </Link>
             ))}
           </div>
-        </>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-6">
-          {/* Left: KPIs (wider) */}
-          <div className="lg:col-span-3">
-            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-              Your Metrics
-            </h2>
-            {getRoleKpis(roleCategory, kpis, stats, isLoading)}
-          </div>
-
-          {/* Right: Next Steps */}
-          <div className="lg:col-span-2">
-            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-              Next Steps
-            </h2>
-            <Card className="border-border/50">
-              <CardContent className="p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
-                    <p className="text-xs text-muted-foreground">open tasks</p>
-                  </div>
-                  {myPendingActions > 0 && (
-                    <div className="text-right">
-                      <p className="text-2xl font-semibold font-mono text-rose-600" data-testid="text-overdue-count">{myPendingActions}</p>
-                      <p className="text-xs text-rose-600">overdue</p>
-                    </div>
-                  )}
-                </div>
-                <Link href="/my-work">
-                  <Button className="w-full" data-testid="link-my-work">
-                    <CheckCircle2 className="w-4 h-4 mr-2" />
-                    Go to My Work
-                    <ArrowRight className="w-4 h-4 ml-auto" />
-                  </Button>
-                </Link>
-                <div className="border-t border-border/50 pt-3 space-y-1.5">
-                  {quickLinks.map((link) => (
-                    <Link key={link.href} href={link.href}>
-                      <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-md text-sm text-muted-foreground hover:bg-muted/60 hover:text-foreground transition-colors cursor-pointer group">
-                        {link.icon}
-                        <span>{link.label}</span>
-                        <ArrowRight className="w-3 h-3 ml-auto opacity-0 group-hover:opacity-60 transition-opacity" />
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
         </div>
-      )}
 
-      {/* Company Priorities — Collapsible */}
+        {/* Right: My Work + Cockpit Launch */}
+        <div className="lg:col-span-2">
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+            Your Workspace
+          </h2>
+          <Card className="border-border/50">
+            <CardContent className="p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
+                  <p className="text-xs text-muted-foreground">open tasks</p>
+                </div>
+                {myPendingActions > 0 && (
+                  <div className="text-right">
+                    <p className="text-2xl font-semibold font-mono text-rose-600" data-testid="text-overdue-count">{myPendingActions}</p>
+                    <p className="text-xs text-rose-600">overdue</p>
+                  </div>
+                )}
+              </div>
+              <Link href="/my-work">
+                <Button className="w-full" data-testid="link-my-work">
+                  <CheckCircle2 className="w-4 h-4 mr-2" />
+                  Go to My Work
+                  {myOpenTasks > 0 && <Badge variant="secondary" className="ml-2 text-xs">{myOpenTasks} open</Badge>}
+                </Button>
+              </Link>
+              <Link href={config.cockpitPath}>
+                <Button variant="outline" className="w-full" data-testid="link-cockpit">
+                  <LayoutDashboard className="w-4 h-4 mr-2" />
+                  {config.cockpitLabel}
+                  <ArrowRight className="w-4 h-4 ml-auto" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* 4. Minimal KPIs — compact, role-relevant */}
+      <div className="mb-6">
+        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+          Key Metrics
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {getKpiCards(config, kpis, stats, isLoading)}
+        </div>
+      </div>
+
+      {/* 5. Company Priorities — Collapsible */}
       {(companyPriorities && companyPriorities.length > 0) && (
         <Collapsible open={prioritiesExpanded} onOpenChange={setPrioritiesExpanded}>
           <Card className="border-border/60 mb-6" data-testid="card-company-priorities">
@@ -550,7 +396,7 @@ export default function HomePage() {
       {companyPriorities && companyPriorities.length === 0 && !prioritiesLoading && (
         <Card className="border-border/60 mb-6">
           <CardContent className="p-5 text-center">
-            <p className="text-sm text-muted-foreground">No priorities assigned to your projects</p>
+            <p className="text-sm text-muted-foreground">No active company priorities</p>
           </CardContent>
         </Card>
       )}

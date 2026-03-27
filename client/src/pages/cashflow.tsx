@@ -57,6 +57,7 @@ import {
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { FinanceShell } from "@/components/layout/FinanceShell";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { usePermission } from "@/hooks/use-permissions";
 import { DateOverridePopover } from "@/components/cashflow/DateOverridePopover";
@@ -898,10 +899,10 @@ export default function CashflowPage() {
   }, [cashflowData]);
 
   if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load cashflow" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
+  if (isError) return <FinanceShell currentPage="cashflow"><div className="p-4 md:p-6"><PageError title="Unable to load cashflow" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div></FinanceShell>;
 
   return (
-    <PageShell className="p-4 md:p-6" data-testid="page-cashflow">
+    <FinanceShell currentPage="cashflow"><div className="p-4 md:p-6" data-testid="page-cashflow">
       <SectionHeader
         icon={<Wallet className="h-5 w-5" />}
         title={`Cashflow FY${CURRENT_FY}`}
@@ -1700,6 +1701,6 @@ export default function CashflowPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageShell>
+    </div></FinanceShell>
   );
 }
