@@ -6,22 +6,13 @@ import { db } from "../db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { projectInfo, workItems, workItemAssignments, notifications } from "@shared/schema";
 import { logAuditFromReq } from "../audit-logger";
-import { requireAuth as sharedRequireAuth } from "../auth-context";
+import { requireAuth } from "../auth-context";
+import { requireAdmin } from "../middleware/requireAdmin";
 import { ApiError, sendError, badRequest, notFound, validationError, unauthorized, serverError, forbidden } from "../lib/api-error";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
 import { softDeleteCanonicalWorkItemByLegacyTaskId } from "../canonical-boundaries";
-
-const requireAuth = sharedRequireAuth;
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = req.user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
-    return next();
-  }
-  res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
-}
 
 // SA working days helpers (duplicated from routes.ts for self-containment)
 function formatDateKey(y: number, m: number, d: number): string {

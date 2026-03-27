@@ -10,6 +10,7 @@ import * as crypto from "crypto";
 import multer from "multer";
 import { verifyToken } from "./jwt";
 import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
+import { requireAuth } from "./auth-context";
 
 const SEED_ZIP_PATH = path.join(process.cwd(), "seed", "ee-info", "Emergent Energy.zip");
 const ASSETS_DIR = path.join(process.cwd(), "uploads", "ee-info-assets");
@@ -25,20 +26,6 @@ function slugify(name: string): string {
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() && req.user) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-      return next();
-    }
-  }
-  return res.status(401).json({ error: "auth_required", message: "Authentication required" });
 }
 
 function requireCOO(req: Request, res: Response, next: NextFunction) {
