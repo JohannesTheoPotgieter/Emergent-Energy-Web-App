@@ -967,7 +967,7 @@ export function registerEeInfoRoutes(app: Express) {
   app.get("/api/ee-info/os/lifecycle", requireAuth, async (_req, res) => {
     try {
       const stages = await db.select().from(eeInfoNodes)
-        .where(sql`${eeInfoNodes.nodeType} = 'lifecycle_stage'`)
+        .where(sql`${eeInfoNodes.nodeType} = 'lifecycle_stage' AND ${eeInfoNodes.slug} LIKE 'os-%'`)
         .orderBy(eeInfoNodes.sortOrder);
 
       const processes = await db.select().from(eeInfoNodes)
