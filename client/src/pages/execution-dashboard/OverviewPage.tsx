@@ -16,6 +16,7 @@ import {
   ArrowRight, BarChart3,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
+import { displayPmName, isValidPmName } from "@/lib/pm-validation";
 
 function queueIcon(queue: string) {
   const q = queue?.toLowerCase();
@@ -156,7 +157,7 @@ export default function OverviewPage() {
                                       {r.severity}
                                     </span>
                                   </td>
-                                  <td className="py-2.5 px-4 text-muted-foreground">{r.owner}</td>
+                                  <td className="py-2.5 px-4 text-muted-foreground">{isValidPmName(r.owner) ? r.owner : <span className="text-amber-600 italic">Unassigned</span>}</td>
                                   <td className="py-2.5 px-4 text-muted-foreground tabular-nums">{formatDate(r.dueDate)}</td>
                                   <td className="py-2.5 px-4 text-right">
                                     <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-muted-foreground hover:text-emerald-600" onClick={() => setLocation(r.link)}>
@@ -215,7 +216,7 @@ export default function OverviewPage() {
         <KpiCard icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label={`Revenue (${fyLabel})`} value={formatCurrencyCompact(kpis.plannedRevenueFy)} sub={`Received: ${formatCurrencyCompact(kpis.receivedInflowFy)}`} />
         <KpiCard icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" label="Revenue Outstanding" value={formatCurrencyCompact(kpis.openInflowFy)} valueClass="text-amber-600" />
         <KpiCard icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" label="Expense Outstanding" value={formatCurrencyCompact(kpis.openExpenditureFy)} valueClass="text-amber-600" />
-        <KpiCard icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label="Gross Profit" value={formatCurrencyCompact(kpis.grossProfitFy)} sub={`Margin: ${kpis.grossMarginPctFy ?? "—"}%`} />
+        <KpiCard icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label="Gross Profit (Planned)" value={formatCurrencyCompact(kpis.grossProfitFy)} sub={`Planned Margin: ${kpis.grossMarginPctFy ?? "—"}% · Based on planned revenue vs planned expenditure`} />
       </div>
 
       {/* 3. TOP PROBLEM PROJECTS */}
@@ -244,7 +245,7 @@ export default function OverviewPage() {
                   {topProblemProjects.map((p) => (
                     <tr key={p.projectId} className="border-t border-border/40 hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => openProject(p)}>
                       <td className="py-2 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
-                      <td className="py-2 px-2 text-muted-foreground text-xs hidden sm:table-cell">{p.pm || "—"}</td>
+                      <td className={`py-2 px-2 text-xs hidden sm:table-cell ${isValidPmName(p.pm) ? "text-muted-foreground" : "text-amber-600 italic"}`}>{displayPmName(p.pm) || "—"}</td>
                       <td className="py-2 px-2 text-center"><Badge className={`text-[10px] ${ragBadgeClasses(p.rag)}`}>{p.rag}</Badge></td>
                       <td className="py-2 px-2 text-muted-foreground text-xs hidden md:table-cell">{p.executionPhase || "—"}</td>
                       <td className="py-2 px-2 text-right tabular-nums text-xs hidden lg:table-cell">{p.grossMarginPctFy === null ? "—" : `${p.grossMarginPctFy}%`}</td>

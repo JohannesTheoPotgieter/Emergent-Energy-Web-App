@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { displayPmName, isValidPmName } from "@/lib/pm-validation";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import {
   Activity,
@@ -196,8 +197,8 @@ function ProjectLifecycleRow({
           </div>
           <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
             <span>Stage: <span className="font-medium text-foreground">{project.lifecycleStageLabel || "Unassigned"}</span></span>
-            <span>PM: <span className="font-medium text-foreground">{project.pmName || "Unassigned"}</span></span>
-            <span>PD: <span className="font-medium text-foreground">{project.pdName || "Unassigned"}</span></span>
+            <span>PM: <span className={`font-medium ${isValidPmName(project.pmName) ? "text-foreground" : "text-amber-600 italic"}`}>{displayPmName(project.pmName)}</span></span>
+            <span>PD: <span className={`font-medium ${isValidPmName(project.pdName) ? "text-foreground" : "text-amber-600 italic"}`}>{displayPmName(project.pdName)}</span></span>
             <span>History: <span className="font-medium text-foreground">{project.stageHistory.count}</span></span>
             <span>MS linked: <span className="font-medium text-foreground">{project.microsoft.totalLinkedItems}</span></span>
           </div>
