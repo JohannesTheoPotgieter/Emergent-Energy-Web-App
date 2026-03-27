@@ -1,24 +1,6 @@
 import { Express, NextFunction, Request, Response } from "express";
-import { verifyToken } from "./jwt";
 import { getExceptionDashboard, summarizeExceptions } from "./services/exception-dashboard-service";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
+import { jwtAuth, requireAuth } from "./auth-context";
 
 export function registerExceptionDashboardRoutes(app: Express) {
   app.get("/api/exceptions", jwtAuth, requireAuth, async (req, res) => {

@@ -5,12 +5,7 @@ import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 import { logAuditFromReq } from "./audit-logger";
 import { requirePermission } from "./permission-middleware";
-import { type AuthenticatedUser, getEffectiveUser } from "./auth-context";
-
-function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  if (!req.isAuthenticated()) return void res.status(401).json({ error: "Not authenticated" });
-  next();
-}
+import { type AuthenticatedUser, getEffectiveUser, requireAuth } from "./auth-context";
 
 export function registerWeeklyReviewRoutes(app: Express): void {
   app.get("/api/weekly-reviews-all", requireAuth, requirePermission('weekly_review_wizard', 'view'), async (req: Request, res: Response) => {

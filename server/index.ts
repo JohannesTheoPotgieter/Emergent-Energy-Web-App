@@ -12,6 +12,7 @@ import { configurePassportAuth } from "./bootstrap/auth";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { enforceRuntimeEnvironmentGuards } from "./bootstrap/env-guard";
 import { applyRequestLogging } from "./bootstrap/http-observability";
+import { csrfProtection } from "./middleware/csrf";
 import { registerGlobalErrorHandler } from "./bootstrap/error-handling";
 import { getEnvironmentStatus } from "./bootstrap/environment-status";
 import { getRuntimeMutationPolicy } from "./bootstrap/runtime-mutation-policy";
@@ -87,6 +88,7 @@ async function bootstrap() {
   app.use(passport.initialize());
   app.use(passport.session());
   app.use(jwtAuth);
+  app.use(csrfProtection);
   applyRequestLogging(app, log);
 
   app.get("/api/environment/status", requireAuth, async (_req, res) => res.status(200).json(getEnvironmentStatus()));
