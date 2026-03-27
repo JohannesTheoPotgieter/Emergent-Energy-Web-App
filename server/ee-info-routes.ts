@@ -813,13 +813,151 @@ export function registerEeInfoRoutes(app: Express) {
   });
 
   const OS_LIFECYCLE_STAGES = [
-    { slug: "os-p0-first-assessment", title: "First Assessment (P0)", sortOrder: 1, description: "Initial project evaluation and feasibility assessment" },
-    { slug: "os-p1-cost-proposal", title: "Cost Proposal (P1)", sortOrder: 2, description: "Detailed costing, design proposals, and client engagement" },
-    { slug: "os-p2-planning", title: "Planning & Handover (P2/P3)", sortOrder: 3, description: "PD/PM handover, financial close, and project planning" },
-    { slug: "os-p4-construction", title: "Construction (P4)", sortOrder: 4, description: "Installation, site management, and construction execution" },
-    { slug: "os-p5-commissioning", title: "Commissioning & QA (P5)", sortOrder: 5, description: "Quality assurance, testing, and commissioning" },
-    { slug: "os-p6-handover", title: "Handover (P6)", sortOrder: 6, description: "Client handover and defect liability period" },
-    { slug: "os-p7-closeout", title: "Closeout (P7)", sortOrder: 7, description: "Commercial close-out and post-mortem review" },
+    {
+      slug: "os-p0-first-assessment", title: "First Assessment (P0)", sortOrder: 1,
+      description: "Initial project evaluation and feasibility assessment",
+      purpose: "Screen new project leads and determine viability. Conduct site visit, assess technical feasibility, and make go/no-go decision before committing further resources.",
+      inputs: "Client enquiry or RFI, Site address and geo-coordinates, Aerial imagery, Initial capacity requirements",
+      steps: "1. Receive and log new project lead\n2. Qualify lead against minimum criteria (system size, roof/ground, location)\n3. Schedule and conduct site visit\n4. Complete First Assessment template (yield estimate, layout, high-level cost)\n5. Present findings to Head of BD\n6. Record go/no-go decision with rationale",
+      outputs: "Qualified lead record, Site assessment report with photos, First Assessment template (yield, layout, estimate), Go/no-go decision record",
+      raci: [
+        { role: "Project Developer", responsible: true },
+        { role: "Head of BD", accountable: true },
+        { role: "Design Engineer", consulted: true },
+        { role: "COO", informed: true },
+      ],
+      toolsDocs: [
+        { name: "PVSOL", type: "tool" },
+        { name: "Google Earth", type: "tool" },
+        { name: "FA Template", type: "template" },
+      ],
+      risksFailureModes: "Incomplete site data leads to inaccurate feasibility assessment. Missing aerial imagery delays evaluation. Unqualified leads waste engineering resources if not screened properly.",
+    },
+    {
+      slug: "os-p1-cost-proposal", title: "Cost Proposal (P1)", sortOrder: 2,
+      description: "Detailed costing, design proposals, and client engagement",
+      purpose: "Produce a detailed engineering design and client-ready cost proposal covering system design, bill of materials, installation cost, and project timeline.",
+      inputs: "Approved First Assessment, Client scope confirmation (kWp, roof/ground, storage), Utility tariff schedule, Supplier pricing",
+      steps: "1. Load cost proposal request on pre-engineering board\n2. Assign to Design Engineer\n3. Execute detailed design (PVsyst simulation, SLD, BOM)\n4. Quality review of engineering outputs\n5. Compile cost proposal document with timeline\n6. Present to client and iterate\n7. Obtain signed proposal",
+      outputs: "Cost Proposal document, Detailed BOM, Single Line Diagram (SLD), PVsyst report, Financial model, Project timeline estimate",
+      raci: [
+        { role: "Design Engineer", responsible: true },
+        { role: "Head of Project Development", accountable: true },
+        { role: "Quality Manager", consulted: true },
+        { role: "Project Developer", responsible: true },
+        { role: "COO", informed: true },
+      ],
+      toolsDocs: [
+        { name: "PVsyst", type: "tool" },
+        { name: "Cost Proposal Template", type: "template" },
+        { name: "SharePoint", type: "tool" },
+      ],
+      risksFailureModes: "Inaccurate BOM pricing leads to margin erosion. Outdated tariff schedules affect financial viability. Incomplete SLD delays engineering approval.",
+    },
+    {
+      slug: "os-p2-planning", title: "Planning & Handover (P2/P3)", sortOrder: 3,
+      description: "PD/PM handover, financial close, and project planning",
+      purpose: "Complete the PD-to-PM handover, secure funding, finalise contracts, procure materials, and produce a detailed construction plan ready for execution.",
+      inputs: "Signed cost proposal, Client contract, Funding agreements, Approved engineering design, Supplier quotes",
+      steps: "1. Conduct PD/PM handover meeting and transfer project file\n2. Finalise EPC contract and funding agreements\n3. Achieve financial close\n4. Issue purchase orders for major equipment\n5. Confirm delivery schedules with suppliers\n6. Produce detailed construction programme\n7. Complete pre-construction compliance checks",
+      outputs: "Signed EPC contract, Financial close certificate, Purchase orders issued, Construction programme, Procurement schedule, Pre-construction checklist",
+      raci: [
+        { role: "Project Manager", responsible: true },
+        { role: "Project Developer", responsible: true },
+        { role: "COO", accountable: true },
+        { role: "Procurement Manager", consulted: true },
+        { role: "Finance Manager", consulted: true },
+      ],
+      toolsDocs: [
+        { name: "MS Project", type: "tool" },
+        { name: "Handover Template", type: "template" },
+        { name: "SharePoint", type: "tool" },
+      ],
+      risksFailureModes: "Incomplete handover causes information loss between PD and PM. Delayed financial close pushes construction schedule. Long-lead equipment not ordered early enough.",
+    },
+    {
+      slug: "os-p4-construction", title: "Construction (P4)", sortOrder: 4,
+      description: "Installation, site management, and construction execution",
+      purpose: "Execute the physical installation of the solar/BESS system on-site, managing daily progress, HSE compliance, quality, and subcontractor coordination.",
+      inputs: "IFC engineering pack, Construction programme, Delivered materials and equipment, Site access approval, HSE plan",
+      steps: "1. Mobilise site team and establish site office\n2. Conduct site induction and HSE briefing\n3. Execute civil works (trenching, foundations)\n4. Install mounting structures and modules\n5. Complete electrical installation (DC/AC wiring, inverters)\n6. Install BESS if applicable\n7. Daily progress logging and photo documentation\n8. Quality inspections at hold points\n9. Mechanical completion sign-off",
+      outputs: "Installed system (mechanical completion), Daily site reports, Quality inspection records, HSE incident log, As-built drawings, Mechanical completion certificate",
+      raci: [
+        { role: "Site Manager", responsible: true },
+        { role: "Project Manager", accountable: true },
+        { role: "HSE Officer", consulted: true },
+        { role: "Quality Inspector", consulted: true },
+        { role: "Engineering Manager", informed: true },
+      ],
+      toolsDocs: [
+        { name: "Site Diary App", type: "tool" },
+        { name: "HSE Checklist", type: "template" },
+        { name: "Quality Inspection Template", type: "template" },
+      ],
+      risksFailureModes: "Weather delays impact construction schedule. Material delivery delays cause idle site time. HSE incidents halt construction. Quality defects require rework.",
+    },
+    {
+      slug: "os-p5-commissioning", title: "Commissioning & QA (P5)", sortOrder: 5,
+      description: "Quality assurance, testing, and commissioning",
+      purpose: "Test and commission the installed system to verify it meets design specifications, safety standards, and performance guarantees before handover.",
+      inputs: "Mechanical completion certificate, As-built drawings, Equipment manuals, Grid connection approval, Testing procedures",
+      steps: "1. Pre-commissioning inspections and punch list\n2. Insulation resistance and earth continuity tests\n3. String testing and IV curve tracing\n4. Inverter commissioning and grid synchronisation\n5. BESS commissioning if applicable\n6. Performance ratio test over monitoring period\n7. Resolve punch list items\n8. Issue commissioning certificate",
+      outputs: "Test reports (IR, earth, string, IV curves), Commissioning certificate, Performance test results, Resolved punch list, Grid connection confirmation",
+      raci: [
+        { role: "Commissioning Engineer", responsible: true },
+        { role: "Engineering Manager", accountable: true },
+        { role: "Quality Manager", consulted: true },
+        { role: "Project Manager", informed: true },
+        { role: "Client Representative", informed: true },
+      ],
+      toolsDocs: [
+        { name: "IV Curve Tracer", type: "tool" },
+        { name: "Commissioning Checklist", type: "template" },
+        { name: "Monitoring Platform", type: "tool" },
+      ],
+      risksFailureModes: "Failed performance test delays handover. Grid connection issues prevent energisation. Unresolved punch list items block commissioning certificate.",
+    },
+    {
+      slug: "os-p6-handover", title: "Handover (P6)", sortOrder: 6,
+      description: "Client handover and defect liability period",
+      purpose: "Hand over the completed and commissioned system to the client and O&M team. Complete all project documentation and enter the defect liability period.",
+      inputs: "Commissioning certificate, As-built documentation, O&M manuals, Warranty certificates, Training materials",
+      steps: "1. Compile final handover documentation pack\n2. Conduct client training session on system operation\n3. Hand over to O&M team with monitoring access\n4. Obtain client acceptance and sign-off\n5. Settle final account and release retentions schedule\n6. Enter defect liability period\n7. Schedule DLP inspections",
+      outputs: "Client acceptance certificate, Handover documentation pack, O&M handover record, Final account statement, DLP schedule, Training completion record",
+      raci: [
+        { role: "Project Manager", responsible: true },
+        { role: "COO", accountable: true },
+        { role: "O&M Manager", consulted: true },
+        { role: "Client Representative", informed: true },
+        { role: "Finance Manager", informed: true },
+      ],
+      toolsDocs: [
+        { name: "Handover Checklist", type: "template" },
+        { name: "O&M Manual Template", type: "template" },
+        { name: "Monitoring Platform", type: "tool" },
+      ],
+      risksFailureModes: "Incomplete documentation delays client sign-off. Missing warranty certificates create liability gaps. Inadequate training leads to client dissatisfaction.",
+    },
+    {
+      slug: "os-p7-closeout", title: "Closeout (P7)", sortOrder: 7,
+      description: "Commercial close-out and post-mortem review",
+      purpose: "Complete commercial close-out of the project, conduct post-mortem review, capture lessons learned, and transition to long-term O&M operations.",
+      inputs: "Client acceptance certificate, Final account, DLP completion record, Project performance data, Stakeholder feedback",
+      steps: "1. Verify DLP period complete with no outstanding defects\n2. Release final retentions\n3. Close out all supplier and subcontractor accounts\n4. Conduct internal post-mortem review\n5. Document lessons learned\n6. Archive project files\n7. Confirm system transitioned to long-term O&M\n8. Close project in financial system",
+      outputs: "Project close-out report, Lessons learned document, Final financial reconciliation, Archived project file, Long-term O&M confirmation",
+      raci: [
+        { role: "Project Manager", responsible: true },
+        { role: "COO", accountable: true },
+        { role: "Finance Manager", consulted: true },
+        { role: "O&M Manager", informed: true },
+        { role: "Engineering Manager", informed: true },
+      ],
+      toolsDocs: [
+        { name: "Close-out Checklist", type: "template" },
+        { name: "Lessons Learned Template", type: "template" },
+      ],
+      risksFailureModes: "Outstanding defects not resolved before DLP expiry. Retentions not released on time damage supplier relationships. Lessons learned not captured repeat mistakes on future projects.",
+    },
   ];
 
   const OS_DEPARTMENTS = [
@@ -858,6 +996,27 @@ export function registerEeInfoRoutes(app: Express) {
           sortOrder: stage.sortOrder, tags: ["lifecycle", "os-map"],
         });
         created.push(stage.slug);
+      }
+
+      // Seed node details for OS lifecycle stages (creates if missing)
+      for (const stage of OS_LIFECYCLE_STAGES) {
+        const nodes = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes).where(eq(eeInfoNodes.slug, stage.slug));
+        if (nodes.length === 0) continue;
+        const nodeId = nodes[0].id;
+        const existingDetails = await db.select({ id: eeInfoNodeDetails.id }).from(eeInfoNodeDetails).where(eq(eeInfoNodeDetails.nodeId, nodeId));
+        if (existingDetails.length > 0) continue;
+        await db.insert(eeInfoNodeDetails).values({
+          nodeId,
+          purpose: stage.purpose,
+          inputs: stage.inputs,
+          steps: stage.steps,
+          outputs: stage.outputs,
+          raci: stage.raci,
+          toolsDocs: stage.toolsDocs,
+          risksFailureModes: stage.risksFailureModes,
+          updatedAt: new Date(),
+          updatedBy: "system",
+        });
       }
 
       const deptIdMap: Record<string, string> = {};
@@ -1052,7 +1211,7 @@ export function registerEeInfoRoutes(app: Express) {
         .orderBy(eeInfoNodes.sortOrder);
 
       const stages = await db.select().from(eeInfoNodes)
-        .where(sql`${eeInfoNodes.nodeType} = 'lifecycle_stage'`)
+        .where(sql`${eeInfoNodes.nodeType} = 'lifecycle_stage' AND ${eeInfoNodes.slug} LIKE 'os-%'`)
         .orderBy(eeInfoNodes.sortOrder);
 
       const grouped: Record<string, any[]> = {};
