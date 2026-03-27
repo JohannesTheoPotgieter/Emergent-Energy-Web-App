@@ -899,7 +899,7 @@ export default function CashflowPage() {
   }, [cashflowData]);
 
   if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load cashflow" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
+  if (isError) return <FinanceShell currentPage="cashflow"><div className="p-4 md:p-6"><PageError title="Unable to load cashflow" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div></FinanceShell>;
 
   return (
     <FinanceShell currentPage="cashflow"><div className="p-4 md:p-6" data-testid="page-cashflow">
