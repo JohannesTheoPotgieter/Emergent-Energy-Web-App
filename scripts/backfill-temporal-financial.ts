@@ -24,21 +24,21 @@ const TABLES_WITH_CREATED_AT_ONLY = [
 ];
 
 async function tableExists(name: string): Promise<boolean> {
-  const result = await db.execute(sql.raw(
-    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${name}') as ex`
-  ));
+  const result = await db.execute(
+    sql`SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ${name}) as ex`
+  );
   return (result as any).rows?.[0]?.ex === true;
 }
 
 async function columnExists(table: string, column: string): Promise<boolean> {
-  const result = await db.execute(sql.raw(
-    `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${table}' AND column_name = '${column}') as ex`
-  ));
+  const result = await db.execute(
+    sql`SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ${table} AND column_name = ${column}) as ex`
+  );
   return (result as any).rows?.[0]?.ex === true;
 }
 
 async function count(table: string): Promise<number> {
-  const result = await db.execute(sql.raw(`SELECT COUNT(*) as cnt FROM "${table}"`));
+  const result = await db.execute(sql`SELECT COUNT(*) as cnt FROM ${sql.raw(`"${table}"`)}`);
   return Number((result as any).rows?.[0]?.cnt ?? 0);
 }
 

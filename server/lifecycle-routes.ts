@@ -1759,11 +1759,11 @@ export function registerLifecycleRoutes(app: Express) {
         const safeDel = async (query: ReturnType<typeof sql>) => {
           const sp = `sp_del_${spIdx++}`;
           try {
-            await tx.execute(sql.raw(`SAVEPOINT ${sp}`));
+            await tx.execute(sql`SAVEPOINT ${sql.raw(sp)}`);
             await tx.execute(query);
-            await tx.execute(sql.raw(`RELEASE SAVEPOINT ${sp}`));
+            await tx.execute(sql`RELEASE SAVEPOINT ${sql.raw(sp)}`);
           } catch (_e) {
-            await tx.execute(sql.raw(`ROLLBACK TO SAVEPOINT ${sp}`));
+            await tx.execute(sql`ROLLBACK TO SAVEPOINT ${sql.raw(sp)}`);
           }
         };
 
