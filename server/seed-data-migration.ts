@@ -30,7 +30,7 @@ function escVal(v: any): string {
 
 async function getDbColumns(tableName: string): Promise<Set<string>> {
   const result = await db.execute(
-    sql.raw(`SELECT column_name FROM information_schema.columns WHERE table_name = '${tableName}'`)
+    sql`SELECT column_name FROM information_schema.columns WHERE table_name = ${tableName}`
   );
   return new Set((result.rows as any[]).map((r: any) => r.column_name));
 }
@@ -61,7 +61,7 @@ export async function runDataSeedMigration() {
   ];
   for (const t of truncateTables) {
     try {
-      await db.execute(sql.raw(`TRUNCATE TABLE ${t} CASCADE`));
+      await db.execute(sql`TRUNCATE TABLE ${sql.raw(t)} CASCADE`);
     } catch (e: any) {
       console.warn(`[DataSeed] TRUNCATE ${t} skipped: ${e.message}`);
     }
@@ -110,7 +110,7 @@ export async function runDataSeedMigration() {
           });
           return `(${vals.join(", ")})`;
         });
-        await tx.execute(sql.raw(`INSERT INTO ${tableName} (${colList}) VALUES ${valueSets.join(", ")}`));
+        await tx.execute(sql`INSERT INTO ${sql.raw(tableName)} (${sql.raw(colList)}) VALUES ${sql.raw(valueSets.join(", "))}`);
       }
 
       results[tableName] = rows.length;
@@ -120,7 +120,7 @@ export async function runDataSeedMigration() {
     for (const t of TABLE_ORDER) {
       try {
         await tx.execute(
-          sql.raw(`SELECT setval(pg_get_serial_sequence('${t}', 'id'), COALESCE((SELECT MAX(id) FROM ${t}), 1))`)
+          sql`SELECT setval(pg_get_serial_sequence(${t}, 'id'), COALESCE((SELECT MAX(id) FROM ${sql.raw(t)}), 1))`
         );
       } catch (_) {}
     }
