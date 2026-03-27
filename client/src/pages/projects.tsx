@@ -1394,7 +1394,22 @@ export default function ProjectsSummary() {
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [tableTopOffset, setTableTopOffset] = useState(340);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const el = tableContainerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const top = el.getBoundingClientRect().top;
+      setTableTopOffset(Math.max(top, 200));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(document.body);
+    return () => ro.disconnect();
+  }, []);
 
   const [savedViews, setSavedViews] = useState<SavedView[]>(() => loadSavedViews());
   const [activeViewName, setActiveViewName] = useState<string | null>(() => loadActiveView());
@@ -1923,7 +1938,12 @@ export default function ProjectsSummary() {
       header: "RAG",
       render: (p) => {
         const rag = p.rag_status;
-        if (!rag) return <span className="text-[10px] text-muted-foreground">—</span>;
+        if (!rag) return (
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-gray-200 shrink-0" />
+            <span className="text-[10px] text-muted-foreground">Not Set</span>
+          </div>
+        );
         const color = rag === "Green" ? "bg-emerald-500" : rag === "Amber" ? "bg-amber-500" : rag === "Red" ? "bg-red-500" : "bg-gray-300";
         return (
           <div className="flex items-center gap-1.5">
@@ -2450,7 +2470,7 @@ export default function ProjectsSummary() {
           value={ragFilter}
           onValueChange={setRagFilter}
           placeholder="All RAG"
-          triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-28 text-sm border-border"
+          triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-32 text-sm border-border"
           data-testid="select-rag-filter"
           options={[
             { value: "all", label: "All RAG" },
@@ -2626,7 +2646,7 @@ export default function ProjectsSummary() {
       ) : (
 
       <div className="border border-border rounded-xl overflow-hidden shadow-sm bg-card">
-        <div className="overflow-auto max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-340px)]">
+        <div ref={tableContainerRef} className="overflow-auto" style={{ maxHeight: `calc(100vh - ${tableTopOffset + 16}px)` }}>
           <table className="w-full text-[10px] border-collapse table-fixed" style={{ minWidth: "100%" }}>
             <colgroup>
               {filteredColumns.map(col => (
