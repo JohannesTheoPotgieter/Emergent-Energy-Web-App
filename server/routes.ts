@@ -340,8 +340,6 @@ function coercePlanOverride(fieldName: string, value: any): any {
   return value;
 }
 
-const requireAuth = sharedRequireAuth;
-
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
   if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
