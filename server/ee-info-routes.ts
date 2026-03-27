@@ -1052,7 +1052,7 @@ export function registerEeInfoRoutes(app: Express) {
         .orderBy(eeInfoNodes.sortOrder);
 
       const stages = await db.select().from(eeInfoNodes)
-        .where(sql`${eeInfoNodes.nodeType} = 'lifecycle_stage'`)
+        .where(sql`${eeInfoNodes.nodeType} = 'lifecycle_stage' AND ${eeInfoNodes.slug} LIKE 'os-%'`)
         .orderBy(eeInfoNodes.sortOrder);
 
       const grouped: Record<string, any[]> = {};
