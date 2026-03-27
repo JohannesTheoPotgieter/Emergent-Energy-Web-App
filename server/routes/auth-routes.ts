@@ -245,6 +245,11 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
     res.json({ enabled: msAuth.isMicrosoftAuthConfigured() });
   });
 
+  app.get("/api/auth/login-modes", (_req, res) => {
+    const passwordLoginEnabled = process.env.PASSWORD_LOGIN_ENABLED === "true";
+    res.json({ passwordLoginEnabled });
+  });
+
   app.get("/api/auth/microsoft", async (_req, res) => {
     try {
       if (!msAuth.isMicrosoftAuthConfigured()) {
