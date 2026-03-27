@@ -35,11 +35,11 @@ const COO_CEO_CONFIG: RoleDashboardConfig = {
   attentionPriority: ["exceptions", "gate_failures", "handover_bottlenecks", "budget_deviation"],
   quickActions: [
     { label: "Exceptions", path: "/exceptions", iconKey: "AlertTriangle" },
-    { label: "Portfolio Overview", path: "/execution-board", iconKey: "LayoutDashboard" },
+    { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
     { label: "GP Tracker", path: "/gp-tracker", iconKey: "Activity" },
   ],
   cockpitPath: "/execution-board",
-  cockpitLabel: "Portfolio Overview",
+  cockpitLabel: "Execution Board",
 };
 
 const PROGRAM_MANAGER_CONFIG: RoleDashboardConfig = {
@@ -56,7 +56,7 @@ const PROGRAM_MANAGER_CONFIG: RoleDashboardConfig = {
     { label: "Programme Reports", path: "/reports/programme", iconKey: "FileText" },
   ],
   cockpitPath: "/execution-board",
-  cockpitLabel: "Portfolio Overview",
+  cockpitLabel: "Execution Board",
 };
 
 const PM_CONFIG: RoleDashboardConfig = {
@@ -73,7 +73,7 @@ const PM_CONFIG: RoleDashboardConfig = {
     { label: "Deliverables", path: "/pm/deliverables", iconKey: "Package" },
   ],
   cockpitPath: "/execution-board",
-  cockpitLabel: "Portfolio Overview",
+  cockpitLabel: "Execution Board",
 };
 
 const ENGINEER_CONFIG: RoleDashboardConfig = {
@@ -153,12 +153,12 @@ const CONSTRUCTION_CONFIG: RoleDashboardConfig = {
   ],
   attentionPriority: ["material_delays", "inspection_failures", "critical_snags", "safety_incidents"],
   quickActions: [
-    { label: "Portfolio Overview", path: "/execution-board", iconKey: "LayoutDashboard" },
+    { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
     { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "My Tasks", path: "/my-work", iconKey: "ListChecks" },
   ],
   cockpitPath: "/execution-board",
-  cockpitLabel: "Portfolio Overview",
+  cockpitLabel: "Execution Board",
 };
 
 const DEFAULT_CONFIG: RoleDashboardConfig = {
@@ -174,7 +174,7 @@ const DEFAULT_CONFIG: RoleDashboardConfig = {
     { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
   ],
   cockpitPath: "/execution-board",
-  cockpitLabel: "Portfolio Overview",
+  cockpitLabel: "Execution Board",
 };
 
 const ROLE_CONFIG_MAP: Partial<Record<CompanyRole, RoleDashboardConfig>> = {
