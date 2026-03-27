@@ -369,8 +369,9 @@ function ProtectedPages() {
   return (
     <RoleGuard>
     <AppLayout>
+      <ErrorBoundary>
       <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
-      <div key={location} className="page-enter">
+      <div className="page-enter">
         <Switch>
           <Route path="/" component={HomePage} />
           {APP_ROUTES.map((route) => {
@@ -383,6 +384,7 @@ function ProtectedPages() {
         </Switch>
       </div>
       </Suspense>
+      </ErrorBoundary>
     </AppLayout>
     </RoleGuard>
   );

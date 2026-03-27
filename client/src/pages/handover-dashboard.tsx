@@ -127,9 +127,13 @@ export default function HandoverDashboardPage() {
         <div className="space-y-2">
           {packsLoading && <p className="text-sm text-muted-foreground">Loading handover packs...</p>}
           {!packsLoading && packs.length === 0 && (
-            <Card><CardContent className="py-12 text-center">
-              <FileCheck className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No handover packs created yet.</p>
+            <Card className="border-amber-200"><CardContent className="py-8 text-center">
+              <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-amber-800">No handover packs created yet</p>
+              <p className="text-xs text-amber-600 mt-1 max-w-md mx-auto">
+                Projects in Handover, Compliance Handover, and Closeout phases require formal handover documentation.
+                Create handover packs from individual project detail pages to begin tracking evidence and checklists.
+              </p>
             </CardContent></Card>
           )}
           {packs.map(pack => (
@@ -168,9 +172,14 @@ export default function HandoverDashboardPage() {
         <div className="space-y-2">
           {ssegLoading && <p className="text-sm text-muted-foreground">Loading SSEG items...</p>}
           {!ssegLoading && ssegItems.length === 0 && (
-            <Card><CardContent className="py-12 text-center">
-              <CheckCircle2 className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No SSEG items tracked yet.</p>
+            <Card className="border-amber-200"><CardContent className="py-8 text-center">
+              <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-3" />
+              <p className="text-sm font-semibold text-amber-800">No SSEG items tracked yet</p>
+              <p className="text-xs text-amber-600 mt-1 max-w-md mx-auto">
+                SSEG (Small-Scale Embedded Generation) registration is a legal requirement for SA C&I solar projects.
+                Projects cannot be considered complete without SSEG approval from the relevant municipality or utility.
+                Add SSEG tracking items from project detail pages.
+              </p>
             </CardContent></Card>
           )}
           {ssegItems.map(item => {

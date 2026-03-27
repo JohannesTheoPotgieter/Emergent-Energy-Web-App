@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRoute, useLocation, Link } from "wouter";
+import { displayPmName, isValidPmName } from "@/lib/pm-validation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -111,7 +112,7 @@ function PortfolioGanttChart({ projects }: { projects: any[] }) {
                       <Link href={`/project/${encodeURIComponent(proj.projectName)}`} className="hover:underline">
                         <div className="font-medium text-foreground text-[11px] truncate">{proj.projectName}</div>
                       </Link>
-                      <div className="text-[9px] text-gray-400 truncate">{proj.pm || '—'} · {parseFloat(proj.sizeKwp || '0').toFixed(0)} kWp</div>
+                      <div className={`text-[9px] truncate ${isValidPmName(proj.pm) ? "text-gray-400" : "text-amber-500 italic"}`}>{displayPmName(proj.pm)} · {parseFloat(proj.sizeKwp || '0').toFixed(0)} kWp</div>
                     </div>
                     <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold flex-shrink-0 ${progressColor}`}>
                       {Math.round(proj.actualPct)}%
@@ -668,8 +669,8 @@ export default function PortfolioDetailPage() {
                             {phase || "—"}
                           </span>
                         </td>
-                        <td className="px-2 py-2 text-muted-foreground whitespace-nowrap" title={pm || ""}>{truncateName(pm, 14)}</td>
-                        <td className="px-2 py-2 text-muted-foreground whitespace-nowrap" title={pd || ""}>{truncateName(pd, 12)}</td>
+                        <td className={`px-2 py-2 whitespace-nowrap ${isValidPmName(pm) ? "text-muted-foreground" : "text-amber-600 italic"}`} title={pm || ""}>{isValidPmName(pm) ? truncateName(pm, 14) : "Unassigned"}</td>
+                        <td className={`px-2 py-2 whitespace-nowrap ${isValidPmName(pd) ? "text-muted-foreground" : "text-amber-600 italic"}`} title={pd || ""}>{isValidPmName(pd) ? truncateName(pd, 12) : "Unassigned"}</td>
                         <td className="px-2 py-2 text-right font-mono text-foreground">{sizeKwp ? sizeKwp.toFixed(0) : "—"}</td>
                         <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{formatDate(constructionStart)}</td>
                         <td className="px-2 py-2 text-muted-foreground whitespace-nowrap">{formatDate(commDate)}</td>
@@ -1090,7 +1091,7 @@ export default function PortfolioDetailPage() {
                                 <Link href={`/project/${encodeURIComponent(proj.projectName)}`} className="hover:underline">
                                   <div className="font-medium text-foreground text-xs">{proj.projectName}</div>
                                 </Link>
-                                <div className="text-[10px] text-gray-400 mt-0.5">{proj.pm || '—'} · {parseFloat(proj.sizeKwp || '0').toFixed(0)} kWp</div>
+                                <div className={`text-[10px] mt-0.5 ${isValidPmName(proj.pm) ? "text-gray-400" : "text-amber-500 italic"}`}>{displayPmName(proj.pm)} · {parseFloat(proj.sizeKwp || '0').toFixed(0)} kWp</div>
                               </td>
                               <td className="text-center px-2 py-2.5">
                                 <Badge variant="outline" className="text-[9px] px-1.5 py-0">{proj.phase || '—'}</Badge>
@@ -1210,7 +1211,7 @@ export default function PortfolioDetailPage() {
                 <div key={p.id} className={`flex items-center gap-3 p-2.5 rounded-lg border ${isAssignedHere ? "bg-emerald-50 border-emerald-200" : isAssignedElsewhere ? "bg-amber-50/50 border-amber-100" : "hover:bg-muted/50"}`} data-testid={`assign-project-${p.id}`}>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-medium truncate">{p.projectName}</div>
-                    <div className="text-xs text-muted-foreground">{p.phase || "—"} · {p.pm || "No PM"} · {parseFloat(p.sizeKwp || "0").toFixed(0)} kWp</div>
+                    <div className="text-xs text-muted-foreground">{p.phase || "—"} · <span className={isValidPmName(p.pm) ? "" : "text-amber-600 italic"}>{displayPmName(p.pm)}</span> · {parseFloat(p.sizeKwp || "0").toFixed(0)} kWp</div>
                   </div>
                   {isAssignedHere ? (
                     <Badge variant="outline" className="bg-emerald-100 text-emerald-700 text-xs shrink-0">

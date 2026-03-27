@@ -65,6 +65,40 @@ export function registerProcurementRoutes(app: Express): void {
     }
   });
 
+  // Global procurement items list for Procurement Dashboard
+  app.get("/api/procurement-items", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
+    try {
+      const rows = await db.execute(sql`
+        SELECT pi2.id, pi2.title, pi2.status, pi2.category, pi2.expected_cost,
+          pi2.project_id, pi2.required_date, pi2.is_long_lead,
+          pi2.requisition_status, pi2.delivery_status, pi2.delivery_expected_date,
+          pi2.quote_amount,
+          p.project_name
+        FROM procurement_items pi2
+        LEFT JOIN project_info p ON pi2.project_id = p.id
+        ORDER BY pi2.created_at DESC
+      `);
+      const items = rowsFromResult(rows).map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        requisitionStatus: r.requisition_status,
+        deliveryStatus: r.delivery_status,
+        deliveryExpectedDate: r.delivery_expected_date,
+        isLongLead: r.is_long_lead ?? false,
+        projectId: r.project_id,
+        expectedCost: r.expected_cost,
+        quoteAmount: r.quote_amount,
+        projectName: r.project_name,
+      }));
+      res.json(items);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[Procurement] Global list error:", message);
+      res.status(500).json({ error: "Failed to fetch procurement items" });
+    }
+  });
+
   app.get("/api/procurement/:id", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(String(req.params.id));

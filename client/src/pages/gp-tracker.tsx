@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import {
   DollarSign, TrendingUp, Activity, Percent, Search,
-  Target, ChevronDown, ChevronRight, X, HelpCircle,
+  Target, ChevronDown, ChevronRight, X, HelpCircle, AlertTriangle,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -206,6 +206,10 @@ export default function GpTrackerPage() {
   const ytdVariance = data?.ytdVariance || 0;
   const ytdGpPct = data?.ytdGpPct || 0;
 
+  // Detect if revenue budget is missing (all zero)
+  const revenueBudgetMissing = months.length > 0 && months.every((m: any) => !m.revBudget || m.revBudget === 0);
+  const BUDGET_VARIANCE_KEYS = new Set(["revBudget", "cosBudget", "budget", "variance", "variancePct", "ytdBudget", "ytdVariance", "ytdVariancePct"]);
+
   const monthlyRows = ROW_DEFS.filter(r => r.group === "monthly");
   const ytdRows = ROW_DEFS.filter(r => r.group === "ytd");
 
@@ -232,6 +236,16 @@ export default function GpTrackerPage() {
           <p className="text-sm text-muted-foreground">Portfolio-level Gross Profit — Budget vs Actual (Sep 2025 – Aug 2026). Click any GP row cell to drill down to line items.</p>
         </div>
       </div>
+
+      {revenueBudgetMissing && (
+        <div className="flex items-start gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900" data-testid="budget-missing-warning">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+          <div className="text-sm">
+            <p className="font-semibold">Revenue budget not configured</p>
+            <p className="text-xs text-amber-700 mt-0.5">All budget and variance metrics below are unreliable because revenue budget is R0 for every month. Contact Finance to set monthly revenue budgets via the budget entry screen.</p>
+          </div>
+        </div>
+      )}
 
       <TooltipProvider delayDuration={300}>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3" role="region" aria-label="GP KPI Summary">
@@ -294,10 +308,12 @@ export default function GpTrackerPage() {
                 <tbody>
                   {monthlyRows.map(row => {
                     const isDrillable = ["totalGP", "realisedGP", "unrealisedGP", "totalRevenue", "totalCOS"].includes(row.key);
+                    const isBudgetRow = BUDGET_VARIANCE_KEYS.has(row.key);
+                    const dimmed = revenueBudgetMissing && isBudgetRow;
                     return (
-                    <tr key={row.key} className="border-b border-border/40 hover:bg-muted/20" data-testid={`row-${row.key}`}>
+                    <tr key={row.key} className={`border-b border-border/40 hover:bg-muted/20 ${dimmed ? "opacity-30" : ""}`} data-testid={`row-${row.key}`}>
                       <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">
-                        {row.label}
+                        {row.label}{dimmed && " *"}
                       </td>
                       {months.map((m: any) => {
                         const val = getCellValue(m, row.dataKey);
@@ -355,9 +371,12 @@ export default function GpTrackerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ytdRows.map(row => (
-                    <tr key={row.key} className="border-b border-border/40 hover:bg-muted/20" data-testid={`row-${row.key}`}>
-                      <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">{row.label}</td>
+                  {ytdRows.map(row => {
+                    const isBudgetRow = BUDGET_VARIANCE_KEYS.has(row.key);
+                    const dimmed = revenueBudgetMissing && isBudgetRow;
+                    return (
+                    <tr key={row.key} className={`border-b border-border/40 hover:bg-muted/20 ${dimmed ? "opacity-30" : ""}`} data-testid={`row-${row.key}`}>
+                      <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">{row.label}{dimmed && " *"}</td>
                       {months.map((m: any) => {
                         const val = getCellValue(m, row.dataKey);
                         const colorClass = row.colorCoded ? getVarianceColor(val) : row.colorClass;
@@ -368,7 +387,8 @@ export default function GpTrackerPage() {
                         );
                       })}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -410,13 +430,17 @@ export default function GpTrackerPage() {
                       <th className="pb-2 font-medium text-right">COS</th>
                       <th className="pb-2 font-medium text-right">GP</th>
                       <th className="pb-2 font-medium text-right">GP%</th>
+                      <th className="pb-2 font-medium text-center">Flag</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProjects.map((p: any) => (
+                    {filteredProjects.map((p: any) => {
+                      const noRevenue = (!p.revenue || p.revenue === 0) && (p.cos ?? 0) > 0;
+                      const extremeMargin = (p.gpPct ?? 0) < -100;
+                      return (
                       <tr
                         key={p.projectName}
-                        className="border-b border-border/50 hover:bg-muted/30 cursor-pointer"
+                        className={`border-b border-border/50 hover:bg-muted/30 cursor-pointer ${noRevenue ? "bg-amber-50/30" : ""}`}
                         onClick={() => navigate(`/project/${encodeURIComponent(p.projectName)}?tab=gp-tracker`)}
                         data-testid={`row-project-${p.projectName}`}
                       >
@@ -429,10 +453,22 @@ export default function GpTrackerPage() {
                             {(p.gpPct ?? 0).toFixed(1)}%
                           </Badge>
                         </td>
+                        <td className="py-2 text-center">
+                          {noRevenue ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-100 text-amber-700 border border-amber-200" title="This project has costs but no revenue recorded — GP is distorted">
+                              <AlertTriangle className="h-2.5 w-2.5" /> No Revenue
+                            </span>
+                          ) : extremeMargin ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-red-100 text-red-700 border border-red-200" title="Margin below -100% — review data quality">
+                              <AlertTriangle className="h-2.5 w-2.5" /> Review
+                            </span>
+                          ) : null}
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {filteredProjects.length === 0 && (
-                      <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No projects match this search. Try different keywords.</td></tr>
+                      <tr><td colSpan={6} className="py-6 text-center text-muted-foreground">No projects match this search. Try different keywords.</td></tr>
                     )}
                   </tbody>
                 </table>
