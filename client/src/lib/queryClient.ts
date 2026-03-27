@@ -42,6 +42,16 @@ export async function apiRequest(
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
+  // Attach CSRF token for state-changing requests
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase())) {
+    const csrfToken = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith("csrf-token="))
+      ?.split("=")[1];
+    if (csrfToken) {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
+  }
 
   let res: Response;
   try {
