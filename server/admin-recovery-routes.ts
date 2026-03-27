@@ -11,12 +11,7 @@ import {
 } from "@shared/schema";
 import { normalizeStatus } from "./lib/canonical-task-engine";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
-
-function requireAdmin(req: Request, res: Response, next: NextFunction): void {
-  const role = getEffectiveUser(req)?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-  res.status(403).json({ error: "admin_required", message: "Admin access required" });
-}
+import { requireAdmin } from "./middleware/requireAdmin";
 
 const taskSearchSchema = z.object({
   q: z.string().optional(),

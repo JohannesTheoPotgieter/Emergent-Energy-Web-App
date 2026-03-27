@@ -4,6 +4,7 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc, sql, ilike } from "drizzle-orm";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 import {
   users, projectInfo, projectPhaseHistory, workItems,
   deliverables, taskActivityLog,
@@ -22,13 +23,6 @@ import { createHash } from "crypto";
 
 function getUser(req: Request) {
   return getEffectiveUser(req);
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = getUser(req)?.role;
-  const execRoles = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
-  if (!role || !execRoles.includes(role)) return res.status(403).json({ error: "Admin access required" });
-  next();
 }
 
 function makeApplicationKey(projectId: number, phase: string, templateId: number, templateVersion: number): string {

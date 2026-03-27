@@ -1,16 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
 import { getEffectiveUser, requireAuth as sharedRequireAuth } from "../auth-context";
+import { requireAdmin } from "../middleware/requireAdmin";
+
+export { requireAdmin };
 
 export function requireAuth(req: Request, res: Response, next: NextFunction) {
   return sharedRequireAuth(req, res, next);
-}
-
-export function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = getEffectiveUser(req)?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
-    return next();
-  }
-  res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
 }
 
 export function requireRole(...roles: string[]) {

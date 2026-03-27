@@ -7,19 +7,10 @@ import { db } from "../db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, workItems, cashflowPoints, financeRevenueMonthly, financeCosMonthly } from "@shared/schema";
 import { logAuditFromReq } from "../audit-logger";
-import { requireAuth as sharedRequireAuth } from "../auth-context";
+import { requireAuth } from "../auth-context";
+import { requireAdmin } from "../middleware/requireAdmin";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
 import { classifyCosStatus } from "../lib/calculations/stateClassifier";
-
-const requireAuth = sharedRequireAuth;
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = req.user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
-    return next();
-  }
-  res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
-}
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };

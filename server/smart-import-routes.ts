@@ -6,8 +6,8 @@ import multer from "multer";
 import crypto from "crypto";
 import { logAuditFromReq } from "./audit-logger";
 import { db } from "./db";
-import { verifyToken } from "./jwt";
 import { requirePermission } from "./permission-middleware";
+import { jwtAuth, requireAuth } from "./auth-context";
 import { runSmartImportPreview } from "./lib/import/index";
 import {
   smartImportRuns,
@@ -256,25 +256,6 @@ const upload = multer({
     }
   },
 });
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
 
 router.use(jwtAuth);
 
