@@ -68,7 +68,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Weekly Reviews", path: "/weekly-reviews" },
       { label: "Construction", path: "/construction" },
       { label: "Engineering", path: "/engineering" },
-      { label: "Quality & HSE", path: "/quality" },
+      { label: "Quality", path: "/quality" },
       { label: "Handover & Closeout", path: "/handover" },
       { label: "PD Dashboard", path: "/pd" },
       { label: "Clients", path: "/clients" },
