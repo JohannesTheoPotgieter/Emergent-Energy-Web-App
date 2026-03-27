@@ -2584,7 +2584,7 @@ export function registerEngineeringRoutes(app: Express) {
         const dataSql = sql`SELECT * FROM (${sql.raw(unionQuery)}) unified WHERE lower(summary) LIKE ${searchFilter} OR lower(detail) LIKE ${searchFilter} OR lower(actor_name) LIKE ${searchFilter} OR lower(project_name) LIKE ${searchFilter} ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`;
         dataResult = await db.execute(dataSql);
       } else {
-        countResult = await db.execute(sql.raw(`SELECT category, count(*)::int AS cnt FROM (${unionQuery}) unified GROUP BY category`));
+        countResult = await db.execute(sql`SELECT category, count(*)::int AS cnt FROM (${sql.raw(unionQuery)}) unified GROUP BY category`);
         dataResult = await db.execute(sql`SELECT * FROM (${sql.raw(unionQuery)}) unified ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`);
       }
 
