@@ -61,7 +61,7 @@ export const TOP_SECTIONS: TopSection[] = [
     ]),
     secondary: [
       { label: "Project List", path: "/projects" },
-      { label: "Portfolio Overview", path: "/execution-board" },
+      { label: "Execution Board", path: "/execution-board" },
       { label: "Lifecycle", path: "/lifecycle-board" },
       { label: "Exceptions", path: "/exceptions" },
       { label: "Deliverables", path: "/pm/deliverables" },
@@ -142,7 +142,20 @@ export function buildVisibleTopSections(options: {
 
 export function linkIsActive(current: string, target: string) {
   if (target === "/") return current === "/";
-  return current === target || current.startsWith(`${target}/`);
+  if (current === target || current.startsWith(`${target}/`)) {
+    // When on /my-work/tasks?source=approvals, My Tasks pill (/my-work) should not be active
+    if (target === "/my-work" && current === "/my-work/tasks") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("source") === "approvals") return false;
+    }
+    return true;
+  }
+  // Approvals pill: /my-work/tasks with ?source=approvals should match /my-work/approvals
+  if (target === "/my-work/approvals" && current === "/my-work/tasks") {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("source") === "approvals";
+  }
+  return false;
 }
 
 export type BreadcrumbItem = { label: string; path?: string };
@@ -189,7 +202,9 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     { label: `Ticket ${decodeURIComponent(ticketMatch[1])}` },
   ];
 
-  const leaf = activeSection.secondary.find((item) => linkIsActive(pathname, item.path));
+  const leaf = activeSection.secondary
+    .filter((item) => linkIsActive(pathname, item.path))
+    .sort((a, b) => b.path.length - a.path.length)[0];
   const items: BreadcrumbItem[] = [{ label: activeSection.label, path: activeSection.path }];
   if (leaf && leaf.label !== activeSection.label) {
     items.push({ label: leaf.label });
