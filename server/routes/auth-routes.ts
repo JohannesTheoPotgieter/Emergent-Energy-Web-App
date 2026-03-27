@@ -106,6 +106,13 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
   app.post("/api/auth/login", async (req, res, next) => {
     const { dbMode } = await import("../db");
 
+    if (process.env.NODE_ENV !== "development") {
+      return sendError(
+        res,
+        new ApiError(403, "PASSWORD_LOGIN_DISABLED", "Password login is only available in development mode. Please use Microsoft 365 sign-in."),
+      );
+    }
+
     passport.authenticate("local", (err: Error | null, user: Express.User | false, info: { message: string }) => {
       if (err) {
         logApiError("POST /api/auth/login", err);
@@ -125,16 +132,6 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
       if (!user) {
         console.log("[LOGIN] Failed login attempt:", req.body?.username, "- Reason:", info?.message);
         return sendError(res, unauthorized(info?.message || "Invalid username or password"));
-      }
-
-      const ALLOWED_PASSWORD_LOGIN_USERNAMES = ["johannes"];
-      const requestedUsername = String(req.body?.username ?? "").trim().toLowerCase();
-      if (!ALLOWED_PASSWORD_LOGIN_USERNAMES.includes(requestedUsername) && user.id !== 31) {
-        console.log("[LOGIN] Password login blocked for non-allowed user:", user.email, "role:", user.role);
-        return sendError(
-          res,
-          new ApiError(403, "PASSWORD_LOGIN_RESTRICTED", "Password login is not available for this account. Please use Microsoft 365 sign-in."),
-        );
       }
 
       req.logIn(user, (loginError) => {
@@ -259,7 +256,7 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
   });
 
   app.get("/api/auth/login-modes", (_req, res) => {
-    const passwordLoginEnabled = process.env.PASSWORD_LOGIN_ENABLED === "true";
+    const passwordLoginEnabled = process.env.NODE_ENV === "development";
     res.json({ passwordLoginEnabled });
   });
 
