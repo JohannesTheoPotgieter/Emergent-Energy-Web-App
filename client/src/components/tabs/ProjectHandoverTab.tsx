@@ -12,8 +12,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { PageEmpty } from "@/components/ui/page-states";
-import { Handshake, Plus, FileCheck, AlertTriangle, Clock } from "lucide-react";
+import { Handshake, Plus, FileCheck, AlertTriangle, Clock, ExternalLink } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { Link } from "wouter";
 
 interface Props { projectId: number; projectName: string; }
 
@@ -77,9 +78,13 @@ export function ProjectHandoverTab({ projectId, projectName }: Props) {
           <Handshake className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium">{packs.length} handover packs</span>
         </div>
-        <Button size="sm" className="gap-1 text-xs" onClick={() => setShowCreate(true)}>
-          <Plus className="h-3 w-3" /> New Pack
-        </Button>
+        <div className="flex items-center gap-2">
+          <Link href="/handover"><Button size="sm" variant="ghost" className="gap-1 text-xs text-muted-foreground"><ExternalLink className="h-3 w-3" />Handover Dashboard</Button></Link>
+          <Link href={`/pd/handover/${projectId}`}><Button size="sm" variant="ghost" className="gap-1 text-xs text-muted-foreground"><ExternalLink className="h-3 w-3" />PD→PM Handover</Button></Link>
+          <Button size="sm" className="gap-1 text-xs" onClick={() => setShowCreate(true)}>
+            <Plus className="h-3 w-3" /> New Pack
+          </Button>
+        </div>
       </div>
 
       {/* Handover Packs */}
