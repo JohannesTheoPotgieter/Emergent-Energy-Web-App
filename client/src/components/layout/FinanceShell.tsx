@@ -9,7 +9,9 @@ export type FinancePageId =
   | "gp-tracker"
   | "fye-revenue-tracking"
   | "counterparties"
-  | "invoice-patterns";
+  | "invoice-patterns"
+  | "procurement"
+  | "subcontractor-dashboard";
 
 interface FinanceNavItem {
   id: FinancePageId;
@@ -28,6 +30,8 @@ const PRIMARY_PAGES: FinanceNavItem[] = [
 const SECONDARY_PAGES: FinanceNavItem[] = [
   { id: "counterparties", label: "Counterparties", path: "/counterparties" },
   { id: "invoice-patterns", label: "Invoice Patterns", path: "/invoice-patterns" },
+  { id: "procurement", label: "Procurement Hub", path: "/procurement" },
+  { id: "subcontractor-dashboard", label: "Subcontractors", path: "/subcontractor-dashboard" },
 ];
 
 interface FinanceShellProps {

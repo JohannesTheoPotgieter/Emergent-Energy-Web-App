@@ -603,7 +603,7 @@ export default function DashboardPage() {
             <Zap className="w-5 h-5 text-emerald-600" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">Portfolio Overview</h1>
+            <h1 className="text-xl font-semibold tracking-tight">Execution Board</h1>
             {data?.meta && (
               <p className="text-muted-foreground text-sm mt-0.5 flex items-center gap-1.5">
                 <Leaf className="w-3 h-3 text-emerald-500" />
@@ -760,7 +760,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── KPI strip (expanded) ── */}
-      <h2 className="text-lg font-semibold flex items-center gap-2"><Briefcase className="h-5 w-5 text-blue-500" />Portfolio Overview</h2>
+      <h2 className="text-lg font-semibold flex items-center gap-2"><Briefcase className="h-5 w-5 text-blue-500" />Execution Board</h2>
       <TooltipProvider delayDuration={200}>
         {isLoading && !data ? (
           <div className={`grid gap-3 ${isMobile ? "grid-cols-1" : "grid-cols-2 sm:grid-cols-4 lg:grid-cols-8"}`}>
