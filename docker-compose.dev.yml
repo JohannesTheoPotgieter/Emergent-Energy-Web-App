@@ -1,0 +1,56 @@
+services:
+  app:
+    build:
+      context: .
+      target: builder
+    command: npx tsx server/index.ts
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      NODE_ENV: development
+      PORT: "5000"
+      DATABASE_URL: postgresql://emergent:emergent@db:5432/emergent_energy
+      SESSION_SECRET: dev-session-secret
+      REDIS_URL: redis://redis:6379
+      ENABLE_STARTUP_SCHEMA_REPAIR: "true"
+    volumes:
+      - ./client:/app/client
+      - ./server:/app/server
+      - ./shared:/app/shared
+      - ./script:/app/script
+      - ./migrations:/app/migrations
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: emergent
+      POSTGRES_PASSWORD: emergent
+      POSTGRES_DB: emergent_energy
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emergent -d emergent_energy"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata_dev:/data
+    restart: unless-stopped
+
+volumes:
+  pgdata_dev:
+  redisdata_dev:

@@ -1,0 +1,43 @@
+services:
+  app:
+    build: .
+    ports:
+      - "5000:5000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: "5000"
+      DATABASE_URL: postgresql://emergent:emergent@db:5432/emergent_energy
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      REDIS_URL: redis://redis:6379
+      ENABLE_STARTUP_SCHEMA_REPAIR: "true"
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: emergent
+      POSTGRES_PASSWORD: emergent
+      POSTGRES_DB: emergent_energy
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U emergent -d emergent_energy"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
