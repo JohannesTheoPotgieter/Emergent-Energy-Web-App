@@ -31,6 +31,7 @@ import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineering
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 
@@ -2434,12 +2435,6 @@ export function registerEngineeringRoutes(app: Express) {
   });
 
   // ========== ADMIN AUDIT LOG (global activity across all tasks) ==========
-
-  function requireAdmin(req: Request, res: Response, next: NextFunction) {
-    const role = getUserRole(req);
-    if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-    sendError(res, forbidden("Admin access required"));
-  }
 
   app.get("/api/eng/unified-audit", requireAuth, requireAdmin, async (req, res) => {
     try {

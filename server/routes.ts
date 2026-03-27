@@ -20,7 +20,8 @@ import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
 import { runSmartImportPreview } from "./lib/import/index";
 import { z } from "zod";
 import { format } from "date-fns";
-import { requireAuth as sharedRequireAuth } from "./auth-context";
+import { requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies, type CPMDependency } from "./cpmEngine";
 import { classifyExpenseState } from "./lib/calculations/stateClassifier";
 import { scoreExpenseConfidence, scoreInflowConfidence, getAssumptionDriver } from "./lib/calculations/confidence";
@@ -442,15 +443,6 @@ function resolveInflowEffectiveDates(
 }
 
 
-const requireAuth = sharedRequireAuth;
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = req.user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
-    return next();
-  }
-  res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
-}
 
 function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction) => {

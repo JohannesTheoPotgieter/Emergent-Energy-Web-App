@@ -2,13 +2,7 @@ import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { notifications } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-
-function requireAuth(req: Request, res: Response, next: () => void) {
-  if (!req.isAuthenticated || !req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-  next();
-}
+import { requireAuth } from "./auth-context";
 
 export function registerNotificationRoutes(app: Express) {
   // Get user's notifications (recent + unread)
