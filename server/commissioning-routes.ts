@@ -54,8 +54,10 @@ export function registerCommissioningRoutes(app: Express) {
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const typeFilter = req.query.itemType as string | undefined;
+      const VALID_ITEM_TYPES = new Set(["commissioning", "closeout", "handover", "punchlist", "inspection", "test"]);
+      const safeTypeFilter = typeFilter && VALID_ITEM_TYPES.has(typeFilter) ? typeFilter : null;
       let whereClause = `WHERE ci.project_id = ${projectId}`;
-      if (typeFilter) whereClause += ` AND ci.item_type = '${typeFilter}'`;
+      if (safeTypeFilter) whereClause += ` AND ci.item_type = '${safeTypeFilter}'`;
 
       const rows = await db.execute(sql.raw(`
         SELECT ci.*, u.name as owner_name, p.project_name

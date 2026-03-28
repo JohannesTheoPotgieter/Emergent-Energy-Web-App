@@ -5515,9 +5515,7 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='role_credentials' AND column_name='password_hash') THEN
     ALTER TABLE "role_credentials" ADD COLUMN "password_hash" TEXT;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='role_credentials' AND column_name='last_password_plain') THEN
-    ALTER TABLE "role_credentials" ADD COLUMN "last_password_plain" TEXT;
-  END IF;
+  -- last_password_plain intentionally removed (security fix: never store plaintext passwords)
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='role_credentials' AND column_name='failed_attempts') THEN
     ALTER TABLE "role_credentials" ADD COLUMN "failed_attempts" INTEGER DEFAULT 0;
   END IF;

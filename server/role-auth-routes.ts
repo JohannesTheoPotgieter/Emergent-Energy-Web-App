@@ -43,9 +43,12 @@ export async function seedRoleCredentials() {
     const existing = await db.select().from(roleCredentials);
     if (existing.length > 0) return;
 
+    if (!process.env.SEED_COO_ADMIN_PASSWORD || !process.env.SEED_CEO_ADMIN_PASSWORD) {
+      console.warn("[ROLE-AUTH] SEED_COO_ADMIN_PASSWORD / SEED_CEO_ADMIN_PASSWORD env vars not set — using fallback defaults. Set these before first deployment.");
+    }
     const defaultPasswords: Record<string, string> = {
-      COO_ADMIN: "2024",
-      CEO_ADMIN: "ceo2026",
+      COO_ADMIN: process.env.SEED_COO_ADMIN_PASSWORD || "emergent2026",
+      CEO_ADMIN: process.env.SEED_CEO_ADMIN_PASSWORD || "emergent2026",
     };
 
     for (const role of COMPANY_ROLES) {
@@ -225,7 +228,6 @@ export function registerRoleAuthRoutes(app: Express) {
       const passwordHash = await bcrypt.hash(newPassword, 10);
       await db.update(roleCredentials).set({
         passwordHash,
-        lastPasswordPlain: null,
         failedAttempts: 0,
         lockedUntil: null,
         updatedBy: currentRole,

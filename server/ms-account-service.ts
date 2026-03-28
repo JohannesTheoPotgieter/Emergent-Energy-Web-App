@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { msAccounts } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
+import { encryptToken, decryptToken } from "./lib/token-encryption";
 
 const CONFIGURED_TENANT_ID = process.env.AZURE_TENANT_ID || "";
 
@@ -19,11 +20,11 @@ export async function ensureMsAccount(
 
   const tokenFields: Record<string, any> = {};
   if (ssoToken?.accessToken) {
-    tokenFields.ssoAccessToken = ssoToken.accessToken;
+    tokenFields.ssoAccessToken = encryptToken(ssoToken.accessToken);
     tokenFields.ssoTokenExpiresAt = ssoToken.expiresOn || new Date(Date.now() + 3600_000);
   }
   if (tokenCache) {
-    tokenFields.refreshTokenEncrypted = tokenCache;
+    tokenFields.refreshTokenEncrypted = encryptToken(tokenCache);
   }
 
   const existing = await db
@@ -86,13 +87,18 @@ export async function getSsoTokenForUser(userId: number): Promise<string | null>
     return null;
   }
 
-  return account.ssoAccessToken;
+  return decryptToken(account.ssoAccessToken);
 }
 
 async function tryRefreshToken(account: typeof msAccounts.$inferSelect): Promise<string | null> {
-  const serializedCache = account.refreshTokenEncrypted;
-  if (!serializedCache) {
+  const encryptedCache = account.refreshTokenEncrypted;
+  if (!encryptedCache) {
     console.log(`[MS Token] No cached token data for user ${account.userId}, cannot refresh`);
+    return null;
+  }
+  const serializedCache = decryptToken(encryptedCache);
+  if (!serializedCache) {
+    console.error(`[MS Token] Failed to decrypt token cache for user ${account.userId}`);
     return null;
   }
 
@@ -104,9 +110,9 @@ async function tryRefreshToken(account: typeof msAccounts.$inferSelect): Promise
     await db
       .update(msAccounts)
       .set({
-        ssoAccessToken: result.accessToken,
+        ssoAccessToken: encryptToken(result.accessToken),
         ssoTokenExpiresAt: result.expiresOn || new Date(Date.now() + 3600_000),
-        refreshTokenEncrypted: result.tokenCache,
+        refreshTokenEncrypted: encryptToken(result.tokenCache),
       })
       .where(eq(msAccounts.id, account.id));
 
