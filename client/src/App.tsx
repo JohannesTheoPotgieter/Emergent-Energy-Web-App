@@ -82,6 +82,7 @@ const AdminControlCenterPage = lazy(() => import("@/pages/admin-control-center")
 const ActionLaunchpadPage = lazy(() => import("@/pages/action-launchpad"));
 const PdPmHandoverPage = lazy(() => import("@/pages/pd-pm-handover"));
 const PmHandoverReviewPage = lazy(() => import("@/pages/pm-handover-review"));
+const FinancialReviewQueuePage = lazy(() => import("@/pages/financial-review-queue"));
 const HandoverControlPage = lazy(() => import("@/pages/handover-control"));
 const FyeRevenueTrackingPage = lazy(() => import("@/pages/fye-revenue-tracking"));
 const TaskManagementPage = lazy(() => import("@/pages/task-management"));
@@ -190,6 +191,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   ActionLaunchpadPage,
   PdPmHandoverPage,
   PmHandoverReviewPage,
+  FinancialReviewQueuePage,
   HandoverControlPage,
   FyeRevenueTrackingPage,
   TaskManagementPage,
