@@ -5896,10 +5896,8 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_credentials') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='role_credentials' AND column_name='password_hash') THEN
     ALTER TABLE "role_credentials" ADD COLUMN "password_hash" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_credentials') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='role_credentials' AND column_name='password_last_changed_at') THEN
-    ALTER TABLE "role_credentials" ADD COLUMN "password_last_changed_at" TIMESTAMP;
-  END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_credentials') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='role_credentials' AND column_name='failed_attempts') THEN
+  -- last_password_plain intentionally removed (security fix: never store plaintext passwords)
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='role_credentials' AND column_name='failed_attempts') THEN
     ALTER TABLE "role_credentials" ADD COLUMN "failed_attempts" INTEGER DEFAULT 0;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_credentials') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='role_credentials' AND column_name='locked_until') THEN

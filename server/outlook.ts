@@ -160,12 +160,9 @@ async function graphPost(url: string, body: any, userAccessToken?: string | null
     const text = await res.text();
     throw new Error(`Graph API error (${res.status}): ${text}`);
   }
-  if (res.status === 202 || res.status === 204) return null;
-  const contentLength = res.headers.get("content-length");
-  if (contentLength === "0") return null;
+  if (res.status === 202 || res.status === 204) return {};
   const text = await res.text();
-  if (!text.trim()) return null;
-  return JSON.parse(text);
+  return text ? JSON.parse(text) : {};
 }
 
 async function graphPatch(url: string, body: any, userAccessToken?: string | null): Promise<any> {
@@ -185,12 +182,9 @@ async function graphPatch(url: string, body: any, userAccessToken?: string | nul
     const text = await res.text();
     throw new Error(`Graph API error (${res.status}): ${text}`);
   }
-  if (res.status === 202 || res.status === 204) return null;
-  const contentLength = res.headers.get("content-length");
-  if (contentLength === "0") return null;
+  if (res.status === 202 || res.status === 204) return {};
   const text = await res.text();
-  if (!text.trim()) return null;
-  return JSON.parse(text);
+  return text ? JSON.parse(text) : {};
 }
 
 async function graphDelete(url: string, userAccessToken?: string | null): Promise<void> {

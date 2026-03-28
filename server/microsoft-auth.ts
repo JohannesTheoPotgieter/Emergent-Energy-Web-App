@@ -15,8 +15,8 @@ const SCOPES = [
   "Calendars.ReadWrite",
   "Sites.Read.All",
   "Files.ReadWrite.All",
-  // Requires matching delegated permission grant in Azure AD app registration.
   "Chat.ReadWrite",
+  "ChannelMessage.Send",
   "Team.ReadBasic.All",
   "Channel.ReadBasic.All",
   "ChannelMessage.Read.All",
