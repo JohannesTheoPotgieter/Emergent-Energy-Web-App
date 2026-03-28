@@ -200,6 +200,12 @@ export const projectExecutionState = pgTable("project_execution_state", {
   costBaseline: decimal("cost_baseline", { precision: 15, scale: 2 }),
   marginBaseline: decimal("margin_baseline", { precision: 8, scale: 4 }),
 
+  // Financial review gate
+  siteEstablishmentDate: text("site_establishment_date"),
+  siteEstablishmentActual: text("site_establishment_actual"),
+  financialReviewStatus: text("financial_review_status").notNull().default("NOT_STARTED"),
+  financialReviewId: integer("financial_review_id"),
+
   // Timestamps
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -1212,3 +1218,65 @@ export const monthlyReportSnapshots = pgTable("monthly_report_snapshots", {
 export const insertMonthlyReportSnapshotSchema = createInsertSchema(monthlyReportSnapshots).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertMonthlyReportSnapshot = z.infer<typeof insertMonthlyReportSnapshotSchema>;
 export type MonthlyReportSnapshot = typeof monthlyReportSnapshots.$inferSelect;
+
+// ===================== FINANCIAL REVIEW GATE =====================
+
+export const projectFinancialReviews = pgTable("project_financial_reviews", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+
+  // Review lifecycle
+  status: text("status").notNull().default("DRAFT"),
+  version: integer("version").notNull().default(1),
+
+  // Financial snapshot
+  budgetBaselineId: integer("budget_baseline_id"),
+  snapshotBudgetTotal: decimal("snapshot_budget_total", { precision: 15, scale: 2 }),
+  snapshotActualTotal: decimal("snapshot_actual_total", { precision: 15, scale: 2 }),
+  snapshotVariance: decimal("snapshot_variance", { precision: 15, scale: 2 }),
+  snapshotVariancePct: decimal("snapshot_variance_pct", { precision: 8, scale: 4 }),
+  snapshotMargin: decimal("snapshot_margin", { precision: 8, scale: 4 }),
+  snapshotContingencyRemaining: decimal("snapshot_contingency_remaining", { precision: 15, scale: 2 }),
+  snapshotProcurementReadiness: real("snapshot_procurement_readiness"),
+  snapshotData: jsonb("snapshot_data").notNull().default({}),
+  snapshotCapturedAt: timestamp("snapshot_captured_at"),
+
+  // Review meeting
+  reviewDate: date("review_date"),
+  reviewMeetingRef: text("review_meeting_ref"),
+
+  // Participants
+  participants: jsonb("participants").notNull().default([]),
+
+  // Five structured review sections
+  budgetReview: jsonb("budget_review").notNull().default({}),
+  procurementReview: jsonb("procurement_review").notNull().default({}),
+  scopeReview: jsonb("scope_review").notNull().default({}),
+  logisticsReview: jsonb("logistics_review").notNull().default({}),
+  hseReview: jsonb("hse_review").notNull().default({}),
+
+  // Overall outcome
+  outcome: text("outcome"),
+  outcomeConditions: text("outcome_conditions"),
+  outcomeNotes: text("outcome_notes"),
+
+  // Approval chain
+  requestedByUserId: integer("requested_by_user_id").references(() => users.id),
+  reviewedByUserId: integer("reviewed_by_user_id").references(() => users.id),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+
+  // Links to canonical systems
+  approvalId: integer("approval_id"),
+  gateEvaluationId: integer("gate_evaluation_id"),
+
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+}, (table) => ({
+  projectStatusIdx: index("idx_financial_reviews_project_status").on(table.projectId, table.status),
+}));
+
+export const insertProjectFinancialReviewSchema = createInsertSchema(projectFinancialReviews).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertProjectFinancialReview = z.infer<typeof insertProjectFinancialReviewSchema>;
+export type ProjectFinancialReview = typeof projectFinancialReviews.$inferSelect;
