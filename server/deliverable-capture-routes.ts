@@ -10,6 +10,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
+import { allowedMimeFilter, validateMagicBytes } from "./lib/file-validation";
 
 const uploadDir = path.join(process.cwd(), "uploads", "_private_deliverables");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -24,6 +25,7 @@ const deliverableUpload = multer({
     },
   }),
   limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: allowedMimeFilter,
 });
 
 function getUser(req: Request): any {
@@ -125,6 +127,12 @@ export function registerDeliverableCaptureRoutes(app: Express) {
       if (!file) {
         return res.status(400).json({ error: "A file is required" });
       }
+
+      const magicError = await validateMagicBytes(file.path, file.mimetype);
+      if (magicError) {
+        return res.status(400).json({ error: `Invalid file: ${magicError}` });
+      }
+
       if (!projectId || !title) {
         return res.status(400).json({ error: "projectId and title are required" });
       }

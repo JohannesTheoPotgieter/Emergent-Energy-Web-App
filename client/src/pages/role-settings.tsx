@@ -986,7 +986,7 @@ export function RolePasswordsSection() {
         const data = await res.json();
         const map: Record<string, { password: string | null; updatedAt: string | null }> = {};
         for (const c of data) {
-          map[c.role] = { password: c.lastPasswordPlain, updatedAt: c.updatedAt };
+          map[c.role] = { password: null, updatedAt: c.updatedAt };
         }
         setPasswords(map);
       }
