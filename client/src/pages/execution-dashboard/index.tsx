@@ -25,9 +25,9 @@ type DashboardView = "overview" | "program" | "construction" | "finance";
 
 const VIEW_CONFIG: { key: DashboardView; label: string; icon: React.ReactNode; path: string }[] = [
   { key: "overview", label: "Overview", icon: <LayoutDashboard className="w-4 h-4" />, path: "/execution-board" },
-  { key: "program", label: "Program View", icon: <Layers className="w-4 h-4" />, path: "/execution-board/program" },
-  { key: "construction", label: "Construction View", icon: <HardHat className="w-4 h-4" />, path: "/execution-board/construction" },
-  { key: "finance", label: "Program Finance", icon: <DollarSign className="w-4 h-4" />, path: "/execution-board/finance" },
+  { key: "program", label: "Programme", icon: <Layers className="w-4 h-4" />, path: "/execution-board/program" },
+  { key: "construction", label: "Construction", icon: <HardHat className="w-4 h-4" />, path: "/execution-board/construction" },
+  { key: "finance", label: "Finance", icon: <DollarSign className="w-4 h-4" />, path: "/execution-board/finance" },
 ];
 
 function resolveView(pathname: string): DashboardView {
@@ -91,7 +91,7 @@ export default function ExecutionDashboard() {
               <div className="w-9 h-9 rounded-lg bg-emerald-100 flex items-center justify-center">
                 <Activity className="w-5 h-5 text-emerald-600" />
               </div>
-              Execution Dashboard
+              Execution Board
             </h1>
             <p className="text-muted-foreground text-sm mt-1.5 ml-[46px]">
               Post-handover execution view for{" "}

@@ -30,6 +30,14 @@ export async function startRuntimeServices(options: {
   }
 
   try {
+    const { startNotificationTriggerScheduler } = await import("../services/notification-trigger-scheduler");
+    startNotificationTriggerScheduler();
+    started.push("notification-trigger-scheduler");
+  } catch (err) {
+    log(`[Notification Trigger Scheduler] Failed to start: ${err}`, "Startup:Runtime");
+  }
+
+  try {
     const { startPeriodicSync } = await import("../ms-sync-service");
     if (startupSyncEnabled) {
       startPeriodicSync();

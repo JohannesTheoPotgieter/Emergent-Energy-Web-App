@@ -22,10 +22,10 @@ describe("priority page registry", () => {
     expect(page!.routeComponentKey).toBe("PriorityDetailPage");
   });
 
-  it("redirects legacy /company-priorities to /priorities", () => {
+  it("keeps /company-priorities mapped to the management page", () => {
     const page = PAGES.find((p) => p.path === "/company-priorities");
     expect(page).toBeDefined();
-    expect(page!.redirectTo).toBe("/priorities");
+    expect(page!.routeComponentKey).toBe("MyToolPrioritiesPage");
   });
 
   it("does not duplicate priority page IDs", () => {

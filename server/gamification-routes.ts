@@ -1,8 +1,6 @@
-// @ts-nocheck
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { sql, eq, and, desc, inArray } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { requirePermission } from "./permission-middleware";
 import {
   users,
@@ -10,25 +8,7 @@ import {
   userPoints,
   BADGE_DEFINITIONS,
 } from "@shared/schema";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 
 const POINT_VALUES: Record<string, number> = {
   task_complete: 10,
@@ -420,7 +400,7 @@ export function registerGamificationRoutes(app: Express) {
         };
       }).filter(Boolean);
 
-      leaderboard.sort((a: any, b: any) => b.points - a.points);
+      leaderboard.sort((a: { points: number }, b: { points: number }) => b.points - a.points);
 
       const newBadges: { userId: number; badgeKey: string }[] = [];
       for (const entry of leaderboard) {
@@ -488,7 +468,7 @@ export function registerGamificationRoutes(app: Express) {
         penaltyValues: PENALTY_VALUES,
         badgeDefinitions: BADGE_DEFINITIONS,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error computing leaderboard:", err);
       res.status(500).json({ error: "Failed to compute leaderboard" });
     }
@@ -496,7 +476,7 @@ export function registerGamificationRoutes(app: Express) {
 
   app.get("/api/gamification/user/:userId", jwtAuth, requireAuth, requirePermission("leaderboard", "view"), async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId);
+      const userId = parseInt(String(req.params.userId));
       const [u] = await db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(eq(users.id, userId));
       if (!u) return res.status(404).json({ error: "User not found" });
 
@@ -546,7 +526,7 @@ export function registerGamificationRoutes(app: Express) {
           overdueQmTasks: act.overdueQmTasks,
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error fetching user gamification:", err);
       res.status(500).json({ error: "Failed to fetch user data" });
     }
@@ -554,7 +534,7 @@ export function registerGamificationRoutes(app: Express) {
 
   app.get("/api/gamification/user/:userId/details", jwtAuth, requireAuth, requirePermission("leaderboard", "view"), async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId);
+      const userId = parseInt(String(req.params.userId));
       const [u] = await db.select({ id: users.id, name: users.name, role: users.role }).from(users).where(eq(users.id, userId));
       if (!u) return res.status(404).json({ error: "User not found" });
       const userName = u.name || "";
@@ -572,13 +552,13 @@ export function registerGamificationRoutes(app: Express) {
         } catch { return []; }
       };
 
-      const formatItems = (rows: any[]) => rows.map(r => ({
+      const formatItems = (rows: Record<string, unknown>[]) => rows.map(r => ({
         name: String(r.name || '').replace(/_Tracker$/i, '').replace(/_/g, ' '),
         project: String(r.project || '').replace(/_Tracker$/i, '').replace(/_/g, ' '),
         date: r.date ? String(r.date).substring(0, 10) : null,
       }));
 
-      const buildCategory = (count: number, perPoint: number, items: any[]) => ({
+      const buildCategory = (count: number, perPoint: number, items: Record<string, unknown>[]) => ({
         count,
         perPoint,
         total: count * perPoint,
@@ -644,7 +624,7 @@ export function registerGamificationRoutes(app: Express) {
           overdueQmTasks: buildCategory(act.overdueQmTasks, PENALTY_VALUES.overdue_qm_task, overdueQmTaskItems),
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error fetching user gamification details:", err);
       res.status(500).json({ error: "Failed to fetch detail data" });
     }

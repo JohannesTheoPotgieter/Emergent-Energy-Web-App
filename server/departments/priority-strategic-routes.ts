@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Router, type Request, type Response } from "express";
 import { requireAuth, requirePriorityAdmin } from "./shared-middleware";
@@ -107,7 +108,17 @@ async function getUserById(userId: number): Promise<{ id: number; name: string }
   return user || null;
 }
 
-async function enrichPriority(priority: any, metrics: DerivedMetricsRow | null): Promise<PriorityWithMetrics> {
+async function getUsersByIds(userIds: number[]): Promise<Map<number, { id: number; name: string }>> {
+  if (userIds.length === 0) return new Map();
+  const rows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
+  return new Map(rows.map((u) => [u.id, u]));
+}
+
+async function enrichPriority(
+  priority: any,
+  metrics: DerivedMetricsRow | null,
+  userMap?: Map<number, { id: number; name: string }>,
+): Promise<PriorityWithMetrics> {
   // Handle both camelCase (drizzle ORM) and snake_case (raw SQL) column names
   const p = {
     id: priority.id,
@@ -143,8 +154,8 @@ async function enrichPriority(priority: any, metrics: DerivedMetricsRow | null):
     ? Math.round(Number(metrics?.avg_progress || 0))
     : (p.manualProgress || 0);
 
-  const owner = p.ownerUserId ? await getUserById(p.ownerUserId) : null;
-  const accountableExec = p.accountableExecId ? await getUserById(p.accountableExecId) : null;
+  const owner = p.ownerUserId ? (userMap?.get(p.ownerUserId) || await getUserById(p.ownerUserId)) : null;
+  const accountableExec = p.accountableExecId ? (userMap?.get(p.accountableExecId) || await getUserById(p.accountableExecId)) : null;
 
   return {
     ...p,
@@ -201,9 +212,15 @@ router.get("/api/priorities", requireAuth, async (req: Request, res: Response) =
     // Company priorities are strategic goals visible to all authenticated users.
     // Write operations are still gated by role via requirePriorityAdmin middleware.
 
+    // Prefetch referenced users to avoid N+1 lookups in large lists.
+    const userIds = Array.from(new Set(
+      allPriorities.flatMap((p: any) => [p.ownerUserId ?? p.owner_user_id, p.accountableExecId ?? p.accountable_exec_id]).filter(Boolean),
+    )) as number[];
+    const userMap = await getUsersByIds(userIds);
+
     // Enrich with metrics
     const enriched = await Promise.all(
-      allPriorities.map(p => enrichPriority(p, metricsMap.get(p.id)))
+      allPriorities.map(p => enrichPriority(p, metricsMap.get(p.id), userMap))
     );
 
     // Sort: severity DESC (critical > important > normal), health DESC (critical > at_risk > healthy), dueDate ASC, sortOrder ASC

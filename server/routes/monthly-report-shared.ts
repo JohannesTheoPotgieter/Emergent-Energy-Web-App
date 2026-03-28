@@ -4,21 +4,7 @@
  */
 
 import type { Request, Response, NextFunction } from "express";
-import { verifyToken } from "../jwt";
-
-export function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      req.user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role } as any;
-      return next();
-    }
-  }
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
+export { requireAuth } from "../auth-context";
 
 /** Validate YYYY-MM format with logical month 01-12 */
 export function validateMonth(month: string | undefined): { valid: boolean; error?: string } {

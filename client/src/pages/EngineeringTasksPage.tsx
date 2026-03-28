@@ -108,15 +108,15 @@ import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { engFetch } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
 
-const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
-const DUE_DATE_FILTER_OPTIONS: { value: EngineeringDueDateFilter; label: string }[] = [
+export const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
+export const DUE_DATE_FILTER_OPTIONS: { value: EngineeringDueDateFilter; label: string }[] = [
   { value: "all", label: "All Due Dates" },
   { value: "overdue", label: "Overdue" },
   { value: "today", label: "Due Today" },
   { value: "this_week", label: "Due In 7 Days" },
   { value: "no_due_date", label: "No Due Date" },
 ];
-const WORKLOAD_STATE_OPTIONS: { value: EngineeringWorkloadStateFilter; label: string }[] = [
+export const WORKLOAD_STATE_OPTIONS: { value: EngineeringWorkloadStateFilter; label: string }[] = [
   { value: "all", label: "All Work States" },
   { value: "unassigned", label: "Unassigned" },
   { value: "blocked", label: "Blocked" },
@@ -125,7 +125,7 @@ const WORKLOAD_STATE_OPTIONS: { value: EngineeringWorkloadStateFilter; label: st
   { value: "deliverable", label: "Project Deliverables" },
   { value: "microsoft_action", label: "Microsoft Actions" },
 ];
-const LINKED_SOURCE_OPTIONS: { value: EngineeringLinkedSourceFilter; label: string }[] = [
+export const LINKED_SOURCE_OPTIONS: { value: EngineeringLinkedSourceFilter; label: string }[] = [
   { value: "all", label: "All Linked Sources" },
   { value: "project_linked", label: "Project Linked" },
   { value: "project_unlinked", label: "No Project Link" },
@@ -133,7 +133,7 @@ const LINKED_SOURCE_OPTIONS: { value: EngineeringLinkedSourceFilter; label: stri
   { value: "microsoft_action_required", label: "Microsoft Action Required" },
 ];
 
-const priorityColors: Record<string, string> = {
+export const priorityColors: Record<string, string> = {
   Critical: "bg-red-600 text-white",
   Urgent: "bg-orange-100 text-orange-700",
   High: "bg-amber-100 text-amber-700",
@@ -141,7 +141,7 @@ const priorityColors: Record<string, string> = {
   Low: "bg-muted text-muted-foreground",
 };
 
-const priorityBorderColors: Record<string, string> = {
+export const priorityBorderColors: Record<string, string> = {
   Critical: "border-l-red-600",
   Urgent: "border-l-orange-500",
   High: "border-l-amber-500",
@@ -149,7 +149,7 @@ const priorityBorderColors: Record<string, string> = {
   Low: "border-l-gray-300",
 };
 
-const SAVED_FILTERS: {
+export const SAVED_FILTERS: {
   label: string;
   filter: {
     status?: string;
@@ -167,19 +167,19 @@ const SAVED_FILTERS: {
   { label: "Microsoft Linked", filter: { linkedSourceFilter: "microsoft_linked" } },
 ];
 
-function getSavedMyName(): string {
+export function getSavedMyName(): string {
   return localStorage.getItem("eng_my_name") || "";
 }
 
-function setSavedMyName(name: string) {
+export function setSavedMyName(name: string) {
   localStorage.setItem("eng_my_name", name);
 }
 
-function getEngViewKey(userId?: number): string {
+export function getEngViewKey(userId?: number): string {
   return `eng_default_view_${userId || "default"}`;
 }
 
-function getSavedEngDefaultView(userId?: number): EngDefaultView | null {
+export function getSavedEngDefaultView(userId?: number): EngDefaultView | null {
   try {
     const raw = localStorage.getItem(getEngViewKey(userId));
     if (!raw) return null;
@@ -191,15 +191,15 @@ function getSavedEngDefaultView(userId?: number): EngDefaultView | null {
   } catch { return null; }
 }
 
-function saveEngDefaultView(view: EngDefaultView, userId?: number) {
+export function saveEngDefaultView(view: EngDefaultView, userId?: number) {
   localStorage.setItem(getEngViewKey(userId), JSON.stringify(view));
 }
 
-function clearEngDefaultView(userId?: number) {
+export function clearEngDefaultView(userId?: number) {
   localStorage.removeItem(getEngViewKey(userId));
 }
 
-function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChange: (id: number, status: string) => void }) {
+export function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChange: (id: number, status: string) => void }) {
   return (
     <div onClick={(e) => e.stopPropagation()}>
       <SearchableSelect
@@ -216,7 +216,7 @@ function QuickStatusSelect({ task, onStatusChange }: { task: Task; onStatusChang
   );
 }
 
-function QuickEditPopover({ task, onDueDateChange, onClose }: { task: Task; onDueDateChange: (id: number, date: string) => void; onClose: () => void }) {
+export function QuickEditPopover({ task, onDueDateChange, onClose }: { task: Task; onDueDateChange: (id: number, date: string) => void; onClose: () => void }) {
   const [noteText, setNoteText] = useState("");
   const [posting, setPosting] = useState(false);
   const { toast } = useToast();
@@ -283,7 +283,7 @@ function QuickEditPopover({ task, onDueDateChange, onClose }: { task: Task; onDu
   );
 }
 
-function getTaskContextBadges(task: Task): Array<{ label: string; className: string }> {
+export function getTaskContextBadges(task: Task): Array<{ label: string; className: string }> {
   const badges: Array<{ label: string; className: string }> = [];
   if (task.isBlocked || task.holdReason) {
     badges.push({ label: "Blocked", className: "bg-red-50 text-red-700 border-red-200" });
@@ -311,7 +311,7 @@ function getTaskContextBadges(task: Task): Array<{ label: string; className: str
   return badges;
 }
 
-function EngineeringWorkloadStrip({
+export function EngineeringWorkloadStrip({
   totalOpenWork,
   unassignedCount,
   blockedCount,
@@ -423,7 +423,7 @@ function EngineeringWorkloadStrip({
 }
 
 
-function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateChange, compact, selected, onToggleSelect }: {
+export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateChange, compact, selected, onToggleSelect }: {
   task: Task; onClick: () => void; onStatusChange: (id: number, status: string) => void;
   onPriorityChange?: (id: number, priority: string) => void;
   onDueDateChange?: (id: number, date: string) => void;
@@ -642,7 +642,7 @@ function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDueDateCh
   );
 }
 
-function KanbanColumn({
+export function KanbanColumn({
   status, tasks, onDrop, onCardClick, onStatusChange, onPriorityChange, onDueDateChange, compact, collapsed, onToggleCollapse, totalTasks, selectedTaskIds, onToggleSelect,
 }: {
   status: string; tasks: Task[]; onDrop: (taskId: number, newStatus: string) => void; onCardClick: (task: Task) => void; onStatusChange: (id: number, status: string) => void; onPriorityChange?: (id: number, priority: string) => void;
@@ -745,7 +745,7 @@ function KanbanColumn({
   );
 }
 
-function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { taskId: number; currentStatus: string; hasProject: boolean; onDone: () => void }) {
+export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { taskId: number; currentStatus: string; hasProject: boolean; onDone: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [updateText, setUpdateText] = useState("");
@@ -868,7 +868,7 @@ function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { taskId:
   );
 }
 
-function DependenciesTab({ task, allTasks }: { task: Task; allTasks?: Task[] }) {
+export function DependenciesTab({ task, allTasks }: { task: Task; allTasks?: Task[] }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -975,7 +975,7 @@ function DependenciesTab({ task, allTasks }: { task: Task; allTasks?: Task[] }) 
   );
 }
 
-function TaskDetailDrawer({
+export function TaskDetailDrawer({
   task, onClose, onUpdate
 }: {
   task: Task; onClose: () => void; onUpdate: () => void;
@@ -2366,7 +2366,7 @@ function TaskDetailDrawer({
 
 // PHASE_COLORS imported from @/lib/phase-colors
 
-interface ProjectGroup {
+export interface ProjectGroup {
   projectName: string;
   displayName: string;
   phase: string;
@@ -2377,7 +2377,7 @@ interface ProjectGroup {
   overdueTasks: number;
 }
 
-function ProjectKanbanView({
+export function ProjectKanbanView({
   tasks,
   onCardClick,
   onDrop,
@@ -2665,7 +2665,7 @@ function ProjectKanbanView({
   );
 }
 
-function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: Task[] }) {
+export function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: Task[] }) {
   const myActive = myTasks.filter(t => !isTaskComplete(t.status)).length;
   const myOverdue = myTasks.filter(t => isOverdue(t.dueDate, t.status)).length;
   const myDueThisWeek = myTasks.filter(t => isDueThisWeek(t.dueDate, t.status)).length;
@@ -2697,7 +2697,7 @@ function PersonalKpiStrip({ tasks, myTasks }: { tasks: Task[]; myTasks: Task[] }
   );
 }
 
-function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClick: (task: Task) => void }) {
+export function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClick: (task: Task) => void }) {
   const today = new Date();
   const [zoomWeeks, setZoomWeeks] = useState<4 | 8 | 12 | 26>(8);
   const [groupBy, setGroupBy] = useState<"project" | "assignee">("project");
@@ -2913,7 +2913,7 @@ function TimelineView({ tasks, onCardClick }: { tasks: Task[]; onCardClick: (tas
   );
 }
 
-function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange, onBulkStatusChange, onBulkPriorityChange }: {
+export function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange, onBulkStatusChange, onBulkPriorityChange }: {
   tasks: Task[];
   onCardClick: (task: Task) => void;
   onStatusChange: (id: number, status: string) => void;
@@ -3104,7 +3104,7 @@ function InlineListView({ tasks, onCardClick, onStatusChange, onPriorityChange, 
   );
 }
 
-function MyTasksView({
+export function MyTasksView({
   tasks,
   myName,
   onCardClick,

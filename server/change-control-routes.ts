@@ -1,30 +1,12 @@
-// @ts-nocheck
-import { Express, Request, Response, NextFunction } from "express";
+import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, sql, desc } from "drizzle-orm";
-import { verifyToken } from "./jwt";
-import { changeRequests, projectInfo, users, approvals } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
+import { changeRequests, approvals } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
+import { createVoApproval } from "./services/approval-service";
 
 const VALID_STATUSES = ['draft', 'submitted', 'under_review', 'approved', 'rejected', 'implemented', 'closed'] as const;
 const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -37,16 +19,24 @@ const VALID_TRANSITIONS: Record<string, string[]> = {
   closed: [],
 };
 
+function rowsFromResult(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === "object" && "rows" in result) {
+    const rows = (result as { rows?: unknown[] }).rows;
+    return Array.isArray(rows) ? (rows as Record<string, unknown>[]) : [];
+  }
+  return [];
+}
 
-export function registerChangeControlRoutes(app: Express) {
+export function registerChangeControlRoutes(app: Express): void {
   app.get("/api/change-requests/project/:projectId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
       const rows = await db.execute(sql.raw(`
-        SELECT cr.*, 
-          u1.name as requested_by_name, 
+        SELECT cr.*,
+          u1.name as requested_by_name,
           u2.name as owner_name,
           pi.project_name
         FROM change_requests cr
@@ -56,17 +46,18 @@ export function registerChangeControlRoutes(app: Express) {
         WHERE cr.project_id = ${projectId}
         ORDER BY cr.created_at DESC
       `));
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       res.json(items);
-    } catch (err: any) {
-      console.error("[ChangeControl] List error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[ChangeControl] List error:", message);
       res.status(500).json({ error: "Failed to fetch change requests" });
     }
   });
 
   app.get("/api/change-requests/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const rows = await db.execute(sql.raw(`
         SELECT cr.*, u1.name as requested_by_name, u2.name as owner_name, pi.project_name
@@ -76,18 +67,21 @@ export function registerChangeControlRoutes(app: Express) {
         LEFT JOIN project_info pi ON cr.project_id = pi.id
         WHERE cr.id = ${id}
       `));
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       if (items.length === 0) return res.status(404).json({ error: "Not found" });
       res.json(items[0]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to fetch change request" });
     }
   });
 
   app.post("/api/change-requests", jwtAuth, requireAuth, requirePermission("projects", "create"), async (req: Request, res: Response) => {
     try {
-      const user = (req as any).user;
-      const { projectId, title, description, changeType, ownerUserId, impactSummary, costImpact, scheduleImpactDays } = req.body;
+      const user = getEffectiveUser(req);
+      const { projectId, title, description, changeType, ownerUserId, impactSummary, costImpact, scheduleImpactDays,
+        // B6: enriched VO fields
+        cause, clientLinked, revenueImpact, cosImpact, marginImpact, evidenceLink,
+      } = req.body;
       if (!projectId || !title || !changeType) return res.status(400).json({ error: "projectId, title, changeType required" });
 
       const result = await db.insert(changeRequests).values({
@@ -95,12 +89,19 @@ export function registerChangeControlRoutes(app: Express) {
         title,
         description: description || null,
         changeType,
-        requestedByUserId: user.id,
+        requestedByUserId: user?.id,
         ownerUserId: ownerUserId || null,
         impactSummary: impactSummary || null,
         costImpact: costImpact || null,
         scheduleImpact: scheduleImpactDays || null,
         status: 'draft',
+        // B6: enriched fields
+        cause: cause || null,
+        clientLinked: clientLinked ?? false,
+        revenueImpact: revenueImpact || null,
+        cosImpact: cosImpact || null,
+        marginImpact: marginImpact || null,
+        evidenceLink: evidenceLink || null,
       }).returning();
 
       logAuditFromReq(req, {
@@ -124,22 +125,23 @@ export function registerChangeControlRoutes(app: Express) {
       });
 
       res.status(201).json(result[0]);
-    } catch (err: any) {
-      console.error("[ChangeControl] Create error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[ChangeControl] Create error:", message);
       res.status(500).json({ error: "Failed to create change request" });
     }
   });
 
   app.patch("/api/change-requests/:id", jwtAuth, requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(changeRequests).where(eq(changeRequests.id, id));
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
       const old = existing[0];
 
-      const updates: any = { updatedAt: new Date() };
+      const updates: Record<string, unknown> = { updatedAt: new Date() };
       const { title, description, changeType, ownerUserId, impactSummary, costImpact, scheduleImpactDays, status } = req.body;
 
       if (title !== undefined) updates.title = title;
@@ -150,6 +152,15 @@ export function registerChangeControlRoutes(app: Express) {
       if (costImpact !== undefined) updates.costImpact = costImpact;
       if (scheduleImpactDays !== undefined) updates.scheduleImpact = scheduleImpactDays;
 
+      // B6: Accept enriched fields on update too
+      if (req.body.cause !== undefined) updates.cause = req.body.cause;
+      if (req.body.clientLinked !== undefined) updates.clientLinked = req.body.clientLinked;
+      if (req.body.revenueImpact !== undefined) updates.revenueImpact = req.body.revenueImpact;
+      if (req.body.cosImpact !== undefined) updates.cosImpact = req.body.cosImpact;
+      if (req.body.marginImpact !== undefined) updates.marginImpact = req.body.marginImpact;
+      if (req.body.evidenceLink !== undefined) updates.evidenceLink = req.body.evidenceLink;
+      if (req.body.finalDecision !== undefined) updates.finalDecision = req.body.finalDecision;
+
       if (status !== undefined && status !== old.status) {
         const allowed = VALID_TRANSITIONS[old.status] || [];
         if (!allowed.includes(status)) {
@@ -159,18 +170,21 @@ export function registerChangeControlRoutes(app: Express) {
 
         if (status === 'submitted') {
           try {
-            const user = (req as any).user;
-            const approvalResult = await db.insert(approvals).values({
-              type: 'change_request',
-              title: `Change Request: ${old.title}`,
-              description: old.impactSummary || old.description || '',
-              status: 'pending',
-              requestedBy: user.id,
+            const user = getEffectiveUser(req);
+            // B8: Use universal approval service with VO-specific metadata
+            const revImpact = Number(old.revenueImpact || req.body.revenueImpact || old.costImpact || 0);
+            const approval = await createVoApproval({
               projectId: old.projectId,
-            }).returning();
-            updates.approvalId = approvalResult[0].id;
-          } catch (approvalErr: any) {
-            console.warn("[ChangeControl] Approval creation failed:", approvalErr.message);
+              changeRequestId: old.id,
+              requestedByUserId: user?.id ?? 0,
+              approverUserId: user?.id ?? 0, // TODO: resolve from project role assignments
+              title: `Change Request: ${old.title}`,
+              revenueImpact: revImpact || undefined,
+            });
+            updates.approvalId = approval.id;
+          } catch (approvalErr: unknown) {
+            const msg = approvalErr instanceof Error ? approvalErr.message : String(approvalErr);
+            console.warn("[ChangeControl] Approval creation failed:", msg);
           }
         }
       }
@@ -199,15 +213,16 @@ export function registerChangeControlRoutes(app: Express) {
         });
       }
       res.json(result[0]);
-    } catch (err: any) {
-      console.error("[ChangeControl] Update error:", err.message);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[ChangeControl] Update error:", message);
       res.status(500).json({ error: "Failed to update change request" });
     }
   });
 
   app.delete("/api/change-requests/:id", jwtAuth, requireAuth, requirePermission("projects", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
       const existing = await db.select().from(changeRequests).where(eq(changeRequests.id, id));
@@ -223,7 +238,7 @@ export function registerChangeControlRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to delete change request" });
     }
   });
@@ -238,9 +253,9 @@ export function registerChangeControlRoutes(app: Express) {
         GROUP BY cr.status, cr.change_type, pi.project_name
         ORDER BY pi.project_name, cr.status
       `));
-      const items = Array.isArray(rows) ? rows : (rows as any).rows || [];
+      const items = rowsFromResult(rows);
       res.json(items);
-    } catch (err: any) {
+    } catch (err: unknown) {
       res.status(500).json({ error: "Failed to fetch cross-project summary" });
     }
   });

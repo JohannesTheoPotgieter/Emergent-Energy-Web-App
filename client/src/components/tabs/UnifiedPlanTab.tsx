@@ -36,6 +36,7 @@ import {
   format, addDays, differenceInDays, parseISO, isValid, startOfDay,
   eachWeekOfInterval, startOfWeek, endOfWeek, isSameDay,
 } from "date-fns";
+import { sanitizeHtml } from "@/lib/sanitize";
 
 const getSAPublicHolidays = (year: number): Set<string> => {
   const holidays = new Set<string>();
@@ -1740,7 +1741,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
         </div>
       )}
 
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{ __html: sanitizeHtml(`
         .plan-grid-table { border-collapse: collapse; }
         .plan-grid-table tbody tr { height: ${ROW_HEIGHT}px; }
         .plan-grid-table tbody td {
@@ -1773,7 +1774,7 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
           .plan-grid-gantt-panel { display: none !important; }
           .plan-grid-split-handle { display: none !important; }
         }
-      `}} />
+      `)}} />
       <div ref={containerRef} className="flex border rounded-md overflow-hidden bg-card" style={{ height: "calc(100vh - 320px)", minHeight: "400px" }} data-testid="plan-grid-container">
         <div
           ref={bodyScrollRef}

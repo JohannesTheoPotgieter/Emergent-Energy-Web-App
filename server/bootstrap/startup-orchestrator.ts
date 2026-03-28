@@ -21,6 +21,13 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
   if (mode !== "postgres") return;
   if (!process.env.DATABASE_URL) return;
 
+  // Wait for PostgreSQL to be fully ready before running schema sync
+  const ready = await waitForDbReady();
+  if (!ready) {
+    log("Database not accepting connections — skipping schema sync", "Startup:Schema");
+    return;
+  }
+
   const sqlFiles = [
     { name: "pre-push-enums.sql", path: "script/pre-push-enums.sql" },
     { name: "full-schema-alignment.sql", path: "script/full-schema-alignment.sql" },
@@ -47,8 +54,8 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
       const candidates = [
         path.resolve(process.cwd(), file.path),
         path.resolve(process.cwd(), `dist/${file.path}`),
-        path.resolve(__dirname, `../${file.path}`),
-        path.resolve(__dirname, `../../${file.path}`),
+        path.resolve(import.meta.dirname, `../${file.path}`),
+        path.resolve(import.meta.dirname, `../../${file.path}`),
       ];
       let sqlContent: string | null = null;
       for (const candidate of candidates) {
@@ -61,12 +68,82 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
         log(`${file.name} not found in any search path, skipping`, "Startup:Schema");
         continue;
       }
-      await db.execute(sql.raw(sqlContent));
-      log(`${file.name} synced (db.execute)`, "Startup:Schema");
-    } catch (err: any) {
-      log(`${file.name} warning (non-fatal): ${err.message}`, "Startup:Schema");
+
+      // First try executing the whole file at once
+      try {
+        await db.execute(sql.raw(sqlContent));
+        log(`${file.name} synced (db.execute)`, "Startup:Schema");
+        continue;
+      } catch (_blockErr) {
+        // DO $$ blocks often fail via Drizzle — fall back to statement-by-statement execution
+      }
+
+      // Second fallback: extract individual ALTER TABLE statements from DO $$ blocks and execute each one
+      const alterStatements = extractAlterStatements(sqlContent);
+      if (alterStatements.length > 0) {
+        let applied = 0;
+        let skipped = 0;
+        for (const stmt of alterStatements) {
+          try {
+            await db.execute(sql.raw(stmt));
+            applied++;
+          } catch {
+            skipped++; // Column likely already exists or table missing — safe to skip
+          }
+        }
+        log(`${file.name} synced (statement-by-statement: ${applied} applied, ${skipped} skipped)`, "Startup:Schema");
+      } else {
+        log(`${file.name} warning: no ALTER statements extracted from DO $$ block`, "Startup:Schema");
+      }
+    } catch (err: unknown) {
+      log(`${file.name} warning (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:Schema");
     }
   }
+}
+
+/**
+ * Extract individual ALTER TABLE ADD COLUMN IF NOT EXISTS statements from a DO $$ block.
+ * Handles both single-column and multi-column ADD patterns:
+ *   ALTER TABLE "foo" ADD COLUMN "bar" TEXT;
+ *   ALTER TABLE "foo" ADD COLUMN "a" INT, ADD COLUMN "b" TEXT;
+ */
+function extractAlterStatements(sqlContent: string): string[] {
+  const statements: string[] = [];
+  // Match full ALTER TABLE ... ADD COLUMN ... lines (may contain multiple ADD COLUMNs)
+  const alterLineRegex = /ALTER TABLE\s+"(\w+)"\s+(ADD COLUMN\s+.+?);/gi;
+  let lineMatch: RegExpExecArray | null;
+  while ((lineMatch = alterLineRegex.exec(sqlContent)) !== null) {
+    const table = lineMatch[1];
+    const addPart = lineMatch[2];
+    // Split multi-column ADD statements: ADD COLUMN "a" TYPE, ADD COLUMN "b" TYPE
+    const columns = addPart.split(/,\s*ADD COLUMN\s+/i);
+    for (let i = 0; i < columns.length; i++) {
+      let colDef = columns[i].trim();
+      if (i === 0) colDef = colDef.replace(/^ADD COLUMN\s+/i, '');
+      // Strip any trailing END IF or whitespace
+      colDef = colDef.replace(/\s*END\s+IF.*$/i, '').trim();
+      if (colDef) {
+        statements.push(`ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS ${colDef}`);
+      }
+    }
+  }
+  return statements;
+}
+
+async function waitForDbReady(maxRetries = 5, baseDelayMs = 1000): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      await db.execute(sql.raw('SELECT 1'));
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[Schema] DB not ready (attempt ${attempt}/${maxRetries}): ${msg}`);
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, baseDelayMs * attempt));
+      }
+    }
+  }
+  return false;
 }
 
 async function runAdditiveSchemaAlignments() {
@@ -77,12 +154,28 @@ async function runAdditiveSchemaAlignments() {
     return;
   }
 
+  const ready = await waitForDbReady();
+  if (!ready) {
+    console.error("[Schema] Database not accepting connections after retries — skipping additive alignments");
+    return;
+  }
+
   // Helper: execute each SQL block independently so one failure doesn't abort others
   async function safeExec(label: string, rawSql: string) {
-    try {
-      await db.execute(sql.raw(rawSql));
-    } catch (err: any) {
-      console.error(`[Schema] ${label} error:`, err.message);
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await db.execute(sql.raw(rawSql));
+        return;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isTransient = /connection|ECONNREFUSED|not yet accepting|timeout/i.test(msg);
+        if (isTransient && attempt < 2) {
+          console.warn(`[Schema] ${label} transient error, retrying in 2s: ${msg}`);
+          await new Promise(r => setTimeout(r, 2000));
+          continue;
+        }
+        console.error(`[Schema] ${label} error:`, msg);
+      }
     }
   }
 
@@ -477,6 +570,10 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE project_info ADD COLUMN IF NOT EXISTS cp_evidence_ref TEXT;
     ALTER TABLE project_info ADD COLUMN IF NOT EXISTS pm_task_pack_created BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE project_info ADD COLUMN IF NOT EXISTS eng_post_cp_task_pack_created BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE project_info ADD COLUMN IF NOT EXISTS site_id INTEGER REFERENCES sites(id);
+    ALTER TABLE project_info ADD COLUMN IF NOT EXISTS opportunity_id INTEGER REFERENCES opportunities(id);
+    ALTER TABLE project_info ADD COLUMN IF NOT EXISTS delivery_model TEXT;
+    ALTER TABLE project_info ADD COLUMN IF NOT EXISTS project_code TEXT;
   `);
 
   // ── Core table column additions ──
@@ -487,6 +584,69 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS role_tags TEXT[] NOT NULL DEFAULT '{}';
     ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
     ALTER TABLE qc_item_evidence ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES project_info(id) ON DELETE CASCADE;
+  `);
+
+  // ── project_execution_state columns added after B3/B4 enrichment ──
+  await safeExec("project_execution_state columns", `
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS construction_manager_user_id INTEGER;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS quality_lead_user_id INTEGER;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS engineering_lead_user_id INTEGER;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS program_manager_user_id INTEGER;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS project_finance_user_id INTEGER;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS matriarch_handover_target TEXT;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS practical_completion_target TEXT;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS practical_completion_actual TEXT;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS cost_baseline NUMERIC(15,2);
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS margin_baseline NUMERIC(8,4);
+  `);
+
+  // ── users columns ──
+  await safeExec("users columns", `
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT;
+  `);
+
+  // ── clients enrichment columns ──
+  await safeExec("clients columns", `
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS client_id TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS created_by INTEGER;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS updated_by INTEGER;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS legal_entity_name TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS trading_name TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS client_type TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_entity TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS secondary_contact_name TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS secondary_contact_email TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS industry TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS pipedrive_org_id TEXT;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'active';
+  `);
+
+  // ── counterparties enrichment columns ──
+  await safeExec("counterparties columns", `
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS name_canonical TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS name_aliases TEXT[] NOT NULL DEFAULT '{}';
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS type_default TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS is_core BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS vat_number TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS registration_number TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS address TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS contact_person TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS bank_name TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS bank_account_number TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS bank_branch_code TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS payment_terms TEXT;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS created_by INTEGER;
+    ALTER TABLE counterparties ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMP;
+  `);
+
+  // ── approvals enrichment columns ──
+  await safeExec("approvals columns", `
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approval_type TEXT;
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS urgency TEXT;
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS evidence_links TEXT;
   `);
 
   // ── Entity assignments ──
@@ -702,6 +862,10 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS revenue_recognition_amount TEXT;
     ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT;
     ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS cos_status_override TEXT;
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS cos_status_override_by INTEGER REFERENCES users(id);
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS cos_status_override_at TIMESTAMP;
+    ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS cos_status_override_reason TEXT;
   `);
 
   // ── temporal/audit columns on finance tables ──
@@ -1281,6 +1445,93 @@ async function runAdditiveSchemaAlignments() {
       AND LOWER(TRIM(mcp.assigned_to)) = LOWER(TRIM(u.name));
   `);
 
+  // C1: Construction module tables
+  await safeExec("site_activities table", `
+    CREATE TABLE IF NOT EXISTS site_activities (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL DEFAULT 0,
+      site_id INTEGER,
+      activity_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      activity_type TEXT NOT NULL DEFAULT '',
+      title TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      reported_by_user_id INTEGER,
+      status TEXT DEFAULT 'open',
+      weather TEXT,
+      crew_count INTEGER,
+      photos TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
+  await safeExec("snags table", `
+    CREATE TABLE IF NOT EXISTS snags (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL DEFAULT 0,
+      site_id INTEGER,
+      title TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      severity TEXT DEFAULT 'minor',
+      location TEXT,
+      reported_by_user_id INTEGER,
+      assigned_to_user_id INTEGER,
+      due_date DATE,
+      status TEXT DEFAULT 'open',
+      resolution TEXT,
+      evidence_link TEXT,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
+  await safeExec("site_inspections table", `
+    CREATE TABLE IF NOT EXISTS site_inspections (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL DEFAULT 0,
+      site_id INTEGER,
+      inspection_type TEXT NOT NULL DEFAULT '',
+      inspector_user_id INTEGER,
+      inspection_date DATE,
+      result TEXT,
+      notes TEXT,
+      evidence_link TEXT,
+      linked_snag_ids TEXT,
+      status TEXT DEFAULT 'scheduled',
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
+  // Ensure construction tables have all required columns (may be missing if tables were created by an earlier version)
+  await safeExec("construction table columns", `
+    ALTER TABLE site_activities ADD COLUMN IF NOT EXISTS project_id INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE site_activities ADD COLUMN IF NOT EXISTS site_id INTEGER;
+    ALTER TABLE snags ADD COLUMN IF NOT EXISTS project_id INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE snags ADD COLUMN IF NOT EXISTS site_id INTEGER;
+    ALTER TABLE site_inspections ADD COLUMN IF NOT EXISTS project_id INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE site_inspections ADD COLUMN IF NOT EXISTS site_id INTEGER;
+  `);
+
+  await safeExec("contractor_assignments table", `
+    CREATE TABLE IF NOT EXISTS contractor_assignments (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL DEFAULT 0,
+      counterparty_id INTEGER,
+      scope TEXT,
+      start_date DATE,
+      end_date DATE,
+      performance_rating INTEGER,
+      notes TEXT,
+      status TEXT DEFAULT 'active',
+      created_at TIMESTAMP DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
   console.log("[Schema] Additive alignments completed");
 }
 
@@ -1325,8 +1576,8 @@ export async function runStartupOrchestrator(options: {
         log("PostgreSQL project_info is empty — auto-enabling data seed migration", "Startup:DataSeed");
         effectiveDataSeedEnabled = true;
       }
-    } catch (err: any) {
-      log(`Could not check project_info count (${err.message}) — auto-enabling data seed`, "Startup:DataSeed");
+    } catch (err: unknown) {
+      log(`Could not check project_info count (${(err instanceof Error ? err.message : String(err))}) — auto-enabling data seed`, "Startup:DataSeed");
       effectiveDataSeedEnabled = true;
     }
   }
@@ -1337,8 +1588,8 @@ export async function runStartupOrchestrator(options: {
   try {
     const { runIntegrityGuard } = await import("./backfills/integrity-guard");
     await runIntegrityGuard(log);
-  } catch (err: any) {
-    log(`Integrity guard error (non-fatal): ${err.message}`, "Startup:IntegrityGuard");
+  } catch (err: unknown) {
+    log(`Integrity guard error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:IntegrityGuard");
   }
 
   await runStartupBackfills({

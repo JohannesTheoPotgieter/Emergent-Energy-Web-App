@@ -1,11 +1,12 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql, eq, and, inArray } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import {
   engStageTemplates,
   engTaskTemplates,
@@ -23,6 +24,7 @@ import {
 import { logAuditFromReq } from "./audit-logger";
 import { sendError } from "./lib/api-error";
 import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
+import { jwtAuth, requireAuth } from "./auth-context";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -32,30 +34,10 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
   filename: (_req, file, cb) => {
-    const sanitized = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-    cb(null, `${Date.now()}_${sanitized}`);
+    cb(null, `${Date.now()}_${sanitizeFilename(file.originalname)}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 }, fileFilter: allowedFileFilter });
 
 const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 const ENGINEER_ROLES = ["ENGINEER", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];

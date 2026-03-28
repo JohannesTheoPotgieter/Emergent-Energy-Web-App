@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin } from './shared-middleware';
@@ -8,6 +9,7 @@ import { requirePermission } from "../permission-middleware";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
+import { sanitizeFilename, allowedFileFilter } from "../lib/upload-security";
 import { parseTrackerFile, applyFontColors } from "../excelParser";
 import { getStartupFlags } from "../startup-flags";
 
@@ -25,8 +27,7 @@ const upload = multer({
     },
     filename: (req, file, cb) => {
       const timestamp = Date.now();
-      const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
-      cb(null, `${timestamp}_${sanitized}`);
+      cb(null, `${timestamp}_${sanitizeFilename(file.originalname)}`);
     }
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
@@ -107,11 +108,11 @@ const docUpload = multer({
     destination: (_req, _file, cb) => cb(null, docUploadDir),
     filename: (_req, file, cb) => {
       const ts = Date.now();
-      const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.-]/g, '_');
-      cb(null, `${ts}_${sanitized}`);
+      cb(null, `${ts}_${sanitizeFilename(file.originalname)}`);
     },
   }),
   limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: allowedFileFilter,
 });
 
 router.post("/api/financial-close/upload", requireAuth, requireAdmin, docUpload.single("file"), (req, res) => {

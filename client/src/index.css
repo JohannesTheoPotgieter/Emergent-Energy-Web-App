@@ -264,7 +264,7 @@
     scroll-behavior: smooth;
     touch-action: manipulation;
   }
-  body {
+body {
     @apply font-sans antialiased bg-background text-foreground;
     overscroll-behavior: none;
     padding-top: env(safe-area-inset-top);
@@ -299,6 +299,21 @@
   }
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading font-semibold tracking-tight;
+  }
+}
+
+@media (max-width: 768px) {
+  button,
+  [role="button"],
+  a.inline-flex,
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .mobile-table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
@@ -376,6 +391,13 @@
   .ee-status-warning { @apply border-amber-200 bg-amber-50 text-amber-700; }
   .ee-status-danger { @apply border-red-200 bg-red-50 text-red-700; }
   .ee-status-info { @apply border-blue-200 bg-blue-50 text-blue-700; }
+}
+
+/* Mobile: compact sub-nav pills for horizontal scroll */
+@media (max-width: 768px) {
+  .ee-subnav-pill {
+    @apply px-2 py-1 text-[12px];
+  }
 }
 
 @layer utilities {
@@ -838,13 +860,4 @@ thead th {
   height: 1px;
   background: linear-gradient(90deg, transparent, hsl(142 76% 36% / 0.15), transparent);
   margin: 8px 0;
-}
-
-[data-page-content] > * {
-  flex: 1 1 0%;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow-y: auto;
-  overflow-x: hidden;
 }

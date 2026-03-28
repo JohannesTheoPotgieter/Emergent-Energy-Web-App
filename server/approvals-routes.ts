@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck — implicit any in callback params
 // @ts-nocheck
 import { Express, Request, Response } from "express";
 import { db } from "./db";
@@ -36,7 +37,7 @@ function isMissingTableError(err: unknown): boolean {
   return message.includes("no such table") || message.includes("does not exist");
 }
 
-function normalizeApprovalAssigneeInput(body: Record<string, any>) {
+function normalizeApprovalAssigneeInput(body: Record<string, unknown>) {
   const assigneeType = body.approverAssigneeType ?? (body.assignedApprover != null ? "internal_user" : null);
   const rawAssigneeId = body.approverAssigneeId ?? body.assignedApprover ?? null;
   const assigneeId = rawAssigneeId == null ? null : parseInt(String(rawAssigneeId), 10);
@@ -301,7 +302,7 @@ export function registerApprovalsRoutes(app: Express) {
         },
         isAdmin,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (isMissingTableError(err)) {
         return res.json({
           items: [],
@@ -326,7 +327,7 @@ export function registerApprovalsRoutes(app: Express) {
       const categoryFilter = req.query.category as string || null;
       const statusFilter = req.query.status as string || null;
 
-      let conditions: any[] = [];
+      let conditions: ReturnType<typeof eq>[] = [];
       if (projectIdFilter) conditions.push(eq(approvals.projectId, projectIdFilter));
       if (statusFilter) conditions.push(eq(approvals.status, statusFilter as any));
       if (categoryFilter) conditions.push(sql`${approvals.approvalCategory} = ${categoryFilter}`);
@@ -368,7 +369,7 @@ export function registerApprovalsRoutes(app: Express) {
           };
         }),
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error fetching general approvals:", err);
       res.status(500).json({ error: "Failed to fetch approvals" });
     }
@@ -435,7 +436,7 @@ export function registerApprovalsRoutes(app: Express) {
         assignments,
         primaryAssignment: assignments[0] || null,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error creating approval:", err);
       res.status(500).json({ error: "Failed to create approval" });
     }
@@ -555,7 +556,7 @@ export function registerApprovalsRoutes(app: Express) {
         assignments,
         primaryAssignment: assignments[0] || null,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       sendError(res, err);
     }
   });
@@ -573,7 +574,7 @@ export function registerApprovalsRoutes(app: Express) {
         changesJson: {},
       });
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Error deleting approval:", err);
       res.status(500).json({ error: "Failed to delete approval" });
     }

@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import { canReassignTask as canReassignTaskByRole, getTaskAssigneeNames, isTaskDueSoon, isTaskOverdue as isTaskOverdueLogic } from "@/pages/my-work-tasks-logic";
 import { useLocation } from "wouter";
@@ -120,6 +121,8 @@ interface UnifiedTask {
   sourceContextLabel?: string | null;
   sourceTypeLabel?: string | null;
   assigneeDisplay?: string | null;
+  workstream?: string | null;
+  sourceSystem?: string | null;
 }
 
 const SOURCE_CONFIG: Record<SourceFilter, { label: string; shortLabel: string; icon: any; color: string; bgColor: string; dot: string }> = {
@@ -293,8 +296,8 @@ export default function MyWorkTasksPage() {
     return () => clearTimeout(timer);
   }, [searchText]);
 
-  const { data: allTaskData, isLoading } = useQuery<any>({
-    queryKey: ["/api/my-work/all-tasks"],
+  const { data: allTaskData, isLoading, isError, error, refetch } = useQuery<any>({
+    queryKey: ["/api/my-work/all-tasks", "canonical"],
     queryFn: async () => {
       const res = await fetch("/api/my-work/all-tasks", { headers: { ...getAuthHeaders() }, credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch tasks");
@@ -302,23 +305,7 @@ export default function MyWorkTasksPage() {
     },
   });
 
-  const { data: msActionItems = [] } = useQuery<any[]>({
-    queryKey: ["/api/ms-objects/mine", "action_required_tasks"],
-    queryFn: async () => {
-      const res = await fetch("/api/ms-objects/mine?action_required=true", { credentials: "include", headers: { ...getAuthHeaders() } });
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
   const { data: rawProjectInfos = [] } = useQuery<any[]>({ queryKey: ["/api/project-info"] });
-
-  const microsoftItems = useMemo(() => {
-    if (Array.isArray(allTaskData?.microsoftItems) && allTaskData.microsoftItems.length > 0) {
-      return allTaskData.microsoftItems;
-    }
-    return msActionItems;
-  }, [allTaskData?.microsoftItems, msActionItems]);
 
   const projectNames = useMemo(() =>
     rawProjectInfos.map((p: any) => p.projectName || p.project_name).filter(Boolean).sort(),
@@ -326,8 +313,8 @@ export default function MyWorkTasksPage() {
   );
 
   const unifiedTasks: UnifiedTask[] = useMemo(() => {
-    if (!allTaskData) return [];
-    const result: UnifiedTask[] = [];
+    if (!allTaskData || !Array.isArray(allTaskData.tasks)) return [];
+
     const safeId = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
     const withSourceMeta = <T extends UnifiedTask>(task: T, raw: any): T => ({
       ...task,
@@ -338,141 +325,59 @@ export default function MyWorkTasksPage() {
       sourceContextLabel: raw?.sourceContextLabel || null,
       sourceTypeLabel: raw?.sourceTypeLabel || null,
       assigneeDisplay: raw?.assigneeDisplay || null,
+      workstream: raw?.workstream || null,
+      sourceSystem: raw?.source || null,
     });
 
-    for (const t of (allTaskData.personal || [])) {
-      result.push(withSourceMeta({
-        _key: `personal-${t.id}`, _source: "personal", _sourceLabel: "Personal",
-        _sourceColor: "bg-blue-50 border-blue-200 text-blue-700", _rawId: safeId(t.id), id: safeId(t.id),
-        title: t.title || "", status: t.status || "todo", priority: t.priority || "normal",
-        projectName: t.projectName || t.project_name || null, dueAt: t.dueAt || t.due_at || null,
-        createdAt: t.createdAt || t.created_at || null, updatedAt: t.updatedAt || t.updated_at || null, notes: t.notes || null,
-        nextStep: t.nextStep || t.next_step || null, definitionOfDone: t.definitionOfDone || t.definition_of_done || null,
-        blockedReason: t.blockedReason || t.blocked_reason || null, pinnedToday: t.pinnedToday || t.pinned_today || false,
-        pinnedWeek: t.pinnedWeek || t.pinned_week || false, isRecurring: t.isRecurring || t.is_recurring || false,
+    return allTaskData.tasks.map((t: any) => {
+      const source: SourceFilter = isSourceFilter(t?._source) ? t._source : "operational";
+      const sourceConfig = SOURCE_CONFIG[source];
+      return withSourceMeta({
+        _key: t.itemKey || t._key || `${source}-${safeId(t?.id)}`,
+        _source: source,
+        _sourceLabel: t.sourceTypeLabel || t.category || sourceConfig.label,
+        _sourceColor: t._sourceColor || sourceConfig.bgColor,
+        _rawId: safeId(t.rawId ?? t._rawId ?? t.id),
+        id: safeId(t.id),
+        title: t.title || "",
+        status: normalizeStatus(t.status || "todo"),
+        priority: normalizePriority(t.priority || "normal"),
+        projectName: t.projectName || t.project_name || null,
+        dueAt: t.dueAt || t.due_date || t.endDate || t.end_date || null,
+        createdAt: t.createdAt || t.created_at || null,
+        updatedAt: t.updatedAt || t.updated_at || null,
+        notes: t.notes || t.description || null,
+        subtaskCount: t.subtaskCount || 0,
+        parentTaskId: t.parentTaskId || t.parent_task_id || null,
+        percentComplete: t.percentComplete || t.percent_complete || (typeof t.pctComplete === "number" ? Math.round(t.pctComplete * 100) : 0),
+        assignees: t.assignees || (t.owner ? [t.owner] : null),
+        resolvedAssignees: t.resolvedAssignees || (t.resolvedAssignee ? [t.resolvedAssignee] : null),
+        description: t.description || null,
+        nextStep: t.nextStep || t.next_step || null,
+        definitionOfDone: t.definitionOfDone || t.definition_of_done || null,
+        blockedReason: t.blockedReason || t.blocked_reason || null,
+        pinnedToday: t.pinnedToday || t.pinned_today || false,
+        pinnedWeek: t.pinnedWeek || t.pinned_week || false,
+        isRecurring: t.isRecurring || t.is_recurring || false,
         recurrenceFrequency: t.recurrenceFrequency || t.recurrence_frequency || null,
-        sortOrder: t.sortOrder || t.sort_order || 0, bucket: t.bucket || null,
+        sortOrder: t.sortOrder || t.sort_order || 0,
+        bucket: t.bucket || null,
         sourceEmailId: t.sourceEmailId || t.source_email_id || null,
         sourceEmailSubject: t.sourceEmailSubject || t.source_email_subject || null,
         completionNote: t.completionNote || t.completion_note || null,
         plannedForDate: t.plannedForDate || t.planned_for_date || null,
-        department: t.department || null, tag: t.tag || null,
-        resolvedAssignees: t.resolvedOwner ? [t.resolvedOwner] : null,
-        _trackingRole: "assignee" as TrackingRole,
-      }, t));
-    }
-
-    for (const t of (allTaskData.operational || [])) {
-      if (t.parentTaskId) continue;
-      result.push(withSourceMeta({
-        _key: `op-${t.id}`, _source: "operational", _sourceLabel: "Project",
-        _sourceColor: "bg-emerald-50 border-emerald-200 text-emerald-700", _rawId: safeId(t.id), id: safeId(t.id),
-        title: t.title || "", status: normalizeStatus(t.status), priority: normalizePriority(t.priority),
-        projectName: t.projectName || t.project_name || null, dueAt: t.dueDate || t.due_date || null,
-        createdAt: t.createdAt || t.created_at || null, updatedAt: t.updatedAt || t.updated_at || null, notes: t.description || t.comment || null,
-        subtaskCount: t.subtaskCount || 0, parentTaskId: t.parentTaskId || t.parent_task_id || null,
-        percentComplete: t.percentComplete || t.percent_complete || 0, assignees: t.assignees || null,
-        resolvedAssignees: t.resolvedAssignees || null, description: t.description || null,
-        _trackingRole: t.trackingRole || "assignee",
-      }, t));
-    }
-
-    for (const a of (allTaskData.approvals?.engineering || [])) {
-      result.push(withSourceMeta({
-        _key: `approval-eng-${a.id}`, _source: "approvals", _sourceLabel: "Eng Approval",
-        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: safeId(a.id), id: safeId(a.id),
-        title: a.title || "", status: normalizeStatus(a.status), priority: "high",
-        projectName: a.projectName || null, dueAt: null, createdAt: a.createdAt || null, notes: null,
-      }, a));
-    }
-    for (const a of (allTaskData.approvals?.quality || [])) {
-      result.push(withSourceMeta({
-        _key: `approval-qc-${a.id}`, _source: "approvals", _sourceLabel: "QC Review",
-        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: safeId(a.id), id: safeId(a.id),
-        title: a.title || "", status: normalizeStatus(a.status), priority: "high",
-        projectName: a.projectName || null, dueAt: null, createdAt: a.createdAt || null, notes: null,
-      }, a));
-    }
-    for (const a of (allTaskData.approvals?.general || [])) {
-      result.push(withSourceMeta({
-        _key: `approval-gen-${a.id}`, _source: "approvals", _sourceLabel: "Approval",
-        _sourceColor: "bg-amber-50 border-amber-200 text-amber-700", _rawId: safeId(a.id), id: safeId(a.id),
-        title: a.title || "", status: normalizeStatus(a.status), priority: "high",
-        projectName: a.projectName || null, dueAt: null, createdAt: a.createdAt || null, notes: null,
-      }, a));
-    }
-
-    for (const t of (allTaskData.trRegister || [])) {
-      result.push(withSourceMeta({
-        _key: `tr-${t.id}`, _source: "tr_register", _sourceLabel: "Action",
-        _sourceColor: "bg-purple-50 border-purple-200 text-purple-700", _rawId: safeId(t.id), id: safeId(t.id),
-        title: t.actionDescription || "", status: normalizeStatus(t.status),
-        priority: t.ragStatus === "Red" ? "critical" : t.ragStatus === "Amber" ? "high" : "normal",
-        projectName: null, dueAt: t.dueDate || t.due_date || null,
-        createdAt: t.createdAt || t.created_at || null, updatedAt: t.updatedAt || t.updated_at || null, notes: t.outcomeComments || t.supportingInfo || null,
-        ragStatus: t.ragStatus || null, owners: t.owners || null, resolvedOwners: t.resolvedOwners || null,
-        trId: t.trId || null, department: t.department || null,
-        _trackingRole: t.trackingRole || "assignee",
-      }, t));
-    }
-
-    for (const d of (allTaskData.deliverables || [])) {
-      result.push(withSourceMeta({
-        _key: `del-${d.id}`, _source: "deliverables", _sourceLabel: "Deliverable",
-        _sourceColor: "bg-rose-50 border-rose-200 text-rose-700", _rawId: safeId(d.id), id: safeId(d.id),
-        title: d.title || "", status: normalizeStatus(d.status), priority: "normal",
-        projectName: d.projectName || d.project_name || null, dueAt: null,
-        createdAt: d.createdAt || d.created_at || null, updatedAt: d.updatedAt || d.updated_at || null, notes: null,
-        deliverableType: d.deliverableType || d.deliverable_type || null, deliverableStatus: d.status || null,
-      }, d));
-    }
-
-    for (const t of (allTaskData.planTasks || [])) {
-      result.push(withSourceMeta({
-        _key: `plan-${t.id}`, _source: "plan", _sourceLabel: "Project Plan",
-        _sourceColor: "bg-violet-50 border-violet-200 text-violet-700", _rawId: safeId(t.id), id: safeId(t.id),
-        title: t.title || "", status: normalizeStatus(t.status), priority: "normal",
-        projectName: t.projectName || null, dueAt: t.endDate || null, createdAt: null,
-        notes: t.phase ? `Phase: ${t.phase}` : null,
-        percentComplete: t.pctComplete ? Math.round(t.pctComplete * 100) : 0,
-        assignees: t.owner ? [t.owner] : null, resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
-        _trackingRole: t.trackingRole || "assignee",
-      }, t));
-    }
-
-    for (const t of (allTaskData.engineeringTasks || [])) {
-      result.push(withSourceMeta({
-        _key: `eng-${t.id}`, _source: "engineering_task", _sourceLabel: "Engineering",
-        _sourceColor: "bg-cyan-50 border-cyan-200 text-cyan-700", _rawId: safeId(t.id), id: safeId(t.id),
-        title: t.title || "", status: normalizeStatus(t.status), priority: "normal",
-        projectName: t.projectName || null, dueAt: null, createdAt: null,
-        notes: t.lifecyclePhase ? `Phase: ${t.lifecyclePhase}` : null,
-        assignees: t.assigneeName ? [t.assigneeName] : null, resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
-      }, t));
-    }
-
-    for (const t of (allTaskData.qualityTasks || [])) {
-      result.push(withSourceMeta({
-        _key: `qc-${t.id}`, _source: "quality_task", _sourceLabel: "Quality",
-        _sourceColor: "bg-rose-50 border-rose-200 text-rose-700", _rawId: safeId(t.id), id: safeId(t.id),
-        title: t.title || "", status: normalizeStatus(t.status), priority: "normal",
-        projectName: t.projectName || null, dueAt: t.endDate || null, createdAt: null, notes: null,
-        resolvedAssignees: t.resolvedAssignee ? [t.resolvedAssignee] : null,
-      }, t));
-    }
-
-    for (const item of microsoftItems) {
-      result.push(withSourceMeta({
-        _key: `ms-${item.id}`, _source: "microsoft", _sourceLabel: "Microsoft",
-        _sourceColor: "bg-indigo-50 border-indigo-200 text-indigo-700", _rawId: safeId(item.id), id: safeId(item.id),
-        title: item.subjectOrTitle || item.subject_or_title || "", status: "todo" as TaskStatus, priority: "normal",
-        projectName: item.linkedProjectName || item.linked_project_name || null, dueAt: null,
-        createdAt: item.receivedOrStartDatetime || item.received_or_start_datetime || null, notes: item.preview || null,
-      }, item));
-    }
-
-    return result;
-  }, [allTaskData, microsoftItems]);
+        department: t.department || null,
+        tag: t.tag || null,
+        deliverableType: t.deliverableType || t.deliverable_type || null,
+        deliverableStatus: t.deliverableStatus || null,
+        ragStatus: t.ragStatus || null,
+        owners: t.owners || null,
+        resolvedOwners: t.resolvedOwners || null,
+        trId: t.trId || null,
+        _trackingRole: t._trackingRole || t.trackingRole || "assignee",
+      } as UnifiedTask, t);
+    });
+  }, [allTaskData]);
 
   const unifiedDetailTaskFresh = useMemo(() => {
     if (!unifiedDetailOpen || !unifiedDetailTask) return unifiedDetailTask;
@@ -982,6 +887,14 @@ export default function MyWorkTasksPage() {
     );
   }
 
+  if (isError) {
+    return (
+      <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
+        <PageError title="Unable to load My Tasks" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} />
+      </PageShell>
+    );
+  }
+
   return (
     <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
 
@@ -994,7 +907,7 @@ export default function MyWorkTasksPage() {
           badges={[
             { label: `${filteredTasks.length} visible`, icon: <ListTodo className="h-3.5 w-3.5" /> },
             { label: `${kpiStats.overdue} overdue`, icon: <AlertCircle className="h-3.5 w-3.5" /> },
-            { label: `${microsoftItems.length} Microsoft items`, icon: <Link2 className="h-3.5 w-3.5" /> },
+            { label: `${sourceCounts.microsoft} Microsoft items`, icon: <Link2 className="h-3.5 w-3.5" /> },
           ]}
           actions={
             <div className="flex items-center gap-1.5 flex-wrap">

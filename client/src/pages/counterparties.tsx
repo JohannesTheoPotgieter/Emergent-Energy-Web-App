@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { usePermission } from "@/hooks/use-permissions";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -97,7 +99,7 @@ export default function CounterpartiesPage() {
   const [form, setForm] = useState<EditableCounterpartyFields>(EMPTY_FORM);
   const [contactForm, setContactForm] = useState<EditableContactFields>(EMPTY_CONTACT_FORM);
 
-  const { data: counterparties = [], isLoading, isError, error } = useQuery<CounterpartySummary[]>({
+  const { data: counterparties = [], isLoading, isError, error, refetch } = useQuery<CounterpartySummary[]>({
     queryKey: ["/api/counterparties/summary"],
     queryFn: async () => {
       const res = await fetch("/api/counterparties/summary", { headers: getAuthHeaders(), credentials: "include" });
@@ -265,8 +267,11 @@ export default function CounterpartiesPage() {
     );
   }
 
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Counterparties" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
+
   return (
-    <div className="space-y-6" data-testid="counterparties-page">
+    <FinanceShell currentPage="counterparties"><div className="space-y-6" data-testid="counterparties-page">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Counterparties</h2>
@@ -537,7 +542,7 @@ export default function CounterpartiesPage() {
           )}
         </SheetContent>
       </Sheet>
-    </div>
+    </div></FinanceShell>
   );
 }
 

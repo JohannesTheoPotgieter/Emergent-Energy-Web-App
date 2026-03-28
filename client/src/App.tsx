@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft, Loader2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { PAGE_REGISTRY, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
+import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 import { lazy, Suspense, useEffect } from "react";
 
@@ -31,9 +31,9 @@ const RevenueTrackerPage = lazy(() => import("@/pages/revenue-tracker"));
 const CostTracker = lazy(() => import("@/pages/cos"));
 const GpTrackerPage = lazy(() => import("@/pages/gp-tracker"));
 const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
-const MyToolAdminSettingsPage = lazy(() => import("@/pages/my-tool-admin-settings"));
-const MyToolPrioritiesPage = lazy(() => import("@/pages/my-tool-priorities"));
-const MyToolMeetingsPage = lazy(() => import("@/pages/my-tool-meetings"));
+const MyWorkAdminSettingsPage = lazy(() => import("@/pages/my-work-admin-settings"));
+const MyWorkPrioritiesPage = lazy(() => import("@/pages/my-work-priorities"));
+const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
 const QmDashboardPage = lazy(() => import("@/pages/qm-dashboard"));
 const EngineeringDashboardPage = lazy(() => import("@/pages/engineering-dashboard"));
 const EngineeringTasksPage = lazy(() => import("@/pages/engineering-tasks"));
@@ -48,7 +48,7 @@ const SubcontractorDashboardPage = lazy(() => import("@/pages/subcontractor-dash
 const CounterpartiesPage = lazy(() => import("@/pages/counterparties"));
 const SystemActivityLogPage = lazy(() => import("@/pages/system-activity-log"));
 const WeeklyReviewsPage = lazy(() => import("@/pages/weekly-reviews"));
-const AdminRolesPage = lazy(() => import("@/pages/admin-roles"));
+const AdminRolesPage = lazy(() => import("@/pages/admin-settings"));
 const LeaderboardPage = lazy(() => import("@/pages/leaderboard"));
 const FeedbackPage = lazy(() => import("@/pages/feedback"));
 const EeInfoPage = lazy(() => import("@/pages/ee-info"));
@@ -62,15 +62,14 @@ const PdTicketCreatePage = lazy(() => import("@/pages/pd-ticket-create"));
 const PdTicketDetailPage = lazy(() => import("@/pages/pd-ticket-detail"));
 const PdReportsPage = lazy(() => import("@/pages/pd-reports"));
 const TeamsChatsPage = lazy(() => import("@/pages/teams-chats"));
-const CollaborationPage = lazy(() => import("@/pages/collaboration"));
 const CollabEmailPage = lazy(() => import("@/pages/collab-email"));
-const CollabTeamsPage = lazy(() => import("@/pages/collab-teams"));
 const FinancialLinkingPage = lazy(() => import("@/pages/financial-linking"));
 const PMOnTheGoHome = lazy(() => import("@/pages/pm-on-the-go-home"));
 const PMOnTheGoProject = lazy(() => import("@/pages/pm-on-the-go-project"));
 const MyWorkHomePage = lazy(() => import("@/pages/my-work-home"));
 const MyWorkTasksPage = lazy(() => import("@/pages/my-work-tasks"));
 const MyWorkCalendarPage = lazy(() => import("@/pages/my-work-calendar"));
+const InboxPage = lazy(() => import("@/pages/inbox"));
 const ApprovalsPage = lazy(() => import("@/pages/admin-approvals"));
 const PMDeliverablesPage = lazy(() => import("@/pages/pm-deliverables"));
 const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
@@ -102,10 +101,24 @@ const EngMonthlyReportPage = lazy(() => import("@/pages/engineering-monthly-repo
 const EngMonthlyReportHistoryPage = lazy(() => import("@/pages/engineering-monthly-report-history"));
 const EngMonthlyReportComparePage = lazy(() => import("@/pages/engineering-monthly-report-compare"));
 const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-monthly-report-project"));
+const ReportCenterPage = lazy(() => import("@/pages/reports/report-center"));
+const EngineeringStandupPage = lazy(() => import("@/pages/engineering/standup"));
+const NcrListPage = lazy(() => import("@/pages/quality/ncr-list"));
+const NcrDetailPage = lazy(() => import("@/pages/quality/ncr-detail"));
+const ConstructionDashboardPage = lazy(() => import("@/pages/construction-dashboard"));
+const ProcurementDashboardPage = lazy(() => import("@/pages/procurement-dashboard"));
+const HseDashboardPage = lazy(() => import("@/pages/hse-dashboard"));
+const HandoverDashboardPage = lazy(() => import("@/pages/handover-dashboard"));
+const SitesPage = lazy(() => import("@/pages/sites"));
+const OpportunitiesPage = lazy(() => import("@/pages/opportunities"));
+const AdminPipedrivePage = lazy(() => import("@/pages/admin-pipedrive"));
+const PortfolioAnalyticsPage = lazy(() => import("@/pages/portfolio-analytics"));
+const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
+const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
 
-const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/quality", "/projects", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
-const PM_ALLOWED_PATHS = ["/", "/dashboard", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm-dashboard", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/cashflow", "/cos", "/gp-tracker", "/revenue-tracker", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups"];
-const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/projects", "/feedback", "/collaboration", "/collaboration/email", "/collaboration/teams", "/teams/chats", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams"];
+const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement"];
+const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement"];
+const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/hse", "/construction"];
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
 
@@ -124,15 +137,15 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   CostTracker,
   RevenueTrackerPage,
   GpTrackerPage,
-  MyToolPrioritiesPage,
-  MyToolAdminSettingsPage,
+  MyWorkPrioritiesPage,
+  MyWorkAdminSettingsPage,
   QmDashboardPage,
   EngineeringDashboardPage,
   EngineeringTasksPage,
   EngineeringAuditPage,
   LifecycleBoardPage,
   ExecutionBoardPage,
-  MyToolMeetingsPage,
+  MyWorkMeetingsPage,
   RoleSettingsPage,
   SmartImportPage,
   SharePointIntakePage,
@@ -155,14 +168,13 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PdTicketDetailPage,
   PdReportsPage,
   TeamsChatsPage,
-  CollaborationPage,
   CollabEmailPage,
-  CollabTeamsPage,
   PMOnTheGoHome,
   PMOnTheGoProject,
   MyWorkHomePage,
   MyWorkCalendarPage,
   MyWorkTasksPage,
+  InboxPage,
   ApprovalsPage,
   PMDeliverablesPage,
   DatabaseMigrationPage,
@@ -194,6 +206,20 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   EngMonthlyReportHistoryPage,
   EngMonthlyReportComparePage,
   EngMonthlyReportProjectPage,
+  ReportCenterPage,
+  EngineeringStandupPage,
+  NcrListPage,
+  NcrDetailPage,
+  ConstructionDashboardPage,
+  ProcurementDashboardPage,
+  HseDashboardPage,
+  HandoverDashboardPage,
+  SitesPage,
+  OpportunitiesPage,
+  AdminPipedrivePage,
+  PortfolioAnalyticsPage,
+  AdminBackfillPage,
+  AdminWorkflowConfigPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
@@ -207,20 +233,25 @@ function HomeRedirect() {
   return <Redirect to={resolveHomePath(user?.role, companyRole)} />;
 }
 
-const APP_ROUTES: RouteConfig[] = PAGE_REGISTRY.filter((page) => page.routeComponentKey || page.redirectTo).flatMap((page) => {
-  const routes: RouteConfig[] = [];
-  if (page.redirectTo) {
-    routes.push({ path: page.path, redirectTo: page.redirectTo });
-  } else if (page.routeComponentKey && ROUTE_COMPONENTS[page.routeComponentKey]) {
-    routes.push({ path: page.path, component: ROUTE_COMPONENTS[page.routeComponentKey] });
-  }
+const APP_ROUTES: RouteConfig[] = [
+  // Legacy redirects (old bookmarks / deep links)
+  ...LEGACY_REDIRECTS.map((r) => ({ path: r.path, redirectTo: r.redirectTo })),
+  // Active pages + registry-level redirects
+  ...PAGE_REGISTRY.filter((page) => page.routeComponentKey || page.redirectTo).flatMap((page) => {
+    const routes: RouteConfig[] = [];
+    if (page.redirectTo) {
+      routes.push({ path: page.path, redirectTo: page.redirectTo });
+    } else if (page.routeComponentKey && ROUTE_COMPONENTS[page.routeComponentKey]) {
+      routes.push({ path: page.path, component: ROUTE_COMPONENTS[page.routeComponentKey] });
+    }
 
-  for (const alias of page.aliases ?? []) {
-    routes.push({ path: alias, redirectTo: page.path });
-  }
+    for (const alias of page.aliases ?? []) {
+      routes.push({ path: alias, redirectTo: page.path });
+    }
 
-  return routes;
-});
+    return routes;
+  }),
+];
 
 
 function AccessDenied() {
@@ -264,7 +295,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
       return res.json();
     },
     enabled: !!user?.role,
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
 
   if (effectiveRole === "PROJECT_MANAGER_SITE") {
@@ -338,8 +369,9 @@ function ProtectedPages() {
   return (
     <RoleGuard>
     <AppLayout>
+      <ErrorBoundary>
       <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
-      <div key={location} className="page-enter">
+      <div className="page-enter">
         <Switch>
           <Route path="/" component={HomePage} />
           {APP_ROUTES.map((route) => {
@@ -352,6 +384,7 @@ function ProtectedPages() {
         </Switch>
       </div>
       </Suspense>
+      </ErrorBoundary>
     </AppLayout>
     </RoleGuard>
   );
@@ -361,6 +394,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/auth/login" component={LoginPage} />
+      <Route path="/login">{() => <Redirect to="/auth/login" />}</Route>
       <Route path="/auth/ms-callback" component={MsCallbackPage} />
       <Route>
         <ProtectedRoute>

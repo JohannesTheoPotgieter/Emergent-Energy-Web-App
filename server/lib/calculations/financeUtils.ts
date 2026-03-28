@@ -8,7 +8,7 @@
  * tracker endpoints (revenue-tracker, cos-tracker, gp-tracker) and the month-detail views.
  */
 
-import { classifyCosStatus } from './stateClassifier';
+import { classifyCosStatus, type CosStatus } from './stateClassifier';
 
 // ─── Static fallback COS budget (FY2025-2026) ───
 // Used when no manual budget override has been entered for a month.
@@ -55,15 +55,37 @@ export function allocateRevenue(
   return (lineItemCOS / totalProjectCOS) * totalProjectRevenue;
 }
 
+// ─── Full COS status classification ───
+// Returns the full COS status ('Planned' | 'Committed' | 'COS Realised') for a
+// cost line item. Respects admin overrides first, then falls back to the canonical
+// classifyCosStatus() from stateClassifier.ts.
+export function classifyCosStatusFull(exp: {
+  expenseInvoiceNumber?: string | null;
+  expenseInvoicedDate?: string | null;
+  expensePoNumber?: string | null;
+  invoiceDateConfirmed?: boolean | null;
+  invoiceDateFontColor?: string | null;
+  _cosOverrideStatus?: string | null;
+}): CosStatus {
+  // Admin override takes precedence
+  if (exp._cosOverrideStatus === 'COS Realised') return 'COS Realised';
+  if (exp._cosOverrideStatus === 'Committed') return 'Committed';
+  if (exp._cosOverrideStatus === 'Planned') return 'Planned';
+  // Standard classification from invoice data
+  return classifyCosStatus({
+    expenseInvoiceNumber: exp.expenseInvoiceNumber ?? null,
+    expenseInvoicedDate: exp.expenseInvoicedDate ?? null,
+    expensePoNumber: exp.expensePoNumber ?? null,
+    invoiceDateConfirmed: exp.invoiceDateConfirmed ?? null,
+    invoiceDateFontColor: exp.invoiceDateFontColor ?? null,
+  });
+}
+
 // ─── COS realisation check ───
 // Determines whether a cost line item should be treated as "realised" for tracker
-// purposes. Uses the canonical classifyCosStatus() from stateClassifier.ts,
-// PLUS respects manual COS status overrides and the cosRealised boolean.
-//
-// COS is realised when:
-// 1. classifyCosStatus returns 'COS Realised' (has invoice number AND invoice date), OR
-// 2. A COS override marks it as 'COS Realised', OR
-// 3. The normalizedCostLines.cosRealised boolean is true
+// purposes. Uses classifyCosStatusFull() which respects admin overrides and the
+// canonical classifyCosStatus() logic (requires invoice number + invoice date +
+// confirmed/black date).
 export function isCosRealised(exp: {
   expenseInvoiceNumber?: string | null;
   expenseInvoicedDate?: string | null;
@@ -71,21 +93,8 @@ export function isCosRealised(exp: {
   invoiceDateConfirmed?: boolean | null;
   invoiceDateFontColor?: string | null;
   _cosOverrideStatus?: string | null;
-  _cosRealisedFlag?: boolean | null;
 }): boolean {
-  // Manual override takes precedence
-  if (exp._cosOverrideStatus === 'COS Realised') return true;
-  // Normalized table boolean flag
-  if (exp._cosRealisedFlag === true) return true;
-  // Classification from invoice data (must include confirmation fields for isDateBlack check)
-  const status = classifyCosStatus({
-    expenseInvoiceNumber: exp.expenseInvoiceNumber ?? null,
-    expenseInvoicedDate: exp.expenseInvoicedDate ?? null,
-    expensePoNumber: exp.expensePoNumber ?? null,
-    invoiceDateConfirmed: exp.invoiceDateConfirmed ?? null,
-    invoiceDateFontColor: exp.invoiceDateFontColor ?? null,
-  });
-  return status === 'COS Realised';
+  return classifyCosStatusFull(exp) === 'COS Realised';
 }
 
 // ─── Project-name normalisation ───

@@ -28,12 +28,12 @@ export interface JWTPayload {
 }
 
 export function generateToken(user: JWTPayload): string {
-  return jwt.sign(user, resolveJwtSecret(), { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(user, resolveJwtSecret(), { algorithm: "HS256", expiresIn: JWT_EXPIRES_IN });
 }
 
 export function verifyToken(token: string): JWTPayload | null {
   try {
-    const decoded = jwt.verify(token, resolveJwtSecret()) as JWTPayload;
+    const decoded = jwt.verify(token, resolveJwtSecret(), { algorithms: ["HS256"] }) as JWTPayload;
     return decoded;
   } catch (error) {
     return null;

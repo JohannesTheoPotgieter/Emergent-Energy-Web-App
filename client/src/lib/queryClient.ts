@@ -1,3 +1,11 @@
+/**
+ * React Query integration (preferred for new code).
+ *
+ * Exports queryClient, getQueryFn, fetchQueryFn, and apiRequest.
+ * For engineering module calls, see eng-fetch.ts.
+ * For legacy auth/project API calls, see api.ts.
+ */
+
 import { QueryClient, QueryFunction, MutationCache, QueryCache } from "@tanstack/react-query";
 import { ApiError, parseApiError, networkError } from "./api-error";
 import { runAsyncAction } from "./async-action";
@@ -33,6 +41,16 @@ export async function apiRequest(
   const token = localStorage.getItem('auth_token');
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
+  }
+  // Attach CSRF token for state-changing requests
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method.toUpperCase())) {
+    const csrfToken = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith("csrf-token="))
+      ?.split("=")[1];
+    if (csrfToken) {
+      headers["X-CSRF-Token"] = csrfToken;
+    }
   }
 
   let res: Response;
@@ -180,8 +198,8 @@ function handleGlobalError(error: unknown) {
   if (error instanceof ApiError) {
     if (error.status === 401) {
       // Session expired — redirect to login
-      if (window.location.pathname !== "/login") {
-        window.location.href = "/login";
+      if (window.location.pathname !== "/auth/login") {
+        window.location.href = "/auth/login";
       }
       return;
     }

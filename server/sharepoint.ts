@@ -1,43 +1,12 @@
 import { storage } from "./storage";
 import type { SpFile, InsertSpFile, InsertChangeLedger, InsertImportRun } from "@shared/schema";
+import { getSharePointToken } from "./sharepoint-token";
 
-export async function getAccessToken(): Promise<string> {
-  const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;
-  const xReplitToken = process.env.REPL_IDENTITY
-    ? "repl " + process.env.REPL_IDENTITY
-    : process.env.WEB_REPL_RENEWAL
-      ? "depl " + process.env.WEB_REPL_RENEWAL
-      : null;
-
-  if (!hostname || !xReplitToken) {
-    throw new Error("SharePoint not available - connector not configured.");
-  }
-
-  const res = await fetch(
-    "https://" + hostname + "/api/v2/connection?include_secrets=true&connector_names=outlook",
-    {
-      headers: {
-        Accept: "application/json",
-        "X-Replit-Token": xReplitToken,
-      },
-    },
-  );
-
-  const data = await res.json();
-  const conn = data.items?.[0];
-  const accessToken =
-    conn?.settings?.access_token ||
-    conn?.settings?.oauth?.credentials?.access_token;
-
-  if (!accessToken) {
-    throw new Error("SharePoint not connected - please set up the Outlook connector.");
-  }
-
-  return accessToken;
-}
+/** @deprecated Use getSharePointToken() from sharepoint-token.ts directly. Re-exported for backward compatibility. */
+export const getAccessToken = getSharePointToken;
 
 async function graphGet(url: string): Promise<any> {
-  const token = await getAccessToken();
+  const token = await getSharePointToken();
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
   });
@@ -49,7 +18,7 @@ async function graphGet(url: string): Promise<any> {
 }
 
 async function graphGetBuffer(url: string): Promise<Buffer> {
-  const token = await getAccessToken();
+  const token = await getSharePointToken();
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -66,8 +35,8 @@ export async function testConnection(siteId: string, driveId: string): Promise<{
     const site = await graphGet(`https://graph.microsoft.com/v1.0/sites/${siteId}`);
     const drive = await graphGet(`https://graph.microsoft.com/v1.0/drives/${driveId}`);
     return { ok: true, success: true, siteName: site.displayName, driveName: drive.name };
-  } catch (err: any) {
-    return { ok: false, success: false, error: err.message };
+  } catch (err: unknown) {
+    return { ok: false, success: false, error: (err instanceof Error ? err.message : String(err)) };
   }
 }
 

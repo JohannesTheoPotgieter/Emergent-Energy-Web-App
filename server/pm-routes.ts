@@ -1,26 +1,10 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { projectInfo, projectExecutionState } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { getCanonicalFinanceByProjectIds, getCanonicalTaskSummaryByProjectIds } from "./services/canonical-dashboard-kpi-service";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (authHeader?.startsWith("Bearer ")) {
-    const payload = verifyToken(authHeader.substring(7));
-    if (payload) {
-      (req as any).user = payload;
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  res.status(401).json({ error: "Authentication required" });
-}
+import { jwtAuth, requireAuth } from "./auth-context";
 
 const PM_ALLOWED_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"];
 
@@ -93,8 +77,8 @@ export function registerPmRoutes(app: Express) {
          ORDER BY u.name`
       ));
       res.json({ users: result.rows });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -194,9 +178,9 @@ export function registerPmRoutes(app: Express) {
       };
 
       res.json({ projects: enrichedProjects, summary });
-    } catch (err: any) {
-      console.error("[PM Dashboard] Error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[PM Dashboard] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -315,9 +299,9 @@ export function registerPmRoutes(app: Express) {
       });
 
       res.json({ items });
-    } catch (err: any) {
-      console.error("[PM Priority] Error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[PM Priority] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -390,9 +374,9 @@ export function registerPmRoutes(app: Express) {
       events.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
 
       res.json({ events });
-    } catch (err: any) {
-      console.error("[PM Calendar] Error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[PM Calendar] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 }
