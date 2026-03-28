@@ -28,6 +28,7 @@ describe("finance access governance", () => {
   it("keeps finance routes explicitly permission-gated in both the departmental and legacy route surfaces", () => {
     const financeRoutesSource = read("server/departments/finance-routes.ts");
     const legacyRoutesSource = read("server/routes.ts");
+    const cashflow2026RoutesSource = read("server/routes/register-cashflow-2026-routes.ts");
 
     expect(financeRoutesSource).toContain('router.post("/api/cashflow-2026/opening-balance", requireAuth, requirePermission("cashflow", "edit")');
     expect(financeRoutesSource).toContain('router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "view")');
@@ -35,8 +36,9 @@ describe("finance access governance", () => {
     expect(financeRoutesSource).toContain('router.get("/api/tracker-monthly/:type", requireAuth, requireTrackerPermission("view")');
     expect(financeRoutesSource).toContain('router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view")');
 
-    expect(legacyRoutesSource).toContain('app.post("/api/cashflow-2026/available-payment", requireAuth, requirePermission("cashflow", "edit")');
-    expect(legacyRoutesSource).toContain('app.get("/api/cashflow-2026/available-payment-history", requireAuth, requirePermission("cashflow", "view")');
+    // Cashflow-2026 routes extracted from routes.ts to register-cashflow-2026-routes.ts
+    expect(cashflow2026RoutesSource).toContain('app.post("/api/cashflow-2026/available-payment", requireAuth, requirePermission("cashflow", "edit")');
+    expect(cashflow2026RoutesSource).toContain('app.get("/api/cashflow-2026/available-payment-history", requireAuth, requirePermission("cashflow", "view")');
     expect(legacyRoutesSource).toContain('app.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit")');
     expect(legacyRoutesSource).toContain('app.get("/api/tracker-monthly/:type", requireAuth, requireTrackerPermission("view")');
   });

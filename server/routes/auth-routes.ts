@@ -1,6 +1,6 @@
-// @ts-nocheck
 import type { Express } from "express";
 import passport from "passport";
+import crypto from "crypto";
 import { db } from "../db";
 import { users } from "@shared/schema";
 import { eq, sql } from "drizzle-orm";
@@ -22,12 +22,25 @@ import { ApiError, sendError, unauthorized, serverError, logApiError } from "../
 
 const MAX_SESSIONS_PER_USER = 3;
 
+// Temporary store for one-time authorization codes (replaces token-in-URL pattern)
+const authCodes = new Map<string, { token: string; user: object; expiresAt: number }>();
+
+// Clean up expired codes every 60 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, entry] of authCodes) {
+    if (entry.expiresAt <= now) {
+      authCodes.delete(code);
+    }
+  }
+}, 60_000);
+
 async function enforceSessionLimit(userId: number, currentSessionId: string, limit: number = MAX_SESSIONS_PER_USER): Promise<void> {
   try {
     const result = await db.execute(
       sql`SELECT sid, sess, expire FROM "session" WHERE expire > NOW() ORDER BY expire DESC`
     );
-    const rows = (result as any).rows || result;
+    const rows = ((result as Record<string, unknown>).rows || result) as Record<string, unknown>[];
     const userSessions: { sid: string; expire: Date }[] = [];
     for (const row of rows) {
       const sess = typeof row.sess === "string" ? JSON.parse(row.sess) : row.sess;
@@ -42,9 +55,8 @@ async function enforceSessionLimit(userId: number, currentSessionId: string, lim
       .slice(limit - 1);
     if (toDelete.length > 0) {
       const sids = toDelete.map((s) => s.sid);
-      await db.execute(sql.raw(
-        `DELETE FROM "session" WHERE sid IN (${sids.map((s) => `'${s.replace(/'/g, "''")}'`).join(",")})`
-      ));
+      const sidParams = sids.map(s => sql`${s}`);
+      await db.execute(sql`DELETE FROM "session" WHERE sid IN (${sql.join(sidParams, sql`, `)})`);
       console.log(`[SESSION] Cleaned ${toDelete.length} old session(s) for user ${userId}, keeping ${limit}`);
     }
   } catch (err) {
@@ -55,14 +67,11 @@ async function enforceSessionLimit(userId: number, currentSessionId: string, lim
 export async function registerAuthRoutes(app: Express): Promise<void> {
   app.get("/api/auth/status", async (req, res) => {
     try {
-      const { dbMode } = await import("../db");
-      const { getDbConfigStatus } = await import("../db-config");
-      const dbStatus = getDbConfigStatus();
       const authHeader = req.headers.authorization;
       const user = await resolveAuthenticatedUser(req);
       const sessionAuth = Boolean(req.isAuthenticated?.());
 
-      res.json({
+      const response: Record<string, unknown> = {
         authenticated: Boolean(user),
         user: user
           ? {
@@ -76,9 +85,18 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
         hasAuthHeader: Boolean(authHeader),
         jwtValid: Boolean(authHeader && authHeader.startsWith("Bearer ") && user),
         sessionAuth,
-        dbMode,
-        dbConnected: dbStatus.connected,
-      });
+      };
+
+      // Only expose infrastructure details in non-production environments
+      if (process.env.NODE_ENV !== "production") {
+        const { dbMode } = await import("../db");
+        const { getDbConfigStatus } = await import("../db-config");
+        const dbStatus = getDbConfigStatus();
+        response.dbMode = dbMode;
+        response.dbConnected = dbStatus.connected;
+      }
+
+      res.json(response);
     } catch (error) {
       logApiError("GET /api/auth/status", error);
       return sendError(res, serverError("Failed to get auth status"));
@@ -87,6 +105,13 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
 
   app.post("/api/auth/login", async (req, res, next) => {
     const { dbMode } = await import("../db");
+
+    if (process.env.NODE_ENV !== "development") {
+      return sendError(
+        res,
+        new ApiError(403, "PASSWORD_LOGIN_DISABLED", "Password login is only available in development mode. Please use Microsoft 365 sign-in."),
+      );
+    }
 
     passport.authenticate("local", (err: Error | null, user: Express.User | false, info: { message: string }) => {
       if (err) {
@@ -107,16 +132,6 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
       if (!user) {
         console.log("[LOGIN] Failed login attempt:", req.body?.username, "- Reason:", info?.message);
         return sendError(res, unauthorized(info?.message || "Invalid username or password"));
-      }
-
-      const ALLOWED_PASSWORD_LOGIN_USERNAMES = ["johannes"];
-      const requestedUsername = String(req.body?.username ?? "").trim().toLowerCase();
-      if (!ALLOWED_PASSWORD_LOGIN_USERNAMES.includes(requestedUsername) && user.id !== 31) {
-        console.log("[LOGIN] Password login blocked for non-allowed user:", user.email, "role:", user.role);
-        return sendError(
-          res,
-          new ApiError(403, "PASSWORD_LOGIN_RESTRICTED", "Password login is not available for this account. Please use Microsoft 365 sign-in."),
-        );
       }
 
       req.logIn(user, (loginError) => {
@@ -240,6 +255,11 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
     res.json({ enabled: msAuth.isMicrosoftAuthConfigured() });
   });
 
+  app.get("/api/auth/login-modes", (_req, res) => {
+    const passwordLoginEnabled = process.env.NODE_ENV === "development";
+    res.json({ passwordLoginEnabled });
+  });
+
   app.get("/api/auth/microsoft", async (_req, res) => {
     try {
       if (!msAuth.isMicrosoftAuthConfigured()) {
@@ -306,7 +326,9 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
               role: dbUser.role,
               tokenVersion,
             });
-            res.redirect(`/auth/ms-callback?token=${encodeURIComponent(token)}&user=${encodeURIComponent(JSON.stringify(sessionUser))}`);
+            const authCode = crypto.randomBytes(32).toString("hex");
+            authCodes.set(authCode, { token, user: sessionUser, expiresAt: Date.now() + 60_000 });
+            res.redirect(`/auth/ms-callback?code=${encodeURIComponent(authCode)}`);
           } catch (tokenError) {
             logApiError("GET /api/auth/microsoft/callback token", tokenError);
             res.redirect("/auth/login?error=ms_auth_failed");
@@ -317,6 +339,22 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
       logApiError("GET /api/auth/microsoft/callback", error);
       return res.redirect("/auth/login?error=ms_auth_failed");
     }
+  });
+
+  app.post("/api/auth/exchange-code", (req, res) => {
+    const { code } = req.body;
+    if (!code || typeof code !== "string") {
+      return sendError(res, new ApiError(400, "INVALID_CODE", "Authorization code is required"));
+    }
+
+    const entry = authCodes.get(code);
+    if (!entry || entry.expiresAt <= Date.now()) {
+      authCodes.delete(code);
+      return sendError(res, unauthorized("Invalid or expired authorization code"));
+    }
+
+    authCodes.delete(code);
+    res.json({ token: entry.token, user: entry.user });
   });
 
   app.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {

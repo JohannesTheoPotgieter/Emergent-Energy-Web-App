@@ -21,10 +21,10 @@ const TEST_PROJECT_ID = 999999;
 
 async function cleanup() {
   // Hard delete all test rows (even soft-closed ones)
-  await db.execute(sql.raw(`DELETE FROM "normalized_cost_lines" WHERE project_name = '${TEST_PROJECT_NAME}'`));
-  await db.execute(sql.raw(`DELETE FROM "normalized_revenue_lines" WHERE project_name = '${TEST_PROJECT_NAME}'`));
-  await db.execute(sql.raw(`DELETE FROM "program_expense" WHERE project_name = '${TEST_PROJECT_NAME}'`));
-  await db.execute(sql.raw(`DELETE FROM "program_inflows" WHERE project_name = '${TEST_PROJECT_NAME}'`));
+  await db.execute(sql`DELETE FROM "normalized_cost_lines" WHERE project_name = ${TEST_PROJECT_NAME}`);
+  await db.execute(sql`DELETE FROM "normalized_revenue_lines" WHERE project_name = ${TEST_PROJECT_NAME}`);
+  await db.execute(sql`DELETE FROM "program_expense" WHERE project_name = ${TEST_PROJECT_NAME}`);
+  await db.execute(sql`DELETE FROM "program_inflows" WHERE project_name = ${TEST_PROJECT_NAME}`);
 }
 
 async function insertTestRows(

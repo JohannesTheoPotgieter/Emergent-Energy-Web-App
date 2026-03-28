@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useLocation } from "wouter";
 import { PermissionGate } from "@/components/PermissionGate";
 import { useAuth } from "@/hooks/use-auth";
@@ -535,6 +536,9 @@ export default function SubcontractorDashboardPage() {
     if (sortField === field) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortField(field); setSortDir("desc"); }
   };
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Procurement Hub" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
     <div className="space-y-6" data-testid="subcontractor-dashboard-page">

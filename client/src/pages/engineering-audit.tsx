@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { engFetch } from "@/lib/eng-fetch";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -235,7 +236,7 @@ export default function EngineeringAuditPage() {
   queryParams.set("limit", String(PAGE_SIZE));
   queryParams.set("offset", String(page * PAGE_SIZE));
 
-  const { data, isLoading, error, refetch } = useQuery<AuditResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<AuditResponse>({
     queryKey: ["eng-unified-audit", category, debouncedSearch, page],
     queryFn: () => engFetch(`/api/eng/unified-audit?${queryParams.toString()}`),
     staleTime: 10000,
@@ -245,6 +246,9 @@ export default function EngineeringAuditPage() {
   const total = data?.total || 0;
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const categoryCounts = data?.categoryCounts || {};
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Engineering Audit" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
     <ErrorBoundary>

@@ -108,8 +108,8 @@ export function ExpenditureTab({ projectName }: ExpenditureTabProps) {
                       <TableCell className="text-right font-mono text-sm">
                         {formatCurrency(exp.expenseRateUnit)}
                       </TableCell>
-                      <TableCell className="text-right font-mono font-medium">
-                        {formatCurrency(exp.expenseActualTotal)}
+                      <TableCell className={`text-right font-mono font-medium ${!exp.expenseActualTotal && (exp as any).quotedTotal ? "text-muted-foreground/50 italic" : ""}`}>
+                        {formatCurrency(exp.expenseActualTotal || (exp as any).quotedTotal)}
                       </TableCell>
                       <TableCell className="font-mono text-sm">{exp.expensePoNumber || "-"}</TableCell>
                       <TableCell className="font-mono text-sm">{exp.expenseInvoiceNumber || "-"}</TableCell>
@@ -124,7 +124,7 @@ export function ExpenditureTab({ projectName }: ExpenditureTabProps) {
                           <Badge variant="outline" className="text-blue-600 border-blue-300">
                             <Clock className="h-3 w-3 mr-1" /> Invoiced
                           </Badge>
-                        ) : exp.expenseActualTotal ? (
+                        ) : (exp.expenseActualTotal || (exp as any).quotedTotal) ? (
                           <Badge variant="outline">Pending</Badge>
                         ) : (
                           <span className="text-muted-foreground">-</span>

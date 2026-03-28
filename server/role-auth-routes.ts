@@ -40,27 +40,32 @@ export function requireCompanyRole(...allowedRoles: CompanyRole[]) {
 
 export async function seedRoleCredentials() {
   try {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("Role credential seeding is disabled in production");
+    }
+
     const existing = await db.select().from(roleCredentials);
     if (existing.length > 0) return;
 
-    const defaultPasswords: Record<string, string> = {
-      COO_ADMIN: "2024",
-      CEO_ADMIN: "ceo2026",
-    };
+    const basePassword = process.env.SEED_ADMIN_PASSWORD;
+    if (!basePassword || basePassword.length < 12) {
+      throw new Error("SEED_ADMIN_PASSWORD must be set and at least 12 characters");
+    }
 
     for (const role of COMPANY_ROLES) {
-      const password = defaultPasswords[role] || "emergent2026";
-      const passwordHash = await bcrypt.hash(password, 10);
+      const passwordHash = await bcrypt.hash(basePassword, 12);
       await db.insert(roleCredentials).values({
         role,
         passwordHash,
         failedAttempts: 0,
+        passwordLastChangedAt: new Date(),
         updatedBy: "system",
       });
     }
-    console.log("[ROLE-AUTH] Seeded default role credentials");
-  } catch (err: any) {
-    console.error("[ROLE-AUTH] Error seeding role credentials:", err.message);
+    console.log("[ROLE-AUTH] Seeded role credentials from SEED_ADMIN_PASSWORD");
+  } catch (err: unknown) {
+    console.error("[ROLE-AUTH] Error seeding role credentials:", (err instanceof Error ? err.message : String(err)));
+    throw err;
   }
 }
 
@@ -101,25 +106,20 @@ export function registerRoleAuthRoutes(app: Express) {
         if (newAttempts >= 5) {
           updates.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
         }
-        await db.update(roleCredentials).set(updates).where(eq(roleCredentials.id, cred.id));
-
-        await db.insert(auditEvents).values({
-          actorRole: role,
-          source: "UI",
-          entityType: "role_auth",
-          entityId: role,
-          action: "login_failed",
-          changesJson: { failedAttempts: newAttempts },
+        await db.transaction(async (tx) => {
+          await tx.update(roleCredentials).set(updates).where(eq(roleCredentials.id, cred.id));
+          await tx.insert(auditEvents).values({
+            actorRole: role,
+            source: "UI",
+            entityType: "role_auth",
+            entityId: role,
+            action: "login_failed",
+            changesJson: { failedAttempts: newAttempts },
+          });
         });
 
         return sendError(res, new ApiError(401, "INVALID_PASSWORD", "Invalid password"));
       }
-
-      await db.update(roleCredentials).set({
-        failedAttempts: 0,
-        lockedUntil: null,
-        updatedAt: new Date(),
-      }).where(eq(roleCredentials.id, cred.id));
 
       const label = COMPANY_ROLE_LABELS[role];
       const token = generateToken({
@@ -129,12 +129,19 @@ export function registerRoleAuthRoutes(app: Express) {
         role: role as any,
       });
 
-      await db.insert(auditEvents).values({
-        actorRole: role,
-        source: "UI",
-        entityType: "role_auth",
-        entityId: role,
-        action: "login_success",
+      await db.transaction(async (tx) => {
+        await tx.update(roleCredentials).set({
+          failedAttempts: 0,
+          lockedUntil: null,
+          updatedAt: new Date(),
+        }).where(eq(roleCredentials.id, cred.id));
+        await tx.insert(auditEvents).values({
+          actorRole: role,
+          source: "UI",
+          entityType: "role_auth",
+          entityId: role,
+          action: "login_success",
+        });
       });
 
       return res.json({
@@ -143,8 +150,8 @@ export function registerRoleAuthRoutes(app: Express) {
         label,
         isAdmin: (ADMIN_ROLES as readonly string[]).includes(role),
       });
-    } catch (err: any) {
-      console.error("[ROLE-AUTH] Login error:", err.message);
+    } catch (err: unknown) {
+      console.error("[ROLE-AUTH] Login error:", (err instanceof Error ? err.message : String(err)));
       logApiError("POST /api/role-auth/login", err);
       return sendError(res, serverError("Login failed"));
     }
@@ -158,8 +165,8 @@ export function registerRoleAuthRoutes(app: Express) {
       }
       await seedRoleCredentials();
       return res.json({ message: "Role credentials seeded successfully", count: COMPANY_ROLES.length });
-    } catch (err: any) {
-      console.error("[ROLE-AUTH] Seed error:", err.message);
+    } catch (err: unknown) {
+      console.error("[ROLE-AUTH] Seed error:", (err instanceof Error ? err.message : String(err)));
       logApiError("POST /api/role-auth/seed", err);
       return sendError(res, serverError("Seed failed"));
     }
@@ -179,7 +186,7 @@ export function registerRoleAuthRoutes(app: Express) {
       const role = (payload as any).role as string;
       const label = isValidCompanyRole(role) ? COMPANY_ROLE_LABELS[role] : role;
       return res.json({ role, label });
-    } catch (err: any) {
+    } catch (err: unknown) {
       logApiError("GET /api/role-auth/me", err);
       return sendError(res, serverError("Failed to get session"));
     }
@@ -218,14 +225,14 @@ export function registerRoleAuthRoutes(app: Express) {
       if (!isValidCompanyRole(targetRole)) {
         return sendError(res, badRequest("Invalid target role"));
       }
-      if (newPassword.length < 4) {
-        return sendError(res, badRequest("Password must be at least 4 characters"));
+      if (newPassword.length < 8) {
+        return sendError(res, badRequest("Password must be at least 8 characters"));
       }
 
       const passwordHash = await bcrypt.hash(newPassword, 10);
       await db.update(roleCredentials).set({
         passwordHash,
-        lastPasswordPlain: null,
+        passwordLastChangedAt: new Date(),
         failedAttempts: 0,
         lockedUntil: null,
         updatedBy: currentRole,
@@ -242,8 +249,8 @@ export function registerRoleAuthRoutes(app: Express) {
       });
 
       return res.json({ message: `Password updated for ${targetRole}` });
-    } catch (err: any) {
-      console.error("[ROLE-AUTH] Password change error:", err.message);
+    } catch (err: unknown) {
+      console.error("[ROLE-AUTH] Password change error:", (err instanceof Error ? err.message : String(err)));
       logApiError("PATCH /api/role-auth/password", err);
       return sendError(res, serverError("Password change failed"));
     }
@@ -264,10 +271,11 @@ export function registerRoleAuthRoutes(app: Express) {
         role: roleCredentials.role,
         updatedBy: roleCredentials.updatedBy,
         updatedAt: roleCredentials.updatedAt,
+        passwordLastChangedAt: roleCredentials.passwordLastChangedAt,
       }).from(roleCredentials);
 
       return res.json(creds);
-    } catch (err: any) {
+    } catch (err: unknown) {
       logApiError("GET /api/role-auth/passwords", err);
       return sendError(res, serverError("Failed to fetch passwords"));
     }

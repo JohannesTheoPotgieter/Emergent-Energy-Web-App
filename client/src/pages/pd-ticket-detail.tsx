@@ -1,5 +1,6 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,9 +14,17 @@ import { useToast } from "@/hooks/use-toast";
 import { useLocation, useRoute } from "wouter";
 import { Progress } from "@/components/ui/progress";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
   Loader2, ArrowLeft, Building2, FolderKanban, FileEdit, ExternalLink,
   CheckCircle2, Clock, AlertTriangle, Activity, ListTodo, Pencil, Save, X,
-  CircleDot, Circle, PauseCircle, ArrowUpRight,
+  CircleDot, Circle, PauseCircle, ArrowUpRight, Plus, Trash2,
 } from "lucide-react";
 
 function pdFetch(url: string, opts?: RequestInit) {
@@ -44,7 +53,7 @@ export default function PdTicketDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
 
-  const { data, isLoading } = useQuery<any>({
+  const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/pd/tickets", ticketId],
     queryFn: () => pdFetch(`/api/pd/tickets/${ticketId}`),
     enabled: !!ticketId,
@@ -75,7 +84,8 @@ export default function PdTicketDetailPage() {
   });
 
   const spawnMutation = useMutation({
-    mutationFn: () => pdFetch(`/api/pd/tickets/${ticketId}/spawn-tasks`, { method: "POST" }),
+    mutationFn: (body: { selectedTasks?: string[]; customTasks?: { title: string; priority: string }[] }) =>
+      pdFetch(`/api/pd/tickets/${ticketId}/spawn-tasks`, { method: "POST", body: JSON.stringify(body) }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets", ticketId] });
       toast({ title: "Tasks spawned", description: `${result.spawned} tasks created` });
@@ -83,13 +93,8 @@ export default function PdTicketDetailPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  if (isLoading) {
-    return (
-      <div className="p-6 flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin" />
-      </div>
-    );
-  }
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PD Ticket" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   if (!data) {
     return (
@@ -325,6 +330,7 @@ export default function PdTicketDetailPage() {
         ticket={t}
         spawnMutation={spawnMutation}
         navigate={navigate}
+        ticketId={ticketId!}
       />
 
       {activity.length > 0 && (
@@ -362,12 +368,75 @@ export default function PdTicketDetailPage() {
   );
 }
 
-function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate }: {
+function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate, ticketId }: {
   tasks: any[];
   ticket: any;
   spawnMutation: any;
   navigate: (path: string) => void;
+  ticketId: string;
 }) {
+  const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
+  const [selectedTemplates, setSelectedTemplates] = useState<Set<string>>(new Set());
+  const [customTasks, setCustomTasks] = useState<{ title: string; priority: string }[]>([]);
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+
+  const { data: templateData } = useQuery<{ requestType: string; templates: { title: string; priority: string }[] }>({
+    queryKey: ["/api/pd/tickets", ticketId, "task-templates"],
+    queryFn: () => pdFetch(`/api/pd/tickets/${ticketId}/task-templates`),
+    enabled: spawnDialogOpen,
+  });
+
+  const templates = templateData?.templates || [];
+
+  useEffect(() => {
+    if (templateData && !templatesLoaded) {
+      setSelectedTemplates(new Set(templates.map(t => t.title)));
+      setTemplatesLoaded(true);
+    }
+  }, [templateData, templatesLoaded, templates]);
+
+  const openSpawnDialog = () => {
+    setTemplatesLoaded(false);
+    setCustomTasks([]);
+    setSpawnDialogOpen(true);
+  };
+
+  const toggleTemplate = (title: string) => {
+    setSelectedTemplates(prev => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+  };
+
+  const addCustomTask = () => {
+    setCustomTasks(prev => [...prev, { title: "", priority: "Medium" }]);
+  };
+
+  const updateCustomTask = (idx: number, field: string, value: string) => {
+    setCustomTasks(prev => prev.map((t, i) => i === idx ? { ...t, [field]: value } : t));
+  };
+
+  const removeCustomTask = (idx: number) => {
+    setCustomTasks(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const totalSelected = selectedTemplates.size + customTasks.filter(t => t.title.trim()).length;
+
+  const handleSpawn = () => {
+    const validCustom = customTasks.filter(t => t.title.trim());
+    spawnMutation.mutate(
+      {
+        selectedTasks: Array.from(selectedTemplates),
+        customTasks: validCustom,
+      },
+      {
+        onSuccess: () => setSpawnDialogOpen(false),
+      }
+    );
+  };
+
   const completed = tasks.filter((t: any) => t.status === "COMPLETE").length;
   const inProgress = tasks.filter((t: any) => t.status === "IN PROGRESS").length;
   const hold = tasks.filter((t: any) => t.status === "HOLD").length;
@@ -388,8 +457,7 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate }: {
             <Badge variant="secondary" className="text-[10px]">{tasks.length}</Badge>
           </span>
           {tasks.length === 0 && !ticket.tasksSpawnedAt && (
-            <Button size="sm" variant="outline" onClick={() => spawnMutation.mutate()} disabled={spawnMutation.isPending} data-testid="btn-spawn-tasks">
-              {spawnMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+            <Button size="sm" variant="outline" onClick={openSpawnDialog} data-testid="btn-spawn-tasks">
               Spawn Tasks
             </Button>
           )}
@@ -523,6 +591,124 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate }: {
           </>
         )}
       </CardContent>
+
+      <Dialog open={spawnDialogOpen} onOpenChange={setSpawnDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Spawn Engineering Tasks</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {templateData?.requestType
+                ? `Template tasks for "${templateData.requestType}"`
+                : "Loading..."}
+            </p>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {templates.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm font-semibold">Template Tasks</Label>
+                <p className="text-xs text-muted-foreground">Select which template tasks to create:</p>
+                <div className="space-y-1.5">
+                  {templates.map((tmpl) => (
+                    <label
+                      key={tmpl.title}
+                      className="flex items-center gap-2 p-2 rounded-md border hover:bg-muted/30 cursor-pointer transition-colors"
+                      data-testid={`template-task-${tmpl.title}`}
+                    >
+                      <Checkbox
+                        checked={selectedTemplates.has(tmpl.title)}
+                        onCheckedChange={() => toggleTemplate(tmpl.title)}
+                      />
+                      <span className="flex-1 text-sm">{tmpl.title}</span>
+                      <Badge variant="outline" className="text-[10px]">{tmpl.priority}</Badge>
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => setSelectedTemplates(new Set(templates.map(t => t.title)))}
+                  >
+                    Select All
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => setSelectedTemplates(new Set())}
+                  >
+                    Deselect All
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {templates.length === 0 && templateData && (
+              <div className="text-center py-3 border rounded-md bg-muted/20">
+                <p className="text-sm text-muted-foreground">
+                  No template tasks available for "{templateData.requestType}"
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Add custom tasks below to create them manually
+                </p>
+              </div>
+            )}
+
+            <Separator />
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-semibold">Custom Tasks</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addCustomTask} data-testid="btn-add-custom-task">
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Task
+                </Button>
+              </div>
+              {customTasks.length === 0 && (
+                <p className="text-xs text-muted-foreground">No custom tasks added yet</p>
+              )}
+              {customTasks.map((ct, idx) => (
+                <div key={idx} className="flex items-center gap-2" data-testid={`custom-task-${idx}`}>
+                  <Input
+                    placeholder="Task title"
+                    value={ct.title}
+                    onChange={(e) => updateCustomTask(idx, "title", e.target.value)}
+                    className="flex-1 text-sm"
+                  />
+                  <select
+                    value={ct.priority}
+                    onChange={(e) => updateCustomTask(idx, "priority", e.target.value)}
+                    className="border rounded-md px-2 py-1.5 text-sm bg-background"
+                  >
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => removeCustomTask(idx)} className="px-2">
+                    <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setSpawnDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleSpawn}
+              disabled={totalSelected === 0 || spawnMutation.isPending}
+              data-testid="btn-confirm-spawn"
+            >
+              {spawnMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+              Create {totalSelected} Task{totalSelected !== 1 ? "s" : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

@@ -26,13 +26,36 @@ export function useAccessMatrix() {
       return res.json();
     },
     enabled: !!effectiveRole,
-    staleTime: 60_000,
+    staleTime: 30_000,
   });
+
+  // Normalize legacy section keys to the current 6-section navigation model.
+  // Existing DB records may still contain old keys (COCKPIT, MONEY, etc.).
+  const OLD_TO_NEW_SECTIONS: Record<string, string[]> = {
+    COCKPIT: ["HOME", "MY_WORK"],
+    MONEY: ["FINANCE"],
+    INFORMATION: ["REPORTS"],
+    GOVERNANCE: ["PROJECTS"],
+    PROJECT_DEVELOPMENT: ["PROJECTS"],
+    PROJECT_MANAGEMENT: ["PROJECTS"],
+    ENGINEERING: ["PROJECTS"],
+    COLLABORATION: ["PROJECTS"],
+  };
 
   // Build a set of allowed sections from the role's section toggles
   const allowedSections = useMemo(() => {
     const s = permissions?.sections;
-    return s && s.length > 0 ? new Set(s) : null;
+    if (!s || s.length === 0) return null;
+    const normalized = new Set<string>();
+    for (const key of s) {
+      const mapped = OLD_TO_NEW_SECTIONS[key];
+      if (mapped) {
+        for (const k of mapped) normalized.add(k);
+      } else {
+        normalized.add(key);
+      }
+    }
+    return normalized;
   }, [permissions?.sections]);
 
   const canAccessEntityAction = useMemo(() => {

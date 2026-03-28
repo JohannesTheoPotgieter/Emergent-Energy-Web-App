@@ -41,6 +41,9 @@ import {
   Trash2,
   LayoutGrid,
   Table2,
+  Plus,
+  Circle,
+  FileSpreadsheet as SpreadsheetIcon,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
@@ -52,13 +55,16 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { isSuperAdmin } from "@/lib/access-control";
+import { useAccessMatrix } from "@/hooks/use-access-matrix";
 
 interface ProjectSummary {
   project_info_id: number | null;
@@ -104,6 +110,7 @@ interface ProjectSummary {
   total_expenses: number | null;
   actual_expenses: number | null;
   gp_percent: number | null;
+  cos_realised_pct: number | null;
   revenue_outstanding: number | null;
   expenses_due: number | null;
   current_vo_total: number | null;
@@ -303,7 +310,7 @@ function TaskCompletionPopover({ projectName, currentPct }: { projectName: strin
         <button data-interactive="true" onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 min-w-[60px] w-full cursor-pointer hover:opacity-80 transition-opacity" data-testid={`btn-act-pct-${projectName}`}>
           <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${progressColor(currentPct)}`}
+              className={`h-full rounded-full transition-[width] duration-500 ${progressColor(currentPct)}`}
               style={{ width: `${Math.min(currentPct, 100)}%` }}
             />
           </div>
@@ -546,8 +553,8 @@ function FinancialCloseCell({
       payload[`${fieldPrefix}Link`] = fileUrl;
       payload[`${fieldPrefix}NaReason`] = null;
       mutation.mutate(payload);
-    } catch (err: any) {
-      console.error("File upload error:", err?.message || err);
+    } catch {
+      // Error handled by mutation onError callback
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -846,7 +853,8 @@ const COLUMN_WIDTHS: Record<string, string> = {
   project_pct_complete: "72px",
   expected_pct_complete: "42px",
   delta_vs_expected: "56px",
-  latest_update: "120px",
+  latest_update: "200px",
+  rag_status: "56px",
   comments: "130px",
   financial_summary: "84px",
   next_key_date: "80px",
@@ -855,28 +863,26 @@ const COLUMN_WIDTHS: Record<string, string> = {
 
 const COLUMN_GROUPS_META: { label: string; keys: string[]; color: string; stickyFirst?: boolean }[] = [
   { label: "Project Info", keys: ["project_name", "client_name", "size_kwp", "pd", "pm"], color: "bg-muted text-muted-foreground", stickyFirst: true },
-  { label: "Execution", keys: ["pd_pm_handover_status", "execution_attention"], color: "bg-blue-50 text-blue-700" },
+  { label: "Execution", keys: ["rag_status", "pd_pm_handover_status", "execution_attention"], color: "bg-blue-50 text-blue-700" },
   { label: "Financial Close", keys: ["cost_proposal_signed", "funding_signed", "epc_contract_signed", "financial_close"], color: "bg-emerald-50 text-emerald-700" },
   { label: "Phase & Schedule", keys: ["phase", "escalation_level", "pd_handover_date", "construction_start_date", "commissioning_date", "om_handover_date", "client_handover_date", "duration", "kw_per_week"], color: "bg-blue-50 text-blue-700" },
   { label: "Progress", keys: ["project_pct_complete", "expected_pct_complete", "delta_vs_expected"], color: "bg-violet-50 text-violet-700" },
-  { label: "Financials", keys: ["actual_revenue", "actual_expenses", "gp_percent", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
+  { label: "Financials", keys: ["actual_revenue", "actual_expenses", "cashflow_delta", "gp_percent", "tracking_gp_percent", "cos_realised_pct", "revenue_outstanding", "expenses_due", "financial_summary"], color: "bg-green-50 text-green-700" },
   { label: "Updates", keys: ["latest_update", "comments", "next_key_date"], color: "bg-amber-50 text-amber-700" },
 ];
 
 const ALL_COLUMN_KEYS_STATIC = COLUMN_GROUPS_META.flatMap(g => g.keys);
 const DEFAULT_DIRECTORY_COLUMNS = [
   "project_name",
-  "client_name",
   "phase",
   "pm",
-  "pd",
-  "pd_pm_handover_status",
+  "rag_status",
   "execution_attention",
   "latest_update",
-  "financial_close",
-  "financial_summary",
+  "delta_vs_expected",
   "project_pct_complete",
-  "next_key_date",
+  "client_name",
+  "financial_summary",
 ];
 
 function loadSavedViews(): SavedView[] {
@@ -899,23 +905,32 @@ function persistActiveView(name: string | null) {
   else localStorage.removeItem(ACTIVE_VIEW_KEY);
 }
 
+function formatRelativeTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return "";
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return new Date(dateStr).toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
+}
+
 function LatestUpdateCell({ project }: { project: ProjectSummary }) {
-  const [editing, setEditing] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [value, setValue] = useState(project.latest_update || "");
+  const [saving, setSaving] = useState(false);
   const queryClient = useQueryClient();
-  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setValue(project.latest_update || "");
   }, [project.latest_update]);
 
-  useEffect(() => {
-    if (editing && inputRef.current) inputRef.current.focus();
-  }, [editing]);
-
   const save = async () => {
     const trimmed = value.trim();
-    if (trimmed === (project.latest_update || "")) { setEditing(false); return; }
+    if (trimmed === (project.latest_update || "")) { setDialogOpen(false); return; }
+    setSaving(true);
     try {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -926,44 +941,74 @@ function LatestUpdateCell({ project }: { project: ProjectSummary }) {
         body: JSON.stringify({ latestUpdate: trimmed || null }),
       });
       queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
-    } catch (e) {
-      console.error("Failed to save latest update:", e);
+    } catch {
+      // Silent failure — will be visible on next refetch
     }
-    setEditing(false);
+    setSaving(false);
+    setDialogOpen(false);
   };
 
-  if (editing) {
-    return (
-      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()} data-interactive="true">
-        <Input
-          ref={inputRef}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-          className="h-6 text-[10px] px-1.5 py-0"
-          data-testid={`input-latest-update-${project.project_name}`}
-        />
-        <Button size="sm" variant="ghost" onClick={save} className="h-5 w-5 p-0 shrink-0">
-          <Check className="h-3 w-3 text-emerald-600" />
-        </Button>
-        <Button size="sm" variant="ghost" onClick={() => { setValue(project.latest_update || ""); setEditing(false); }} className="h-5 w-5 p-0 shrink-0">
-          <X className="h-3 w-3 text-muted-foreground" />
-        </Button>
-      </div>
-    );
-  }
+  const metaLine = [
+    project.latest_update_by,
+    project.latest_update_at ? formatRelativeTime(project.latest_update_at) : null,
+  ].filter(Boolean).join(", ");
 
   return (
-    <span
-      className="block truncate text-[10px] text-muted-foreground cursor-pointer hover:text-foreground group"
-      title={project.latest_update ? `${project.latest_update} (click to edit)` : "Click to add update"}
-      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
-      data-interactive="true"
-      data-testid={`text-latest-update-${project.project_name}`}
-    >
-      {project.latest_update || "—"}
-      <Pencil className="inline-block ml-1 h-2.5 w-2.5 opacity-0 group-hover:opacity-60" />
-    </span>
+    <>
+      <div
+        className="cursor-pointer hover:bg-muted/40 rounded px-1 py-0.5 -mx-1 group"
+        onClick={(e) => { e.stopPropagation(); setDialogOpen(true); }}
+        data-interactive="true"
+        data-testid={`text-latest-update-${project.project_name}`}
+      >
+        {project.latest_update ? (
+          <>
+            <p className="text-[10px] text-foreground leading-snug line-clamp-2 whitespace-pre-line">
+              {project.latest_update}
+            </p>
+            {metaLine && (
+              <p className="text-[9px] text-muted-foreground mt-0.5">{metaLine}</p>
+            )}
+          </>
+        ) : (
+          <span className="text-[10px] text-muted-foreground italic">No update</span>
+        )}
+        <Pencil className="inline-block ml-1 h-2.5 w-2.5 opacity-0 group-hover:opacity-60 text-muted-foreground" />
+      </div>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setValue(project.latest_update || ""); setDialogOpen(false); } }}>
+        <DialogContent className="max-w-lg" onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Pencil className="h-4 w-4" />
+              Update Status — {project.project_name.replace(/_Tracker$/i, "")}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Textarea
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              placeholder="Write a status update for this project..."
+              className="min-h-[160px] text-sm"
+              autoFocus
+              data-testid={`input-latest-update-${project.project_name}`}
+            />
+            {metaLine && (
+              <p className="text-xs text-muted-foreground">Last updated: {metaLine}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setValue(project.latest_update || ""); setDialogOpen(false); }}>
+              Cancel
+            </Button>
+            <Button onClick={save} disabled={saving} data-testid={`button-save-update-${project.project_name}`}>
+              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Save Update
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -1264,7 +1309,7 @@ function MobileProjectCard({ project, setLocation }: { project: ProjectSummary; 
         <div className="flex items-start justify-between gap-2">
           <button
             className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline text-sm leading-tight min-w-0 truncate"
-            onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}?tab=task-grid`)}
+            onClick={() => setLocation(`/project/${encodeURIComponent(project.project_name)}`)}
             data-testid={`mobile-link-project-${project.project_name}`}
           >
             {cleanName(project.project_name)}
@@ -1286,7 +1331,7 @@ function MobileProjectCard({ project, setLocation }: { project: ProjectSummary; 
         <div className="flex items-center gap-2">
           <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all duration-500 ${progressColor(pct)}`}
+              className={`h-full rounded-full transition-[width] duration-500 ${progressColor(pct)}`}
               style={{ width: `${Math.min(pct, 100)}%` }}
             />
           </div>
@@ -1335,18 +1380,36 @@ export default function ProjectsSummary() {
   });
   const [pmFilter, setPmFilter] = useState("all");
   const [phaseFilter, setPhaseFilter] = useState("all");
+  const [ragFilter, setRagFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("phase");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const { isAdmin, user } = useAuth();
+  const { canAccessEntityAction } = useAccessMatrix();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const canSuperAdmin = isSuperAdmin(user?.role, companyRole);
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
   const [viewTab, setViewTab] = useState<"active" | "archived">("active");
+  const [quickFilter, setQuickFilter] = useState<"all" | "behind_plan" | "needs_attention" | "my_projects">("all");
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const [tableTopOffset, setTableTopOffset] = useState(340);
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const el = tableContainerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const top = el.getBoundingClientRect().top;
+      setTableTopOffset(Math.max(top, 200));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(document.body);
+    return () => ro.disconnect();
+  }, []);
 
   const [savedViews, setSavedViews] = useState<SavedView[]>(() => loadSavedViews());
   const [activeViewName, setActiveViewName] = useState<string | null>(() => loadActiveView());
@@ -1466,8 +1529,18 @@ export default function ProjectsSummary() {
     });
   }, [currentProjects]);
 
+  const currentUserName = (() => { try { const u = localStorage.getItem("user"); if (u) { const p = JSON.parse(u); return p.name || ""; } } catch {} return ""; })();
+
   const filtered = useMemo(() => {
     let result = [...currentProjects];
+    // A4: Quick filter tabs
+    if (quickFilter === "behind_plan") {
+      result = result.filter((p) => (p.delta_vs_expected ?? 0) < -0.1);
+    } else if (quickFilter === "needs_attention") {
+      result = result.filter((p) => p.rag_status === "Red" || p.rag_status === "Amber" || (p.escalation_level && p.escalation_level !== "None"));
+    } else if (quickFilter === "my_projects") {
+      result = result.filter((p) => p.pm === currentUserName);
+    }
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter((p) => p.project_name.toLowerCase().includes(term));
@@ -1478,14 +1551,15 @@ export default function ProjectsSummary() {
     if (phaseFilter !== "all") {
       result = result.filter((p) => p.phase === phaseFilter);
     }
+    if (ragFilter !== "all") {
+      result = result.filter((p) => p.rag_status === ragFilter);
+    }
     if (priorityFilter !== "all" && priorityProjectIds) {
       const idSet = new Set(priorityProjectIds);
       result = result.filter((p) => p.project_info_id != null && idSet.has(p.project_info_id));
     }
     return result;
-  }, [currentProjects, searchTerm, pmFilter, phaseFilter, priorityFilter, priorityProjectIds]);
-
-  const currentUserName = (() => { try { const u = localStorage.getItem("user"); if (u) { const p = JSON.parse(u); return p.name || ""; } } catch {} return ""; })();
+  }, [currentProjects, searchTerm, pmFilter, phaseFilter, ragFilter, priorityFilter, priorityProjectIds, quickFilter, currentUserName]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -1730,7 +1804,7 @@ export default function ProjectsSummary() {
           <button
             data-testid={`link-project-${p.project_name}`}
             className="text-left font-semibold text-blue-700 hover:text-blue-900 hover:underline truncate max-w-[180px] block text-[10px]"
-            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}
+            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
             title={cleanName(p.project_name)}
           >
             {cleanName(p.project_name)}
@@ -1738,7 +1812,7 @@ export default function ProjectsSummary() {
           <button
             type="button"
             className="inline-flex items-center text-[9px] text-blue-700 hover:text-blue-900 hover:underline gap-0.5"
-            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`)}
+            onClick={() => setLocation(`/project/${encodeURIComponent(p.project_name)}`)}
             data-testid={`button-open-details-${p.project_name}`}
           >
             <ExternalLink className="w-2.5 h-2.5" />
@@ -1767,7 +1841,9 @@ export default function ProjectsSummary() {
       key: "pm",
       header: "PM",
       render: (p) => isAdmin && p.project_info_id ? (
-        <div onClick={(e) => e.stopPropagation()}><SearchableSelect
+        <div onClick={(e) => e.stopPropagation()} className="flex items-center gap-0.5">
+          <SpreadsheetIcon className="w-2.5 h-2.5 text-muted-foreground/40 shrink-0" title="PM is managed via Excel import. Manual changes may be overwritten on next import." />
+          <SearchableSelect
           value={p.pm || "__unassigned"}
           placeholder={!p.pm ? "No PM" : undefined}
           onValueChange={(val) => {
@@ -1854,6 +1930,26 @@ export default function ProjectsSummary() {
             {achieved ? <CheckCircle2 className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
             {achieved ? "Done" : "Open"}
           </span>
+        );
+      },
+    },
+    {
+      key: "rag_status",
+      header: "RAG",
+      render: (p) => {
+        const rag = p.rag_status;
+        if (!rag) return (
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-gray-200 shrink-0" />
+            <span className="text-[10px] text-muted-foreground">Not Set</span>
+          </div>
+        );
+        const color = rag === "Green" ? "bg-emerald-500" : rag === "Amber" ? "bg-amber-500" : rag === "Red" ? "bg-red-500" : "bg-gray-300";
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2.5 h-2.5 rounded-full ${color} shrink-0`} />
+            <span className="text-[10px] font-medium">{rag}</span>
+          </div>
         );
       },
     },
@@ -2038,6 +2134,21 @@ export default function ProjectsSummary() {
       },
     },
     {
+      key: "cashflow_delta",
+      header: "Delta",
+      align: "right",
+      render: (p) => {
+        const inBank = p.actual_revenue ?? 0;
+        const paid = p.actual_expenses ?? 0;
+        const delta = inBank - paid;
+        if (inBank === 0 && paid === 0) return <span className="text-slate-500 text-[10px]">—</span>;
+        const fmt = (v: number) => "R" + Math.abs(v).toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+        const color = delta >= 0 ? "text-emerald-600" : "text-red-600";
+        const prefix = delta >= 0 ? "+" : "-";
+        return <span className={`font-mono text-[10px] font-semibold ${color}`} data-testid="text-cashflow-delta">{prefix}{fmt(delta)}</span>;
+      },
+    },
+    {
       key: "gp_percent",
       header: "GP%",
       align: "right",
@@ -2046,6 +2157,31 @@ export default function ProjectsSummary() {
         const val = p.gp_percent * 100;
         const color = val >= 20 ? "text-emerald-600" : val >= 0 ? "text-amber-600" : "text-red-600";
         return <span className={`font-mono text-[10px] font-semibold ${color}`}>{val.toFixed(1)}%</span>;
+      },
+    },
+    {
+      key: "tracking_gp_percent",
+      header: "Tracking GP%",
+      align: "right",
+      render: (p) => {
+        const revenue = p.actual_revenue ?? 0;
+        const expenses = p.actual_expenses ?? 0;
+        if (revenue === 0 && expenses === 0) return <span className="text-slate-500 text-[10px]">—</span>;
+        if (revenue === 0) return <span className="font-mono text-[10px] font-semibold text-red-600">-∞</span>;
+        const val = ((revenue - expenses) / revenue) * 100;
+        const color = val >= 20 ? "text-emerald-600" : val >= 0 ? "text-amber-600" : "text-red-600";
+        return <span className={`font-mono text-[10px] font-semibold ${color}`} data-testid="text-tracking-gp">{val.toFixed(1)}%</span>;
+      },
+    },
+    {
+      key: "cos_realised_pct",
+      header: "COS Realised %",
+      align: "right",
+      render: (p) => {
+        if (p.cos_realised_pct == null) return <span className="text-slate-500 text-[10px]">—</span>;
+        const val = p.cos_realised_pct * 100;
+        const color = val >= 80 ? "text-emerald-600" : val >= 50 ? "text-amber-600" : "text-red-600";
+        return <span className={`font-mono text-[10px] font-semibold ${color}`} data-testid="text-cos-realised-pct">{val.toFixed(1)}%</span>;
       },
     },
     {
@@ -2114,7 +2250,7 @@ export default function ProjectsSummary() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLocation(`/project/${encodeURIComponent(p.project_name)}?tab=task-grid`); }}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setLocation(`/project/${encodeURIComponent(p.project_name)}`); }}>
                     Open project detail
                   </DropdownMenuItem>
                   <DropdownMenuItem disabled={!p.project_info_id} onClick={(e) => { e.stopPropagation(); setEditProject(p); }}>
@@ -2146,46 +2282,52 @@ export default function ProjectsSummary() {
     <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
       <SectionHeader
         icon={<BarChart3 className="h-5 w-5" />}
-        eyebrow="Project Management"
+        eyebrow="Projects"
         title="Project List"
         description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) ? " (filtered)" : ""}`}
         actions={
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleExport}
-            data-testid="button-export"
-            className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-muted-foreground border-border hover:bg-muted shrink-0"
-          >
-            <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Export</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            {canAccessEntityAction("project_create", "create") && (
+              <Link href="/project-create">
+                <Button
+                  size="sm"
+                  data-testid="button-create-project"
+                  className="h-8 sm:h-9 gap-1 sm:gap-1.5 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">Create Project</span>
+                </Button>
+              </Link>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              data-testid="button-export"
+              className="h-8 sm:h-9 gap-1 sm:gap-1.5 text-muted-foreground border-border hover:bg-muted shrink-0"
+            >
+              <Download className="w-4 h-4" />
+              <span className="hidden sm:inline">Export</span>
+            </Button>
+          </div>
         }
       />
 
       <WorkspaceNotice
-        title="Project List is the execution directory inside Project Management"
-        description="Use this list with Execution Overview and the Work Plan / Board to move from portfolio scanning into action, latest updates, and tracker-fed delivery signals."
+        title="Project List is the primary project directory"
+        description="Use this list with the Execution Board to scan project status, latest updates, and tracker-fed delivery signals."
         icon={<BarChart3 className="h-4 w-4" />}
         actions={
           <>
             <Button asChild variant="outline" size="sm">
-              <Link href="/execution-board">Execution Overview</Link>
-            </Button>
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/execution-board">Open Work Plan / Board</Link>
+              <Link href="/execution-board">Execution Board</Link>
             </Button>
           </>
         }
       >
         <Badge variant="secondary">Latest Update stays canonical</Badge>
         <Badge variant="secondary">Tracker-fed dates stay authoritative</Badge>
-        <Badge variant="secondary">Execution-first scanning</Badge>
       </WorkspaceNotice>
-
-      <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-[11px] text-muted-foreground">
-        Tracker-fed schedule and finance fields remain authoritative here. Latest Update stays app-managed, text only, and visible for execution scanning.
-      </div>
 
       <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">
         <button
@@ -2208,8 +2350,30 @@ export default function ProjectsSummary() {
         </button>
       </div>
 
+      {/* A4: Quick filter tabs for fast scanning */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {([
+          { key: "all" as const, label: "All" },
+          { key: "my_projects" as const, label: "My Projects" },
+          { key: "behind_plan" as const, label: "Behind Plan" },
+          { key: "needs_attention" as const, label: "Needs Attention" },
+        ]).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setQuickFilter(key)}
+            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors border ${
+              quickFilter === key
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card text-muted-foreground border-border hover:text-foreground hover:border-foreground/30"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-1">
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
           <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Projects</span>
@@ -2217,12 +2381,12 @@ export default function ProjectsSummary() {
                 <BarChart3 className="w-4 h-4 text-blue-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-foreground animate-number-pop" data-testid="stat-total-projects">{stats.total}</div>
+            <div className="text-2xl font-bold text-foreground" data-testid="stat-total-projects">{stats.total}</div>
             <div className="text-xs text-muted-foreground mt-1">{stats.totalKwp.toLocaleString()} kWp total capacity</div>
           </CardContent>
         </Card>
 
-        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-2">
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
           <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Avg. Completion</span>
@@ -2230,14 +2394,14 @@ export default function ProjectsSummary() {
                 <Activity className="w-4 h-4 text-emerald-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-foreground animate-number-pop" data-testid="stat-avg-completion">{stats.avgCompletion.toFixed(0)}%</div>
+            <div className="text-2xl font-bold text-foreground" data-testid="stat-avg-completion">{stats.avgCompletion.toFixed(0)}%</div>
             <div className="w-full h-1.5 bg-muted rounded-full mt-2 overflow-hidden">
-              <div className={`h-full rounded-full animate-progress-fill ${progressColor(stats.avgCompletion)}`} style={{ width: `${Math.min(stats.avgCompletion, 100)}%` }} />
+              <div className={`h-full rounded-full ${progressColor(stats.avgCompletion)}`} style={{ width: `${Math.min(stats.avgCompletion, 100)}%` }} />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-3">
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
           <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Behind Schedule</span>
@@ -2245,14 +2409,14 @@ export default function ProjectsSummary() {
                 <TrendingDown className={`w-4 h-4 ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} />
               </div>
             </div>
-            <div className={`text-2xl font-bold animate-number-pop ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} data-testid="stat-behind-schedule">
+            <div className={`text-2xl font-bold ${stats.behindSchedule > 0 ? "text-rose-600" : "text-emerald-600"}`} data-testid="stat-behind-schedule">
               {stats.behindSchedule}
             </div>
             <div className="text-xs text-muted-foreground mt-1">of {stats.total} projects ({stats.total > 0 ? ((stats.behindSchedule / stats.total) * 100).toFixed(0) : 0}%)</div>
           </CardContent>
         </Card>
 
-        <Card className="border-border shadow-sm overflow-hidden card-hover animate-float-in stagger-4">
+        <Card className="border-border shadow-sm overflow-hidden card-hover">
           <CardContent className="p-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Financial Close</span>
@@ -2260,7 +2424,7 @@ export default function ProjectsSummary() {
                 <Zap className="w-4 h-4 text-violet-600" />
               </div>
             </div>
-            <div className="text-2xl font-bold text-foreground animate-number-pop" data-testid="stat-fin-close">{stats.finCloseCount}</div>
+            <div className="text-2xl font-bold text-foreground" data-testid="stat-fin-close">{stats.finCloseCount}</div>
             <div className="text-xs text-muted-foreground mt-1">of {stats.total} achieved ({stats.total > 0 ? ((stats.finCloseCount / stats.total) * 100).toFixed(0) : 0}%)</div>
           </CardContent>
         </Card>
@@ -2299,6 +2463,20 @@ export default function ProjectsSummary() {
           options={[
             { value: "all", label: "All Phases" },
             ...uniquePhases.map((ph) => ({ value: ph, label: getPhaseLabel(ph) })),
+          ]}
+        />
+
+        <SearchableSelect
+          value={ragFilter}
+          onValueChange={setRagFilter}
+          placeholder="All RAG"
+          triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-36 text-sm border-border"
+          data-testid="select-rag-filter"
+          options={[
+            { value: "all", label: "All RAG" },
+            { value: "Green", label: "Green" },
+            { value: "Amber", label: "Amber" },
+            { value: "Red", label: "Red" },
           ]}
         />
 
@@ -2425,7 +2603,7 @@ export default function ProjectsSummary() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); setPriorityFilter("all"); }}
+            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); setRagFilter("all"); setPriorityFilter("all"); }}
             className="h-9 text-xs text-muted-foreground hover:text-foreground"
           >
             <X className="w-3 h-3 mr-1" />
@@ -2467,8 +2645,8 @@ export default function ProjectsSummary() {
         </div>
       ) : (
 
-      <div className="border border-border rounded-xl overflow-hidden shadow-sm bg-card">
-        <div className="overflow-auto max-h-[calc(100vh-280px)] sm:max-h-[calc(100vh-340px)]">
+      <div className="border border-border rounded-xl overflow-hidden shadow-sm bg-card" style={{ contain: "layout style" }}>
+        <div ref={tableContainerRef} className="overflow-auto" style={{ maxHeight: `calc(100vh - ${tableTopOffset + 16}px)` }}>
           <table className="w-full text-[10px] border-collapse table-fixed" style={{ minWidth: "100%" }}>
             <colgroup>
               {filteredColumns.map(col => (
@@ -2513,17 +2691,24 @@ export default function ProjectsSummary() {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((project, idx) => (
+              {sorted.length === 0 ? (
+                <tr>
+                  <td colSpan={filteredColumns.length} className="p-8 text-center text-sm text-muted-foreground">
+                    No projects match your filters
+                  </td>
+                </tr>
+              ) : sorted.map((project, idx) => (
                 <tr
                   key={project.project_name}
-                  className={`border-b border-border hover:bg-blue-50/40 transition-colors ${
+                  className={`border-b border-border hover:bg-blue-50/40 ${
                     idx % 2 === 0 ? "bg-card" : "bg-muted/30"
                   }`}
+                  style={{ contentVisibility: "auto", containIntrinsicHeight: "32px" }}
                   data-testid={`row-project-${idx}`}
                   onClick={(e) => {
                     const target = e.target as HTMLElement;
                     if (target.closest('button, a, input, select, textarea, [role="button"], [data-interactive="true"]')) return;
-                    setLocation(`/project/${encodeURIComponent(project.project_name)}?tab=task-grid`);
+                    setLocation(`/project/${encodeURIComponent(project.project_name)}`);
                   }}
                 >
                   {filteredColumns.map((col) => (

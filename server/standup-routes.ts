@@ -1,9 +1,10 @@
 import { Express, Request, Response } from "express";
-import { db } from "./db";
+import { db, getDbMode } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, count } from "drizzle-orm";
 import {
   standupSchedules, standupParticipants, standupEntries,
-  users, projectInfo, workItems, workItemStatusHistory, notifications,
+  users, projectInfo, workItems, workItemStatusHistory, notifications, workItemAssignments,
+  priorityProjects, mytoolCompanyPriorities,
   type InsertStandupSchedule, type InsertStandupEntry, type InsertStandupParticipant,
 } from "@shared/schema";
 import { getEffectiveUser, requireAuth } from "./auth-context";
@@ -72,6 +73,13 @@ async function notifyStandupParticipants(
   }
 }
 
+async function ensureStandupV2Table() {
+  const isPostgres = getDbMode() === "postgres";
+  const idCol = isPostgres ? "id SERIAL PRIMARY KEY" : "id INTEGER PRIMARY KEY AUTOINCREMENT";
+  const tsDefault = isPostgres ? "DEFAULT NOW()" : "DEFAULT CURRENT_TIMESTAMP";
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (${sql.raw(idCol)}, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TIMESTAMP NOT NULL ${sql.raw(tsDefault)})`);
+}
+
 export function registerStandupRoutes(app: Express) {
 
   // ── Schedules ──────────────────────────────────────────────────────────────
@@ -102,8 +110,8 @@ export function registerStandupRoutes(app: Express) {
       }
 
       res.json(schedules);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -115,8 +123,8 @@ export function registerStandupRoutes(app: Express) {
         .from(standupSchedules)
         .orderBy(desc(standupSchedules.createdAt));
       res.json(schedules);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -150,8 +158,8 @@ export function registerStandupRoutes(app: Express) {
       });
 
       res.status(201).json(schedule);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -173,8 +181,8 @@ export function registerStandupRoutes(app: Express) {
         .returning();
 
       res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -184,8 +192,8 @@ export function registerStandupRoutes(app: Express) {
       const id = parseInt(req.params.id as string);
       await db.delete(standupSchedules).where(eq(standupSchedules.id, id));
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -211,8 +219,8 @@ export function registerStandupRoutes(app: Express) {
         .orderBy(asc(users.name));
 
       res.json(participants);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -229,8 +237,8 @@ export function registerStandupRoutes(app: Express) {
       }).returning();
 
       res.status(201).json(participant);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -248,8 +256,8 @@ export function registerStandupRoutes(app: Express) {
       );
 
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -258,6 +266,20 @@ export function registerStandupRoutes(app: Express) {
   /** Get today's standup info (which schedules need a submission) */
   app.get("/api/standups/today", requireAuth, async (req: Request, res: Response) => {
     try {
+      if (req.query.team_id) {
+        const date = new Date().toISOString().slice(0, 10);
+        const teamId = Number(req.query.team_id);
+        await ensureStandupV2Table();
+        const rows = await db.execute(sql`
+          SELECT e.*, u.name as user_name, u.email as user_email
+          FROM standup_entries_v2 e
+          LEFT JOIN users u ON u.id = e.user_id
+          WHERE e.date = ${date} AND (${teamId} IS NULL OR e.team_id = ${teamId})
+          ORDER BY e.created_at ASC
+        `);
+        return res.json({ date, items: rows.rows || [] });
+      }
+
       const user = getUser(req);
       const todayStr = today();
 
@@ -298,8 +320,8 @@ export function registerStandupRoutes(app: Express) {
       }
 
       res.json(todayStandups);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -373,8 +395,8 @@ export function registerStandupRoutes(app: Express) {
       notifyStandupParticipants(scheduleId, user, entry, schedule[0]?.name || "Standup").catch(() => {});
 
       res.status(201).json(entry);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -395,8 +417,8 @@ export function registerStandupRoutes(app: Express) {
         .returning();
 
       res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -430,8 +452,8 @@ export function registerStandupRoutes(app: Express) {
         .orderBy(asc(standupEntries.submittedAt));
 
       res.json(entries);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -499,8 +521,8 @@ export function registerStandupRoutes(app: Express) {
       const totalCount = Number(totalCountResult.count);
 
       res.json({ entries: grouped, total: totalCount, limit, offset, hasMore: offset + limit < totalCount });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -578,8 +600,8 @@ export function registerStandupRoutes(app: Express) {
         moodDistribution: moodDist,
         participationRate: avgParticipation,
       });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -677,8 +699,8 @@ export function registerStandupRoutes(app: Express) {
       });
 
       res.json({ series, totalParticipants });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -755,8 +777,8 @@ export function registerStandupRoutes(app: Express) {
       });
 
       res.json({ members: personStats, totalStandups });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -850,8 +872,8 @@ export function registerStandupRoutes(app: Express) {
       }
 
       res.json({ text, markdown, date, scheduleName, submissionCount: entries.length, participantCount: participants.length, blockerCount: blockerEntries.length, missingCount: missing.length });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -904,8 +926,300 @@ export function registerStandupRoutes(app: Express) {
         .slice(0, 5);
 
       res.json({ whatIDid, whatImDoing });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    }
+  });
+
+  // ── Meeting Mode ────────────────────────────────────────────────────────
+
+  /** Get meeting data: all participants with their entries + assigned tasks for the meeting carousel */
+  app.get("/api/standups/meeting/:scheduleId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const scheduleId = parseInt(req.params.scheduleId as string);
+      const date = (req.query.date as string) || today();
+
+      // Get all participants
+      const participants = await db
+        .select({
+          userId: standupParticipants.userId,
+          isRequired: standupParticipants.isRequired,
+          userName: users.name,
+          userEmail: users.email,
+        })
+        .from(standupParticipants)
+        .leftJoin(users, eq(standupParticipants.userId, users.id))
+        .where(eq(standupParticipants.scheduleId, scheduleId))
+        .orderBy(asc(users.name));
+
+      // Get all entries for this date
+      const entries = await db
+        .select({
+          id: standupEntries.id,
+          scheduleId: standupEntries.scheduleId,
+          userId: standupEntries.userId,
+          standupDate: standupEntries.standupDate,
+          whatIDid: standupEntries.whatIDid,
+          whatImDoing: standupEntries.whatImDoing,
+          blockers: standupEntries.blockers,
+          mood: standupEntries.mood,
+          isLate: standupEntries.isLate,
+          submittedAt: standupEntries.submittedAt,
+          userName: users.name,
+          userEmail: users.email,
+        })
+        .from(standupEntries)
+        .leftJoin(users, eq(standupEntries.userId, users.id))
+        .where(and(
+          eq(standupEntries.scheduleId, scheduleId),
+          eq(standupEntries.standupDate, date)
+        ))
+        .orderBy(asc(standupEntries.submittedAt));
+
+      const entryByUser = new Map(entries.map((e) => [e.userId, e]));
+
+      // For each participant, get their assigned work items (tasks)
+      const todayStr = today();
+      const meetingParticipants = await Promise.all(
+        participants.map(async (p) => {
+          // Get tasks owned by or assigned to this user
+          const ownedTasks = await db
+            .select({
+              id: workItems.id,
+              title: workItems.title,
+              status: workItems.status,
+              priority: workItems.priority,
+              endDate: workItems.endDate,
+              percentComplete: workItems.percentComplete,
+              projectId: workItems.projectId,
+              projectName: projectInfo.name,
+            })
+            .from(workItems)
+            .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+            .where(and(
+              eq(workItems.ownerUserId, p.userId),
+              sql`${workItems.deletedAt} IS NULL`,
+              sql`UPPER(${workItems.status}) NOT IN ('COMPLETE', 'COMPLETED', 'DONE', 'CANCELLED', 'CANCELED')`
+            ))
+            .orderBy(
+              sql`CASE ${workItems.priority}
+                WHEN 'Urgent' THEN 0
+                WHEN 'High' THEN 1
+                WHEN 'Med' THEN 2
+                WHEN 'Low' THEN 3
+                ELSE 4
+              END`,
+              asc(workItems.endDate)
+            )
+            .limit(25);
+
+          // Also get tasks assigned via work_item_assignments
+          const assignedTaskIds = await db
+            .select({ workItemId: workItemAssignments.workItemId })
+            .from(workItemAssignments)
+            .where(eq(workItemAssignments.userId, p.userId));
+
+          const assignedIds = assignedTaskIds.map((r) => r.workItemId);
+          const ownedIds = new Set(ownedTasks.map((t) => t.id));
+
+          let additionalTasks: typeof ownedTasks = [];
+          if (assignedIds.length > 0) {
+            const missingIds = assignedIds.filter((id) => !ownedIds.has(id));
+            if (missingIds.length > 0) {
+              additionalTasks = await db
+                .select({
+                  id: workItems.id,
+                  title: workItems.title,
+                  status: workItems.status,
+                  priority: workItems.priority,
+                  endDate: workItems.endDate,
+                  percentComplete: workItems.percentComplete,
+                  projectId: workItems.projectId,
+                  projectName: projectInfo.name,
+                })
+                .from(workItems)
+                .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+                .where(and(
+                  inArray(workItems.id, missingIds),
+                  sql`${workItems.deletedAt} IS NULL`,
+                  sql`UPPER(${workItems.status}) NOT IN ('COMPLETE', 'COMPLETED', 'DONE', 'CANCELLED', 'CANCELED')`
+                ))
+                .orderBy(
+                  sql`CASE ${workItems.priority}
+                    WHEN 'Urgent' THEN 0
+                    WHEN 'High' THEN 1
+                    WHEN 'Med' THEN 2
+                    WHEN 'Low' THEN 3
+                    ELSE 4
+                  END`,
+                  asc(workItems.endDate)
+                )
+                .limit(15);
+            }
+          }
+
+          const rawTasks = [...ownedTasks, ...additionalTasks];
+
+          // Look up company priorities linked to each task's project
+          const projectIds = [...new Set(rawTasks.map((t) => t.projectId).filter(Boolean))] as number[];
+          let priorityByProject = new Map<number, { id: number; title: string; severity: string }>();
+          if (projectIds.length > 0) {
+            const ppRows = await db
+              .select({
+                projectId: priorityProjects.projectId,
+                priorityId: mytoolCompanyPriorities.id,
+                priorityTitle: mytoolCompanyPriorities.title,
+                severity: mytoolCompanyPriorities.severity,
+              })
+              .from(priorityProjects)
+              .innerJoin(mytoolCompanyPriorities, eq(priorityProjects.priorityId, mytoolCompanyPriorities.id))
+              .where(and(
+                inArray(priorityProjects.projectId, projectIds),
+                sql`${mytoolCompanyPriorities.status} != 'closed'`
+              ));
+            for (const row of ppRows) {
+              // Keep the highest-severity priority per project
+              const existing = priorityByProject.get(row.projectId);
+              const sevRank = (s: string) => s === "critical" ? 2 : s === "important" ? 1 : 0;
+              if (!existing || sevRank(row.severity) > sevRank(existing.severity)) {
+                priorityByProject.set(row.projectId, {
+                  id: row.priorityId,
+                  title: row.priorityTitle,
+                  severity: row.severity,
+                });
+              }
+            }
+          }
+
+          // Enrich tasks with company priority linkage
+          const allTasks = rawTasks.map((t) => ({
+            ...t,
+            linkedPriority: t.projectId ? (priorityByProject.get(t.projectId) || null) : null,
+          }));
+
+          // Classify tasks
+          const overdue = allTasks.filter((t) => t.endDate && t.endDate < todayStr);
+          const dueSoon = allTasks.filter((t) => {
+            if (!t.endDate || t.endDate < todayStr) return false;
+            const soon = new Date(`${todayStr}T00:00:00Z`);
+            soon.setUTCDate(soon.getUTCDate() + 7);
+            return t.endDate <= soon.toISOString().split("T")[0];
+          });
+          const inProgress = allTasks.filter((t) => {
+            const s = (t.status || "").toUpperCase();
+            return ["IN PROGRESS", "NEEDS APPROVAL", "PROVIDE FEEDBACK"].includes(s);
+          });
+          const onHold = allTasks.filter((t) => {
+            const s = (t.status || "").toUpperCase();
+            return ["HOLD", "ON HOLD"].includes(s);
+          });
+
+          return {
+            userId: p.userId,
+            userName: p.userName,
+            userEmail: p.userEmail,
+            isRequired: p.isRequired,
+            entry: entryByUser.get(p.userId) || null,
+            hasSubmitted: entryByUser.has(p.userId),
+            tasks: {
+              total: allTasks.length,
+              overdue,
+              dueSoon,
+              inProgress,
+              onHold,
+              byPriority: {
+                urgent: allTasks.filter((t) => t.priority === "Urgent"),
+                high: allTasks.filter((t) => t.priority === "High"),
+                med: allTasks.filter((t) => t.priority === "Med"),
+                low: allTasks.filter((t) => t.priority === "Low"),
+              },
+            },
+          };
+        })
+      );
+
+      // Aggregate blockers across all entries
+      const allBlockers = entries
+        .filter((e) => e.blockers && e.blockers.trim())
+        .map((e) => ({
+          userId: e.userId,
+          userName: e.userName,
+          blockers: e.blockers!,
+          mood: e.mood,
+        }));
+
+      res.json({
+        date,
+        participants: meetingParticipants,
+        summary: {
+          total: participants.length,
+          submitted: entries.length,
+          blockerCount: allBlockers.length,
+          blockers: allBlockers,
+        },
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Advanced daily standup workflow ───────────────────────────────────────
+  app.post("/api/standups/entry", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { yesterday, today: todayPlan, blockers, project_id, team_id } = req.body || {};
+      if (!todayPlan || typeof todayPlan !== "string") {
+        return res.status(400).json({ error: "today field is required" });
+      }
+      const date = new Date().toISOString().slice(0, 10);
+      await ensureStandupV2Table();
+      await db.execute(sql`
+        INSERT INTO standup_entries_v2 (user_id, date, yesterday, today, blockers, project_id, team_id, created_at)
+        VALUES (${user.id}, ${date}, ${yesterday ?? null}, ${todayPlan}, ${blockers ?? null}, ${project_id ?? null}, ${team_id ?? null}, ${new Date().toISOString()})
+      `);
+      res.status(201).json({ ok: true });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    }
+  });
+
+  app.get("/api/standups/history", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const teamId = req.query.team_id ? Number(req.query.team_id) : null;
+      const from = String(req.query.from || "1900-01-01");
+      const to = String(req.query.to || "2999-12-31");
+      await ensureStandupV2Table();
+      const rows = await db.execute(sql`
+        SELECT e.*, u.name as user_name, u.email as user_email
+        FROM standup_entries_v2 e
+        LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.date >= ${from} AND e.date <= ${to} AND (${teamId} IS NULL OR e.team_id = ${teamId})
+        ORDER BY e.date DESC, e.created_at DESC
+      `);
+      res.json({ items: rows.rows || [] });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    }
+  });
+
+  app.get("/api/standups/blockers/active", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      await ensureStandupV2Table();
+      const isPostgres = getDbMode() === "postgres";
+      const ageDaysExpr = isPostgres
+        ? "EXTRACT(EPOCH FROM (NOW() - e.date::date)) / 86400"
+        : "CAST(julianday('now') - julianday(e.date) AS INTEGER)";
+      const rows = await db.execute(sql.raw(`
+        SELECT e.id, e.date, e.blockers, e.project_id, e.team_id, e.user_id, u.name as owner_name,
+               ${ageDaysExpr} as age_days
+        FROM standup_entries_v2 e
+        LEFT JOIN users u ON u.id = e.user_id
+        WHERE e.blockers IS NOT NULL AND TRIM(e.blockers) <> ''
+        ORDER BY e.date ASC
+      `));
+      res.json({ items: rows.rows || [] });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 }

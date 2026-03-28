@@ -54,23 +54,25 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   const hasPO = !!(cost.poNumber);
   const hasPaidDate = !!(cost.paidDate);
 
-  const hasInvoiceColorInfo = rawInvoiceDateConfirmed != null || invoiceDateFontColor != null;
+  // Use the canonical isDateBlack check: red text = unconfirmed, black text = confirmed.
+  // When no color info exists, default to unconfirmed (red) — not confirmed.
   const invoiceDateActual = hasInvoiceDate && (
     rawInvoiceDateConfirmed === true ||
-    invoiceDateFontColor === 'black' ||
-    !hasInvoiceColorInfo
+    invoiceDateFontColor === 'black'
   );
-  const hasPaymentColorInfo = rawPaidDateConfirmed != null || paymentDateFontColor != null;
   const paidDateActual = hasPaidDate && (
     rawPaidDateConfirmed === true ||
-    paymentDateFontColor === 'black' ||
-    !hasPaymentColorInfo
+    paymentDateFontColor === 'black'
   );
 
   let computedState = "Planned";
   if (hasInvoice && hasPaidDate && paidDateActual) computedState = "Paid";
   else if (hasInvoice && hasInvoiceDate && invoiceDateActual) computedState = "Invoiced";
   else if (hasPO || hasInvoice) computedState = "Committed";
+
+  const effectivePaidDate = cost.paidDate || (cost as any).forecastPaymentDate || null;
+  const effectivePaidDateFontColor = cost.paidDate ? paymentDateFontColor : ((cost as any).forecastPaymentDate ? (paymentDateFontColor || "red") : null);
+  const effectivePaidDateConfirmed = cost.paidDate ? (rawPaidDateConfirmed ?? false) : ((cost as any).forecastPaymentDate ? (rawPaidDateConfirmed ?? false) : false);
 
   return {
     id: cost.id + 900000,
@@ -81,28 +83,38 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     expenseLineItem: cost.description,
     expenseInvoiceNumber: cost.invoiceNumber,
     expenseInvoicedDate: cost.invoiceDate,
-    expensePaymentDate: cost.paidDate,
+    expensePaymentDate: effectivePaidDate,
     expenseActualTotal: cost.amountExVat,
+    quotedTotal: cost.amountExVat,
     expensePoNumber: cost.poNumber,
     budgetQty: (cost as any).budgetQty ?? null,
     budgetRateUnit: (cost as any).budgetRate ?? null,
     budgetTotal: (cost as any).budgetTotal ?? null,
     budgetCosTotal: (cost as any).budgetCos ?? null,
     actualCosTotal: cost.amountExVat,
+    approvedDate: cost.approvedDate ?? null,
     forecastPaymentDate: (cost as any).forecastPaymentDate ?? null,
     computedForecastPaymentDate: null,
     computedState,
     invoiceDateConfirmed: rawInvoiceDateConfirmed ?? false,
     invoiceDateFontColor,
-    paymentDateConfirmed: rawPaidDateConfirmed ?? false,
-    paymentDateFontColor,
+    paymentDateConfirmed: effectivePaidDateConfirmed,
+    paymentDateFontColor: effectivePaidDateFontColor,
     supplierName: cost.counterpartyName,
     noRevenueLinked: cost.noRevenueLinked ?? false,
     subProjectName: (cost as any).subProjectName ?? null,
     revenueRecognitionAmount: (cost as any).revenueRecognitionAmount ?? null,
+    adminDateOverride: (cost as any).adminDateOverride ?? null,
+    adminDateOverrideReason: (cost as any).adminDateOverrideReason ?? null,
+    adminDateOverrideBy: (cost as any).adminDateOverrideBy ?? null,
+    adminDateOverrideAt: (cost as any).adminDateOverrideAt ?? null,
     _isNormalized: true,
     _sourceRow: (cost as any).sourceRow || cost.id,
     _cosRealisedFlag: (cost as any).cosRealised ?? false,
+    _cosOverrideStatus: (cost as any).cosStatusOverride ?? null,
+    _cosOverrideBy: (cost as any).cosStatusOverrideBy ?? null,
+    _cosOverrideAt: (cost as any).cosStatusOverrideAt ?? null,
+    _cosOverrideReason: (cost as any).cosStatusOverrideReason ?? null,
   };
 }
 
@@ -131,6 +143,10 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     inBank,
     effectiveDate: rev.paidDate || rev.inBankDate || rev.expectedPaymentDate || rev.invoiceDate,
     subProjectName: (rev as any).subProjectName ?? null,
+    adminDateOverride: (rev as any).adminDateOverride ?? null,
+    adminDateOverrideReason: (rev as any).adminDateOverrideReason ?? null,
+    adminDateOverrideBy: (rev as any).adminDateOverrideBy ?? null,
+    adminDateOverrideAt: (rev as any).adminDateOverrideAt ?? null,
     _isNormalized: true,
   };
 }

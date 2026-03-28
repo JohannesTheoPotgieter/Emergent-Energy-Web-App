@@ -53,9 +53,9 @@ async function generateMonthlyReport(reportType: "pm" | "engineering", month: st
       data,
       generatedAt: new Date(),
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Handle unique constraint violation (race condition — another instance already created it)
-    if (err.message?.includes("unique") || err.message?.includes("duplicate") || err.code === "23505") {
+    if ((err instanceof Error ? err.message : String(err))?.includes("unique") || (err instanceof Error ? err.message : String(err))?.includes("duplicate") || err.code === "23505") {
       console.log(`[Monthly Report Scheduler] ${reportType} report for ${month} was created by another instance, skipping`);
       return false;
     }
@@ -90,14 +90,14 @@ export function startMonthlyReportScheduler(): void {
 
     try {
       await generateMonthlyReport("pm", previousMonth);
-    } catch (err: any) {
-      console.error(`[Monthly Report Scheduler] Failed to generate PM report for ${previousMonth}:`, err.message);
+    } catch (err: unknown) {
+      console.error(`[Monthly Report Scheduler] Failed to generate PM report for ${previousMonth}:`, (err instanceof Error ? err.message : String(err)));
     }
 
     try {
       await generateMonthlyReport("engineering", previousMonth);
-    } catch (err: any) {
-      console.error(`[Monthly Report Scheduler] Failed to generate Engineering report for ${previousMonth}:`, err.message);
+    } catch (err: unknown) {
+      console.error(`[Monthly Report Scheduler] Failed to generate Engineering report for ${previousMonth}:`, (err instanceof Error ? err.message : String(err)));
     }
 
     isRunning = false;

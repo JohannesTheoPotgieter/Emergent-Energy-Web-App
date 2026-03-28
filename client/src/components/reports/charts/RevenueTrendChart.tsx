@@ -16,6 +16,7 @@ interface RevenueTrendItem {
 
 interface RevenueTrendChartProps {
   data: RevenueTrendItem[];
+  onChartClick?: () => void;
 }
 
 function formatDateLabel(dateStr: string): string {
@@ -23,7 +24,7 @@ function formatDateLabel(dateStr: string): string {
   return `${String(d.getDate()).padStart(2, "0")} ${d.toLocaleString("en-ZA", { month: "short" })}`;
 }
 
-export default function RevenueTrendChart({ data }: RevenueTrendChartProps) {
+export default function RevenueTrendChart({ data, onChartClick }: RevenueTrendChartProps) {
   const { chartData, categories } = useMemo(() => {
     if (!data || data.length === 0) return { chartData: [], categories: [] };
 
@@ -43,7 +44,7 @@ export default function RevenueTrendChart({ data }: RevenueTrendChartProps) {
 
   if (!data || data.length === 0) {
     return (
-      <Card>
+      <Card className={onChartClick ? "cursor-pointer" : ""} onClick={onChartClick}>
         <CardContent className="py-8 text-center text-muted-foreground text-sm">
           No data available for this period
         </CardContent>
