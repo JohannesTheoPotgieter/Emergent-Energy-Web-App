@@ -1,7 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, inArray, count, isNull, ne } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import {
   trItems, trItemProjectLinks, trItemSuggestionDecisions,
   insertTrItemSchema, projectInfo, workItems, entityAssignments,
@@ -9,6 +8,8 @@ import {
 } from "@shared/schema";
 import { resolveNameToUserId } from "./user-resolver";
 import { requirePermission } from "./permission-middleware";
+import { jwtAuth, requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 type AppUser = { id: number; email: string; name: string; role: string; };
 
@@ -16,37 +17,11 @@ function getUser(req: Request): AppUser {
   return req.user as any as AppUser;
 }
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
-
 function requireManager(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as AppUser)?.role || "";
   const allowed = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
   if (allowed.includes(role)) return next();
   res.status(403).json({ error: "forbidden", message: "Manager access required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = ((req as any).user as AppUser)?.role || "";
-  const allowed = ["COO_ADMIN", "CEO_ADMIN"];
-  if (allowed.includes(role)) return next();
-  res.status(403).json({ error: "forbidden", message: "Admin access required" });
 }
 
 const ANCHOR_TOKENS = [
@@ -151,8 +126,8 @@ export async function seedTrRegisterData() {
       }
     }
     console.log(`[Seed] TR Register: ${created} created, ${updated} updated.`);
-  } catch (err: any) {
-    console.error("[Seed] TR Register error:", err.message);
+  } catch (err: unknown) {
+    console.error("[Seed] TR Register error:", (err instanceof Error ? err.message : String(err)));
   }
 }
 
@@ -240,8 +215,8 @@ export function registerTrRegisterRoutes(app: Express) {
         };
       });
       res.json(enriched);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -268,8 +243,8 @@ export function registerTrRegisterRoutes(app: Express) {
         .where(eq(trItemProjectLinks.trItemId, id));
 
       res.json({ ...item, linkedProjects: links });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -319,8 +294,8 @@ export function registerTrRegisterRoutes(app: Express) {
       }
 
       res.json(item);
-    } catch (err: any) {
-      res.status(400).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -402,8 +377,8 @@ export function registerTrRegisterRoutes(app: Express) {
       }
 
       res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -414,8 +389,8 @@ export function registerTrRegisterRoutes(app: Express) {
       if (!existing) return res.status(404).json({ error: "TR item not found" });
       await db.delete(trItems).where(eq(trItems.id, id));
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -463,8 +438,8 @@ export function registerTrRegisterRoutes(app: Express) {
         .returning();
 
       res.json({ link: updatedLink, task });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -481,8 +456,8 @@ export function registerTrRegisterRoutes(app: Express) {
 
       await db.delete(trItemProjectLinks).where(eq(trItemProjectLinks.id, linkId));
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -521,8 +496,8 @@ export function registerTrRegisterRoutes(app: Express) {
       }).where(eq(trItems.id, id)).returning();
 
       res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -614,8 +589,8 @@ export function registerTrRegisterRoutes(app: Express) {
 
       scored.sort((a: ScoredProject, b: ScoredProject) => b.score - a.score);
       res.json(scored.slice(0, 8));
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -686,8 +661,8 @@ export function registerTrRegisterRoutes(app: Express) {
       }
 
       res.json({ success: true, decision, linkResult });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 

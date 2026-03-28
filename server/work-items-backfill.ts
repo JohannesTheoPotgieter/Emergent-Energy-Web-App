@@ -37,8 +37,8 @@ async function backfillFromTable(
 async function migrateTable(name: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
-  } catch (err: any) {
-    console.error(`[Backfill] Error migrating ${name}:`, err.message);
+  } catch (err: unknown) {
+    console.error(`[Backfill] Error migrating ${name}:`, (err instanceof Error ? err.message : String(err)));
   }
 }
 
@@ -556,8 +556,8 @@ export async function backfillWorkItems(): Promise<void> {
     await setFeatureFlag("canonical_work_items_v1", true, "system-backfill");
     console.log("[Backfill] canonical_work_items_v1 feature flag enabled");
     console.log("[Backfill] All legacy table migration complete");
-  } catch (err: any) {
-    console.error("[Backfill] work_items backfill error:", err.message);
+  } catch (err: unknown) {
+    console.error("[Backfill] work_items backfill error:", (err instanceof Error ? err.message : String(err)));
     await setFeatureFlag("canonical_work_items_v1", true, "system-backfill");
   }
 }

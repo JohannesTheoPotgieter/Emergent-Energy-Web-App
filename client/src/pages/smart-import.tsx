@@ -17,16 +17,16 @@ import {
 } from "lucide-react";
 import { useLocation } from "wouter";
 
-function getAuthHeaders(): Record<string, string> {
+export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
   return headers;
 }
 
-const STEP_LABELS = ["Upload", "Sections", "Mapping", "Issues", "Commit"];
+export const STEP_LABELS = ["Upload", "Sections", "Mapping", "Issues", "Commit"];
 
-const CANONICAL_FIELDS: Record<string, string[]> = {
+export const CANONICAL_FIELDS: Record<string, string[]> = {
   PLAN: [
     "task_name", "task_no", "start_date", "end_date", "duration",
     "actual_start", "actual_end", "actual_duration",
@@ -45,7 +45,7 @@ const CANONICAL_FIELDS: Record<string, string[]> = {
   ],
 };
 
-function confidenceBadge(confidence: number) {
+export function confidenceBadge(confidence: number) {
   if (confidence > 0.8) {
     return (
       <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] px-1.5 py-0">
@@ -67,7 +67,7 @@ function confidenceBadge(confidence: number) {
   );
 }
 
-function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onStepClick?: (step: number) => void }) {
+export function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onStepClick?: (step: number) => void }) {
   return (
     <div className="flex items-center gap-1 mb-6" data-testid="step-indicator">
       {STEP_LABELS.map((label, idx) => {
@@ -109,7 +109,7 @@ function StepIndicator({ currentStep, onStepClick }: { currentStep: number; onSt
   );
 }
 
-interface FileUploadResult {
+export interface FileUploadResult {
   file: File;
   status: "pending" | "uploading" | "success" | "error";
   runId?: number;
@@ -118,7 +118,7 @@ interface FileUploadResult {
   sectionsFound?: number;
 }
 
-function UploadStep({
+export function UploadStep({
   onUploaded,
   onBatchUploaded,
   onResumeBatch,
@@ -532,7 +532,7 @@ function UploadStep({
   );
 }
 
-function EditableField({
+export function EditableField({
   label,
   value,
   fieldKey,
@@ -616,7 +616,7 @@ function EditableField({
   );
 }
 
-function SectionDetectionStep({
+export function SectionDetectionStep({
   preview,
   runId,
   onContinue,
@@ -836,7 +836,7 @@ function SectionDetectionStep({
   );
 }
 
-const FIELD_LABELS: Record<string, string> = {
+export const FIELD_LABELS: Record<string, string> = {
   task_name: "Task Name", task_no: "Task #", start_date: "Start Date", end_date: "End Date",
   duration: "Duration", actual_start: "Actual Start", actual_end: "Actual End", actual_duration: "Actual Duration",
   pct_complete: "% Complete", expected_pct: "Expected %", owner: "Owner", predecessor: "Predecessor", phase: "Phase", comment: "Comment",
@@ -856,13 +856,13 @@ const FIELD_LABELS: Record<string, string> = {
   milestoneName: "Milestone", expectedPaymentDate: "Expected Payment",
 };
 
-const DB_TABLE_MAP: Record<string, string> = {
+export const DB_TABLE_MAP: Record<string, string> = {
   PLAN: "normalized_plan_tasks",
   REVENUE: "normalized_revenue_lines",
   EXPENDITURE: "normalized_cost_lines",
 };
 
-function ColumnMappingStep({
+export function ColumnMappingStep({
   runId,
   preview,
   onContinue,
@@ -1191,7 +1191,7 @@ function ColumnMappingStep({
   );
 }
 
-const IssueRowDetail = memo(function IssueRowDetail({ issue, normalization }: { issue: any; normalization: any }) {
+export const IssueRowDetail = memo(function IssueRowDetail({ issue, normalization }: { issue: any; normalization: any }) {
   const payload = issue.payloadJson || {};
   const section = (issue.section || "").toUpperCase();
   const row = payload.row;
@@ -1337,7 +1337,7 @@ const IssueRowDetail = memo(function IssueRowDetail({ issue, normalization }: { 
   );
 });
 
-function IssuesStep({
+export function IssuesStep({
   runId,
   issues,
   normalization,
@@ -2065,7 +2065,7 @@ function IssuesStep({
   );
 }
 
-function InvoiceClassificationPanel({ runId, normalization }: { runId: number; normalization: any }) {
+export function InvoiceClassificationPanel({ runId, normalization }: { runId: number; normalization: any }) {
   const [classifications, setClassifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [classified, setClassified] = useState(false);
@@ -2268,7 +2268,7 @@ function InvoiceClassificationPanel({ runId, normalization }: { runId: number; n
   );
 }
 
-function PreviewCommitStep({
+export function PreviewCommitStep({
   runId,
   preview,
   onBack,
@@ -3182,7 +3182,7 @@ function PreviewCommitStep({
   );
 }
 
-interface PendingRun {
+export interface PendingRun {
   id: number;
   projectName: string;
   status: string;
@@ -3194,7 +3194,7 @@ interface PendingRun {
   resolvedIssues: number;
 }
 
-interface BulkCommitResult {
+export interface BulkCommitResult {
   runId: number;
   projectName: string;
   status: "committed" | "skipped" | "failed";
@@ -3202,7 +3202,7 @@ interface BulkCommitResult {
   error?: string;
 }
 
-interface SmartImportRunHistoryItem {
+export interface SmartImportRunHistoryItem {
   id: number;
   projectName: string;
   sourceFileName: string;
@@ -3219,7 +3219,7 @@ interface SmartImportRunHistoryItem {
   resolvedIssues: number;
 }
 
-function BulkCommitPanel({ onBack, onSwitchToWizard }: {
+export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
   onBack: () => void;
   onSwitchToWizard: (runId: number) => void;
 }) {
@@ -3664,7 +3664,7 @@ function BulkCommitPanel({ onBack, onSwitchToWizard }: {
   );
 }
 
-function SmartImportGovernancePanel({
+export function SmartImportGovernancePanel({
   pendingRuns,
   pendingRunsLoading,
   pendingRunsError,

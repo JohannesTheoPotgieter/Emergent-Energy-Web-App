@@ -9,6 +9,13 @@ export async function registerDepartmentRoutes(app: Express) {
   // Each dynamic import is wrapped individually so one module failing
   // doesn't prevent the remaining department routes from registering.
   try {
+    const { registerProjectRoutes } = await import("../departments/project-routes");
+    registerProjectRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register project-routes:", err);
+  }
+
+  try {
     const { registerPriorityStrategicRoutes } = await import("../departments/priority-strategic-routes");
     registerPriorityStrategicRoutes(app);
   } catch (err) {
@@ -34,5 +41,93 @@ export async function registerDepartmentRoutes(app: Express) {
     registerFyeRevenueTrackingRoutes(app);
   } catch (err) {
     console.error("[Routes] Failed to register fye-revenue-tracking-routes:", err);
+  }
+
+  // B2: Sites
+  try {
+    const { registerSitesRoutes } = await import("../departments/sites-routes");
+    registerSitesRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register sites-routes:", err);
+  }
+
+  // B3: Opportunities
+  try {
+    const { registerOpportunitiesRoutes } = await import("../departments/opportunities-routes");
+    registerOpportunitiesRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register opportunities-routes:", err);
+  }
+
+  // B5: Budget Baselines
+  try {
+    const { registerBudgetBaselineRoutes } = await import("../departments/budget-baseline-routes");
+    registerBudgetBaselineRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register budget-baseline-routes:", err);
+  }
+
+  // C1: Construction
+  try {
+    const { registerConstructionRoutes } = await import("../departments/construction-routes");
+    registerConstructionRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register construction-routes:", err);
+  }
+
+  // C3: HSE
+  try {
+    const { registerHseRoutes } = await import("../departments/hse-routes");
+    registerHseRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register hse-routes:", err);
+  }
+
+  // C4: Handover Packs
+  try {
+    const { registerHandoverRoutes } = await import("../departments/handover-routes");
+    registerHandoverRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register handover-routes:", err);
+  }
+
+  // C5: Notification Triggers
+  try {
+    const { registerNotificationTriggerRoutes } = await import("../departments/notification-trigger-routes");
+    registerNotificationTriggerRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register notification-trigger-routes:", err);
+  }
+
+  // Board Pack PDF
+  try {
+    const { registerBoardPackRoutes } = await import("../departments/board-pack-routes");
+    registerBoardPackRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register board-pack-routes:", err);
+  }
+
+  // Drawing Register
+  try {
+    const { registerDrawingRegisterRoutes } = await import("../departments/drawing-register-routes");
+    registerDrawingRegisterRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register drawing-register-routes:", err);
+  }
+
+  // Data Backfill
+  try {
+    const { registerDataBackfillRoutes } = await import("../departments/data-backfill-routes");
+    registerDataBackfillRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register data-backfill-routes:", err);
+  }
+
+  // D1: Pipedrive Sync
+  try {
+    const { registerPipedriveRoutes } = await import("../departments/pipedrive-routes");
+    registerPipedriveRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register pipedrive-routes:", err);
   }
 }

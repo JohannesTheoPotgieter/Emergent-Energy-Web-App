@@ -2,36 +2,8 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { changeSets, fieldChanges, auditEvents, OVERRIDE_CATEGORIES } from "@shared/schema";
 import { eq, desc, and, sql, gte, lte, or, like, count } from "drizzle-orm";
-import { verifyToken } from "./jwt";
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) {
-    return next();
-  }
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = {
-        id: payload.userId,
-        email: payload.email,
-        name: payload.name,
-        role: payload.role,
-      };
-      return next();
-    }
-  }
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
-    return next();
-  }
-  res.status(403).json({ error: "Admin access required" });
-}
+import { requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 export function registerAuditRoutes(app: Express) {
   // Project History Timeline - get all ChangeSets for a specific project
@@ -67,9 +39,9 @@ export function registerAuditRoutes(app: Express) {
         items,
         pagination: { page, limit, total, totalPages: Math.ceil(Number(total) / limit) },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] project-history error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -104,9 +76,9 @@ export function registerAuditRoutes(app: Express) {
         items,
         pagination: { page, limit, total, totalPages: Math.ceil(Number(total) / limit) },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] project-history-by-name error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -122,9 +94,9 @@ export function registerAuditRoutes(app: Express) {
       const fields = await db.select().from(fieldChanges).where(eq(fieldChanges.changeSetId, id));
 
       res.json({ ...cs, fieldChanges: fields });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] changeset detail error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -245,9 +217,9 @@ export function registerAuditRoutes(app: Express) {
           userNames: (filterData.user_names || []).filter(Boolean),
         },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] activity-log error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -337,9 +309,9 @@ export function registerAuditRoutes(app: Express) {
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', `attachment; filename="activity-log-${new Date().toISOString().slice(0, 10)}.csv"`);
       res.send(csvContent);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[audit] activity-log export error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 

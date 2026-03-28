@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
@@ -5,26 +6,10 @@ import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules }
 import { eq, sql, and, isNull } from "drizzle-orm";
 import { softCloseRows, addTemporalColumns } from "./lib/temporal-helpers";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
-import { verifyToken } from "./jwt";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
+import { jwtAuth, requireAuth } from "./auth-context";
 const router = Router();
-
-function jwtAuth(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const decoded = verifyToken(authHeader.slice(7));
-    if (decoded) {
-      (req as any).user = { id: decoded.userId, role: decoded.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
 
 function toPositiveInt(value: unknown): number | null {
   const parsed = Number(value);

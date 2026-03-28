@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, Fragment } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LineChart,
   Line,
@@ -18,8 +18,12 @@ import {
   TrendingDown,
   ArrowUpRight,
   ArrowDownRight,
+  ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import { DateOverridePopover } from "@/components/cashflow/DateOverridePopover";
 
 interface CashflowWeek {
   weekStart: string;
@@ -38,14 +42,52 @@ interface CashflowWeek {
   availablePayment: number;
 }
 
+interface DetailInflow {
+  inflowId: number;
+  projectName: string;
+  milestoneName: string;
+  milestoneInvoiceNumber: string;
+  paymentReceivedDate: string;
+  originalDate: string | null;
+  hasAdminOverride: boolean;
+  adminDateOverride: string | null;
+  adminDateOverrideReason: string | null;
+  adminDateOverrideAt: string | null;
+  milestoneAmount: number;
+  invoiceRaisedDate: string;
+  daysToReceipt: number;
+}
+
+interface DetailOutflow {
+  expenseId: number;
+  projectName: string;
+  expenseCategory: string;
+  expenseLineItem: string;
+  expenseInvoiceNumber: string;
+  expensePaymentDate: string;
+  originalDate: string | null;
+  hasAdminOverride: boolean;
+  adminDateOverride: string | null;
+  adminDateOverrideReason: string | null;
+  adminDateOverrideAt: string | null;
+  expenseActualTotal: number;
+  paymentStatus?: string;
+}
+
+interface WeekDetail {
+  inflows: DetailInflow[];
+  outflows: DetailOutflow[];
+}
+
 interface CashflowTabProps {
   projectName?: string;
   projectNames?: string[];
   title?: string;
+  canOverrideFinance?: boolean;
 }
 
 function formatRand(val: number | null | undefined): string {
-  if (val === null || val === undefined || !Number.isFinite(val)) return "—";
+  if (val === null || val === undefined || !Number.isFinite(val)) return "\u2014";
   const abs = Math.abs(val);
   const sign = val < 0 ? "-" : "";
   if (abs >= 1_000_000) return `${sign}R ${(abs / 1_000_000).toFixed(2)}M`;
@@ -68,7 +110,179 @@ function isCurrentWeek(weekStart: string, weekEnd: string): boolean {
   return now >= start && now < end;
 }
 
-export function CashflowTab({ projectName, projectNames, title }: CashflowTabProps) {
+function WeekDetailPanel({
+  weekStart,
+  filterParam,
+  canOverride,
+}: {
+  weekStart: string;
+  filterParam?: string;
+  canOverride: boolean;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const params = new URLSearchParams({ week: weekStart });
+  if (filterParam) params.set("project", filterParam);
+
+  const { data, isLoading } = useQuery<WeekDetail>({
+    queryKey: ["/api/cashflow-2026/detail", weekStart, filterParam],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/cashflow-2026/detail?${params.toString()}`, {
+        credentials: "include",
+        headers,
+      });
+      if (!res.ok) throw new Error("Failed to fetch detail");
+      return res.json();
+    },
+  });
+
+  const overrideExpenseDate = useMutation({
+    mutationFn: async (d: { expenseId: number; dateOverride: string | null; reason?: string }) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/cashflow-2026/expense-date-override", {
+        method: "POST", credentials: "include", headers, body: JSON.stringify(d),
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      toast({ title: "Expense date override saved" });
+    },
+    onError: () => toast({ title: "Failed to save override", variant: "destructive" }),
+  });
+
+  const overrideInflowDate = useMutation({
+    mutationFn: async (d: { inflowId: number; dateOverride: string | null; reason?: string }) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch("/api/cashflow-2026/inflow-date-override", {
+        method: "POST", credentials: "include", headers, body: JSON.stringify(d),
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      toast({ title: "Inflow date override saved" });
+    },
+    onError: () => toast({ title: "Failed to save override", variant: "destructive" }),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 text-muted-foreground py-4">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        <span className="text-xs">Loading detail...</span>
+      </div>
+    );
+  }
+
+  if (!data) return null;
+
+  return (
+    <div className="bg-muted/30 border-t border-border px-4 py-3 space-y-3">
+      {data.inflows.length > 0 && (
+        <div>
+          <h5 className="text-xs font-semibold text-emerald-700 mb-1 flex items-center gap-1">
+            <ArrowUpRight className="h-3 w-3" /> Inflows ({data.inflows.length})
+          </h5>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left px-2 py-1 font-medium text-muted-foreground">Milestone</th>
+                  <th className="text-left px-2 py-1 font-medium text-muted-foreground">Date</th>
+                  <th className="text-right px-2 py-1 font-medium text-muted-foreground">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.inflows.map((inf, i) => (
+                  <tr key={i} className="border-b border-border/50 hover:bg-muted/40">
+                    <td className="px-2 py-1 text-muted-foreground">{inf.milestoneName || "\u2014"}</td>
+                    <td className="px-2 py-1">
+                      <DateOverridePopover
+                        currentDate={inf.paymentReceivedDate}
+                        originalDate={inf.originalDate}
+                        hasOverride={inf.hasAdminOverride}
+                        overrideReason={inf.adminDateOverrideReason}
+                        overrideAt={inf.adminDateOverrideAt}
+                        onSave={(dateOverride, reason) =>
+                          overrideInflowDate.mutate({ inflowId: inf.inflowId, dateOverride, reason })
+                        }
+                        disabled={!canOverride}
+                        testId={`proj-date-inflow-${weekStart}-${i}`}
+                      />
+                    </td>
+                    <td className="px-2 py-1 text-right font-mono text-emerald-700">{formatRand(inf.milestoneAmount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {data.outflows.length > 0 && (
+        <div>
+          <h5 className="text-xs font-semibold text-red-700 mb-1 flex items-center gap-1">
+            <ArrowDownRight className="h-3 w-3" /> Outflows ({data.outflows.length})
+          </h5>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left px-2 py-1 font-medium text-muted-foreground">Category</th>
+                  <th className="text-left px-2 py-1 font-medium text-muted-foreground">Line Item</th>
+                  <th className="text-left px-2 py-1 font-medium text-muted-foreground">Date</th>
+                  <th className="text-right px-2 py-1 font-medium text-muted-foreground">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.outflows.map((out, i) => (
+                  <tr key={i} className="border-b border-border/50 hover:bg-muted/40">
+                    <td className="px-2 py-1 text-muted-foreground">{out.expenseCategory || "\u2014"}</td>
+                    <td className="px-2 py-1 text-muted-foreground">{out.expenseLineItem || "\u2014"}</td>
+                    <td className="px-2 py-1">
+                      <DateOverridePopover
+                        currentDate={out.expensePaymentDate}
+                        originalDate={out.originalDate}
+                        hasOverride={out.hasAdminOverride}
+                        overrideReason={out.adminDateOverrideReason}
+                        overrideAt={out.adminDateOverrideAt}
+                        onSave={(dateOverride, reason) =>
+                          overrideExpenseDate.mutate({ expenseId: out.expenseId, dateOverride, reason })
+                        }
+                        disabled={!canOverride}
+                        testId={`proj-date-outflow-${weekStart}-${i}`}
+                      />
+                    </td>
+                    <td className="px-2 py-1 text-right font-mono text-red-700">{formatRand(out.expenseActualTotal)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {data.inflows.length === 0 && data.outflows.length === 0 && (
+        <p className="text-xs text-muted-foreground text-center py-2">No line items this week</p>
+      )}
+    </div>
+  );
+}
+
+export function CashflowTab({ projectName, projectNames, title, canOverrideFinance = false }: CashflowTabProps) {
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
+
   const filterParam = useMemo(() => {
     if (projectNames && projectNames.length > 0) return projectNames.join(",");
     if (projectName) return projectName;
@@ -116,7 +330,16 @@ export function CashflowTab({ projectName, projectNames, title }: CashflowTabPro
     return { totalInflows, totalOutflows, currentWeekOpeningBalance, forecastedEndOfFYPosition };
   }, [cashflowData]);
 
-  const displayTitle = title || (projectName ? `Cashflow — ${projectName}` : "Cashflow FY26");
+  const toggleWeek = (weekStart: string) => {
+    setExpandedWeeks((prev) => {
+      const next = new Set(prev);
+      if (next.has(weekStart)) next.delete(weekStart);
+      else next.add(weekStart);
+      return next;
+    });
+  };
+
+  const displayTitle = title || (projectName ? `Cashflow \u2014 ${projectName}` : "Cashflow FY26");
 
   if (isLoading) {
     return (
@@ -257,53 +480,73 @@ export function CashflowTab({ projectName, projectNames, title }: CashflowTabPro
                   const current = isCurrentWeek(week.weekStart, week.weekEnd);
                   const isEven = idx % 2 === 0;
                   const netFlow = (week.projectInflows || 0) - (week.projectOutflows || 0);
+                  const isExpanded = expandedWeeks.has(week.weekStart);
+                  const hasActivity = (week.projectInflows || 0) > 0 || (week.projectOutflows || 0) > 0;
 
                   return (
-                    <tr
-                      key={week.weekStart}
-                      className={`border-b border-border transition-colors ${
-                        current
-                          ? "bg-blue-50/70 border-l-[3px] border-l-blue-500"
-                          : isEven
-                          ? "bg-card"
-                          : "bg-muted/30"
-                      } hover:bg-muted/60`}
-                    >
-                      <td
-                        className={`px-4 py-2.5 font-medium text-foreground sticky left-0 z-10 ${
-                          current ? "bg-blue-50/70" : isEven ? "bg-card" : "bg-muted/30"
-                        }`}
+                    <Fragment key={week.weekStart}>
+                      <tr
+                        className={`border-b border-border transition-colors cursor-pointer ${
+                          current
+                            ? "bg-blue-50/70 border-l-[3px] border-l-blue-500"
+                            : isEven
+                            ? "bg-card"
+                            : "bg-muted/30"
+                        } hover:bg-muted/60`}
+                        onClick={() => hasActivity && toggleWeek(week.weekStart)}
                       >
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[13px]">{formatWeek(week.weekStart)}</span>
-                          {current && (
-                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700">
-                              NOW
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-[13px] text-blue-600">
-                        {formatRand(week.openingBalance)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-[13px] text-emerald-600">
-                        {formatRand(week.projectInflows)}
-                      </td>
-                      <td className="px-4 py-2.5 text-right font-mono text-[13px]">
-                        <span className="text-red-500">{formatRand(week.projectOutflows)}</span>
-                        {(week.pastDueUnpaid || 0) > 0 && (
-                          <div className="text-[10px] font-semibold text-red-700 bg-red-100 rounded px-1 py-0.5 mt-0.5 inline-block" title="Past-due outflows not yet confirmed out of bank">
-                            {formatRand(week.pastDueUnpaid)} overdue
+                        <td
+                          className={`px-4 py-2.5 font-medium text-foreground sticky left-0 z-10 ${
+                            current ? "bg-blue-50/70" : isEven ? "bg-card" : "bg-muted/30"
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5">
+                            {hasActivity && (
+                              isExpanded
+                                ? <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                                : <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                            )}
+                            <span className="text-[13px]">{formatWeek(week.weekStart)}</span>
+                            {current && (
+                              <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-700">
+                                NOW
+                              </span>
+                            )}
                           </div>
-                        )}
-                      </td>
-                      <td className={`px-4 py-2.5 text-right font-mono text-[13px] font-bold ${(week.closingBalance || 0) >= 0 ? "text-emerald-700" : "text-red-700"}`}>
-                        {formatRand(week.closingBalance)}
-                      </td>
-                      <td className={`px-4 py-2.5 text-right font-mono text-[13px] font-semibold ${netFlow >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                        {formatRand(netFlow)}
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-[13px] text-blue-600">
+                          {formatRand(week.openingBalance)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-[13px] text-emerald-600">
+                          {formatRand(week.projectInflows)}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-mono text-[13px]">
+                          <span className="text-red-500">{formatRand(week.projectOutflows)}</span>
+                          {(week.pastDueUnpaid || 0) > 0 && (
+                            <div className="text-[10px] font-semibold text-red-700 bg-red-100 rounded px-1 py-0.5 mt-0.5 inline-block" title="Past-due outflows not yet confirmed out of bank">
+                              {formatRand(week.pastDueUnpaid)} overdue
+                            </div>
+                          )}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-mono text-[13px] font-bold ${(week.closingBalance || 0) >= 0 ? "text-emerald-700" : "text-red-700"}`}>
+                          {formatRand(week.closingBalance)}
+                        </td>
+                        <td className={`px-4 py-2.5 text-right font-mono text-[13px] font-semibold ${netFlow >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                          {formatRand(netFlow)}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={6} className="p-0">
+                            <WeekDetailPanel
+                              weekStart={week.weekStart}
+                              filterParam={filterParam}
+                              canOverride={canOverrideFinance}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   );
                 })}
               </tbody>

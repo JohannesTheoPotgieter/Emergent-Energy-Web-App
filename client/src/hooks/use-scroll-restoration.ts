@@ -48,7 +48,9 @@ export function useScrollRestoration(location: string) {
         window.scrollTo({ top: nextY, behavior: "auto" });
       });
     } else {
-      window.scrollTo({ top: 0, behavior: "auto" });
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      });
     }
 
     previousLocationRef.current = nextLocation;

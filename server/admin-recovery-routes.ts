@@ -1,40 +1,17 @@
+// TODO: remove @ts-nocheck — enum type narrowing needed for status fields
 // @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, and, or, sql, desc, ilike, isNull, isNotNull } from "drizzle-orm";
+import { eq, and, sql, desc, ilike, isNull, isNotNull } from "drizzle-orm";
 import { z } from "zod";
-import { verifyToken } from "./jwt";
 import { logAuditFromReq } from "./audit-logger";
 import {
   mytoolTasks, workItems,
-  smartImportRuns, importIssues, projectInfo, users, pdTickets, qcItemInstance,
+  smartImportRuns, importIssues, projectInfo, users,
 } from "@shared/schema";
 import { normalizeStatus } from "./lib/canonical-task-engine";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-  res.status(403).json({ error: "admin_required", message: "Admin access required" });
-}
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 const taskSearchSchema = z.object({
   q: z.string().optional(),
@@ -90,11 +67,11 @@ export function registerAdminRecoveryRoutes(app: Express) {
       const offset = parseInt(params.offset || "0");
       const searchTerm = params.q ? `%${params.q}%` : null;
 
-      const results: any[] = [];
+      const results: Record<string, unknown>[] = [];
 
       if (!params.taskType || params.taskType === "operational") {
         let query = db.select().from(workItems);
-        const conditions: any[] = [isNull(workItems.deletedAt)];
+        const conditions: ReturnType<typeof eq>[] = [isNull(workItems.deletedAt)];
         if (searchTerm) conditions.push(ilike(workItems.title, searchTerm));
         if (params.status) conditions.push(eq(workItems.status, params.status));
         if (params.projectName) conditions.push(sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${params.projectName})`);
@@ -109,7 +86,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
       if (!params.taskType || params.taskType === "personal") {
         let query = db.select().from(mytoolTasks);
-        const conditions: any[] = [];
+        const conditions: ReturnType<typeof eq>[] = [];
         if (searchTerm) conditions.push(ilike(mytoolTasks.title, searchTerm));
         if (params.status) conditions.push(eq(mytoolTasks.status, params.status));
         if (params.projectName) conditions.push(eq(mytoolTasks.projectName, params.projectName));
@@ -126,8 +103,8 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
       if (!params.taskType || params.taskType === "engineering") {
         let query = db.select().from(workItems);
-        const conditions: any[] = [];
-        conditions.push(eq(workItems.workstream, 'ENG' as any));
+        const conditions: ReturnType<typeof eq>[] = [];
+        conditions.push(eq(workItems.workstream, 'ENG'));
         if (searchTerm) conditions.push(ilike(workItems.title, searchTerm));
         if (params.status) conditions.push(eq(workItems.status, params.status));
         if (params.projectName) conditions.push(sql`EXISTS (SELECT 1 FROM project_info pi WHERE pi.id = ${workItems.projectId} AND pi.project_name = ${params.projectName})`);
@@ -143,7 +120,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
       if (!params.taskType || params.taskType === "work_item") {
         let query = db.select().from(workItems);
-        const conditions: any[] = [];
+        const conditions: ReturnType<typeof eq>[] = [];
         if (searchTerm) conditions.push(ilike(workItems.title, searchTerm));
         if (params.status) conditions.push(eq(workItems.status, params.status));
         if (params.assigneeUserId) conditions.push(eq(workItems.ownerUserId, parseInt(params.assigneeUserId)));
@@ -168,7 +145,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
             ${params.assigneeUserId ? sql`AND pd.project_developer_user_id = ${parseInt(params.assigneeUserId)}` : sql``}
           ORDER BY pd.id DESC
           LIMIT ${limit} OFFSET ${offset}
-        `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
+        `).then((r: unknown) => Array.isArray(r) ? r : ((r as Record<string, unknown>).rows || []) as Record<string, unknown>[]);
 
         for (const r of pdRows) {
           results.push({
@@ -192,7 +169,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
             ${params.assigneeUserId ? sql`AND qi.assignee_user_id = ${parseInt(params.assigneeUserId)}` : sql``}
           ORDER BY qi.last_updated_at DESC
           LIMIT ${limit} OFFSET ${offset}
-        `).then((r: any) => Array.isArray(r) ? r : (r.rows || []));
+        `).then((r: unknown) => Array.isArray(r) ? r : ((r as Record<string, unknown>).rows || []) as Record<string, unknown>[]);
 
         for (const r of qcRows) {
           results.push({
@@ -214,9 +191,9 @@ export function registerAdminRecoveryRoutes(app: Express) {
         users: allUsers,
         projects: allProjects,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[AdminRecovery] GET tasks error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -231,11 +208,11 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
       const fields = parsed.data;
       if (fields.status) fields.status = normalizeStatus(fields.status);
-      const changesJson: Record<string, any> = { taskId, taskSource, updates: fields };
+      const changesJson: Record<string, unknown> = { taskId, taskSource, updates: fields };
 
       switch (taskSource) {
         case "operational": {
-          const setObj: any = {};
+          const setObj: Record<string, unknown> = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
           if (fields.projectName !== undefined) setObj.projectName = fields.projectName;
@@ -250,7 +227,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
           break;
         }
         case "personal": {
-          const setObj: any = {};
+          const setObj: Record<string, unknown> = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
           if (fields.projectName !== undefined) setObj.projectName = fields.projectName;
@@ -261,7 +238,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
           break;
         }
         case "engineering_task": {
-          const setObj: any = {};
+          const setObj: Record<string, unknown> = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
           if (fields.projectId !== undefined) setObj.projectId = fields.projectId;
@@ -272,7 +249,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
           break;
         }
         case "plan": {
-          const setObj: any = {};
+          const setObj: Record<string, unknown> = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
           if (fields.projectId !== undefined) setObj.projectId = fields.projectId;
@@ -296,9 +273,9 @@ export function registerAdminRecoveryRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[AdminRecovery] PATCH task error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -321,13 +298,13 @@ export function registerAdminRecoveryRoutes(app: Express) {
         .offset(offset);
 
       const runIds = runs.map(r => r.id);
-      let issues: any[] = [];
+      let issues: Record<string, unknown>[] = [];
       if (runIds.length > 0) {
         issues = await db.select().from(importIssues)
           .where(sql`${importIssues.importRunId} = ANY(${runIds})`);
       }
 
-      const issuesByRun = new Map<number, any[]>();
+      const issuesByRun = new Map<number, Record<string, unknown>[]>();
       for (const issue of issues) {
         const list = issuesByRun.get(issue.importRunId) || [];
         list.push(issue);
@@ -341,9 +318,9 @@ export function registerAdminRecoveryRoutes(app: Express) {
       }));
 
       res.json({ runs: enriched, total: enriched.length });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[AdminRecovery] GET imports error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -370,12 +347,12 @@ export function registerAdminRecoveryRoutes(app: Express) {
         softDeletedAt: workItems.deletedAt,
         ownerUserId: workItems.ownerUserId,
       }).from(workItems)
-        .where(and(eq(workItems.workstream, 'ENG' as any), isNotNull(workItems.deletedAt)))
+        .where(and(eq(workItems.workstream, 'ENG'), isNotNull(workItems.deletedAt)))
         .orderBy(desc(workItems.deletedAt))
         .limit(100);
 
       // Operational tasks now in work_items — duplicates the deleted eng tasks query above
-      const deletedOpTasks: any[] = [];
+      const deletedOpTasks: Record<string, unknown>[] = [];
 
       const deletedMytoolTasks = await db.select({
         id: mytoolTasks.id,
@@ -416,9 +393,9 @@ export function registerAdminRecoveryRoutes(app: Express) {
       });
 
       res.json({ items, total: items.length });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[AdminRecovery] GET deleted error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -452,9 +429,9 @@ export function registerAdminRecoveryRoutes(app: Express) {
       });
 
       res.json({ success: true, restored });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[AdminRecovery] POST restore error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -467,7 +444,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
       if (!parsed.success) return res.status(400).json({ error: "Invalid project data", details: parsed.error.issues });
 
       const fields = parsed.data;
-      const setObj: any = {};
+      const setObj: Record<string, unknown> = {};
       if (fields.projectName !== undefined) setObj.projectName = fields.projectName;
       if (fields.pm !== undefined) setObj.pm = fields.pm;
       if (fields.pd !== undefined) setObj.pd = fields.pd;
@@ -494,9 +471,9 @@ export function registerAdminRecoveryRoutes(app: Express) {
       });
 
       res.json({ success: true });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[AdminRecovery] PATCH project error:", err);
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 }

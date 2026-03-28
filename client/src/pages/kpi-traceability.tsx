@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Database, Code, Monitor, Search, RefreshCw } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 
@@ -71,7 +72,7 @@ function getCategoryColor(category: string): string {
 export default function KpiTraceabilityPage() {
   const [search, setSearch] = useState("");
 
-  const { data, isLoading, refetch, isFetching } = useQuery<KpiResponse>({
+  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<KpiResponse>({
     queryKey: ["kpi-traceability"],
     queryFn: async () => {
       const token = localStorage.getItem("auth_token");
@@ -96,6 +97,9 @@ export default function KpiTraceabilityPage() {
   }) ?? [];
 
   const categories = Array.from(new Set(filteredKpis.map((k) => getCategory(k.id))));
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load KPI traceability" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
     <div className="space-y-6 p-6" data-testid="page-kpi-traceability">

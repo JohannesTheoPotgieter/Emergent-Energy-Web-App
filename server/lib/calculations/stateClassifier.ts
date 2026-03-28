@@ -1,6 +1,6 @@
 export type ExpenseState = 'Planned' | 'Committed' | 'Invoiced' | 'Paid';
 export type CosStatus = 'Planned' | 'COS Realised' | 'Committed';
-export type CashflowStatus = 'Planned' | 'Payment Planned' | 'Out of Bank' | 'Committed';
+export type CashflowStatus = 'Planned' | 'Outstanding' | 'Out of Bank' | 'Risk';
 
 export interface ExpenseLineInput {
   expensePaymentDate?: string | null;
@@ -64,13 +64,18 @@ export function classifyCashflowStatus(line: ExpenseLineInput): CashflowStatus {
   const hasPaymentDate = !!(line.expensePaymentDate && String(line.expensePaymentDate).trim() !== '');
   const paymentDateBlack = hasPaymentDate && isDateBlack(line.paymentDateConfirmed, line.paymentDateFontColor);
 
+  // Black payment date + invoice = paid (out of bank)
   if (paymentDateBlack && hasInvoiceNumber) {
     return 'Out of Bank';
   }
-
-  if (hasPaymentDate && !paymentDateBlack) {
-    return 'Payment Planned';
+  // Black payment date + no invoice = risk
+  if (paymentDateBlack && !hasInvoiceNumber) {
+    return 'Risk';
   }
-
+  // Red payment date + invoice = outstanding (not yet paid)
+  if (hasPaymentDate && !paymentDateBlack && hasInvoiceNumber) {
+    return 'Outstanding';
+  }
+  // Red payment date + no invoice = just planned
   return 'Planned';
 }

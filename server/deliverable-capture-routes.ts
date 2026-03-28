@@ -1,13 +1,13 @@
-// @ts-nocheck
 import { type Express, type Request, type Response } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { db } from "./db";
 import { sql, eq, and, isNull, asc } from "drizzle-orm";
 import { deliverables, projectInfo, normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
 import { logAuditFromReq } from "./audit-logger";
-import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { getEffectiveUser, jwtAuth, requireAuth, type AuthenticatedUser } from "./auth-context";
 import { requirePermission } from "./permission-middleware";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
 import { allowedMimeFilter, validateMagicBytes } from "./lib/file-validation";
@@ -20,15 +20,14 @@ const deliverableUpload = multer({
     destination: (_req, _file, cb) => cb(null, uploadDir),
     filename: (_req, file, cb) => {
       const ts = Date.now();
-      const sanitized = file.originalname.replace(/[^a-zA-Z0-9_.\-]/g, "_");
-      cb(null, `${ts}_${sanitized}`);
+      cb(null, `${ts}_${sanitizeFilename(file.originalname)}`);
     },
   }),
   limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: allowedMimeFilter,
 });
 
-function getUser(req: Request): any {
+function getUser(req: Request): AuthenticatedUser | null {
   return getEffectiveUser(req);
 }
 
@@ -36,7 +35,7 @@ function getUser(req: Request): any {
 export function registerDeliverableCaptureRoutes(app: Express) {
   app.get("/api/deliverable-capture/linkable-items/:projectId", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const [taskRows, costRows, revenueRows] = await Promise.all([
@@ -86,7 +85,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         costLines: costRows,
         revenueLines: revenueRows,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] Linkable items error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -101,7 +100,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         .from(projectInfo)
         .orderBy(asc(projectInfo.projectName));
       res.json(projects);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] Projects error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -214,7 +213,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         linkedRevenueLineId,
         fileName: file?.originalname,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] Upload error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -222,7 +221,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
 
   app.get("/api/deliverable-capture/list/:projectId", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const rows = await db.execute(sql`
@@ -244,7 +243,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         ORDER BY d.created_at DESC
       `);
 
-      const serializedRows = (rows.rows || []) as any[];
+      const serializedRows = ((rows as Record<string, unknown>).rows || []) as Record<string, unknown>[];
       const deliverableIds = serializedRows.map((row) => Number(row.id));
       const assignmentMap = await getAssignmentsForEntities("deliverable", deliverableIds);
 
@@ -253,7 +252,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
         assignments: assignmentMap.get(Number(row.id)) || [],
         primaryAssignment: (assignmentMap.get(Number(row.id)) || [])[0] || null,
       })));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] List error:", err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -261,12 +260,12 @@ export function registerDeliverableCaptureRoutes(app: Express) {
 
   app.get("/api/deliverable-capture/download/:id", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const rows = await db.execute(sql`
         SELECT file_path, original_file_name, mime_type
         FROM deliverables WHERE id = ${id}
       `);
-      const row = (rows.rows || [])[0] as any;
+      const row = (((rows as Record<string, unknown>).rows || []) as Record<string, unknown>[])[0];
       if (!row?.file_path) return res.status(404).json({ error: "File not found" });
 
       if (!fs.existsSync(row.file_path)) return res.status(404).json({ error: "File not found on disk" });
@@ -274,7 +273,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
       res.setHeader("Content-Disposition", `attachment; filename="${row.original_file_name || "file"}"`);
       res.setHeader("Content-Type", row.mime_type || "application/octet-stream");
       fs.createReadStream(row.file_path).pipe(res);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[Deliverable Capture] Download error:", err);
       res.status(500).json({ error: "Internal server error" });
     }

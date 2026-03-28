@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Users,
 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
@@ -31,7 +32,7 @@ export default function EngTemplateAdmin() {
   const userRole = localStorage.getItem("company_role") || "";
   const isCoo = ["COO_ADMIN", "CEO_ADMIN", "admin"].includes(userRole);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["eng-stage-templates"],
     queryFn: async () => {
       const res = await engFetch("/api/eng-stages/templates");
@@ -66,7 +67,15 @@ export default function EngTemplateAdmin() {
   }
 
   if (isLoading) {
-    return <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+    return <PageSkeleton lines={5} />;
+  }
+
+  if (isError) {
+    return (
+      <div className="p-4 md:p-6">
+        <PageError title="Unable to load engineering templates" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} />
+      </div>
+    );
   }
 
   return (

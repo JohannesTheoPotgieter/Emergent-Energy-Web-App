@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
   Dialog,
   DialogContent,
@@ -585,11 +586,11 @@ export default function LeaderboardPage() {
     initialTab === "departments" ? "departments" : "leaderboard",
   );
 
-  const { data, isLoading } = useQuery<LeaderboardResponse>({
+  const { data, isLoading, isError, error, refetch } = useQuery<LeaderboardResponse>({
     queryKey: ["/api/gamification/leaderboard"],
     queryFn: async () => {
       const res = await fetch("/api/gamification/leaderboard", { headers: getAuthHeaders(), credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) throw new Error("Failed to fetch leaderboard");
       return res.json();
     },
     refetchInterval: 60000,
@@ -616,6 +617,9 @@ export default function LeaderboardPage() {
       </div>
     );
   }
+
+  if (isLoading) return <PageSkeleton lines={6} />;
+  if (isError) return <div className="max-w-5xl mx-auto p-4 sm:p-6"><PageError title="Unable to load leaderboard" message={error instanceof Error ? error.message : "Failed to fetch leaderboard data"} onRetry={() => refetch()} /></div>;
 
   const myLvlCfg = myEntry ? (LEVEL_CONFIG[myEntry.level.level] || LEVEL_CONFIG[1]) : LEVEL_CONFIG[1];
 

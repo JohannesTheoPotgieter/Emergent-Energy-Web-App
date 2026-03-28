@@ -39,7 +39,7 @@ async function getAccessToken(): Promise<string> {
 }
 
 export async function graphGet(url: string): Promise<any> {
-  const token = await getAccessToken();
+  const token = await getSharePointToken();
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
   });
@@ -51,7 +51,7 @@ export async function graphGet(url: string): Promise<any> {
 }
 
 async function graphPatch(url: string, body: any): Promise<any> {
-  const token = await getAccessToken();
+  const token = await getSharePointToken();
   const res = await fetch(url, {
     method: "PATCH",
     headers: {

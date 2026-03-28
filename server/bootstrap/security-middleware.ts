@@ -1,5 +1,8 @@
 import express, { type Express, type NextFunction, type Request, type Response } from "express";
+import helmet from "helmet";
 import path from "path";
+import { verifyToken } from "../jwt";
+import { getRedisClient, isRedisCache } from "../lib/cache";
 
 type RateLimitEntry = {
   count: number;
@@ -9,6 +12,7 @@ type RateLimitEntry = {
 
 const authLimiterStore = new Map<string, RateLimitEntry>();
 const AUTH_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_WINDOW_SECONDS = Math.ceil(AUTH_WINDOW_MS / 1000);
 const AUTH_MAX_REQUESTS = 20;
 const AUTH_STORE_TTL_MS = 60 * 60 * 1000;
 
@@ -39,7 +43,45 @@ function cleanupAuthLimiter(now: number): void {
   }
 }
 
-function authRateLimit(req: Request, res: Response, next: NextFunction): void {
+// ─── Redis-backed rate limiting ─────────────────────────────────────
+
+async function redisRateLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (!AUTH_ENDPOINTS.has(req.path)) {
+    next();
+    return;
+  }
+
+  const redis = getRedisClient();
+  if (!redis) {
+    // Redis disappeared — fall back to in-memory
+    memoryRateLimit(req, res, next);
+    return;
+  }
+
+  const key = `ratelimit:auth:${getClientKey(req)}`;
+
+  try {
+    const count = await redis.incr(key);
+    if (count === 1) {
+      // First request in window — set the expiry
+      await redis.expire(key, AUTH_WINDOW_SECONDS);
+    }
+
+    if (count > AUTH_MAX_REQUESTS) {
+      res.status(429).json({ message: "Too many authentication attempts. Please retry later." });
+      return;
+    }
+
+    next();
+  } catch {
+    // Redis error — fall back to in-memory check
+    memoryRateLimit(req, res, next);
+  }
+}
+
+// ─── In-memory rate limiting (fallback) ─────────────────────────────
+
+function memoryRateLimit(req: Request, res: Response, next: NextFunction): void {
   if (!AUTH_ENDPOINTS.has(req.path)) {
     next();
     return;
@@ -71,12 +113,61 @@ function authRateLimit(req: Request, res: Response, next: NextFunction): void {
   next();
 }
 
+function authRateLimit(req: Request, res: Response, next: NextFunction): void {
+  if (isRedisCache()) {
+    // Use Redis-backed rate limiter — handles its own fallback on error
+    redisRateLimit(req, res, next).catch(() => memoryRateLimit(req, res, next));
+  } else {
+    memoryRateLimit(req, res, next);
+  }
+}
+
 export function applySecurityAndParsingMiddleware(app: Express): void {
   const isReplit = !!(process.env.REPLIT_DOMAINS || process.env.REPLIT_DEV_DOMAIN || process.env.REPL_ID);
   const isProduction = process.env.NODE_ENV === "production";
 
+  // Helmet provides secure defaults for many HTTP headers including CSP
+  const cspDirectives: Record<string, string[]> = isProduction
+    ? {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        fontSrc: ["'self'"],
+        connectSrc: ["'self'"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      }
+    : {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        connectSrc: ["'self'", "ws:", "wss:"],
+        workerSrc: ["'self'", "blob:"],
+        frameSrc: ["'none'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+      };
+
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: cspDirectives,
+      },
+      // Let our manual middleware below handle frame options for Replit compatibility
+      frameguard: false,
+      // Helmet sets these by default, but we keep explicit control below
+      referrerPolicy: false,
+    }),
+  );
+
+  // Manual headers that need environment-specific logic or that helmet doesn't cover
   app.use((_req, res, next) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
 
@@ -119,6 +210,13 @@ export function applySecurityAndParsingMiddleware(app: Express): void {
   app.use(
     "/uploads",
     (req, res, next) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        return res.status(401).json({ error: "Authentication required" });
+      }
+      if (!verifyToken(authHeader.substring(7))) {
+        return res.status(401).json({ error: "Invalid auth token" });
+      }
       if (req.path.includes("_private_")) {
         return res.status(403).json({ error: "Access denied" });
       }

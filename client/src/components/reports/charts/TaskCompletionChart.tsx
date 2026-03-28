@@ -26,13 +26,14 @@ interface PerProjectTask {
 interface TaskCompletionChartProps {
   data: PerProjectTask[];
   showNotStarted?: boolean;
+  onChartClick?: () => void;
 }
 
 function truncate(str: string, len: number): string {
   return str.length > len ? str.slice(0, len) + "..." : str;
 }
 
-export default function TaskCompletionChart({ data, showNotStarted = false }: TaskCompletionChartProps) {
+export default function TaskCompletionChart({ data, showNotStarted = false, onChartClick }: TaskCompletionChartProps) {
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
     return data.map((r) => ({
@@ -46,7 +47,7 @@ export default function TaskCompletionChart({ data, showNotStarted = false }: Ta
 
   if (!data || data.length === 0) {
     return (
-      <Card>
+      <Card className={onChartClick ? "cursor-pointer" : ""} onClick={onChartClick}>
         <CardContent className="py-8 text-center text-muted-foreground text-sm">
           No data available for this period
         </CardContent>

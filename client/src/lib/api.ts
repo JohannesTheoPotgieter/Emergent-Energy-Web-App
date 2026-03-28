@@ -1,3 +1,11 @@
+/**
+ * Legacy auth/project API calls.
+ *
+ * Contains authApi, projectsApi, uploadApi, overviewApi, cashflowApi, financeApi.
+ * For engineering module calls, see eng-fetch.ts.
+ * For React Query integration, prefer queryClient.ts (getQueryFn / fetchQueryFn).
+ */
+
 import { queryOptions } from "@tanstack/react-query";
 import { getErrorMessage } from "./errors";
 import { parseApiError, networkError, ApiError } from "./api-error";
@@ -188,7 +196,7 @@ export interface User {
   id: number;
   email: string;
   name: string;
-  role: "admin" | "member" | "quality_manager" | "viewer" | "eng_program_manager";
+  role: "admin" | "member" | "viewer" | "COO_ADMIN" | "CEO_ADMIN" | "CCO" | "CFO" | "PROGRAM_MANAGER" | "PROGRAM_FINANCE_MANAGER" | "CONSTRUCTION_MANAGER" | "QUALITY_MANAGER" | "ENGINEERING_MANAGER" | "KEY_ACCOUNTS_MANAGER" | "ACCOUNTANT" | "ENGINEER" | "PROJECT_MANAGER_SITE" | "PROJECT_DEVELOPER";
 }
 
 export interface Project {

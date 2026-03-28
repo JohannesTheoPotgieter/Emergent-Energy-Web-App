@@ -165,8 +165,8 @@ async function exportViaFSA(data: StageExportData, projectName: string, dirHandl
       const delWritable = await (delFile as any).createWritable();
       await delWritable.write(blob);
       await delWritable.close();
-    } catch (e) {
-      console.warn(`Failed to export deliverable ${del.id}:`, e);
+    } catch {
+      // Skip failed deliverable and continue export
     }
   }
 }
@@ -188,8 +188,8 @@ async function exportViaZip(stages: StageExportData[], projectName: string): Pro
       try {
         const { blob, fileName } = await downloadDeliverableBlob(del.id);
         stageFolder.file(fileName, blob);
-      } catch (e) {
-        console.warn(`Failed to export deliverable ${del.id}:`, e);
+      } catch {
+        // Skip failed deliverable and continue export
       }
     }
   }
@@ -219,7 +219,6 @@ export async function exportStagePack(stageId: number, projectId: number, projec
 
     await exportViaZip([data], projectName);
   } catch (err) {
-    console.error("Export failed:", err);
     throw err;
   }
 }
@@ -246,7 +245,6 @@ export async function exportAllStagesPack(projectId: number, projectName: string
 
     await exportViaZip(allData, projectName);
   } catch (err) {
-    console.error("Export all failed:", err);
     throw err;
   }
 }

@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck — file has 2.4k lines; incrementally type-fix and re-enable checking
 // @ts-nocheck
 import { db, getDbMode } from "./db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
@@ -861,6 +862,10 @@ export class DatabaseStorage implements IStorage {
       "cp_evidence_ref",
       "pm_task_pack_created",
       "eng_post_cp_task_pack_created",
+      "site_id",
+      "opportunity_id",
+      "delivery_model",
+      "project_code",
     ];
 
     if (mode === "sqlite") {
@@ -1062,8 +1067,8 @@ export class DatabaseStorage implements IStorage {
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
     const adapted = costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
 
-    // Enrich with programExpense data (budget totals, forecast dates) — matching
-    // getProgramExpensesByProject() so portfolio reads from project-detail level up
+    const projectsWithCostLines = new Set(costLines.map(c => resolve(c.projectName)));
+
     if (peRows.length > 0) {
       const budgetByKey = new Map<string, any>();
       for (const pe of peRows) {
@@ -1081,7 +1086,16 @@ export class DatabaseStorage implements IStorage {
           if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
           if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
           if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
+          if (pe.adminDateOverride != null) item.adminDateOverride = pe.adminDateOverride;
+          if (pe.adminDateOverrideReason != null) item.adminDateOverrideReason = pe.adminDateOverrideReason;
+          if (pe.adminDateOverrideBy != null) item.adminDateOverrideBy = pe.adminDateOverrideBy;
+          if (pe.adminDateOverrideAt != null) item.adminDateOverrideAt = pe.adminDateOverrideAt;
         }
+      }
+
+      const legacyOnly = peRows.filter(pe => !projectsWithCostLines.has(pe.projectName) && !projectsWithCostLines.has(resolve(pe.projectName)));
+      if (legacyOnly.length > 0) {
+        adapted.push(...legacyOnly);
       }
     }
 
@@ -1092,10 +1106,51 @@ export class DatabaseStorage implements IStorage {
     const { adaptCostToExpense } = await import("./lib/data-merge");
     const costLines = await this.dbInstance.select().from(normalizedCostLines)
       .where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
-    const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
 
     const peRows = await this.dbInstance.select().from(programExpense)
       .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
+
+    if (costLines.length === 0 && peRows.length > 0) {
+      return peRows as any[];
+    }
+
+    const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
+
+    const needsCarryForward = adapted.some((a: any) => !a.expensePaymentDate && !a.forecastPaymentDate);
+    if (needsCarryForward) {
+      const closedLines = await this.dbInstance.select().from(normalizedCostLines)
+        .where(and(
+          eq(normalizedCostLines.projectName, projectName),
+          isNotNull(normalizedCostLines.effectiveTo),
+        ));
+      const priorByRow = new Map<number, any>();
+      for (const cl of closedLines) {
+        const row = (cl as any).sourceRow;
+        if (row == null) continue;
+        const payDate = cl.paidDate || (cl as any).forecastPaymentDate;
+        if (!payDate) continue;
+        const existing = priorByRow.get(row);
+        if (!existing || (cl.id > existing.id)) {
+          priorByRow.set(row, cl);
+        }
+      }
+      for (const item of adapted) {
+        if (!item.expensePaymentDate && !item.forecastPaymentDate) {
+          const prior = priorByRow.get(item.rowNumber);
+          if (prior) {
+            const priorDate = prior.paidDate || (prior as any).forecastPaymentDate;
+            if (priorDate) {
+              item.expensePaymentDate = priorDate;
+              item.forecastPaymentDate = priorDate;
+              item.paymentDateFontColor = prior.paidDateFontColor || "red";
+              item.paymentDateConfirmed = prior.paidDateConfirmed ?? false;
+              item._carryForward = true;
+            }
+          }
+        }
+      }
+    }
+
     if (peRows.length === 0) return adapted;
 
     const budgetByRow = new Map<number, any>();
@@ -1161,6 +1216,10 @@ export class DatabaseStorage implements IStorage {
       paymentDateConfirmed: 'paidDateConfirmed',
       paymentDateFontColor: 'paidDateFontColor',
       noRevenueLinked: 'noRevenueLinked',
+      cosStatusOverride: 'cosStatusOverride',
+      cosStatusOverrideBy: 'cosStatusOverrideBy',
+      cosStatusOverrideAt: 'cosStatusOverrideAt',
+      cosStatusOverrideReason: 'cosStatusOverrideReason',
     };
     const validDbColumns = new Set(Object.values(fieldMap));
     for (const [key, value] of Object.entries(fields)) {

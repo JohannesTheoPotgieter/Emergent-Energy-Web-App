@@ -32,15 +32,11 @@ const DEPARTMENTS = [
 
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
 const NAV_SECTIONS = [
-  { key: "COCKPIT", label: "Home", description: "Home, My Work" },
-  { key: "PROJECTS", label: "Project Lifecycle", description: "Overview, Lifecycle Board, Stage Gates, Clients" },
-  { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD Dashboard, PD Tickets" },
-  { key: "PROJECT_MANAGEMENT", label: "Project Management", description: "Execution Dashboard, Project List, Deliverables, PM Dashboard, PM On-The-Go" },
-  { key: "ENGINEERING", label: "Engineering", description: "Engineering Overview, Requests & Tasks" },
-  { key: "GOVERNANCE", label: "Quality", description: "Quality Workspace" },
-  { key: "MONEY", label: "Finance", description: "Cashflow, Cost of Sales, Revenue, Gross Profit, Procurement" },
-  { key: "INFORMATION", label: "Knowledge", description: "Lifecycle & SOP, Leaderboard, Training, Feedback" },
-  { key: "COLLABORATION", label: "Collaboration", description: "Project Chat & Meetings" },
+  { key: "HOME", label: "Home", description: "Home dashboard" },
+  { key: "MY_WORK", label: "My Work", description: "My Tasks, Approvals, Inbox, Calendar, Meetings" },
+  { key: "PROJECTS", label: "Projects", description: "Project List, Lifecycle, Engineering, Quality, PD, Construction, Handover" },
+  { key: "FINANCE", label: "Finance", description: "Cashflow, Costs, Revenue, GP Tracker, Procurement" },
+  { key: "REPORTS", label: "Reports", description: "Priorities, PM Reports, Eng Reports, SOPs, Training, Feedback" },
   { key: "ADMIN", label: "Admin", description: "Control Center, Smart Import, Roles & Permissions, Audit Log" },
 ];
 
@@ -1093,8 +1089,8 @@ function GlobalUsersView() {
 
   const handleResetPassword = async () => {
     if (!showPasswordDialog || !newPassword) return;
-    if (newPassword.length < 4) {
-      toast({ title: "Password too short", description: "Must be at least 4 characters", variant: "destructive" });
+    if (newPassword.length < 8) {
+      toast({ title: "Password too short", description: "Must be at least 8 characters", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -1347,7 +1343,7 @@ function GlobalUsersView() {
               type={showPassword ? "text" : "password"}
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Enter new password (min 4 characters)"
+              placeholder="Enter new password (min 8 characters)"
               data-testid="input-new-password"
             />
             <button
@@ -1360,7 +1356,7 @@ function GlobalUsersView() {
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => { setShowPasswordDialog(null); setNewPassword(""); setShowPassword(false); }} data-testid="button-cancel-password">Cancel</Button>
-            <Button onClick={handleResetPassword} disabled={saving || newPassword.length < 4} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-password">
+            <Button onClick={handleResetPassword} disabled={saving || newPassword.length < 8} className="bg-emerald-600 hover:bg-emerald-700" data-testid="button-confirm-password">
               {saving ? "Saving..." : "Reset Password"}
             </Button>
           </DialogFooter>

@@ -1,9 +1,11 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAdmin } from "./shared-middleware";
 import { storage } from "../storage";
 import { db } from "../db";
 import { financialEditRequests, financialIntegrationRules, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
+import { createNotification } from "../services/notification-service";
 import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
 
 const router = Router();
@@ -83,26 +85,63 @@ async function detectExpenditureImpact(projectName: string, taskIds: number[]): 
   return false;
 }
 
-// Notifications feature removed - sendFinancialWarningNotifications is now a no-op
 async function sendFinancialWarningNotifications(
-  _projectName: string,
-  _editSummary: string,
-  _flags: { isCriticalPath: boolean; affectsRevenue: boolean; affectsExpenditure: boolean; affectsQuality: boolean },
-  _requestedByUserId: number,
-  _requestId: number
+  projectName: string,
+  editSummary: string,
+  flags: { isCriticalPath: boolean; affectsRevenue: boolean; affectsExpenditure: boolean; affectsQuality: boolean },
+  requestedByUserId: number,
+  requestId: number
 ) {
-  // no-op: notifications feature removed
+  try {
+    const tags: string[] = [];
+    if (flags.isCriticalPath) tags.push("CRITICAL PATH");
+    if (flags.affectsRevenue) tags.push("REVENUE IMPACT");
+    if (flags.affectsExpenditure) tags.push("EXPENDITURE IMPACT");
+    const tagStr = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
+
+    const approvers = await db.select({ id: users.id, role: users.role }).from(users)
+      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
+    for (const approver of approvers) {
+      if (approver.id === requestedByUserId) continue;
+      await createNotification({
+        recipientUserId: approver.id,
+        eventType: "financial.edit_request_pending",
+        title: `Financial edit request: ${projectName}${tagStr}`,
+        body: editSummary,
+        projectName,
+        relatedEntityType: "financial_edit_request",
+        relatedEntityId: requestId,
+      });
+    }
+  } catch (err) {
+    console.error("[fin-integration] Failed to send financial warning notifications:", err);
+  }
 }
 
-// Notifications feature removed - sendIntegrationWarningNotifications is now a no-op
 async function sendIntegrationWarningNotifications(
-  _projectName: string,
-  _warningType: string,
-  _title: string,
-  _body: string,
-  _linkedTaskId?: number
+  projectName: string,
+  warningType: string,
+  title: string,
+  body: string,
+  linkedTaskId?: number
 ) {
-  // no-op: notifications feature removed
+  try {
+    const approvers = await db.select({ id: users.id, role: users.role }).from(users)
+      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
+    for (const approver of approvers) {
+      await createNotification({
+        recipientUserId: approver.id,
+        eventType: `financial.integration_warning.${warningType}`,
+        title,
+        body,
+        projectName,
+        linkedTaskId,
+        relatedEntityType: "financial_integration_warning",
+      });
+    }
+  } catch (err) {
+    console.error("[fin-integration] Failed to send integration warning notifications:", err);
+  }
 }
 
 router.post("/api/financial-edit-requests", requireAuth, requireFinancialEditor, async (req: Request, res: Response) => {
@@ -355,7 +394,20 @@ router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinan
       .where(eq(financialEditRequests.id, requestId))
       .returning();
 
-    // Notifications feature removed - rejection notification is now a no-op
+    // Notify the requester that their edit was rejected
+    try {
+      await createNotification({
+        recipientUserId: existing.requestedByUserId,
+        eventType: "financial.edit_request_rejected",
+        title: `Financial edit rejected: ${existing.projectName}`,
+        body: `Your edit request was rejected. Reason: ${comment.trim()}`,
+        projectName: existing.projectName,
+        relatedEntityType: "financial_edit_request",
+        relatedEntityId: requestId,
+      });
+    } catch (err) {
+      console.error("[fin-integration] Failed to send rejection notification:", err);
+    }
 
     res.json({ message: "Edit request rejected", request: updated });
   } catch (error: any) {

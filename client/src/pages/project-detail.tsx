@@ -9,15 +9,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import {
   DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
-  ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
+  ArrowLeft, ExternalLink, User, CheckCircle, AlertCircle, Columns, CalendarDays,
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
   MessageSquare, FolderOpen, FileCheck, Search, X,
+  HardHat, Handshake, MapPin,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -42,12 +42,16 @@ import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
 import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
+import { ProjectConstructionTab } from "@/components/tabs/ProjectConstructionTab";
+import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
+import { BudgetBaselineStrip } from "@/components/tabs/BudgetBaselineStrip";
+import { DrawingRegisterTab } from "@/components/tabs/DrawingRegisterTab";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
 import { PageShell } from "@/components/layout/page-shell";
-import { PROJECT_PHASES, LIFECYCLE_PHASES, PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
+import { PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { usePermission } from "@/hooks/use-permissions";
 import { type NextMilestoneSummary } from "@/lib/next-milestone";
@@ -128,118 +132,66 @@ function engFetch(url: string, options?: RequestInit) {
   return fetch(url, { ...options, headers: { ...headers, ...options?.headers }, credentials: "include" });
 }
 
-function PhaseChangeModal({ projectId, currentPhase, open, onClose }: {
-  projectId: number; currentPhase: string | null; open: boolean; onClose: () => void;
-}) {
-  const [toPhase, setToPhase] = useState<string>("");
-  const [reason, setReason] = useState("");
-  const [overrideSequence, setOverrideSequence] = useState(false);
-  const { toast } = useToast();
-  const qc = useQueryClient();
-
-  const mutation = useMutation({
-    mutationFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/projects/${projectId}/phase`, {
-        method: "PATCH",
-        headers,
-        credentials: "include",
-        body: JSON.stringify({ toPhase, reason, overrideSequence }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || err.error || "Failed to update phase");
-      }
-      return res.json();
+/** Linked entity info cards — shows site, opportunity, budget baseline if linked */
+function LinkedEntityCards({ projectInfoId }: { projectInfoId: number }) {
+  const { data: siteData } = useQuery({
+    queryKey: ["project-site", projectInfoId],
+    queryFn: async () => {
+      const res = await fetch(`/api/sites?projectId_lookup=${projectInfoId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      const sites = await res.json();
+      return sites?.[0] || null;
     },
-    onSuccess: () => {
-      toast({ title: "Phase updated successfully" });
-      qc.invalidateQueries({ queryKey: ["/api/projects-summary"] });
-      qc.invalidateQueries({ queryKey: ["phase-history", projectId] });
-      setToPhase("");
-      setReason("");
-      setOverrideSequence(false);
-      onClose();
-    },
-    onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    },
+    staleTime: 60_000,
   });
 
-  const currentIdx = PROJECT_PHASES.indexOf(currentPhase as any);
-  const toIdx = PROJECT_PHASES.indexOf(toPhase as any);
-  const needsOverride = currentIdx >= 0 && toIdx >= 0 && Math.abs(toIdx - currentIdx) > 1;
+  const { data: budgetData } = useQuery({
+    queryKey: ["project-budget-baselines", projectInfoId],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`/api/budget-baselines?projectId=${projectInfoId}`, { credentials: "include", headers });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const latestBaseline = budgetData?.[0];
+  const hasSite = siteData && siteData.siteName;
+  const hasBaseline = latestBaseline && latestBaseline.id;
+
+  if (!hasSite && !hasBaseline) return null;
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-md" data-testid="dialog-phase-change">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <History className="h-5 w-5" />
-            Change Project Phase
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div>
-            <Label className="text-xs text-muted-foreground">Current Phase</Label>
-            <p className="text-sm font-medium mt-1">{getPhaseLabel(currentPhase)}</p>
-          </div>
-          <div>
-            <Label htmlFor="toPhase">New Phase</Label>
-            <SearchableSelect
-              value={toPhase}
-              onValueChange={setToPhase}
-              placeholder="Select phase..."
-              data-testid="select-to-phase"
-              options={LIFECYCLE_PHASES.map(p => ({
-                value: p,
-                label: PROJECT_PHASE_LABELS[p] || p,
-                disabled: p === currentPhase,
-              }))}
-            />
-          </div>
-          <div>
-            <Label htmlFor="reason">Reason (required)</Label>
-            <Textarea
-              id="reason"
-              value={reason}
-              onChange={e => setReason(e.target.value)}
-              placeholder="Explain why this phase change is happening..."
-              className="mt-1"
-              data-testid="input-phase-reason"
-            />
-          </div>
-          {needsOverride && (
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-amber-50 border border-amber-200">
-              <Switch
-                checked={overrideSequence}
-                onCheckedChange={setOverrideSequence}
-                data-testid="switch-override-sequence"
-              />
-              <div className="text-sm">
-                <p className="font-medium text-amber-800">Override sequential order</p>
-                <p className="text-xs text-amber-600 mt-0.5">Phases normally move one step at a time. Enable this to skip phases.</p>
-              </div>
-            </div>
+    <div className="flex flex-wrap gap-2" data-testid="linked-entity-cards">
+      {hasSite && (
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border bg-card text-xs">
+          <MapPin className="h-3 w-3 text-muted-foreground" />
+          <span className="font-medium">{siteData.siteName}</span>
+          {siteData.municipality && <span className="text-muted-foreground">({siteData.municipality})</span>}
+          {siteData.roofType && <Badge variant="outline" className="text-[9px] h-4">{siteData.roofType.replace(/_/g, " ")}</Badge>}
+        </div>
+      )}
+      {hasBaseline && (
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md border bg-card text-xs">
+          <DollarSign className="h-3 w-3 text-muted-foreground" />
+          <span className="font-medium">Baseline v{latestBaseline.version}</span>
+          {latestBaseline.changeLocked ? (
+            <Badge variant="default" className="text-[9px] h-4 bg-green-100 text-green-700">Locked</Badge>
+          ) : (
+            <Badge variant="secondary" className="text-[9px] h-4">Draft</Badge>
+          )}
+          {latestBaseline.revenueBaseline && (
+            <span className="text-muted-foreground">R{Number(latestBaseline.revenueBaseline).toLocaleString()}</span>
           )}
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} data-testid="button-cancel-phase">Cancel</Button>
-          <Button
-            onClick={() => mutation.mutate()}
-            disabled={!toPhase || !reason.trim() || (needsOverride && !overrideSequence) || mutation.isPending}
-            data-testid="button-save-phase"
-          >
-            {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            Update Phase
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      )}
+    </div>
   );
 }
+
 
 function PhaseHistoryTimeline({ projectId }: { projectId: number }) {
   const { data } = useQuery({
@@ -876,11 +828,13 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "local-files": { section: "collaboration", subTab: "local-files" },
   "approvals": { section: "collaboration", subTab: "approvals" },
   "collaboration": { section: "collaboration", subTab: "chat" },
+  "construction": { section: "construction", subTab: "" },
+  "handover": { section: "handover", subTab: "" },
 };
 
 const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
   delivery: "task-grid",
-  commercial: "procurement",
+  commercial: "revenue-tracking",
   engineering: "eng-tasks",
   quality: "quality",
   collaboration: "chat",
@@ -964,7 +918,7 @@ export default function ProjectDetailPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedTaskRole, setSelectedTaskRole] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [phaseModalOpen, setPhaseModalOpen] = useState(false);
+
 
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
   const urlTab = searchParams.get("tab");
@@ -1418,11 +1372,16 @@ export default function ProjectDetailPage() {
         canSetRag={canSetRag}
         pdAssignableUsers={pdAssignableUsers || []}
         pmAssignableUsers={pmAssignableUsers || []}
-        onPhaseChangeClick={() => setPhaseModalOpen(true)}
+
       />
 
       {/* Priority badges */}
       <ProjectPriorityBadges projectId={projectInfoId ?? null} />
+
+      {/* Linked entity info cards (B2/B3/B5) */}
+      {projectInfoId && (
+        <LinkedEntityCards projectInfoId={projectInfoId} />
+      )}
 
       {/* GC-012: Contract value reconciliation warning — uses V2 finance summary */}
       {(() => {
@@ -1455,10 +1414,12 @@ export default function ProjectDetailPage() {
       <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
         {[
           { key: "delivery", label: "Delivery", icon: CalendarDays, visible: canViewTab.overview },
-          { key: "commercial", label: "Commercial", icon: DollarSign, visible: canViewTab.finance },
+          { key: "commercial", label: "Finance", icon: DollarSign, visible: canViewTab.finance },
           { key: "engineering", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
           { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality },
-          { key: "collaboration", label: "Records", icon: Users, visible: canViewSubTab.collaboration },
+          { key: "construction", label: "Construction", icon: HardHat, visible: canViewTab.overview },
+          { key: "handover", label: "Handover", icon: Handshake, visible: canViewTab.overview },
+          { key: "collaboration", label: "Collaboration", icon: Users, visible: canViewSubTab.collaboration },
         ].filter(t => t.visible).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSection === tab.key;
@@ -1505,6 +1466,8 @@ export default function ProjectDetailPage() {
 
       {activeSection === "commercial" && canViewTab.finance && (
         <div className="space-y-2" data-testid="commercial-section">
+          {/* B5: Budget baseline vs actual strip */}
+          {projectInfoId && <BudgetBaselineStrip projectId={projectInfoId} actualRevenue={totalRevenueActual} />}
           {urlTab && ["expenditure", "revenue-tracking", "monthly-realisation", "revenue-tracker", "gp-tracker"].includes(urlTab) && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="tracker-breadcrumb">
               <button
@@ -1531,11 +1494,8 @@ export default function ProjectDetailPage() {
           )}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
             {[
-              { key: "revenue-tracking", label: "Inflows", icon: DollarSign, visible: canViewSubTab.revenue },
-              { key: "expenditure", label: "COS / Costs", icon: CreditCard, visible: canViewSubTab.expenditure },
-              { key: "monthly-realisation", label: "COS Tracker", icon: TrendingUp, visible: canViewSubTab.cosTracker },
-              { key: "revenue-tracker", label: "Revenue", icon: TrendingUp, visible: canViewSubTab.cosTracker },
-              { key: "gp-tracker", label: "GP", icon: BarChart3, visible: canViewSubTab.cosTracker },
+              { key: "revenue-tracking", label: "Revenue Milestones", icon: DollarSign, visible: canViewSubTab.revenue },
+              { key: "expenditure", label: "Cost Lines", icon: CreditCard, visible: canViewSubTab.expenditure },
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
               { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
               { key: "change-control", label: "Changes", icon: FileCheck, visible: true },
@@ -1545,13 +1505,23 @@ export default function ProjectDetailPage() {
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
               </Button>
             ))}
+            {/* Cross-links to portfolio finance views */}
+            <div className="h-5 border-l border-border/50 mx-1" />
+            {canViewSubTab.cosTracker && (
+              <>
+                <Link href="/cos"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground whitespace-nowrap shrink-0 gap-1"><TrendingUp className="h-3 w-3" />COS Tracker<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+                <Link href="/revenue-tracker"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground whitespace-nowrap shrink-0 gap-1"><TrendingUp className="h-3 w-3" />Revenue Tracker<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+                <Link href="/gp-tracker"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground whitespace-nowrap shrink-0 gap-1"><BarChart3 className="h-3 w-3" />GP Tracker<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+              </>
+            )}
           </div>
           {activeSubTab === "revenue-tracking" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
           {activeSubTab === "expenditure" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
+          {/* Legacy sub-tab support: if user navigates via old URL, show the tab component */}
           {activeSubTab === "monthly-realisation" && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
           {activeSubTab === "revenue-tracker" && canViewSubTab.cosTracker && <RevenueTrackerTab projectName={projectName} />}
           {activeSubTab === "gp-tracker" && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
-          {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} />}
+          {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
           {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
           {activeSubTab === "change-control" && projectInfoId && <ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} />}
@@ -1559,14 +1529,33 @@ export default function ProjectDetailPage() {
       )}
 
       {activeSection === "engineering" && canViewTab.engineering && (
-        <div className="space-y-2" data-testid="eng-section">
+        <div className="space-y-4" data-testid="eng-section">
           {canViewSubTab.engTasks && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} projectName={projectName} />}
+          {projectInfoId && <DrawingRegisterTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
       {activeSection === "quality" && canViewTab.quality && (
         <div className="space-y-2" data-testid="quality-section">
           <QualityTab projectName={projectName} />
+        </div>
+      )}
+
+      {activeSection === "construction" && (
+        <div className="space-y-2" data-testid="construction-section">
+          <div className="flex justify-end">
+            <Link href="/construction"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground gap-1">Open Construction Dashboard<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+          </div>
+          {projectInfoId && <ProjectConstructionTab projectId={projectInfoId} projectName={projectName} />}
+        </div>
+      )}
+
+      {activeSection === "handover" && (
+        <div className="space-y-2" data-testid="handover-section">
+          <div className="flex justify-end">
+            <Link href="/handover"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground gap-1">Open Handover Dashboard<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
+          </div>
+          {projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
@@ -1616,14 +1605,6 @@ export default function ProjectDetailPage() {
         trackingRole={selectedTaskRole === "VIEWER" ? "viewer" : selectedTaskRole === "OWNER" ? "assignee" : selectedTaskRole === "REVIEWER" ? "assignee" : null}
       />
 
-      {projectInfoId && (
-        <PhaseChangeModal
-          projectId={projectInfoId}
-          currentPhase={phase}
-          open={phaseModalOpen}
-          onClose={() => setPhaseModalOpen(false)}
-        />
-      )}
 
       <DataSourceDebug
         pageName="Project Detail"

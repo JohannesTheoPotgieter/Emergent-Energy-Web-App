@@ -186,8 +186,8 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
           totalUpdated++;
         }
       }
-    } catch (err: any) {
-      errors.push(`Error processing ${fileName}: ${err.message}`);
+    } catch (err: unknown) {
+      errors.push(`Error processing ${fileName}: ${(err instanceof Error ? err.message : String(err))}`);
     }
   }
 

@@ -1,4 +1,5 @@
 import { Client } from "@microsoft/microsoft-graph-client";
+import { MS_TIMEZONE } from "./ms-config";
 
 // -- Replit Connector-based Outlook integration --
 // OAuth is managed by the Replit connector. Access tokens are fetched
@@ -117,15 +118,21 @@ async function resolveUserToken(userAccessToken?: string | null): Promise<string
 }
 
 async function graphGet(url: string, userAccessToken?: string | null): Promise<any> {
-  const isUserScoped = url.startsWith("/me/") || url.startsWith("/me?");
-  const token = isUserScoped
-    ? await resolveUserToken(userAccessToken)
-    : await resolveToken(userAccessToken);
+  let token: string;
+  if (userAccessToken) {
+    // Explicit token passed — use it directly regardless of URL prefix
+    token = userAccessToken;
+  } else {
+    const isUserScoped = url.startsWith("/me/") || url.startsWith("/me?");
+    token = isUserScoped
+      ? await resolveUserToken(null)
+      : await resolveToken(null);
+  }
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      Prefer: 'outlook.timezone="Africa/Johannesburg"',
+      Prefer: `outlook.timezone="${MS_TIMEZONE}"`,
     },
   });
   if (!res.ok) {
@@ -145,7 +152,7 @@ async function graphPost(url: string, body: any, userAccessToken?: string | null
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      Prefer: 'outlook.timezone="Africa/Johannesburg"',
+      Prefer: `outlook.timezone="${MS_TIMEZONE}"`,
     },
     body: JSON.stringify(body),
   });
@@ -193,6 +200,9 @@ async function graphDelete(url: string, userAccessToken?: string | null): Promis
     const text = await res.text();
     throw new Error(`Graph API error (${res.status}): ${text}`);
   }
+  if (res.status === 202 || res.status === 204) return;
+  const contentLength = res.headers.get("content-length");
+  if (contentLength === "0") return;
 }
 
 export async function getCalendarEvents(startDate: string, endDate: string, userAccessToken?: string | null): Promise<any[]> {
@@ -247,11 +257,11 @@ export async function createOutlookEvent(block: {
     subject: block.label,
     start: {
       dateTime: `${block.date}T${block.startTime}:00`,
-      timeZone: "Africa/Johannesburg",
+      timeZone: MS_TIMEZONE,
     },
     end: {
       dateTime: `${block.date}T${block.endTime}:00`,
-      timeZone: "Africa/Johannesburg",
+      timeZone: MS_TIMEZONE,
     },
     showAs: "tentative",
     categories: ["My Tool"],
@@ -348,8 +358,8 @@ export async function listFlaggedMessages(top: number = 50, userAccessToken?: st
       hasAttachments: msg.hasAttachments,
       flagStatus: msg.flag?.flagStatus || null,
     }));
-  } catch (err: any) {
-    console.log(`[Outlook] Flagged messages query failed (non-fatal): ${err.message}`);
+  } catch (err: unknown) {
+    console.log(`[Outlook] Flagged messages query failed (non-fatal): ${(err instanceof Error ? err.message : String(err))}`);
     return [];
   }
 }
@@ -435,31 +445,17 @@ export async function forwardMessage(messageId: string, comment: string, toRecip
   }, userAccessToken);
 }
 
-async function graphGetWithToken(url: string, token: string): Promise<any> {
-  const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Graph API error (${res.status}): ${body}`);
-  }
-  return res.json();
-}
-
 export async function getJoinedTeams(ssoToken?: string | null): Promise<any[]> {
   try {
     if (!ssoToken) throw new Error("User SSO token required for /me/joinedTeams");
-    const data = await graphGetWithToken("/me/joinedTeams?$select=id,displayName,description", ssoToken);
+    const data = await graphGet("/me/joinedTeams?$select=id,displayName,description", ssoToken);
     return (data.value || []).map((t: any) => ({
       id: t.id,
       displayName: t.displayName,
       description: t.description || null,
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch joined teams:", err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch joined teams:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -467,15 +463,15 @@ export async function getJoinedTeams(ssoToken?: string | null): Promise<any[]> {
 export async function getTeamChannels(teamId: string, ssoToken?: string | null): Promise<any[]> {
   try {
     if (!ssoToken) throw new Error("User SSO token required for team channels");
-    const data = await graphGetWithToken(`/teams/${teamId}/channels?$select=id,displayName,description,membershipType`, ssoToken);
+    const data = await graphGet(`/teams/${teamId}/channels?$select=id,displayName,description,membershipType`, ssoToken);
     return (data.value || []).map((ch: any) => ({
       id: ch.id,
       displayName: ch.displayName,
       description: ch.description || null,
       membershipType: ch.membershipType || "standard",
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch channels for team", teamId, err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch channels for team", teamId, (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -483,7 +479,7 @@ export async function getTeamChannels(teamId: string, ssoToken?: string | null):
 export async function getMyChats(top: number = 30, ssoToken?: string | null): Promise<any[]> {
   try {
     if (!ssoToken) throw new Error("User SSO token required for /me/chats");
-    const data = await graphGetWithToken(`/me/chats?$top=${top}&$expand=members&$select=id,topic,chatType,lastUpdatedDateTime`, ssoToken);
+    const data = await graphGet(`/me/chats?$top=${top}&$expand=members&$select=id,topic,chatType,lastUpdatedDateTime`, ssoToken);
     return (data.value || []).map((chat: any) => ({
       id: chat.id,
       topic: chat.topic || null,
@@ -494,8 +490,8 @@ export async function getMyChats(top: number = 30, ssoToken?: string | null): Pr
         email: m.email,
       })),
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch chats:", err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch chats:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -503,7 +499,7 @@ export async function getMyChats(top: number = 30, ssoToken?: string | null): Pr
 export async function getChatMessages(chatId: string, top: number = 50, ssoToken?: string | null): Promise<any[]> {
   try {
     if (!ssoToken) throw new Error("User SSO token required for chat messages");
-    const data = await graphGetWithToken(`/me/chats/${chatId}/messages?$top=${top}&$orderby=createdDateTime desc`, ssoToken);
+    const data = await graphGet(`/me/chats/${chatId}/messages?$top=${top}&$orderby=createdDateTime desc`, ssoToken);
     return (data.value || []).filter((m: any) => m.messageType === "message").map((m: any) => ({
       id: m.id,
       createdDateTime: m.createdDateTime,
@@ -513,8 +509,8 @@ export async function getChatMessages(chatId: string, top: number = 50, ssoToken
       bodyType: m.body?.contentType || "text",
       attachments: (m.attachments || []).map((a: any) => ({ name: a.name, contentUrl: a.contentUrl })),
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch chat messages:", err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch chat messages:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -522,7 +518,7 @@ export async function getChatMessages(chatId: string, top: number = 50, ssoToken
 export async function getChannelMessages(teamId: string, channelId: string, top: number = 50, ssoToken?: string | null): Promise<any[]> {
   try {
     if (!ssoToken) throw new Error("User SSO token required for channel messages");
-    const data = await graphGetWithToken(`/teams/${teamId}/channels/${channelId}/messages?$top=${top}`, ssoToken);
+    const data = await graphGet(`/teams/${teamId}/channels/${channelId}/messages?$top=${top}`, ssoToken);
     return (data.value || []).filter((m: any) => m.messageType === "message").map((m: any) => ({
       id: m.id,
       createdDateTime: m.createdDateTime,
@@ -532,8 +528,8 @@ export async function getChannelMessages(teamId: string, channelId: string, top:
       bodyType: m.body?.contentType || "text",
       attachments: (m.attachments || []).map((a: any) => ({ name: a.name, contentUrl: a.contentUrl })),
     }));
-  } catch (err: any) {
-    console.warn("[Teams] Failed to fetch channel messages:", err.message);
+  } catch (err: unknown) {
+    console.warn("[Teams] Failed to fetch channel messages:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -580,8 +576,8 @@ export async function discoverSharePointSites(userAccessToken?: string | null): 
       displayName: site.displayName,
       webUrl: site.webUrl,
     }));
-  } catch (err: any) {
-    console.warn("[SharePoint] Failed to discover sites:", err.message);
+  } catch (err: unknown) {
+    console.warn("[SharePoint] Failed to discover sites:", (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }
@@ -595,8 +591,8 @@ export async function getSiteDrives(siteId: string, userAccessToken?: string | n
       driveType: d.driveType,
       webUrl: d.webUrl,
     }));
-  } catch (err: any) {
-    console.warn("[SharePoint] Failed to get drives for site", siteId, err.message);
+  } catch (err: unknown) {
+    console.warn("[SharePoint] Failed to get drives for site", siteId, (err instanceof Error ? err.message : String(err)));
     return [];
   }
 }

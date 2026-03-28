@@ -10,8 +10,9 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, User, Activity, TrendingUp, DollarSign,
-  CalendarDays, Target, Loader2, ChevronDown,
+  CalendarDays, Target, Loader2, ChevronDown, ArrowUpRight,
   AlertTriangle, ShoppingCart, Shield, GitPullRequest, Wrench, CheckCircle2,
+  FileWarning, Ban, ClipboardCheck,
 } from "lucide-react";
 import { POGenerator } from "@/components/POGenerator";
 import CaptureDeliverable from "@/components/CaptureDeliverable";
@@ -57,7 +58,6 @@ interface CommandHeaderProps {
   canSetRag: boolean;
   pdAssignableUsers: { id: number; name: string; username: string; role: string }[];
   pmAssignableUsers: { id: number; name: string; username: string; role: string }[];
-  onPhaseChangeClick: () => void;
 }
 
 function RagIndicator({ color, label }: { color: "green" | "amber" | "red"; label: string }) {
@@ -81,7 +81,7 @@ function StatBlock({ label, value, color, suffix }: { label: string; value: stri
   );
 }
 
-function useAlertStripData(projectInfoId: number | null) {
+function useAlertStripData(projectInfoId: number | null, projectName?: string) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -137,6 +137,27 @@ function useAlertStripData(projectInfoId: number | null) {
     retry: false,
   });
 
+  const qualityEnabled = !!projectName;
+  const qualitySummary = useQuery<{
+    governance?: {
+      evidenceGapCount?: number;
+      blockedHandover?: boolean;
+      riskLevel?: string;
+      pendingReviewCount?: number;
+      overdueCount?: number;
+    };
+  }>({
+    queryKey: ["alert-quality-summary", projectName],
+    queryFn: async () => {
+      const res = await fetch(`/api/quality/project/${encodeURIComponent(projectName!)}/summary`, fetchOpts);
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: qualityEnabled,
+    staleTime: 60000,
+    retry: false,
+  });
+
   const today = new Date().toISOString().split("T")[0];
   const closedProcStatuses = ["received", "invoiced", "closed"];
   const overdueProcurement = (procurement.data as any[] || []).filter(
@@ -155,31 +176,48 @@ function useAlertStripData(projectInfoId: number | null) {
     (item: any) => item.status !== "approved" && item.status !== "closed"
   ).length;
 
-  const allLoading = procurement.isLoading && raid.isLoading && changes.isLoading && commissioning.isLoading;
-  const allFailed = procurement.isError && raid.isError && changes.isError && commissioning.isError;
-  const anyLoaded = procurement.isSuccess || raid.isSuccess || changes.isSuccess || commissioning.isSuccess;
+  const gov = qualitySummary.data?.governance;
+  const evidenceGaps = gov?.evidenceGapCount ?? 0;
+  const blockedHandover = gov?.blockedHandover === true;
+  const qualityRiskCritical = gov?.riskLevel === "critical";
+  const pendingApprovals = gov?.pendingReviewCount ?? 0;
+  const qualityAlertCount = evidenceGaps + (blockedHandover ? 1 : 0) + (qualityRiskCritical ? 1 : 0) + (pendingApprovals > 0 ? 1 : 0);
+
+  const allLoading = procurement.isLoading && raid.isLoading && changes.isLoading && commissioning.isLoading && qualitySummary.isLoading;
+  const allFailed = procurement.isError && raid.isError && changes.isError && commissioning.isError && qualitySummary.isError;
+  const anyLoaded = procurement.isSuccess || raid.isSuccess || changes.isSuccess || commissioning.isSuccess || qualitySummary.isSuccess;
 
   return {
     overdueProcurement,
     openRaid,
     activeChanges,
     incompleteCommissioning,
+    evidenceGaps,
+    blockedHandover,
+    qualityRiskCritical,
+    pendingApprovals,
+    qualityAlertCount,
     allLoading,
     allFailed,
     anyLoaded,
   };
 }
 
-function AlertStrip({ projectInfoId }: { projectInfoId: number | null }) {
+function AlertStrip({ projectInfoId, projectName }: { projectInfoId: number | null; projectName?: string }) {
   const {
     overdueProcurement,
     openRaid,
     activeChanges,
     incompleteCommissioning,
+    evidenceGaps,
+    blockedHandover,
+    qualityRiskCritical,
+    pendingApprovals,
+    qualityAlertCount,
     allLoading,
     allFailed,
     anyLoaded,
-  } = useAlertStripData(projectInfoId);
+  } = useAlertStripData(projectInfoId, projectName);
 
   if (!projectInfoId) return null;
   if (allFailed) return null;
@@ -195,11 +233,23 @@ function AlertStrip({ projectInfoId }: { projectInfoId: number | null }) {
     );
   }
 
-  const totalAlerts = overdueProcurement + openRaid + activeChanges + incompleteCommissioning;
+  const totalAlerts = overdueProcurement + openRaid + activeChanges + incompleteCommissioning + qualityAlertCount;
   const hasAlerts = totalAlerts > 0;
 
   const badges: { key: string; count: number; label: string; icon: React.ReactNode; color: "red" | "amber" }[] = [];
 
+  if (blockedHandover) {
+    badges.push({ key: "handover-blocked", count: 1, label: "Handover Blocked", icon: <Ban className="h-3 w-3" />, color: "red" });
+  }
+  if (qualityRiskCritical) {
+    badges.push({ key: "quality-risk", count: 1, label: "Quality CRITICAL", icon: <AlertTriangle className="h-3 w-3" />, color: "red" });
+  }
+  if (evidenceGaps > 0) {
+    badges.push({ key: "evidence-gaps", count: evidenceGaps, label: "Evidence Gaps", icon: <FileWarning className="h-3 w-3" />, color: "red" });
+  }
+  if (pendingApprovals > 0) {
+    badges.push({ key: "pending-approvals", count: pendingApprovals, label: "Pending Approvals", icon: <ClipboardCheck className="h-3 w-3" />, color: "amber" });
+  }
   if (overdueProcurement > 0) {
     badges.push({ key: "procurement", count: overdueProcurement, label: "Overdue Procurement", icon: <ShoppingCart className="h-3 w-3" />, color: "red" });
   }
@@ -258,7 +308,7 @@ export function ProjectCommandHeader({
   contractValue, revenueRealisedPct, cosRealisedPct, marginDelta,
   scheduleRag, costRag, qualityRag, ragStatus,
   nextMilestone, projectInfoId, isAdmin, canSetRag,
-  pdAssignableUsers, pmAssignableUsers, onPhaseChangeClick,
+  pdAssignableUsers, pmAssignableUsers,
 }: CommandHeaderProps) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -328,13 +378,14 @@ export function ProjectCommandHeader({
                     {displayName}
                   </h1>
                   <button
-                    onClick={onPhaseChangeClick}
+                    onClick={() => isAdmin && setLocation("/lifecycle-board")}
                     className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold border border-[var(--cmd-border)] bg-white text-[var(--cmd-text-secondary)] hover:bg-gray-50 transition-colors ${isAdmin ? "cursor-pointer" : "cursor-default"}`}
                     disabled={!isAdmin}
+                    title={isAdmin ? "Manage phase on Lifecycle Board" : undefined}
                     data-testid="badge-project-phase"
                   >
                     {getPhaseLabel(phase)}
-                    {isAdmin && <ChevronDown className="h-3 w-3 opacity-50" />}
+                    {isAdmin && <ArrowUpRight className="h-3 w-3 opacity-50" />}
                   </button>
                 </div>
 
@@ -477,7 +528,7 @@ export function ProjectCommandHeader({
             </div>
           </div>
 
-          <AlertStrip projectInfoId={projectInfoId} />
+          <AlertStrip projectInfoId={projectInfoId} projectName={projectName} />
         </div>
       </div>
 

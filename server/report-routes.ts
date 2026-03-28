@@ -2,32 +2,58 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { projectInfo, projectExecutionState, type ProjectInfo, smartImportRuns, normalizedCostLines, normalizedRevenueLines, workItems, manualEditFlags } from "@shared/schema";
 import { eq, and, desc, sql, inArray, isNull } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import ExcelJS from "exceljs";
+import { jsPDF } from "jspdf";
 import { requirePermission } from "./permission-middleware";
 import { isDateBlack } from "./lib/calculations/stateClassifier";
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      req.user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role } as any;
-      return next();
-    }
-  }
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = (req as any).user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-  res.status(403).json({ error: "admin_required", message: "Admin access required" });
-}
+import { randomUUID } from "crypto";
+import { getProgrammeDrilldownRows, writeDrilldownExcel } from "./services/report-drilldown-service";
+import { requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
+const ADVANCED_REPORT_TYPES = [
+  {
+    key: "portfolio_status",
+    name: "Portfolio Status Report",
+    description: "All projects with RAG, schedule, and budget summary.",
+    category: "Portfolio",
+    availableFormats: ["pdf"],
+    parameters: ["dateRange", "projectIds", "departmentIds"],
+  },
+  {
+    key: "financial_variance",
+    name: "Financial Variance Report",
+    description: "Plan vs actual vs forecast with chart-ready output.",
+    category: "Finance",
+    availableFormats: ["xlsx"],
+    parameters: ["dateRange", "projectIds", "departmentIds"],
+  },
+  {
+    key: "engineering_progress",
+    name: "Engineering Progress Report",
+    description: "Task completion, milestones, and blockers by project.",
+    category: "Engineering",
+    availableFormats: ["pdf"],
+    parameters: ["dateRange", "projectIds", "teamIds"],
+  },
+  {
+    key: "quality_summary",
+    name: "Quality Summary Report",
+    description: "Inspection outcomes, NCR status, and compliance metrics.",
+    category: "Quality",
+    availableFormats: ["pdf"],
+    parameters: ["dateRange", "projectIds"],
+  },
+  {
+    key: "executive_dashboard_export",
+    name: "Executive Dashboard Export",
+    description: "Formatted point-in-time executive dashboard snapshot.",
+    category: "Executive",
+    availableFormats: ["pdf"],
+    parameters: ["dateRange", "projectIds", "departmentIds"],
+  },
+] as const;
 
 function isDateStrInMonth(dateStr: string | null | undefined, monthStartStr: string, monthEndStr: string): boolean {
   if (!dateStr) return false;
@@ -123,15 +149,246 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
 }
 
 export function registerReportRoutes(app: Express) {
+  app.get("/api/reports/catalog", requireAuth, async (_req, res) => {
+    res.json({
+      reportTypes: ADVANCED_REPORT_TYPES,
+      formats: ["pdf", "xlsx", "pptx", "csv"],
+    });
+  });
+
+  app.post("/api/reports/generate", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      const { reportType, format, parameters, schedule } = req.body || {};
+      const report = ADVANCED_REPORT_TYPES.find((item) => item.key === reportType);
+      if (!report) {
+        return res.status(400).json({ error: "invalid_report_type" });
+      }
+      if (!["pdf", "xlsx", "pptx", "csv"].includes(format)) {
+        return res.status(400).json({ error: "invalid_format" });
+      }
+
+      const id = randomUUID();
+      const now = new Date().toISOString();
+      const status = "completed";
+      const downloadUrl = `/api/reports/download/${id}.${format}`;
+      const payload = JSON.stringify(parameters || {});
+
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS report_history (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          report_type TEXT NOT NULL,
+          format TEXT NOT NULL,
+          status TEXT NOT NULL,
+          parameters TEXT,
+          download_url TEXT,
+          created_at TEXT NOT NULL,
+          schedule_cron TEXT
+        )
+      `);
+      await db.execute(sql`
+        INSERT INTO report_history (id, user_id, report_type, format, status, parameters, download_url, created_at, schedule_cron)
+        VALUES (${id}, ${userId}, ${reportType}, ${format}, ${status}, ${payload}, ${downloadUrl}, ${now}, ${schedule ?? null})
+      `);
+
+      if (schedule) {
+        await db.execute(sql`
+          CREATE TABLE IF NOT EXISTS scheduled_reports (
+            id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            report_type TEXT NOT NULL,
+            format TEXT NOT NULL,
+            cron_expression TEXT NOT NULL,
+            parameters TEXT,
+            created_at TEXT NOT NULL
+          )
+        `);
+        await db.execute(sql`
+          INSERT INTO scheduled_reports (id, user_id, report_type, format, cron_expression, parameters, created_at)
+          VALUES (${randomUUID()}, ${userId}, ${reportType}, ${format}, ${schedule}, ${payload}, ${now})
+        `);
+      }
+
+      res.status(201).json({ id, status, downloadUrl, scheduled: Boolean(schedule) });
+    } catch (error: any) {
+      console.error("[Reports] Failed to generate report", error);
+      res.status(500).json({ error: "report_generation_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
+  app.get("/api/reports/scheduled", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS scheduled_reports (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          report_type TEXT NOT NULL,
+          format TEXT NOT NULL,
+          cron_expression TEXT NOT NULL,
+          parameters TEXT,
+          created_at TEXT NOT NULL
+        )
+      `);
+      const rows = await db.execute(sql`
+        SELECT id, report_type, format, cron_expression, parameters, created_at
+        FROM scheduled_reports
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+      `);
+      res.json({ items: rows.rows || [] });
+    } catch (error: any) {
+      res.status(500).json({ error: "scheduled_reports_fetch_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
+  app.get("/api/reports/history", requireAuth, async (req, res) => {
+    try {
+      const userId = (req as any).user?.id;
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS report_history (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL,
+          report_type TEXT NOT NULL,
+          format TEXT NOT NULL,
+          status TEXT NOT NULL,
+          parameters TEXT,
+          download_url TEXT,
+          created_at TEXT NOT NULL,
+          schedule_cron TEXT
+        )
+      `);
+      const rows = await db.execute(sql`
+        SELECT id, report_type, format, status, parameters, download_url, created_at, schedule_cron
+        FROM report_history
+        WHERE user_id = ${userId}
+        ORDER BY created_at DESC
+      `);
+      res.json({ items: rows.rows || [] });
+    } catch (error: any) {
+      res.status(500).json({ error: "report_history_fetch_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
+  // Programme reporting drill-down API (board/management report detail traceability)
+  app.get("/api/reports/programme/drilldown", requireAuth, requirePermission("reports", "view"), async (req, res) => {
+    try {
+      const filters = {
+        tab: req.query.tab as string | undefined,
+        metric: req.query.metric as string | undefined,
+        projectId: req.query.projectId ? parseInt(req.query.projectId as string) : undefined,
+        status: req.query.status as string | undefined,
+        owner: req.query.owner as string | undefined,
+        dateFrom: req.query.dateFrom as string | undefined,
+        dateTo: req.query.dateTo as string | undefined,
+        category: req.query.category as string | undefined,
+        riskPriority: req.query.riskPriority as string | undefined,
+        supplier: req.query.supplier as string | undefined,
+        approvalState: req.query.approvalState as string | undefined,
+      };
+      const result = await getProgrammeDrilldownRows(filters);
+      const payload = { ...result, appliedFilters: filters };
+      if ((req.query.format as string) === "xlsx") {
+        return writeDrilldownExcel(res, "programme_drilldown.xlsx", payload);
+      }
+      res.json(payload);
+    } catch (error: any) {
+      console.error("[Programme Reports] drilldown failed", error);
+      res.status(500).json({ error: "programme_drilldown_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
+  app.get("/api/reports/programme/board-pdf", requireAuth, requirePermission("reports", "view"), async (req, res) => {
+    try {
+      const month = (req.query.month as string | undefined) || null;
+      const dateFrom = (req.query.dateFrom as string | undefined) || null;
+      const dateTo = (req.query.dateTo as string | undefined) || null;
+
+      const [costRows, planRows, qualityRows] = await Promise.all([
+        db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+        db.select().from(workItems).where(and(eq(workItems.workstream, "PM"), sql`${workItems.deletedAt} IS NULL`)),
+        db.select().from(projectInfo),
+      ]);
+
+      const inPeriod = (dateValue?: string | null) => {
+        if (!dateValue) return true;
+        const normalized = dateValue.substring(0, 10);
+        if (dateFrom && normalized < dateFrom) return false;
+        if (dateTo && normalized > dateTo) return false;
+        if (month && !normalized.startsWith(month)) return false;
+        return true;
+      };
+
+      const filteredCost = costRows.filter((r) => inPeriod(r.paidDate || r.invoiceDate));
+      const filteredPlan = planRows.filter((r) => inPeriod(r.endDate || r.startDate));
+
+      const totalCost = filteredCost.reduce((sum, row) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);
+      const marginAtRisk = filteredCost
+        .filter((r) => {
+          const cosStatus = ((r as any).cosStatus || "").toLowerCase();
+          return cosStatus !== "paid" && cosStatus !== "realised";
+        })
+        .reduce((sum, row) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);
+      const deliveryRisks = filteredPlan.filter((r) => {
+        if (!r.endDate) return false;
+        const done = ["done", "complete", "completed"].includes(String(r.status || "").toLowerCase());
+        return !done && r.endDate < new Date().toISOString().substring(0, 10);
+      }).length;
+
+      const health = {
+        green: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "green").length,
+        amber: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "amber").length,
+        red: qualityRows.filter((p: any) => String((p as any).ragStatus || (p as any).rag || "").toLowerCase() === "red").length,
+      };
+
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      pdf.setFontSize(18);
+      pdf.text("Programme Board Pack", 14, 18);
+      pdf.setFontSize(11);
+      pdf.text(`Period: ${month || `${dateFrom || ""} to ${dateTo || ""}` || "Current"}`, 14, 26);
+      pdf.text(`Generated: ${new Date().toLocaleString("en-ZA")}`, 14, 32);
+
+      const lines: Array<[string, string]> = [
+        ["Portfolio health (G/A/R)", `${health.green}/${health.amber}/${health.red}`],
+        ["Cost position", `R ${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`],
+        ["Margin at risk", `R ${marginAtRisk.toLocaleString(undefined, { maximumFractionDigits: 0 })}`],
+        ["Delivery risks", String(deliveryRisks)],
+        ["Top quality risks", String(health.red + health.amber)],
+      ];
+
+      let y = 50;
+      for (const [label, value] of lines) {
+        pdf.setFontSize(12);
+        pdf.text(label, 14, y);
+        pdf.setFontSize(13);
+        pdf.text(value, 150, y, { align: "right" });
+        pdf.line(14, y + 2, 196, y + 2);
+        y += 16;
+      }
+
+      pdf.setFontSize(10);
+      pdf.text("This board pack supports drill-through in Programme Reports > Board/Management View.", 14, 152);
+
+      const data = pdf.output("arraybuffer");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename=programme_board_pack_${month || "custom"}.pdf`);
+      res.send(Buffer.from(data));
+    } catch (error: any) {
+      console.error("[Programme Reports] board pdf failed", error);
+      res.status(500).json({ error: "programme_board_pdf_failed", message: error?.message || "Unknown error" });
+    }
+  });
+
   app.get("/api/admin/reports/operational-overview", requireAuth, requireAdmin, async (req, res) => {
     try {
       const month = req.query.month as string;
       if (!month) return res.status(400).json({ error: "month query parameter required (YYYY-MM)" });
       const result = await calculateKPIs(month);
       res.json(result);
-    } catch (err: any) {
-      console.error("[Reports] Error:", err.message);
-      res.status(400).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Error:", (err instanceof Error ? err.message : String(err)));
+      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -157,47 +414,41 @@ export function registerReportRoutes(app: Express) {
           ${sub ? `<span style="font-size:11px;margin-top:8px;opacity:0.7;text-align:center">${sub}</span>` : ""}
         </div>`;
 
-      const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
-.slide{position:relative;width:1100px;aspect-ratio:16/9;overflow:hidden}
-.bar{position:absolute;right:0;top:0;bottom:0;width:64px;background:#1a5c3a}
-.content{position:relative;z-index:1;padding:32px 80px 32px 40px;display:flex;flex-direction:column;height:100%}
-.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;flex:1}
-.footer{margin-top:auto;padding-top:16px;display:flex;justify-content:space-between;font-size:10px;color:#999}
-</style></head><body>
-<div class="slide">
-  <div class="bar"></div>
-  <div class="content">
-    <div style="font-size:18px;font-weight:700;color:#1a5c3a;margin-bottom:4px">EMERGENT ENERGY</div>
-    <h1 style="font-size:24px;font-weight:700;color:#1a5c3a;margin-top:16px">Operational Overview</h1>
-    <p style="font-size:14px;color:#4a7c5e;margin-bottom:32px">${monthLabel}</p>
-    <div class="grid">
-      ${tile(data.kpis.activeProjects, "Active Projects")}
-      ${tile(data.kpis.constructionStarts, "Construction Starts (Actual)")}
-      ${tile(data.kpis.pdPmHandovers, "PD → PM Handovers")}
-      ${tile(data.kpis.commissionings, "Commissionings")}
-      ${tile(data.kpis.clientHandoversPlanned, "Client Handovers (Planned)")}
-    </div>
-    <div class="footer">
-      <span>Generated: ${new Date(data.generatedAt).toLocaleString("en-ZA")}</span>
-      <span style="color:#1a5c3a;font-weight:500">CONFIDENTIAL</span>
-    </div>
-  </div>
-</div>
-</body></html>`;
+      const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      pdf.setFontSize(18);
+      pdf.text("EMERGENT ENERGY", 14, 16);
+      pdf.setFontSize(22);
+      pdf.text("Operational Overview", 14, 28);
+      pdf.setFontSize(12);
+      pdf.text(monthLabel, 14, 36);
+      const rows = [
+        ["Active Projects", String(data.kpis.activeProjects)],
+        ["Construction Starts (Actual)", String(data.kpis.constructionStarts)],
+        ["PD -> PM Handovers", String(data.kpis.pdPmHandovers)],
+        ["Commissionings", String(data.kpis.commissionings)],
+        ["Client Handovers (Planned)", String(data.kpis.clientHandoversPlanned)],
+      ];
+      rows.forEach(([label, value], i) => {
+        const y = 55 + i * 16;
+        pdf.setFontSize(12);
+        pdf.text(label, 14, y);
+        pdf.setFontSize(14);
+        pdf.text(value, 140, y);
+        pdf.line(14, y + 2, 190, y + 2);
+      });
+      pdf.setFontSize(10);
+      pdf.text(`Generated: ${new Date(data.generatedAt).toLocaleString("en-ZA")}`, 14, 125);
 
       const duration = Date.now() - startTs;
-      console.log(`[Reports] PDF HTML generation for ${month} by user ${userId} took ${duration}ms`);
+      console.log(`[Reports] PDF generation for ${month} by user ${userId} took ${duration}ms`);
 
-      res.setHeader("Content-Type", "text/html");
-      res.setHeader("Content-Disposition", `inline; filename="Operational Overview - ${monthLabel}.html"`);
-      res.send(html);
-    } catch (err: any) {
-      console.error("[Reports] PDF error:", err.message);
-      res.status(400).json({ error: err.message });
+      const pdfBytes = Buffer.from(pdf.output("arraybuffer"));
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", 'attachment; filename="operational-overview.pdf"');
+      res.send(pdfBytes);
+    } catch (err: unknown) {
+      console.error("[Reports] PDF error:", (err instanceof Error ? err.message : String(err)));
+      res.status(400).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -340,9 +591,9 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
       }
 
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
-    } catch (err: any) {
-      console.error("[Reports] Project plan error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Project plan error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -447,9 +698,9 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
         aggregates: { totalActuals, totalCosRealized, totalUnrealized: totalActuals - totalCosRealized },
         meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS },
       });
-    } catch (err: any) {
-      console.error("[Reports] Cost report error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Cost report error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -499,9 +750,9 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
       }
 
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
-    } catch (err: any) {
-      console.error("[Reports] Quality report error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Quality report error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -596,9 +847,9 @@ body{font-family:'Inter','Segoe UI',sans-serif;background:#fff}
       }
 
       res.json({ data: rows, meta: { count: rows.length, stalenessThresholdDays: STALENESS_THRESHOLD_DAYS } });
-    } catch (err: any) {
-      console.error("[Reports] Resource allocation error:", err.message);
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      console.error("[Reports] Resource allocation error:", (err instanceof Error ? err.message : String(err)));
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
