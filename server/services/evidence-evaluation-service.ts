@@ -29,6 +29,11 @@ const DEFAULT_THRESHOLD_BY_COMPLETION: Record<string, number> = {
   commissioning_item_close: 80,
   milestone_completion: 85,
   handover_gate_complete: 90,
+  // EPC workflow thresholds — all evidence required before proceeding
+  po_submission: 100,
+  invoice_validation: 100,
+  payment_request: 100,
+  payment_confirmed: 100,
 };
 
 const EVIDENCE_OVERRIDE_ROLES = ["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"];

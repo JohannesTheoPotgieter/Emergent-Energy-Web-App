@@ -107,6 +107,9 @@ const NcrListPage = lazy(() => import("@/pages/quality/ncr-list"));
 const NcrDetailPage = lazy(() => import("@/pages/quality/ncr-detail"));
 const ConstructionDashboardPage = lazy(() => import("@/pages/construction-dashboard"));
 const ProcurementDashboardPage = lazy(() => import("@/pages/procurement-dashboard"));
+const POApprovalBoardPage = lazy(() => import("@/pages/po-approval-board"));
+const PaymentRequestBoardPage = lazy(() => import("@/pages/payment-request-board"));
+const PaymentBatchManagerPage = lazy(() => import("@/pages/payment-batch-manager"));
 const HseDashboardPage = lazy(() => import("@/pages/hse-dashboard"));
 const HandoverDashboardPage = lazy(() => import("@/pages/handover-dashboard"));
 const SitesPage = lazy(() => import("@/pages/sites"));
@@ -212,6 +215,9 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   NcrDetailPage,
   ConstructionDashboardPage,
   ProcurementDashboardPage,
+  POApprovalBoardPage,
+  PaymentRequestBoardPage,
+  PaymentBatchManagerPage,
   HseDashboardPage,
   HandoverDashboardPage,
   SitesPage,

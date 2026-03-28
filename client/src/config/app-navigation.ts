@@ -77,13 +77,16 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Finance",
     path: "/cashflow",
-    match: (pathname) => startsWithAny(pathname, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard", "/fye-revenue-tracking", "/procurement"]),
+    match: (pathname) => startsWithAny(pathname, ["/cashflow", "/cos", "/revenue-tracker", "/gp-tracker", "/invoice-patterns", "/counterparties", "/subcontractor-dashboard", "/fye-revenue-tracking", "/procurement", "/po-approval-board", "/payment-request-board", "/payment-batch-manager"]),
     secondary: [
       { label: "Cashflow", path: "/cashflow" },
       { label: "COS", path: "/cos" },
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "GP Tracker", path: "/gp-tracker" },
       { label: "FYE Revenue", path: "/fye-revenue-tracking" },
+      { label: "PO Approvals", path: "/po-approval-board" },
+      { label: "Payment Requests", path: "/payment-request-board" },
+      { label: "Payment Batches", path: "/payment-batch-manager" },
       { label: "Counterparties", path: "/counterparties" },
       { label: "Invoice Patterns", path: "/invoice-patterns" },
       { label: "Procurement Hub", path: "/procurement" },

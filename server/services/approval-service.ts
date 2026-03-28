@@ -8,7 +8,7 @@
 import { db } from "../db";
 import { approvals } from "@shared/schema/collaboration";
 
-export type ApprovalType = "handover" | "budget" | "vo" | "procurement" | "gate" | "handover_pack" | "exception";
+export type ApprovalType = "handover" | "budget" | "vo" | "procurement" | "gate" | "handover_pack" | "exception" | "po_approval" | "payment_release";
 export type ApprovalUrgency = "critical" | "high" | "normal" | "low";
 
 export interface CreateApprovalParams {
@@ -143,5 +143,52 @@ export async function createGateApproval(params: {
     relatedEntityType: "project",
     relatedEntityId: params.projectId,
     urgency: "high",
+  });
+}
+
+/**
+ * Create a PO approval.
+ * Called when a PM submits a Purchase Order for multi-reviewer approval.
+ */
+export async function createPoApproval(params: {
+  projectId: number;
+  purchaseOrderId: number;
+  requestedByUserId: number;
+  title: string;
+  total: number;
+}) {
+  return createApproval({
+    approvalType: "po_approval",
+    type: "general",
+    title: params.title,
+    description: `PO total: R${params.total.toLocaleString()}`,
+    projectId: params.projectId,
+    requestedByUserId: params.requestedByUserId,
+    relatedEntityType: "purchase_order",
+    relatedEntityId: params.purchaseOrderId,
+    urgency: params.total > 100000 ? "high" : "normal",
+  });
+}
+
+/**
+ * Create a payment release approval.
+ * Called when a payment batch is submitted for ManCo approval.
+ */
+export async function createPaymentReleaseApproval(params: {
+  projectId: number;
+  paymentBatchId: number;
+  requestedByUserId: number;
+  totalAmount: number;
+  batchNumber: string;
+}) {
+  return createApproval({
+    approvalType: "payment_release",
+    type: "general",
+    title: `Payment batch ${params.batchNumber} — R${params.totalAmount.toLocaleString()} requires ManCo release`,
+    projectId: params.projectId,
+    requestedByUserId: params.requestedByUserId,
+    relatedEntityType: "payment_batch",
+    relatedEntityId: params.paymentBatchId,
+    urgency: "critical",
   });
 }
