@@ -43,6 +43,7 @@ import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlT
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
 import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
 import { ProjectConstructionTab } from "@/components/tabs/ProjectConstructionTab";
+import FinancialReviewTab from "@/components/tabs/FinancialReviewTab";
 import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
 import { BudgetBaselineStrip } from "@/components/tabs/BudgetBaselineStrip";
 import { DrawingRegisterTab } from "@/components/tabs/DrawingRegisterTab";
@@ -1417,6 +1418,7 @@ export default function ProjectDetailPage() {
           { key: "commercial", label: "Finance", icon: DollarSign, visible: canViewTab.finance },
           { key: "engineering", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
           { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality },
+          { key: "readiness-gate", label: "Readiness Gate", icon: ShieldCheck, visible: canViewTab.overview },
           { key: "construction", label: "Construction", icon: HardHat, visible: canViewTab.overview },
           { key: "handover", label: "Handover", icon: Handshake, visible: canViewTab.overview },
           { key: "collaboration", label: "Collaboration", icon: Users, visible: canViewSubTab.collaboration },
@@ -1538,6 +1540,12 @@ export default function ProjectDetailPage() {
       {activeSection === "quality" && canViewTab.quality && (
         <div className="space-y-2" data-testid="quality-section">
           <QualityTab projectName={projectName} />
+        </div>
+      )}
+
+      {activeSection === "readiness-gate" && projectInfoId && (
+        <div className="space-y-2" data-testid="readiness-gate-section">
+          <FinancialReviewTab projectId={projectInfoId} projectName={projectName} />
         </div>
       )}
 
