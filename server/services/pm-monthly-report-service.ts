@@ -161,7 +161,10 @@ export async function generatePmReportData(month: string) {
   kpis.totalRevenue = activeRevLines.reduce((sum, r) => sum + toNum(r.amountExVat), 0);
   kpis.totalCost = activeCostLines.reduce((sum, r) => sum + toNum(r.amountExVat), 0);
   kpis.blendedGpMarginPct = kpis.totalRevenue > 0 ? ((kpis.totalRevenue - kpis.totalCost) / kpis.totalRevenue) * 100 : 0;
-  kpis.projectsAtRisk = activeProjects.filter(p => (p.ragStatus || "").toUpperCase() === "RED").length;
+  kpis.projectsAtRisk = activeProjects.filter(p => {
+    const rag = (p.ragStatus || "").toUpperCase();
+    return rag === "RED" || rag === "AMBER";
+  }).length;
 
   const healthScores = activeProjects.map(p => toNum(metricsMap.get(p.id)?.healthScore)).filter(h => h > 0);
   kpis.avgHealthScore = healthScores.length > 0 ? healthScores.reduce((a, b) => a + b, 0) / healthScores.length : 0;

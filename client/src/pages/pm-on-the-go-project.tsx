@@ -41,6 +41,7 @@ import {
   Check,
   X,
 } from "lucide-react";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -131,7 +132,7 @@ export default function PMOnTheGoProject() {
   const queryClient = useQueryClient();
   const [activeAction, setActiveAction] = useState<ActionType | null>(null);
 
-  const { data: snapshot, isLoading: snapshotLoading, refetch: refetchSnapshot } = useQuery<Snapshot>({
+  const { data: snapshot, isLoading: snapshotLoading, isError, error, refetch: refetchSnapshot } = useQuery<Snapshot>({
     queryKey: ["pm-otg-snapshot", projectId],
     queryFn: () => apiFetch(`/api/pm-otg/projects/${projectId}/snapshot`),
     enabled: projectId > 0,
@@ -157,10 +158,11 @@ export default function PMOnTheGoProject() {
     },
   });
 
-  if (snapshotLoading) {
+  if (snapshotLoading) return <PageSkeleton lines={5} />;
+  if (isError) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      <div className="p-4 md:p-6">
+        <PageError title="Unable to load project snapshot" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetchSnapshot()} />
       </div>
     );
   }

@@ -1,5 +1,8 @@
 import React, { useState, useMemo, useCallback } from "react";
+import { FinanceShell } from "@/components/layout/FinanceShell";
+import { useAuth } from "@/hooks/use-auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -43,6 +46,7 @@ interface MonthData {
   monthLabel: string;
   totalCOS: number;
   realisedCOS: number;
+  committedCOS: number;
   unrealisedCOS: number;
   budget: number;
   variance: number;
@@ -50,6 +54,7 @@ interface MonthData {
   revRealised: number;
   ytdCOS: number;
   ytdRealised: number;
+  ytdCommitted: number;
   ytdUnrealised: number;
   ytdBudget: number;
   ytdVariance: number;
@@ -57,6 +62,7 @@ interface MonthData {
   ytdRevRealised: number;
   cosProjects: ProjectBreakdown[];
   realisedProjects: ProjectBreakdown[];
+  committedProjects: ProjectBreakdown[];
   unrealisedProjects: ProjectBreakdown[];
 }
 
@@ -76,6 +82,9 @@ interface MonthDetailItem {
   isRealised: boolean;
   realisedMonth: string | null;
   cosState: string;
+  hasOverride?: boolean;
+  overrideStatus?: string | null;
+  overrideReason?: string | null;
 }
 
 interface MonthDetail {
@@ -115,29 +124,36 @@ const ROW_DEFS: {
   group: "monthly" | "ytd";
   colorCoded?: boolean;
   expandable?: boolean;
-  projectsKey?: "cosProjects" | "realisedProjects" | "unrealisedProjects";
+  projectsKey?: "cosProjects" | "realisedProjects" | "committedProjects" | "unrealisedProjects";
 }[] = [
   { key: "totalCOS", label: "COS (Finance)", dataKey: "totalCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "cosProjects" },
   { key: "realisedCOS", label: "Realised COS", dataKey: "realisedCOS", editable: false, colorClass: "text-foreground font-bold", group: "monthly", expandable: true, projectsKey: "realisedProjects" },
+  { key: "committedCOS", label: "Committed COS", dataKey: "committedCOS", editable: false, colorClass: "text-amber-600 font-semibold", group: "monthly", expandable: true, projectsKey: "committedProjects" },
   { key: "unrealisedCOS", label: "Unrealised COS", dataKey: "unrealisedCOS", editable: false, colorClass: "text-red-600 font-semibold", group: "monthly", expandable: true, projectsKey: "unrealisedProjects" },
   { key: "budget", label: "Costed", dataKey: "budget", editable: true, colorClass: "text-purple-600", group: "monthly" },
   { key: "variance", label: "Variance", dataKey: "variance", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "variancePct", label: "Variance %", dataKey: "variancePct", editable: false, colorClass: "", group: "monthly", colorCoded: true },
   { key: "ytdCOS", label: "YTD COS", dataKey: "ytdCOS", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
   { key: "ytdRealised", label: "YTD Realised", dataKey: "ytdRealised", editable: false, colorClass: "text-foreground font-bold", group: "ytd" },
+  { key: "ytdCommitted", label: "YTD Committed", dataKey: "ytdCommitted", editable: false, colorClass: "text-amber-600", group: "ytd" },
   { key: "ytdUnrealised", label: "YTD Unrealised", dataKey: "ytdUnrealised", editable: false, colorClass: "text-red-600", group: "ytd" },
   { key: "ytdBudget", label: "YTD Costed", dataKey: "ytdBudget", editable: false, colorClass: "text-purple-600", group: "ytd" },
   { key: "ytdVariance", label: "YTD Variance", dataKey: "ytdVariance", editable: false, colorClass: "", group: "ytd", colorCoded: true },
   { key: "ytdVariancePct", label: "YTD Variance %", dataKey: "ytdVariancePct", editable: false, colorClass: "", group: "ytd", colorCoded: true },
 ];
 
-function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "unrealised"; defaultProject?: string }) {
+function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all", defaultProject = "all" }: { monthKey: string; monthLabel: string; onClose: () => void; defaultFilter?: "all" | "realised" | "committed" | "unrealised"; defaultProject?: string }) {
   const [, navigate] = useLocation();
   const [search, setSearch] = useState("");
-  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "unrealised">(defaultFilter);
+  const [stateFilter, setStateFilter] = useState<"all" | "realised" | "committed" | "unrealised">(defaultFilter);
   const [projectFilter, setProjectFilter] = useState<string>(defaultProject);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [overrideItemId, setOverrideItemId] = useState<number | null>(null);
+  const [overrideStatus, setOverrideStatus] = useState<string>("");
+  const [overrideDate, setOverrideDate] = useState<string>("");
+  const [overrideReason, setOverrideReason] = useState<string>("");
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
 
   const { data, isLoading } = useQuery<MonthDetail>({
     queryKey: ["/api/cos-tracker/month-detail", monthKey],
@@ -149,6 +165,21 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
       await apiRequest("PATCH", `/api/cos-tracker/toggle-realised/${id}`, { realised });
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker/month-detail", monthKey] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
+      invalidateDashboardQueries(queryClient);
+    },
+  });
+
+  const overrideStatusMutation = useMutation({
+    mutationFn: async ({ id, cosStatus, invoiceDate, reason }: { id: number; cosStatus: string | null; invoiceDate?: string; reason: string }) => {
+      await apiRequest("PATCH", `/api/cos-tracker/override-status/${id}`, { cosStatus, invoiceDate: invoiceDate || undefined, reason });
+    },
+    onSuccess: () => {
+      setOverrideItemId(null);
+      setOverrideStatus("");
+      setOverrideDate("");
+      setOverrideReason("");
       queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker/month-detail", monthKey] });
       queryClient.invalidateQueries({ queryKey: ["/api/cos-tracker"] });
       invalidateDashboardQueries(queryClient);
@@ -266,6 +297,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             >
               <option value="all">All States</option>
               <option value="realised">Realised Only</option>
+              <option value="committed">Committed Only</option>
               <option value="unrealised">Unrealised Only</option>
             </select>
             <select
@@ -346,26 +378,92 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
                       <td className="px-3 py-2.5 text-muted-foreground max-w-[110px] truncate" title={item.category || ""}>{item.category || "—"}</td>
                       <td className="px-3 py-2.5 max-w-[200px] truncate text-foreground" title={item.lineItem || ""}>{item.lineItem || "—"}</td>
                       <td className="px-3 py-2.5 text-center">
-                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.cosState)}`}>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${stateBadgeColor(item.cosState)}`}>
                           {item.cosState}
+                          {item.hasOverride && (
+                            <span className="text-purple-500 cursor-help" title={`Admin override: ${item.overrideReason || 'No reason'}`}>*</span>
+                          )}
                         </span>
                       </td>
                       <td className="px-3 py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <button
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-colors ${
-                            item.isRealised
-                              ? 'bg-muted text-foreground ring-1 ring-slate-300 font-bold hover:bg-red-50 hover:text-red-600 hover:ring-red-200'
-                              : 'bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-muted hover:text-foreground hover:ring-slate-300'
-                          }`}
-                          title={item.isRealised ? 'Click to mark as Not Realised' : 'Click to mark as Realised'}
-                          disabled={toggleRealisedMutation.isPending}
-                          onClick={() => toggleRealisedMutation.mutate({ id: item.id, realised: !item.isRealised })}
-                          data-testid={`button-toggle-realised-${item.id}`}
-                        >
-                          {item.isRealised
-                            ? (item.invoiceNumber ? `INV: ${item.invoiceNumber.substring(0, 12)}` : (item.realisedMonth || 'Realised'))
-                            : 'Not Realised'}
-                        </button>
+                        {isAdmin ? (
+                          overrideItemId === item.id ? (
+                            <div className="flex flex-col gap-1.5 min-w-[180px]" onClick={(e) => e.stopPropagation()}>
+                              <select
+                                className="text-[10px] border rounded px-1.5 py-1 bg-white"
+                                value={overrideStatus}
+                                onChange={(e) => setOverrideStatus(e.target.value)}
+                              >
+                                <option value="">Auto (clear override)</option>
+                                <option value="Planned">Planned</option>
+                                <option value="Committed">Committed</option>
+                                <option value="COS Realised">COS Realised</option>
+                              </select>
+                              <input
+                                type="date"
+                                className="text-[10px] border rounded px-1.5 py-1 bg-white"
+                                value={overrideDate}
+                                onChange={(e) => setOverrideDate(e.target.value)}
+                                placeholder="Invoice date (optional)"
+                              />
+                              <input
+                                type="text"
+                                className="text-[10px] border rounded px-1.5 py-1 bg-white"
+                                value={overrideReason}
+                                onChange={(e) => setOverrideReason(e.target.value)}
+                                placeholder="Reason (required)"
+                              />
+                              <div className="flex gap-1">
+                                <button
+                                  className="text-[10px] px-2 py-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                                  disabled={overrideStatusMutation.isPending || (overrideStatus !== "" && !overrideReason.trim())}
+                                  onClick={() => overrideStatusMutation.mutate({
+                                    id: item.id,
+                                    cosStatus: overrideStatus || null,
+                                    invoiceDate: overrideDate || undefined,
+                                    reason: overrideReason,
+                                  })}
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  className="text-[10px] px-2 py-0.5 bg-gray-200 rounded hover:bg-gray-300"
+                                  onClick={() => { setOverrideItemId(null); setOverrideStatus(""); setOverrideDate(""); setOverrideReason(""); }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-pointer transition-colors ${
+                                item.hasOverride
+                                  ? 'bg-purple-50 text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100'
+                                  : item.isRealised
+                                    ? 'bg-muted text-foreground ring-1 ring-slate-300 font-bold hover:bg-blue-50 hover:text-blue-600'
+                                    : 'bg-red-50 text-red-600 ring-1 ring-red-200 hover:bg-blue-50 hover:text-blue-600'
+                              }`}
+                              title="Click to override COS status"
+                              onClick={() => {
+                                setOverrideItemId(item.id);
+                                setOverrideStatus(item.overrideStatus || "");
+                                setOverrideDate(item.invoiceDate || "");
+                                setOverrideReason(item.overrideReason || "");
+                              }}
+                              data-testid={`button-override-${item.id}`}
+                            >
+                              {item.hasOverride ? 'Override' : (item.isRealised ? 'Realised' : 'Not Realised')}
+                            </button>
+                          )
+                        ) : (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            item.isRealised ? 'bg-muted text-foreground ring-1 ring-slate-300' : 'bg-red-50 text-red-600 ring-1 ring-red-200'
+                          }`}>
+                            {item.isRealised
+                              ? (item.invoiceNumber ? `INV: ${item.invoiceNumber.substring(0, 12)}` : 'Realised')
+                              : 'Not Realised'}
+                          </span>
+                        )}
                       </td>
                       <td className={`px-3 py-2.5 text-right font-mono font-semibold ${item.isRealised ? 'text-foreground' : 'text-red-600'}`}>{formatRand(item.amount)}</td>
                     </tr>
@@ -463,7 +561,7 @@ export default function CosTracker() {
 
   const projectNamesByRow = useMemo(() => {
     const result: Record<string, string[]> = {};
-    for (const key of ["cosProjects", "realisedProjects", "unrealisedProjects"] as const) {
+    for (const key of ["cosProjects", "realisedProjects", "committedProjects", "unrealisedProjects"] as const) {
       const names = new Set<string>();
       for (const m of months) {
         for (const p of m[key] || []) {
@@ -512,6 +610,7 @@ export default function CosTracker() {
       months.map((m) => ({
         month: m.monthLabel,
         "Realised": m.realisedCOS,
+        "Committed": m.committedCOS,
         "Unrealised": m.unrealisedCOS,
         Costed: m.budget,
         "YTD Variance": m.ytdVariance,
@@ -526,6 +625,7 @@ export default function CosTracker() {
         "Costed COS": m.budget,
         "Planned COS": m.totalCOS,
         "Realised COS": m.realisedCOS,
+        "Committed COS": m.committedCOS,
         "Outstanding COS": m.unrealisedCOS,
       })),
     [months],
@@ -548,71 +648,11 @@ export default function CosTracker() {
     return formatRand(val);
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50" data-testid="loading-indicator">
-        <div className="bg-card border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
-          <div className="max-w-[1800px] mx-auto">
-            <Skeleton className="h-8 w-72 mb-2" />
-            <Skeleton className="h-4 w-96" />
-          </div>
-        </div>
-        <div className="max-w-[1800px] mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i} className="shadow-sm">
-                <CardContent className="pt-5 pb-4 px-4">
-                  <div className="flex items-start gap-3">
-                    <Skeleton className="h-10 w-10 rounded-xl" />
-                    <div className="flex-1">
-                      <Skeleton className="h-3 w-20 mb-2" />
-                      <Skeleton className="h-6 w-24" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-          <Card className="shadow-sm overflow-hidden">
-            <CardContent className="p-6">
-              <Skeleton className="h-[420px] w-full rounded-lg" />
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm overflow-hidden">
-            <CardContent className="p-0">
-              <div className="px-5 py-3 border-b"><Skeleton className="h-5 w-32" /></div>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="flex gap-2 px-5 py-2.5 border-b border-border/40">
-                  <Skeleton className="h-4 w-32" />
-                  {Array.from({ length: 6 }).map((_, j) => (
-                    <Skeleton key={j} className="h-4 w-20 ml-auto" />
-                  ))}
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="p-6 max-w-[1200px] mx-auto" data-testid="cos-tracker-error-state">
-        <Card className="border-red-200 bg-red-50/40">
-          <CardContent className="py-10 text-center space-y-3">
-            <AlertCircle className="h-8 w-8 text-red-500 mx-auto" />
-            <p className="text-sm font-semibold text-red-700">COS tracker data failed to load.</p>
-            <p className="text-xs text-red-600/90">{(error as Error)?.message || "An unexpected error occurred."}</p>
-            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-cos-tracker">Retry</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load COS Tracker" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const kpiCards = [
-    { id: "ytd-total-cos", label: "YTD COS (Finance)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date total Cost of Sales from the Finance COS sheet. Includes both realised (paid) and unrealised (unpaid) expenses." },
+    { id: "ytd-total-cos", label: "YTD COS (Planned)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date planned COS from all line items (invoice captured or not). Realised is the paid subset; unrealised is the remaining planned balance." },
     { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "COS where the invoice has been raised AND paid. These are confirmed, actual costs." },
     { id: "ytd-unrealised", label: "YTD Unrealised (Not Paid)", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "COS that is planned or committed but not yet paid. These are forecast costs still at risk of change." },
     { id: "ytd-budget", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "", tooltip: "The manually entered costed budget for COS. Editable in the grid below. Used to calculate variance." },
@@ -637,7 +677,7 @@ export default function CosTracker() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
+    <FinanceShell currentPage="cos"><div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
       <div className="bg-card border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-[1800px] mx-auto">
           <div>
@@ -660,7 +700,7 @@ export default function CosTracker() {
             <div>
               <p className="font-semibold text-amber-900 text-sm">COS Realisation Tracker</p>
               <p className="text-sm text-amber-700/90 mt-0.5 leading-relaxed">
-                COS is "Realised" when the matching expenditure line has an Invoice Number AND the Invoice Raised Date has <strong className="text-foreground">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
+                Planned = all line items (invoice captured or not). Committed = invoice captured, but the invoice date is not yet confirmed in black font. Realised = invoice captured + invoice date shown in <strong className="text-foreground">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
               </p>
             </div>
           </CardContent>
@@ -718,6 +758,7 @@ export default function CosTracker() {
                   />
                   <Legend iconType="circle" wrapperStyle={{ fontSize: '12px', paddingTop: '12px' }} />
                   <Bar dataKey="Realised" stackId="cos" fill="#1e293b" radius={[0, 0, 0, 0]} />
+                  <Bar dataKey="Committed" stackId="cos" fill="#f59e0b" radius={[0, 0, 0, 0]} />
                   <Bar dataKey="Unrealised" stackId="cos" fill="#dc2626" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Costed" fill="#a855f7" opacity={0.3} radius={[4, 4, 0, 0]} />
                   <Line
@@ -753,6 +794,7 @@ export default function CosTracker() {
                   <Bar dataKey="Costed COS" fill="#a6a6a6" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Planned COS" fill="#4472C4" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Realised COS" fill="#ED7D31" radius={[2, 2, 0, 0]} />
+                  <Bar dataKey="Committed COS" fill="#f59e0b" radius={[2, 2, 0, 0]} />
                   <Bar dataKey="Outstanding COS" fill="#FFC000" radius={[2, 2, 0, 0]} />
                 </ComposedChart>
               </ResponsiveContainer>
@@ -783,7 +825,7 @@ export default function CosTracker() {
                   {ROW_DEFS.map((row, rowIdx) => {
                     const isYtd = row.group === "ytd";
                     const isExpanded = expandedRows.has(row.key);
-                    const isClickable = ["totalCOS", "realisedCOS", "unrealisedCOS"].includes(row.key);
+                    const isClickable = ["totalCOS", "realisedCOS", "committedCOS", "unrealisedCOS"].includes(row.key);
                     const isFirstYtd = isYtd && rowIdx > 0 && ROW_DEFS[rowIdx - 1].group !== "ytd";
                     return (
                       <React.Fragment key={row.key}>
@@ -857,7 +899,7 @@ export default function CosTracker() {
                                 onClick={isClickable ? () => setDrawerMonth({
                                   monthKey: m.monthKey,
                                   monthLabel: m.monthLabel,
-                                  defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'unrealisedCOS' ? 'unrealised' : 'all'
+                                  defaultFilter: row.key === 'realisedCOS' ? 'realised' : row.key === 'committedCOS' ? 'committed' : row.key === 'unrealisedCOS' ? 'unrealised' : 'all'
                                 }) : undefined}
                                 data-testid={`cell-${row.key}-${m.monthKey}`}
                               >
@@ -886,7 +928,7 @@ export default function CosTracker() {
                               const projArr = row.projectsKey ? (m as any)[row.projectsKey] as ProjectBreakdown[] : [];
                               const proj = projArr?.find((p: ProjectBreakdown) => p.projectName === pName);
                               const val = proj?.value ?? 0;
-                              const drillFilter = row.key === 'realisedCOS' ? 'realised' as const : row.key === 'unrealisedCOS' ? 'unrealised' as const : 'all' as const;
+                              const drillFilter = row.key === 'realisedCOS' ? 'realised' as const : row.key === 'committedCOS' ? 'committed' as const : row.key === 'unrealisedCOS' ? 'unrealised' as const : 'all' as const;
                               return (
                                 <td
                                   key={m.monthKey}
@@ -925,6 +967,6 @@ export default function CosTracker() {
           onClose={() => setDrawerMonth(null)}
         />
       )}
-    </div>
+    </div></FinanceShell>
   );
 }

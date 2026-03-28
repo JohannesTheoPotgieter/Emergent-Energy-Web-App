@@ -1,8 +1,6 @@
-// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, desc, sql, inArray } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import {
   meetingSummaries,
   meetingActionItems,
@@ -15,33 +13,8 @@ import {
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { z } from "zod";
 import { requirePermission } from "./permission-middleware";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required" });
-}
-
-const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
-
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  const role = ((req as any).user as any)?.role || "";
-  if (ADMIN_ROLES.includes(role)) return next();
-  res.status(403).json({ error: "forbidden" });
-}
+import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 
 export function registerMeetingRoutes(app: Express) {
 
@@ -106,8 +79,8 @@ export function registerMeetingRoutes(app: Express) {
       }
 
       res.status(200).json({ status: "ok", meetingId: meeting.id, actionItemCount: actionItems.length });
-    } catch (err: any) {
-      console.error("[Read.ai Webhook] Error:", err.message);
+    } catch (err: unknown) {
+      console.error("[Read.ai Webhook] Error:", (err instanceof Error ? err.message : String(err)));
       res.status(500).json({ error: "webhook_processing_failed" });
     }
   });
@@ -123,8 +96,8 @@ export function registerMeetingRoutes(app: Express) {
         .orderBy(desc(meetingSummaries.createdAt))
         .limit(50);
 
-      const meetingIds = meetings.map((m) => m.id);
-      let allItems: any[] = [];
+      const meetingIds = meetings.map((m: { id: number }) => m.id);
+      let allItems: Array<{ meetingId: number | null; title: string; status: string; assignee: string | null; dueDate: string | null; id: number }> = [];
       if (meetingIds.length > 0) {
         allItems = await db
           .select()
@@ -155,8 +128,8 @@ export function registerMeetingRoutes(app: Express) {
       });
 
       res.json(result);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -183,8 +156,8 @@ export function registerMeetingRoutes(app: Express) {
         pendingItems,
         convertedItems,
       });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -195,14 +168,14 @@ export function registerMeetingRoutes(app: Express) {
       const protocol = req.headers["x-forwarded-proto"] || req.protocol || "https";
       const webhookUrl = `${protocol}://${host}/api/webhooks/read-ai`;
       res.json({ webhookUrl });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
   app.get("/api/meetings/:id", requireAuth, requirePermission("meetings", "view"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const [meeting] = await db.select().from(meetingSummaries).where(eq(meetingSummaries.id, id));
       if (!meeting) return res.status(404).json({ error: "Meeting not found" });
 
@@ -228,18 +201,18 @@ export function registerMeetingRoutes(app: Express) {
         highlights: highlights.filter(Boolean),
         actionItems: items,
       });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
   app.delete("/api/meetings/:id", requireAuth, requirePermission("meetings", "delete"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       await db.delete(meetingSummaries).where(eq(meetingSummaries.id, id));
       res.json({ ok: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -247,7 +220,7 @@ export function registerMeetingRoutes(app: Express) {
 
   app.patch("/api/meetings/action-items/:id/dismiss", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(String(req.params.id));
       const [updated] = await db
         .update(meetingActionItems)
         .set({ status: "dismissed" })
@@ -255,8 +228,8 @@ export function registerMeetingRoutes(app: Express) {
         .returning();
       if (!updated) return res.status(404).json({ error: "Action item not found" });
       res.json(updated);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -264,8 +237,8 @@ export function registerMeetingRoutes(app: Express) {
 
   app.post("/api/meetings/action-items/:id/convert-to-task", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const actionItemId = parseInt(req.params.id);
-      const userId = (req as any).user.id;
+      const actionItemId = parseInt(String(req.params.id));
+      const userId = getEffectiveUser(req)?.id;
 
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
       if (!actionItem) return res.status(404).json({ error: "Action item not found" });
@@ -275,7 +248,7 @@ export function registerMeetingRoutes(app: Express) {
 
       const overrides = req.body || {};
 
-      const userEmail = (req as any).user?.email;
+      const userEmail = getEffectiveUser(req)?.email;
       let ownerUserId: number | null = null;
       if (userEmail) {
         const [dbUser] = await db.select().from(users).where(eq(users.email, userEmail));
@@ -340,14 +313,14 @@ export function registerMeetingRoutes(app: Express) {
         .where(eq(meetingActionItems.id, actionItemId));
 
       res.json({ task, actionItem: { id: actionItemId, status: "converted", convertedToType, convertedToId: task.id } });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
   app.post("/api/meetings/action-items/:id/convert-to-priority", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const actionItemId = parseInt(req.params.id);
+      const actionItemId = parseInt(String(req.params.id));
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
       if (!actionItem) return res.status(404).json({ error: "Action item not found" });
       if (actionItem.status === "converted") return res.status(400).json({ error: "Already converted" });
@@ -375,14 +348,14 @@ export function registerMeetingRoutes(app: Express) {
         .where(eq(meetingActionItems.id, actionItemId));
 
       res.json({ priority, actionItem: { id: actionItemId, status: "converted", convertedToType: "company_priority", convertedToId: priority.id } });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
   app.post("/api/meetings/action-items/:id/convert-to-project", requireAuth, requirePermission("meetings", "edit"), async (req: Request, res: Response) => {
     try {
-      const actionItemId = parseInt(req.params.id);
+      const actionItemId = parseInt(String(req.params.id));
       const [actionItem] = await db.select().from(meetingActionItems).where(eq(meetingActionItems.id, actionItemId));
       if (!actionItem) return res.status(404).json({ error: "Action item not found" });
       if (actionItem.status === "converted") return res.status(400).json({ error: "Already converted" });
@@ -409,8 +382,8 @@ export function registerMeetingRoutes(app: Express) {
         .where(eq(meetingActionItems.id, actionItemId));
 
       res.json({ project, actionItem: { id: actionItemId, status: "converted", convertedToType: "project", convertedToId: project.id } });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -458,9 +431,9 @@ export function registerMeetingRoutes(app: Express) {
 
       const items = await db.select().from(meetingActionItems).where(eq(meetingActionItems.meetingId, meeting.id));
       res.json({ ...meeting, actionItems: items });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err.name === "ZodError") return res.status(400).json({ error: "Validation failed", details: err.errors });
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -501,8 +474,8 @@ export function registerMeetingRoutes(app: Express) {
       });
 
       res.json({ ok: true, meetingId: meeting.id, message: "Test meeting created successfully" });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 

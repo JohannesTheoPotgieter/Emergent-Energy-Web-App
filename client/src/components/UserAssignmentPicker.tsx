@@ -140,7 +140,6 @@ export default function UserAssignmentPicker({
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        console.error("[Assignment] Reassign failed:", res.status, body);
         throw new Error(body?.error || `Failed to reassign (${res.status})`);
       }
       return body;
@@ -174,7 +173,6 @@ export default function UserAssignmentPicker({
       setOpen(false);
     },
     onError: (error: any) => {
-      console.error("[Assignment] Mutation error:", error);
       toast({ title: error?.message || "Failed to update assignment", variant: "destructive" });
     },
   });

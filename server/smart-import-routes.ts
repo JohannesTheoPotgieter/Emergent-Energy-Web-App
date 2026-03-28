@@ -6,8 +6,8 @@ import multer from "multer";
 import crypto from "crypto";
 import { logAuditFromReq } from "./audit-logger";
 import { db } from "./db";
-import { verifyToken } from "./jwt";
 import { requirePermission } from "./permission-middleware";
+import { jwtAuth, requireAuth } from "./auth-context";
 import { runSmartImportPreview } from "./lib/import/index";
 import {
   smartImportRuns,
@@ -220,7 +220,7 @@ async function pruneOldImportRuns(projectName: string, currentRunId: number): Pr
       await db.delete(smartImportRuns).where(inArray(smartImportRuns.id, idsToDelete));
       console.log(`[SmartImport] Pruned ${idsToDelete.length} stale import runs for "${projectName}"`);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.warn(`[SmartImport] Failed to prune old import runs:`, err?.message || err);
   }
 }
@@ -257,25 +257,6 @@ const upload = multer({
   },
 });
 
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
-
 router.use(jwtAuth);
 
 router.get("/api/smart-import/runs", requireAuth, requirePermission("smart_import", "view"), async (req: Request, res: Response) => {
@@ -289,7 +270,7 @@ router.get("/api/smart-import/runs", requireAuth, requirePermission("smart_impor
     `);
     const results = Array.isArray(rows) ? rows : (rows.rows || []);
     res.json(results);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[SmartImport] List runs error:", err);
     res.status(500).json({ error: "Failed to list import runs" });
   }
@@ -299,7 +280,7 @@ router.get("/api/smart-import/runs", requireAuth, requirePermission("smart_impor
 router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_import", "edit"), (req: Request, res: Response, next: NextFunction) => {
   upload.single("file")(req, res, async (err: any) => {
     if (err) {
-      const message = err.message || "File upload failed";
+      const message = (err instanceof Error ? err.message : String(err)) || "File upload failed";
       // Log rejected upload attempt
       try {
         const userId = (req as any).user?.id || null;
@@ -458,9 +439,9 @@ router.post("/api/smart-import/upload", requireAuth, requirePermission("smart_im
       matchDiagnostics,
       rerunWarning: rerunWarning || null,
     });
-  } catch (err: any) {
-    console.error("[smart-import] POST upload error:", err.message);
-    let userMessage = err.message || "Unknown error";
+  } catch (err: unknown) {
+    console.error("[smart-import] POST upload error:", (err instanceof Error ? err.message : String(err)));
+    let userMessage = (err instanceof Error ? err.message : String(err)) || "Unknown error";
     let statusCode = 500;
     if (userMessage.startsWith("PARSE_ERROR:")) {
       userMessage = userMessage.replace("PARSE_ERROR: ", "");
@@ -493,9 +474,9 @@ router.get("/api/smart-import/history/:projectName", requireAuth, async (req: Re
       .orderBy(desc(smartImportRuns.uploadedAt));
 
     res.json(runs);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] GET history error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -594,9 +575,9 @@ router.get("/api/smart-import/health-dashboard", requireAuth, requirePermission(
     dashboard.sort((a, b) => (stalenessOrder[a.staleness] ?? 9) - (stalenessOrder[b.staleness] ?? 9));
 
     res.json(dashboard);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] GET health-dashboard error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -663,9 +644,9 @@ router.get("/api/smart-import/pending-runs", requireAuth, requirePermission("sma
 
     runsWithIssues.sort((a, b) => a.projectName.localeCompare(b.projectName));
     res.json(runsWithIssues);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] GET pending-runs error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -678,9 +659,9 @@ router.get("/api/smart-import/project-matches/:name", requireAuth, requirePermis
       normalizedName: normalizeForComparison(name),
       matches,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] GET project-matches error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -712,9 +693,9 @@ router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePerm
     });
 
     res.json({ success: true, projectId: targetProject.id, projectName: targetProject.projectName });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] PATCH assign-project error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -734,9 +715,9 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
       issues,
       preview: run.summaryJson,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] GET run error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -854,9 +835,9 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
     }
 
     res.json({ diff });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] GET diff error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -902,9 +883,9 @@ router.patch("/api/smart-import/:runId/project-info", requireAuth, requirePermis
     });
 
     res.json({ success: true, projectInfo: summary.detection.projectInfo });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] PATCH project-info error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1043,9 +1024,9 @@ router.patch("/api/smart-import/:runId/mapping", requireAuth, requirePermission(
     });
 
     res.json({ success: true, updatedMapping: { section, colIndex, canonicalField } });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] PATCH mapping error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1126,9 +1107,9 @@ router.patch("/api/smart-import/:runId/issue/:issueId/resolve", requireAuth, req
     });
 
     res.json(updated);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] PATCH resolve error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1182,9 +1163,9 @@ router.post("/api/smart-import/:runId/ignore-all-blockers", requireAuth, require
     });
 
     res.json({ ignored, issues: updatedIssues });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] POST ignore-all-blockers error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1229,9 +1210,9 @@ router.post("/api/smart-import/:runId/allow-all", requireAuth, requirePermission
     });
 
     res.json({ allowed, issues: updatedIssues });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] POST allow-all error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1301,9 +1282,9 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, req
     });
 
     res.json({ applied, issues: updatedIssues });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] POST apply-prior-resolutions error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1380,7 +1361,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         row.invoiceDateConfirmed === true ||
         row.paidDateConfirmed === true ||
         row.noRevenueLinked === true ||
-        row.cashflowConfirmed === true
+        row.cashflowConfirmed === true ||
+        !!row.adminDateOverride
       );
 
       const manualEditChangeSets = await db
@@ -1495,12 +1477,51 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               editedAt: flagInfo?.editedAt?.toISOString() || undefined,
             });
           }
+          if (existing.adminDateOverride) {
+            const flagInfo = editFlagMap.get(`${existing.id}::adminDateOverride`);
+            const importDate = matchingImport?.forecastPaymentDate || matchingImport?.paidDate || "none";
+            conflicts.push({
+              sourceRow: existing.sourceRow || 0,
+              description: existing.description || "",
+              costCategory: existing.costCategory || "",
+              field: "Admin Date Override",
+              currentValue: `${existing.adminDateOverride}${existing.adminDateOverrideReason ? ` (${existing.adminDateOverrideReason})` : ""}`,
+              importValue: importDate,
+              editedByName: flagInfo?.editedByName || undefined,
+              editedAt: flagInfo?.editedAt?.toISOString() || existing.adminDateOverrideAt?.toISOString() || undefined,
+            });
+          }
         }
 
+        // Also check for revenue admin date overrides
+        const existingRevLines = await db.select().from(normalizedRevenueLines)
+          .where(and(eq(normalizedRevenueLines.projectId, run.projectId), isNull(normalizedRevenueLines.effectiveTo)));
+
+        const revWithOverrides = existingRevLines.filter(row => !!row.adminDateOverride);
+        if (revWithOverrides.length > 0) {
+          const importRevLines = norm?.revenueLines || [];
+          for (const existing of revWithOverrides) {
+            if (existing.sourceRow == null) continue;
+            const matchingImport = importRevLines.find((imp: any) => imp.sourceRow === existing.sourceRow);
+            const importDate = matchingImport?.expectedPaymentDate || matchingImport?.paidDate || "none";
+            conflicts.push({
+              sourceRow: existing.sourceRow,
+              description: existing.milestoneName || existing.description || "",
+              costCategory: "Revenue",
+              field: "Admin Date Override (Revenue)",
+              currentValue: `${existing.adminDateOverride}${existing.adminDateOverrideReason ? ` (${existing.adminDateOverrideReason})` : ""}`,
+              importValue: importDate,
+              editedByName: undefined,
+              editedAt: existing.adminDateOverrideAt?.toISOString() || undefined,
+            });
+          }
+        }
+
+        const totalEdits = manuallyModifiedRows.length + revWithOverrides.length;
         return res.status(409).json({
           error: "manual_edits_warning",
-          message: `This project has ${manuallyModifiedRows.length} cost line(s) with manual edits that will be affected by this import.`,
-          manualEditCount: manuallyModifiedRows.length,
+          message: `This project has ${totalEdits} line(s) with manual edits that will be affected by this import.`,
+          manualEditCount: totalEdits,
           changeSetCount,
           conflicts,
           hint: "Resolve each conflict individually: 'keep' to preserve your manual edit, 'import' to overwrite with Excel data.",
@@ -1651,6 +1672,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         paidDateConfirmed?: boolean;
         noRevenueLinked?: boolean;
         cashflowConfirmed?: boolean;
+        adminDateOverride?: string;
+        adminDateOverrideReason?: string;
+        adminDateOverrideBy?: number;
+        adminDateOverrideAt?: Date;
+      }>();
+
+      // Track revenue admin date overrides separately
+      const revenueAdminOverrides = new Map<number, {
+        adminDateOverride: string;
+        adminDateOverrideReason?: string;
+        adminDateOverrideBy?: number;
+        adminDateOverrideAt?: Date;
       }>();
 
       if (preserveManualEdits || conflictResolutions) {
@@ -1659,23 +1692,31 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           : await tx.select().from(normalizedCostLines).where(eq(normalizedCostLines.projectName, projectName));
 
         for (const row of existingCostRows) {
-          const hasManualEdits = row.cosRealised || row.invoiceDateConfirmed || row.paidDateConfirmed || row.noRevenueLinked || row.cashflowConfirmed;
+          const hasManualEdits = row.cosRealised || row.invoiceDateConfirmed || row.paidDateConfirmed || row.noRevenueLinked || row.cashflowConfirmed || row.adminDateOverride;
           if (!hasManualEdits || row.sourceRow == null) continue;
 
           if (conflictResolutions) {
-            const edits: Record<string, boolean> = {};
+            const edits: Record<string, any> = {};
             const fields: Record<string, string> = {
               cosRealised: "COS Realised",
               invoiceDateConfirmed: "Invoice Date Confirmed",
               paidDateConfirmed: "Paid Date Confirmed",
               noRevenueLinked: "No Revenue Linked",
               cashflowConfirmed: "Cashflow Confirmed",
+              adminDateOverride: "Admin Date Override",
             };
             for (const [dbField, label] of Object.entries(fields)) {
               if ((row as any)[dbField]) {
                 const key = `${row.sourceRow}::${label}`;
                 if (conflictResolutions[key] === "keep") {
-                  (edits as any)[dbField] = true;
+                  if (dbField === "adminDateOverride") {
+                    edits.adminDateOverride = row.adminDateOverride;
+                    edits.adminDateOverrideReason = row.adminDateOverrideReason || undefined;
+                    edits.adminDateOverrideBy = row.adminDateOverrideBy || undefined;
+                    edits.adminDateOverrideAt = row.adminDateOverrideAt || undefined;
+                  } else {
+                    edits[dbField] = true;
+                  }
                 }
               }
             }
@@ -1689,6 +1730,38 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               paidDateConfirmed: row.paidDateConfirmed || undefined,
               noRevenueLinked: row.noRevenueLinked || undefined,
               cashflowConfirmed: row.cashflowConfirmed || undefined,
+              adminDateOverride: row.adminDateOverride || undefined,
+              adminDateOverrideReason: row.adminDateOverrideReason || undefined,
+              adminDateOverrideBy: row.adminDateOverrideBy || undefined,
+              adminDateOverrideAt: row.adminDateOverrideAt || undefined,
+            });
+          }
+        }
+
+        // Also check revenue lines for admin date overrides
+        const existingRevRows = projectId
+          ? await tx.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectId, projectId))
+          : await tx.select().from(normalizedRevenueLines).where(eq(normalizedRevenueLines.projectName, projectName));
+
+        for (const row of existingRevRows) {
+          if (!row.adminDateOverride || row.sourceRow == null) continue;
+
+          if (conflictResolutions) {
+            const key = `${row.sourceRow}::Admin Date Override (Revenue)`;
+            if (conflictResolutions[key] === "keep") {
+              revenueAdminOverrides.set(row.sourceRow, {
+                adminDateOverride: row.adminDateOverride,
+                adminDateOverrideReason: row.adminDateOverrideReason || undefined,
+                adminDateOverrideBy: row.adminDateOverrideBy || undefined,
+                adminDateOverrideAt: row.adminDateOverrideAt || undefined,
+              });
+            }
+          } else {
+            revenueAdminOverrides.set(row.sourceRow, {
+              adminDateOverride: row.adminDateOverride,
+              adminDateOverrideReason: row.adminDateOverrideReason || undefined,
+              adminDateOverrideBy: row.adminDateOverrideBy || undefined,
+              adminDateOverrideAt: row.adminDateOverrideAt || undefined,
             });
           }
         }
@@ -1911,6 +1984,27 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           });
         if (revValues.length > 0) {
           await tx.insert(normalizedRevenueLines).values(addTemporalColumns(revValues, runId, commitTimestamp) as any);
+
+          // Preserve admin date overrides on re-imported revenue lines
+          if (revenueAdminOverrides.size > 0) {
+            const insertedRevRows = projectId
+              ? await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo)))
+              : await tx.select({ id: normalizedRevenueLines.id, sourceRow: normalizedRevenueLines.sourceRow }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo)));
+
+            for (const inserted of insertedRevRows) {
+              if (inserted.sourceRow == null) continue;
+              const preserved = revenueAdminOverrides.get(inserted.sourceRow);
+              if (!preserved) continue;
+
+              await tx.update(normalizedRevenueLines).set({
+                adminDateOverride: preserved.adminDateOverride,
+                adminDateOverrideReason: preserved.adminDateOverrideReason || null,
+                adminDateOverrideBy: preserved.adminDateOverrideBy || null,
+                adminDateOverrideAt: preserved.adminDateOverrideAt || null,
+              }).where(eq(normalizedRevenueLines.id, inserted.id));
+              preservedManualEditsCount++;
+            }
+          }
         }
         counts.revenueLines = revValues.length;
       }
@@ -1919,6 +2013,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         const oldInflows = await tx.select({
           rowNumber: programInflows.rowNumber,
           inBank: programInflows.inBank,
+          paymentReceivedDate: programInflows.paymentReceivedDate,
           milestoneName: programInflows.milestoneName,
           milestoneAmount: programInflows.milestoneAmount,
           source: programInflows.source,
@@ -1934,14 +2029,25 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           overwriteWarnings.push(msg);
         }
 
-        // Build composite key map: "milestoneName::amount" → { inBank, rowNumber }
-        const oldCompositeMap = new Map<string, { inBank: number | null; rowNumber: number | null }>();
-        const oldRowMap = new Map<number, number | null>();
+        // Build composite key map: "milestoneName::amount" → previous inflow row
+        const oldCompositeMap = new Map<string, { inBank: number | null; rowNumber: number | null; paymentReceivedDate: string | null; source: string | null }>();
+        const oldRowMap = new Map<number, { inBank: number | null; paymentReceivedDate: string | null; source: string | null }>();
         for (const r of oldInflows) {
-          if (r.rowNumber != null) oldRowMap.set(r.rowNumber, r.inBank);
+          if (r.rowNumber != null) {
+            oldRowMap.set(r.rowNumber, {
+              inBank: r.inBank,
+              paymentReceivedDate: r.paymentReceivedDate,
+              source: r.source || null,
+            });
+          }
           if (r.milestoneName) {
             const key = `${r.milestoneName}::${r.milestoneAmount || ""}`;
-            oldCompositeMap.set(key, { inBank: r.inBank, rowNumber: r.rowNumber });
+            oldCompositeMap.set(key, {
+              inBank: r.inBank,
+              rowNumber: r.rowNumber,
+              paymentReceivedDate: r.paymentReceivedDate,
+              source: r.source || null,
+            });
           }
         }
 
@@ -1962,10 +2068,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
               // Composite match first (name + amount), then fall back to row number
               let prevInBank: number | null | undefined = undefined;
+              let prevPaymentReceivedDate: string | null | undefined = undefined;
+              let prevSource: string | null | undefined = undefined;
               const compositeKey = name ? `${name}::${amount || ""}` : null;
               if (compositeKey && oldCompositeMap.has(compositeKey)) {
                 const match = oldCompositeMap.get(compositeKey)!;
                 prevInBank = match.inBank;
+                prevPaymentReceivedDate = match.paymentReceivedDate;
+                prevSource = match.source;
                 // Warn if the milestone moved rows
                 if (match.rowNumber != null && match.rowNumber !== r.sourceRow) {
                   console.log(`[SmartImport] Revenue milestone '${name}' moved from row ${match.rowNumber} to row ${r.sourceRow}. Status preserved.`);
@@ -1973,8 +2083,16 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               }
               // Fall back to row number match
               if (prevInBank === undefined && oldRowMap.has(r.sourceRow)) {
-                prevInBank = oldRowMap.get(r.sourceRow) ?? null;
+                const rowMatch = oldRowMap.get(r.sourceRow)!;
+                prevInBank = rowMatch.inBank ?? null;
+                prevPaymentReceivedDate = rowMatch.paymentReceivedDate ?? null;
+                prevSource = rowMatch.source;
               }
+
+              const preserveManualRow = prevSource === "imported_edited";
+              const paymentReceivedDate = preserveManualRow
+                ? (prevPaymentReceivedDate ?? null)
+                : (m.paidDate || null);
 
               return {
                 projectName,
@@ -1985,7 +2103,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 plannedPaymentDate: m.expectedPaymentDate || null,
                 milestoneInvoiceNumber: m.invoiceNumber || null,
                 invoiceRaisedDate: m.invoiceDate || null,
-                paymentReceivedDate: m.paidDate || null,
+                paymentReceivedDate,
                 inBank: prevInBank != null ? prevInBank : (m.inBankDate ? 1 : 0),
                 subProjectName: m.subProjectName || null,
                 dataSource: "SMART_IMPORT",
@@ -2127,12 +2245,18 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               const preserved = manualEditsToPreserve.get(inserted.sourceRow);
               if (!preserved) continue;
 
-              const updates: Record<string, boolean> = {};
+              const updates: Record<string, any> = {};
               if (preserved.cosRealised) updates.cosRealised = true;
               if (preserved.invoiceDateConfirmed) updates.invoiceDateConfirmed = true;
               if (preserved.paidDateConfirmed) updates.paidDateConfirmed = true;
               if (preserved.noRevenueLinked) updates.noRevenueLinked = true;
               if (preserved.cashflowConfirmed) updates.cashflowConfirmed = true;
+              if (preserved.adminDateOverride) {
+                updates.adminDateOverride = preserved.adminDateOverride;
+                updates.adminDateOverrideReason = preserved.adminDateOverrideReason || null;
+                updates.adminDateOverrideBy = preserved.adminDateOverrideBy || null;
+                updates.adminDateOverrideAt = preserved.adminDateOverrideAt || null;
+              }
 
               if (Object.keys(updates).length > 0) {
                 await tx.update(normalizedCostLines).set(updates).where(eq(normalizedCostLines.id, inserted.id));
@@ -2173,7 +2297,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
 
       if (Array.isArray(norm.costLines) && projectName) {
-        const oldPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber, source: programExpense.source })
+        const oldPeRows = await tx.select({
+          id: programExpense.id,
+          rowNumber: programExpense.rowNumber,
+          source: programExpense.source,
+          expensePaymentDate: programExpense.expensePaymentDate,
+          paymentDateConfirmed: programExpense.paymentDateConfirmed,
+          paymentDateFontColor: programExpense.paymentDateFontColor,
+        })
           .from(programExpense)
           .where(eq(programExpense.projectName, projectName));
 
@@ -2192,12 +2323,28 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         if (norm.costLines.length > 0) {
           const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
           const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
+          const oldPeByRow = new Map(
+            oldPeRows
+              .filter((r) => r.rowNumber != null)
+              .map((r) => [r.rowNumber as number, r]),
+          );
           let currentCategory = "";
           const peValues = norm.costLines
             .filter((c: any) => !costIgnored.has(c.sourceRow))
             .map((c: any) => {
               const ov = costOverrides.get(c.sourceRow);
               const m = ov ? { ...c, ...ov } : c;
+              const previous = oldPeByRow.get(c.sourceRow);
+              const preserveManualRow = previous?.source === "imported_edited";
+              const expensePaymentDate = preserveManualRow
+                ? (previous?.expensePaymentDate || null)
+                : (m.paidDate || null);
+              const paymentDateConfirmed = preserveManualRow
+                ? Boolean(previous?.paymentDateConfirmed)
+                : m.paidDateFontColor === "black";
+              const paymentDateFontColor = preserveManualRow
+                ? (previous?.paymentDateFontColor || null)
+                : (m.paidDateFontColor || null);
               if (m.costCategory && m.costCategory !== currentCategory) currentCategory = m.costCategory;
               return {
                 projectName,
@@ -2216,9 +2363,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 expenseInvoicedDate: m.invoiceDate || null,
                 invoiceDateFontColor: m.invoiceDateFontColor || null,
                 invoiceDateConfirmed: m.invoiceDateFontColor === "black",
-                expensePaymentDate: m.paidDate || null,
-                paymentDateFontColor: m.paidDateFontColor || null,
-                paymentDateConfirmed: m.paidDateFontColor === "black",
+                expensePaymentDate,
+                paymentDateFontColor,
+                paymentDateConfirmed,
                 subProjectName: m.subProjectName || null,
                 dataSource: "SMART_IMPORT",
                 projectId: projectId || null,
@@ -2515,7 +2662,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
     // Prompt 12: Refresh materialized dashboard metrics after import commit
     if (projectId) refreshProjectMetricsAsync(projectId);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] POST commit error:", err);
 
     // Log failed import attempt
@@ -2532,12 +2679,12 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           importedByName: (req as any).user?.name || null,
           projectName: failedRun?.projectName || null,
           status: "FAILED",
-          errorMessage: err.message,
+          errorMessage: (err instanceof Error ? err.message : String(err)),
         });
       }
     } catch (_) { /* non-blocking */ }
 
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -2600,9 +2747,9 @@ router.post("/api/smart-import/:runId/rollback", requireAuth, requirePermission(
     });
 
     res.json({ success: true, runId, status: "ROLLED_BACK" });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] POST rollback error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -2648,9 +2795,9 @@ router.post("/api/counterparties/match", requireAuth, async (req: Request, res: 
     }
 
     res.json({ match: bestMatch, confidence: Math.round(bestConfidence * 100) / 100 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[counterparties] POST match error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -2693,9 +2840,9 @@ router.get("/api/smart-import/normalized/:projectName/plan", requireAuth, async 
       sourceRow: wi.sourceRow,
       importRunId: wi.importRunId,
     })));
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] GET normalized plan error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -2718,9 +2865,9 @@ router.get("/api/smart-import/normalized/:projectName/revenue", requireAuth, asy
       .where(and(eq(normalizedRevenueLines.importRunId, latestRun.id), isNull(normalizedRevenueLines.effectiveTo)));
 
     res.json(records);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] GET normalized revenue error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -2743,9 +2890,9 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
       .where(and(eq(normalizedCostLines.importRunId, latestRun.id), isNull(normalizedCostLines.effectiveTo)));
 
     res.json(records);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] GET normalized expenditure error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -2880,7 +3027,7 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("sma
             runId: run.id,
             projectName: run.projectName,
             status: "failed",
-            error: err.error || err.message || "Commit failed",
+            error: err.error || (err instanceof Error ? err.message : String(err)) || "Commit failed",
           });
         }
       } catch (runErr: any) {
@@ -2912,9 +3059,9 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("sma
       total: runs.length,
       results,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[smart-import] POST bulk-commit error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -2992,9 +3139,9 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
     }));
 
     res.json(enriched);
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[import-control-tower] GET history error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -3031,9 +3178,9 @@ router.get("/api/import-control-tower/run/:runId/errors", requireAuth, requirePe
       status: run.status,
       issues: enrichedIssues,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[import-control-tower] GET run errors:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -3066,9 +3213,9 @@ router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermis
     });
 
     res.json({ success: true, runId, newStatus: "PREVIEW" });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("[import-control-tower] POST retry error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 

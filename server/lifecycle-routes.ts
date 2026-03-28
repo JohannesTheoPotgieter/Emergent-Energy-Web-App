@@ -1,37 +1,20 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
+import { classifyCosStatus } from "./lib/calculations/stateClassifier";
 import { requirePermission } from "./permission-middleware";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle-stage-gate-service";
 import { buildProjectLifecycleWorkspace } from "./services/project-lifecycle-workspace-service";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
+import { jwtAuth, requireAuth } from "./auth-context";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -786,7 +769,13 @@ export function registerLifecycleRoutes(app: Express) {
         const basePaid = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
         const confirmedPaid = Boolean(row.paidDateConfirmed);
         const cosOverrideStatus = cosOverrideByKey.get(`${row.projectName}::${row.sourceRow}`);
-        const isRealised = cosOverrideStatus ? cosOverrideStatus === 'COS Realised' : (row as any).cosRealised === true;
+        const isRealised = cosOverrideStatus === 'COS Realised' || (!cosOverrideStatus && classifyCosStatus({
+          expenseInvoiceNumber: row.invoiceNumber,
+          expenseInvoicedDate: row.invoiceDate,
+          expensePoNumber: row.poNumber,
+          invoiceDateConfirmed: row.invoiceDateConfirmed,
+          invoiceDateFontColor: row.invoiceDateFontColor,
+        }) === 'COS Realised');
         const paid = basePaid || (hasText(row.invoiceNumber) && confirmedPaid) || isRealised;
 
         const addTo = (entry: ReturnType<typeof emptyFin>) => {
@@ -1453,7 +1442,8 @@ export function registerLifecycleRoutes(app: Express) {
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, id));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
-      const handoverRows: any[] = await db.execute(sql.raw(`SELECT status FROM project_pd_pm_handover WHERE project_id = ${id} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      // SECURITY: parameterized
+      const handoverRows: any[] = await db.execute(sql`SELECT status FROM project_pd_pm_handover WHERE project_id = ${id} LIMIT 1`).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
       const handoverAccepted = handoverRows[0]?.status === "ACCEPTED";
 
       const isEligible = project.signedStatus !== 'NONE' && project.signedDate != null && project.signedDocumentLink != null && project.signedDocumentLink.trim() !== '';
@@ -1505,7 +1495,8 @@ export function registerLifecycleRoutes(app: Express) {
 
       const isEligible = effectiveSignedStatus !== 'NONE' && effectiveSignedDate != null && effectiveSignedDocumentLink != null && effectiveSignedDocumentLink.trim() !== '';
 
-      const handoverRows: any[] = await db.execute(sql.raw(`SELECT status FROM project_pd_pm_handover WHERE project_id = ${id} LIMIT 1`)).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
+      // SECURITY: parameterized
+      const handoverRows: any[] = await db.execute(sql`SELECT status FROM project_pd_pm_handover WHERE project_id = ${id} LIMIT 1`).then((r: any) => (Array.isArray(r) ? r : r.rows || []));
       const handoverAccepted = handoverRows[0]?.status === "ACCEPTED";
       if (executionEnabled === true && !handoverAccepted) {
         return res.status(400).json({
@@ -1749,11 +1740,11 @@ export function registerLifecycleRoutes(app: Express) {
         const safeDel = async (query: ReturnType<typeof sql>) => {
           const sp = `sp_del_${spIdx++}`;
           try {
-            await tx.execute(sql.raw(`SAVEPOINT ${sp}`));
+            await tx.execute(sql`SAVEPOINT ${sql.raw(sp)}`);
             await tx.execute(query);
-            await tx.execute(sql.raw(`RELEASE SAVEPOINT ${sp}`));
+            await tx.execute(sql`RELEASE SAVEPOINT ${sql.raw(sp)}`);
           } catch (_e) {
-            await tx.execute(sql.raw(`ROLLBACK TO SAVEPOINT ${sp}`));
+            await tx.execute(sql`ROLLBACK TO SAVEPOINT ${sql.raw(sp)}`);
           }
         };
 

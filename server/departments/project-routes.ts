@@ -34,7 +34,7 @@ function resolveInflowEffectiveDates(
   if (taskLinks.length === 0) {
     return inflows.map(inf => ({
       ...inf,
-      effectiveDate: inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
+      effectiveDate: inf.adminDateOverride || inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
     }));
   }
 
@@ -54,6 +54,11 @@ function resolveInflowEffectiveDates(
   }
 
   return inflows.map(inf => {
+    // Admin date override takes highest priority
+    if (inf.adminDateOverride && /^\d{4}-\d{2}-\d{2}/.test(inf.adminDateOverride)) {
+      return { ...inf, effectiveDate: inf.adminDateOverride };
+    }
+
     const key = `${inf.projectName}::${inf.rowNumber}`;
     const link = linkMap.get(key);
 
@@ -676,9 +681,14 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
     for (const row of uploadMetaRows.rows) {
       const fileName = (row as any).file_name as string;
       if (!fileName) continue;
-      const stripped = fileName.replace(/\.(xlsx|xlsm|xls)$/i, '');
+      let stripped = fileName.replace(/\.(xlsx|xlsm|xls)$/i, '');
+      stripped = stripped.replace(/^\d+_/, '');
+      stripped = stripped.replace(/_Tracker$/i, '');
       importedProjectNames.add(stripped);
       importedProjectNames.add(stripped.replace(/ /g, '_'));
+      importedProjectNames.add(stripped.replace(/_/g, ' '));
+      importedProjectNames.add(stripped + '_Tracker');
+      importedProjectNames.add(stripped.replace(/ /g, '_') + '_Tracker');
     }
 
     const today = new Date().toISOString().split("T")[0];
@@ -712,6 +722,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
     const taskCountsByProject = new Map<string, Record<string, number>>();
     for (const task of allOpTasks) {
       const rawName = task.projectName;
+      if (!rawName) continue;
       const trackerName = rawName.replace(/ /g, "_") + (rawName.endsWith("_Tracker") ? "" : "_Tracker");
       const key = allProjectNames.has(trackerName) ? trackerName : rawName;
       if (!taskCountsByProject.has(key)) taskCountsByProject.set(key, {});
@@ -802,6 +813,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
 
       let totalExpenses = 0;
       let actualExpenses = 0;
+      let cosRealisedTotal = 0;
       for (const expense of projectExpenses) {
         if (expense.expenseActualTotal) {
           const amt = parseFloat(expense.expenseActualTotal) || 0;
@@ -810,8 +822,12 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
           if (state === 'Paid') {
             actualExpenses += amt;
           }
+          if (isCosRealised(expense as any)) {
+            cosRealisedTotal += amt;
+          }
         }
       }
+      const cosRealisedPct = totalExpenses > 0 ? cosRealisedTotal / totalExpenses : null;
 
       const gpPercent = totalContractRevenue > 0 ? 1 - (totalExpenses / totalContractRevenue) : null;
 
@@ -970,6 +986,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
         total_expenses: totalExpenses,
         actual_expenses: actualExpenses,
         gp_percent: gpPercent,
+        cos_realised_pct: cosRealisedPct,
         revenue_outstanding: revenueOutstanding,
         expenses_due: expensesDue,
         current_vo_total: editable?.currentVoTotal ? parseFloat(editable.currentVoTotal) : 0,
@@ -1877,8 +1894,8 @@ router.get("/api/key-date-mappings/:projectName", requireAuth, requireAdmin, asy
   try {
     const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName as string));
     res.json(mappings);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1886,8 +1903,8 @@ router.post("/api/key-date-mappings", requireAuth, requireAdmin, async (req: Req
   try {
     const mapping = await storage.createKeyDateMapping({ ...req.body, createdBy: (req.user as any)?.id });
     res.json(mapping);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1895,8 +1912,8 @@ router.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req
   try {
     const updated = await storage.updateKeyDateMapping(parseInt(req.params.id as string), req.body);
     res.json(updated);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1904,8 +1921,8 @@ router.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (re
   try {
     await storage.deleteKeyDateMapping(parseInt(req.params.id as string));
     res.json({ success: true });
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
@@ -1978,8 +1995,8 @@ router.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res:
     });
 
     res.json(results);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
+  } catch (err: unknown) {
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 

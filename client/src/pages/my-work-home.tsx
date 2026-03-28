@@ -6,12 +6,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Link, useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
-import { PageShell, SectionHeader, KPIStrip } from "@/components/layout/page-shell";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { format, parseISO } from "date-fns";
+import { trackFeatureUse } from "@/lib/nav-analytics";
 import {
   CheckCircle2,
   Circle,
@@ -23,11 +27,17 @@ import {
   ChevronRight,
   Inbox,
   Target,
-  Loader2,
   FolderOpen,
   Flag,
   ArrowRight,
   RefreshCw,
+  MessageSquare,
+  Bell,
+  Zap,
+  Sparkles,
+  Bookmark,
+  Save,
+  Trash2,
 } from "lucide-react";
 
 interface TaskItem {
@@ -86,7 +96,9 @@ interface MsObject {
   sourceTypeLabel?: string | null;
 }
 
-const today = format(new Date(), "yyyy-MM-dd");
+function getToday() {
+  return format(new Date(), "yyyy-MM-dd");
+}
 
 const SOURCE_BADGE_COLORS: Record<string, string> = {
   personal: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -154,8 +166,49 @@ export default function MyWorkHomePage() {
   const { canViewPath } = useAccessMatrix();
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  // Recompute on each render so it stays current past midnight
+  const today = getToday();
   const [, navigate] = useLocation();
   const [sourceFilter, setSourceFilter] = useState<string>("all");
+  type GroupingMode = "source" | "priority" | "status" | "due_date";
+  const [groupingMode, setGroupingMode] = useState<GroupingMode>(
+    () => (localStorage.getItem("ee_mywork_grouping") as GroupingMode) || "source"
+  );
+
+  // Saved views
+  const [savedViews, setSavedViews] = useState<Array<{ name: string; sourceFilter: string; grouping: GroupingMode }>>(() => {
+    try {
+      const raw = localStorage.getItem("ee_mywork_saved_views");
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  });
+
+  const saveCurrentView = (name: string) => {
+    const updated = [...savedViews.filter(v => v.name !== name), { name, sourceFilter, grouping: groupingMode }];
+    setSavedViews(updated);
+    localStorage.setItem("ee_mywork_saved_views", JSON.stringify(updated));
+    toast({ title: "View saved", description: `"${name}" saved with current filters.` });
+  };
+
+  const loadView = (view: { name: string; sourceFilter: string; grouping: GroupingMode }) => {
+    setSourceFilter(view.sourceFilter);
+    setGroupingMode(view.grouping);
+    localStorage.setItem("ee_mywork_grouping", view.grouping);
+    toast({ title: "View loaded", description: `Loaded "${view.name}"` });
+  };
+
+  const deleteView = (name: string) => {
+    const updated = savedViews.filter(v => v.name !== name);
+    setSavedViews(updated);
+    localStorage.setItem("ee_mywork_saved_views", JSON.stringify(updated));
+  };
+
+  const handleGroupingChange = (value: string) => {
+    const mode = value as GroupingMode;
+    setGroupingMode(mode);
+    localStorage.setItem("ee_mywork_grouping", mode);
+    trackFeatureUse("mywork_grouping_toggle");
+  };
 
   const syncMutation = useMutation({
     mutationFn: async () => {
@@ -248,14 +301,14 @@ export default function MyWorkHomePage() {
     },
   });
 
-  const { data: allTaskData, isLoading: allTasksLoading } = useQuery<any>({
+  const { data: allTaskData, isLoading: allTasksLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/my-work/all-tasks"],
     queryFn: async () => {
       const res = await fetch("/api/my-work/all-tasks", {
         credentials: "include",
         headers: authHeaders(),
       });
-      if (!res.ok) return null;
+      if (!res.ok) throw new Error("Failed to fetch data (" + res.status + ")");
       return res.json();
     },
   });
@@ -268,10 +321,9 @@ export default function MyWorkHomePage() {
   }, [allTaskData?.microsoftItems, msActionItems]);
   const personalMicrosoftTools = useMemo(() => {
     return [
-      { label: "Personal Email", path: "/my-work/email" },
-      { label: "Personal Teams", path: "/my-work/teams" },
-      { label: "Personal Calendar", path: "/my-work/calendar" },
-      { label: "Meetings", path: "/my-work/meetings" },
+      { label: "Email", path: "/my-work/email", icon: Mail },
+      { label: "Teams", path: "/my-work/teams", icon: MessageSquare },
+      { label: "Calendar", path: "/my-work/calendar", icon: Calendar },
     ].filter((item) => canViewPath(item.path));
   }, [canViewPath]);
 
@@ -668,7 +720,37 @@ export default function MyWorkHomePage() {
     return counts;
   }, [openTasks]);
 
-  const groupedTasks = useMemo(() => {
+  const doneToday = useMemo(() => {
+    return tasks.filter(t => {
+      if (!DONE_STATUSES.includes(t.status)) return false;
+      const due = t.dueAt || t.plannedForDate;
+      if (!due) return false;
+      return due.startsWith(today);
+    }).length;
+  }, [tasks, today]);
+
+  const focusNowItems = useMemo(() => {
+    const now = new Date();
+    const urgent = openTasks
+      .map(t => {
+        let urgencyScore = 0;
+        if (t.dueAt) {
+          const due = new Date(t.dueAt);
+          if (due < now) urgencyScore = 3; // overdue
+          else if (t.dueAt.startsWith(today)) urgencyScore = 2; // due today
+        }
+        if (t.priority === "critical") urgencyScore = Math.max(urgencyScore, 2.5);
+        if (t.priority === "high") urgencyScore = Math.max(urgencyScore, 1.5);
+        return { task: t, urgencyScore };
+      })
+      .filter(x => x.urgencyScore > 0)
+      .sort((a, b) => b.urgencyScore - a.urgencyScore)
+      .slice(0, 3)
+      .map(x => x.task);
+    return urgent;
+  }, [openTasks, today]);
+
+  const groupedByProject = useMemo(() => {
     const groups: Record<string, TaskItem[]> = {};
     filteredTasks.forEach(t => {
       const key = t.projectName || "No Project";
@@ -689,6 +771,95 @@ export default function MyWorkHomePage() {
     return sortedGroups;
   }, [filteredTasks]);
 
+  const groupedByPriority = useMemo(() => {
+    const priorityOrder = ["critical", "high", "normal", "low"];
+    const priorityLabels: Record<string, string> = { critical: "Critical", high: "High", normal: "Normal", low: "Low" };
+    const groups: Record<string, TaskItem[]> = {};
+    filteredTasks.forEach(t => {
+      const key = t.priority || "normal";
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+    const sortedGroups: Record<string, TaskItem[]> = {};
+    for (const p of priorityOrder) {
+      if (groups[p]) sortedGroups[priorityLabels[p] || p] = groups[p];
+    }
+    return sortedGroups;
+  }, [filteredTasks]);
+
+  const groupedByStatus = useMemo(() => {
+    const statusLabels: Record<string, string> = {
+      inbox: "Inbox", todo: "To Do", in_progress: "In Progress",
+      review: "In Review", blocked: "Blocked", waiting: "Waiting",
+      action_required: "Action Required",
+    };
+    const statusOrder = ["blocked", "action_required", "in_progress", "review", "waiting", "todo", "inbox"];
+    const groups: Record<string, TaskItem[]> = {};
+    filteredTasks.forEach(t => {
+      const key = t.status || "inbox";
+      const label = statusLabels[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+      if (!groups[label]) groups[label] = [];
+      groups[label].push(t);
+    });
+    const sorted: Record<string, TaskItem[]> = {};
+    for (const s of statusOrder) {
+      const label = statusLabels[s];
+      if (label && groups[label]) sorted[label] = groups[label];
+    }
+    // Add any remaining groups not in the predefined order
+    for (const [label, tasks] of Object.entries(groups)) {
+      if (!sorted[label]) sorted[label] = tasks;
+    }
+    return sorted;
+  }, [filteredTasks]);
+
+  const groupedByDueDate = useMemo(() => {
+    const now = new Date();
+    const todayStr = format(now, "yyyy-MM-dd");
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowStr = format(tomorrow, "yyyy-MM-dd");
+    const weekEnd = new Date(now);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    const weekEndStr = format(weekEnd, "yyyy-MM-dd");
+
+    const groups: Record<string, TaskItem[]> = {
+      "Overdue": [],
+      "Today": [],
+      "Tomorrow": [],
+      "This Week": [],
+      "Later": [],
+      "No Due Date": [],
+    };
+
+    filteredTasks.forEach(t => {
+      const due = t.dueAt;
+      if (!due) { groups["No Due Date"].push(t); return; }
+      const dueDate = due.split("T")[0];
+      if (dueDate < todayStr) groups["Overdue"].push(t);
+      else if (dueDate === todayStr) groups["Today"].push(t);
+      else if (dueDate === tomorrowStr) groups["Tomorrow"].push(t);
+      else if (dueDate <= weekEndStr) groups["This Week"].push(t);
+      else groups["Later"].push(t);
+    });
+
+    // Remove empty groups
+    const result: Record<string, TaskItem[]> = {};
+    for (const [k, v] of Object.entries(groups)) {
+      if (v.length > 0) result[k] = v;
+    }
+    return result;
+  }, [filteredTasks]);
+
+  const groupedTasks = useMemo(() => {
+    switch (groupingMode) {
+      case "priority": return groupedByPriority;
+      case "status": return groupedByStatus;
+      case "due_date": return groupedByDueDate;
+      default: return groupedByProject;
+    }
+  }, [groupingMode, groupedByProject, groupedByPriority, groupedByStatus, groupedByDueDate]);
+
   const sortedEvents = useMemo(() =>
     [...calendarEvents].sort((a, b) => {
       const aStart = typeof a.start === "string" ? a.start : "";
@@ -696,6 +867,18 @@ export default function MyWorkHomePage() {
       return aStart.localeCompare(bStart);
     }),
   [calendarEvents]);
+
+  // A6: Fetch pending approval count for My Work summary
+  const { data: approvalData } = useQuery<{ counts: { total: number } }>({
+    queryKey: ["/api/approvals/pending-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/approvals/pending", { credentials: "include", headers: authHeaders() });
+      if (!res.ok) return { counts: { total: 0 } };
+      return res.json();
+    },
+    staleTime: 30_000,
+  });
+  const pendingApprovals = approvalData?.counts?.total ?? 0;
 
   const myDaySummary = useMemo(() => {
     const urgentActions = actionItems.length;
@@ -715,38 +898,117 @@ export default function MyWorkHomePage() {
       openTasks: openTasks.length,
       escalatedCount: escalatedItems.length,
     };
-  }, [actionItems.length, escalatedItems.length, openTasks, sortedEvents]);
+  }, [actionItems.length, escalatedItems.length, openTasks, sortedEvents, today]);
+
+  if (allTasksLoading) return <PageShell className="p-4 md:p-6 max-w-[1400px] mx-auto"><PageSkeleton lines={5} /></PageShell>;
+  if (isError) return <PageShell className="p-4 md:p-6 max-w-[1400px] mx-auto"><PageError title="Unable to load My Work" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
 
   return (
-    <PageShell className="p-4 md:p-6" data-testid="my-work-home">
+    <PageShell className="p-4 md:p-6 max-w-[1400px] mx-auto" data-testid="my-work-home">
       <SectionHeader
         icon={<Target className="h-5 w-5" />}
         title="My Work"
         description={format(new Date(), "EEEE, MMMM d, yyyy")}
-        actions={<Link href="/my-work/tasks"><Button variant="outline" size="sm" data-testid="link-all-tasks">All Tasks <ArrowRight className="h-3 w-3 ml-1" /></Button></Link>}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              data-testid="button-sync-all"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+              Sync
+            </Button>
+            <Link href="/my-work/tasks">
+              <Button variant="outline" size="sm" data-testid="link-all-tasks">
+                All Tasks <ArrowRight className="h-3 w-3 ml-1" />
+              </Button>
+            </Link>
+          </div>
+        }
       />
 
-      <Card className="mb-4 border-emerald-200/70 bg-gradient-to-r from-emerald-50/60 via-background to-background" data-testid="my-work-focus-summary">
-        <CardContent className="pt-4 pb-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-emerald-800">What matters now</p>
-              <p className="text-xs text-muted-foreground">Your personal priorities for today across tasks, timeline, and action surfaces.</p>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.urgentActions} action now</Badge>
-              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.dueToday} due today</Badge>
-              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.upcomingMeetings} meetings</Badge>
-              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.openTasks} open tasks</Badge>
-              <Badge variant="outline" className="justify-center bg-background/80">{myDaySummary.escalatedCount} alerts</Badge>
+      {/* Summary strip */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5" data-testid="my-work-focus-summary">
+        {[
+          { label: "Actions", value: myDaySummary.urgentActions, icon: Zap, color: "text-orange-600", bg: "bg-orange-50 border-orange-200" },
+          { label: "Due Today", value: myDaySummary.dueToday, icon: Target, color: "text-red-600", bg: "bg-red-50 border-red-200" },
+          { label: "Meetings", value: myDaySummary.upcomingMeetings, icon: Calendar, color: "text-blue-600", bg: "bg-blue-50 border-blue-200" },
+          { label: "Open Tasks", value: myDaySummary.openTasks, icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50 border-emerald-200" },
+          { label: "Done Today", value: doneToday, icon: Sparkles, color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-300" },
+          { label: "Approvals", value: pendingApprovals, icon: Bell, color: pendingApprovals > 0 ? "text-amber-600" : "text-muted-foreground", bg: pendingApprovals > 0 ? "bg-amber-50 border-amber-200" : "bg-muted/50 border-border" },
+        ].map(({ label, value, icon: Icon, color, bg }) => (
+          <div key={label} className={`flex items-center gap-3 rounded-lg border px-3.5 py-2.5 ${bg}`}>
+            <Icon className={`h-4 w-4 ${color} shrink-0`} />
+            <div className="min-w-0">
+              <p className={`text-lg font-bold leading-none ${color}`}>{value}</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">{label}</p>
             </div>
           </div>
-        </CardContent>
-      </Card>
+        ))}
+      </div>
 
-      <KPIStrip className="grid-cols-1 lg:grid-cols-3" data-testid="my-work-grid">
-        <div className="lg:col-span-1 space-y-4" data-testid="my-work-tasks-column">
-          <Card>
+      {/* Focus Now — urgent items highlight */}
+      {!tasksLoading && (
+        <div className="mb-5" data-testid="focus-now-section">
+          {focusNowItems.length > 0 ? (
+            <div className="space-y-1.5">
+              <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                Focus Now
+              </h2>
+              {focusNowItems.map(task => {
+                const isOverdue = task.dueAt ? new Date(task.dueAt) < new Date() : false;
+                return (
+                  <div
+                    key={task.id}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-lg border cursor-pointer transition-all touch-manipulation active:scale-[0.98] group ${
+                      isOverdue
+                        ? "border-l-4 border-l-red-400 border-red-200 bg-red-50/40 hover:bg-red-50/70 active:bg-red-50"
+                        : "border-l-4 border-l-amber-400 border-amber-200 bg-amber-50/40 hover:bg-amber-50/70 active:bg-amber-50"
+                    }`}
+                    onClick={() => handleTaskClick(task)}
+                    data-testid={`focus-item-${task.id}`}
+                  >
+                    <StatusIcon status={task.status} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate group-hover:text-foreground">{task.title}</p>
+                      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        {task.projectName && <span>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
+                        {task.dueAt && (
+                          <span className={isOverdue ? "text-red-600 font-medium" : "text-amber-600"}>
+                            {isOverdue ? "Overdue" : "Due today"}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {task.sourceLabel && (
+                      <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 ${SOURCE_BADGE_COLORS[task.source || ""] || ""}`}>
+                        {task.sourceLabel}
+                      </Badge>
+                    )}
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-foreground shrink-0" />
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border border-emerald-200 bg-emerald-50/40">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+              <p className="text-sm text-emerald-700">You're caught up — no urgent items right now.</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Main 2-column layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5" data-testid="my-work-grid">
+
+        {/* LEFT: Tasks — takes 3/5 width */}
+        <div className="lg:col-span-3 space-y-5" data-testid="my-work-tasks-column">
+          <Card className="border-border/60">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -773,24 +1035,63 @@ export default function MyWorkHomePage() {
                   </Badge>
                 </div>
               </div>
-              <ScrollArea className="w-full">
-                <div className="flex gap-1 pt-1 pb-0.5">
-                  {SOURCE_FILTERS.filter(f => f.key === "all" || (sourceCounts[f.key] || 0) > 0).map(f => (
-                    <button
-                      key={f.key}
-                      onClick={() => setSourceFilter(f.key)}
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap transition-colors border ${
-                        sourceFilter === f.key
-                          ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                          : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
-                      }`}
-                      data-testid={`filter-${f.key}`}
-                    >
-                      {f.label} {(sourceCounts[f.key] || 0) > 0 ? `(${sourceCounts[f.key]})` : ""}
-                    </button>
-                  ))}
-                </div>
-              </ScrollArea>
+              <div className="flex items-center gap-3 pt-1 pb-0.5">
+                <ScrollArea className="flex-1">
+                  <div className="flex gap-1">
+                    {SOURCE_FILTERS.filter(f => f.key === "all" || (sourceCounts[f.key] || 0) > 0).map(f => (
+                      <button
+                        key={f.key}
+                        onClick={() => setSourceFilter(f.key)}
+                        className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors border ${
+                          sourceFilter === f.key
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
+                        }`}
+                        data-testid={`filter-${f.key}`}
+                      >
+                        {f.label} {(sourceCounts[f.key] || 0) > 0 ? `(${sourceCounts[f.key]})` : ""}
+                      </button>
+                    ))}
+                  </div>
+                </ScrollArea>
+                <Tabs value={groupingMode} onValueChange={handleGroupingChange}>
+                  <TabsList className="h-7">
+                    <TabsTrigger value="source" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-source">Source</TabsTrigger>
+                    <TabsTrigger value="priority" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-priority">Priority</TabsTrigger>
+                    <TabsTrigger value="status" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-status">Status</TabsTrigger>
+                    <TabsTrigger value="due_date" className="text-[10px] px-1.5 py-0.5 h-5" data-testid="group-by-due-date">Due Date</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" title="Saved views">
+                      <Bookmark className="h-3.5 w-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {savedViews.length > 0 ? (
+                      <>
+                        {savedViews.map(v => (
+                          <DropdownMenuItem key={v.name} className="flex items-center justify-between gap-2">
+                            <span className="truncate text-xs cursor-pointer flex-1" onClick={() => loadView(v)}>{v.name}</span>
+                            <button onClick={(e) => { e.stopPropagation(); deleteView(v.name); }} className="text-muted-foreground hover:text-destructive shrink-0">
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </DropdownMenuItem>
+                        ))}
+                        <DropdownMenuSeparator />
+                      </>
+                    ) : null}
+                    <DropdownMenuItem onClick={() => {
+                      const name = prompt("View name:");
+                      if (name?.trim()) saveCurrentView(name.trim());
+                    }}>
+                      <Save className="h-3.5 w-3.5 mr-2" />
+                      <span className="text-xs">Save current view</span>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </CardHeader>
             <CardContent className="pt-0">
               {tasksLoading ? (
@@ -800,16 +1101,16 @@ export default function MyWorkHomePage() {
                   ))}
                 </div>
               ) : filteredTasks.length === 0 ? (
-                <div className="flex flex-col items-center py-8 text-center" data-testid="empty-tasks">
-                  <Inbox className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                  <p className="text-sm text-muted-foreground">{sourceFilter === "all" ? "No open tasks right now" : `No ${SOURCE_FILTERS.find(f => f.key === sourceFilter)?.label || ""} tasks`}</p>
+                <div className="flex items-center gap-3 py-6 px-2 text-muted-foreground" data-testid="empty-tasks">
+                  <Inbox className="h-5 w-5 shrink-0" />
+                  <p className="text-sm">{sourceFilter === "all" ? "No open tasks right now" : `No ${SOURCE_FILTERS.find(f => f.key === sourceFilter)?.label || ""} tasks`}</p>
                 </div>
               ) : (
-                <ScrollArea className="max-h-[500px]">
-                  <div className="space-y-4">
+                <ScrollArea className="max-h-[520px]">
+                  <div className="space-y-3">
                     {Object.entries(groupedTasks).map(([projectName, projectTasks]) => (
                       <div key={projectName} data-testid={`task-group-${projectName}`}>
-                        <div className="flex items-center gap-1.5 mb-2">
+                        <div className="flex items-center gap-1.5 mb-1.5 px-1">
                           <FolderOpen className="h-3 w-3 text-muted-foreground" />
                           <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                             {projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
@@ -818,11 +1119,11 @@ export default function MyWorkHomePage() {
                             {projectTasks.length}
                           </Badge>
                         </div>
-                        <div className="space-y-1">
-                          {projectTasks.slice(0, 5).map(task => (
+                        <div className="space-y-0.5">
+                          {projectTasks.slice(0, 8).map(task => (
                             <div
                               key={task.id}
-                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-emerald-50/60 transition-colors cursor-pointer group"
+                              className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-emerald-50/60 active:bg-emerald-50/80 active:scale-[0.99] transition-all cursor-pointer group touch-manipulation"
                               onClick={() => handleTaskClick(task)}
                               data-testid={`task-item-${task.id}`}
                             >
@@ -830,7 +1131,7 @@ export default function MyWorkHomePage() {
                               <PriorityDot priority={task.priority} />
                               <span className="text-sm truncate flex-1 group-hover:text-emerald-700">{task.title}</span>
                               {task.sourceLabel && (
-                                <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 ${SOURCE_BADGE_COLORS[task.source || ""] || "bg-gray-50 text-gray-600 border-gray-200"}`}>
+                                <Badge variant="outline" className={`text-[9px] h-4 px-1 shrink-0 hidden sm:inline-flex ${SOURCE_BADGE_COLORS[task.source || ""] || "bg-gray-50 text-gray-600 border-gray-200"}`}>
                                   {task.sourceLabel}
                                 </Badge>
                               )}
@@ -842,12 +1143,12 @@ export default function MyWorkHomePage() {
                               <ChevronRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-emerald-600 transition-colors shrink-0" />
                             </div>
                           ))}
-                          {projectTasks.length > 5 && (
+                          {projectTasks.length > 8 && (
                             <p
                               className="text-[10px] text-emerald-600 pl-2 cursor-pointer hover:underline"
                               onClick={() => navigate("/my-work/tasks")}
                             >
-                              +{projectTasks.length - 5} more
+                              +{projectTasks.length - 8} more
                             </p>
                           )}
                         </div>
@@ -858,340 +1159,223 @@ export default function MyWorkHomePage() {
               )}
             </CardContent>
           </Card>
+
         </div>
 
-        <div className="lg:col-span-1 space-y-4" data-testid="my-work-timeline-column">
-          <Card>
-            <CardHeader className="pb-3">
+        {/* RIGHT: Timeline + Sidebar — takes 2/5 width */}
+        <div className="lg:col-span-2 space-y-5" data-testid="my-work-sidebar">
+
+          {/* Action Required — promoted to sidebar top */}
+          {(actionItems.length > 0 || actionsLoading) && (
+            <Card className="border-border/60" data-testid="card-action-required">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-orange-600" />
+                    Action Required
+                  </CardTitle>
+                  {actionItems.length > 0 && (
+                    <Badge className="bg-orange-100 text-orange-700 border-orange-300 hover:bg-orange-100" data-testid="badge-action-count">
+                      {actionItems.length}
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {actionsLoading ? (
+                  <div className="space-y-2">
+                    {[1, 2].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {actionItems.slice(0, 5).map(item => (
+                      <div
+                        key={item.id}
+                        className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border/60 hover:border-orange-200 hover:bg-orange-50/30 active:bg-orange-50/50 active:scale-[0.99] transition-all cursor-pointer touch-manipulation group"
+                        onClick={() => handleActionClick(item)}
+                        data-testid={`action-item-${item.id}`}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold border ${item.sourceColor}`}>
+                              {item.sourceLabel}
+                            </span>
+                            {item.projectName && (
+                              <span className="text-[10px] text-muted-foreground truncate">
+                                {item.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs font-medium truncate group-hover:text-orange-700">{item.title}</p>
+                        </div>
+                        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/30 group-hover:text-orange-600 shrink-0 mt-1 transition-colors" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {actionItems.length > 5 && (
+                  <p className="text-[11px] text-orange-600 mt-2 cursor-pointer hover:underline" onClick={() => navigate("/my-work/tasks")}>
+                    +{actionItems.length - 5} more items needing attention
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Today's Schedule */}
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-blue-600" />
-                  Today's Timeline
+                  Today's Schedule
                 </CardTitle>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6"
-                    onClick={() => syncMutation.mutate()}
-                    disabled={syncMutation.isPending}
-                    data-testid="button-refresh-timeline"
-                    title="Refresh connection"
-                  >
-                    <RefreshCw className={`h-3 w-3 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                <Link href="/my-work/calendar">
+                  <Button variant="ghost" size="sm" className="h-6 text-xs" data-testid="link-full-calendar">
+                    Full Calendar <ChevronRight className="h-3 w-3 ml-0.5" />
                   </Button>
-                  <Link href="/my-work/calendar">
-                    <Button variant="ghost" size="sm" className="h-6 text-xs" data-testid="link-full-calendar">
-                      Full Calendar <ChevronRight className="h-3 w-3 ml-0.5" />
-                    </Button>
-                  </Link>
-                </div>
+                </Link>
               </div>
             </CardHeader>
             <CardContent className="pt-0">
               {calLoading ? (
                 <div className="space-y-2">
                   {[1, 2, 3].map(i => (
-                    <Skeleton key={i} className="h-14 w-full rounded-lg" />
+                    <Skeleton key={i} className="h-12 w-full rounded-lg" />
                   ))}
                 </div>
               ) : sortedEvents.length === 0 ? (
-                <div className="flex flex-col items-center py-8 text-center" data-testid="empty-calendar">
-                  <Calendar className="h-8 w-8 text-muted-foreground/50 mb-2" />
-                  <p className="text-sm text-muted-foreground">No meetings on your calendar today</p>
-                </div>
-              ) : (
-                <ScrollArea className="max-h-[500px]">
-                  <div className="space-y-2">
-                    {sortedEvents.map((ev, idx) => {
-                      const startStr = typeof ev.start === "string" ? ev.start : "";
-                      const endStr = typeof ev.end === "string" ? ev.end : "";
-                      let timeLabel = "";
-                      try {
-                        if (ev.isAllDay) {
-                          timeLabel = "All day";
-                        } else if (startStr) {
-                          timeLabel = format(parseISO(startStr), "h:mm a");
-                          if (endStr) timeLabel += ` – ${format(parseISO(endStr), "h:mm a")}`;
-                        }
-                      } catch {}
-
-                      return (
-                        <div
-                          key={ev.id || idx}
-                          className="flex items-start gap-3 p-2.5 rounded-lg border border-border/50 hover:border-blue-200 hover:bg-blue-50/30 transition-colors"
-                          data-testid={`calendar-event-${ev.id || idx}`}
-                        >
-                          <div className="w-1 self-stretch rounded-full bg-blue-500 shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{ev.subject || "No Subject"}</p>
-                            <p className="text-[11px] text-muted-foreground">{timeLabel}</p>
-                            {ev.location && (
-                              <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
-                                {typeof ev.location === "string" ? ev.location : ""}
-                              </p>
-                            )}
-                          </div>
-                          {ev.webLink && (
-                            <a href={ev.webLink} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5">
-                              <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-blue-600" />
-                            </a>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="lg:col-span-1 space-y-4" data-testid="my-work-alerts-column">
-          {contextualMsSurfacesEnabled && personalMicrosoftTools.length > 0 && (
-            <Card data-testid="card-my-work-personal-ms-tools">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-blue-600" />
-                  Personal Microsoft Tools
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="pt-0 space-y-2">
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  {personalMicrosoftTools.map((tool) => (
-                    <Link key={tool.path} href={tool.path}><Button variant="outline" size="sm" className="justify-start h-8">{tool.label}</Button></Link>
-                  ))}
-                </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <Badge variant="outline" className={outlookStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
-                    Outlook {outlookStatus?.connected ? "Connected" : "Not Connected"}
-                  </Badge>
-                  <Badge variant="outline" className={teamsStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
-                    Teams {teamsStatus?.connected ? "Connected" : "Not Connected"}
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
-                Risks & Alerts
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              {escalatedItems.length === 0 ? (
-                <div className="flex flex-col items-center py-6 text-center" data-testid="empty-alerts">
-                  <Flag className="h-6 w-6 text-muted-foreground/50 mb-2" />
-                  <p className="text-xs text-muted-foreground">No escalated items</p>
-                </div>
-              ) : (
-                <ScrollArea className="max-h-[200px]">
-                  <div className="space-y-1.5">
-                    {escalatedItems.slice(0, 8).map(item => (
-                      <div
-                        key={item.id}
-                        className="flex items-start gap-2 p-2 rounded-md border border-amber-200/50 bg-amber-50/30 text-xs cursor-pointer hover:border-amber-300 hover:bg-amber-50/60 transition-colors group"
-                        onClick={() => item.projectName ? navigate(`/project/${encodeURIComponent(item.projectName)}`) : navigate("/my-work/tasks")}
-                        data-testid={`alert-item-${item.id}`}
-                      >
-                        <AlertTriangle className="h-3 w-3 text-amber-600 mt-0.5 shrink-0" />
-                        <div className="min-w-0">
-                          <p className="font-medium truncate group-hover:text-amber-800">{item.title}</p>
-                          <p className="text-muted-foreground truncate">{item.projectName}</p>
-                        </div>
-                        <Badge variant="outline" className="text-[9px] shrink-0 ml-auto border-amber-300 text-amber-700">
-                          {item.escalationLevel}
-                        </Badge>
-                        <ChevronRight className="h-3 w-3 text-amber-400/0 group-hover:text-amber-600 mt-0.5 shrink-0 transition-colors" />
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card data-testid="card-meetings">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-indigo-600" />
-                  Meetings
-                </CardTitle>
-                <Link href="/my-work/meetings">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs" data-testid="link-all-meetings">
-                    View All <ChevronRight className="h-3 w-3 ml-0.5" />
-                  </Button>
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              {calLoading ? (
-                <div className="space-y-2">
-                  {[1, 2].map(i => (
-                    <Skeleton key={i} className="h-10 w-full rounded-lg" />
-                  ))}
-                </div>
-              ) : sortedEvents.length === 0 ? (
-                <div className="flex flex-col items-center py-6 text-center" data-testid="empty-meetings">
-                  <Calendar className="h-6 w-6 text-muted-foreground/50 mb-2" />
-                  <p className="text-xs text-muted-foreground">No upcoming meetings today</p>
+                <div className="flex items-center gap-3 py-4 px-1 text-muted-foreground" data-testid="empty-calendar">
+                  <Calendar className="h-5 w-5 shrink-0 text-muted-foreground/50" />
+                  <p className="text-sm">No meetings on your calendar today</p>
                 </div>
               ) : (
                 <div className="space-y-1.5">
-                  {sortedEvents.slice(0, 4).map((ev, idx) => {
+                  {sortedEvents.map((ev, idx) => {
                     let timeLabel = "";
                     try {
                       if (ev.isAllDay) {
                         timeLabel = "All day";
                       } else if (ev.start) {
                         timeLabel = format(parseISO(ev.start), "h:mm a");
+                        if (ev.end) timeLabel += ` – ${format(parseISO(ev.end), "h:mm a")}`;
                       }
                     } catch {}
+
                     return (
                       <div
                         key={ev.id || idx}
-                        className="flex items-center gap-2 p-2 rounded-md border border-indigo-100 hover:bg-indigo-50/40 transition-colors"
-                        data-testid={`meeting-item-${ev.id || idx}`}
+                        className="flex items-start gap-2.5 p-2.5 rounded-lg border border-border/40 hover:border-blue-200 hover:bg-blue-50/30 transition-colors"
+                        data-testid={`calendar-event-${ev.id || idx}`}
                       >
-                        <div className="w-1 h-8 rounded-full bg-indigo-500 shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-medium truncate">{ev.subject || "No Subject"}</p>
-                          <p className="text-[10px] text-muted-foreground">{timeLabel}</p>
+                        <div className="w-1 self-stretch rounded-full bg-blue-500 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{ev.subject || "No Subject"}</p>
+                          <p className="text-[11px] text-muted-foreground">{timeLabel}</p>
+                          {ev.location && (
+                            <p className="text-[10px] text-muted-foreground/70 truncate mt-0.5">
+                              {typeof ev.location === "string" ? ev.location : ""}
+                            </p>
+                          )}
                         </div>
                         {ev.webLink && (
-                          <a href={ev.webLink} target="_blank" rel="noopener noreferrer" className="shrink-0">
-                            <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-indigo-600" />
+                          <a href={ev.webLink} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5">
+                            <ExternalLink className="h-3 w-3 text-muted-foreground hover:text-blue-600" />
                           </a>
                         )}
                       </div>
                     );
                   })}
-                  {sortedEvents.length > 4 && (
-                    <Link href="/my-work/meetings">
-                      <p className="text-[10px] text-indigo-600 pl-2 cursor-pointer hover:underline">
-                        +{sortedEvents.length - 4} more meetings
-                      </p>
-                    </Link>
-                  )}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card data-testid="card-chat">
-            <CardHeader className="pb-3">
+          {/* Risks & Alerts */}
+          <Card className="border-border/60">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-blue-600" />
-                  Chat & Messages
+                  <AlertTriangle className="h-4 w-4 text-amber-600" />
+                  Risks & Alerts
                 </CardTitle>
-                <Link href="/my-work/teams">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs" data-testid="link-chat">
-                    Open <ChevronRight className="h-3 w-3 ml-0.5" />
-                  </Button>
-                </Link>
+                {escalatedItems.length > 0 && (
+                  <Badge className="bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-100">
+                    {escalatedItems.length}
+                  </Badge>
+                )}
               </div>
             </CardHeader>
             <CardContent className="pt-0">
-              <div className="space-y-2">
+              {escalatedItems.length === 0 ? (
+                <div className="flex items-center gap-3 py-3 px-1 text-muted-foreground" data-testid="empty-alerts">
+                  <Flag className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+                  <p className="text-sm">No escalated items</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {escalatedItems.slice(0, 5).map(item => (
+                    <div
+                      key={item.id}
+                      className="flex items-start gap-2 p-2 rounded-md border border-amber-200/50 bg-amber-50/30 text-xs cursor-pointer hover:border-amber-300 hover:bg-amber-50/60 transition-colors group"
+                      onClick={() => item.projectName ? navigate(`/project/${encodeURIComponent(item.projectName)}`) : navigate("/my-work/tasks")}
+                      data-testid={`alert-item-${item.id}`}
+                    >
+                      <AlertTriangle className="h-3 w-3 text-amber-600 mt-0.5 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate group-hover:text-amber-800">{item.title}</p>
+                        <p className="text-muted-foreground truncate">{item.projectName}</p>
+                      </div>
+                      <Badge variant="outline" className="text-[9px] shrink-0 ml-auto border-amber-300 text-amber-700">
+                        {item.escalationLevel}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Quick Links: Chat & Messages */}
+          <Card className="border-border/60" data-testid="card-chat">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-blue-600" />
+                  Communication
+                </CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="space-y-2.5">
                 <div className="flex items-center gap-2 text-xs">
-                  <Badge variant="outline" className={teamsStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
-                    Teams {teamsStatus?.connected ? "Connected" : "Not Connected"}
-                  </Badge>
                   <Badge variant="outline" className={outlookStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
                     Outlook {outlookStatus?.connected ? "Connected" : "Not Connected"}
                   </Badge>
+                  <Badge variant="outline" className={teamsStatus?.connected ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
+                    Teams {teamsStatus?.connected ? "Connected" : "Not Connected"}
+                  </Badge>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Link href="/my-work/email">
-                    <Button variant="outline" size="sm" className="w-full justify-start h-8 text-xs" data-testid="link-email">
-                      <Mail className="h-3 w-3 mr-1.5" /> Email
-                    </Button>
-                  </Link>
-                  <Link href="/my-work/teams">
-                    <Button variant="outline" size="sm" className="w-full justify-start h-8 text-xs" data-testid="link-teams">
-                      <ExternalLink className="h-3 w-3 mr-1.5" /> Teams
-                    </Button>
-                  </Link>
+                <div className="grid grid-cols-3 gap-2">
+                  {personalMicrosoftTools.map(({ label, path, icon: ToolIcon }) => (
+                    <Link key={path} href={path}>
+                      <Button variant="outline" size="sm" className="w-full justify-center h-8 text-xs gap-1.5" data-testid={`link-${label.toLowerCase()}`}>
+                        <ToolIcon className="h-3 w-3" />
+                        {label}
+                      </Button>
+                    </Link>
+                  ))}
                 </div>
                 {microsoftItems.length > 0 && (
                   <p className="text-[10px] text-muted-foreground">
-                    {microsoftItems.length} item{microsoftItems.length !== 1 ? "s" : ""} needing attention from email & Teams
+                    {microsoftItems.length} item{microsoftItems.length !== 1 ? "s" : ""} needing attention
                   </p>
                 )}
               </div>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-purple-600" />
-                  Action Required
-                </CardTitle>
-                <Badge variant="destructive" className="text-xs" data-testid="badge-action-count">
-                  {actionItems.length}
-                </Badge>
-              </div>
-              <p className="text-xs text-muted-foreground">Items waiting on your response from approvals and Microsoft tools.</p>
-            </CardHeader>
-            <CardContent className="pt-0">
-              {actionsLoading ? (
-                <div className="space-y-2">
-                  {[1, 2].map(i => (
-                    <Skeleton key={i} className="h-10 w-full rounded-lg" />
-                  ))}
-                </div>
-              ) : actionItems.length === 0 ? (
-                <div className="flex flex-col items-center py-6 text-center" data-testid="empty-actions">
-                  <Inbox className="h-6 w-6 text-muted-foreground/50 mb-2" />
-                  <p className="text-xs text-muted-foreground">You're clear — no immediate action required.</p>
-                </div>
-              ) : (
-                <ScrollArea className="max-h-[300px]">
-                  <div className="space-y-1.5">
-                    {actionItems.slice(0, 20).map(item => (
-                      <div
-                        key={item.id}
-                        className="flex items-start gap-2 p-2 rounded-md border border-purple-200/60 bg-purple-50/30 hover:bg-purple-50/60 hover:border-purple-300 transition-colors cursor-pointer group"
-                        onClick={() => handleActionClick(item)}
-                        data-testid={`action-item-${item.id}`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold border ${item.sourceColor}`}>
-                              {item.sourceLabel}
-                            </span>
-                            {item.projectName && (
-                              <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
-                                {item.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-xs font-medium truncate mt-0.5 group-hover:text-purple-700">{item.title}</p>
-                          {item.subtitle && (
-                            <p className="text-[10px] text-muted-foreground truncate">{item.subtitle}</p>
-                          )}
-                        </div>
-                        {isExternalTarget(item.link) ? (
-                          <ExternalLink className="h-3 w-3 text-muted-foreground group-hover:text-purple-600 shrink-0 mt-0.5" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-purple-600 shrink-0 mt-0.5 transition-colors" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
         </div>
-      </KPIStrip>
+      </div>
     </PageShell>
   );
 }

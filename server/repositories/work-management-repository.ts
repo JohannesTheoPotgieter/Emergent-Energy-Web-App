@@ -2,6 +2,7 @@ import { db } from "../db";
 import { and, desc, eq, inArray, isNull, not, or, sql } from "drizzle-orm";
 import {
   workItems,
+  workItemAssignments,
   taskComments,
   taskChecklists,
   taskChecklistItems,
@@ -63,28 +64,47 @@ export class WorkManagementRepository {
   }
   async createOperationalTask(data: any): Promise<any> {
     const now = new Date();
-    const [created] = await this.dbInstance.insert(workItems).values({
-      projectId: data.projectId,
-      title: data.title || data.taskName || 'Untitled',
-      description: data.description,
-      status: data.status || 'Not Started',
-      priority: data.priority,
-      startDate: data.startDate,
-      endDate: data.dueDate,
-      ownerUserId: data.ownerUserId,
-      workstream: 'ENG' as any,
-      source: 'UI' as any,
-      sortOrder: data.sortOrder,
-      holdReason: data.holdReason,
-      blockedType: data.blockedType,
-      approvalRequired: data.approvalRequired,
-      linkedPlanItemId: data.linkedPlanItemId,
-      linkedDeliverableId: data.linkedDeliverableId,
-      taskTypeTag: data.taskTypeTag,
-      blockerReason: data.blockerReason,
-      createdAt: now,
-      updatedAt: now,
-    }).returning();
+    const assigneeUserIds = Array.isArray(data.assigneeUserIds)
+      ? [...new Set(data.assigneeUserIds.map((id: any) => Number(id)).filter((id: number) => Number.isInteger(id) && id > 0))]
+      : [];
+
+    const [created] = await this.dbInstance.transaction(async (tx) => {
+      const [task] = await tx.insert(workItems).values({
+        projectId: data.projectId,
+        title: data.title || data.taskName || 'Untitled',
+        description: data.description,
+        status: data.status || 'Not Started',
+        priority: data.priority,
+        startDate: data.startDate,
+        endDate: data.dueDate,
+        ownerUserId: data.ownerUserId,
+        workstream: 'ENG' as any,
+        source: 'UI' as any,
+        sortOrder: data.sortOrder,
+        holdReason: data.holdReason,
+        blockedType: data.blockedType,
+        approvalRequired: data.approvalRequired,
+        linkedPlanItemId: data.linkedPlanItemId,
+        linkedDeliverableId: data.linkedDeliverableId,
+        taskTypeTag: data.taskTypeTag,
+        blockerReason: data.blockerReason,
+        createdAt: now,
+        updatedAt: now,
+      }).returning();
+
+      if (assigneeUserIds.length > 0) {
+        await tx.insert(workItemAssignments).values(
+          assigneeUserIds.map((userId: number) => ({
+            workItemId: task.id,
+            userId,
+            role: "ASSIGNEE" as any,
+            createdAt: now,
+          })),
+        );
+      }
+
+      return [task];
+    });
     return created;
   }
   async updateOperationalTask(id: number, data: any): Promise<any> {

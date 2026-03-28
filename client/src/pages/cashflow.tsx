@@ -57,7 +57,17 @@ import {
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
+import { FinanceShell } from "@/components/layout/FinanceShell";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { usePermission } from "@/hooks/use-permissions";
+import { DateOverridePopover } from "@/components/cashflow/DateOverridePopover";
+
+interface OutflowByStatus {
+  outOfBank: number;
+  outstanding: number;
+  risk: number;
+  planned: number;
+}
 
 interface CashflowWeek {
   weekStart: string;
@@ -71,6 +81,7 @@ interface CashflowWeek {
   computedOpex: number;
   hasOpexOverride: boolean;
   projectOutflows: number;
+  outflowByStatus?: OutflowByStatus;
   closingBalance: number;
   availablePayment: number;
   computedAvailablePayment: number;
@@ -90,22 +101,35 @@ interface BalanceHistoryEntry {
 }
 
 interface DetailInflow {
+  inflowId: number;
   projectName: string;
   milestoneName: string;
   milestoneInvoiceNumber: string;
   paymentReceivedDate: string;
+  originalDate: string | null;
+  hasAdminOverride: boolean;
+  adminDateOverride: string | null;
+  adminDateOverrideReason: string | null;
+  adminDateOverrideAt: string | null;
   milestoneAmount: number;
   invoiceRaisedDate: string;
   daysToReceipt: number;
 }
 
 interface DetailOutflow {
+  expenseId: number;
   projectName: string;
   expenseCategory: string;
   expenseLineItem: string;
   expenseInvoiceNumber: string;
   expensePaymentDate: string;
+  originalDate: string | null;
+  hasAdminOverride: boolean;
+  adminDateOverride: string | null;
+  adminDateOverrideReason: string | null;
+  adminDateOverrideAt: string | null;
   expenseActualTotal: number;
+  paymentStatus: string;
 }
 
 interface WeekDetail {
@@ -135,20 +159,37 @@ function formatWeek(dateStr: string): string {
   }
 }
 
-const FY26_MONTHS = [
-  { key: "2025-09", label: "Sep 2025" },
-  { key: "2025-10", label: "Oct 2025" },
-  { key: "2025-11", label: "Nov 2025" },
-  { key: "2025-12", label: "Dec 2025" },
-  { key: "2026-01", label: "Jan 2026" },
-  { key: "2026-02", label: "Feb 2026" },
-  { key: "2026-03", label: "Mar 2026" },
-  { key: "2026-04", label: "Apr 2026" },
-  { key: "2026-05", label: "May 2026" },
-  { key: "2026-06", label: "Jun 2026" },
-  { key: "2026-07", label: "Jul 2026" },
-  { key: "2026-08", label: "Aug 2026" },
-];
+/**
+ * Determine the fiscal year (Sep-Aug cycle) from the current date.
+ * FY runs Sep of (fyYear-1) through Aug of fyYear.
+ * e.g. in Mar 2026 -> FY2026 (Sep 2025 - Aug 2026)
+ */
+function getCurrentFiscalYear(): number {
+  const now = new Date();
+  const month = now.getMonth(); // 0-indexed: 0=Jan, 8=Sep
+  const year = now.getFullYear();
+  // If Sep or later, we're in the next FY
+  return month >= 8 ? year + 1 : year;
+}
+
+function generateFYMonths(fyYear: number): { key: string; label: string }[] {
+  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const months: { key: string; label: string }[] = [];
+  // FY starts in Sep of (fyYear - 1) and ends in Aug of fyYear
+  for (let i = 0; i < 12; i++) {
+    // Sep=8, Oct=9, Nov=10, Dec=11, Jan=0, Feb=1, ..., Aug=7
+    const monthIndex = (8 + i) % 12;
+    const year = monthIndex >= 8 ? fyYear - 1 : fyYear;
+    const key = `${year}-${String(monthIndex + 1).padStart(2, "0")}`;
+    const label = `${monthNames[monthIndex]} ${year}`;
+    months.push({ key, label });
+  }
+  return months;
+}
+
+const CURRENT_FY = getCurrentFiscalYear();
+const FY_MONTHS = generateFYMonths(CURRENT_FY);
+const CASHFLOW_API_BASE = `/api/cashflow-${CURRENT_FY}`;
 
 function isCurrentWeek(weekStart: string, weekEnd: string): boolean {
   const now = new Date();
@@ -225,13 +266,67 @@ function KpiCard({
 
 function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; project: string; colSpan?: number }) {
   const [detailSearch, setDetailSearch] = useState("");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const overrideExpenseDate = useMutation({
+    mutationFn: async (data: { expenseId: number; dateOverride: string | null; reason?: string }) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${CASHFLOW_API_BASE}/expense-date-override`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Failed (${res.status})`);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      toast({ title: "Expense date override saved" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to save override", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const overrideInflowDate = useMutation({
+    mutationFn: async (data: { inflowId: number; dateOverride: string | null; reason?: string }) => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      const res = await fetch(`${CASHFLOW_API_BASE}/inflow-date-override`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Failed (${res.status})`);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      toast({ title: "Inflow date override saved" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to save override", description: err.message, variant: "destructive" });
+    },
+  });
   const params = new URLSearchParams({ week: weekStart });
   if (project !== "all") params.set("project", project);
 
   const { data, isLoading } = useQuery<WeekDetail>({
-    queryKey: ["/api/cashflow-2026/detail", weekStart, project],
+    queryKey: [`${CASHFLOW_API_BASE}/detail`, weekStart, project],
     queryFn: async () => {
-      const res = await fetch(`/api/cashflow-2026/detail?${params.toString()}`, {
+      const res = await fetch(`${CASHFLOW_API_BASE}/detail?${params.toString()}`, {
         credentials: "include",
       });
       if (!res.ok) throw new Error("Failed to fetch detail");
@@ -328,7 +423,19 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                           <td className="px-3 py-2 font-medium text-foreground">{inf.projectName}</td>
                           <td className="px-3 py-2 text-muted-foreground">{inf.milestoneName}</td>
                           <td className="px-3 py-2 font-mono text-muted-foreground text-[11px]">{inf.milestoneInvoiceNumber || "—"}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{inf.paymentReceivedDate ? format(parseISO(inf.paymentReceivedDate), "dd MMM") : "—"}</td>
+                          <td className="px-3 py-2">
+                            <DateOverridePopover
+                              currentDate={inf.paymentReceivedDate}
+                              originalDate={inf.originalDate}
+                              hasOverride={inf.hasAdminOverride}
+                              overrideReason={inf.adminDateOverrideReason}
+                              overrideAt={inf.adminDateOverrideAt}
+                              onSave={(dateOverride, reason) =>
+                                overrideInflowDate.mutate({ inflowId: inf.inflowId, dateOverride, reason })
+                              }
+                              testId={`date-override-inflow-${weekStart}-${i}`}
+                            />
+                          </td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-emerald-700">{formatRand(inf.milestoneAmount)}</td>
                           <td className="px-3 py-2 text-right font-mono text-muted-foreground">{inf.daysToReceipt ?? "—"}</td>
                         </tr>
@@ -357,20 +464,46 @@ function DetailRow({ weekStart, project, colSpan = 8 }: { weekStart: string; pro
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Line Item</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Invoice #</th>
                         <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                        <th className="text-center px-3 py-2 font-medium text-muted-foreground">Status</th>
                         <th className="text-right px-3 py-2 font-medium text-muted-foreground">Amount</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {filteredOutflows.map((out, i) => (
+                      {filteredOutflows.map((out, i) => {
+                        const statusColors: Record<string, string> = {
+                          "Out of Bank": "bg-emerald-50 text-emerald-700 border-emerald-300",
+                          "Outstanding": "bg-amber-50 text-amber-700 border-amber-300",
+                          "Risk": "bg-red-50 text-red-700 border-red-300",
+                          "Planned": "bg-muted text-muted-foreground border-border",
+                        };
+                        return (
                         <tr key={i} className="border-b border-border hover:bg-muted/50 transition-colors" data-testid={`row-outflow-${weekStart}-${i}`}>
                           <td className="px-3 py-2 font-medium text-foreground">{out.projectName}</td>
                           <td className="px-3 py-2 text-muted-foreground">{out.expenseCategory}</td>
                           <td className="px-3 py-2 text-muted-foreground">{out.expenseLineItem}</td>
                           <td className="px-3 py-2 font-mono text-muted-foreground text-[11px]">{out.expenseInvoiceNumber || "—"}</td>
-                          <td className="px-3 py-2 text-muted-foreground">{out.expensePaymentDate ? format(parseISO(out.expensePaymentDate), "dd MMM") : "—"}</td>
+                          <td className="px-3 py-2">
+                            <DateOverridePopover
+                              currentDate={out.expensePaymentDate}
+                              originalDate={out.originalDate}
+                              hasOverride={out.hasAdminOverride}
+                              overrideReason={out.adminDateOverrideReason}
+                              overrideAt={out.adminDateOverrideAt}
+                              onSave={(dateOverride, reason) =>
+                                overrideExpenseDate.mutate({ expenseId: out.expenseId, dateOverride, reason })
+                              }
+                              testId={`date-override-outflow-${weekStart}-${i}`}
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            <span className={`inline-block text-[9px] font-medium px-1.5 py-0.5 rounded-full border ${statusColors[out.paymentStatus] || "bg-muted"}`}>
+                              {out.paymentStatus}
+                            </span>
+                          </td>
                           <td className="px-3 py-2 text-right font-mono font-medium text-red-700">{formatRand(out.expenseActualTotal)}</td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -389,9 +522,9 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
   const [editedValues, setEditedValues] = useState<Record<string, string>>({});
 
   const { data: opexData = [], isLoading } = useQuery<OpexEntry[]>({
-    queryKey: ["/api/cashflow-2026/opex-budget"],
+    queryKey: [`${CASHFLOW_API_BASE}/opex-budget`],
     queryFn: async () => {
-      const res = await fetch("/api/cashflow-2026/opex-budget", { credentials: "include" });
+      const res = await fetch(`${CASHFLOW_API_BASE}/opex-budget`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch OPEX budget");
       return res.json();
     },
@@ -401,12 +534,12 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
   const saveMutation = useMutation({
     mutationFn: async (entries: { monthKey: string; amount: number }[]) => {
       for (const entry of entries) {
-        await apiRequest("POST", "/api/cashflow-2026/opex-budget", entry);
+        await apiRequest("POST", `${CASHFLOW_API_BASE}/opex-budget`, entry);
       }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/opex-budget"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/opex-budget`] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       invalidateDashboardQueries(queryClient);
       setEditedValues({});
       toast({ title: "OPEX Costed Saved", description: "Costed values updated successfully." });
@@ -438,7 +571,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
     saveMutation.mutate(entries);
   };
 
-  const totalBudget = FY26_MONTHS.reduce((sum, m) => {
+  const totalBudget = FY_MONTHS.reduce((sum, m) => {
     const val = editedValues[m.key] !== undefined
       ? parseFloat(editedValues[m.key]) || 0
       : opexMap[m.key] ?? 0;
@@ -449,9 +582,9 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg" data-testid="dialog-opex-budget">
         <DialogHeader>
-          <DialogTitle className="text-lg font-semibold">OPEX Monthly Costed — FY26</DialogTitle>
+          <DialogTitle className="text-lg font-semibold">OPEX Monthly Costed — FY{CURRENT_FY}</DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground mt-1">
-            Set monthly operating expense costed amounts for Sep 2025 – Aug 2026
+            Set monthly operating expense costed amounts for Sep {CURRENT_FY - 1} – Aug {CURRENT_FY}
           </DialogDescription>
         </DialogHeader>
         {isLoading ? (
@@ -460,7 +593,7 @@ function OpexBudgetModal({ open, onClose }: { open: boolean; onClose: () => void
           </div>
         ) : (
           <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
-            {FY26_MONTHS.map((m) => {
+            {FY_MONTHS.map((m) => {
               const currentVal = editedValues[m.key] ?? (opexMap[m.key]?.toString() || "0");
               return (
                 <div key={m.key} className="flex items-center gap-3 group hover:bg-muted rounded-lg px-2 py-1.5 transition-colors">
@@ -534,12 +667,12 @@ export default function CashflowPage() {
 
   const projectParam = selectedProjects.length > 0 ? selectedProjects.join(",") : undefined;
 
-  const { data: cashflowData = [], isLoading } = useQuery<CashflowWeek[]>({
-    queryKey: ["/api/cashflow-2026", projectParam],
+  const { data: cashflowData = [], isLoading, isError, error, refetch } = useQuery<CashflowWeek[]>({
+    queryKey: [CASHFLOW_API_BASE, projectParam],
     queryFn: async () => {
       const url = projectParam
-        ? `/api/cashflow-2026?project=${encodeURIComponent(projectParam)}`
-        : "/api/cashflow-2026";
+        ? `${CASHFLOW_API_BASE}?project=${encodeURIComponent(projectParam)}`
+        : CASHFLOW_API_BASE;
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -550,11 +683,11 @@ export default function CashflowPage() {
   });
 
   const { data: balanceHistory = [] } = useQuery<BalanceHistoryEntry[]>({
-    queryKey: ["/api/cashflow-2026/balance-history", historyWeek],
+    queryKey: [`${CASHFLOW_API_BASE}/balance-history`, historyWeek],
     queryFn: async () => {
       const url = historyWeek
-        ? `/api/cashflow-2026/balance-history?week=${historyWeek}`
-        : "/api/cashflow-2026/balance-history";
+        ? `${CASHFLOW_API_BASE}/balance-history?week=${historyWeek}`
+        : `${CASHFLOW_API_BASE}/balance-history`;
       const bToken = localStorage.getItem("auth_token");
       const bHeaders: Record<string, string> = {};
       if (bToken) bHeaders["Authorization"] = `Bearer ${bToken}`;
@@ -587,11 +720,11 @@ export default function CashflowPage() {
 
   const balanceMutation = useMutation({
     mutationFn: async (body: { weekStartDate: string; openingBalance: number; computedValue: number; clearForward: boolean }) => {
-      await apiRequest("POST", "/api/cashflow-2026/opening-balance", body);
+      await apiRequest("POST", `${CASHFLOW_API_BASE}/opening-balance`, body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/balance-history"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/balance-history`] });
       invalidateDashboardQueries(queryClient);
       setEditingBalance(null);
       toast({ title: "Opening Balance Saved", description: "All forward weeks recalculated" });
@@ -603,11 +736,11 @@ export default function CashflowPage() {
 
   const clearOverrideMutation = useMutation({
     mutationFn: async (weekStartDate: string) => {
-      await apiRequest("DELETE", "/api/cashflow-2026/opening-balance", { weekStartDate });
+      await apiRequest("DELETE", `${CASHFLOW_API_BASE}/opening-balance`, { weekStartDate });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/balance-history"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/balance-history`] });
       invalidateDashboardQueries(queryClient);
       toast({ title: "Override Cleared", description: "Balance now uses cascaded value" });
     },
@@ -618,10 +751,10 @@ export default function CashflowPage() {
 
   const opexMutation = useMutation({
     mutationFn: async (body: { weekStartDate: string; opexAmount: number }) => {
-      await apiRequest("POST", "/api/cashflow-2026/opex-weekly", body);
+      await apiRequest("POST", `${CASHFLOW_API_BASE}/opex-weekly`, body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       invalidateDashboardQueries(queryClient);
       setEditingOpex(null);
       toast({ title: "OPEX Saved", description: "Weekly OPEX updated and values recalculated" });
@@ -633,10 +766,10 @@ export default function CashflowPage() {
 
   const clearOpexMutation = useMutation({
     mutationFn: async (weekStartDate: string) => {
-      await apiRequest("DELETE", "/api/cashflow-2026/opex-weekly", { weekStartDate });
+      await apiRequest("DELETE", `${CASHFLOW_API_BASE}/opex-weekly`, { weekStartDate });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
       invalidateDashboardQueries(queryClient);
       toast({ title: "OPEX Override Cleared", description: "Using monthly costed split value" });
     },
@@ -646,12 +779,12 @@ export default function CashflowPage() {
   });
 
   const { data: availPayHistory = [] } = useQuery<{ id: number; weekStartDate: string; previousValue: string | null; newValue: string; computedValue: string | null; reason: string | null; changedAt: string; changedBy: string | null }[]>({
-    queryKey: ["/api/cashflow-2026/available-payment-history", availPayHistoryWeek],
+    queryKey: [`${CASHFLOW_API_BASE}/available-payment-history`, availPayHistoryWeek],
     queryFn: async () => {
       const hToken = localStorage.getItem("auth_token");
       const hHeaders: Record<string, string> = {};
       if (hToken) hHeaders["Authorization"] = `Bearer ${hToken}`;
-      const res = await fetch(`/api/cashflow-2026/available-payment-history?week=${availPayHistoryWeek}`, { credentials: "include", headers: hHeaders });
+      const res = await fetch(`${CASHFLOW_API_BASE}/available-payment-history?week=${availPayHistoryWeek}`, { credentials: "include", headers: hHeaders });
       if (!res.ok) throw new Error("Failed to fetch history");
       return res.json();
     },
@@ -660,11 +793,11 @@ export default function CashflowPage() {
 
   const availPayMutation = useMutation({
     mutationFn: async (body: { weekStartDate: string; overrideValue: number; reason: string; computedValue: number }) => {
-      await apiRequest("POST", "/api/cashflow-2026/available-payment", body);
+      await apiRequest("POST", `${CASHFLOW_API_BASE}/available-payment`, body);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/available-payment-history"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/available-payment-history`] });
       invalidateDashboardQueries(queryClient);
       setAvailPayEdit(null);
       setAvailPayValue("");
@@ -678,11 +811,11 @@ export default function CashflowPage() {
 
   const clearAvailPayMutation = useMutation({
     mutationFn: async (weekStartDate: string) => {
-      await apiRequest("DELETE", "/api/cashflow-2026/available-payment", { weekStartDate });
+      await apiRequest("DELETE", `${CASHFLOW_API_BASE}/available-payment`, { weekStartDate });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cashflow-2026/available-payment-history"] });
+      queryClient.invalidateQueries({ queryKey: [CASHFLOW_API_BASE] });
+      queryClient.invalidateQueries({ queryKey: [`${CASHFLOW_API_BASE}/available-payment-history`] });
       invalidateDashboardQueries(queryClient);
       toast({ title: "Override Cleared", description: "Using computed available payment" });
     },
@@ -765,12 +898,15 @@ export default function CashflowPage() {
     return { totalInflows, totalOutflows, currentWeekOpeningBalance, forecastedEndOfFYPosition };
   }, [cashflowData]);
 
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <FinanceShell currentPage="cashflow"><div className="p-4 md:p-6"><PageError title="Unable to load cashflow" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div></FinanceShell>;
+
   return (
-    <PageShell className="p-4 md:p-6" data-testid="page-cashflow">
+    <FinanceShell currentPage="cashflow"><div className="p-4 md:p-6" data-testid="page-cashflow">
       <SectionHeader
         icon={<Wallet className="h-5 w-5" />}
-        title="Cashflow FY26"
-        description="Weekly cashflow timeline for Sep 2025 to Aug 2026 with visible source, override, and variance relationships."
+        title={`Cashflow FY${CURRENT_FY}`}
+        description={`Weekly cashflow timeline for Sep ${CURRENT_FY - 1} to Aug ${CURRENT_FY} with visible source, override, and variance relationships.`}
         badges={[
           { label: scopeLabel, icon: <Wallet className="h-3.5 w-3.5" /> },
           { label: canEditCashflow ? "Manual overrides enabled" : "Read-only finance view", icon: <ArrowRight className="h-3.5 w-3.5" /> },
@@ -1270,7 +1406,15 @@ export default function CashflowPage() {
                                 className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] text-red-500"
                                 data-testid={`text-proj-outflows-${week.weekStart}`}
                               >
-                                {formatRand(week.projectOutflows)}
+                                <div>{formatRand(week.projectOutflows)}</div>
+                                {week.outflowByStatus && week.projectOutflows > 0 && (
+                                  <div className="flex justify-end gap-1 mt-0.5">
+                                    {week.outflowByStatus.outOfBank > 0 && <span className="text-[8px] px-1 py-0 rounded bg-emerald-50 text-emerald-700 border border-emerald-300" title="Out of Bank (Paid)">Paid {formatRand(week.outflowByStatus.outOfBank)}</span>}
+                                    {week.outflowByStatus.outstanding > 0 && <span className="text-[8px] px-1 py-0 rounded bg-amber-50 text-amber-700 border border-amber-300" title="Outstanding (invoiced, not yet paid)">Outstd {formatRand(week.outflowByStatus.outstanding)}</span>}
+                                    {week.outflowByStatus.risk > 0 && <span className="text-[8px] px-1 py-0 rounded bg-red-50 text-red-700 border border-red-300" title="Risk (no invoice)">Risk {formatRand(week.outflowByStatus.risk)}</span>}
+                                    {week.outflowByStatus.planned > 0 && <span className="text-[8px] px-1 py-0 rounded bg-muted text-muted-foreground border border-border" title="Planned">Plan {formatRand(week.outflowByStatus.planned)}</span>}
+                                  </div>
+                                )}
                               </td>
                               <td
                                 className="px-2 sm:px-4 py-2 sm:py-3 text-right font-mono text-[11px] sm:text-[13px] font-semibold text-red-700"
@@ -1557,6 +1701,6 @@ export default function CashflowPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </PageShell>
+    </div></FinanceShell>
   );
 }

@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -12,7 +13,7 @@ function getAuthHeaders(): Record<string, string> {
 export default function PmMonthlyReportHistory() {
   const [, navigate] = useLocation();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["/api/reports/pm/monthly/history"],
     queryFn: async () => {
       const res = await fetch("/api/reports/pm/monthly/history", { headers: getAuthHeaders() });
@@ -28,6 +29,9 @@ export default function PmMonthlyReportHistory() {
   };
 
   const history = data?.data || [];
+
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PM report history" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
     <div className="container mx-auto p-6 space-y-4">

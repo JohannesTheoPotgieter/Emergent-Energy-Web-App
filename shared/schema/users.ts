@@ -8,7 +8,8 @@ export const organizations = pgTable("organizations", {
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
 });
 export type Organization = typeof organizations.$inferSelect;
 export type InsertOrganization = typeof organizations.$inferInsert;
@@ -17,13 +18,14 @@ export type InsertOrganization = typeof organizations.$inferInsert;
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
-  email: text("email").notNull(),
+  email: text("email").notNull().unique(),
   password: text("password").notNull(),
   name: text("name").notNull(),
   role: text("role").notNull().default('member'),
   department: text("department"),
   microsoft_id: text("microsoft_id").unique(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
 });
 
 export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true } as any);
@@ -90,7 +92,7 @@ export const roleCredentials = pgTable("role_credentials", {
   id: serial("id").primaryKey(),
   role: text("role").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
-  lastPasswordPlain: text("last_password_plain"),
+  passwordLastChangedAt: timestamp("password_last_changed_at").notNull().defaultNow(),
   failedAttempts: integer("failed_attempts").notNull().default(0),
   lockedUntil: timestamp("locked_until"),
   updatedBy: text("updated_by"),
@@ -115,14 +117,19 @@ export type AppSetting = typeof appSettings.$inferSelect;
 // ===================== UNIFIED ROLE PERMISSIONS =====================
 
 export const APP_SECTIONS = [
+  // Current 6-section navigation model
+  'HOME',
+  'MY_WORK',
+  'PROJECTS',
+  'FINANCE',
+  'REPORTS',
+  'ADMIN',
+  // Legacy keys kept for backward compatibility with existing DB records
   'EXCO',
   'PROJECT_MANAGEMENT',
   'ENGINEERING',
   'QUALITY',
-  'ADMIN',
   'MY_TOOL',
-  'FINANCE',
-  'PROJECTS',
   'OPERATIONS',
   'GOVERNANCE',
   'COCKPIT',
@@ -134,14 +141,18 @@ export const APP_SECTIONS = [
 export type AppSection = typeof APP_SECTIONS[number];
 
 export const APP_SECTION_LABELS: Record<AppSection, string> = {
+  HOME: "Home",
+  MY_WORK: "My Work (Tasks, Approvals, Inbox)",
+  PROJECTS: "Projects (Lifecycle, Engineering, Quality, PD, Construction)",
+  FINANCE: "Finance (Cashflow, COS, Revenue, Procurement)",
+  REPORTS: "Reports (Priorities, PM Reports, SOPs, Training, Feedback)",
+  ADMIN: "Admin (Settings, Templates, Import)",
+  // Legacy labels (kept for backward compat)
   EXCO: "Executive (Lifecycle, Priorities)",
   PROJECT_MANAGEMENT: "Project Management (Execution, Projects, Deliverables)",
   ENGINEERING: "Engineering (Overview, Tasks, Stages)",
   QUALITY: "Quality Management",
-  ADMIN: "Admin (Settings, Templates, Import)",
   MY_TOOL: "My Tool (Daily Planner)",
-  FINANCE: "Finance (Cashflow, COS, Budgets)",
-  PROJECTS: "Project Lifecycle (Overview, Lifecycle, Clients)",
   OPERATIONS: "Operations (Finance, Engineering, Procurement)",
   GOVERNANCE: "Quality (Quality Workspace)",
   COCKPIT: "Home (Home, My Work)",
@@ -218,7 +229,7 @@ export interface EntityPermissionRule {
 export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   {
     entity: 'projects',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO'],
@@ -371,12 +382,12 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'lifecycle',
-    view_roles: ['COO_ADMIN'],
-    create_roles: ['COO_ADMIN'],
-    edit_roles: ['COO_ADMIN'],
-    approve_roles: ['COO_ADMIN'],
-    override_roles: ['COO_ADMIN'],
-    delete_roles: ['COO_ADMIN'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'create_project',
@@ -542,7 +553,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'execution_board',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1010,7 +1021,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'data_export',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1055,7 +1066,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'standups',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
@@ -1073,7 +1084,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'commissioning',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'QUALITY_MANAGER'],
@@ -1121,6 +1132,24 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'reports',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'task_management',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'ENGINEER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'ENGINEER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1287,8 +1316,8 @@ export const WORKSTREAM_VISIBILITY_DEFAULTS: Record<string, { workstreams: strin
   KEY_ACCOUNTS_MANAGER: { workstreams: ['PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'INFORMATION'] },
 
   // PROJECT MANAGEMENT — CONSTRUCTION_MANAGER now PM + QUALITY focused
-  CONSTRUCTION_MANAGER: { workstreams: ['PM', 'QUALITY'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECT_MANAGEMENT', 'GOVERNANCE', 'INFORMATION'] },
-  PROJECT_MANAGER_SITE: { workstreams: ['PM', 'PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE'] },
+  CONSTRUCTION_MANAGER: { workstreams: ['PM', 'QUALITY'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'PROJECT_MANAGEMENT', 'GOVERNANCE', 'INFORMATION'] },
+  PROJECT_MANAGER_SITE: { workstreams: ['PM', 'PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
 
   // FINANCE
   CFO:                     { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'GOVERNANCE', 'INFORMATION'] },
@@ -1297,18 +1326,18 @@ export const WORKSTREAM_VISIBILITY_DEFAULTS: Record<string, { workstreams: strin
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
-  { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CCO", label: "CCO", description: "Commercial operations, project oversight", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Project finance, cost tracking", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management — PM and quality focused", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "PROJECT_MANAGEMENT", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Site project manager — view-only access to assigned projects, dates, financials, quality, engineering", sections: ["COLLABORATION", "PROJECTS", "MONEY", "PROJECT_MANAGEMENT", "ENGINEERING", "GOVERNANCE"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
-  { role: "PROJECT_DEVELOPER", label: "Project Developer", description: "Project developer — manages project development, cost proposals, and client relations", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "PROJECT_DEVELOPMENT", "GOVERNANCE", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ENGINEER", label: "Engineer", description: "Engineering team member — engineering tasks, deliverables, stage checklists", sections: ["COCKPIT", "COLLABORATION", "ENGINEERING", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ACCOUNTANT", label: "Accountant", description: "Finance team — cashflow, COS tracking, invoice management", sections: ["COCKPIT", "COLLABORATION", "PROJECTS", "MONEY", "INFORMATION"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CCO", label: "CCO", description: "Commercial operations, project oversight", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Project finance, cost tracking", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management — PM and quality focused", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Site project manager — view-only access to assigned projects, dates, financials, quality, engineering", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
+  { role: "PROJECT_DEVELOPER", label: "Project Developer", description: "Project developer — manages project development, cost proposals, and client relations", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ENGINEER", label: "Engineer", description: "Engineering team member — engineering tasks, deliverables, stage checklists", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ACCOUNTANT", label: "Accountant", description: "Finance team — cashflow, COS tracking, invoice management", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
 ];

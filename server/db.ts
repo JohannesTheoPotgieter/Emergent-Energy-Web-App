@@ -95,7 +95,7 @@ async function initializeDatabase(): Promise<void> {
         });
         // Robust pool error handling for Replit - prevent unhandled errors from crashing
         pool.on('error', (err) => {
-          console.error('[DB] Pool background error (non-fatal):', err.message);
+          console.error('[DB] Pool background error (non-fatal):', (err instanceof Error ? err.message : String(err)));
         });
         db = drizzle(pool, { schema });
         dbMode = 'postgres';
@@ -165,11 +165,11 @@ async function initializeDatabase(): Promise<void> {
         isInitialized = true;
         return;
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (isProduction) {
-        throw new Error(`[DB] PostgreSQL connection failed in production: ${err.message}`);
+        throw new Error(`[DB] PostgreSQL connection failed in production: ${(err instanceof Error ? err.message : String(err))}`);
       }
-      console.warn(`[DB] ⚠ Postgres connection error (${err.message}), falling back to SQLite`);
+      console.warn(`[DB] ⚠ Postgres connection error (${(err instanceof Error ? err.message : String(err))}), falling back to SQLite`);
     }
 
     if (isProduction) {
@@ -1166,6 +1166,10 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN excel_tracker_link TEXT`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN canonical_project_id INTEGER`)); } catch {}
     try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN client_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN site_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN opportunity_id INTEGER`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN delivery_model TEXT`)); } catch {}
+    try { await db.run(sql.raw(`ALTER TABLE project_info ADD COLUMN project_code TEXT`)); } catch {}
 
     // Add missing columns to program_expense (safe ALTERs)
     try { await db.run(sql.raw(`ALTER TABLE program_expense ADD COLUMN row_type TEXT DEFAULT 'item'`)); } catch {}
@@ -1201,8 +1205,8 @@ async function ensureSqliteSchema() {
     try { await db.run(sql.raw(`ALTER TABLE program_inflows ADD COLUMN import_run_id INTEGER`)); } catch {}
 
     console.log('[DB] SQLite schema verified');
-  } catch (err: any) {
-    console.error('[DB] Error creating SQLite schema:', err.message);
+  } catch (err: unknown) {
+    console.error('[DB] Error creating SQLite schema:', (err instanceof Error ? err.message : String(err)));
   }
 }
 

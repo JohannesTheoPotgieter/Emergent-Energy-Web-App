@@ -109,7 +109,7 @@ function resolveUserRole(req: Request): string | null {
 }
 
 function buildRoleRecord(role: string) {
-  return roleRecordCache[role] || { entityPermissions: entityPermCache[role] as any, authorityModel: null, canManageUsers: false, canManageRoles: false };
+  return roleRecordCache[role] || { entityPermissions: entityPermCache[role] as CachedRoleRecord["entityPermissions"], authorityModel: null, canManageUsers: false, canManageRoles: false };
 }
 
 function logPermissionFailure(req: Request, entity: PermissionEntity, action: string, reason: string) {
@@ -144,7 +144,7 @@ export async function evaluateAuthorityForRequest(req: Request, entity: Permissi
     role,
     entity,
     action,
-    roleRecord: buildRoleRecord(role) as any,
+    roleRecord: buildRoleRecord(role) as Parameters<typeof evaluateAuthorityForRole>[0]["roleRecord"],
   });
 }
 
@@ -180,7 +180,7 @@ export async function evaluatePermissionForRequest(req: Request, entity: Permiss
     role,
     entity,
     action,
-    roleRecord: buildRoleRecord(role) as any,
+    roleRecord: buildRoleRecord(role) as Parameters<typeof evaluatePermissionForRole>[0]["roleRecord"],
   });
 }
 

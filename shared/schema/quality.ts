@@ -12,7 +12,8 @@ export const qcTemplate = pgTable("qc_template", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   version: integer("version").notNull().default(1),
-  isActive: boolean("is_active").notNull().default(true),
+  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  deletedAt: timestamp("deleted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 export const insertQcTemplateSchema = createInsertSchema(qcTemplate).omit({ id: true, createdAt: true } as any);

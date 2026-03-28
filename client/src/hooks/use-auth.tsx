@@ -72,8 +72,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       return true;
     } catch (error) {
-      console.error("[Login Error]", error);
-      
       toast({
         title: "Login Failed",
         description: getErrorMessage(error, "An unexpected error occurred"),
@@ -86,8 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       await authApi.logout();
-    } catch (error) {
-      console.error("Logout error:", error);
+    } catch {
+      // Logout API may fail if session already expired — proceed with local cleanup
     } finally {
       setUser(null);
       setAuthToken(null);

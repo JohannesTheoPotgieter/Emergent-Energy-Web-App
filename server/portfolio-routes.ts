@@ -1,8 +1,8 @@
+// TODO: remove @ts-nocheck — large file needs systematic type fixes
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, and, inArray, desc, isNull } from "drizzle-orm";
-import { verifyToken } from "./jwt";
 import {
   portfolios, portfolioRolloutPlans, portfolioRolloutPhases,
   projectPortfolioAssignments, projectInfo, users,
@@ -18,25 +18,7 @@ import {
   compareCoreProjectPortfolioAssignmentsReadiness,
   compareCoreProjectsReadiness,
 } from "./services/promoted-read-compat";
-
-function jwtAuth(req: Request, _res: Response, next: NextFunction) {
-  if ((req as any).user) return next();
-  if (req.isAuthenticated?.()) return next();
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
-    const payload = verifyToken(token);
-    if (payload) {
-      (req as any).user = { id: payload.userId, email: payload.email, name: payload.name, role: payload.role };
-    }
-  }
-  next();
-}
-
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (req.isAuthenticated?.() || (req as any).user) return next();
-  res.status(401).json({ error: "auth_required", message: "Authentication required" });
-}
+import { jwtAuth, requireAuth } from "./auth-context";
 
 const MANAGE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
 const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
@@ -63,6 +45,18 @@ export function registerPortfolioRoutes(app: Express) {
         "promoted_core_portfolio_assignments_read",
       ]);
 
+      const legacyPortfoliosQuery = () => db.select().from(portfolios).orderBy(desc(portfolios.createdAt));
+      const legacyAssignmentsQuery = () => db.select().from(projectPortfolioAssignments);
+      const legacyProjectsQuery = () => db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        phase: projectExecutionState.phase,
+        sizeKwp: projectInfo.sizeKwp,
+        pm: projectInfo.pm,
+        isActive: projectExecutionState.isActive,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
+
       const [allPortfolios, assignments, allProjects] = await Promise.all([
         flags.promoted_core_portfolios_read
           ? db.execute(sql`
@@ -79,8 +73,15 @@ export function registerPortfolioRoutes(app: Express) {
                 p.updated_at AS "updatedAt"
               FROM core.portfolios p
               ORDER BY p.created_at DESC
-            `).then((r: any) => r.rows ?? r)
-          : db.select().from(portfolios).orderBy(desc(portfolios.createdAt)),
+            `).then((r: any) => r.rows ?? r).catch((error: any) => {
+              const msg = error?.message || '';
+              if (/relation.*does not exist|no such table|schema.*does not exist/i.test(msg) || error?.code === '42P01') {
+                console.warn("[portfolio-routes] core.portfolios missing, falling back to public.portfolios");
+                return legacyPortfoliosQuery();
+              }
+              throw error;
+            })
+          : legacyPortfoliosQuery(),
         flags.promoted_core_portfolio_assignments_read
           ? db.execute(sql`
               SELECT
@@ -92,8 +93,15 @@ export function registerPortfolioRoutes(app: Express) {
                 NULL::INTEGER AS "movedBy",
                 NULL::TIMESTAMP AS "movedAt"
               FROM core.project_portfolio_assignments
-            `).then((r: any) => r.rows ?? r)
-          : db.select().from(projectPortfolioAssignments),
+            `).then((r: any) => r.rows ?? r).catch((error: any) => {
+              const msg = error?.message || '';
+              if (/relation.*does not exist|no such table|schema.*does not exist/i.test(msg) || error?.code === '42P01') {
+                console.warn("[portfolio-routes] core.project_portfolio_assignments missing, falling back to public");
+                return legacyAssignmentsQuery();
+              }
+              throw error;
+            })
+          : legacyAssignmentsQuery(),
         flags.promoted_core_projects_read
           ? db.execute(sql`
               SELECT
@@ -104,16 +112,15 @@ export function registerPortfolioRoutes(app: Express) {
                 NULL::TEXT AS pm,
                 TRUE AS "isActive"
               FROM core.projects
-            `).then((r: any) => r.rows ?? r)
-          : db.select({
-              id: projectInfo.id,
-              projectName: projectInfo.projectName,
-              phase: projectExecutionState.phase,
-              sizeKwp: projectInfo.sizeKwp,
-              pm: projectInfo.pm,
-              isActive: projectExecutionState.isActive,
-            }).from(projectInfo)
-              .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
+            `).then((r: any) => r.rows ?? r).catch((error: any) => {
+              const msg = error?.message || '';
+              if (/relation.*does not exist|no such table|schema.*does not exist/i.test(msg) || error?.code === '42P01') {
+                console.warn("[portfolio-routes] core.projects missing, falling back to public.project_info");
+                return legacyProjectsQuery();
+              }
+              throw error;
+            })
+          : legacyProjectsQuery(),
       ]);
 
       const ownerIds = allPortfolios.map(p => p.ownerUserId).filter(Boolean) as number[];

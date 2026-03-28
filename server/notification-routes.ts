@@ -2,13 +2,7 @@ import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { notifications } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
-
-function requireAuth(req: Request, res: Response, next: () => void) {
-  if (!req.isAuthenticated || !req.isAuthenticated()) {
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-  next();
-}
+import { requireAuth } from "./auth-context";
 
 export function registerNotificationRoutes(app: Express) {
   // Get user's notifications (recent + unread)
@@ -28,8 +22,8 @@ export function registerNotificationRoutes(app: Express) {
       const unreadCount = rows.filter(r => !r.isRead).length;
 
       res.json({ notifications: rows, unreadCount });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -45,8 +39,8 @@ export function registerNotificationRoutes(app: Express) {
         .where(and(eq(notifications.id, id), eq(notifications.recipientUserId, user.id)));
 
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -61,8 +55,8 @@ export function registerNotificationRoutes(app: Express) {
         .where(and(eq(notifications.recipientUserId, user.id), eq(notifications.isRead, false)));
 
       res.json({ success: true });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
 }

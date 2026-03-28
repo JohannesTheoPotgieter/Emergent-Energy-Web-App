@@ -112,6 +112,7 @@ interface EnrichedExpense {
   budgetTotal: string | null;
   forecastPaymentDate: string | null;
   expenseActualTotal: string | null;
+  quotedTotal: string | null;
   expensePoNumber: string | null;
   expenseInvoiceNumber: string | null;
   expenseInvoicedDate: string | null;
@@ -253,7 +254,8 @@ const getCosStatusBadge = (status: string) => {
 const getPaymentStatusBadge = (status: string) => {
   const colors: Record<string, string> = {
     "Out of Bank": "bg-emerald-50 text-emerald-700 border-emerald-300",
-    "Payment Planned": "bg-blue-50 text-blue-600 border-blue-200",
+    "Outstanding": "bg-amber-50 text-amber-700 border-amber-300",
+    "Risk": "bg-red-50 text-red-700 border-red-300",
     "Planned": "bg-muted text-muted-foreground border-border",
   };
   return (
@@ -682,7 +684,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     };
     const countByPayment = {
       "Out of Bank": editedItems.filter(e => e.paymentStatus === "Out of Bank").length,
-      "Payment Planned": editedItems.filter(e => e.paymentStatus === "Payment Planned").length,
+      "Outstanding": editedItems.filter(e => e.paymentStatus === "Outstanding").length,
+      "Risk": editedItems.filter(e => e.paymentStatus === "Risk").length,
       "Planned": editedItems.filter(e => e.paymentStatus === "Planned").length,
     };
     return { totalBudget, totalActual, cosRealised, totalOutOfBank, variance, countByCos, countByPayment, totalItems: editedItems.length };
@@ -694,7 +697,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       return rowEdits ? { ...row, ...rowEdits } : row;
     });
     data = data.filter(e => {
-      const val = parseFloat(e.expenseActualTotal || "0");
+      const val = parseFloat(e.quotedTotal || e.expenseActualTotal || "0");
       return !isNaN(val) && val !== 0;
     });
     if (statusFilter !== "all") {
@@ -718,7 +721,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
       const group = groupMap.get(cat)!;
       group.items.push(row);
       const budget = parseFloat(row.budgetTotal || "0");
-      const actual = parseFloat(row.expenseActualTotal || "0");
+      const actual = parseFloat(row.expenseActualTotal || (row as any).quotedTotal || "0");
       const revAmt = parseFloat(row.revenueAmount || "0");
       group.budgetTotal += budget;
       group.actualTotal += actual;
@@ -1001,8 +1004,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             const key = query.queryKey[0];
             return typeof key === 'string' && (key.startsWith('/api/cos-tracker') || key.startsWith('/api/cashflow'));
           }});
-        } catch (err) {
-          console.error("Font color toggle failed:", err);
+        } catch {
+          // Font color toggle failed — non-critical, skip silently
         }
       }
     };
@@ -1135,7 +1138,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   };
 
   const renderCellValue = (exp: EnrichedExpense, col: ColumnDef) => {
-    const variance = parseFloat(exp.budgetTotal || "0") - parseFloat(exp.expenseActualTotal || "0");
+    const variance = parseFloat(exp.budgetTotal || "0") - parseFloat(exp.expenseActualTotal || (exp as any).quotedTotal || "0");
     switch (col.key) {
       case "description":
         return (
@@ -1179,7 +1182,9 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
         return <span className="text-xs font-mono">{formatCurrency(exp.revenueAmount)}</span>;
       case "actualTotal":
         return (
-          <EditableCell rowId={exp.id} field="expenseActualTotal" value={exp.expenseActualTotal} type="currency" rowNumber={exp.rowNumber} />
+          <EditableCell rowId={exp.id} field="expenseActualTotal" value={exp.expenseActualTotal || (exp as any).quotedTotal} type="currency" rowNumber={exp.rowNumber}
+            colorClass={!exp.expenseActualTotal && (exp as any).quotedTotal ? "text-muted-foreground/50 italic" : ""}
+          />
         );
       case "poNumber":
         return <EditableCell rowId={exp.id} field="expensePoNumber" value={exp.expensePoNumber} rowNumber={exp.rowNumber} />;
@@ -1468,7 +1473,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             { value: "COS Realised", label: `COS Realised (${kpis.countByCos["COS Realised"]})` },
             { value: "Committed", label: `Committed (${kpis.countByCos["Committed"]})` },
             { value: "Out of Bank", label: `Out of Bank (${kpis.countByPayment["Out of Bank"]})` },
-            { value: "Payment Planned", label: `Payment Planned (${kpis.countByPayment["Payment Planned"]})` },
+            { value: "Outstanding", label: `Outstanding (${kpis.countByPayment["Outstanding"]})` },
+            { value: "Risk", label: `Risk (${kpis.countByPayment["Risk"]})` },
             { value: "Planned", label: `Planned (${kpis.countByCos.Planned})` },
           ]}
         />
@@ -1692,7 +1698,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                   options={[
                     { value: "all", label: "All" },
                     { value: "Out of Bank", label: "Out of Bank" },
-                    { value: "Payment Planned", label: "Payment Planned" },
+                    { value: "Outstanding", label: "Outstanding" },
+                    { value: "Risk", label: "Risk" },
                     { value: "Planned", label: "Planned" },
                   ]}
                 />
@@ -1738,7 +1745,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             </div>
 
             <div className="text-xs text-muted-foreground">
-              {drawerItems.length} item{drawerItems.length !== 1 ? "s" : ""} | Total: {formatCurrency(drawerItems.reduce((s, i) => s + (parseFloat(i.expenseActualTotal || "0")), 0))}
+              {drawerItems.length} item{drawerItems.length !== 1 ? "s" : ""} | Total: {formatCurrency(drawerItems.reduce((s, i) => s + (parseFloat(i.expenseActualTotal || (i as any).quotedTotal || "0")), 0))}
             </div>
 
             <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-auto">
@@ -1747,7 +1754,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                   <CardContent className="p-3 space-y-1.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-medium truncate max-w-[250px]">{item.expenseLineItem || "-"}</span>
-                      <span className="text-xs font-mono font-bold">{formatCurrency(item.expenseActualTotal)}</span>
+                      <span className={`text-xs font-mono font-bold ${!item.expenseActualTotal && (item as any).quotedTotal ? "text-muted-foreground/50 italic" : ""}`}>{formatCurrency(item.expenseActualTotal || (item as any).quotedTotal)}</span>
                     </div>
                     <div className="flex flex-wrap gap-1">
                       <Badge variant="outline" className="text-[8px] bg-muted">{item.expenseCategory}</Badge>
@@ -1779,7 +1786,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
                       <span>Inv Date: {formatDate(item.expenseInvoicedDate)}</span>
                       <span>Pay Date: {formatDate(item.effectivePaymentDate)}</span>
                       <span>Budget: {formatCurrency(item.budgetTotal)}</span>
-                      <span>Variance: {formatCurrency(parseFloat(item.budgetTotal || "0") - parseFloat(item.expenseActualTotal || "0"))}</span>
+                      <span>Variance: {formatCurrency(parseFloat(item.budgetTotal || "0") - parseFloat(item.expenseActualTotal || (item as any).quotedTotal || "0"))}</span>
                       {item.linkedTask && <span className="col-span-2">Task: {item.linkedTask.title} ({item.linkedTask.status})</span>}
                     </div>
                   </CardContent>

@@ -52,19 +52,11 @@ import { EnergyLoader } from "@/components/ui/energy-loader";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
+import { apiRequest } from "@/lib/queryClient";
+import { formatForDisplayZA, parseIsoDateStrict } from "@shared/utils/dates";
 
-async function pmFetch(url: string) {
-  const token = localStorage.getItem("auth_token");
-  const res = await fetch(url, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-  if (!res.ok) {
-    const msg = await res.text();
-    throw new Error(msg || "Could not load execution overview data. Likely reason: server or permission mismatch. Refresh and retry. If it persists, contact your admin.");
-  }
+async function pmFetch<T>(url: string): Promise<T> {
+  const res = await apiRequest("GET", url);
   return res.json();
 }
 
@@ -172,13 +164,9 @@ function formatCurrency(val: number): string {
 
 function formatDate(d: string | null): string {
   if (!d) return "\u2014";
-  try {
-    const date = new Date(d);
-    if (isNaN(date.getTime())) return d;
-    return date.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "2-digit" });
-  } catch {
-    return d;
-  }
+  const parsed = parseIsoDateStrict(d);
+  if (!parsed) return d;
+  return formatForDisplayZA(parsed.toDate());
 }
 
 function DateRow({ label, planned, actual }: { label: string; planned: string | null; actual: string | null }) {

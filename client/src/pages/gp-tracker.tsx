@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from "react";
+import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useQuery } from "@tanstack/react-query";
+import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +14,7 @@ import {
 } from "recharts";
 import {
   DollarSign, TrendingUp, Activity, Percent, Search,
-  Target, ChevronDown, ChevronRight, X, HelpCircle,
+  Target, ChevronDown, ChevronRight, X, HelpCircle, AlertTriangle,
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -190,69 +192,23 @@ export default function GpTrackerPage() {
     return projects.filter((p: any) => (p.projectName || "").toLowerCase().includes(q));
   }, [projects, search]);
 
-  if (isLoading) {
-    return (
-      <div className="p-6 space-y-6 max-w-[1600px] mx-auto" data-testid="gp-tracker-page">
-        <div>
-          <Skeleton className="h-8 w-48 mb-2" />
-          <Skeleton className="h-4 w-96" />
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Card key={i}>
-              <CardContent className="p-4">
-                <Skeleton className="h-3 w-16 mb-2" />
-                <Skeleton className="h-6 w-20" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <Card>
-          <CardContent className="p-4">
-            <Skeleton className="h-[280px] w-full rounded-lg" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <Skeleton className="h-5 w-32 mb-3" />
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="flex gap-3 py-2">
-                <Skeleton className="h-4 w-28" />
-                {Array.from({ length: 5 }).map((_, j) => (
-                  <Skeleton key={j} className="h-4 w-16 ml-auto" />
-                ))}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <div className="p-6 max-w-[1200px] mx-auto" data-testid="gp-tracker-error-state">
-        <Card className="border-red-200 bg-red-50/40">
-          <CardContent className="py-10 text-center space-y-2">
-            <p className="text-sm font-semibold text-red-700">GP tracker data failed to load.</p>
-            <p className="text-xs text-red-600/90">{(error as Error)?.message || "Please retry."}</p>
-            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-retry-gp-tracker">Retry</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (isLoading) return <PageSkeleton lines={5} />;
+  if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load GP Tracker" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const totalRevenue = data?.totalRevenue || 0;
   const totalCOS = data?.totalCOS || 0;
   const totalGP = data?.totalGP || 0;
   const overallGpPct = data?.overallGpPct || 0;
 
-  const lastMonth = months.length > 0 ? months[months.length - 1] : null;
-  const ytdGP = lastMonth?.ytdGP || 0;
-  const ytdBudget = lastMonth?.ytdBudget || 0;
-  const ytdVariance = lastMonth?.ytdVariance || 0;
-  const ytdGpPct = lastMonth?.ytdGpPct || 0;
+  // Use backend-provided YTD values (calculated through current month, not full year)
+  const ytdGP = data?.ytdGP || 0;
+  const ytdBudget = data?.ytdBudget || 0;
+  const ytdVariance = data?.ytdVariance || 0;
+  const ytdGpPct = data?.ytdGpPct || 0;
+
+  // Detect if revenue budget is missing (all zero)
+  const revenueBudgetMissing = months.length > 0 && months.every((m: any) => !m.revBudget || m.revBudget === 0);
+  const BUDGET_VARIANCE_KEYS = new Set(["revBudget", "cosBudget", "budget", "variance", "variancePct", "ytdBudget", "ytdVariance", "ytdVariancePct"]);
 
   const monthlyRows = ROW_DEFS.filter(r => r.group === "monthly");
   const ytdRows = ROW_DEFS.filter(r => r.group === "ytd");
@@ -273,13 +229,23 @@ export default function GpTrackerPage() {
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-[1600px] mx-auto page-enter" data-testid="gp-tracker-page">
+    <FinanceShell currentPage="gp-tracker"><div className="p-6 space-y-6 max-w-[1600px] mx-auto" data-testid="gp-tracker-page">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">GP Tracker</h1>
           <p className="text-sm text-muted-foreground">Portfolio-level Gross Profit — Budget vs Actual (Sep 2025 – Aug 2026). Click any GP row cell to drill down to line items.</p>
         </div>
       </div>
+
+      {revenueBudgetMissing && (
+        <div className="flex items-start gap-3 p-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-900" data-testid="budget-missing-warning">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-amber-600" />
+          <div className="text-sm">
+            <p className="font-semibold">Revenue budget not configured</p>
+            <p className="text-xs text-amber-700 mt-0.5">All budget and variance metrics below are unreliable because revenue budget is R0 for every month. Contact Finance to set monthly revenue budgets via the budget entry screen.</p>
+          </div>
+        </div>
+      )}
 
       <TooltipProvider delayDuration={300}>
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3" role="region" aria-label="GP KPI Summary">
@@ -342,10 +308,12 @@ export default function GpTrackerPage() {
                 <tbody>
                   {monthlyRows.map(row => {
                     const isDrillable = ["totalGP", "realisedGP", "unrealisedGP", "totalRevenue", "totalCOS"].includes(row.key);
+                    const isBudgetRow = BUDGET_VARIANCE_KEYS.has(row.key);
+                    const dimmed = revenueBudgetMissing && isBudgetRow;
                     return (
-                    <tr key={row.key} className="border-b border-border/40 hover:bg-muted/20" data-testid={`row-${row.key}`}>
+                    <tr key={row.key} className={`border-b border-border/40 hover:bg-muted/20 ${dimmed ? "opacity-30" : ""}`} data-testid={`row-${row.key}`}>
                       <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">
-                        {row.label}
+                        {row.label}{dimmed && " *"}
                       </td>
                       {months.map((m: any) => {
                         const val = getCellValue(m, row.dataKey);
@@ -403,9 +371,12 @@ export default function GpTrackerPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {ytdRows.map(row => (
-                    <tr key={row.key} className="border-b border-border/40 hover:bg-muted/20" data-testid={`row-${row.key}`}>
-                      <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">{row.label}</td>
+                  {ytdRows.map(row => {
+                    const isBudgetRow = BUDGET_VARIANCE_KEYS.has(row.key);
+                    const dimmed = revenueBudgetMissing && isBudgetRow;
+                    return (
+                    <tr key={row.key} className={`border-b border-border/40 hover:bg-muted/20 ${dimmed ? "opacity-30" : ""}`} data-testid={`row-${row.key}`}>
+                      <td className="py-2 px-3 font-medium text-muted-foreground sticky left-0 bg-white z-10 whitespace-nowrap">{row.label}{dimmed && " *"}</td>
                       {months.map((m: any) => {
                         const val = getCellValue(m, row.dataKey);
                         const colorClass = row.colorCoded ? getVarianceColor(val) : row.colorClass;
@@ -416,7 +387,8 @@ export default function GpTrackerPage() {
                         );
                       })}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -458,13 +430,17 @@ export default function GpTrackerPage() {
                       <th className="pb-2 font-medium text-right">COS</th>
                       <th className="pb-2 font-medium text-right">GP</th>
                       <th className="pb-2 font-medium text-right">GP%</th>
+                      <th className="pb-2 font-medium text-center">Flag</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredProjects.map((p: any) => (
+                    {filteredProjects.map((p: any) => {
+                      const noRevenue = (!p.revenue || p.revenue === 0) && (p.cos ?? 0) > 0;
+                      const extremeMargin = (p.gpPct ?? 0) < -100;
+                      return (
                       <tr
                         key={p.projectName}
-                        className="border-b border-border/50 hover:bg-muted/30 cursor-pointer"
+                        className={`border-b border-border/50 hover:bg-muted/30 cursor-pointer ${noRevenue ? "bg-amber-50/30" : ""}`}
                         onClick={() => navigate(`/project/${encodeURIComponent(p.projectName)}?tab=gp-tracker`)}
                         data-testid={`row-project-${p.projectName}`}
                       >
@@ -477,10 +453,22 @@ export default function GpTrackerPage() {
                             {(p.gpPct ?? 0).toFixed(1)}%
                           </Badge>
                         </td>
+                        <td className="py-2 text-center">
+                          {noRevenue ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-100 text-amber-700 border border-amber-200" title="This project has costs but no revenue recorded — GP is distorted">
+                              <AlertTriangle className="h-2.5 w-2.5" /> No Revenue
+                            </span>
+                          ) : extremeMargin ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium bg-red-100 text-red-700 border border-red-200" title="Margin below -100% — review data quality">
+                              <AlertTriangle className="h-2.5 w-2.5" /> Review
+                            </span>
+                          ) : null}
+                        </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                     {filteredProjects.length === 0 && (
-                      <tr><td colSpan={5} className="py-6 text-center text-muted-foreground">No projects match this search. Try different keywords.</td></tr>
+                      <tr><td colSpan={6} className="py-6 text-center text-muted-foreground">No projects match this search. Try different keywords.</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -489,6 +477,6 @@ export default function GpTrackerPage() {
           )}
         </CardContent>
       </Card>
-    </div>
+    </div></FinanceShell>
   );
 }

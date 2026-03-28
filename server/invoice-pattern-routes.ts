@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck — needs transaction types and classification types
 // @ts-nocheck
 import { Router, Request, Response } from "express";
 import { db } from "./db";
@@ -834,7 +835,7 @@ router.post("/api/admin/wipe-all-data", requireAuth, requirePermission('admin', 
 
     for (const table of tables) {
       try {
-        await db.execute(sql.raw(`TRUNCATE TABLE "${table}" CASCADE`));
+        await db.execute(sql`TRUNCATE TABLE ${sql.raw(`"${table}"`)} CASCADE`);
         truncated++;
       } catch (err: any) {
         if (err.message?.includes('does not exist')) {

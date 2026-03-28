@@ -973,7 +973,7 @@ export function RolePasswordsSection() {
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [saving, setSaving] = useState(false);
-  const [passwords, setPasswords] = useState<Record<string, { password: string | null; updatedAt: string | null }>>({});
+  const [passwords, setPasswords] = useState<Record<string, { updatedAt: string | null }>>({});
 
   useEffect(() => {
     loadPasswords();
@@ -984,9 +984,9 @@ export function RolePasswordsSection() {
       const res = await fetch("/api/role-auth/passwords", { credentials: "include", headers: getAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
-        const map: Record<string, { password: string | null; updatedAt: string | null }> = {};
+        const map: Record<string, { updatedAt: string | null }> = {};
         for (const c of data) {
-          map[c.role] = { password: c.lastPasswordPlain, updatedAt: c.updatedAt };
+          map[c.role] = { updatedAt: c.passwordLastChangedAt || c.updatedAt };
         }
         setPasswords(map);
       }
@@ -994,8 +994,8 @@ export function RolePasswordsSection() {
   };
 
   const handleChangePassword = async (targetRole: string) => {
-    if (!newPassword || newPassword.length < 4) {
-      toast({ title: "Error", description: "Password must be at least 4 characters.", variant: "destructive" });
+    if (!newPassword || newPassword.length < 8) {
+      toast({ title: "Error", description: "Password must be at least 8 characters.", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -1039,12 +1039,9 @@ export function RolePasswordsSection() {
                 </span>
                 <span className="text-xs text-gray-400">{role}</span>
               </div>
-              {info?.password && (
-                <div className="flex items-center gap-1.5 mt-1">
-                  <span className="text-xs text-muted-foreground">Current:</span>
-                  <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono text-foreground break-all" data-testid={`text-current-password-${role}`}>
-                    {info.password}
-                  </code>
+              {info?.updatedAt && (
+                <div className="text-xs text-muted-foreground mt-1">
+                  Last changed: {new Date(info.updatedAt).toLocaleString()}
                 </div>
               )}
             </div>

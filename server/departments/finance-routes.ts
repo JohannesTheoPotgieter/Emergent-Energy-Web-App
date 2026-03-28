@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin } from './shared-middleware';
@@ -11,19 +12,25 @@ import {
   changeSets,
   fieldChanges,
   financialEditRequests,
+  manualEditFlags,
   msObjects,
+  normalizedCostLines,
   normalizedRevenueLines,
   OVERRIDE_CATEGORIES,
+  programExpense,
+  programInflows,
   projectInfo,
   users,
 } from "@shared/schema";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { recordManualEdit } from "../lib/audit/diff-engine";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
 import {
   STATIC_COS_BUDGET_FY26,
   extractMonthKey,
   allocateRevenue,
   isCosRealised as isCosRealisedShared,
+  classifyCosStatusFull,
   normalizeProjectName,
   mapToSortedArray,
   currentMonthKey as getCurrentMonthKey,
@@ -32,6 +39,7 @@ import {
 import { recordOverride } from "../lib/audit/diff-engine";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
+import { createNotification } from "../services/notification-service";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
@@ -68,7 +76,25 @@ async function createPendingEditRequest(
     status: "pending",
   }).returning();
 
-  // Notifications feature removed - financial edit request notifications are now no-ops
+  // Notify financial approvers about the pending edit request
+  try {
+    const approvers = await db.select({ id: users.id, role: users.role }).from(users)
+      .where(inArray(users.role, FINANCIAL_APPROVER_ROLES));
+    for (const approver of approvers) {
+      if (approver.id === userId) continue; // don't notify the requester
+      await createNotification({
+        recipientUserId: approver.id,
+        eventType: "financial.edit_request_pending",
+        title: `Financial edit request: ${projectName}`,
+        body: editSummary,
+        projectName,
+        relatedEntityType: "financial_edit_request",
+        relatedEntityId: saved.id,
+      });
+    }
+  } catch (err) {
+    console.error("[finance] Failed to send edit request notifications:", err);
+  }
 
   return saved;
 }
@@ -153,16 +179,27 @@ function resolveInflowEffectiveDates(
   operationalTasks: any[],
   planTasks: any[]
 ): any[] {
+  const normalizeProjectName = (value: unknown): string => String(value || "").trim().toLowerCase();
+
   if (taskLinks.length === 0) {
     return inflows.map(inf => ({
       ...inf,
-      effectiveDate: inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
+      effectiveDate: inf.adminDateOverride || inf.paymentReceivedDate || inf.computedForecastReceiptDate || inf.plannedPaymentDate || null,
     }));
   }
 
   const linkMap = new Map<string, any>();
+  const normalizedLinkMap = new Map<string, any>();
+  const linksByRowNumber = new Map<number, any[]>();
   for (const link of taskLinks) {
     linkMap.set(`${link.projectName}::${link.milestoneRowNumber}`, link);
+    normalizedLinkMap.set(`${normalizeProjectName(link.projectName)}::${link.milestoneRowNumber}`, link);
+    const rowNumber = Number(link.milestoneRowNumber);
+    if (Number.isFinite(rowNumber)) {
+      const existing = linksByRowNumber.get(rowNumber) || [];
+      existing.push(link);
+      linksByRowNumber.set(rowNumber, existing);
+    }
   }
 
   const opTaskMap = new Map<number, any>();
@@ -176,8 +213,20 @@ function resolveInflowEffectiveDates(
   }
 
   return inflows.map(inf => {
+    // Admin date override takes highest priority
+    if (inf.adminDateOverride && /^\d{4}-\d{2}-\d{2}/.test(inf.adminDateOverride)) {
+      return { ...inf, effectiveDate: inf.adminDateOverride };
+    }
+
     const key = `${inf.projectName}::${inf.rowNumber}`;
-    const link = linkMap.get(key);
+    const normalizedKey = `${normalizeProjectName(inf.projectName)}::${inf.rowNumber}`;
+    const link =
+      linkMap.get(key) ||
+      normalizedLinkMap.get(normalizedKey) ||
+      (() => {
+        const sameRowLinks = linksByRowNumber.get(Number(inf.rowNumber)) || [];
+        return sameRowLinks.length === 1 ? sameRowLinks[0] : null;
+      })();
 
     if (inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate)) {
       return { ...inf, effectiveDate: inf.paymentReceivedDate };
@@ -749,8 +798,8 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
         // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
         if (expense.rowType !== 'item') continue;
         if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
-        // Use effective payment date: actual payment date, then computed forecast, then forecast, then invoice date
-        const d = expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
+        // Use effective payment date: admin override first, then actual payment date, then computed forecast, then forecast, then invoice date
+        const d = (expense as any).adminDateOverride || expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
         // Use actual total with budget fallback, matching project-detail level logic
         const amt = parseFloat(expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
@@ -843,18 +892,27 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         // Bottom-up: only leaf-node (item) rows, matching project-detail level logic
         if (e.rowType !== 'item') return false;
         if (projectFilters && !projectFilters.has(e.projectName || "")) return false;
-        const pd = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+        const pd = (e as any).adminDateOverride || e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
         return pd >= weekStart && pd < weekEnd;
       })
       .map(e => {
-        const effectiveDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+        const originalDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+        const effectiveDate = (e as any).adminDateOverride || originalDate;
+        // adaptCostToExpense adds 900000 to normalizedCostLines IDs; reverse that offset
+        const realId = e.id >= 900000 ? e.id - 900000 : e.id;
         return {
+          expenseId: realId,
           projectName: e.projectName,
           expenseCategory: e.expenseCategory,
           expenseLineItem: e.expenseLineItem,
           expenseInvoiceNumber: e.expenseInvoiceNumber,
           expensePaymentDate: effectiveDate,
+          originalDate,
+          hasAdminOverride: !!(e as any).adminDateOverride,
+          adminDateOverride: (e as any).adminDateOverride || null,
+          adminDateOverrideReason: (e as any).adminDateOverrideReason || null,
+          adminDateOverrideAt: (e as any).adminDateOverrideAt || null,
           expenseActualTotal: parseFloat(e.expenseActualTotal || (e as any).budgetTotal || '0') || 0,
         };
       });
@@ -875,11 +933,19 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           const pay = new Date(inf.paymentReceivedDate);
           daysToReceipt = Math.round((pay.getTime() - inv.getTime()) / (1000 * 60 * 60 * 24));
         }
+        // adaptRevenueToInflow adds 900000 to normalizedRevenueLines IDs; reverse that offset
+        const realInflowId = inf.id >= 900000 ? inf.id - 900000 : inf.id;
         return {
+          inflowId: realInflowId,
           projectName: inf.projectName,
           milestoneName: inf.milestoneName,
           milestoneInvoiceNumber: inf.milestoneInvoiceNumber,
           paymentReceivedDate: inf.effectiveDate,
+          originalDate: inf.adminDateOverride ? (inf.paymentReceivedDate || inf.plannedPaymentDate || null) : null,
+          hasAdminOverride: !!inf.adminDateOverride,
+          adminDateOverride: inf.adminDateOverride || null,
+          adminDateOverrideReason: inf.adminDateOverrideReason || null,
+          adminDateOverrideAt: inf.adminDateOverrideAt || null,
           milestoneAmount: inf.milestoneAmount ? parseFloat(inf.milestoneAmount) : 0,
           invoiceRaisedDate: inf.invoiceRaisedDate,
           daysToReceipt,
@@ -891,6 +957,247 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
   } catch (error) {
     console.error("Cashflow 2026 detail error:", error);
     res.status(500).json({ error: "Failed to fetch cashflow detail", message: "Failed to fetch cashflow detail" });
+  }
+});
+
+// ==================== ADMIN DATE OVERRIDE ENDPOINTS ====================
+
+router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+  try {
+    const { expenseId, dateOverride, reason } = req.body;
+    if (!expenseId) {
+      return res.status(400).json({ error: "expenseId is required" });
+    }
+    if (dateOverride && !/^\d{4}-\d{2}-\d{2}$/.test(dateOverride)) {
+      return res.status(400).json({ error: "dateOverride must be YYYY-MM-DD format or null" });
+    }
+
+    const userId = (req as any).user?.id;
+    const now = new Date();
+
+    const overrideFields = {
+      adminDateOverride: dateOverride || null,
+      adminDateOverrideReason: reason || null,
+      adminDateOverrideBy: userId || null,
+      adminDateOverrideAt: dateOverride ? now : null,
+    };
+
+    // Try normalizedCostLines first (IDs from the detail endpoint come from this table)
+    const updated = await db.update(normalizedCostLines)
+      .set(overrideFields)
+      .where(eq(normalizedCostLines.id, expenseId))
+      .returning();
+
+    let row: any;
+    if (updated.length > 0) {
+      row = updated[0];
+      // Also sync override to programExpense if a matching legacy row exists
+      if (row.projectName && row.sourceRow != null) {
+        await db.update(programExpense)
+          .set({
+            adminDateOverride: dateOverride || null,
+            adminDateOverrideReason: reason || null,
+            adminDateOverrideBy: userId || null,
+            adminDateOverrideAt: dateOverride ? now : null,
+          })
+          .where(and(
+            eq(programExpense.projectName, row.projectName),
+            eq(programExpense.rowNumber, row.sourceRow),
+            isNull(programExpense.effectiveTo),
+          ));
+      }
+    } else {
+      // Fallback: try updating programExpense directly (legacy rows not in normalizedCostLines)
+      const peUpdated = await db.update(programExpense)
+        .set({
+          adminDateOverride: dateOverride || null,
+          adminDateOverrideReason: reason || null,
+          adminDateOverrideBy: userId || null,
+          adminDateOverrideAt: dateOverride ? now : null,
+        })
+        .where(and(eq(programExpense.id, expenseId), isNull(programExpense.effectiveTo)))
+        .returning();
+      if (peUpdated.length === 0) {
+        return res.status(404).json({ error: "Expense line not found" });
+      }
+      row = peUpdated[0];
+    }
+
+    // Insert/update manualEditFlags for smart import conflict detection
+    if (dateOverride) {
+      const existingFlag = await db.select().from(manualEditFlags)
+        .where(and(
+          eq(manualEditFlags.entityType, "program_expense"),
+          eq(manualEditFlags.entityId, String(expenseId)),
+          eq(manualEditFlags.fieldName, "adminDateOverride"),
+        ));
+      if (existingFlag.length === 0) {
+        await db.insert(manualEditFlags).values({
+          entityType: "program_expense",
+          entityId: String(expenseId),
+          fieldName: "adminDateOverride",
+          editedByUserId: userId,
+          editedAt: now,
+          isProtected: true,
+          protectedAt: now,
+          protectedByUserId: userId,
+        });
+      } else {
+        await db.update(manualEditFlags)
+          .set({ editedByUserId: userId, editedAt: now, isProtected: true, protectedAt: now, protectedByUserId: userId })
+          .where(eq(manualEditFlags.id, existingFlag[0].id));
+      }
+    } else {
+      await db.delete(manualEditFlags)
+        .where(and(
+          eq(manualEditFlags.entityType, "program_expense"),
+          eq(manualEditFlags.entityId, String(expenseId)),
+          eq(manualEditFlags.fieldName, "adminDateOverride"),
+        ));
+    }
+
+    // Audit trail
+    try {
+      await recordManualEdit({
+        actorUserId: userId,
+        actorRole: (req as any).user?.role,
+        entityType: "expense_admin_date_override",
+        entityId: `${row.projectName}|expense${expenseId}`,
+        projectName: row.projectName,
+        action: dateOverride ? "EXPENSE_DATE_OVERRIDDEN" : "EXPENSE_DATE_OVERRIDE_CLEARED",
+        summary: dateOverride
+          ? `Admin overrode expense ${expenseId} date to ${dateOverride}${reason ? ` (${reason})` : ''}`
+          : `Admin cleared expense ${expenseId} date override`,
+        oldRecord: {},
+        newRecord: { expenseId, dateOverride, reason },
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Expense admin date override audit failed:", auditErr.message);
+    }
+
+    res.json({ success: true, updated: row });
+  } catch (error) {
+    console.error("Expense date override error:", error);
+    res.status(500).json({ error: "Failed to save expense date override" });
+  }
+});
+
+router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermission("cashflow", "edit"), async (req, res) => {
+  try {
+    const { inflowId, dateOverride, reason } = req.body;
+    if (!inflowId) {
+      return res.status(400).json({ error: "inflowId is required" });
+    }
+    if (dateOverride && !/^\d{4}-\d{2}-\d{2}$/.test(dateOverride)) {
+      return res.status(400).json({ error: "dateOverride must be YYYY-MM-DD format or null" });
+    }
+
+    const userId = (req as any).user?.id;
+    const now = new Date();
+
+    const overrideFields = {
+      adminDateOverride: dateOverride || null,
+      adminDateOverrideReason: reason || null,
+      adminDateOverrideBy: userId || null,
+      adminDateOverrideAt: dateOverride ? now : null,
+    };
+
+    // Try normalizedRevenueLines first (IDs from the detail endpoint come from this table)
+    const updated = await db.update(normalizedRevenueLines)
+      .set(overrideFields)
+      .where(eq(normalizedRevenueLines.id, inflowId))
+      .returning();
+
+    let row: any;
+    if (updated.length > 0) {
+      row = updated[0];
+      // Also sync override to programInflows if a matching legacy row exists
+      if (row.projectName && row.sourceRow != null) {
+        await db.update(programInflows)
+          .set({
+            adminDateOverride: dateOverride || null,
+            adminDateOverrideReason: reason || null,
+            adminDateOverrideBy: userId || null,
+            adminDateOverrideAt: dateOverride ? now : null,
+          })
+          .where(and(
+            eq(programInflows.projectName, row.projectName),
+            eq(programInflows.rowNumber, row.sourceRow),
+          ));
+      }
+    } else {
+      // Fallback: try updating programInflows directly (legacy rows not in normalizedRevenueLines)
+      const piUpdated = await db.update(programInflows)
+        .set({
+          adminDateOverride: dateOverride || null,
+          adminDateOverrideReason: reason || null,
+          adminDateOverrideBy: userId || null,
+          adminDateOverrideAt: dateOverride ? now : null,
+        })
+        .where(eq(programInflows.id, inflowId))
+        .returning();
+      if (piUpdated.length === 0) {
+        return res.status(404).json({ error: "Inflow line not found" });
+      }
+      row = piUpdated[0];
+    }
+
+    // Insert/update manualEditFlags for smart import conflict detection
+    if (dateOverride) {
+      const existingFlag = await db.select().from(manualEditFlags)
+        .where(and(
+          eq(manualEditFlags.entityType, "program_inflows"),
+          eq(manualEditFlags.entityId, String(inflowId)),
+          eq(manualEditFlags.fieldName, "adminDateOverride"),
+        ));
+      if (existingFlag.length === 0) {
+        await db.insert(manualEditFlags).values({
+          entityType: "program_inflows",
+          entityId: String(inflowId),
+          fieldName: "adminDateOverride",
+          editedByUserId: userId,
+          editedAt: now,
+          isProtected: true,
+          protectedAt: now,
+          protectedByUserId: userId,
+        });
+      } else {
+        await db.update(manualEditFlags)
+          .set({ editedByUserId: userId, editedAt: now, isProtected: true, protectedAt: now, protectedByUserId: userId })
+          .where(eq(manualEditFlags.id, existingFlag[0].id));
+      }
+    } else {
+      await db.delete(manualEditFlags)
+        .where(and(
+          eq(manualEditFlags.entityType, "program_inflows"),
+          eq(manualEditFlags.entityId, String(inflowId)),
+          eq(manualEditFlags.fieldName, "adminDateOverride"),
+        ));
+    }
+
+    // Audit trail
+    try {
+      await recordManualEdit({
+        actorUserId: userId,
+        actorRole: (req as any).user?.role,
+        entityType: "inflow_admin_date_override",
+        entityId: `${row.projectName}|inflow${inflowId}`,
+        projectName: row.projectName,
+        action: dateOverride ? "INFLOW_DATE_OVERRIDDEN" : "INFLOW_DATE_OVERRIDE_CLEARED",
+        summary: dateOverride
+          ? `Admin overrode inflow ${inflowId} date to ${dateOverride}${reason ? ` (${reason})` : ''}`
+          : `Admin cleared inflow ${inflowId} date override`,
+        oldRecord: {},
+        newRecord: { inflowId, dateOverride, reason },
+      });
+    } catch (auditErr: any) {
+      console.warn("[audit] Inflow admin date override audit failed:", auditErr.message);
+    }
+
+    res.json({ success: true, updated: row });
+  } catch (error) {
+    console.error("Inflow date override error:", error);
+    res.status(500).json({ error: "Failed to save inflow date override" });
   }
 });
 
@@ -1184,6 +1491,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     const cosByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
     const realisedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
+    const committedByMonth = new Map<string, { total: number; projects: Map<string, number> }>();
 
     const nowDate = new Date();
     const currentMonthKey = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
@@ -1193,9 +1501,15 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const dateSource = (exp.expenseInvoicedDate
+        || (exp as any).approvedDate
+        || (exp as any).forecastPaymentDate
+        || (exp as any).computedForecastPaymentDate
+        || exp.expensePaymentDate
+        || (exp as any).startDate
+        || null) as string | null;
+      if (!dateSource) continue;
+      const dateMatch = String(dateSource).match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
@@ -1208,7 +1522,9 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       cosBucket.total += amount;
       cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
 
-      const isRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      const cosStatus = classifyCosStatusFull(exp);
+      const isRealised = cosStatus === 'COS Realised' && monthKey <= currentMonthKey;
+      const isCommitted = cosStatus === 'Committed';
 
       if (isRealised) {
         if (!realisedByMonth.has(monthKey)) {
@@ -1218,6 +1534,15 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         realBucket.total += amount;
         realBucket.projects.set(pName, (realBucket.projects.get(pName) || 0) + amount);
       }
+
+      if (isCommitted) {
+        if (!committedByMonth.has(monthKey)) {
+          committedByMonth.set(monthKey, { total: 0, projects: new Map() });
+        }
+        const commitBucket = committedByMonth.get(monthKey)!;
+        commitBucket.total += amount;
+        commitBucket.projects.set(pName, (commitBucket.projects.get(pName) || 0) + amount);
+      }
     }
 
     // Uses shared static COS budget from financeUtils.ts (single source of truth)
@@ -1226,7 +1551,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
 
-    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdRevRealised = 0;
+    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0, ytdRevRealised = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1240,6 +1565,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
       const realisedBucket = realisedByMonth.get(monthKey);
       const realisedCOS = realisedBucket?.total ?? 0;
+      const committedBucket = committedByMonth.get(monthKey);
+      const committedCOS = committedBucket?.total ?? 0;
       const unrealisedCOS = totalCOS - realisedCOS;
 
       const manual = manualMap.get(monthKey);
@@ -1251,6 +1578,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const revRealised = revByMonth.get(monthKey) ?? 0;
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
+      ytdCommitted += committedCOS;
       ytdBudget += budget;
       ytdRevRealised += revRealised;
       const ytdUnrealised = ytdCOS - ytdRealised;
@@ -1262,6 +1590,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
         totalCOS,
         realisedCOS,
+        committedCOS,
         unrealisedCOS,
         budget,
         variance,
@@ -1269,6 +1598,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         revRealised,
         ytdCOS,
         ytdRealised,
+        ytdCommitted,
         ytdUnrealised,
         ytdBudget,
         ytdVariance,
@@ -1276,6 +1606,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         ytdRevRealised,
         cosProjects: mapToSortedArray(bucket?.projects ?? new Map()),
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
+        committedProjects: mapToSortedArray(committedBucket?.projects ?? new Map()),
         unrealisedProjects: (() => {
           const cosPs = bucket?.projects ?? new Map<string, number>();
           const realPs = realisedBucket?.projects ?? new Map<string, number>();
@@ -1303,6 +1634,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
     const cosByMonth = new Map<string, number>();
     const realisedByMonth = new Map<string, number>();
+    const committedByMonth = new Map<string, number>();
     const itemsByMonth = new Map<string, any[]>();
 
     const nowDate = new Date();
@@ -1313,17 +1645,28 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const dateSource = (exp.expenseInvoicedDate
+        || (exp as any).approvedDate
+        || (exp as any).forecastPaymentDate
+        || (exp as any).computedForecastPaymentDate
+        || exp.expensePaymentDate
+        || (exp as any).startDate
+        || null) as string | null;
+      if (!dateSource) continue;
+      const dateMatch = String(dateSource).match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
 
-      const isRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      const cosStatus = classifyCosStatusFull(exp);
+      const isRealised = cosStatus === 'COS Realised' && monthKey <= currentMonthKey;
+      const isCommitted = cosStatus === 'Committed';
       if (isRealised) {
         realisedByMonth.set(monthKey, (realisedByMonth.get(monthKey) || 0) + amount);
+      }
+      if (isCommitted) {
+        committedByMonth.set(monthKey, (committedByMonth.get(monthKey) || 0) + amount);
       }
 
       if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
@@ -1337,7 +1680,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
         invoiceDate: exp.expenseInvoicedDate || null,
         supplier: exp.supplierName || null,
         isRealised,
-        cosStatus: isRealised ? 'Realised' : (exp.expenseInvoiceNumber ? 'Invoiced' : (exp.expensePoNumber ? 'Committed' : 'Planned')),
+        cosStatus: isRealised ? 'Realised' : (isCommitted ? 'Committed' : 'Planned'),
         paymentDate: exp.expensePaymentDate || null,
       });
     }
@@ -1347,8 +1690,12 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       if (exp.rowType !== 'item') continue;
       const budgetAmt = exp.budgetTotal ? parseFloat(exp.budgetTotal as string) : 0;
       if (isNaN(budgetAmt) || budgetAmt === 0) continue;
-      const invDate = exp.expenseInvoicedDate as string | null;
-      const startDate = invDate || (exp as any).startDate || null;
+      const startDate = (exp.expenseInvoicedDate
+        || (exp as any).forecastPaymentDate
+        || (exp as any).computedForecastPaymentDate
+        || exp.expensePaymentDate
+        || (exp as any).startDate
+        || null) as string | null;
       if (!startDate) continue;
       const dateMatch = String(startDate).match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
@@ -1358,7 +1705,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
     const months: any[] = [];
     const startMonth = new Date(Date.UTC(2025, 8, 1));
-    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0;
+    let ytdCOS = 0, ytdBudget = 0, ytdRealised = 0, ytdCommitted = 0;
 
     for (let i = 0; i < 12; i++) {
       const monthDate = new Date(startMonth);
@@ -1369,6 +1716,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
       const totalCOS = cosByMonth.get(monthKey) ?? 0;
       const realisedCOS = realisedByMonth.get(monthKey) ?? 0;
+      const committedCOS = committedByMonth.get(monthKey) ?? 0;
       const unrealisedCOS = totalCOS - realisedCOS;
       const budget = budgetByMonth.get(monthKey) ?? 0;
       const variance = totalCOS - budget;
@@ -1376,6 +1724,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
+      ytdCommitted += committedCOS;
       ytdBudget += budget;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
@@ -1388,12 +1737,14 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
         monthLabel: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
         totalCOS,
         realisedCOS,
+        committedCOS,
         unrealisedCOS,
         budget,
         variance,
         variancePct,
         ytdCOS,
         ytdRealised,
+        ytdCommitted,
         ytdUnrealised,
         ytdBudget,
         ytdVariance,
@@ -1441,6 +1792,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       isRealised: boolean;
       realisedMonth: string | null;
       cosState: string;
+      paymentStatus: string;
     }
 
     const items: LineItem[] = [];
@@ -1454,28 +1806,36 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const payDate = exp.expensePaymentDate as string | null;
       const forecastDate = exp.forecastPaymentDate as string | null;
 
+      const approvedDate = (exp as any).approvedDate as string | null;
+
       let itemMonthKey: string | null = null;
-      if (invDate) {
-        const dm = invDate.match(/^(\d{4})-(\d{2})/);
-        if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
-      } else if (forecastDate) {
-        const dm = forecastDate.match(/^(\d{4})-(\d{2})/);
+      const dateForMonth = invDate || approvedDate || forecastDate || payDate || null;
+      if (dateForMonth) {
+        const dm = String(dateForMonth).match(/^(\d{4})-(\d{2})/);
         if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
       }
 
       const nowD = new Date();
       const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
-      const isRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
-      const isConfirmedPayment = isCashflowConfirmed(exp) && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
+      const fullCosStatus = classifyCosStatusFull(exp);
+      const isRealised = fullCosStatus === 'COS Realised' && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
+      const isCommitted = fullCosStatus === 'Committed';
 
-      let cosState = 'Planned';
-      if (isConfirmedPayment) {
-        cosState = 'Paid';
-      } else if (isRealised) {
-        cosState = 'Invoiced';
-      } else if (exp.expensePoNumber) {
-        cosState = 'Committed';
+      // COS state derived from classifyCosStatusFull
+      const cosState = isRealised ? 'COS Realised' : fullCosStatus;
+
+      // Cashflow payment status (4-state model)
+      const hasInv = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
+      const hasPayD = !!(payDate && String(payDate).trim());
+      const payDBlack = hasPayD && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor);
+      let paymentStatus = 'Planned';
+      if (payDBlack && hasInv) {
+        paymentStatus = 'Out of Bank';
+      } else if (payDBlack && !hasInv) {
+        paymentStatus = 'Risk';
+      } else if (hasPayD && !payDBlack && hasInv) {
+        paymentStatus = 'Outstanding';
       }
 
       if (itemMonthKey !== monthKey) continue;
@@ -1492,6 +1852,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
       if (project && pName !== project) continue;
       if (stateFilter === 'realised' && !isRealised) continue;
+      if (stateFilter === 'committed' && !isCommitted) continue;
       if (stateFilter === 'unrealised' && isRealised) continue;
 
       items.push({
@@ -1505,17 +1866,22 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
         invoiceDate: invDate,
         invoiceDateConfirmed: isRealised,
         paymentDate: payDate,
-        paymentDateConfirmed: isConfirmedPayment,
+        paymentDateConfirmed: !!(payDate && String(payDate).trim()) && isDateConfirmed(exp.paymentDateConfirmed, exp.paymentDateFontColor),
         supplier: exp.supplierName || null,
         isRealised,
         realisedMonth,
         cosState,
+        paymentStatus,
+        hasOverride: !!(exp as any)._cosOverrideStatus,
+        overrideStatus: (exp as any)._cosOverrideStatus || null,
+        overrideReason: (exp as any)._cosOverrideReason || null,
       });
     }
 
     items.sort((a, b) => b.amount - a.amount);
 
     const realisedTotal = items.filter(i => i.isRealised).reduce((s, i) => s + i.amount, 0);
+    const committedTotal = items.filter(i => i.cosState === 'Committed').reduce((s, i) => s + i.amount, 0);
     const unrealisedTotal = items.filter(i => !i.isRealised).reduce((s, i) => s + i.amount, 0);
 
     res.json({
@@ -1523,8 +1889,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       lineCount: items.length,
       totalAmount: items.reduce((s, i) => s + i.amount, 0),
       realisedTotal,
+      committedTotal,
       unrealisedTotal,
       realisedCount: items.filter(i => i.isRealised).length,
+      committedCount: items.filter(i => i.cosState === 'Committed').length,
       unrealisedCount: items.filter(i => !i.isRealised).length,
       items,
     });
@@ -1574,6 +1942,68 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
   } catch (error) {
     console.error("Toggle realised error:", error);
     res.status(500).json({ error: "Failed to toggle realised status" });
+  }
+});
+
+// ==================== ADMIN COS STATUS OVERRIDE ====================
+
+router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(String(req.params.id || ""), 10);
+    if (isNaN(id)) return res.status(400).json({ error: "Invalid expense id" });
+
+    const { cosStatus, invoiceDate, invoiceDateConfirmed: invoiceDateConfirmedOverride, reason, expectedUpdatedAt } = req.body as {
+      cosStatus: string | null;
+      invoiceDate?: string;
+      invoiceDateConfirmed?: boolean;
+      reason: string;
+      expectedUpdatedAt?: string;
+    };
+
+    // Validate cosStatus
+    const validStatuses = ['Planned', 'Committed', 'COS Realised', null];
+    if (!validStatuses.includes(cosStatus)) {
+      return res.status(400).json({ error: "cosStatus must be 'Planned', 'Committed', 'COS Realised', or null (to clear override)" });
+    }
+
+    if (cosStatus !== null && (!reason || !reason.trim())) {
+      return res.status(400).json({ error: "A reason is required when setting an override" });
+    }
+
+    const allExpenses = await storage.getAllProgramExpenses();
+    const expense = allExpenses.find(e => e.id === id);
+    if (!expense) return res.status(404).json({ error: "Expense not found" });
+
+    const fields: Record<string, any> = {
+      cosStatusOverride: cosStatus,
+      cosStatusOverrideBy: cosStatus !== null ? req.user?.id ?? null : null,
+      cosStatusOverrideAt: cosStatus !== null ? new Date() : null,
+      cosStatusOverrideReason: cosStatus !== null ? reason : null,
+    };
+
+    // Optional date override
+    if (invoiceDate !== undefined) {
+      fields.expenseInvoicedDate = invoiceDate;
+    }
+    if (invoiceDateConfirmedOverride !== undefined) {
+      fields.invoiceDateConfirmed = invoiceDateConfirmedOverride;
+    }
+
+    const updated = await storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to update expense fields" });
+    }
+
+    const newState = classifyExpenseState(updated as any);
+    await storage.updateProgramExpenseFields(id, { computedState: newState });
+
+    res.json({ success: true, id, cosStatus, overrideCleared: cosStatus === null });
+
+    if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
+  } catch (error: any) {
+    if (error.status === 409) return res.status(409).json({ error: error.message });
+    console.error("COS status override error:", error);
+    res.status(500).json({ error: "Failed to override COS status" });
   }
 });
 
@@ -1870,12 +2300,21 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
       .map(([name, data]) => ({ projectName: name, ...data }))
       .sort((a, b) => b.gp - a.gp);
 
-    const totalRevenue = Array.from(revByProject.values()).reduce((s, v) => s + v, 0);
-    const totalCOS = Array.from(cosByProject.values()).reduce((s, v) => s + v, 0);
+    // Sum totals from FY-filtered monthly data (not all-time project totals)
+    const totalRevenue = months.reduce((s: number, m: any) => s + m.totalRevenue, 0);
+    const totalCOS = months.reduce((s: number, m: any) => s + m.totalCOS, 0);
     const totalGP = totalRevenue - totalCOS;
     const overallGpPct = totalRevenue !== 0 ? (totalGP / totalRevenue) * 100 : 0;
 
-    res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct });
+    // Find the current month's YTD values (not full-year cumulative)
+    const currentMonth = months.find((m: any) => m.monthKey === currentMonthKey);
+    const lastDataMonth = currentMonth || months[months.length - 1];
+    const finalYtdGP = lastDataMonth?.ytdGP ?? 0;
+    const finalYtdBudget = lastDataMonth?.ytdBudget ?? 0;
+    const finalYtdVariance = lastDataMonth?.ytdVariance ?? 0;
+    const finalYtdGpPct = lastDataMonth?.ytdGpPct ?? 0;
+
+    res.json({ months, projects, totalRevenue, totalCOS, totalGP, overallGpPct, ytdGP: finalYtdGP, ytdBudget: finalYtdBudget, ytdVariance: finalYtdVariance, ytdGpPct: finalYtdGpPct });
   } catch (error) {
     console.error("Portfolio GP tracker error:", error);
     res.status(500).json({ error: "Failed to fetch GP tracker data" });
@@ -2491,7 +2930,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
         }
 
         for (const exp of projExpenses) {
-          const d = exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate || exp.expenseInvoicedDate || null;
+          const d = exp.adminDateOverride || exp.expensePaymentDate || exp.computedForecastPaymentDate || exp.forecastPaymentDate || exp.expenseInvoicedDate || null;
           if (!d || !/^\d{4}-\d{2}-\d{2}/.test(d)) continue;
           const amt = parseFloat(exp.expenseActualTotal || exp.budgetTotal || '0');
           if (amt === 0) continue;
@@ -2770,7 +3209,12 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
           const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
           const hasInvoice = !!(r.milestoneInvoiceNumber && String(r.milestoneInvoiceNumber).trim());
           const hasPaymentReceived = !!(r.paymentReceivedDate && String(r.paymentReceivedDate).trim() && r.paymentReceivedDate !== '-');
-          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+          const confirmedByColor = typeof (r as any).paymentReceivedDateFontColor === "string"
+            ? (r as any).paymentReceivedDateFontColor.toLowerCase() === "black"
+            : false;
+          const confirmedByFlag = (r as any).paymentReceivedDateConfirmed === true;
+          const paymentConfirmed = confirmedByFlag || confirmedByColor;
+          const isInBank = manualInBank || (hasPaymentReceived && hasInvoice && paymentConfirmed);
           const paidDateConfirmed = isInBank;
           const paidDateFontColor = isInBank ? 'black' : 'red';
           const paidDate = isInBank ? (r.paymentReceivedDate || r.plannedPaymentDate || null) : null;
@@ -2895,7 +3339,12 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
       const hasInvoice = !!(r.milestoneInvoiceNumber && r.milestoneInvoiceNumber.trim());
       const manualInBank = r.inBank === 1 || r.inBank === '1' || r.inBank === true;
       const hasPaymentReceived = !!(r.paymentReceivedDate && r.paymentReceivedDate.trim() && r.paymentReceivedDate !== '-');
-      const inBank = manualInBank || (hasPaymentReceived && hasInvoice);
+      const confirmedByColor = typeof r.paymentReceivedDateFontColor === "string"
+        ? r.paymentReceivedDateFontColor.toLowerCase() === "black"
+        : false;
+      const confirmedByFlag = r.paymentReceivedDateConfirmed === true;
+      const paymentConfirmed = confirmedByFlag || confirmedByColor;
+      const inBank = manualInBank || (hasPaymentReceived && hasInvoice && paymentConfirmed);
 
       const date = r.paymentReceivedDate || r.plannedPaymentDate || null;
       const isConfirmed = inBank && hasInvoice;
@@ -2907,12 +3356,13 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
 
       if (inBank && hasInvoice) {
         status = 'inBank';
-      } else if (hasPaymentReceived && hasInvoice) {
-        status = 'received';
-        flags.push('Payment received, pending bank confirmation');
       } else if (hasInvoice) {
         status = 'invoiced';
-        flags.push('Invoice raised, payment outstanding');
+        if (hasPaymentReceived && !paymentConfirmed) {
+          flags.push('Payment date present but not confirmed — treated as outstanding');
+        } else {
+          flags.push('Invoice raised, payment outstanding');
+        }
       } else if (!hasInvoice && isPast) {
         status = 'overdue';
         flags.push('Payment date has passed without invoice');
@@ -3096,11 +3546,12 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
       for (const row of expenseRows) {
         if ((row as any).rowType === 'item') {
           costedExpenditure += parseFloat(String((row as any).budgetTotal || 0)) || 0;
-          const actualAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
-          allExpenditure += actualAmt;
+          const lineAmt = parseFloat(String((row as any).quotedTotal || (row as any).expenseActualTotal || 0)) || 0;
+          const confirmedAmt = parseFloat(String((row as any).expenseActualTotal || 0)) || 0;
+          allExpenditure += confirmedAmt;
           const state = (row as any).computedState || classifyExpenseState(row as any);
-          if (state === 'Paid' && actualAmt > 0) {
-            actualExpenditure += actualAmt;
+          if (state === 'Paid' && lineAmt > 0) {
+            actualExpenditure += lineAmt;
           }
         }
       }
@@ -3959,8 +4410,10 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
       let paymentStatus: string;
       if (paymentDateBlack && hasInvoice) {
         paymentStatus = 'Out of Bank';
-      } else if (hasPayDate && !paymentDateBlack) {
-        paymentStatus = 'Payment Planned';
+      } else if (paymentDateBlack && !hasInvoice) {
+        paymentStatus = 'Risk';
+      } else if (hasPayDate && !paymentDateBlack && hasInvoice) {
+        paymentStatus = 'Outstanding';
       } else {
         paymentStatus = 'Planned';
       }

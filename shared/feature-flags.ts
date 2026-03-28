@@ -23,6 +23,18 @@ export const FEATURE_FLAG_KEYS = [
   "promoted_quality_read",
   "task_management_hub",
   "standup_system",
+
+  // A10: Non-core features gated for progressive disclosure
+  "nav_customizer",
+  "onboarding_tour",
+  "micro_walkthrough",
+  "gamification",
+  "leaderboard_nav",
+  "department_scores_nav",
+  "action_launchpad",
+  "phone_templates",
+  "training_page",
+  "feedback_page",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -70,31 +82,31 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "promoted_core_clients_read",
     label: "Promoted core clients read",
     description: "Controls additive read-only adoption of clients from core.clients with comparison support.",
-    defaultValue: true,
+    defaultValue: false,
   },
   {
     key: "promoted_core_projects_read",
     label: "Promoted core projects read",
     description: "Controls additive read-only adoption of project master reads from core.projects with comparison support.",
-    defaultValue: true,
+    defaultValue: false,
   },
   {
     key: "promoted_core_portfolios_read",
     label: "Promoted core portfolios read",
     description: "Controls additive read-only adoption of portfolio summary reads from core.portfolios with comparison support.",
-    defaultValue: true,
+    defaultValue: false,
   },
   {
     key: "promoted_core_portfolio_assignments_read",
     label: "Promoted core portfolio assignments read",
     description: "Controls additive read-only adoption of project-portfolio assignment reads from core.project_portfolio_assignments.",
-    defaultValue: true,
+    defaultValue: false,
   },
   {
     key: "promoted_core_project_detail_read",
     label: "Promoted core project detail read",
     description: "Controls additive promoted-read expansion for project identity/client/phase/rag master sections with legacy fallback.",
-    defaultValue: true,
+    defaultValue: false,
   },
   {
     key: "promoted_core_work_item_summary_read",
@@ -106,13 +118,13 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "promoted_core_clients_dual_write",
     label: "Promoted core clients dual-write",
     description: "Controls optional mirrored writes from public.clients into core.clients while keeping legacy as primary.",
-    defaultValue: true,
+    defaultValue: false,
   },
   {
     key: "promoted_core_project_master_dual_write",
     label: "Promoted core project master dual-write",
     description: "Controls optional mirrored writes from public.project_info master metadata into core.projects while keeping legacy as primary.",
-    defaultValue: true,
+    defaultValue: false,
   },
   {
     key: "imports_source_update_governance_preview",
@@ -174,6 +186,68 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     label: "Standup system",
     description: "Controls the bi-daily standup system with async submissions, team views, and analytics.",
     defaultValue: true,
+  },
+
+  // A10: Non-core helper features — gated to reduce default UI clutter
+  {
+    key: "nav_customizer",
+    label: "Navigation customizer",
+    description: "Controls the nav order customizer in user menu. De-emphasized until nav is stable.",
+    defaultValue: false,
+  },
+  {
+    key: "onboarding_tour",
+    label: "Onboarding tour",
+    description: "Controls the nav onboarding tour overlay. De-emphasized until nav is stable.",
+    defaultValue: false,
+  },
+  {
+    key: "micro_walkthrough",
+    label: "Micro walkthroughs",
+    description: "Controls contextual micro-walkthrough guidance overlays.",
+    defaultValue: false,
+  },
+  {
+    key: "gamification",
+    label: "Gamification",
+    description: "Controls gamification features and routes.",
+    defaultValue: false,
+  },
+  {
+    key: "leaderboard_nav",
+    label: "Leaderboard in nav",
+    description: "Controls leaderboard visibility in main navigation. Available via Reports > Team.",
+    defaultValue: false,
+  },
+  {
+    key: "department_scores_nav",
+    label: "Department scores in nav",
+    description: "Controls department scores visibility in main navigation. Available via Reports > Team.",
+    defaultValue: false,
+  },
+  {
+    key: "action_launchpad",
+    label: "Action launchpad",
+    description: "Controls the standalone action launchpad page. Content available via normal navigation.",
+    defaultValue: false,
+  },
+  {
+    key: "phone_templates",
+    label: "Phone templates",
+    description: "Controls phone templates page visibility. Available via Admin when enabled.",
+    defaultValue: false,
+  },
+  {
+    key: "training_page",
+    label: "Training page",
+    description: "Controls training page in main navigation. Available via user menu.",
+    defaultValue: false,
+  },
+  {
+    key: "feedback_page",
+    label: "Feedback page",
+    description: "Controls feedback page in main navigation. Available via user menu.",
+    defaultValue: false,
   },
 ];
 

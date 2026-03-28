@@ -1,3 +1,4 @@
+// TODO: remove @ts-nocheck
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
@@ -5,6 +6,7 @@ import { eq, and, desc, asc, sql, inArray, isNull, lt, gt, or, ne } from "drizzl
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import {
   taskComments, taskActivityLog, taskWatchers, taskDeliverables,
   deliverables, deliverableVersions, deliverableFiles, deliverableEvents,
@@ -29,6 +31,7 @@ import { listEngineeringWorkItems, getEngineeringWorkItemById, createEngineering
 import { generateWorkItemReconciliationReport } from "./lib/reconciliation/work-item-reconciliation";
 import { assertTaskWorkflowTransition, buildTaskWorkflowContext, TaskWorkflowGuardError } from "./lib/task-workflow-guard";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 
@@ -37,9 +40,10 @@ if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recur
 const approvalUpload = multer({
   storage: multer.diskStorage({
     destination: approvalUploadsDir,
-    filename: (_req, file, cb) => cb(null, `${Date.now()}-${path.basename(file.originalname).replace(/[^a-zA-Z0-9._-]/g, '_')}`),
+    filename: (_req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`),
   }),
   limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: allowedFileFilter,
 });
 
 type AppUser = { id: number; email: string; name: string; role: string; };
@@ -2145,9 +2149,9 @@ export function registerEngineeringRoutes(app: Express) {
     }
   });
 
-  // ========== ENGINEERING STANDUP DASHBOARD ==========
+  // ========== ENGINEERING OVERVIEW DASHBOARD ==========
 
-  app.get("/api/eng/dashboard/standup", requireAuth, async (req, res) => {
+  app.get("/api/eng/dashboard/overview", requireAuth, async (req, res) => {
     try {
       const role = getUserRole(req);
       const managerRoles = ["eng_program_manager", "CEO_ADMIN", "COO_ADMIN", "CCO", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"];
@@ -2432,12 +2436,6 @@ export function registerEngineeringRoutes(app: Express) {
 
   // ========== ADMIN AUDIT LOG (global activity across all tasks) ==========
 
-  function requireAdmin(req: Request, res: Response, next: NextFunction) {
-    const role = getUserRole(req);
-    if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-    sendError(res, forbidden("Admin access required"));
-  }
-
   app.get("/api/eng/unified-audit", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { category, search, limit: qLimit, offset: qOffset } = req.query;
@@ -2581,7 +2579,7 @@ export function registerEngineeringRoutes(app: Express) {
         const dataSql = sql`SELECT * FROM (${sql.raw(unionQuery)}) unified WHERE lower(summary) LIKE ${searchFilter} OR lower(detail) LIKE ${searchFilter} OR lower(actor_name) LIKE ${searchFilter} OR lower(project_name) LIKE ${searchFilter} ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`;
         dataResult = await db.execute(dataSql);
       } else {
-        countResult = await db.execute(sql.raw(`SELECT category, count(*)::int AS cnt FROM (${unionQuery}) unified GROUP BY category`));
+        countResult = await db.execute(sql`SELECT category, count(*)::int AS cnt FROM (${sql.raw(unionQuery)}) unified GROUP BY category`);
         dataResult = await db.execute(sql`SELECT * FROM (${sql.raw(unionQuery)}) unified ORDER BY timestamp DESC NULLS LAST LIMIT ${pageLimit} OFFSET ${pageOffset}`);
       }
 
@@ -3013,6 +3011,34 @@ export function registerEngineeringRoutes(app: Express) {
         }
       }
 
+      // D4: Evaluate stage gate in "warn" mode — log result but don't block
+      let gateEvaluation: any = null;
+      try {
+        const { evaluateStageGate } = await import("./services/lifecycle-stage-gate-service");
+        gateEvaluation = await evaluateStageGate({
+          projectId,
+          targetStage: toPhase,
+          actorUserId: user.id,
+          actorRole: user.role,
+        });
+        // B8: Create gate approval when there are missing items
+        if (gateEvaluation && !gateEvaluation.allowed && gateEvaluation.missingItems?.length > 0) {
+          try {
+            const { createGateApproval } = await import("./services/approval-service");
+            await createGateApproval({
+              projectId,
+              gateName: gateEvaluation.gateName,
+              requestedByUserId: user.id,
+              approverUserId: user.id,
+            });
+          } catch (approvalErr: any) {
+            console.warn("[Phase] Gate approval creation failed (non-blocking):", approvalErr.message);
+          }
+        }
+      } catch (gateErr: any) {
+        console.warn("[Phase] Stage gate evaluation error (non-blocking):", gateErr.message);
+      }
+
       const [updated] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       res.json({
         project: updated,
@@ -3020,6 +3046,11 @@ export function registerEngineeringRoutes(app: Express) {
         tasksCreated,
         templateApplied,
         templateResult,
+        gateEvaluation: gateEvaluation ? {
+          allowed: gateEvaluation.allowed,
+          gateName: gateEvaluation.gateName,
+          missingItems: gateEvaluation.missingItems,
+        } : null,
       });
     } catch (err: any) {
       console.error("[Phase] Error:", err.message);
