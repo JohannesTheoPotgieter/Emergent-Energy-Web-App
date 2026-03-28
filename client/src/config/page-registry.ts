@@ -131,6 +131,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // New module pages (Phase C)
   { id: "constructionDashboard", path: "/construction", label: "Construction", iconKey: "HardHat", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ConstructionDashboardPage" },
   { id: "procurementDashboard", path: "/procurement", label: "Procurement", iconKey: "Package", navGroup: "FINANCE", permissionEntity: "subcontractors", showInSidebar: true, routeComponentKey: "ProcurementDashboardPage" },
+  // EPC Workflow Phase 1
+  { id: "poApprovalBoard", path: "/po-approval-board", label: "PO Approvals", iconKey: "FileText", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "POApprovalBoardPage" },
+  { id: "paymentRequestBoard", path: "/payment-request-board", label: "Payment Requests", iconKey: "CreditCard", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "PaymentRequestBoardPage" },
+  { id: "paymentBatchManager", path: "/payment-batch-manager", label: "Payment Batches", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "PaymentBatchManagerPage" },
   { id: "hseDashboard", path: "/hse", label: "Health, Safety & Environment", iconKey: "ShieldAlert", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "HseDashboardPage" },
   { id: "handoverDashboard", path: "/handover", label: "Handover & Closeout", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverDashboardPage" },
   // Admin integration pages (Phase D)

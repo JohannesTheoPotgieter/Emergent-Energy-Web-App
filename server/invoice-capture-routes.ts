@@ -66,6 +66,18 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
 
       const documentPath = req.file ? req.file.path : null;
 
+      // Validate linked PO exists and is approved
+      if (linkedPoId) {
+        const poCheck = await db.execute(sql.raw(`SELECT id, status FROM purchase_orders WHERE id = ${parseInt(linkedPoId)}`));
+        const poRows = rowsFromResult(poCheck);
+        if (poRows.length === 0) {
+          return res.status(400).json({ error: "Linked purchase order not found" });
+        }
+        if (poRows[0].status !== "approved") {
+          return res.status(400).json({ error: `Linked PO must be approved. Current status: ${poRows[0].status}` });
+        }
+      }
+
       const result = await db.insert(invoiceCaptures).values({
         projectId: parseInt(projectId),
         supplierId: supplierId ? parseInt(supplierId) : null,

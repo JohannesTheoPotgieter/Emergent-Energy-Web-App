@@ -813,7 +813,7 @@ export const invoiceCaptures = pgTable("invoice_captures", {
   invoiceDate: date("invoice_date"),
   amount: real("amount"),
   vatAmount: real("vat_amount"),
-  linkedPoId: integer("linked_po_id"),
+  linkedPoId: integer("linked_po_id"),  // FK added via migration to purchase_orders
   linkedProcurementItemId: integer("linked_procurement_item_id").references(() => procurementItems.id, { onDelete: "set null" }),
   status: invoiceCaptureStatusEnum("status").notNull().default('captured'),
   capturedByUserId: integer("captured_by_user_id").references(() => users.id),
@@ -821,6 +821,10 @@ export const invoiceCaptures = pgTable("invoice_captures", {
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  // EPC workflow additions
+  qbSyncStatus: text("qb_sync_status").default("not_synced"),
+  documentDriveId: text("document_drive_id"),
+  documentItemId: text("document_item_id"),
 });
 export const insertInvoiceCaptureSchema = createInsertSchema(invoiceCaptures).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertInvoiceCapture = z.infer<typeof insertInvoiceCaptureSchema>;
@@ -1010,3 +1014,163 @@ export const budgetBaselines = pgTable("budget_baselines", {
 export const insertBudgetBaselineSchema = createInsertSchema(budgetBaselines).omit({ id: true, createdAt: true } as any);
 export type InsertBudgetBaseline = z.infer<typeof insertBudgetBaselineSchema>;
 export type BudgetBaseline = typeof budgetBaselines.$inferSelect;
+
+// ===================== EPC WORKFLOW: ENUMS =====================
+
+export const poStatusEnum = pgEnum('po_status', ['draft', 'submitted', 'in_review', 'requires_info', 'blocked', 'approved', 'cancelled']);
+export const paymentRequestStatusEnum = pgEnum('payment_request_status', ['new', 'in_review', 'loaded_for_payment', 'proof_attached', 'complete', 'requires_info', 'blocked']);
+export const paymentBatchStatusEnum = pgEnum('payment_batch_status', ['preparing', 'submitted', 'approved', 'released', 'confirmed']);
+export const poReviewDecisionEnum = pgEnum('po_review_decision', ['pending', 'approved', 'requires_info', 'blocked']);
+
+// ===================== EPC WORKFLOW: PURCHASE ORDERS (Drizzle def wrapping existing table) =====================
+
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: serial("id").primaryKey(),
+  poRef: text("po_ref").notNull().unique(),
+  poNumber: integer("po_number").notNull(),
+  projectName: text("project_name").notNull(),
+  projectId: integer("project_id").references(() => projectInfo.id),
+  supplierName: text("supplier_name").notNull(),
+  supplierVat: text("supplier_vat"),
+  supplierAddress: text("supplier_address"),
+  supplierContact: text("supplier_contact"),
+  lineItems: jsonb("line_items").notNull().default([]),
+  subtotal: decimal("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
+  vatAmount: decimal("vat_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  total: decimal("total", { precision: 15, scale: 2 }).notNull().default("0"),
+  paymentTerms: text("payment_terms"),
+  deliveryDate: text("delivery_date"),
+  deliveryAddress: text("delivery_address"),
+  siteContact: text("site_contact"),
+  comments: text("comments"),
+  projectManager: text("project_manager"),
+  status: text("status").notNull().default("draft"),
+  createdBy: integer("created_by").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  sentAt: timestamp("sent_at"),
+  pdfData: text("pdf_data"),  // BYTEA in DB, handled as Buffer in routes
+  // Workflow columns (added by epc_workflow_phase1 migration)
+  counterpartyId: integer("counterparty_id").references(() => counterparties.id),
+  approvalId: integer("approval_id"),
+  evidenceEvaluationId: integer("evidence_evaluation_id"),
+  submittedByUserId: integer("submitted_by_user_id").references(() => users.id),
+  submittedAt: timestamp("submitted_at"),
+  approvedAt: timestamp("approved_at"),
+}, (table) => ({
+  projectIdx: index("idx_po_project").on(table.projectName),
+  statusIdx: index("idx_po_status").on(table.status),
+}));
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
+// ===================== EPC WORKFLOW: PO REVIEW ASSIGNMENTS =====================
+
+export const poReviewAssignments = pgTable("po_review_assignments", {
+  id: serial("id").primaryKey(),
+  purchaseOrderId: integer("purchase_order_id").notNull().references(() => purchaseOrders.id, { onDelete: "cascade" }),
+  reviewerUserId: integer("reviewer_user_id").notNull().references(() => users.id),
+  reviewerRole: text("reviewer_role").notNull(),
+  decision: poReviewDecisionEnum("decision").notNull().default("pending"),
+  decidedAt: timestamp("decided_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  poIdx: index("idx_po_review_po_id").on(table.purchaseOrderId),
+  reviewerIdx: index("idx_po_review_reviewer").on(table.reviewerUserId),
+}));
+export const insertPoReviewAssignmentSchema = createInsertSchema(poReviewAssignments).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertPoReviewAssignment = z.infer<typeof insertPoReviewAssignmentSchema>;
+export type PoReviewAssignment = typeof poReviewAssignments.$inferSelect;
+
+// ===================== EPC WORKFLOW: PAYMENT REQUESTS =====================
+
+export const paymentRequests = pgTable("payment_requests", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  purchaseOrderId: integer("purchase_order_id").references(() => purchaseOrders.id),
+  invoiceCaptureId: integer("invoice_capture_id").references(() => invoiceCaptures.id),
+  counterpartyId: integer("counterparty_id").references(() => counterparties.id),
+  procurementItemId: integer("procurement_item_id").references(() => procurementItems.id),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  dueDate: date("due_date"),
+  status: paymentRequestStatusEnum("status").notNull().default("new"),
+  submittedByUserId: integer("submitted_by_user_id").notNull().references(() => users.id),
+  cutoffDate: date("cutoff_date"),
+  evidenceEvaluationId: integer("evidence_evaluation_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("idx_payment_req_project").on(table.projectId),
+  statusIdx: index("idx_payment_req_status").on(table.status),
+  cutoffIdx: index("idx_payment_req_cutoff").on(table.cutoffDate),
+}));
+export const insertPaymentRequestSchema = createInsertSchema(paymentRequests).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertPaymentRequest = z.infer<typeof insertPaymentRequestSchema>;
+export type PaymentRequest = typeof paymentRequests.$inferSelect;
+
+// ===================== EPC WORKFLOW: PAYMENT BATCHES =====================
+
+export const paymentBatches = pgTable("payment_batches", {
+  id: serial("id").primaryKey(),
+  batchNumber: text("batch_number").notNull().unique(),
+  cutoffDate: date("cutoff_date").notNull(),
+  totalAmount: decimal("total_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  itemCount: integer("item_count").notNull().default(0),
+  status: paymentBatchStatusEnum("status").notNull().default("preparing"),
+  preparedByUserId: integer("prepared_by_user_id").notNull().references(() => users.id),
+  approvedByUserId: integer("approved_by_user_id").references(() => users.id),
+  releasedByUserId: integer("released_by_user_id").references(() => users.id),
+  approvalId: integer("approval_id"),
+  approvedAt: timestamp("approved_at"),
+  releasedAt: timestamp("released_at"),
+  confirmedAt: timestamp("confirmed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  statusIdx: index("idx_payment_batch_status").on(table.status),
+  cutoffIdx: index("idx_payment_batch_cutoff").on(table.cutoffDate),
+}));
+export const insertPaymentBatchSchema = createInsertSchema(paymentBatches).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertPaymentBatch = z.infer<typeof insertPaymentBatchSchema>;
+export type PaymentBatch = typeof paymentBatches.$inferSelect;
+
+// ===================== EPC WORKFLOW: PAYMENT BATCH ITEMS =====================
+
+export const paymentBatchItems = pgTable("payment_batch_items", {
+  id: serial("id").primaryKey(),
+  paymentBatchId: integer("payment_batch_id").notNull().references(() => paymentBatches.id, { onDelete: "cascade" }),
+  paymentRequestId: integer("payment_request_id").notNull().references(() => paymentRequests.id),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  batchIdx: index("idx_batch_item_batch").on(table.paymentBatchId),
+  requestIdx: index("idx_batch_item_request").on(table.paymentRequestId),
+}));
+export type PaymentBatchItem = typeof paymentBatchItems.$inferSelect;
+
+// ===================== EPC WORKFLOW: PROOF OF PAYMENT =====================
+
+export const proofOfPayment = pgTable("proof_of_payment", {
+  id: serial("id").primaryKey(),
+  paymentRequestId: integer("payment_request_id").references(() => paymentRequests.id),
+  paymentBatchId: integer("payment_batch_id").references(() => paymentBatches.id),
+  bankReference: text("bank_reference"),
+  documentDriveId: text("document_drive_id"),
+  documentItemId: text("document_item_id"),
+  documentUrl: text("document_url"),
+  uploadedByUserId: integer("uploaded_by_user_id").notNull().references(() => users.id),
+  confirmedAt: timestamp("confirmed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  requestIdx: index("idx_pop_request").on(table.paymentRequestId),
+  batchIdx: index("idx_pop_batch").on(table.paymentBatchId),
+}));
+export const insertProofOfPaymentSchema = createInsertSchema(proofOfPayment).omit({ id: true, createdAt: true } as any);
+export type InsertProofOfPayment = z.infer<typeof insertProofOfPaymentSchema>;
+export type ProofOfPayment = typeof proofOfPayment.$inferSelect;

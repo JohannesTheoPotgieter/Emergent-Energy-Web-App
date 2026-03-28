@@ -15,4 +15,11 @@ export async function registerProjectRoutes(app: Express) {
   registerPdRoutes(app);
   const { registerProjectEventsRoutes } = await import("../project-events-routes");
   registerProjectEventsRoutes(app);
+  // EPC Workflow Phase 1
+  const { registerPaymentRequestRoutes } = await import("../payment-request-routes");
+  registerPaymentRequestRoutes(app);
+  const { registerPaymentBatchRoutes } = await import("../payment-batch-routes");
+  registerPaymentBatchRoutes(app);
+  const { registerProofOfPaymentRoutes } = await import("../proof-of-payment-routes");
+  registerProofOfPaymentRoutes(app);
 }
