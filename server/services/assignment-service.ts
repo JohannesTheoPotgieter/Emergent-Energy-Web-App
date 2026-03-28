@@ -42,6 +42,9 @@ export const ASSIGNMENT_ENTITY_TYPES = [
   "raid_item",
   "commissioning_item",
   "change_request",
+  "purchase_order",
+  "payment_request",
+  "payment_batch",
 ] as const;
 
 export type AssignmentEntityType = typeof ASSIGNMENT_ENTITY_TYPES[number];

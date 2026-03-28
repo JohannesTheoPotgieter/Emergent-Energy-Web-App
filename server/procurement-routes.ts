@@ -194,6 +194,15 @@ export function registerProcurementRoutes(app: Express): void {
         if (req.body[f] !== undefined) updates[f] = req.body[f];
       }
 
+      // Validate poId references a real purchase_orders record (FK enforced by migration)
+      if (req.body.poId !== undefined && req.body.poId !== null) {
+        const poCheck = await db.execute(sql`SELECT id, status FROM purchase_orders WHERE id = ${parseInt(req.body.poId)}`);
+        const poRows = rowsFromResult(poCheck);
+        if (poRows.length === 0) {
+          return res.status(400).json({ error: "Linked purchase order not found" });
+        }
+      }
+
       if (req.body.status !== undefined && req.body.status !== old.status) {
         const allowed = VALID_TRANSITIONS[old.status] || [];
         if (!allowed.includes(req.body.status)) {
