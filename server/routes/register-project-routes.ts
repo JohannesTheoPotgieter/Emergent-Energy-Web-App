@@ -22,4 +22,7 @@ export async function registerProjectRoutes(app: Express) {
   registerPaymentBatchRoutes(app);
   const { registerProofOfPaymentRoutes } = await import("../proof-of-payment-routes");
   registerProofOfPaymentRoutes(app);
+  // Financial Review Gate
+  const { registerFinancialReviewRoutes } = await import("../financial-review-routes");
+  registerFinancialReviewRoutes(app);
 }
