@@ -1149,6 +1149,17 @@ export const projectPdPmHandover = pgTable("project_pd_pm_handover", {
   dependencySummary: text("dependency_summary"),
   handoverReadinessStatus: text("handover_readiness_status"),
   handoverReadinessNotes: text("handover_readiness_notes"),
+  // V2 enhanced handover fields
+  handoverFormData: jsonb("handover_form_data").default({}),
+  readinessChecklist: jsonb("readiness_checklist").default({}),
+  readinessScore: integer("readiness_score").default(0),
+  pdSignOffAt: timestamp("pd_sign_off_at"),
+  pdSignOffBy: text("pd_sign_off_by"),
+  pmSignOffAt: timestamp("pm_sign_off_at"),
+  pmSignOffBy: text("pm_sign_off_by"),
+  kickoffDate: date("kickoff_date"),
+  lessonsReviewed: boolean("lessons_reviewed").default(false),
+  version: integer("version").default(1),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

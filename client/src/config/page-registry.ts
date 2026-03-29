@@ -137,6 +137,9 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "paymentBatchManager", path: "/payment-batch-manager", label: "Payment Batches", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "PaymentBatchManagerPage" },
   { id: "hseDashboard", path: "/hse", label: "Health, Safety & Environment", iconKey: "ShieldAlert", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "HseDashboardPage" },
   { id: "handoverDashboard", path: "/handover", label: "Handover & Closeout", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverDashboardPage" },
+  // PD-PM Handover V2 extensions
+  { id: "lessonsLearnt", path: "/admin/lessons", label: "Lessons Learnt", iconKey: "BookOpen", navGroup: "SYSTEM", permissionEntity: "handover", showInSidebar: false, routeComponentKey: "LessonsLearntPage" },
+  { id: "handoverHealth", path: "/admin/handover-health", label: "Handover Health Score", iconKey: "Handshake", navGroup: "SYSTEM", permissionEntity: "handover", showInSidebar: false, routeComponentKey: "HandoverControlPage" },
   // Admin integration pages (Phase D)
   { id: "adminWorkflowConfig", path: "/admin/workflow-config", label: "Workflow Configuration", iconKey: "Workflow", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminWorkflowConfigPage" },
   { id: "adminBackfill", path: "/admin/data-migration-status", label: "Data Migration Status", iconKey: "Database", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminBackfillPage" },

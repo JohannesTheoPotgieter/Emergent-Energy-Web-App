@@ -71,4 +71,7 @@ export async function runStartupSeeds(options: {
 
   const { seedEeInfoUpdates } = await import("../seed-ee-info-updates");
   await seedEeInfoUpdates().catch((err) => log(`[EE-Info-Update] Seed error: ${err}`, "Startup"));
+
+  const { seedLessonsLearnt } = await import("../seed-lessons-learnt");
+  await seedLessonsLearnt().catch((err) => log(`[Lessons-Learnt] Seed error: ${err}`, "Startup"));
 }
