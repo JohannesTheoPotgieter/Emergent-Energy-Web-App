@@ -13,6 +13,8 @@ import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, CheckCircle2, ClipboardList, Handshake, Loader2, ShieldAlert, Workflow } from "lucide-react";
+import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
+import PdPmHandoverV2 from "./pd-pm-handover-v2";
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Draft",
@@ -73,6 +75,24 @@ function actionLabel(action: string) {
 export default function PdPmHandoverPage() {
   const [, params] = useRoute("/pd/handover/:projectId");
   const projectId = Number(params?.projectId);
+
+  // Feature flag: when pd_pm_handover_v2 is ON, render the new tabbed form
+  const { data: rolloutFlags } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: fetchRolloutFeatureFlags,
+    staleTime: 60_000,
+  });
+  const v2Enabled = rolloutFlags?.find((f) => f.key === "pd_pm_handover_v2")?.value === true;
+
+  if (v2Enabled && Number.isFinite(projectId)) {
+    return <PdPmHandoverV2 projectId={projectId} />;
+  }
+
+  // ===== V1 (existing form) below =====
+  return <PdPmHandoverV1 projectId={projectId} />;
+}
+
+function PdPmHandoverV1({ projectId }: { projectId: number }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();

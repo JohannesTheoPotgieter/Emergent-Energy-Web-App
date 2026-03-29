@@ -113,6 +113,7 @@ const PaymentRequestBoardPage = lazy(() => import("@/pages/payment-request-board
 const PaymentBatchManagerPage = lazy(() => import("@/pages/payment-batch-manager"));
 const HseDashboardPage = lazy(() => import("@/pages/hse-dashboard"));
 const HandoverDashboardPage = lazy(() => import("@/pages/handover-dashboard"));
+const LessonsLearntPage = lazy(() => import("@/pages/lessons-learnt"));
 const SitesPage = lazy(() => import("@/pages/sites"));
 const OpportunitiesPage = lazy(() => import("@/pages/opportunities"));
 const AdminPipedrivePage = lazy(() => import("@/pages/admin-pipedrive"));
@@ -222,6 +223,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PaymentBatchManagerPage,
   HseDashboardPage,
   HandoverDashboardPage,
+  LessonsLearntPage,
   SitesPage,
   OpportunitiesPage,
   AdminPipedrivePage,

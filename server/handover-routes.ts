@@ -2,8 +2,8 @@
 // @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, desc, sql, and, inArray } from "drizzle-orm";
-import { projectInfo, projectPhaseHistory, users, projectExecutionState, projectPdPmHandover, projectHandoverHistory, clients, evidenceOverrideRecords } from "@shared/schema";
+import { eq, desc, sql, and, inArray, isNull, ilike } from "drizzle-orm";
+import { projectInfo, projectPhaseHistory, users, projectExecutionState, projectPdPmHandover, projectHandoverHistory, clients, evidenceOverrideRecords, lessonsLearnt, handoverStakeholders } from "@shared/schema";
 import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { logAuditFromReq } from "./audit-logger";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
@@ -399,7 +399,7 @@ export function registerHandoverRoutes(app: Express) {
         })
         .from(projectPdPmHandover)
         .innerJoin(projectInfo, eq(projectInfo.id, projectPdPmHandover.projectId))
-        .where(inArray(projectPdPmHandover.status, ["SUBMITTED_FOR_PM_REVIEW", "REJECTED"]))
+        .where(inArray(projectPdPmHandover.status, ["SUBMITTED_FOR_PM_REVIEW", "REJECTED", "HANDOVER_COMPLETE"]))
         .orderBy(desc(projectPdPmHandover.updatedAt));
       res.json({ items: rows });
     } catch (err: any) {
@@ -426,6 +426,12 @@ export function registerHandoverRoutes(app: Express) {
           updated_at: sql<Date>`COALESCE(${projectPdPmHandover.updatedAt}, ${projectInfo.updatedAt})`,
           rejection_reason: projectPdPmHandover.rejectionReason,
           deliverables: projectPdPmHandover.deliverables,
+          readiness_score: projectPdPmHandover.readinessScore,
+          handover_form_data: projectPdPmHandover.handoverFormData,
+          kickoff_date: projectPdPmHandover.kickoffDate,
+          lessons_reviewed: projectPdPmHandover.lessonsReviewed,
+          pd_sign_off_at: projectPdPmHandover.pdSignOffAt,
+          pm_sign_off_at: projectPdPmHandover.pmSignOffAt,
         })
         .from(projectInfo)
         .leftJoin(clients, eq(clients.id, projectInfo.clientId))
@@ -567,7 +573,7 @@ export function registerHandoverRoutes(app: Express) {
 
       const existing = await db.select({ id: projectPdPmHandover.id }).from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
 
-      const handoverValues = {
+      const handoverValues: Record<string, any> = {
         pdOwner: body.pdOwner || null,
         pmOwner: body.pmOwner || null,
         summary: body.summary || null,
@@ -586,6 +592,18 @@ export function registerHandoverRoutes(app: Express) {
         handoverStatusText: "Draft",
         updatedAt: new Date(),
       };
+
+      // V2 enhanced fields
+      if (body.handoverFormData !== undefined) handoverValues.handoverFormData = body.handoverFormData;
+      if (body.readinessChecklist !== undefined) {
+        handoverValues.readinessChecklist = body.readinessChecklist;
+        const items = body.readinessChecklist || {};
+        const total = Object.keys(items).length;
+        const checked = Object.values(items).filter(Boolean).length;
+        handoverValues.readinessScore = total > 0 ? Math.round((checked / total) * 100) : 0;
+      }
+      if (body.kickoffDate !== undefined) handoverValues.kickoffDate = body.kickoffDate || null;
+      if (body.lessonsReviewed !== undefined) handoverValues.lessonsReviewed = body.lessonsReviewed === true;
 
       if (existing.length > 0) {
         await db.update(projectPdPmHandover).set(handoverValues).where(eq(projectPdPmHandover.projectId, projectId));
@@ -962,6 +980,328 @@ export function registerHandoverRoutes(app: Express) {
     } catch (err: any) {
       console.error("[handover] add evidence error:", err);
       res.status(500).json({ error: "Could not add handover evidence" });
+    }
+  });
+
+  // ===================== PD SIGN-OFF =====================
+
+  app.post("/api/pd-pm-handover/:projectId/pd-sign-off", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const user = (req as any).user as any;
+      const PD_ROLES = ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+      if (!PD_ROLES.includes(user?.role)) {
+        return res.status(403).json({ error: "PD sign-off requires Project Developer role." });
+      }
+      const handoverRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      const handover = handoverRows[0];
+      if (!handover || handover.status !== "ACCEPTED") {
+        return res.status(400).json({ error: "PD sign-off requires handover in ACCEPTED status." });
+      }
+      await db.update(projectPdPmHandover).set({
+        pdSignOffAt: new Date(),
+        pdSignOffBy: user?.name || "Unknown",
+        updatedAt: new Date(),
+      }).where(eq(projectPdPmHandover.projectId, projectId));
+      await insertPdPmHandoverHistory({ projectId, req, action: "PD_PM_HANDOVER_PD_SIGN_OFF", details: { signedBy: user?.name } });
+      logAuditFromReq(req, { entityType: "pd_pm_handover", entityId: String(projectId), action: "pd_sign_off", changesJson: { signedBy: user?.name } });
+
+      // Check if PM has also signed — if so, complete handover
+      const [updated] = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      if (updated?.pmSignOffAt) {
+        await completeHandover(projectId, req);
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[handover] PD sign-off error:", err);
+      res.status(500).json({ error: "Could not record PD sign-off." });
+    }
+  });
+
+  // ===================== PM SIGN-OFF =====================
+
+  app.post("/api/pd-pm-handover/:projectId/pm-sign-off", requireAuth, requirePermission("handover", "approve"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const user = (req as any).user as any;
+      if (!PM_REVIEW_ROLES.includes(user?.role)) {
+        return res.status(403).json({ error: "PM sign-off requires PM role." });
+      }
+      const handoverRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      const handover = handoverRows[0];
+      if (!handover || handover.status !== "ACCEPTED") {
+        return res.status(400).json({ error: "PM sign-off requires handover in ACCEPTED status." });
+      }
+      await db.update(projectPdPmHandover).set({
+        pmSignOffAt: new Date(),
+        pmSignOffBy: user?.name || "Unknown",
+        updatedAt: new Date(),
+      }).where(eq(projectPdPmHandover.projectId, projectId));
+      await insertPdPmHandoverHistory({ projectId, req, action: "PD_PM_HANDOVER_PM_SIGN_OFF", details: { signedBy: user?.name } });
+      logAuditFromReq(req, { entityType: "pd_pm_handover", entityId: String(projectId), action: "pm_sign_off", changesJson: { signedBy: user?.name } });
+
+      // Check if PD has also signed — if so, complete handover
+      const [updated] = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      if (updated?.pdSignOffAt) {
+        await completeHandover(projectId, req);
+      }
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[handover] PM sign-off error:", err);
+      res.status(500).json({ error: "Could not record PM sign-off." });
+    }
+  });
+
+  async function completeHandover(projectId: number, req: Request) {
+    await db.update(projectPdPmHandover).set({
+      status: "HANDOVER_COMPLETE",
+      handoverStatusText: "Handover Complete",
+      updatedAt: new Date(),
+    }).where(eq(projectPdPmHandover.projectId, projectId));
+
+    const completeFields = { executionEnabled: true, executionGateStatus: "ENABLED", updatedAt: new Date() };
+    await db.update(projectInfo).set(completeFields).where(eq(projectInfo.id, projectId));
+    await syncProjectSplitTables(projectId, completeFields);
+
+    await insertPdPmHandoverHistory({ projectId, req, action: "PD_PM_HANDOVER_COMPLETE", details: {} });
+    const [project] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
+    logAuditFromReq(req, { entityType: "pd_pm_handover", entityId: String(projectId), action: "handover_complete", projectName: project?.projectName, changesJson: {} });
+  }
+
+  // ===================== LESSONS LEARNT =====================
+
+  app.get("/api/lessons-learnt", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const projectType = String(req.query.projectType || "").trim();
+      const search = String(req.query.search || "").trim();
+      const limitNum = Math.min(Number(req.query.limit) || 50, 200);
+
+      let query = db.select().from(lessonsLearnt).where(isNull(lessonsLearnt.deletedAt));
+
+      const conditions: any[] = [isNull(lessonsLearnt.deletedAt)];
+      if (projectType) {
+        conditions.push(eq(lessonsLearnt.projectType, projectType));
+      }
+      if (search) {
+        conditions.push(sql`(${lessonsLearnt.title} ILIKE ${'%' + search + '%'} OR ${lessonsLearnt.description} ILIKE ${'%' + search + '%'})`);
+      }
+
+      const rows = await db.select().from(lessonsLearnt)
+        .where(and(...conditions))
+        .orderBy(desc(lessonsLearnt.createdAt))
+        .limit(limitNum);
+
+      res.json({ items: rows });
+    } catch (err: any) {
+      console.error("[handover] GET lessons-learnt error:", err);
+      res.status(500).json({ error: "Could not load lessons learnt." });
+    }
+  });
+
+  app.post("/api/lessons-learnt", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = (req as any).user as any;
+      const body = req.body || {};
+      if (!body.title || !body.description) {
+        return res.status(400).json({ error: "Title and description are required." });
+      }
+      const [row] = await db.insert(lessonsLearnt).values({
+        title: body.title,
+        description: body.description,
+        tags: body.tags || [],
+        projectType: body.projectType || null,
+        technologyTags: body.technologyTags || [],
+        addedByUserId: user?.id || null,
+        addedByName: user?.name || "Unknown",
+      }).returning();
+      res.status(201).json(row);
+    } catch (err: any) {
+      console.error("[handover] POST lessons-learnt error:", err);
+      res.status(500).json({ error: "Could not create lesson." });
+    }
+  });
+
+  app.patch("/api/lessons-learnt/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const body = req.body || {};
+      const updates: Record<string, any> = { updatedAt: new Date() };
+      if (body.title !== undefined) updates.title = body.title;
+      if (body.description !== undefined) updates.description = body.description;
+      if (body.tags !== undefined) updates.tags = body.tags;
+      if (body.projectType !== undefined) updates.projectType = body.projectType;
+      if (body.technologyTags !== undefined) updates.technologyTags = body.technologyTags;
+      const [row] = await db.update(lessonsLearnt).set(updates).where(eq(lessonsLearnt.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "Lesson not found" });
+      res.json(row);
+    } catch (err: any) {
+      console.error("[handover] PATCH lessons-learnt error:", err);
+      res.status(500).json({ error: "Could not update lesson." });
+    }
+  });
+
+  app.delete("/api/lessons-learnt/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const [row] = await db.update(lessonsLearnt).set({ deletedAt: new Date() }).where(eq(lessonsLearnt.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "Lesson not found" });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[handover] DELETE lessons-learnt error:", err);
+      res.status(500).json({ error: "Could not delete lesson." });
+    }
+  });
+
+  // ===================== HANDOVER STAKEHOLDERS =====================
+
+  app.get("/api/pd-pm-handover/:projectId/stakeholders", requireAuth, requirePermission("handover", "view"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const handoverRows = await db.select({ id: projectPdPmHandover.id }).from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      if (!handoverRows[0]) return res.json({ items: [] });
+      const rows = await db.select().from(handoverStakeholders).where(eq(handoverStakeholders.handoverId, handoverRows[0].id)).orderBy(handoverStakeholders.createdAt);
+      res.json({ items: rows });
+    } catch (err: any) {
+      console.error("[handover] GET stakeholders error:", err);
+      res.status(500).json({ error: "Could not load stakeholders." });
+    }
+  });
+
+  app.post("/api/pd-pm-handover/:projectId/stakeholders", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const handoverRows = await db.select({ id: projectPdPmHandover.id }).from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      if (!handoverRows[0]) return res.status(404).json({ error: "Handover not found. Save a draft first." });
+      const body = req.body || {};
+      if (!body.name || !body.role) return res.status(400).json({ error: "Name and role are required." });
+      const [row] = await db.insert(handoverStakeholders).values({
+        handoverId: handoverRows[0].id,
+        name: body.name,
+        role: body.role,
+        company: body.company || null,
+        phone: body.phone || null,
+        email: body.email || null,
+        notes: body.notes || null,
+        counterpartyId: body.counterpartyId || null,
+      }).returning();
+      res.status(201).json(row);
+    } catch (err: any) {
+      console.error("[handover] POST stakeholders error:", err);
+      res.status(500).json({ error: "Could not add stakeholder." });
+    }
+  });
+
+  app.patch("/api/pd-pm-handover/:projectId/stakeholders/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid stakeholder ID" });
+      const body = req.body || {};
+      const updates: Record<string, any> = {};
+      if (body.name !== undefined) updates.name = body.name;
+      if (body.role !== undefined) updates.role = body.role;
+      if (body.company !== undefined) updates.company = body.company;
+      if (body.phone !== undefined) updates.phone = body.phone;
+      if (body.email !== undefined) updates.email = body.email;
+      if (body.notes !== undefined) updates.notes = body.notes;
+      if (body.counterpartyId !== undefined) updates.counterpartyId = body.counterpartyId;
+      const [row] = await db.update(handoverStakeholders).set(updates).where(eq(handoverStakeholders.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "Stakeholder not found" });
+      res.json(row);
+    } catch (err: any) {
+      console.error("[handover] PATCH stakeholders error:", err);
+      res.status(500).json({ error: "Could not update stakeholder." });
+    }
+  });
+
+  app.delete("/api/pd-pm-handover/:projectId/stakeholders/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid stakeholder ID" });
+      const deleted = await db.delete(handoverStakeholders).where(eq(handoverStakeholders.id, id)).returning();
+      if (deleted.length === 0) return res.status(404).json({ error: "Stakeholder not found" });
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[handover] DELETE stakeholders error:", err);
+      res.status(500).json({ error: "Could not delete stakeholder." });
+    }
+  });
+
+  // ===================== HANDOVER COMPLETE PROJECTS (for PM dashboard) =====================
+
+  app.get("/api/pd-pm-handover/completed", requireAuth, requirePermission("handover", "view"), async (_req: Request, res: Response) => {
+    try {
+      const rows = await db
+        .select({
+          project_id: projectPdPmHandover.projectId,
+          status: projectPdPmHandover.status,
+          kickoff_date: projectPdPmHandover.kickoffDate,
+          pd_sign_off_at: projectPdPmHandover.pdSignOffAt,
+          pm_sign_off_at: projectPdPmHandover.pmSignOffAt,
+          updated_at: projectPdPmHandover.updatedAt,
+          project_name: projectInfo.projectName,
+          client_name: sql<string>`COALESCE(${clients.name}, '')`,
+          size_kwp: projectInfo.sizeKwp,
+          pd: projectInfo.pd,
+          pm: projectInfo.pm,
+        })
+        .from(projectPdPmHandover)
+        .innerJoin(projectInfo, eq(projectInfo.id, projectPdPmHandover.projectId))
+        .leftJoin(clients, eq(clients.id, projectInfo.clientId))
+        .where(eq(projectPdPmHandover.status, "HANDOVER_COMPLETE"))
+        .orderBy(desc(projectPdPmHandover.updatedAt));
+      res.json({ items: rows });
+    } catch (err: any) {
+      console.error("[handover] GET completed error:", err);
+      res.status(500).json({ error: "Could not load completed handovers." });
+    }
+  });
+
+  // ===================== ADMIN OVERRIDE (version handover after sign-off) =====================
+
+  app.put("/api/pd-pm-handover/:projectId/admin-override", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId, 10);
+      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const handoverRows = await db.select().from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
+      const handover = handoverRows[0];
+      if (!handover || handover.status !== "HANDOVER_COMPLETE") {
+        return res.status(400).json({ error: "Admin override only applies to completed handovers." });
+      }
+      const user = (req as any).user as any;
+
+      // Archive current state
+      await insertPdPmHandoverHistory({
+        projectId,
+        req,
+        action: "ADMIN_EDIT_OVERRIDE",
+        details: {
+          previousVersion: handover.version,
+          archivedFormData: handover.handoverFormData,
+          archivedBy: user?.name,
+        },
+      });
+
+      const body = req.body || {};
+      const updates: Record<string, any> = {
+        version: (handover.version || 1) + 1,
+        updatedAt: new Date(),
+      };
+      if (body.handoverFormData !== undefined) updates.handoverFormData = body.handoverFormData;
+      if (body.readinessChecklist !== undefined) updates.readinessChecklist = body.readinessChecklist;
+      if (body.kickoffDate !== undefined) updates.kickoffDate = body.kickoffDate;
+
+      await db.update(projectPdPmHandover).set(updates).where(eq(projectPdPmHandover.projectId, projectId));
+      logAuditFromReq(req, { entityType: "pd_pm_handover", entityId: String(projectId), action: "admin_override", changesJson: { newVersion: updates.version, editedBy: user?.name } });
+      res.json({ success: true, version: updates.version });
+    } catch (err: any) {
+      console.error("[handover] admin-override error:", err);
+      res.status(500).json({ error: "Could not apply admin override." });
     }
   });
 

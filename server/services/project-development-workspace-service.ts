@@ -663,6 +663,15 @@ export function computePdPmSubmitBlockers(params: {
     missingItems.push("Complete linked intake tasks");
   }
 
+  // V2: readiness checklist gating
+  const readinessScore = Number(params.handover?.readinessScore ?? params.handover?.readiness_score ?? 0);
+  const readinessChecklist = params.handover?.readinessChecklist ?? params.handover?.readiness_checklist;
+  if (readinessChecklist && typeof readinessChecklist === "object" && Object.keys(readinessChecklist).length > 0) {
+    if (readinessScore < 100) {
+      missingItems.push("Complete readiness checklist first");
+    }
+  }
+
   return missingItems;
 }
 
