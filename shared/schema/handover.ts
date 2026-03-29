@@ -1,10 +1,11 @@
 // C4: Handover packs schema — client handover, PC, Matriarch, SSEG closeout
 
-import { pgTable, text, integer, boolean, timestamp, serial, date } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, serial, date, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { users } from "./users";
-import { projectInfo } from "./projects";
+import { projectInfo, projectPdPmHandover } from "./projects";
+import { counterparties } from "./finance";
 
 // ===================== HANDOVER PACKS =====================
 
@@ -70,3 +71,42 @@ export const ssegItems = pgTable("sseg_items", {
 export const insertSsegItemSchema = createInsertSchema(ssegItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertSsegItem = z.infer<typeof insertSsegItemSchema>;
 export type SsegItem = typeof ssegItems.$inferSelect;
+
+// ===================== LESSONS LEARNT =====================
+
+export const lessonsLearnt = pgTable("lessons_learnt", {
+  id: serial("id").primaryKey(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  tags: jsonb("tags").default([]),
+  projectType: text("project_type"),
+  technologyTags: jsonb("technology_tags").default([]),
+  addedByUserId: integer("added_by_user_id").references(() => users.id),
+  addedByName: text("added_by_name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const insertLessonsLearntSchema = createInsertSchema(lessonsLearnt).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export type InsertLessonsLearnt = z.infer<typeof insertLessonsLearntSchema>;
+export type LessonsLearnt = typeof lessonsLearnt.$inferSelect;
+
+// ===================== HANDOVER STAKEHOLDERS =====================
+
+export const handoverStakeholders = pgTable("handover_stakeholders", {
+  id: serial("id").primaryKey(),
+  handoverId: integer("handover_id").notNull().references(() => projectPdPmHandover.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  role: text("role").notNull(),
+  company: text("company"),
+  phone: text("phone"),
+  email: text("email"),
+  notes: text("notes"),
+  counterpartyId: integer("counterparty_id").references(() => counterparties.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertHandoverStakeholderSchema = createInsertSchema(handoverStakeholders).omit({ id: true, createdAt: true } as any);
+export type InsertHandoverStakeholder = z.infer<typeof insertHandoverStakeholderSchema>;
+export type HandoverStakeholder = typeof handoverStakeholders.$inferSelect;

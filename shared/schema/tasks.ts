@@ -135,7 +135,7 @@ export type TaskWatcher = typeof taskWatchers.$inferSelect;
 
 // ===================== WORK ITEMS =====================
 
-export const workItemWorkstreamEnum = pgEnum('work_item_workstream', ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE']);
+export const workItemWorkstreamEnum = pgEnum('work_item_workstream', ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE', 'HANDOVER']);
 export const workItemSourceEnum = pgEnum('work_item_source', ['SMART_IMPORT', 'UI', 'INTEGRATION', 'SYSTEM']);
 export const workItemAssignmentRoleEnum = pgEnum('work_item_assignment_role', ['OWNER', 'ASSIGNEE', 'REVIEWER', 'VIEWER']);
 export const workItemDepTypeEnum = pgEnum('work_item_dep_type', ['FS', 'SS', 'FF', 'SF']);
