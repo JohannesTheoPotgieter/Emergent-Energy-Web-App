@@ -267,8 +267,116 @@ Not all tracks are required on every project. Admin selects which apply at proje
 **Contributors:** Engineering, Quality, Finance
 **Approver:** PM (accepts or rejects)
 
+### PROJECT CHARTER TEMPLATE (structured in-app, based on existing Emergent charter format)
+
+The charter is the centrepiece of this stage. It must be filled by PD before the handover meeting and reviewed by PM during/after. The app should present this as a structured form with 6 sections, not a file upload. Prefill from existing project data where possible.
+
+**Section 1 — OVERVIEW:**
+- `charter_project_name` (prefill from project_info)
+- `charter_site_name` (prefill from sites table)
+- `charter_site_address`
+- `charter_gps_coordinates`
+- `charter_facility_type` (e.g., commercial rooftop, industrial, ground mount, carport)
+- `charter_utility_supplier` (Eskom, municipal, Transnet, other)
+- `charter_existing_infrastructure` (existing solar, generator, batteries, or all new)
+- `charter_roof_type` (prefill from sites — flat, pitched, ground mount, ballast, penetrated)
+- `charter_access_method` (stairs, ladder, crane, other)
+- `charter_special_site_notes` (e.g., bird proofing needed, heritage constraints, tenant restrictions)
+- `charter_structural_assessment_done` (boolean)
+- `charter_structural_assessment_notes`
+
+**Section 2 — STAKEHOLDERS:**
+
+*External (client):*
+- `charter_client_name` (prefill from clients table)
+- `charter_client_type` (new / existing / referral)
+- `charter_primary_contact_name` (prefill from clients)
+- `charter_primary_contact_email`
+- `charter_primary_contact_phone`
+- `charter_client_relationship_notes` (context about the relationship, opportunity significance)
+
+*Internal (Emergent team):*
+- `charter_pd_name` (prefill from project_info.pdUserId)
+- `charter_programme_manager` (prefill from projectExecutionState.programManagerUserId)
+- `charter_project_manager` (prefill from project_info.pmUserId)
+- `charter_procurement_manager`
+- `charter_om_manager`
+- `charter_asset_manager`
+- `charter_compliance_officer`
+- `charter_safety_officer`
+- `charter_designer`
+- `charter_preferred_installer`
+
+**Section 3 — SCOPE:**
+
+*System specification:*
+- `charter_system_type` (grid-tied / hybrid / off-grid / hybrid + BESS)
+- `charter_system_size_kwp`
+- `charter_inverter_capacity_kva`
+- `charter_battery_capacity_kwh` (if applicable)
+- `charter_module_spec` (panel wattage, make, client-specified Y/N)
+- `charter_inverter_spec` (make, model)
+- `charter_mounting_type` (ballast / penetrated / ground mount / carport)
+- `charter_monitoring_system` (to be recommended / specified)
+- `charter_metering` (production only / production + consumption / Techsitter)
+- `charter_diesel_gen_integration` (boolean)
+- `charter_dedicated_feeder` (boolean)
+- `charter_transformer_details`
+- `charter_tie_in_points`
+- `charter_main_breaker_details`
+- `charter_internet_provision` (client-provided / self-provided / signal check needed)
+
+*HSE:*
+- `charter_hse_contact_established` (boolean)
+- `charter_lifelines_required` (boolean)
+- `charter_additional_security_required` (boolean)
+- `charter_hse_notes`
+
+*SSEG / Compliance:*
+- `charter_sseg_application_status` (not started / pending / submitted / approved)
+- `charter_grid_study_status` (not started / pending / complete)
+- `charter_notification_number`
+
+*O&M:*
+- `charter_om_contract_type` (full performance guarantee / basic maintenance / monitoring only / none)
+- `charter_waterpoints_available` (boolean)
+- `charter_metering_billing_required` (boolean)
+- `charter_om_special_notes` (e.g., client-specified equipment, structural assessment still needed)
+
+**Section 4 — SCHEDULE:**
+- `charter_alignment_meeting_date`
+- `charter_installer_walkthrough_date`
+- `charter_external_intro_meeting_date`
+- `charter_internal_review_date`
+- `charter_client_kickoff_date`
+- `charter_site_establishment_date`
+- `charter_expected_completion_date`
+- `charter_handover_date_target` (Matriarch + Client)
+
+All dates can be blank at charter creation — they are filled during the handover meeting and become the baseline schedule.
+
+**Section 5 — BUDGET:**
+- `charter_funding_model` (self-funded / third-party / blended / Fedgroup)
+- `charter_payment_terms_text`
+- `charter_invoice_conditions_text` (e.g., "client must approve before payment")
+- `charter_funding_partner`
+- `charter_deposit_status` (pending / received / not required)
+- `charter_bdp_commission` (amount or "none")
+- `charter_budget_notes`
+
+**Section 6 — RISKS / OPPORTUNITIES / TRIAGE:**
+- `charter_overview_risk_summary`
+- `charter_stakeholder_risk_summary`
+- `charter_scope_risk_summary`
+- `charter_schedule_risk_summary`
+- `charter_budget_risk_summary`
+- `charter_triage_level` (green / amber / purple)
+- `charter_opportunities_text`
+
+---
+
 ### PD checklist:
-- Project charter filled (objectives, client context, key commercial terms, stakeholders)
+- Project charter completed (all 6 sections filled or explicitly marked N/A)
 - Assumptions list finalized
 - Open risks listed
 - Commercial commitments logged
@@ -277,7 +385,7 @@ Not all tracks are required on every project. Admin selects which apply at proje
 - "Changes since proposal" summary attached
 
 ### PM checklist:
-- Read charter
+- Read charter (all 6 sections)
 - Clarification questions asked and answered
 - Acceptance decision:
   - Accepted
@@ -295,8 +403,8 @@ Not all tracks are required on every project. Admin selects which apply at proje
 - Budget version aligned with PD margin and contract terms
 - Financial baseline set
 
-### Required fields:
-- `project_charter_url`
+### Required fields (stage-level, in addition to charter fields above):
+- `project_charter_status` (draft / complete / reviewed / accepted)
 - `scope_summary_text`
 - `commercial_summary_text`
 - `design_pack_url`
