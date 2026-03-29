@@ -134,6 +134,113 @@ created_at
 resolved_at
 ```
 
+**`project_charters`** — structured charter for PD→PM handover (one per project):
+```
+id
+project_id → project_info.id
+stage_instance_id → project_stage_instances.id
+status (draft, complete, reviewed, accepted)
+
+-- Section 1: Overview
+charter_project_name
+charter_site_name
+charter_site_address
+charter_gps_coordinates
+charter_facility_type
+charter_utility_supplier
+charter_existing_infrastructure
+charter_roof_type
+charter_access_method
+charter_special_site_notes
+charter_structural_assessment_done (boolean)
+charter_structural_assessment_notes
+
+-- Section 2: Stakeholders (external)
+charter_client_name
+charter_client_type (new, existing, referral)
+charter_primary_contact_name
+charter_primary_contact_email
+charter_primary_contact_phone
+charter_client_relationship_notes
+
+-- Section 2: Stakeholders (internal — user ID references)
+charter_pd_user_id → users.id
+charter_programme_manager_user_id → users.id
+charter_project_manager_user_id → users.id
+charter_procurement_manager_user_id → users.id
+charter_om_manager_user_id → users.id
+charter_asset_manager_user_id → users.id
+charter_compliance_officer_user_id → users.id
+charter_safety_officer_user_id → users.id
+charter_designer_user_id → users.id
+charter_preferred_installer
+
+-- Section 3: Scope (system)
+charter_system_type (grid_tied, hybrid, off_grid, hybrid_bess)
+charter_system_size_kwp
+charter_inverter_capacity_kva
+charter_battery_capacity_kwh
+charter_module_spec
+charter_inverter_spec
+charter_mounting_type
+charter_monitoring_system
+charter_metering (production_only, production_consumption, techsitter)
+charter_diesel_gen_integration (boolean)
+charter_dedicated_feeder (boolean)
+charter_transformer_details
+charter_tie_in_points
+charter_main_breaker_details
+charter_internet_provision
+
+-- Section 3: Scope (HSE)
+charter_hse_contact_established (boolean)
+charter_lifelines_required (boolean)
+charter_additional_security_required (boolean)
+charter_hse_notes
+
+-- Section 3: Scope (SSEG)
+charter_sseg_application_status
+charter_grid_study_status
+charter_notification_number
+
+-- Section 3: Scope (O&M)
+charter_om_contract_type
+charter_waterpoints_available (boolean)
+charter_metering_billing_required (boolean)
+charter_om_special_notes
+
+-- Section 4: Schedule (dates — can be blank, filled during handover meeting)
+charter_alignment_meeting_date
+charter_installer_walkthrough_date
+charter_external_intro_meeting_date
+charter_internal_review_date
+charter_client_kickoff_date
+charter_site_establishment_date
+charter_expected_completion_date
+charter_handover_date_target
+
+-- Section 5: Budget
+charter_funding_model
+charter_payment_terms_text
+charter_invoice_conditions_text
+charter_funding_partner
+charter_deposit_status
+charter_bdp_commission
+charter_budget_notes
+
+-- Section 6: Risks / Opportunities / Triage
+charter_overview_risk_summary
+charter_stakeholder_risk_summary
+charter_scope_risk_summary
+charter_schedule_risk_summary
+charter_budget_risk_summary
+charter_triage_level (green, amber, purple)
+charter_opportunities_text
+
+created_at
+updated_at
+```
+
 **`project_client_commitments`** — client promise tracking:
 ```
 id
