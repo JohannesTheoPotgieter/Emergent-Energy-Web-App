@@ -1,12 +1,14 @@
-# ROLLOUT PROMPT 6 OF 7 — SUPPORTING SCREENS
+# ROLLOUT PROMPT 6 OF 7 — SUPPORTING SCREENS & PERMISSIONS
 
 These screens provide cross-project operational control. They are not stage workspaces — they are management and governance views that pull data from the stage engine.
+
+**Important navigation change:** Department screens (Quality, Compliance, Engineering) are no longer standalone nav destinations. They become role-filtered content within stage workspaces. However, specialist roles still need cross-project governance views — these are accessed from Home (role-specific blocks) or from Gates sub-views, not from a separate top-level nav item.
 
 ---
 
 ## 1. EXCEPTION QUEUE
 
-**Route:** `/lifecycle/exceptions`
+**Route:** `/gates/exceptions`
 
 **Purpose:** Manage all exception requests across all projects in one place. Admin uses this to approve/reject bypass requests.
 
@@ -67,9 +69,9 @@ These screens provide cross-project operational control. They are not stage work
 
 ## 2. APPROVALS
 
-**Route:** `/my-work/approvals`
+**Route:** `/?tab=approvals` (Home → Approvals tab)
 
-**Purpose:** Single queue for all approvals the logged-in user must action.
+**Purpose:** Single queue for all approvals the logged-in user must action. Lives inside Home, not as a separate page.
 
 ### Approval types:
 - Gate approval (stage ready to progress)
@@ -96,19 +98,23 @@ These screens provide cross-project operational control. They are not stage work
 - Delegate to another user
 
 ### Rules:
-- Approvals appear on the user's home page (role-specific block)
-- Approvals appear in My Work → Awaiting My Approval tab
-- Overdue approvals (> 3 days) flag on dashboards
+- Approvals appear on the Home page Approvals tab
+- Overdue approvals (> 3 days) flag on Home page top strip
+- Approval count shown in Home top strip at all times
 
 ---
 
-## 3. QUALITY SCREEN
+## 3. QUALITY GOVERNANCE VIEW
 
-**Route:** `/quality` (existing — extend, do not replace)
+**Not a standalone nav destination.** Accessed from:
+- Home page → Quality Manager role-specific block → "View all quality items" link
+- Gates → any project card → Current Gate (quality section visible within stage workspace)
 
-**Purpose:** Quality governance across commissioning to closeout.
+**Purpose:** Cross-project quality governance for the Quality Manager role.
 
-### Views:
+**Implementation:** This can be a modal/drawer or a filtered view within Gates, not a separate route. If a route is needed for deep linking, use `/gates?filter=quality`.
+
+### Content:
 - Commissioning reviews due (projects approaching or in commissioning needing Quality review)
 - Open snags (across all projects, with age, severity, owner)
 - Open NCRs (across all projects, with status, corrective action status)
@@ -125,7 +131,7 @@ These screens provide cross-project operational control. They are not stage work
 - Status
 
 ### Actions:
-- Open project stage workspace
+- Open project Current Gate (jumps directly to quality section)
 - Create snag/NCR
 - Review and approve/reject
 - Assign corrective action
@@ -134,17 +140,20 @@ These screens provide cross-project operational control. They are not stage work
 ### Integration:
 - Uses existing `shared/schema/quality.ts` → QC templates, checklists, NCRs
 - Quality items created in stage workspaces (especially stages 6, 7, 8) surface here
-- This is a cross-project governance view, not a duplicate of per-project quality tabs
 
 ---
 
-## 4. COMPLIANCE SCREEN
+## 4. COMPLIANCE GOVERNANCE VIEW
 
-**Route:** `/compliance` (new — separate from handover dashboard)
+**Not a standalone nav destination.** Accessed from:
+- Home page → Compliance role-specific block → "View all compliance items" link
+- Gates → any project card → Current Gate (compliance section visible within stage workspace)
 
 **Purpose:** SSEG and RMA specialist control across all projects.
 
-### Views:
+**Implementation:** Filtered view within Gates or a drawer. If a route is needed: `/gates?filter=compliance`.
+
+### Content:
 - SSEG by project (status, submitted date, expected date, actual date)
 - Authority submissions tracker
 - SSEG overdue (submitted but not approved past expected date)
@@ -152,18 +161,6 @@ These screens provide cross-project operational control. They are not stage work
 - RMA ageing (days since submission)
 - Techsitter / metering confirmations pending
 - Metering confirmed vs not confirmed
-
-### Columns:
-- Project
-- Stage
-- Item type (SSEG application, approval, inspection, certificate, connection, RMA)
-- Authority
-- Reference number
-- Submitted date
-- Expected date
-- Actual date
-- Status
-- Age
 
 ### Actions:
 - Update status
@@ -174,15 +171,14 @@ These screens provide cross-project operational control. They are not stage work
 ### Integration:
 - Uses existing `shared/schema/handover.ts` → `ssegItems` table
 - Compliance items created in stage workspaces (stages 2, 6, 7) surface here
-- Techsitter/metering confirmations from commissioning (stage 7) visible here
 
 ---
 
 ## 5. HANDOVER PIPELINE
 
-**Route:** `/lifecycle/handover-pipeline`
+**Route:** `/gates/handovers`
 
-**Purpose:** Company-wide closeout control. Evolves the current handover page into a broader lifecycle view.
+**Purpose:** Company-wide closeout control.
 
 ### Views:
 - O&M handover queue (projects in stage 8)
@@ -207,7 +203,7 @@ These screens provide cross-project operational control. They are not stage work
 - Days waiting
 
 ### Actions:
-- Open project handover workspace
+- Open project handover workspace (→ Current Gate on that project)
 - Request missing document
 - Escalate overdue acceptance
 - View pack completeness detail
@@ -220,13 +216,13 @@ These screens provide cross-project operational control. They are not stage work
 
 ## 6. REPORTS
 
-**Route:** `/reports/center` (existing — extend with new lifecycle reports)
+**Route:** `/reports/center` (existing — now accessed under Admin secondary nav)
 
 **Purpose:** Management and board reporting fed by stage engine data.
 
 ### New core reports to add:
 
-**Lifecycle Reports:**
+**Gate Reports:**
 - Projects by stage (pipeline view — how many projects at each stage)
 - Stage duration analysis (average days per stage, outliers)
 - Blocked gates (current blockers, age, owner)
@@ -257,7 +253,7 @@ These screens provide cross-project operational control. They are not stage work
 
 ## 7. PERFORMANCE SCREEN (V1 — SIMPLE)
 
-**Route:** `/performance` (new, under Reports or standalone)
+**Route:** `/reports/performance` (under Admin → Reports)
 
 **Purpose:** Early version of operational outcomes tracking.
 
@@ -306,6 +302,7 @@ These screens provide cross-project operational control. They are not stage work
 
 **Template Management:**
 - Stage checklist templates
+- Project charter template (6-section structure — see Prompt 3)
 - Meeting agenda templates
 - Client update templates
 - Handover pack templates
@@ -314,3 +311,113 @@ These screens provide cross-project operational control. They are not stage work
 - Extend existing role management to include stage-level RACI assignments
 - Construction Manager role definition
 - KAM role definition
+
+---
+
+## 9. ROLES, PERMISSIONS & PROJECT-LEVEL ACCESS CONTROL
+
+**Extends existing:** `shared/schema/users.ts` → `users`, `userRoles`, `rolePermissions`
+
+### Permission model — 3 layers:
+
+**Layer 1 — Global role permissions (existing, extend):**
+
+The existing `rolePermissions` table maps Role → Entity → Action. Extend with new permission entities:
+
+New entities to add:
+- `stage_gate` — can view/edit/approve stage workspaces
+- `exception` — can view/create/approve exceptions
+- `stage_config` — can manage stage definitions (admin)
+- `gate_override` — can bypass a gate (admin only)
+- `project_charter` — can view/edit charters
+- `client_update` — can view/edit/send client updates
+- `handover_acceptance` — can accept/reject handovers
+
+New actions per entity: `view`, `create`, `edit`, `delete`, `approve`, `bypass`
+
+Example role mappings:
+| Role | stage_gate | exception | gate_override | handover_acceptance |
+|------|-----------|-----------|---------------|-------------------|
+| CEO/COO/CFO | view, approve | view, approve | bypass | view |
+| Admin | all | all | bypass | all |
+| PM | view, edit | view, create | — | view, edit (submit) |
+| PD | view, edit (stages 1-3) | view, create | — | — |
+| Quality Manager | view, edit (quality sections) | view, create | — | approve (quality sign-off) |
+| Construction Manager | view, edit (stages 6-9) | view, create | — | — |
+| KAM | view, edit (stage 10) | view | — | — |
+| Finance | view, edit (financial sections) | view, create | — | — |
+| O&M / Matriarch | view (stages 7-8) | view | — | approve (O&M acceptance) |
+
+**Layer 2 — Project-level access (NEW):**
+
+Add a `project_access` table to control who can see and do what on each specific project:
+
+```
+project_access:
+  id
+  project_id → project_info.id
+  user_id → users.id
+  access_level (owner / contributor / viewer / none)
+  role_on_project (pm / pd / construction_manager / quality_lead / compliance / kam / finance / engineering / hse / om)
+  stages_visible (text[] — array of stage codes, or 'all')
+  can_edit (boolean)
+  can_approve (boolean)
+  granted_by_user_id → users.id
+  granted_at
+  expires_at (nullable — for temporary access)
+  notes
+```
+
+**How it works:**
+- Admin (or PM/Program Manager) assigns users to a project with a specific role and access level
+- `access_level` controls visibility: owner sees everything, contributor sees their relevant stages, viewer is read-only
+- `role_on_project` determines which sections of the stage workspace are prominent (role-filtering in Current Gate)
+- `stages_visible` allows restricting a user to only certain stages (e.g., O&M only sees stages 7-8, KAM only sees stage 10)
+- `can_edit` and `can_approve` override global permissions at the project level
+- A user with no `project_access` record for a project cannot see that project (unless global role grants portfolio-wide access like Exco)
+
+**Layer 3 — Stage-level field visibility (role-filtered content):**
+
+This is not a separate permission table — it's implemented in the UI. When a user opens Current Gate on a project:
+- The system checks their `role_on_project` from `project_access`
+- Their department's checklist section is shown expanded/prominently
+- Other departments' sections are shown collapsed but visible (unless `stages_visible` restricts them)
+- `can_edit` determines whether they can modify checklist items and evidence
+- `can_approve` determines whether approve/reject buttons are shown
+
+### Admin UI for project access:
+
+**Inside each project (Admin or PM can manage):**
+- Team tab showing all users assigned to this project
+- For each user: role, access level, stages visible, edit/approve permissions
+- Add/remove team members
+- Bulk assign from template (e.g., "standard EPC team" template)
+
+**Inside Admin → Role Management:**
+- Define default project access templates
+- Define which global roles get portfolio-wide access (Exco sees all projects, Finance sees financial data on all projects)
+- Define stage-level RACI defaults per role
+
+### Portfolio-wide access (no project_access record needed):
+- Exco roles (CEO, COO, CFO) → view all projects, all stages, can approve
+- Program Manager → view all projects, all stages, can edit
+- Program Finance → view all projects, financial sections only
+
+### Project-level access examples:
+- PM assigned to Project X → access_level: owner, role: pm, stages: all, can_edit: true, can_approve: false (can submit for approval but not self-approve)
+- Quality Manager assigned to Project X → access_level: contributor, role: quality_lead, stages: [construction, commissioning, om_handover, client_handover], can_edit: true, can_approve: true (quality sign-offs)
+- KAM assigned to Project X → access_level: contributor, role: kam, stages: [client_handover, post_handover_review], can_edit: true, can_approve: false
+- O&M rep for Project X → access_level: contributor, role: om, stages: [commissioning, om_handover], can_edit: false (view only until acceptance), can_approve: true (O&M acceptance)
+
+### Permission checks — where they apply:
+
+| Screen | Check |
+|--------|-------|
+| Home page | Show only projects where user has `project_access` record OR global portfolio-wide role |
+| Projects list | Filter to projects user can access |
+| Project Overview | Check `project_access.access_level` ≠ none |
+| Current Gate | Check `stages_visible` includes current stage. Role-filter content based on `role_on_project`. Check `can_edit` for edit controls. Check `can_approve` for approval buttons |
+| Gates pipeline | Filter to projects user can access |
+| Exception queue | Show exceptions for projects user can access |
+| Handover pipeline | Filter by accessible projects |
+| Reports | Aggregate data only from projects user can access (except Exco who sees all) |

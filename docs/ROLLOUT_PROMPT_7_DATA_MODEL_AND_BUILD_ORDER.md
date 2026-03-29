@@ -324,6 +324,22 @@ created_at
 updated_at
 ```
 
+**`project_access`** — project-level access control (NEW — see Prompt 6 Section 9 for full detail):
+```
+id
+project_id → project_info.id
+user_id → users.id
+access_level (owner, contributor, viewer, none)
+role_on_project (pm, pd, construction_manager, quality_lead, compliance, kam, finance, engineering, hse, om)
+stages_visible (text[] — array of stage codes, or ['all'])
+can_edit (boolean)
+can_approve (boolean)
+granted_by_user_id → users.id
+granted_at
+expires_at (nullable — for temporary access)
+notes
+```
+
 ### Financial Close deliverable tracks:
 
 Add to `project_stage_instances` or a linked table:
