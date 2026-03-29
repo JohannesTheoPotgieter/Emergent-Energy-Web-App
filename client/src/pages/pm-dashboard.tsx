@@ -734,6 +734,54 @@ interface PMUser {
 
 const COO_VIEW_ROLES = ["COO_ADMIN", "CEO_ADMIN", "admin"];
 
+function HandoverCompleteSection() {
+  const [, navigate] = useLocation();
+  const { data } = useQuery<{ items: any[] }>({
+    queryKey: ["/api/pd-pm-handover/completed"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/pd-pm-handover/completed");
+      return res.json();
+    },
+  });
+
+  const items = data?.items || [];
+  if (items.length === 0) return null;
+
+  return (
+    <div className="mt-6">
+      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+        <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Handover Complete ({items.length})
+      </h3>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {items.map((row: any) => {
+          const daysSince = row.pm_sign_off_at ? Math.max(0, Math.floor((Date.now() - new Date(row.pm_sign_off_at).getTime()) / 86400000)) : 0;
+          const kickoffDate = row.kickoff_date ? new Date(row.kickoff_date) : null;
+          const kickoffSoon = kickoffDate ? (kickoffDate.getTime() - Date.now()) / 86400000 <= 5 && kickoffDate.getTime() >= Date.now() : false;
+          return (
+            <Card key={row.project_id} className="border-emerald-100 cursor-pointer hover:shadow-sm transition-shadow" onClick={() => navigate(`/pd/handover/${row.project_id}`)}>
+              <CardContent className="p-3 space-y-1">
+                <div className="flex items-center justify-between">
+                  <p className="font-medium text-sm">{row.project_name}</p>
+                  <Badge variant="outline" className="text-emerald-700 border-emerald-200 text-xs">Complete</Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">{row.client_name} &middot; {row.size_kwp || "—"} kWp</p>
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  {kickoffDate && (
+                    <span className={kickoffSoon ? "text-amber-700 font-medium" : ""}>
+                      Kickoff: {kickoffDate.toLocaleDateString()}{kickoffSoon ? " (soon)" : ""}
+                    </span>
+                  )}
+                  <span>{daysSince}d since sign-off</span>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function PMDashboard() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
@@ -888,6 +936,9 @@ export default function PMDashboard() {
           <CalendarTab navigate={navigate} pmUserId={pmIdParam} />
         </TabsContent>
       </Tabs>
+
+      {/* Handover-complete projects section */}
+      <HandoverCompleteSection />
 
       <DataSourceDebug
         pageName="Project Manager Dashboard"

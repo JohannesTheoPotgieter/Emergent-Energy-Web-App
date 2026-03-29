@@ -35,6 +35,9 @@ export const FEATURE_FLAG_KEYS = [
   "phone_templates",
   "training_page",
   "feedback_page",
+
+  // Handover V2: structured multi-tab PD→PM handover with readiness gating and dual sign-off
+  "pd_pm_handover_v2",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -247,6 +250,12 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     key: "feedback_page",
     label: "Feedback page",
     description: "Controls feedback page in main navigation. Available via user menu.",
+    defaultValue: false,
+  },
+  {
+    key: "pd_pm_handover_v2",
+    label: "PD→PM Handover V2",
+    description: "Enables the enhanced multi-tab PD→PM handover form with readiness gating, dual sign-off, lessons learnt, and COO health scoring.",
     defaultValue: false,
   },
 ];
