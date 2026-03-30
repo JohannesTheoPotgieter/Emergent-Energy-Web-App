@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -223,7 +224,7 @@ export default function MyWorkHomePage() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["outlook-events-mywork"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["/api/ms-objects/mine"] });
       if (data?.success === false && data?.error === "ms_sso_required") {
         toast({
@@ -1021,7 +1022,7 @@ export default function MyWorkHomePage() {
                     size="icon"
                     className="h-6 w-6"
                     onClick={() => {
-                      queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
+                      invalidateAllTaskCaches(queryClient);
                       queryClient.invalidateQueries({ queryKey: ["/api/ms-objects/mine"] });
                       toast({ title: "Refreshing tasks...", description: "Fetching latest task data." });
                     }}

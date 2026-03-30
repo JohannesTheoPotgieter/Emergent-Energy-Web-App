@@ -107,6 +107,7 @@ import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { engFetch } from "@/lib/eng-fetch";
 import { PHASE_COLORS } from "@/lib/phase-colors";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 
 export const PRIORITIES = ["Critical", "Urgent", "High", "Medium", "Low"];
 export const DUE_DATE_FILTER_OPTIONS: { value: EngineeringDueDateFilter; label: string }[] = [
@@ -227,7 +228,7 @@ export function QuickEditPopover({ task, onDueDateChange, onClose }: { task: Tas
     setPosting(true);
     try {
       await engFetch(`/api/eng/tasks/${task.id}/comments`, { method: "POST", body: JSON.stringify({ body: noteText.trim() }) });
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-comments", task.id] });
       toast({ title: "Note added" });
       setNoteText("");
@@ -789,7 +790,7 @@ export function PostUpdateForm({ taskId, currentStatus, hasProject, onDone }: { 
           body: JSON.stringify(patch),
         });
       }
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-comments", taskId] });
       queryClient.invalidateQueries({ queryKey: ["task-activity", taskId] });
       setUpdateText("");
@@ -891,7 +892,7 @@ export function DependenciesTab({ task, allTasks }: { task: Task; allTasks?: Tas
     const newDesc = cleanDesc + "\n" + depsTag;
     try {
       await engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ description: newDesc }) });
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       toast({ title: `Dependency added: ${depType === "blocked_by" ? "blocked by" : "blocks"} ${depTask.title.slice(0, 30)}` });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -905,7 +906,7 @@ export function DependenciesTab({ task, allTasks }: { task: Task; allTasks?: Tas
     const newDesc = (cleanDesc + "\n" + depsTag).trim();
     try {
       await engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ description: newDesc }) });
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       toast({ title: "Dependency removed" });
     } catch (e: any) {
       toast({ title: "Error", description: e.message, variant: "destructive" });
@@ -1124,7 +1125,7 @@ export function TaskDetailDrawer({
     mutationFn: (updates: Record<string, any>) =>
       engFetch(`/api/eng/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify(updates) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-activity", task.id] });
       onUpdate();
       toast({ title: "Task updated" });
@@ -1147,7 +1148,7 @@ export function TaskDetailDrawer({
     mutationFn: () =>
       engFetch(`/api/eng/tasks/${task.id}`, { method: "DELETE" }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       onClose();
       onUpdate();
       toast({ title: "Task deleted" });
@@ -1293,7 +1294,7 @@ export function TaskDetailDrawer({
               currentStatus={task.status}
               hasProject={!!task.projectName}
               onDone={() => {
-                queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+                invalidateAllTaskCaches(queryClient);
                 onUpdate();
               }}
             />
@@ -3220,7 +3221,7 @@ export function MyTasksView({
     mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ dueDate: dueDate || null }) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       toast({ title: "Due date updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -3235,7 +3236,7 @@ export function MyTasksView({
         method: "POST",
         body: JSON.stringify({ body: note }),
       });
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       queryClient.invalidateQueries({ queryKey: ["task-comments", taskId] });
       queryClient.invalidateQueries({ queryKey: ["task-activity", taskId] });
       setQuickNotes(prev => ({ ...prev, [taskId]: "" }));
@@ -3730,7 +3731,7 @@ export default function EngineeringTasksPage() {
       });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       setCreateOpen(false);
       setNewTask({ projectName: "", title: "", description: "", status: "TO DO", priority: "Medium", phase: "", primaryWorkstream: "", dueDate: "", assignees: [] });
       toast({ title: "Task created" });
@@ -3742,7 +3743,7 @@ export default function EngineeringTasksPage() {
     mutationFn: ({ taskId, status, holdReason, blockedType }: { taskId: number; status: string; holdReason?: string; blockedType?: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ status, ...(holdReason ? { holdReason } : {}), ...(blockedType ? { blockedType } : {}) }) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       toast({ title: "Status updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -3752,7 +3753,7 @@ export default function EngineeringTasksPage() {
     mutationFn: ({ taskId, priority }: { taskId: number; priority: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ priority }) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       toast({ title: "Priority updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -3806,7 +3807,7 @@ export default function EngineeringTasksPage() {
       await Promise.all(taskIds.map(id => engFetch(`/api/eng/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) })));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       toast({ title: `${selectedTaskIds.size} tasks updated` });
       clearSelection();
     },
@@ -3818,7 +3819,7 @@ export default function EngineeringTasksPage() {
       await Promise.all(taskIds.map(id => engFetch(`/api/eng/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ priority }) })));
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       toast({ title: `${selectedTaskIds.size} tasks updated` });
       clearSelection();
     },
@@ -3829,7 +3830,7 @@ export default function EngineeringTasksPage() {
     mutationFn: ({ taskId, dueDate }: { taskId: number; dueDate: string }) =>
       engFetch(`/api/eng/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify({ dueDate }) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       toast({ title: "Due date updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -4706,7 +4707,7 @@ export default function EngineeringTasksPage() {
           task={selectedTask}
           onClose={() => setSelectedTask(null)}
           onUpdate={() => {
-            queryClient.invalidateQueries({ queryKey: ["eng-tasks"] });
+            invalidateAllTaskCaches(queryClient);
             const updatedTask = tasks.find(t => t.id === selectedTask.id);
             if (updatedTask) setSelectedTask(updatedTask);
           }}

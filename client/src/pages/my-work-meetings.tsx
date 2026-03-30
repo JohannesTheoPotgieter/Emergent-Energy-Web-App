@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { useToast } from "@/hooks/use-toast";
 import { usePermission } from "@/hooks/use-permissions";
 import { Button } from "@/components/ui/button";
@@ -164,7 +165,7 @@ export default function MyWorkMeetingsPage() {
     onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/meetings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/meetings/webhook-status"] });
-      if (vars.type === "task") queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
+      if (vars.type === "task") invalidateAllTaskCaches(queryClient);
       if (vars.type === "priority") {
         queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
         queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
