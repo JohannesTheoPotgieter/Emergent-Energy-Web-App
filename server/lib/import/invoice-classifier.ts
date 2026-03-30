@@ -137,7 +137,7 @@ export async function classifyCostLines(
     .from(invoicePatternRules)
     .where(eq(invoicePatternRules.isActive, true));
 
-  const rules: ActiveRule[] = activeRules.map((r) => ({
+  const rules: ActiveRule[] = activeRules.map((r: any) => ({
     id: r.id,
     patternType: r.patternType,
     patternValue: r.patternValue,

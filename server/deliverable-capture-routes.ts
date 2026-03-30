@@ -143,7 +143,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
       const linkedCostLineId = linkType === "cost_line" ? lId : null;
       const linkedRevenueLineId = linkType === "revenue_line" ? lId : null;
       const ownerAssignmentType = ownerAssigneeType || (legacyOwnerUserId ? "internal_user" : "internal_user");
-      const ownerAssignmentId = ownerAssigneeId ? parseInt(String(ownerAssigneeId), 10) : legacyOwnerUserId ? parseInt(String(legacyOwnerUserId), 10) : user.id;
+      const ownerAssignmentId = ownerAssigneeId ? parseInt(String(ownerAssigneeId), 10) : legacyOwnerUserId ? parseInt(String(legacyOwnerUserId), 10) : user!.id;
 
       const [deliv] = await db.insert(deliverables).values({
         projectId: pId,
@@ -268,11 +268,11 @@ export function registerDeliverableCaptureRoutes(app: Express) {
       const row = (((rows as Record<string, unknown>).rows || []) as Record<string, unknown>[])[0];
       if (!row?.file_path) return res.status(404).json({ error: "File not found" });
 
-      if (!fs.existsSync(row.file_path)) return res.status(404).json({ error: "File not found on disk" });
+      if (!fs.existsSync(row.file_path as string)) return res.status(404).json({ error: "File not found on disk" });
 
       res.setHeader("Content-Disposition", `attachment; filename="${row.original_file_name || "file"}"`);
-      res.setHeader("Content-Type", row.mime_type || "application/octet-stream");
-      fs.createReadStream(row.file_path).pipe(res);
+      res.setHeader("Content-Type", (row.mime_type as string) || "application/octet-stream");
+      fs.createReadStream(row.file_path as string).pipe(res);
     } catch (err: unknown) {
       console.error("[Deliverable Capture] Download error:", err);
       res.status(500).json({ error: "Internal server error" });

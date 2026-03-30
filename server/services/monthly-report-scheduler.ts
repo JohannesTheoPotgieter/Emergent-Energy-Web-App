@@ -55,7 +55,7 @@ async function generateMonthlyReport(reportType: "pm" | "engineering", month: st
     });
   } catch (err: unknown) {
     // Handle unique constraint violation (race condition — another instance already created it)
-    if ((err instanceof Error ? err.message : String(err))?.includes("unique") || (err instanceof Error ? err.message : String(err))?.includes("duplicate") || err.code === "23505") {
+    if ((err instanceof Error ? err.message : String(err))?.includes("unique") || (err instanceof Error ? err.message : String(err))?.includes("duplicate") || (err as any).code === "23505") {
       console.log(`[Monthly Report Scheduler] ${reportType} report for ${month} was created by another instance, skipping`);
       return false;
     }

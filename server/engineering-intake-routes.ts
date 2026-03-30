@@ -102,9 +102,9 @@ export function registerEngineeringIntakeRoutes(app: Express) {
         try {
           const fields = item.fields as Record<string, unknown>;
           const clientName = fields.Client || fields.Title || "Unknown";
-          const clientKey = normalizeClientKey(clientName);
+          const clientKey = normalizeClientKey(clientName as string);
           const spItemId = item.id;
-          const mapped = mapSpFieldsToApp(fields);
+          const mapped = mapSpFieldsToApp(fields as any, {} as any, {} as any);
           const pullHash = hashFields(fields);
 
           const [existing] = await db.select().from(intakeRequests)

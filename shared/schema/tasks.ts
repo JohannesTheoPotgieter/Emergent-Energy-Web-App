@@ -159,7 +159,7 @@ export const workItems = pgTable("work_items", {
   wbsCode: text("wbs_code"),
   outlineNumber: text("outline_number"),
   indentLevel: integer("indent_level").default(0),
-  parentId: integer("parent_id").references(() => workItems.id, { onDelete: "set null" }),
+  parentId: integer("parent_id"),  // FK to work_items (self-ref) managed via migration
   isMilestone: boolean("is_milestone").default(false),
   phase: text("phase"),
   ownerUserId: integer("owner_user_id").references(() => users.id),

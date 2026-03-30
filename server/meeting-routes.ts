@@ -105,7 +105,7 @@ export function registerMeetingRoutes(app: Express) {
           .where(inArray(meetingActionItems.meetingId, meetingIds));
       }
 
-      const result = meetings.map((m) => {
+      const result = meetings.map((m: any) => {
         let keyTopics: string[] = [];
         let highlights: string[] = [];
         if (m.rawPayload) {
@@ -140,12 +140,12 @@ export function registerMeetingRoutes(app: Express) {
       const allItems = await db.select({ id: meetingActionItems.id, status: meetingActionItems.status }).from(meetingActionItems);
 
       const totalMeetings = allMeetings.length;
-      const webhookMeetings = allMeetings.filter(m => m.source === 'read_ai').length;
-      const webhookDates = allMeetings.filter(m => m.source === 'read_ai').map(m => m.createdAt);
-      const lastWebhookAt = webhookDates.length > 0 ? webhookDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
+      const webhookMeetings = allMeetings.filter((m: any) => m.source === 'read_ai').length;
+      const webhookDates = allMeetings.filter((m: any) => m.source === 'read_ai').map((m: any) => m.createdAt);
+      const lastWebhookAt = webhookDates.length > 0 ? webhookDates.sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime())[0] : null;
       const totalActionItems = allItems.length;
-      const pendingItems = allItems.filter(i => i.status === 'pending').length;
-      const convertedItems = allItems.filter(i => i.status === 'converted').length;
+      const pendingItems = allItems.filter((i: any) => i.status === 'pending').length;
+      const convertedItems = allItems.filter((i: any) => i.status === 'converted').length;
 
       res.json({
         connected: webhookMeetings > 0,
@@ -432,7 +432,7 @@ export function registerMeetingRoutes(app: Express) {
       const items = await db.select().from(meetingActionItems).where(eq(meetingActionItems.meetingId, meeting.id));
       res.json({ ...meeting, actionItems: items });
     } catch (err: unknown) {
-      if (err.name === "ZodError") return res.status(400).json({ error: "Validation failed", details: err.errors });
+      if ((err as any).name === "ZodError") return res.status(400).json({ error: "Validation failed", details: (err as any).errors });
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });

@@ -275,7 +275,7 @@ export async function getWorkItemsAsEngineeringTasks(userId?: number): Promise<a
       dueDate: wi.endDate,
       startDate: wi.startDate,
       assignees: assigneeNames.length > 0 ? assigneeNames : null,
-      assigneeUserIds: assignments.filter(a => a.workItemId === wi.id).map(a => a.userId),
+      assigneeUserIds: assignments.filter((a: any) => a.workItemId === wi.id).map((a: any) => a.userId),
       ownerUserId: wi.ownerUserId,
       trackingRag: null,
       holdReason: null,
@@ -372,7 +372,7 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
       )
     );
 
-  const projectIds: number[] = Array.from(new Set(items.map((i) => i.projectId).filter((id): id is number => typeof id === "number")));
+  const projectIds: number[] = Array.from(new Set(items.map((i: any) => i.projectId).filter((id: any): id is number => typeof id === "number")));
   let projectNameMap = new Map<number, string>();
   if (projectIds.length > 0) {
     const projects = await db
@@ -385,7 +385,7 @@ export async function getAllPMWorkItemsAsProjectPlan(): Promise<any[]> {
   }
 
   const rowCounterByProject = new Map<number, number>();
-  return items.map(wi => {
+  return items.map((wi: any) => {
     const pId = wi.projectId || 0;
     const rowNum = (rowCounterByProject.get(pId) || 0) + 1;
     rowCounterByProject.set(pId, rowNum);
@@ -613,9 +613,9 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
 
   const items = await db.select().from(workItems).where(and(...conditions)).orderBy(asc(workItems.sortOrder), asc(workItems.id));
 
-  const itemIds = items.map((i) => i.id);
+  const itemIds = items.map((i: any) => i.id);
   const assignments = itemIds.length > 0
-    ? await db.select().from(workItemAssignments).where(sql`${workItemAssignments.workItemId} IN (${sql.join(itemIds.map((id) => sql`${id}`), sql`, `)})`)
+    ? await db.select().from(workItemAssignments).where(sql`${workItemAssignments.workItemId} IN (${sql.join(itemIds.map((id: any) => sql`${id}`), sql`, `)})`)
     : [];
 
   const assigneeMap = new Map<number, number[]>();
@@ -626,16 +626,16 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
   }
 
   const projectRows = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo);
-  const projectMap = new Map(projectRows.map((row) => [row.id, row.projectName]));
+  const projectMap = new Map(projectRows.map((row: any) => [row.id, row.projectName]));
 
   // For items without projectId, try to resolve project name from legacy operational_tasks table
-  const orphanedItems = items.filter((wi) => !wi.projectId && wi.legacyTable === "operational_tasks" && wi.legacyId != null);
+  const orphanedItems = items.filter((wi: any) => !wi.projectId && wi.legacyTable === "operational_tasks" && wi.legacyId != null);
   const legacyProjectNameMap = new Map<number, string>();
   if (orphanedItems.length > 0) {
     try {
-      const legacyIds = orphanedItems.map((wi) => wi.legacyId!);
+      const legacyIds = orphanedItems.map((wi: any) => wi.legacyId!);
       const legacyRows = await db.execute(
-        sql`SELECT id, project_name FROM operational_tasks WHERE id IN (${sql.join(legacyIds.map((id) => sql`${id}`), sql`, `)})`
+        sql`SELECT id, project_name FROM operational_tasks WHERE id IN (${sql.join(legacyIds.map((id: any) => sql`${id}`), sql`, `)})`
       );
       for (const row of (legacyRows as any).rows || []) {
         if (row.project_name) legacyProjectNameMap.set(row.id, row.project_name);
@@ -645,7 +645,7 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
     }
   }
 
-  return items.map((wi) => ({
+  return items.map((wi: any) => ({
     id: wi.id,
     projectId: wi.projectId,
     projectName: wi.projectId

@@ -8,7 +8,7 @@ export const DISPLAY_DATE_FORMAT_ZA = "DD/MM/YYYY";
 
 export function parseIsoDateStrict(value: string | null | undefined) {
   if (!value) return null;
-  const parsed = dayjs(value, [API_DATE_FORMAT, dayjs.ISO_8601], true);
+  const parsed = dayjs(value, [API_DATE_FORMAT, "YYYY-MM-DDTHH:mm:ssZ", "YYYY-MM-DDTHH:mm:ss.SSSZ"], true);
   return parsed.isValid() ? parsed : null;
 }
 

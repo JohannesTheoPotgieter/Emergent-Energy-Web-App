@@ -695,20 +695,20 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
 
     const expensesByProject = new Map<string, typeof allExpenses>();
     for (const expense of allExpenses) {
-      if (!expensesByProject.has(expense.projectName)) expensesByProject.set(expense.projectName, []);
-      expensesByProject.get(expense.projectName)!.push(expense);
+      if (!expensesByProject.has(expense.projectName)) expensesByProject.set(expense.projectName, [] as any);
+      (expensesByProject.get(expense.projectName)! as any).push(expense);
     }
 
     const inflowsByProject = new Map<string, typeof allInflows>();
     for (const inflow of allInflows) {
-      if (!inflowsByProject.has(inflow.projectName)) inflowsByProject.set(inflow.projectName, []);
-      inflowsByProject.get(inflow.projectName)!.push(inflow);
+      if (!inflowsByProject.has(inflow.projectName)) inflowsByProject.set(inflow.projectName, [] as any);
+      (inflowsByProject.get(inflow.projectName)! as any).push(inflow);
     }
 
     const plansByProject = new Map<string, typeof allPlans>();
     for (const plan of allPlans) {
-      if (!plansByProject.has(plan.projectName)) plansByProject.set(plan.projectName, []);
-      plansByProject.get(plan.projectName)!.push(plan);
+      if (!plansByProject.has(plan.projectName)) plansByProject.set(plan.projectName, [] as any);
+      (plansByProject.get(plan.projectName)! as any).push(plan);
     }
 
     const editableMap = new Map(allEditableFields.map(f => [f.projectName, f]));
@@ -1807,7 +1807,7 @@ router.get("/api/pm-assignable-users", requireAuth, async (_req, res) => {
       username: users.username,
       role: users.role,
     }).from(users).where(eq(users.role, "PROJECT_MANAGER_SITE"));
-    res.json(pmUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+    res.json(pmUsers.map((u: any) => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch users" });
   }
@@ -1821,7 +1821,7 @@ router.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
       username: users.username,
       role: users.role,
     }).from(users).where(eq(users.role, "PROJECT_DEVELOPER"));
-    res.json(pdUsers.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
+    res.json(pdUsers.map((u: any) => ({ id: u.id, name: u.name, username: u.username, role: u.role })));
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch users" });
   }

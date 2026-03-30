@@ -631,7 +631,7 @@ router.get(
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
       // Filter: isActive may be undefined in SQLite (column missing) — treat as true
-      const activeProjects = projects.filter((p) => p.isActive !== false);
+      const activeProjects = projects.filter((p: any) => p.isActive !== false);
 
       // Try project_revenue_summary for hasTracker flag only
       let trackerSet = new Set<string>();
@@ -653,7 +653,7 @@ router.get(
           fundingType: projectEditableFields.fundingType,
           province: projectEditableFields.province,
         }).from(projectEditableFields);
-        editableMap = new Map(editableFields.map((e) => [e.projectName, e]));
+        editableMap = new Map(editableFields.map((e: any) => [e.projectName, e]));
       } catch {
         // Table may have schema mismatch
       }
@@ -1261,10 +1261,10 @@ router.get(
         .from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
-      const activeProjects = projects.filter((p) => p.isActive !== false);
-      const signed = activeProjects.filter((p) => p.signedStatus === "SIGNED").length;
+      const activeProjects = projects.filter((p: any) => p.isActive !== false);
+      const signed = activeProjects.filter((p: any) => p.signedStatus === "SIGNED").length;
       const broughtIn = activeProjects.filter(
-        (p) =>
+        (p: any) =>
           p.phase &&
           ["Construction", "Commissioning", "Operations", "Complete", "Handover"].some((ph) =>
             (p.phase || "").toLowerCase().includes(ph.toLowerCase())
@@ -1357,7 +1357,7 @@ async function collectSnapshotData(fye: number) {
 
   // Detail projects
   const projects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName, sizeKwp: projectInfo.sizeKwp, pd: projectInfo.pd, constructionStartDate: projectExecutionState.constructionStartDate, commissioningDate: projectExecutionState.commissioningDate, phase: projectExecutionState.phase, signedStatus: projectExecutionState.signedStatus, isActive: projectExecutionState.isActive, contractValue: projectInfo.contractValue }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
-  const activeProjects = projects.filter((p) => p.isActive !== false);
+  const activeProjects = projects.filter((p: any) => p.isActive !== false);
 
   // Compute per-project financials (standardized to expenseActualTotal)
   const inflowsByProject = new Map<string, { budget: number; actual: number }>();
@@ -1378,13 +1378,13 @@ async function collectSnapshotData(fye: number) {
     if (exp.expenseInvoicedDate) { const mk = extractMonthKey(exp.expenseInvoicedDate); if (mk && mk >= fyeStart && mk <= fyeEnd) e.actual += amt; }
   }
 
-  const projectRows = activeProjects.map((p) => {
+  const projectRows = activeProjects.map((p: any) => {
     const pName = normalizeProjectName(p.projectName);
     const inf = inflowsByProject.get(pName) || { budget: 0, actual: 0 };
     const exp = expensesByProject.get(pName) || { budget: 0, actual: 0 };
     return { projectName: p.projectName, businessDeveloper: p.pd, province: null, sizeKwp: safeNum(p.sizeKwp), status: p.phase, budgetRevenue: inf.budget, budgetCos: exp.budget, budgetGp: inf.budget - exp.budget, actualRevenue: inf.actual, actualExpense: exp.actual, actualGp: inf.actual - exp.actual, budgetGpPct: safeDivide(inf.budget - exp.budget, inf.budget), actualGpPct: safeDivide(inf.actual - exp.actual, inf.actual) };
   });
-  const totals = projectRows.reduce((a, r) => ({ budgetRevenue: a.budgetRevenue + r.budgetRevenue, budgetCos: a.budgetCos + r.budgetCos, budgetGp: a.budgetGp + r.budgetGp, actualRevenue: a.actualRevenue + r.actualRevenue, actualExpense: a.actualExpense + r.actualExpense, actualGp: a.actualGp + r.actualGp }), { budgetRevenue: 0, budgetCos: 0, budgetGp: 0, actualRevenue: 0, actualExpense: 0, actualGp: 0 });
+  const totals = projectRows.reduce((a: any, r: any) => ({ budgetRevenue: a.budgetRevenue + r.budgetRevenue, budgetCos: a.budgetCos + r.budgetCos, budgetGp: a.budgetGp + r.budgetGp, actualRevenue: a.actualRevenue + r.actualRevenue, actualExpense: a.actualExpense + r.actualExpense, actualGp: a.actualGp + r.actualGp }), { budgetRevenue: 0, budgetCos: 0, budgetGp: 0, actualRevenue: 0, actualExpense: 0, actualGp: 0 });
 
   // Pipeline
   let pipelineRows: any[] = [];

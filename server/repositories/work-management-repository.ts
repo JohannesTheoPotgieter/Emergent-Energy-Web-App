@@ -68,7 +68,7 @@ export class WorkManagementRepository {
       ? [...new Set(data.assigneeUserIds.map((id: any) => Number(id)).filter((id: number) => Number.isInteger(id) && id > 0))]
       : [];
 
-    const [created] = await this.dbInstance.transaction(async (tx) => {
+    const [created] = await this.dbInstance.transaction(async (tx: any) => {
       const [task] = await tx.insert(workItems).values({
         projectId: data.projectId,
         title: data.title || data.taskName || 'Untitled',
@@ -94,12 +94,12 @@ export class WorkManagementRepository {
 
       if (assigneeUserIds.length > 0) {
         await tx.insert(workItemAssignments).values(
-          assigneeUserIds.map((userId: number) => ({
+          assigneeUserIds.map((userId: any) => ({
             workItemId: task.id,
             userId,
             role: "ASSIGNEE" as any,
             createdAt: now,
-          })),
+          })) as any,
         );
       }
 

@@ -2,6 +2,7 @@ import { db } from "./db";
 import { msAccounts } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { encryptToken, decryptToken } from "./lib/token-encryption";
+import { isEncryptedPayload, decrypt } from "./utils/encryption";
 
 const CONFIGURED_TENANT_ID = process.env.AZURE_TENANT_ID || "";
 

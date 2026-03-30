@@ -11,7 +11,7 @@ export function registerNotificationRoutes(app: Express) {
       const user = req.user as any;
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
 
-      const limit = parseInt(req.query.limit as string) || 30;
+      const limit = parseInt(req.query.limit as string, 10) || 30;
       const rows = await db
         .select()
         .from(notifications)
@@ -19,7 +19,7 @@ export function registerNotificationRoutes(app: Express) {
         .orderBy(desc(notifications.createdAt))
         .limit(limit);
 
-      const unreadCount = rows.filter(r => !r.isRead).length;
+      const unreadCount = rows.filter((r: any) => !r.isRead).length;
 
       res.json({ notifications: rows, unreadCount });
     } catch (err: unknown) {
@@ -31,7 +31,7 @@ export function registerNotificationRoutes(app: Express) {
   app.patch("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid notification ID" });
 
       await db.update(notifications)
