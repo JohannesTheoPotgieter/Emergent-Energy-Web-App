@@ -31,4 +31,7 @@ export async function registerProjectRoutes(app: Express) {
   // Stage Data + Charter (Prompt 3 — stage workspaces 1-5)
   const { registerStageDataRoutes } = await import("../stage-data-routes");
   registerStageDataRoutes(app);
+  // Stage Collaboration (Prompt 7 — client commitments, updates, queries, access, financial close tracks)
+  const { registerStageCollaborationRoutes } = await import("../stage-collaboration-routes");
+  registerStageCollaborationRoutes(app);
 }
