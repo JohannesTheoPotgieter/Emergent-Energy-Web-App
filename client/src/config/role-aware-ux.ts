@@ -1,4 +1,5 @@
 import type { PageRegistryEntry } from "@/config/page-registry";
+import { resolveUserLens, type LensRole, DEFAULT_LENS_PROFILES } from "@shared/schema/role-based-upgrade";
 
 export type RoleAwareSection =
   | "MY_WORK"
@@ -24,6 +25,11 @@ const ROLE_ALIASES: Record<string, string> = {
   PROGRAM_FINANCE_MANAGER: "FINANCE",
   ACCOUNTANT: "FINANCE",
   PROJECT_DEVELOPER: "PROJECT_DEVELOPMENT",
+  CCO: "PROJECT_DEVELOPMENT",
+  KEY_ACCOUNTS_MANAGER: "PROJECT_DEVELOPMENT",
+  // New roles — mapped to their own intents
+  HSE_MANAGER: "HSE",
+  SSEG_MANAGER: "SSEG",
 };
 
 const ROLE_SECTION_PRIORITIES: Record<string, RoleAwareSection[]> = {
@@ -33,6 +39,8 @@ const ROLE_SECTION_PRIORITIES: Record<string, RoleAwareSection[]> = {
   QUALITY: ["MY_WORK", "OPERATIONS", "EXECUTION", "PROJECTS", "FINANCE", "PROJECT_DEVELOPMENT", "INSIGHTS", "FEEDBACK", "SYSTEM"],
   FINANCE: ["MY_WORK", "FINANCE", "EXECUTION", "OPERATIONS", "PROJECTS", "PROJECT_DEVELOPMENT", "INSIGHTS", "FEEDBACK", "SYSTEM"],
   PROJECT_DEVELOPMENT: ["MY_WORK", "PROJECT_DEVELOPMENT", "PROJECTS", "EXECUTION", "OPERATIONS", "FINANCE", "INSIGHTS", "FEEDBACK", "SYSTEM"],
+  HSE: ["MY_WORK", "OPERATIONS", "EXECUTION", "PROJECTS", "FINANCE", "PROJECT_DEVELOPMENT", "INSIGHTS", "FEEDBACK", "SYSTEM"],
+  SSEG: ["MY_WORK", "OPERATIONS", "ENGINEERING", "EXECUTION", "PROJECTS", "FINANCE", "INSIGHTS", "FEEDBACK", "SYSTEM"],
   DEFAULT: ["MY_WORK", "EXECUTION", "OPERATIONS", "PROJECTS", "FINANCE", "PROJECT_DEVELOPMENT", "INSIGHTS", "FEEDBACK", "SYSTEM"],
 };
 
@@ -40,9 +48,11 @@ const ROLE_LANDING_CANDIDATES: Record<string, string[]> = {
   LEADERSHIP: ["executionBoard", "projects", "myWork", "commandCenter"],
   SITE_MANAGEMENT: ["executionBoard", "projects", "pmOnTheGo", "myWorkTasks", "myWork"],
   ENGINEERING: ["engineering", "engineeringTasks", "myWorkTasks", "myWork"],
-  QUALITY: ["quality", "myWorkApprovals", "myWorkTasks", "myWork"],
+  QUALITY: ["quality", "qualityNcrList", "myWorkApprovals", "myWorkTasks", "myWork"],
   FINANCE: ["cashflow", "cos", "revenueTracker", "gpTracker", "myWork"],
   PROJECT_DEVELOPMENT: ["pdDashboard", "pdTickets", "pdReports", "clients", "myWork"],
+  HSE: ["hseDashboard", "quality", "myWorkTasks", "myWork"],
+  SSEG: ["hseDashboard", "engineering", "myWorkTasks", "myWork"],
   DEFAULT: ["myWork", "executionBoard", "projects"],
 };
 
@@ -53,6 +63,8 @@ const MICROSOFT_PRIORITY_BY_ROLE: Record<string, string[]> = {
   QUALITY: ["myWorkMeetings", "myWorkTeams", "myWorkEmail"],
   FINANCE: ["myWorkEmail", "myWorkMeetings", "myWorkTeams"],
   PROJECT_DEVELOPMENT: ["myWorkTeams", "myWorkEmail", "myWorkMeetings"],
+  HSE: ["myWorkMeetings", "myWorkTeams", "myWorkEmail"],
+  SSEG: ["myWorkEmail", "myWorkTeams", "myWorkMeetings"],
   DEFAULT: ["myWorkTeams", "myWorkEmail", "myWorkMeetings"],
 };
 
@@ -97,4 +109,15 @@ export function pickRoleAwareLandingPage(
     }
   }
   return undefined;
+}
+
+/**
+ * Lens-aware landing page resolution.
+ * Uses the new lens profile system for landing pages.
+ * Falls back to the legacy pickRoleAwareLandingPage if no lens profile match.
+ */
+export function getLensLandingPage(dbRole?: string | null): string {
+  const lens = resolveUserLens(dbRole);
+  const profile = DEFAULT_LENS_PROFILES.find(p => p.lensRole === lens);
+  return profile?.landingPage ?? "/gates";
 }

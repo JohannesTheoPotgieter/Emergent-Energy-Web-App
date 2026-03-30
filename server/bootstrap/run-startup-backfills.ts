@@ -5,6 +5,7 @@ import { runMsAssignmentCleanup } from "./backfills/ms-assignment-cleanup-backfi
 import { runWorkItemsBackfill } from "./backfills/work-items-backfill";
 import { runAssigneeUserIdsBackfill } from "./backfills/assignee-user-ids-backfill";
 import { runIntegrityGuard } from "./backfills/integrity-guard";
+import { runRoleLensBackfill } from "./backfills/role-lens-backfill";
 
 export async function runStartupBackfills(options: {
   startupBackfillEnabled: boolean;
@@ -26,5 +27,10 @@ export async function runStartupBackfills(options: {
   );
   await runIntegrityGuard(log).catch((err: any) =>
     log(`[Backfill] integrity guard error: ${err?.message || err}`, "Startup:Backfill"),
+  );
+
+  // Role-based UX upgrade: backfill lens profiles, widgets, contracts, SSEG applications
+  await runRoleLensBackfill().catch((err: any) =>
+    log(`[Backfill] role lens backfill error: ${err?.message || err}`, "Startup:Backfill"),
   );
 }
