@@ -177,11 +177,8 @@ export function registerPoRoutes(app: Express) {
                po.line_items, po.subtotal, po.vat_amount, po.total,
                po.payment_terms, po.delivery_date, po.delivery_address, po.site_contact,
                po.comments, po.project_manager, po.status, po.created_by,
-               po.created_at, po.updated_at, po.sent_at,
-               po.counterparty_id, po.approval_id, po.submitted_at, po.approved_at,
-               c.name_canonical as counterparty_name
+               po.created_at, po.updated_at, po.sent_at
         FROM purchase_orders po
-        LEFT JOIN counterparties c ON po.counterparty_id = c.id
         WHERE po.project_name = ${projectName}
         ORDER BY po.created_at DESC
       `);
@@ -200,9 +197,8 @@ export function registerPoRoutes(app: Express) {
     try {
       const rows = await db.execute(sql`
         SELECT po.id, po.po_ref, po.po_number, po.project_name, po.project_id,
-               po.supplier_name, po.total, po.status, po.created_at, po.submitted_at, po.approved_at,
-               po.counterparty_id, po.project_manager,
-               c.name_canonical as counterparty_name,
+               po.supplier_name, po.total, po.status, po.created_at,
+               po.project_manager,
                u.name as submitted_by_name,
                (
                  SELECT json_agg(json_build_object(
@@ -218,8 +214,7 @@ export function registerPoRoutes(app: Express) {
                  WHERE pra.purchase_order_id = po.id
                ) as reviewers
         FROM purchase_orders po
-        LEFT JOIN counterparties c ON po.counterparty_id = c.id
-        LEFT JOIN users u ON po.submitted_by_user_id = u.id
+        LEFT JOIN users u ON po.created_by = u.id
         ORDER BY po.created_at DESC
       `);
       res.json(rowsFromResult(rows));
@@ -238,13 +233,11 @@ export function registerPoRoutes(app: Express) {
 
       const rows = await db.execute(sql`
         SELECT po.id, po.po_ref, po.po_number, po.project_name, po.project_id,
-               po.supplier_name, po.total, po.status, po.created_at, po.submitted_at,
+               po.supplier_name, po.total, po.status, po.created_at,
                po.project_manager,
-               pra.decision as my_decision, pra.id as review_assignment_id,
-               c.name_canonical as counterparty_name
+               pra.decision as my_decision, pra.id as review_assignment_id
         FROM po_review_assignments pra
         JOIN purchase_orders po ON pra.purchase_order_id = po.id
-        LEFT JOIN counterparties c ON po.counterparty_id = c.id
         WHERE pra.reviewer_user_id = ${user.id}
           AND pra.decision = 'pending'
           AND po.status IN ('submitted', 'in_review')
@@ -323,7 +316,7 @@ export function registerPoRoutes(app: Express) {
           po_ref, po_number, project_name, project_id, supplier_name, supplier_vat,
           supplier_address, supplier_contact, line_items, subtotal, vat_amount,
           total, payment_terms, delivery_date, delivery_address, site_contact,
-          comments, project_manager, status, created_by, pdf_data, counterparty_id
+          comments, project_manager, status, created_by, pdf_data
         ) VALUES (
           ${poRef}, ${poNumber}, ${projectName}, ${projectId || null},
           ${supplierName}, ${supplierVat || null},
@@ -338,8 +331,7 @@ export function registerPoRoutes(app: Express) {
           ${comments || null},
           ${pmName},
           'draft', ${user?.id},
-          ${pdfBuffer},
-          ${counterpartyId || null}
+          ${pdfBuffer}
         ) RETURNING id
       `);
 
@@ -420,8 +412,7 @@ export function registerPoRoutes(app: Express) {
       // Update PO status
       await db.execute(sql`
         UPDATE purchase_orders
-        SET status = 'submitted', approval_id = ${approval.id},
-            submitted_by_user_id = ${user.id}, submitted_at = NOW(), updated_at = NOW()
+        SET status = 'submitted', updated_at = NOW()
         WHERE id = ${poIdNum}
       `);
 
@@ -505,9 +496,6 @@ export function registerPoRoutes(app: Express) {
       }
 
       const updateFields: string[] = [`status = '${newPoStatus}'`, `updated_at = NOW()`];
-      if (newPoStatus === "approved") {
-        updateFields.push(`approved_at = NOW()`);
-      }
 
       await db.execute(sql.raw(`
         UPDATE purchase_orders SET ${updateFields.join(", ")} WHERE id = ${poIdNum}
@@ -650,10 +638,8 @@ export function registerPoRoutes(app: Express) {
       if (isNaN(poIdNum)) return res.status(400).json({ error: "Invalid PO ID" });
 
       const poResult = await db.execute(sql`
-        SELECT po.*, c.name_canonical as counterparty_name, u.name as submitted_by_name
+        SELECT po.*
         FROM purchase_orders po
-        LEFT JOIN counterparties c ON po.counterparty_id = c.id
-        LEFT JOIN users u ON po.submitted_by_user_id = u.id
         WHERE po.id = ${poIdNum}
       `);
       const po = rowsFromResult(poResult)[0];
