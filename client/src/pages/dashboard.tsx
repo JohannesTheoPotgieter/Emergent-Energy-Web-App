@@ -54,6 +54,7 @@ import {
   ArrowUpRight,
 } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 type DashboardResponse = {
   meta: { fyStart: string; fyEnd: string };
   kpis: Record<string, number | null>;
@@ -405,6 +406,8 @@ export default function DashboardPage() {
   const [collapsedQueues, setCollapsedQueues] = useState<Set<string>>(new Set());
   const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set());
   const [financialPeriod, setFinancialPeriod] = useState("ytd");
+  const { isAdmin } = useAuth();
+  const queryClient = useQueryClient();
 
   /* ── URL filter sync ── */
   const searchString = useSearch();
@@ -526,6 +529,49 @@ export default function DashboardPage() {
     },
   });
 
+  const { data: lastRefreshData } = useQuery<{
+    lastRefreshedAt: string | null;
+    nextAutoRefreshAt: string | null;
+    manualRefreshAllowed: boolean;
+  }>({
+    queryKey: ["/api/v2/dashboard-metrics/last-refresh"],
+    queryFn: async () => {
+      const res = await fetch("/api/v2/dashboard-metrics/last-refresh", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch last refresh");
+      const json = await res.json();
+      return json.data;
+    },
+    refetchInterval: 60_000,
+  });
+
+  const refreshMetrics = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/v2/dashboard-metrics/refresh", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (res.status === 429) throw new Error("Rate limited");
+      if (!res.ok) throw new Error("Refresh failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/v2/dashboard-metrics/last-refresh"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/program-dashboard"] });
+    },
+  });
+
+  const lastRefreshedAgo = useMemo(() => {
+    if (!lastRefreshData?.lastRefreshedAt) return null;
+    const diffMs = Date.now() - new Date(lastRefreshData.lastRefreshedAt).getTime();
+    const mins = Math.floor(diffMs / 60_000);
+    if (mins < 1) return "just now";
+    if (mins === 1) return "1 minute ago";
+    if (mins < 60) return `${mins} minutes ago`;
+    const hrs = Math.floor(mins / 60);
+    return hrs === 1 ? "1 hour ago" : `${hrs} hours ago`;
+  }, [lastRefreshData?.lastRefreshedAt]);
+
   const savePreferences = useMutation({
     mutationFn: async (payload: any) => {
       await fetch("/api/user/dashboard-preferences", {
@@ -604,15 +650,36 @@ export default function DashboardPage() {
           </div>
           <div>
             <h1 className="text-xl font-semibold tracking-tight">Execution Board</h1>
-            {data?.meta && (
-              <p className="text-muted-foreground text-sm mt-0.5 flex items-center gap-1.5">
-                <Leaf className="w-3 h-3 text-emerald-500" />
-                FY {data.meta.fyStart} – {data.meta.fyEnd}
-              </p>
-            )}
+            <div className="flex items-center gap-3 mt-0.5">
+              {data?.meta && (
+                <p className="text-muted-foreground text-sm flex items-center gap-1.5">
+                  <Leaf className="w-3 h-3 text-emerald-500" />
+                  FY {data.meta.fyStart} – {data.meta.fyEnd}
+                </p>
+              )}
+              {lastRefreshedAgo && (
+                <p className="text-muted-foreground text-xs flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  Last refreshed: {lastRefreshedAgo}
+                </p>
+              )}
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && lastRefreshData?.manualRefreshAllowed && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 text-xs"
+              disabled={refreshMetrics.isPending}
+              onClick={() => refreshMetrics.mutate()}
+              data-testid="manual-refresh-btn"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshMetrics.isPending ? "animate-spin" : ""}`} />
+              {refreshMetrics.isPending ? "Refreshing..." : "Refresh Metrics"}
+            </Button>
+          )}
           {/* A9: Role-aware quick actions */}
           {(() => {
             const role = (localStorage.getItem("company_role") || "PROJECT_MANAGER_SITE") as CompanyRole;
