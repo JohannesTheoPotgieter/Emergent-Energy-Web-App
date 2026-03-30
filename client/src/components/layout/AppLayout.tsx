@@ -77,8 +77,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [location]);
 
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const effectiveCompanyRole = companyRole || user?.role || null;
+
   const visibleSections = useMemo(() => {
-    const sections = buildVisibleTopSections({ canViewPath });
+    const sections = buildVisibleTopSections({ canViewPath, companyRole: effectiveCompanyRole });
     // Apply user's custom section order if set
     if (sectionOrder.length > 0) {
       return [...sections].sort((a, b) => {
@@ -91,7 +94,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
     }
     return sections;
-  }, [canViewPath, sectionOrder]);
+  }, [canViewPath, sectionOrder, effectiveCompanyRole]);
 
   const activeSection = useMemo(() => visibleSections.find((section) => section.match(location)) ?? visibleSections[0], [location, visibleSections]);
   const quickCreateActions = useMemo(() => {
