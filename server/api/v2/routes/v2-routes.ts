@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import * as c from "../controllers/v2-controller";
 import { requireAuth } from "../utils/http";
+import { requireAdmin } from "../../../middleware/requireAdmin";
 import { attachProjectScope, requireProjectAccess } from "../../../middleware/project-scope-middleware";
 
 /** Auth + scope resolution (for list/dashboard endpoints) */
@@ -16,7 +17,8 @@ export function registerApiV2Routes(app: Express) {
 
   // Prompt 12: Materialized dashboard metrics
   app.get("/api/v2/dashboard-metrics", requireAuth, c.dashboardMetrics);
-  app.post("/api/v2/dashboard-metrics/refresh", requireAuth, c.dashboardRefresh);
+  app.post("/api/v2/dashboard-metrics/refresh", requireAuth, requireAdmin, c.dashboardRefresh);
+  app.get("/api/v2/dashboard-metrics/last-refresh", requireAuth, c.dashboardLastRefresh);
 
   app.get("/api/v2/projects", ...authScoped, c.listProjects);
   app.get("/api/v2/projects/:projectId", ...authProject, c.projectDetailConsolidated);
