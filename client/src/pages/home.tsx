@@ -11,9 +11,11 @@ import { AttentionBadges, type AttentionItem } from "@/components/dashboard/Atte
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { apiRequest } from "@/lib/queryClient";
 import { QueryErrorBanner } from "@/components/QueryErrorBanner";
-import { getRoleDashboardConfig } from "@/config/role-dashboard-config";
+import { getRoleDashboardConfig, getLensDashboardConfig } from "@/config/role-dashboard-config";
 import { COMPANY_ROLE_LABELS, normalizeRoleForPermissions } from "@shared/schema/users";
 import type { CompanyRole } from "@shared/schema/users";
+import { useLensContext } from "@/hooks/use-lens-context";
+import { LifecycleGatesChecklist } from "@/components/dashboard/LifecycleGatesChecklist";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -81,6 +83,11 @@ const ICON_MAP: Record<string, React.ReactNode> = {
   Briefcase: <Briefcase className="w-4 h-4" />,
   DollarSign: <DollarSign className="w-4 h-4" />,
   BarChart3: <BarChart3 className="w-4 h-4" />,
+  ShieldAlert: <AlertTriangle className="w-4 h-4" />,
+  HardHat: <Briefcase className="w-4 h-4" />,
+  Gauge: <LayoutDashboard className="w-4 h-4" />,
+  Milestone: <CheckCircle2 className="w-4 h-4" />,
+  Flag: <Flame className="w-4 h-4" />,
 };
 
 function resolveIcon(iconKey?: string): React.ReactNode {
@@ -139,6 +146,16 @@ function getKpiCards(
     site_readiness: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
     open_snags: { label: "Red RAG", value: stats.redProjects, icon: <AlertTriangle className="w-4 h-4" /> },
     inspections_due: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
+    // HSE Manager KPIs
+    incidents_open: { label: "Open Incidents", value: kpis.openIncidents ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
+    corrective_actions_due: { label: "Corrective Actions Due", value: kpis.correctiveActionsDue ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
+    safety_file_compliance: { label: "Safety Compliance", value: kpis.safetyCompliance ?? "\u2014", icon: <ShieldCheck className="w-4 h-4" /> },
+    inspections_overdue: { label: "Inspections Overdue", value: kpis.inspectionsOverdue ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
+    // SSEG Manager KPIs
+    applications_pending: { label: "Applications Pending", value: kpis.applicationsPending ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
+    queries_outstanding: { label: "Queries Outstanding", value: kpis.queriesOutstanding ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
+    approvals_due: { label: "Approvals Due", value: kpis.approvalsDue ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
+    rejections_open: { label: "Rejections Open", value: kpis.rejectionsOpen ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
     my_tasks: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
     my_approvals: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
     my_projects: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
@@ -204,10 +221,11 @@ export default function HomePage() {
     },
   });
 
+  const lens = useLensContext();
   const userRole = (user as any)?.role;
   const effectiveRole = normalizeRoleForPermissions(userRole) as CompanyRole;
-  const config = getRoleDashboardConfig(effectiveRole);
-  const roleLabel = COMPANY_ROLE_LABELS[effectiveRole] || "Team Member";
+  const config = getLensDashboardConfig(effectiveRole);
+  const roleLabel = lens.activeLensLabel;
 
   const stats = useMemo(() => {
     const projects: any[] = dashData?.projects || [];
@@ -404,6 +422,18 @@ export default function HomePage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {getKpiCards(config, kpis, stats, isLoading)}
             </div>
+          </div>
+
+          {/* Lifecycle Gates — operational surface */}
+          <div>
+            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+              Lifecycle Gates
+            </h2>
+            <Card className="border-border/50">
+              <CardContent className="p-4">
+                <LifecycleGatesChecklist compact />
+              </CardContent>
+            </Card>
           </div>
 
           {/* Company Priorities */}
