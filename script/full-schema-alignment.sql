@@ -5026,6 +5026,18 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='updated_at') THEN
     ALTER TABLE "project_execution_state" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='site_establishment_date') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "site_establishment_date" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='site_establishment_actual') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "site_establishment_actual" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='financial_review_status') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "financial_review_status" TEXT DEFAULT 'NOT_STARTED';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='financial_review_id') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "financial_review_id" INTEGER;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_gate_evaluations') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_gate_evaluations' AND column_name='project_id') THEN
     ALTER TABLE "project_gate_evaluations" ADD COLUMN "project_id" INTEGER;
   END IF;
