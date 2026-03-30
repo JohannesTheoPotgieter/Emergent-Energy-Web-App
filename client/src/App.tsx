@@ -104,6 +104,7 @@ const EngMonthlyReportHistoryPage = lazy(() => import("@/pages/engineering-month
 const EngMonthlyReportComparePage = lazy(() => import("@/pages/engineering-monthly-report-compare"));
 const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-monthly-report-project"));
 const ReportCenterPage = lazy(() => import("@/pages/reports/report-center"));
+const PerformancePage = lazy(() => import("@/pages/reports/performance"));
 const EngineeringStandupPage = lazy(() => import("@/pages/engineering/standup"));
 const NcrListPage = lazy(() => import("@/pages/quality/ncr-list"));
 const NcrDetailPage = lazy(() => import("@/pages/quality/ncr-detail"));
@@ -225,6 +226,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   EngMonthlyReportComparePage,
   EngMonthlyReportProjectPage,
   ReportCenterPage,
+  PerformancePage,
   EngineeringStandupPage,
   NcrListPage,
   NcrDetailPage,

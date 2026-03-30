@@ -52,9 +52,17 @@ export function useGatesReady() {
   });
 }
 
-export function useGatesExceptions() {
+export function useGatesExceptions(view?: string) {
+  const queryParam = view ? `?view=${view}` : "";
   return useQuery<{ exceptions: any[] }>({
-    queryKey: ["/api/gates/exceptions"],
+    queryKey: [`/api/gates/exceptions${queryParam}`],
+    queryFn: getQueryFn({ on401: "throw" }),
+  });
+}
+
+export function useGatesExceptionCounts() {
+  return useQuery<{ all: number; pendingMyApproval: number; overdue: number }>({
+    queryKey: ["/api/gates/exceptions/counts"],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 }
@@ -66,9 +74,10 @@ export function useGatesClientUpdates() {
   });
 }
 
-export function useGatesHandovers() {
-  return useQuery<{ projects: GateProjectCard[] }>({
-    queryKey: ["/api/gates/handovers"],
+export function useGatesHandovers(view?: string) {
+  const queryParam = view ? `?view=${view}` : "";
+  return useQuery<{ projects: any[] }>({
+    queryKey: [`/api/gates/handovers${queryParam}`],
     queryFn: getQueryFn({ on401: "throw" }),
   });
 }

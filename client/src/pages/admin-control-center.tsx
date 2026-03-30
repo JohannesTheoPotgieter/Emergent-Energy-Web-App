@@ -1,4 +1,6 @@
 import { useAdminFetch } from "@/hooks/use-admin-fetch";
+import { StageDefinitionsCard } from "@/components/admin/stage-definitions-card";
+import { GateConfigCard } from "@/components/admin/gate-config-card";
 import { AdminPageShell } from "@/components/admin/admin-shell";
 import { CcSystemHealthCard } from "@/components/admin/cc-system-health-card";
 import { CcImportGovernanceCard } from "@/components/admin/cc-import-governance-card";
@@ -62,6 +64,10 @@ export default function AdminControlCenterPage() {
           <CcImportGovernanceCard />
           <CcIntegrationCard />
         </div>
+
+        {/* Stage Engine Configuration (Prompt 6) */}
+        <StageDefinitionsCard />
+        <GateConfigCard />
 
         {/* Operational exceptions */}
         <CcOperationalExceptions />

@@ -15,6 +15,16 @@ export async function registerCoreRoutes(app: Express) {
   registerLifecycleRoutes(app);
   const { registerGatesRoutes } = await import("./gates-routes");
   registerGatesRoutes(app);
+  const { registerApprovalsRoutes } = await import("./approvals-routes");
+  registerApprovalsRoutes(app);
+  const { registerGovernanceViewsRoutes } = await import("./governance-views-routes");
+  registerGovernanceViewsRoutes(app);
+  const { registerPerformanceRoutes } = await import("./performance-routes");
+  registerPerformanceRoutes(app);
+  const { registerStageAdminRoutes } = await import("./stage-admin-routes");
+  registerStageAdminRoutes(app);
+  const { registerProjectAccessRoutes } = await import("./project-access-routes");
+  registerProjectAccessRoutes(app);
   const { registerReportRoutes } = await import("../report-routes");
   registerReportRoutes(app);
   const { registerTemplateRoutes } = await import("../template-routes");
