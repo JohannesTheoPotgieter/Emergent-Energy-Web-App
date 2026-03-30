@@ -269,3 +269,119 @@ export const stage5DataSchema = z.object({
   financial_review_date: z.string().optional(),
 });
 export type Stage5Data = z.infer<typeof stage5DataSchema>;
+
+export const stage6DataSchema = z.object({
+  construction_start_date_planned: z.string().optional(),
+  construction_start_date_actual: z.string().optional(),
+  construction_schedule_url: z.string().optional(),
+  installer_name: z.string().optional(),
+  installer_contract_status: z.string().optional(),
+  installer_mobilised: z.boolean().optional(),
+  material_inflow_status: z.enum(["on_track", "delayed", "critical"]).optional(),
+  key_equipment_status: z.enum(["on_track", "delayed", "critical"]).optional(),
+  site_access_confirmed: z.boolean().optional(),
+  weekly_progress_reporting_active: z.boolean().optional(),
+  open_tq_count: z.number().optional(),
+  open_variation_count: z.number().optional(),
+  hse_plan_approved: z.boolean().optional(),
+  hse_induction_complete: z.boolean().optional(),
+  sseg_application_status: z.string().optional(),
+  practical_completion_target: z.string().optional(),
+  construction_progress_pct: z.number().optional(),
+  construction_gate_status: z.string().optional(),
+});
+export type Stage6Data = z.infer<typeof stage6DataSchema>;
+
+export const stage7DataSchema = z.object({
+  commissioning_plan_url: z.string().optional(),
+  commissioning_date: z.string().optional(),
+  test_results_uploaded: z.boolean().optional(),
+  snag_count_open: z.number().optional(),
+  snag_count_closed: z.number().optional(),
+  ncr_count_open: z.number().optional(),
+  ncr_count_closed: z.number().optional(),
+  practical_completion_status: z.string().optional(),
+  practical_completion_date: z.string().optional(),
+  techsitter_confirmed: z.boolean().optional(),
+  metering_confirmed: z.boolean().optional(),
+  monitoring_live: z.boolean().optional(),
+  internet_connectivity_confirmed: z.boolean().optional(),
+  quality_review_status: z.string().optional(),
+  engineering_acceptance_status: z.string().optional(),
+  hse_safe_to_energise: z.boolean().optional(),
+  billing_readiness_status: z.string().optional(),
+  commissioning_gate_status: z.string().optional(),
+  installer_signoff_date: z.string().optional(),
+  client_signoff_date: z.string().optional(),
+});
+export type Stage7Data = z.infer<typeof stage7DataSchema>;
+
+export const stage8DataSchema = z.object({
+  om_handover_checklist_status: z.string().optional(),
+  as_builts_uploaded: z.boolean().optional(),
+  warranties_uploaded: z.boolean().optional(),
+  om_manual_uploaded: z.boolean().optional(),
+  serial_numbers_uploaded: z.boolean().optional(),
+  targets_confirmed: z.boolean().optional(),
+  monitoring_access_confirmed: z.boolean().optional(),
+  training_complete: z.boolean().optional(),
+  om_handover_meeting_date: z.string().optional(),
+  om_handover_minutes_url: z.string().optional(),
+  matriarch_acceptance_status: z.enum(["accepted", "accepted_with_reservations", "rejected"]).optional(),
+  matriarch_acceptance_date: z.string().optional(),
+  matriarch_rejection_reason: z.string().optional(),
+  asset_manager_assigned_user_id: z.number().optional(),
+  soft_monitoring_end_date: z.string().optional(),
+  review_sla_start_date: z.string().optional(),
+  review_sla_due_date: z.string().optional(),
+  open_workmanship_items_count: z.number().optional(),
+  reserved_items_json: z.array(z.object({
+    item: z.string(),
+    owner: z.string(),
+    deadline: z.string(),
+    status: z.string(),
+  })).optional(),
+});
+export type Stage8Data = z.infer<typeof stage8DataSchema>;
+
+export const stage9DataSchema = z.object({
+  client_handover_pack_status: z.string().optional(),
+  client_handover_pack_delivered: z.boolean().optional(),
+  client_training_complete: z.boolean().optional(),
+  open_items_text: z.string().optional(),
+  remaining_snag_obligations_text: z.string().optional(),
+  warranty_route_confirmed: z.boolean().optional(),
+  defects_contact_confirmed: z.boolean().optional(),
+  sseg_status_for_client: z.string().optional(),
+  operating_instructions_delivered: z.boolean().optional(),
+  om_contact_transferred: z.boolean().optional(),
+  client_handover_meeting_date: z.string().optional(),
+  client_handover_minutes_url: z.string().optional(),
+  client_acceptance_status: z.enum(["accepted", "accepted_with_reservations", "not_accepted"]).optional(),
+  client_feedback_text: z.string().optional(),
+  client_handover_gate_status: z.string().optional(),
+});
+export type Stage9Data = z.infer<typeof stage9DataSchema>;
+
+export const stage10DataSchema = z.object({
+  review_due_date: z.string().optional(),
+  review_status: z.enum(["scheduled", "in_progress", "completed", "overdue"]).optional(),
+  review_owner_user_id: z.number().optional(),
+  review_meeting_date: z.string().optional(),
+  actual_vs_expected_summary: z.string().optional(),
+  loss_attribution_text: z.string().optional(),
+  client_feedback_text: z.string().optional(),
+  quality_issue_summary: z.string().optional(),
+  compliance_issue_summary: z.string().optional(),
+  matriarch_feedback_text: z.string().optional(),
+  engineering_lessons_text: z.string().optional(),
+  pd_lessons_text: z.string().optional(),
+  pm_lessons_text: z.string().optional(),
+  relationship_risk_level: z.enum(["low", "medium", "high"]).optional(),
+  upsell_opportunity_text: z.string().optional(),
+  lessons_learned_text: z.string().optional(),
+  follow_up_action_count: z.number().optional(),
+  review_completed_date: z.string().optional(),
+  review_report_url: z.string().optional(),
+});
+export type Stage10Data = z.infer<typeof stage10DataSchema>;
