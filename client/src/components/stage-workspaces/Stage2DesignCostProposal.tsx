@@ -11,6 +11,9 @@ import { useStageDetail } from "@/hooks/use-stage-lifecycle";
 import { useStageData } from "@/hooks/use-stage-data";
 import { useState } from "react";
 import { FileText, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { EvidenceRequestPanel } from "./EvidenceRequestPanel";
+import { QueryRouter } from "./QueryRouter";
+import { ClientCommitmentTracker } from "./ClientCommitmentTracker";
 
 const STAGE_CODE = "S02_DESIGN_COST_PROPOSAL";
 
@@ -136,6 +139,9 @@ export function Stage2DesignCostProposal({ projectId, isAdmin }: Stage2Props) {
           <>
             <DependencyList projectId={projectId} stageCode={STAGE_CODE} />
             <DecisionLog projectId={projectId} stageCode={STAGE_CODE} />
+            <EvidenceRequestPanel projectId={projectId} stageCode={STAGE_CODE} />
+            <QueryRouter projectId={projectId} stageCode={STAGE_CODE} />
+            <ClientCommitmentTracker projectId={projectId} stageCode={STAGE_CODE} />
 
             <Card>
               <CardHeader className="pb-2">

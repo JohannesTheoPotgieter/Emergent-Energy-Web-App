@@ -238,7 +238,16 @@ export function registerStageLifecycleRoutes(app: Express): void {
         const requirementId = parseInt(p(req.params.requirementId), 10);
         if (Number.isNaN(requirementId)) return res.status(400).json({ error: "Invalid requirementId" });
         const user = getUser(req);
-        const { status, evidenceUrl, notes } = req.body;
+        const { status, evidenceUrl, notes, contributors } = req.body;
+
+        // Support updating contributors without status change
+        if (contributors !== undefined && !status) {
+          const { projectStageRequirements: psr } = await import("@shared/schema");
+          const { eq: eqOp } = await import("drizzle-orm");
+          await db.update(psr).set({ contributors, updatedAt: new Date() }).where(eqOp(psr.id, requirementId));
+          const [updated] = await db.select().from(psr).where(eqOp(psr.id, requirementId));
+          return res.json({ requirement: updated });
+        }
 
         if (!status) return res.status(400).json({ error: "status is required" });
 
