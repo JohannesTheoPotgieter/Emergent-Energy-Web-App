@@ -200,6 +200,32 @@ export function requirePermission(entity: PermissionEntity, action: PermissionAc
   };
 }
 
+/**
+ * Convenience helper: checks whether the given user has data_import:create permission.
+ * Uses the same evaluation pipeline (DB overrides → ENTITY_PERMISSION_DEFAULTS) as requirePermission.
+ */
+export async function hasImportPermission(req: Request): Promise<boolean> {
+  const role = resolveUserRole(req);
+  if (!role) return false;
+  await loadEntityPermissions();
+  const user = getEffectiveUser(req);
+
+  // Check user-specific overrides first
+  if (user?.id) {
+    const overrides = await loadUserOverrides(user.id);
+    const key = "data_import:create";
+    if (key in overrides) return overrides[key];
+  }
+
+  const result = evaluatePermissionForRole({
+    role,
+    entity: "data_import",
+    action: "create",
+    roleRecord: buildRoleRecord(role) as Parameters<typeof evaluatePermissionForRole>[0]["roleRecord"],
+  });
+  return result.allowed;
+}
+
 export function requireAuthority(entity: PermissionEntity, action: AuthorityAction) {
   return async (req: Request, res: Response, next: NextFunction) => {
     const role = resolveUserRole(req);
