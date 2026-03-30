@@ -108,6 +108,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminImportControlTower", path: "/admin/import-control-tower", label: "Import Control Tower", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "ImportControlTowerPage" },
   { id: "programmeReports", path: "/reports/programme", label: "Programme Reports", iconKey: "FileSpreadsheet", navGroup: "REPORTS", permissionEntity: "reports", showInSidebar: true, routeComponentKey: "ProgrammeReportsPage" },
   { id: "reportCenter", path: "/reports/center", label: "Report Center", iconKey: "FileText", navGroup: "REPORTS", permissionEntity: "reports", showInSidebar: true, routeComponentKey: "ReportCenterPage" },
+  { id: "performanceDashboard", path: "/reports/performance", label: "Performance", iconKey: "BarChart3", navGroup: "REPORTS", permissionEntity: "performance", showInSidebar: true, routeComponentKey: "PerformancePage" },
   { id: "pmMonthlyReport", path: "/reports/pm/monthly", label: "PM Monthly Report", iconKey: "FileText", navGroup: "REPORTS", permissionEntity: "reports", showInSidebar: true, routeComponentKey: "PmMonthlyReportPage" },
   { id: "pmMonthlyReportHistory", path: "/reports/pm/monthly/history", label: "PM Report History", permissionEntity: "reports", routeComponentKey: "PmMonthlyReportHistoryPage" },
   { id: "pmMonthlyReportCompare", path: "/reports/pm/monthly/compare", label: "PM Report Compare", permissionEntity: "reports", routeComponentKey: "PmMonthlyReportComparePage" },
@@ -161,6 +162,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "gatesExceptions", path: "/gates/exceptions", label: "Gate Exceptions", iconKey: "AlertTriangle", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesExceptionsPage" },
   { id: "gatesClientUpdates", path: "/gates/client-updates", label: "Client Updates", iconKey: "CalendarCheck", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesClientUpdatesPage" },
   { id: "gatesHandovers", path: "/gates/handovers", label: "Handover Queue", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesHandoversPage" },
+  { id: "gatesQueries", path: "/gates/queries", label: "Open Queries", iconKey: "MessageSquare", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesQueriesPage" },
+  { id: "gatesCommitments", path: "/gates/commitments", label: "Client Commitments", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesCommitmentsPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY

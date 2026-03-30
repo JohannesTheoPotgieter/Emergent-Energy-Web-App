@@ -51,6 +51,9 @@ const MyWorkTasksPage = lazy(() => import("@/pages/my-work-tasks"));
 const MyWorkCalendarPage = lazy(() => import("@/pages/my-work-calendar"));
 const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
 const InboxPage = lazy(() => import("@/pages/inbox"));
+const UnifiedApprovalsQueue = lazy(() =>
+  import("@/components/approvals/unified-approvals-queue").then((m) => ({ default: m.UnifiedApprovalsQueue }))
+);
 
 const money = (n: number | null | undefined) =>
   `R ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -458,7 +461,7 @@ export default function HomePage() {
 
       {activeTab === "approvals" && (
         <Suspense fallback={<Skeleton className="h-64 w-full" />}>
-          <MyWorkTasksPage />
+          <UnifiedApprovalsQueue />
         </Suspense>
       )}
 
