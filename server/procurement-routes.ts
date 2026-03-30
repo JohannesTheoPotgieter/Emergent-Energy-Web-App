@@ -37,7 +37,7 @@ export function registerProcurementRoutes(app: Express): void {
       const statusFilter = req.query.status as string | undefined;
       const categoryFilter = req.query.category as string | undefined;
 
-      const conditions = [sql`pi2.project_id = ${projectId}`];
+      const conditions = [sql`pi2.project_id = ${projectId}`, sql`pi2.deleted_at IS NULL`];
       if (statusFilter) conditions.push(sql`pi2.status = ${statusFilter}`);
       if (categoryFilter) conditions.push(sql`pi2.category = ${categoryFilter}`);
       const whereClause = sql.join(conditions, sql` AND `);
@@ -76,6 +76,7 @@ export function registerProcurementRoutes(app: Express): void {
           p.project_name
         FROM procurement_items pi2
         LEFT JOIN project_info p ON pi2.project_id = p.id
+        WHERE pi2.deleted_at IS NULL
         ORDER BY pi2.created_at DESC
       `);
       const items = rowsFromResult(rows).map((r: any) => ({
@@ -274,7 +275,7 @@ export function registerProcurementRoutes(app: Express): void {
       const existing = await db.select().from(procurementItems).where(eq(procurementItems.id, id));
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
 
-      await db.delete(procurementItems).where(eq(procurementItems.id, id));
+      const [deleted] = await db.update(procurementItems).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(procurementItems.id, id)).returning();
 
       logAuditFromReq(req, {
         entityType: "procurement_item",
@@ -283,7 +284,7 @@ export function registerProcurementRoutes(app: Express): void {
         changesJson: { title: existing[0].title, status: existing[0].status },
       });
 
-      res.json({ success: true });
+      res.json({ success: true, record: deleted });
     } catch (err: unknown) {
       res.status(500).json({ error: "Failed to delete procurement item" });
     }

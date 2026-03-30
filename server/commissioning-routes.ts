@@ -45,7 +45,7 @@ export function registerCommissioningRoutes(app: Express): void {
       const typeFilter = req.query.itemType as string | undefined;
       const VALID_ITEM_TYPES = new Set(["commissioning", "closeout", "handover", "punchlist", "inspection", "test"]);
       const safeTypeFilter = typeFilter && VALID_ITEM_TYPES.has(typeFilter) ? typeFilter : null;
-      let whereClause = `WHERE ci.project_id = ${projectId}`;
+      let whereClause = `WHERE ci.project_id = ${projectId} AND ci.deleted_at IS NULL`;
       if (safeTypeFilter) whereClause += ` AND ci.item_type = '${safeTypeFilter}'`;
 
       const rows = await db.execute(sql.raw(`
@@ -240,7 +240,7 @@ export function registerCommissioningRoutes(app: Express): void {
       const existing = await db.select().from(commissioningItems).where(eq(commissioningItems.id, id));
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
 
-      await db.delete(commissioningItems).where(eq(commissioningItems.id, id));
+      const [deleted] = await db.update(commissioningItems).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(commissioningItems.id, id)).returning();
 
       logAuditFromReq(req, {
         entityType: "commissioning_item",
@@ -249,7 +249,7 @@ export function registerCommissioningRoutes(app: Express): void {
         changesJson: { title: existing[0].title, status: existing[0].status },
       });
 
-      res.json({ success: true });
+      res.json({ success: true, record: deleted });
     } catch (err: unknown) {
       res.status(500).json({ error: "Failed to delete commissioning item" });
     }

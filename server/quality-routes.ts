@@ -932,7 +932,7 @@ export function registerQualityRoutes(app: Express) {
 
   app.delete("/api/quality/evidence/:evidenceId", requireAuth, requirePermission("quality", "delete"), async (req, res) => {
     try {
-      await db.delete(qcItemEvidence).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10)));
+      await db.update(qcItemEvidence).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(qcItemEvidence.id, parseInt(String(req.params.evidenceId), 10))).returning();
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(req.params.evidenceId), action: "delete", changesJson: { description: "Evidence deleted" } });
       res.json({ success: true });
     } catch (err: unknown) {

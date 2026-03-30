@@ -9381,7 +9381,7 @@ import { feedbackTickets, userProjectFolders } from "@shared/schema";
 function registerFeedbackRoutes(app: Express) {
   app.get("/api/feedback", requireAuth, async (req, res) => {
     try {
-      const tickets = await db.select().from(feedbackTickets).orderBy(desc(feedbackTickets.createdAt));
+      const tickets = await db.select().from(feedbackTickets).where(isNull(feedbackTickets.deletedAt)).orderBy(desc(feedbackTickets.createdAt));
       res.json(tickets);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

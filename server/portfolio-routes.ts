@@ -45,7 +45,7 @@ export function registerPortfolioRoutes(app: Express) {
         "promoted_core_portfolio_assignments_read",
       ]);
 
-      const legacyPortfoliosQuery = () => db.select().from(portfolios).orderBy(desc(portfolios.createdAt));
+      const legacyPortfoliosQuery = () => db.select().from(portfolios).where(isNull(portfolios.deletedAt)).orderBy(desc(portfolios.createdAt));
       const legacyAssignmentsQuery = () => db.select().from(projectPortfolioAssignments);
       const legacyProjectsQuery = () => db.select({
         id: projectInfo.id,
@@ -273,9 +273,9 @@ export function registerPortfolioRoutes(app: Express) {
   app.delete("/api/portfolios/:id", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      await db.delete(portfolios).where(eq(portfolios.id, id));
-      logAuditFromReq(req, { entityType: "portfolio", entityId: String(id), action: "delete", changesJson: { description: "Portfolio deleted" } });
-      res.json({ success: true });
+      const [deleted] = await db.update(portfolios).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(portfolios.id, id)).returning();
+      logAuditFromReq(req, { entityType: "portfolio", entityId: String(id), action: "delete", changesJson: { description: "Portfolio soft-deleted" } });
+      res.json({ success: true, record: deleted });
     } catch (err: any) {
       console.error("[Portfolio] Delete error:", err);
       res.status(500).json({ error: err.message });
@@ -608,9 +608,9 @@ export function registerPortfolioRoutes(app: Express) {
   app.delete("/api/portfolios/:portfolioId/rollout-plans/:planId", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
       const planId = parseInt(req.params.planId);
-      await db.delete(portfolioRolloutPlans).where(eq(portfolioRolloutPlans.id, planId));
-      logAuditFromReq(req, { entityType: "portfolio_rollout", entityId: String(planId), action: "delete", changesJson: { description: "Rollout plan deleted" } });
-      res.json({ success: true });
+      const [deleted] = await db.update(portfolioRolloutPlans).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(portfolioRolloutPlans.id, planId)).returning();
+      logAuditFromReq(req, { entityType: "portfolio_rollout", entityId: String(planId), action: "delete", changesJson: { description: "Rollout plan soft-deleted" } });
+      res.json({ success: true, record: deleted });
     } catch (err: any) {
       console.error("[Portfolio] Delete rollout plan error:", err);
       res.status(500).json({ error: err.message });

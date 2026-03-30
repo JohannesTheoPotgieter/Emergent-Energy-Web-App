@@ -110,9 +110,11 @@ export const stageDefinitions = pgTable("stage_definitions", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
 
-export const insertStageDefinitionSchema = createInsertSchema(stageDefinitions).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertStageDefinitionSchema = createInsertSchema(stageDefinitions).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertStageDefinition = z.infer<typeof insertStageDefinitionSchema>;
 export type StageDefinition = typeof stageDefinitions.$inferSelect;
 
@@ -131,9 +133,18 @@ export const stageChecklistTemplates = pgTable("stage_checklist_templates", {
   isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
+  // Template governance
+  version: integer("version").notNull().default(1),
+  isCurrentVersion: boolean("is_current_version").notNull().default(true),
+  isSystemDefault: boolean("is_system_default").notNull().default(false),
+  editedBy: integer("edited_by"),
+  editedAt: timestamp("edited_at"),
+  editReason: text("edit_reason"),
 });
 
-export const insertStageChecklistTemplateSchema = createInsertSchema(stageChecklistTemplates).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertStageChecklistTemplateSchema = createInsertSchema(stageChecklistTemplates).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertStageChecklistTemplate = z.infer<typeof insertStageChecklistTemplateSchema>;
 export type StageChecklistTemplate = typeof stageChecklistTemplates.$inferSelect;
 
@@ -329,12 +340,14 @@ export const projectAccess = pgTable("project_access", {
   grantedAt: timestamp("granted_at").notNull().defaultNow(),
   expiresAt: timestamp("expires_at"),
   notes: text("notes"),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 }, (table) => ({
   projectUserUnique: unique("project_access_project_user_uq").on(table.projectId, table.userId),
   projectIdIdx: index("pa_project_id_idx").on(table.projectId),
   userIdIdx: index("pa_user_id_idx").on(table.userId),
 }));
 
-export const insertProjectAccessSchema = createInsertSchema(projectAccess).omit({ id: true, grantedAt: true } as any);
+export const insertProjectAccessSchema = createInsertSchema(projectAccess).omit({ id: true, grantedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertProjectAccess = z.infer<typeof insertProjectAccessSchema>;
 export type ProjectAccess = typeof projectAccess.$inferSelect;

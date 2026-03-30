@@ -16,6 +16,7 @@ import notificationsRouter from './notifications.routes';
 import documentsRouter from './documents.routes';
 import pipelineRouter from './pipeline.routes';
 import { registerRoutes as registerLegacyRoutes } from '../routes';
+import { registerTemplateGovernanceRoutes } from './template-governance-routes';
 
 export function registerDomainRouters(app: Express) {
   app.use('/api/auth', authRouter);
@@ -37,5 +38,6 @@ export function registerDomainRouters(app: Express) {
 
 export async function registerRoutes(httpServer: Server, app: Express) {
   registerDomainRouters(app);
+  registerTemplateGovernanceRoutes(app);
   return registerLegacyRoutes(httpServer, app);
 }

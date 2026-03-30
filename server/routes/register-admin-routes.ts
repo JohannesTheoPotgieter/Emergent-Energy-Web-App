@@ -9,4 +9,6 @@ export async function registerAdminSupportRoutes(app: Express) {
   registerAdminRecoveryRoutes(app);
   const { registerKpiTraceabilityRoutes } = await import("../kpi-traceability-routes");
   registerKpiTraceabilityRoutes(app);
+  const { registerTemplateGovernanceRoutes } = await import("./template-governance-routes");
+  registerTemplateGovernanceRoutes(app);
 }

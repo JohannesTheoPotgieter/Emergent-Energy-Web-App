@@ -1320,6 +1320,8 @@ export const userPermissionOverrides = pgTable("user_permission_overrides", {
   reason: text("reason"),
   expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
 export type UserPermissionOverride = typeof userPermissionOverrides.$inferSelect;
 export type InsertUserPermissionOverride = typeof userPermissionOverrides.$inferInsert;

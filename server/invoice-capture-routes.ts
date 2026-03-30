@@ -48,7 +48,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
         LEFT JOIN users u ON ic.captured_by_user_id = u.id
         LEFT JOIN counterparties c ON ic.supplier_id = c.id
         LEFT JOIN project_info p ON ic.project_id = p.id
-        WHERE ic.project_id = ${projectId}
+        WHERE ic.project_id = ${projectId} AND ic.deleted_at IS NULL
         ORDER BY ic.created_at DESC
       `));
       const items = rowsFromResult(rows);
@@ -201,7 +201,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
         try { fs.unlinkSync(existing[0].documentPath); } catch { /* ignore */ }
       }
 
-      await db.delete(invoiceCaptures).where(eq(invoiceCaptures.id, id));
+      const [deleted] = await db.update(invoiceCaptures).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(invoiceCaptures.id, id)).returning();
 
       logAuditFromReq(req, {
         entityType: "invoice_capture",
@@ -210,7 +210,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
         changesJson: { invoiceNumber: existing[0].invoiceNumber },
       });
 
-      res.json({ success: true });
+      res.json({ success: true, record: deleted });
     } catch (err: unknown) {
       res.status(500).json({ error: "Failed to delete invoice" });
     }

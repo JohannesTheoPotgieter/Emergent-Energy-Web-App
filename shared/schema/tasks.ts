@@ -318,8 +318,10 @@ export const workItemDependencies = pgTable("work_item_dependencies", {
   successorId: integer("successor_id").notNull().references(() => workItems.id, { onDelete: "cascade" }),
   depType: workItemDepTypeEnum("dep_type").notNull().default("FS"),
   lagDays: integer("lag_days").default(0),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertWorkItemDependencySchema = createInsertSchema(workItemDependencies).omit({ id: true } as any);
+export const insertWorkItemDependencySchema = createInsertSchema(workItemDependencies).omit({ id: true, deletedAt: true, deletedBy: true } as any);
 export type InsertWorkItemDependency = z.infer<typeof insertWorkItemDependencySchema>;
 export type WorkItemDependency = typeof workItemDependencies.$inferSelect;
 
@@ -347,8 +349,10 @@ export const taskTags = pgTable("task_tags", {
   category: taskTagCategoryEnum("category").notNull().default("CUSTOM"),
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertTaskTagSchema = createInsertSchema(taskTags).omit({ id: true, createdAt: true } as any);
+export const insertTaskTagSchema = createInsertSchema(taskTags).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertTaskTag = z.infer<typeof insertTaskTagSchema>;
 export type TaskTag = typeof taskTags.$inferSelect;
 
@@ -372,7 +376,9 @@ export const taskTimeEntries = pgTable("task_time_entries", {
   description: text("description"),
   date: date("date").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertTaskTimeEntrySchema = createInsertSchema(taskTimeEntries).omit({ id: true, createdAt: true } as any);
+export const insertTaskTimeEntrySchema = createInsertSchema(taskTimeEntries).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertTaskTimeEntry = z.infer<typeof insertTaskTimeEntrySchema>;
 export type TaskTimeEntry = typeof taskTimeEntries.$inferSelect;
