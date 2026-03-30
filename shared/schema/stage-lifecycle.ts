@@ -186,6 +186,7 @@ export const projectStageRequirements = pgTable("project_stage_requirements", {
   evidenceAttached: boolean("evidence_attached").notNull().default(false),
   completedByUserId: integer("completed_by_user_id").references(() => users.id),
   completedDate: timestamp("completed_date"),
+  contributors: jsonb("contributors").default([]),  // Array of { userId, department, name }
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

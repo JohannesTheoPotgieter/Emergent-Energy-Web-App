@@ -20,6 +20,11 @@ import { useStageData } from "@/hooks/use-stage-data";
 import { useProjectCharter, useSaveCharter, useUpdateCharterStatus } from "@/hooks/use-stage-data";
 import { FileText, ShieldAlert, Save, Loader2, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
 import type { ProjectCharter } from "@shared/schema";
+import { AcceptanceWorkflow } from "./AcceptanceWorkflow";
+import { ClientCommitmentTracker } from "./ClientCommitmentTracker";
+import { EvidenceRequestPanel } from "./EvidenceRequestPanel";
+import { QueryRouter } from "./QueryRouter";
+import { ClientUpdateEditor } from "./ClientUpdateEditor";
 
 const STAGE_CODE = "S04_PD_PM_HANDOVER";
 
@@ -214,6 +219,9 @@ export function Stage4PdPmHandover({ projectId, isAdmin }: Stage4Props) {
               </Card>
             )}
 
+            {/* Acceptance Workflow */}
+            <AcceptanceWorkflow projectId={projectId} stageCode={STAGE_CODE} isAdmin={isAdmin} />
+
             {/* Evidence */}
             <Card>
               <CardHeader className="pb-2">
@@ -237,12 +245,18 @@ export function Stage4PdPmHandover({ projectId, isAdmin }: Stage4Props) {
                 )}
               </CardContent>
             </Card>
+
+            {/* Weekly Client Update */}
+            <ClientUpdateEditor projectId={projectId} />
           </>
         }
         right={
           <>
             <DependencyList projectId={projectId} stageCode={STAGE_CODE} />
             <DecisionLog projectId={projectId} stageCode={STAGE_CODE} />
+            <EvidenceRequestPanel projectId={projectId} stageCode={STAGE_CODE} />
+            <QueryRouter projectId={projectId} stageCode={STAGE_CODE} />
+            <ClientCommitmentTracker projectId={projectId} stageCode={STAGE_CODE} />
 
             <Card>
               <CardHeader className="pb-2">
