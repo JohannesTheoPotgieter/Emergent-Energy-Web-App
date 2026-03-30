@@ -10,6 +10,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CalendarDays, FileText, FolderKanban, Settings2 } from "lucide-react";
 import { Link } from "wouter";
+import { GateReports } from "@/components/reports/gate-reports";
+import { OperationalReports } from "@/components/reports/operational-reports";
+import { QualityComplianceReports } from "@/components/reports/quality-compliance-reports";
 
 type ReportType = {
   key: string;
@@ -147,6 +150,21 @@ export default function ReportCenterPage() {
           <Link href="/reports/programme"><Button className="w-full" variant="outline">Programme Reports</Button></Link>
         </CardContent>
       </Card>
+
+      {/* Stage Engine Reports (Prompt 6) */}
+      <Card className="border-blue-200">
+        <CardHeader>
+          <CardTitle>Stage Engine Reports</CardTitle>
+          <CardDescription>Gate, operational, and quality/compliance reports from the stage lifecycle.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <Link href="/reports/performance"><Button className="w-full" variant="outline">Performance Dashboard</Button></Link>
+        </CardContent>
+      </Card>
+
+      <GateReports />
+      <OperationalReports />
+      <QualityComplianceReports />
 
       {grouped.map(([category, items]) => (
         <section key={category} className="space-y-3">

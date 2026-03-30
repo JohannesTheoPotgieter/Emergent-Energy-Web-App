@@ -302,3 +302,38 @@ export const projectStageDependencies = pgTable("project_stage_dependencies", {
 export const insertProjectStageDependencySchema = createInsertSchema(projectStageDependencies).omit({ id: true, createdAt: true } as any);
 export type InsertProjectStageDependency = z.infer<typeof insertProjectStageDependencySchema>;
 export type ProjectStageDependency = typeof projectStageDependencies.$inferSelect;
+
+// ===================== PROJECT ACCESS =====================
+// Project-level access control (Layer 2 of 3-layer permission model)
+
+export const ACCESS_LEVELS = ['owner', 'contributor', 'viewer', 'none'] as const;
+export type AccessLevel = typeof ACCESS_LEVELS[number];
+
+export const PROJECT_ROLES = [
+  'pm', 'pd', 'construction_manager', 'quality_lead', 'compliance',
+  'kam', 'finance', 'engineering', 'hse', 'om',
+] as const;
+export type ProjectRole = typeof PROJECT_ROLES[number];
+
+export const projectAccess = pgTable("project_access", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
+  userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  accessLevel: text("access_level").notNull().default("viewer"),
+  roleOnProject: text("role_on_project").notNull(),
+  stagesVisible: text("stages_visible").array().notNull().default([]),   // empty = 'all'
+  canEdit: boolean("can_edit").notNull().default(false),
+  canApprove: boolean("can_approve").notNull().default(false),
+  grantedByUserId: integer("granted_by_user_id").references(() => users.id),
+  grantedAt: timestamp("granted_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  notes: text("notes"),
+}, (table) => ({
+  projectUserUnique: unique("project_access_project_user_uq").on(table.projectId, table.userId),
+  projectIdIdx: index("pa_project_id_idx").on(table.projectId),
+  userIdIdx: index("pa_user_id_idx").on(table.userId),
+}));
+
+export const insertProjectAccessSchema = createInsertSchema(projectAccess).omit({ id: true, grantedAt: true } as any);
+export type InsertProjectAccess = z.infer<typeof insertProjectAccessSchema>;
+export type ProjectAccess = typeof projectAccess.$inferSelect;
