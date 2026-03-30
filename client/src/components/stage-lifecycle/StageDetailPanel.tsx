@@ -7,6 +7,11 @@ import { useStageDetail, useTransitionStage, useHydrateChecklist, useUpdateRequi
 import { CurrentGateCard } from "./CurrentGateCard";
 import { ExceptionDialog } from "./ExceptionDialog";
 import { DependencyList } from "./DependencyList";
+import { Stage1FirstAssessment } from "@/components/stage-workspaces/Stage1FirstAssessment";
+import { Stage2DesignCostProposal } from "@/components/stage-workspaces/Stage2DesignCostProposal";
+import { Stage3FinancialClose } from "@/components/stage-workspaces/Stage3FinancialClose";
+import { Stage4PdPmHandover } from "@/components/stage-workspaces/Stage4PdPmHandover";
+import { Stage5FinancialReview } from "@/components/stage-workspaces/Stage5FinancialReview";
 import { getValidNextStates } from "@shared/utils/stage-state-machine";
 import type { StageStatus } from "@shared/schema";
 import { Loader2, FileText, ShieldAlert, ArrowRight, Link2 } from "lucide-react";
@@ -27,6 +32,15 @@ const STATUS_LABELS: Record<string, string> = {
   BLOCKED: "Blocked",
 };
 
+// Stage codes that have dedicated workspace components
+const STAGE_WORKSPACE_MAP: Record<string, React.ComponentType<{ projectId: number; isAdmin?: boolean }>> = {
+  S01_FIRST_ASSESSMENT: Stage1FirstAssessment,
+  S02_DESIGN_COST_PROPOSAL: Stage2DesignCostProposal,
+  S03_SIGNATURE_FINANCIAL_CLOSE: Stage3FinancialClose,
+  S04_PD_PM_HANDOVER: Stage4PdPmHandover,
+  S05_FINANCIAL_REVIEW: Stage5FinancialReview,
+};
+
 export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: StageDetailPanelProps) {
   const { data, isLoading } = useStageDetail(projectId, stageCode);
   const transitionMutation = useTransitionStage(projectId);
@@ -42,6 +56,27 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
     return <div className="p-4 text-sm text-muted-foreground">Stage not found.</div>;
   }
 
+  // If a dedicated workspace exists for this stage, render it
+  const WorkspaceComponent = STAGE_WORKSPACE_MAP[stageCode];
+  if (WorkspaceComponent) {
+    return (
+      <div className="space-y-4">
+        {/* Hydrate button if no requirements exist */}
+        {data.requirements.length === 0 && (
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => hydrateMutation.mutate(stageCode)} disabled={hydrateMutation.isPending}>
+              {hydrateMutation.isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+              Hydrate Checklist
+            </Button>
+            <span className="text-xs text-muted-foreground">Populate checklist from templates to begin.</span>
+          </div>
+        )}
+        <WorkspaceComponent projectId={projectId} isAdmin={isAdmin} />
+      </div>
+    );
+  }
+
+  // Fallback: Generic stage view (for stages 6-10 until their workspaces are built)
   const { stage, evidence, exceptions, dependencies } = data;
   const currentStatus = stage.stageStatus as StageStatus;
   const validNext = getValidNextStates(currentStatus, isAdmin);
