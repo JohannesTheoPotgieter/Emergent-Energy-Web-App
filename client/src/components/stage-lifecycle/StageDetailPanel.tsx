@@ -12,6 +12,11 @@ import { Stage2DesignCostProposal } from "@/components/stage-workspaces/Stage2De
 import { Stage3FinancialClose } from "@/components/stage-workspaces/Stage3FinancialClose";
 import { Stage4PdPmHandover } from "@/components/stage-workspaces/Stage4PdPmHandover";
 import { Stage5FinancialReview } from "@/components/stage-workspaces/Stage5FinancialReview";
+import { Stage6Construction } from "@/components/stage-workspaces/Stage6Construction";
+import { Stage7Commissioning } from "@/components/stage-workspaces/Stage7Commissioning";
+import { Stage8OmHandover } from "@/components/stage-workspaces/Stage8OmHandover";
+import { Stage9ClientHandover } from "@/components/stage-workspaces/Stage9ClientHandover";
+import { Stage10PostHandoverReview } from "@/components/stage-workspaces/Stage10PostHandoverReview";
 import { getValidNextStates } from "@shared/utils/stage-state-machine";
 import type { StageStatus } from "@shared/schema";
 import { Loader2, FileText, ShieldAlert, ArrowRight, Link2 } from "lucide-react";
@@ -39,6 +44,11 @@ const STAGE_WORKSPACE_MAP: Record<string, React.ComponentType<{ projectId: numbe
   S03_SIGNATURE_FINANCIAL_CLOSE: Stage3FinancialClose,
   S04_PD_PM_HANDOVER: Stage4PdPmHandover,
   S05_FINANCIAL_REVIEW: Stage5FinancialReview,
+  S06_CONSTRUCTION: Stage6Construction,
+  S07_COMMISSIONING: Stage7Commissioning,
+  S08_OM_HANDOVER: Stage8OmHandover,
+  S09_CLIENT_HANDOVER: Stage9ClientHandover,
+  S10_POST_HANDOVER_REVIEW: Stage10PostHandoverReview,
 };
 
 export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: StageDetailPanelProps) {
