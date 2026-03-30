@@ -14,6 +14,7 @@ import { ShieldAlert, ArrowLeft, Loader2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
+import { LensProvider } from "@/hooks/use-lens-context";
 import { lazy, Suspense, useEffect } from "react";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
@@ -402,6 +403,7 @@ function ProtectedPages() {
   usePageTitle(location);
 
   return (
+    <LensProvider>
     <RoleGuard>
     <AppLayout>
       <ErrorBoundary>
@@ -422,6 +424,7 @@ function ProtectedPages() {
       </ErrorBoundary>
     </AppLayout>
     </RoleGuard>
+    </LensProvider>
   );
 }
 
