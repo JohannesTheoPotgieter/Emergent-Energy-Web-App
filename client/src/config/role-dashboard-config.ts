@@ -177,28 +177,6 @@ const DEFAULT_CONFIG: RoleDashboardConfig = {
   cockpitLabel: "Execution Board",
 };
 
-const ROLE_CONFIG_MAP: Partial<Record<CompanyRole, RoleDashboardConfig>> = {
-  COO_ADMIN: COO_CEO_CONFIG,
-  CEO_ADMIN: COO_CEO_CONFIG,
-  CCO: PD_CONFIG,
-  CFO: FINANCE_CONFIG,
-  PROGRAM_MANAGER: PROGRAM_MANAGER_CONFIG,
-  PROGRAM_FINANCE_MANAGER: FINANCE_CONFIG,
-  CONSTRUCTION_MANAGER: CONSTRUCTION_CONFIG,
-  QUALITY_MANAGER: QUALITY_CONFIG,
-  ENGINEERING_MANAGER: ENGINEER_CONFIG,
-  KEY_ACCOUNTS_MANAGER: PD_CONFIG,
-  ACCOUNTANT: FINANCE_CONFIG,
-  ENGINEER: ENGINEER_CONFIG,
-  PROJECT_MANAGER_SITE: PM_CONFIG,
-  PROJECT_DEVELOPER: PD_CONFIG,
-  HSE_MANAGER: HSE_CONFIG,
-  SSEG_MANAGER: SSEG_CONFIG,
-};
-
-/**
- * HSE Manager dashboard config
- */
 const HSE_CONFIG: RoleDashboardConfig = {
   kpis: [
     { key: "incidents_open", label: "Open Incidents" },
@@ -216,9 +194,6 @@ const HSE_CONFIG: RoleDashboardConfig = {
   cockpitLabel: "HSE Dashboard",
 };
 
-/**
- * SSEG Manager dashboard config
- */
 const SSEG_CONFIG: RoleDashboardConfig = {
   kpis: [
     { key: "applications_pending", label: "Applications Pending" },
@@ -234,6 +209,25 @@ const SSEG_CONFIG: RoleDashboardConfig = {
   ],
   cockpitPath: "/hse",
   cockpitLabel: "SSEG Control Board",
+};
+
+const ROLE_CONFIG_MAP: Partial<Record<CompanyRole, RoleDashboardConfig>> = {
+  COO_ADMIN: COO_CEO_CONFIG,
+  CEO_ADMIN: COO_CEO_CONFIG,
+  CCO: PD_CONFIG,
+  CFO: FINANCE_CONFIG,
+  PROGRAM_MANAGER: PROGRAM_MANAGER_CONFIG,
+  PROGRAM_FINANCE_MANAGER: FINANCE_CONFIG,
+  CONSTRUCTION_MANAGER: CONSTRUCTION_CONFIG,
+  QUALITY_MANAGER: QUALITY_CONFIG,
+  ENGINEERING_MANAGER: ENGINEER_CONFIG,
+  KEY_ACCOUNTS_MANAGER: PD_CONFIG,
+  ACCOUNTANT: FINANCE_CONFIG,
+  ENGINEER: ENGINEER_CONFIG,
+  PROJECT_MANAGER_SITE: PM_CONFIG,
+  PROJECT_DEVELOPER: PD_CONFIG,
+  HSE_MANAGER: HSE_CONFIG,
+  SSEG_MANAGER: SSEG_CONFIG,
 };
 
 export function getRoleDashboardConfig(role: CompanyRole): RoleDashboardConfig {
