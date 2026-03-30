@@ -200,19 +200,23 @@ export function getPermissionEntityForPath(pathname: string): PermissionEntity |
  * This is the bridge between the navigation path and the section toggles
  * configured on each role in Admin → Roles & Permissions → Navigation.
  */
+/**
+ * Maps navGroup from PAGE_REGISTRY entries to the new 8-section keys.
+ * Used by getAppSectionForPath to gate nav visibility via role_permissions.sections.
+ */
 const NAV_GROUP_TO_SECTION: Record<string, string> = {
   MY_WORK: "HOME",
   EXCO: "HOME",
-  PROJECTS: "PROJECTS",
-  PROJECT_DEVELOPMENT: "PROJECTS",
-  PROJECT_MANAGEMENT: "PROJECTS",
-  ENGINEERING: "GATES",
-  QUALITY: "GATES",
-  GATES: "GATES",
+  PROJECTS: "PROJECT_DELIVERY",
+  PROJECT_DEVELOPMENT: "PROJECT_DEVELOPMENT",
+  PROJECT_MANAGEMENT: "PROJECT_DELIVERY",
+  ENGINEERING: "ENGINEERING",
+  QUALITY: "QUALITY_HSE",
+  GATES: "PORTFOLIO",
   FINANCE: "FINANCE",
   KNOWLEDGE: "ADMIN",
   FEEDBACK: "ADMIN",
-  PORTFOLIO: "PROJECTS",
+  PORTFOLIO: "PORTFOLIO",
   REPORTS: "ADMIN",
   SYSTEM: "ADMIN",
 };
@@ -224,13 +228,28 @@ export function getAppSectionForPath(pathname: string): string | undefined {
   if (pathname === "/") {
     return "HOME";
   }
-  // My Work absorbed into Home (Prompt 2)
   if (pathname === "/my-work" || pathname.startsWith("/my-work/") || pathname === "/inbox") {
     return "HOME";
   }
-  // Gates section
+  // Gates live under Portfolio
   if (pathname === "/gates" || pathname.startsWith("/gates/")) {
-    return "GATES";
+    return "PORTFOLIO";
+  }
+  // Quality & HSE
+  if (pathname === "/quality" || pathname.startsWith("/quality/") || pathname === "/hse" || pathname.startsWith("/hse/")) {
+    return "QUALITY_HSE";
+  }
+  // Engineering
+  if (pathname === "/engineering" || pathname.startsWith("/engineering/")) {
+    return "ENGINEERING";
+  }
+  // PD
+  if (pathname === "/pd" || pathname.startsWith("/pd/") || pathname === "/opportunities" || pathname === "/clients") {
+    return "PROJECT_DEVELOPMENT";
+  }
+  // Portfolio paths
+  if (pathname === "/portfolios" || pathname.startsWith("/portfolios/") || pathname === "/execution-board" || pathname.startsWith("/execution-board/") || pathname === "/project-lifecycle" || pathname.startsWith("/project-lifecycle/")) {
+    return "PORTFOLIO";
   }
   const sorted = [...PAGE_REGISTRY]
     .filter((page) => !!page.navGroup && !page.path.includes(":"))

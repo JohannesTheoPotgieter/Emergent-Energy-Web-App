@@ -121,17 +121,21 @@ export type AppSetting = typeof appSettings.$inferSelect;
 // ===================== UNIFIED ROLE PERMISSIONS =====================
 
 export const APP_SECTIONS = [
-  // Current 6-section navigation model
+  // Current 8-section navigation model
   'HOME',
-  'MY_WORK',
-  'PROJECTS',
+  'PORTFOLIO',
+  'PROJECT_DEVELOPMENT',
+  'PROJECT_DELIVERY',
+  'ENGINEERING',
+  'QUALITY_HSE',
   'FINANCE',
-  'REPORTS',
   'ADMIN',
   // Legacy keys kept for backward compatibility with existing DB records
+  'MY_WORK',
+  'PROJECTS',
+  'REPORTS',
   'EXCO',
   'PROJECT_MANAGEMENT',
-  'ENGINEERING',
   'QUALITY',
   'MY_TOOL',
   'OPERATIONS',
@@ -140,30 +144,35 @@ export const APP_SECTIONS = [
   'MONEY',
   'COLLABORATION',
   'INFORMATION',
-  'PROJECT_DEVELOPMENT',
+  'GATES',
 ] as const;
 export type AppSection = typeof APP_SECTIONS[number];
 
 export const APP_SECTION_LABELS: Record<AppSection, string> = {
+  // Current 8-section model
   HOME: "Home",
+  PORTFOLIO: "Portfolio (Lifecycle, Execution, Gates, Reports)",
+  PROJECT_DEVELOPMENT: "Project Development (Pipeline, Clients, Handovers)",
+  PROJECT_DELIVERY: "Project Delivery (Projects, Construction, Procurement, Milestones)",
+  ENGINEERING: "Engineering (Design, Tasks, Reviews)",
+  QUALITY_HSE: "Quality & HSE (Inspections, NCRs, Safety, Compliance)",
+  FINANCE: "Finance (Cashflow, Revenue, COS, Billing)",
+  ADMIN: "Admin (Settings, Templates, Import, Reports)",
+  // Legacy labels (kept for backward compat with existing DB records)
   MY_WORK: "My Work (Tasks, Approvals, Inbox)",
-  PROJECTS: "Projects (Lifecycle, Engineering, Quality, PD, Construction)",
-  FINANCE: "Finance (Cashflow, COS, Revenue, Procurement)",
-  REPORTS: "Reports (Priorities, PM Reports, SOPs, Training, Feedback)",
-  ADMIN: "Admin (Settings, Templates, Import)",
-  // Legacy labels (kept for backward compat)
-  EXCO: "Executive (Lifecycle, Priorities)",
-  PROJECT_MANAGEMENT: "Project Management (Execution, Projects, Deliverables)",
-  ENGINEERING: "Engineering (Overview, Tasks, Stages)",
-  QUALITY: "Quality Management",
-  MY_TOOL: "My Tool (Daily Planner)",
-  OPERATIONS: "Operations (Finance, Engineering, Procurement)",
-  GOVERNANCE: "Quality (Quality Workspace)",
-  COCKPIT: "Home (Home, My Work)",
-  MONEY: "Finance (Cashflow, COS, Revenue, Procurement)",
-  COLLABORATION: "Collaboration (Chat, Meetings)",
-  INFORMATION: "Knowledge (Lifecycle & SOP, Leaderboard, Training)",
-  PROJECT_DEVELOPMENT: "Project Development (PD Dashboard, Tickets)",
+  PROJECTS: "Projects (legacy)",
+  REPORTS: "Reports (legacy)",
+  EXCO: "Executive (legacy)",
+  PROJECT_MANAGEMENT: "Project Management (legacy)",
+  QUALITY: "Quality Management (legacy)",
+  MY_TOOL: "My Tool (legacy)",
+  OPERATIONS: "Operations (legacy)",
+  GOVERNANCE: "Quality (legacy)",
+  COCKPIT: "Home (legacy)",
+  MONEY: "Finance (legacy)",
+  COLLABORATION: "Collaboration (legacy)",
+  INFORMATION: "Knowledge (legacy)",
+  GATES: "Gates (legacy)",
 };
 
 export const UX_REDESIGN_ENABLED = true;
@@ -1466,20 +1475,20 @@ export const WORKSTREAM_VISIBILITY_DEFAULTS: Record<string, { workstreams: strin
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
-  { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CCO", label: "CCO", description: "Commercial operations, project oversight", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Project finance, cost tracking", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management — PM and quality focused", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Site project manager — view-only access to assigned projects, dates, financials, quality, engineering", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
-  { role: "PROJECT_DEVELOPER", label: "Project Developer", description: "Project developer — manages project development, cost proposals, and client relations", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ENGINEER", label: "Engineer", description: "Engineering team member — engineering tasks, deliverables, stage checklists", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ACCOUNTANT", label: "Accountant", description: "Finance team — cashflow, COS tracking, invoice management", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "HSE_MANAGER", label: "HSE Manager", description: "Health, Safety & Environment — incidents, audits, corrective actions, safety files", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "SSEG_MANAGER", label: "SSEG Manager", description: "SSEG applications — authority tracking, rejections, queries, turnaround", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY_HSE", "FINANCE", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CCO", label: "CCO", description: "Head of Project Development — commercial, pipeline, client relations", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CFO", label: "CFO", description: "Financial oversight — cashflow, budgets, margin, billing", sections: ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Cross-project delivery — portfolio, gates, escalations", sections: ["HOME", "PORTFOLIO", "PROJECT_DELIVERY", "QUALITY_HSE", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Program finance — invoicing, forecasting, collections", sections: ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction delivery — sites, milestones, inflow planning, procurement", sections: ["HOME", "PROJECT_DELIVERY", "FINANCE", "QUALITY_HSE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality workspace — NCRs, inspections, checklists, corrective actions", sections: ["HOME", "QUALITY_HSE", "PROJECT_DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering lead — design, approvals, deliverables", sections: ["HOME", "ENGINEERING", "QUALITY_HSE", "PROJECT_DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management, pipeline", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Project delivery — assigned projects, tasks, approvals, milestones", sections: ["HOME", "PROJECT_DELIVERY", "QUALITY_HSE", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
+  { role: "PROJECT_DEVELOPER", label: "Project Developer", description: "Project development — pipeline, cost proposals, client relations", sections: ["HOME", "PROJECT_DEVELOPMENT", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ENGINEER", label: "Engineer", description: "Engineering team — tasks, deliverables, reviews, stage checklists", sections: ["HOME", "ENGINEERING", "QUALITY_HSE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ACCOUNTANT", label: "Accountant", description: "Finance team — cashflow, COS tracking, invoice management", sections: ["HOME", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "HSE_MANAGER", label: "HSE Manager", description: "HSE compliance — incidents, audits, corrective actions, safety files", sections: ["HOME", "QUALITY_HSE", "PROJECT_DELIVERY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "SSEG_MANAGER", label: "SSEG Manager", description: "SSEG applications — authority tracking, queries, compliance", sections: ["HOME", "QUALITY_HSE", "ENGINEERING"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
 ];
