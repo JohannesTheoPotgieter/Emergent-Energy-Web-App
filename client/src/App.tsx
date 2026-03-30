@@ -129,9 +129,11 @@ const GatesReadyPage = lazy(() => import("@/pages/gates/gates-ready"));
 const GatesExceptionsPage = lazy(() => import("@/pages/gates/gates-exceptions"));
 const GatesClientUpdatesPage = lazy(() => import("@/pages/gates/gates-client-updates"));
 const GatesHandoversPage = lazy(() => import("@/pages/gates/gates-handovers"));
+const GatesQueriesPage = lazy(() => import("@/pages/gates/gates-queries"));
+const GatesCommitmentsPage = lazy(() => import("@/pages/gates/gates-commitments"));
 
-const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers"];
-const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers"];
+const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
+const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
 const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/hse", "/construction", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers"];
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
@@ -247,6 +249,8 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   GatesExceptionsPage,
   GatesClientUpdatesPage,
   GatesHandoversPage,
+  GatesQueriesPage,
+  GatesCommitmentsPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {

@@ -11,6 +11,9 @@ import { useStageDetail } from "@/hooks/use-stage-lifecycle";
 import { useStageData } from "@/hooks/use-stage-data";
 import { useState } from "react";
 import { FileText, ShieldAlert } from "lucide-react";
+import { EvidenceRequestPanel } from "./EvidenceRequestPanel";
+import { QueryRouter } from "./QueryRouter";
+import { ClientCommitmentTracker } from "./ClientCommitmentTracker";
 
 const STAGE_CODE = "S01_FIRST_ASSESSMENT";
 
@@ -127,6 +130,9 @@ export function Stage1FirstAssessment({ projectId, isAdmin }: Stage1Props) {
           <>
             <DependencyList projectId={projectId} stageCode={STAGE_CODE} />
             <DecisionLog projectId={projectId} stageCode={STAGE_CODE} />
+            <EvidenceRequestPanel projectId={projectId} stageCode={STAGE_CODE} />
+            <QueryRouter projectId={projectId} stageCode={STAGE_CODE} />
+            <ClientCommitmentTracker projectId={projectId} stageCode={STAGE_CODE} />
 
             {/* Collaboration Rule */}
             <Card>
