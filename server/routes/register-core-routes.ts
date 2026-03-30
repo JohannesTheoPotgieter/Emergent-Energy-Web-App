@@ -35,6 +35,13 @@ export async function registerCoreRoutes(app: Express) {
   registerTaskManagementRoutes(app);
   const { registerStandupRoutes } = await import("../standup-routes");
   registerStandupRoutes(app);
+  // Role-based UX upgrade: lens config routes
+  try {
+    const { registerLensConfigRoutes } = await import("./lens-config-routes");
+    registerLensConfigRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register lens config routes:", (err instanceof Error ? err.message : String(err)));
+  }
   try {
     const { registerPmMonthlyReportRoutes } = await import("./pm-monthly-report-routes");
     registerPmMonthlyReportRoutes(app);
