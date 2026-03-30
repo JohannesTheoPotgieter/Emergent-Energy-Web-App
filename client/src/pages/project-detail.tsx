@@ -10,6 +10,7 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import {
   DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
   ArrowLeft, ExternalLink, User, CheckCircle, AlertCircle, Columns, CalendarDays,
@@ -317,7 +318,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     },
     onSuccess: () => {
       toast({ title: "Task created" });
-      qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
+      invalidateAllTaskCaches(qc);
       setNewTitle("");
       setNewDescription("");
       setNewPriority("Med");
@@ -342,7 +343,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     },
     onSuccess: () => {
       toast({ title: "Task updated" });
-      qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
+      invalidateAllTaskCaches(qc);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
@@ -358,7 +359,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     },
     onSuccess: () => {
       toast({ title: "Task deleted" });
-      qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
+      invalidateAllTaskCaches(qc);
       setDeleteConfirmId(null);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
@@ -375,7 +376,7 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     },
     onSuccess: (data) => {
       toast({ title: `${data.tasksCreated} engineering tasks created` });
-      qc.invalidateQueries({ queryKey: ["project-eng-tasks", projectInfoId] });
+      invalidateAllTaskCaches(qc);
     },
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
