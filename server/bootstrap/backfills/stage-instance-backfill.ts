@@ -78,7 +78,7 @@ export async function runStageInstanceBackfill(
 
       // Create all 10 stage instances
       const now = new Date();
-      const toInsert = definitions.map((def) => ({
+      const toInsert = definitions.map((def: any) => ({
         projectId,
         stageCode: def.stageCode,
         stageStatus: "NOT_STARTED" as const,
