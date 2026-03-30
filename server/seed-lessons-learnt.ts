@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { lessonsLearnt } from "@shared/schema";
+import { lessonsLearnt } from "@shared/schema/handover";
 import { eq, sql } from "drizzle-orm";
 
 const SEED_LESSONS = [

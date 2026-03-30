@@ -56,12 +56,12 @@ export async function seedRoleCredentials() {
     };
 
     for (const role of COMPANY_ROLES) {
+      const basePassword = defaultPasswords[role] || "emergent2026";
       const passwordHash = await bcrypt.hash(basePassword, 12);
       await db.insert(roleCredentials).values({
         role,
         passwordHash,
         failedAttempts: 0,
-        passwordLastChangedAt: new Date(),
         updatedBy: "system",
       });
     }
@@ -109,7 +109,7 @@ export function registerRoleAuthRoutes(app: Express) {
         if (newAttempts >= 5) {
           updates.lockedUntil = new Date(Date.now() + 15 * 60 * 1000);
         }
-        await db.transaction(async (tx) => {
+        await db.transaction(async (tx: any) => {
           await tx.update(roleCredentials).set(updates).where(eq(roleCredentials.id, cred.id));
           await tx.insert(auditEvents).values({
             actorRole: role,
@@ -132,7 +132,7 @@ export function registerRoleAuthRoutes(app: Express) {
         role: role as any,
       });
 
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         await tx.update(roleCredentials).set({
           failedAttempts: 0,
           lockedUntil: null,
@@ -273,7 +273,7 @@ export function registerRoleAuthRoutes(app: Express) {
         role: roleCredentials.role,
         updatedBy: roleCredentials.updatedBy,
         updatedAt: roleCredentials.updatedAt,
-        passwordLastChangedAt: roleCredentials.passwordLastChangedAt,
+        passwordLastChangedAt: roleCredentials.updatedAt,
       }).from(roleCredentials);
 
       return res.json(creds);

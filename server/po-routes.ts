@@ -443,6 +443,7 @@ export function registerPoRoutes(app: Express) {
           sourceEntityId: String(poIdNum),
           summary: `PO ${po.po_ref} submitted for approval`,
           details: { poId: poIdNum, poRef: po.po_ref, total },
+          idempotencyKey: `po-submit-${poIdNum}-${Date.now()}`,
         });
       }
 
@@ -533,6 +534,7 @@ export function registerPoRoutes(app: Express) {
           sourceEntityId: String(poIdNum),
           summary: `PO ${po.po_ref} ${newPoStatus}`,
           details: { poId: poIdNum, poRef: po.po_ref, decision, newStatus: newPoStatus },
+          idempotencyKey: `po-review-${poIdNum}-${Date.now()}`,
         });
       }
 

@@ -111,7 +111,7 @@ export async function financeRevenueService(projectId: number) {
 
 export async function financeExpenditureService(projectId: number) {
   const lines = await repo.getFinanceCostLines(projectId);
-  return { committed: lines.filter((l) => ["APPROVED", "INVOICED", "PAID"].includes(String(l.status ?? ""))), planned: lines.filter((l) => String(l.status ?? "") === "PLANNED") };
+  return { committed: lines.filter((l: any) => ["APPROVED", "INVOICED", "PAID"].includes(String(l.status ?? ""))), planned: lines.filter((l: any) => String(l.status ?? "") === "PLANNED") };
 }
 
 export async function createFinanceVariationService(projectId: number, payload: any, userId: number) {

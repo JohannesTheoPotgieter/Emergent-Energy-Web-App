@@ -227,7 +227,7 @@ export async function generateWorkItemReconciliationReport(workstream?: "ENG"): 
 
   const baseReport = {
     generated_at: new Date().toISOString(),
-    scope: workstream ? "engineering" : "all-work-items",
+    scope: (workstream ? "engineering" : "all-work-items") as "engineering" | "all-work-items",
     totals: {
       projects: projects.length,
       pass: projects.filter((project) => project.status === "pass").length,

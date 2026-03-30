@@ -46,7 +46,7 @@ async function enforceSessionLimit(userId: number, currentSessionId: string, lim
       const sess = typeof row.sess === "string" ? JSON.parse(row.sess) : row.sess;
       const passportUserId = sess?.passport?.user;
       if (Number(passportUserId) === userId) {
-        userSessions.push({ sid: row.sid, expire: row.expire });
+        userSessions.push({ sid: row.sid as string, expire: row.expire as Date });
       }
     }
     if (userSessions.length <= limit) return;
@@ -369,8 +369,8 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
   app.get("/api/pd-assignable-users", requireAuth, async (_req, res) => {
     try {
       const pdUsers = await db.select({ id: users.id, name: users.name, username: users.username, role: users.role, microsoft_id: users.microsoft_id }).from(users).where(eq(users.role, "PROJECT_DEVELOPER"));
-      const filtered = pdUsers.filter((u) => u.microsoft_id != null && u.microsoft_id !== "");
-      res.json(filtered.map(({ microsoft_id: _microsoftId, ...rest }) => rest));
+      const filtered = pdUsers.filter((u: any) => u.microsoft_id != null && u.microsoft_id !== "");
+      res.json(filtered.map(({ microsoft_id: _microsoftId, ...rest }: any) => rest));
     } catch {
       res.status(500).json({ error: "Failed to fetch PD users" });
     }

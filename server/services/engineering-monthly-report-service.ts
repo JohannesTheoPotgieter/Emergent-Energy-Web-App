@@ -76,28 +76,28 @@ export async function generateEngineeringReportData(month: string) {
     db.select({ id: users.id, name: users.name }).from(users),
   ]);
 
-  const projectMap = new Map(allProjectRows.map(r => [r.project_info.id, { ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }]));
-  const userMap = new Map(allUsers.map(u => [u.id, u.name]));
-  const stageTemplateMap = new Map(stageTemplates.map(s => [s.id, s]));
+  const projectMap: Map<number, any> = new Map(allProjectRows.map((r: any) => [r.project_info.id, { ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }]));
+  const userMap: Map<number, any> = new Map(allUsers.map((u: any) => [u.id, u.name]));
+  const stageTemplateMap: Map<number, any> = new Map(stageTemplates.map((s: any) => [s.id, s]));
 
-  const activeProjects = [...projectMap.values()].filter(p => {
+  const activeProjects = [...projectMap.values()].filter((p: any) => {
     if (!p.isActive) return false;
     const phase = (p.phase || "").trim();
     return !INACTIVE_STATUSES.some(s => s.toLowerCase() === phase.toLowerCase());
   });
-  const activeProjectIds = new Set(activeProjects.map(p => p.id));
+  const activeProjectIds = new Set(activeProjects.map((p: any) => p.id));
 
   // Filter engineering work items to active projects
-  const engWorkItems = allWorkItemRows.filter(w => activeProjectIds.has(w.projectId));
+  const engWorkItems = allWorkItemRows.filter((w: any) => activeProjectIds.has(w.projectId));
 
   // ===== SECTION 1: Engineering KPIs =====
   const totalEngTasks = engWorkItems.length;
-  const completedThisMonth = engWorkItems.filter(w => w.completedAt && isTimestampInMonth(w.completedAt, monthStart, monthEnd)).length;
-  const totalCompleted = engWorkItems.filter(w => COMPLETED_STATUSES.includes((w.status || "").toUpperCase())).length;
+  const completedThisMonth = engWorkItems.filter((w: any) => w.completedAt && isTimestampInMonth(w.completedAt, monthStart, monthEnd)).length;
+  const totalCompleted = engWorkItems.filter((w: any) => COMPLETED_STATUSES.includes((w.status || "").toUpperCase())).length;
 
-  const activeDeliverables = allDeliverables.filter(d => activeProjectIds.has(d.projectId));
+  const activeDeliverables = allDeliverables.filter((d: any) => activeProjectIds.has(d.projectId));
 
-  const activeTasks = engWorkItems.filter(w => {
+  const activeTasks = engWorkItems.filter((w: any) => {
     const status = (w.status || "").toUpperCase();
     return !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
   }).length;
@@ -107,10 +107,10 @@ export async function generateEngineeringReportData(month: string) {
     tasksCompletedThisMonth: completedThisMonth,
     cumulativeCompletionRate: totalEngTasks > 0 ? (totalCompleted / totalEngTasks) * 100 : 0,
     monthlyCompletionRate: (completedThisMonth + activeTasks) > 0 ? (completedThisMonth / (completedThisMonth + activeTasks)) * 100 : 0,
-    deliverablesSubmitted: activeDeliverables.filter(d => isTimestampInMonth(d.createdAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
-    deliverablesApproved: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && (d.status === "QC APPROVED" || d.status === "COMPLETE")).length,
-    deliverablesRejected: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "PROVIDE FEEDBACK").length,
-    openBlockers: engWorkItems.filter(w => {
+    deliverablesSubmitted: activeDeliverables.filter((d: any) => isTimestampInMonth(d.createdAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
+    deliverablesApproved: activeDeliverables.filter((d: any) => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && (d.status === "QC APPROVED" || d.status === "COMPLETE")).length,
+    deliverablesRejected: activeDeliverables.filter((d: any) => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "PROVIDE FEEDBACK").length,
+    openBlockers: engWorkItems.filter((w: any) => {
       const status = (w.status || "").toUpperCase();
       return w.endDate && w.endDate < monthEndStr && !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
     }).length,
@@ -123,20 +123,20 @@ export async function generateEngineeringReportData(month: string) {
     tasksByProject.get(w.projectId)!.push(w);
   }
 
-  const perProjectTasks = activeProjects.map(p => {
+  const perProjectTasks = activeProjects.map((p: any) => {
     const tasks = tasksByProject.get(p.id) || [];
     const total = tasks.length;
-    const completed = tasks.filter(t => COMPLETED_STATUSES.includes((t.status || "").toUpperCase())).length;
-    const inProgress = tasks.filter(t => (t.status || "").toUpperCase() === "IN PROGRESS").length;
-    const notStarted = tasks.filter(t => {
+    const completed = tasks.filter((t: any) => COMPLETED_STATUSES.includes((t.status || "").toUpperCase())).length;
+    const inProgress = tasks.filter((t: any) => (t.status || "").toUpperCase() === "IN PROGRESS").length;
+    const notStarted = tasks.filter((t: any) => {
       const s = (t.status || "").toUpperCase();
       return s === "TO DO" || s === "NOT STARTED";
     }).length;
-    const overdue = tasks.filter(t => {
+    const overdue = tasks.filter((t: any) => {
       const status = (t.status || "").toUpperCase();
       return t.endDate && t.endDate < monthEndStr && !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
     }).length;
-    const completedThisMonth = tasks.filter(t => t.completedAt && isTimestampInMonth(t.completedAt, monthStart, monthEnd)).length;
+    const completedThisMonth = tasks.filter((t: any) => t.completedAt && isTimestampInMonth(t.completedAt, monthStart, monthEnd)).length;
 
     return {
       projectId: p.id,
@@ -159,9 +159,9 @@ export async function generateEngineeringReportData(month: string) {
     versionsByDeliverable.get(v.deliverableId)!.push(v);
   }
 
-  const deliverableRegister = activeDeliverables.map(d => {
+  const deliverableRegister = activeDeliverables.map((d: any) => {
     const proj = projectMap.get(d.projectId);
-    const versions = (versionsByDeliverable.get(d.id) || []).map(v => ({
+    const versions = (versionsByDeliverable.get(d.id) || []).map((v: any) => ({
       versionNumber: v.versionNumber,
       status: v.status,
       createdAt: v.createdAt?.toISOString() || null,
@@ -182,16 +182,16 @@ export async function generateEngineeringReportData(month: string) {
   });
 
   const deliverableActivity = {
-    submittedThisMonth: activeDeliverables.filter(d => isTimestampInMonth(d.createdAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
-    approvedThisMonth: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && (d.status === "QC APPROVED" || d.status === "COMPLETE")).length,
-    rejectedThisMonth: activeDeliverables.filter(d => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "PROVIDE FEEDBACK").length,
-    pendingReview: activeDeliverables.filter(d => d.status === "NEEDS APPROVAL").length,
+    submittedThisMonth: activeDeliverables.filter((d: any) => isTimestampInMonth(d.createdAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
+    approvedThisMonth: activeDeliverables.filter((d: any) => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && (d.status === "QC APPROVED" || d.status === "COMPLETE")).length,
+    rejectedThisMonth: activeDeliverables.filter((d: any) => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "PROVIDE FEEDBACK").length,
+    pendingReview: activeDeliverables.filter((d: any) => d.status === "NEEDS APPROVAL").length,
   };
 
   // ===== SECTION 4: Stage/Gate progress =====
-  const activeStages = allStages.filter(s => activeProjectIds.has(s.projectId));
+  const activeStages = allStages.filter((s: any) => activeProjectIds.has(s.projectId));
 
-  const stageGateProgress = activeStages.map(s => {
+  const stageGateProgress = activeStages.map((s: any) => {
     const proj = projectMap.get(s.projectId);
     const template = stageTemplateMap.get(s.stageTemplateId);
     return {
@@ -228,11 +228,11 @@ export async function generateEngineeringReportData(month: string) {
   }));
 
   // ===== SECTION 6: Approvals =====
-  const activeStageIds = new Set(activeStages.map(s => s.id));
-  const activeApprovals = allApprovals.filter(a => activeStageIds.has(a.projectEngStageId));
+  const activeStageIds = new Set(activeStages.map((s: any) => s.id));
+  const activeApprovals = allApprovals.filter((a: any) => activeStageIds.has(a.projectEngStageId));
 
-  const approvalRegister = activeApprovals.map(a => {
-    const stage = allStages.find(s => s.id === a.projectEngStageId);
+  const approvalRegister = activeApprovals.map((a: any) => {
+    const stage = allStages.find((s: any) => s.id === a.projectEngStageId);
     const proj = stage ? projectMap.get(stage.projectId) : null;
     return {
       projectId: stage?.projectId || 0,

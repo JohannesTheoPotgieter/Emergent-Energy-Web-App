@@ -118,7 +118,7 @@ export function registerTaskManagementRoutes(app: Express) {
         .where(and(...conditions));
 
       // Enrich with tags for the returned items
-      const itemIds = items.map((i) => i.id);
+      const itemIds = items.map((i: any) => i.id);
       let tagsByItem: Record<number, { id: number; name: string; color: string; category: string }[]> = {};
 
       if (itemIds.length > 0) {
@@ -154,11 +154,11 @@ export function registerTaskManagementRoutes(app: Express) {
             .filter(([, tags]) => tags.some((t) => t.id === tagIdNum))
             .map(([id]) => parseInt(id))
         );
-        filteredItems = items.filter((i) => itemsWithTag.has(i.id));
+        filteredItems = items.filter((i: any) => itemsWithTag.has(i.id));
       }
 
       res.json({
-        items: filteredItems.map((item) => ({
+        items: filteredItems.map((item: any) => ({
           ...item,
           tags: tagsByItem[item.id] || [],
         })),
@@ -582,7 +582,7 @@ export function registerTaskManagementRoutes(app: Express) {
         .where(eq(taskTimeEntries.workItemId, workItemId))
         .orderBy(desc(taskTimeEntries.date));
 
-      const totalMinutes = entries.reduce((sum, e) => sum + e.durationMinutes, 0);
+      const totalMinutes = entries.reduce((sum: any, e: any) => sum + e.durationMinutes, 0);
 
       res.json({ entries, totalMinutes });
     } catch (err: unknown) {
@@ -810,11 +810,11 @@ export function registerTaskManagementRoutes(app: Express) {
 
       // Get tag IDs
       const allTags = await db.select().from(taskTags);
-      const bugTagId = allTags.find((t) => t.name === "Bug")?.id;
-      const improvementTagId = allTags.find((t) => t.name === "Improvement")?.id;
-      const featureTagId = allTags.find((t) => t.name === "Feature")?.id;
-      const securityTagId = allTags.find((t) => t.name === "Security")?.id;
-      const criticalTagId = allTags.find((t) => t.name === "Critical")?.id;
+      const bugTagId = allTags.find((t: any) => t.name === "Bug")?.id;
+      const improvementTagId = allTags.find((t: any) => t.name === "Improvement")?.id;
+      const featureTagId = allTags.find((t: any) => t.name === "Feature")?.id;
+      const securityTagId = allTags.find((t: any) => t.name === "Security")?.id;
+      const criticalTagId = allTags.find((t: any) => t.name === "Critical")?.id;
 
       // Insert bugs
       for (const bug of bugs) {

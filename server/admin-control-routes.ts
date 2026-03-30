@@ -254,7 +254,7 @@ router.get("/api/admin/control-center/health", requireAuth, requireAdmin, async 
 router.get("/api/admin/control-center/feature-flags", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const allSettings = await db.select().from(appSettings);
-    const flags = allSettings.map(s => ({
+    const flags = allSettings.map((s: any) => ({
       key: s.key,
       value: s.value === "true" || s.value === "1",
       rawValue: s.value,
@@ -545,7 +545,7 @@ router.get("/api/admin/control-center/import-governance", requireAuth, requireAd
             count: sql<number>`COUNT(*)::int`,
           })
           .from(importIssues)
-          .where(and(inArray(importIssues.importRunId, recentRuns.map((run) => run.id)), eq(importIssues.resolved, false)))
+          .where(and(inArray(importIssues.importRunId, recentRuns.map((run: any) => run.id)), eq(importIssues.resolved, false)))
           .groupBy(importIssues.importRunId, importIssues.severity)
       : [];
 
@@ -576,7 +576,7 @@ router.get("/api/admin/control-center/import-governance", requireAuth, requireAd
       if (row.status === "SUPERSEDED") statusCounts.supersededRuns += count;
     }
 
-    const mappedRecentRuns = recentRuns.map((run) => {
+    const mappedRecentRuns = recentRuns.map((run: any) => {
       const issues = issueCounts.get(run.id) || { blockers: 0, warnings: 0 };
       return {
         id: run.id,
@@ -602,7 +602,7 @@ router.get("/api/admin/control-center/import-governance", requireAuth, requireAd
       },
       recentRuns: mappedRecentRuns,
       recentAttentionRuns: mappedRecentRuns.filter(
-        (run) =>
+        (run: any) =>
           run.status !== "COMMITTED" ||
           run.blockerCount > 0 ||
           run.warningCount > 0 ||

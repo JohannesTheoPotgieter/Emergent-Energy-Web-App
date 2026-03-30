@@ -334,14 +334,18 @@ export async function getPlatformProjectSummaryMap(params?: {
     const seen = assigneeSeenByProject.get(row.projectId) || new Set<string>();
     addAssignee(target, seen, {
       assignmentRole: row.assignmentRole,
+      assigneeType: "user",
+      assigneeId: row.userId,
       userId: row.userId,
+      counterpartyId: null,
+      contactId: null,
       roleId: null,
       displayName: row.displayName || userNameById.get(row.userId) || null,
       sourceTable: "work_item_assignments",
       sourceEntityType: "work_item",
       sourceEntityId: String(row.workItemId),
       canonical: true,
-    });
+    } as any);
     assigneesByProject.set(row.projectId, target);
     assigneeSeenByProject.set(row.projectId, seen);
   }
@@ -352,14 +356,18 @@ export async function getPlatformProjectSummaryMap(params?: {
     const seen = assigneeSeenByProject.get(row.projectId) || new Set<string>();
     addAssignee(target, seen, {
       assignmentRole: "OWNER",
+      assigneeType: "user",
+      assigneeId: row.userId,
       userId: row.userId,
+      counterpartyId: null,
+      contactId: null,
       roleId: null,
       displayName: row.displayName || userNameById.get(row.userId) || null,
       sourceTable: "work_items",
       sourceEntityType: "work_item",
       sourceEntityId: String(row.workItemId),
       canonical: false,
-    });
+    } as any);
     assigneesByProject.set(row.projectId, target);
     assigneeSeenByProject.set(row.projectId, seen);
   }
@@ -381,27 +389,35 @@ export async function getPlatformProjectSummaryMap(params?: {
     if (row.pmUserId || row.pm) {
       addAssignee(assignees, seen, {
         assignmentRole: "OWNER",
+        assigneeType: "user",
+        assigneeId: row.pmUserId || null,
         userId: row.pmUserId || null,
+        counterpartyId: null,
+        contactId: null,
         roleId: normalizeRoleId("PROGRAM_MANAGER"),
         displayName: row.pm || (row.pmUserId ? userNameById.get(row.pmUserId) || null : null),
         sourceTable: "project_info",
         sourceEntityType: "project",
         sourceEntityId: String(row.id),
         canonical: false,
-      });
+      } as any);
     }
 
     if (row.pdUserId || row.pd) {
       addAssignee(assignees, seen, {
         assignmentRole: "OWNER",
+        assigneeType: "user",
+        assigneeId: row.pdUserId || null,
         userId: row.pdUserId || null,
+        counterpartyId: null,
+        contactId: null,
         roleId: normalizeRoleId("PROJECT_DEVELOPER"),
         displayName: row.pd || (row.pdUserId ? userNameById.get(row.pdUserId) || null : null),
         sourceTable: "project_info",
         sourceEntityType: "project",
         sourceEntityId: String(row.id),
         canonical: false,
-      });
+      } as any);
     }
 
     const latestUpdateAt = toIsoString(editable?.latestUpdateAt);

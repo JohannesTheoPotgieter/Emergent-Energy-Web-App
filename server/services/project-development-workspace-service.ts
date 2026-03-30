@@ -774,9 +774,9 @@ export async function getProjectDevelopmentWorkspace(params: {
     getPlatformProjectSummaryMap({ projectIds: [params.projectId] }),
   ]);
 
-  const intakeRequestIds = intakeRows.map((row) => row.id);
-  const pdTicketIds = pdTicketRows.map((row) => row.id);
-  const workItemIds = workItemRows.map((row) => row.id);
+  const intakeRequestIds = intakeRows.map((row: any) => row.id);
+  const pdTicketIds = pdTicketRows.map((row: any) => row.id);
+  const workItemIds = workItemRows.map((row: any) => row.id);
 
   const [intakeTaskRows, pdTicketTaskRows, workItemDependencyRows] = await Promise.all([
     intakeRequestIds.length > 0
@@ -832,7 +832,7 @@ export async function getProjectDevelopmentWorkspace(params: {
     pdTicketTaskRows,
     workItemRows,
     workItemDependencyRows,
-    raidRows: raidRows.map((row) => ({
+    raidRows: raidRows.map((row: any) => ({
       id: row.id,
       type: row.type,
       title: row.title,

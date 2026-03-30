@@ -507,7 +507,7 @@ export function registerMsSyncRoutes(app: Express) {
         } : null,
         assignments,
       });
-    } catch (err: unknown) {
+    } catch (err: any) {
       console.error("[Reassign] Assignment update failed", err?.message, err?.stack?.split("\n").slice(0, 8).join("\n"));
       const status = err?.message?.toLowerCase().includes("permission") ? 403 : err?.message?.toLowerCase().includes("not found") ? 404 : err?.message?.toLowerCase().includes("required") ? 400 : 500;
       res.status(status).json({ error: (err instanceof Error ? err.message : String(err)) || "Assignment update failed", _debug: { body: req.body, stack: err?.stack?.split("\n").slice(0, 8) } });
@@ -570,7 +570,7 @@ export function registerMsSyncRoutes(app: Express) {
           };
           let filtered = engApprovals;
           if (!isAdmin) {
-            filtered = engApprovals.filter(a => {
+            filtered = engApprovals.filter((a: any) => {
               if (a.approverUserId && a.approverUserId === userId) return true;
               if (a.approverRole) {
                 const allowedRoles = APPROVAL_ROLE_TO_USER_ROLES[a.approverRole];
@@ -611,11 +611,11 @@ export function registerMsSyncRoutes(app: Express) {
             .where(eq(approvals.status, "pending"))
             .orderBy(desc(approvals.requestedAt));
 
-          const generalAssignmentsById = await getAssignmentsForEntities("approval", generalApprovals.map((a) => a.id), "APPROVER");
+          const generalAssignmentsById = await getAssignmentsForEntities("approval", generalApprovals.map((a: any) => a.id), "APPROVER");
 
           let filteredGeneral = generalApprovals;
           if (!isAdmin) {
-            filteredGeneral = generalApprovals.filter((approval) => {
+            filteredGeneral = generalApprovals.filter((approval: any) => {
               if (approval.assignedApprover === userId) return true;
               const assignments = (generalAssignmentsById.get(approval.id) || []) as Awaited<ReturnType<typeof getAssignmentsForEntity>>;
               return assignments.some(
@@ -627,7 +627,7 @@ export function registerMsSyncRoutes(app: Express) {
           return {
             engApprovals: filtered,
             qcItems: filteredQc,
-            generalApprovals: filteredGeneral.map((approval) => ({
+            generalApprovals: filteredGeneral.map((approval: any) => ({
               ...approval,
               assignments: generalAssignmentsById.get(approval.id) || [],
             })),
@@ -708,7 +708,7 @@ export function registerMsSyncRoutes(app: Express) {
           .orderBy(desc(msObjects.receivedOrStartDatetime)),
       ]);
 
-      const subtaskParentIds = opTasks.filter(t => t.parentId === null || t.parentId === undefined).map(t => t.id);
+      const subtaskParentIds = opTasks.filter((t: any) => t.parentId === null || t.parentId === undefined).map((t: any) => t.id);
       let subtaskCounts: Record<number, number> = {};
       if (subtaskParentIds.length > 0) {
         const counts = await db.select({
@@ -771,7 +771,7 @@ export function registerMsSyncRoutes(app: Express) {
 
       const visibleMicrosoftItems = await filterMicrosoftItemsForRequest(req, microsoftItems);
 
-      const personal = personalTasks.map(t => withSourceLinks("personal", {
+      const personal = personalTasks.map((t: any) => withSourceLinks("personal", {
         ...t,
         resolvedOwner: resolveUserId(t.ownerUserId),
       }, {
@@ -780,7 +780,7 @@ export function registerMsSyncRoutes(app: Express) {
         projectName: t.projectName,
       }));
 
-      const operational = opTasks.map(t => {
+      const operational = opTasks.map((t: any) => {
         const isOwnerOrAssignee = t.ownerUserId === userId;
         const isCreator = t.createdBy === userId;
         const trackingRole = isOwnerOrAssignee && isCreator ? "both" : isOwnerOrAssignee ? "assignee" : "creator";
@@ -798,7 +798,7 @@ export function registerMsSyncRoutes(app: Express) {
         });
       });
 
-      const trRegister = trRegisterItems.map(t => {
+      const trRegister = trRegisterItems.map((t: any) => {
         const isOwner = (t.owners || []).includes(userName);
         const isCreatorByEmail = t.createdBy === userEmail || t.createdBy === userName || t.createdBy === username;
         const trackingRole = isOwner && isCreatorByEmail ? "both" : isOwner ? "assignee" : "creator";
@@ -1044,7 +1044,7 @@ export function registerMsSyncRoutes(app: Express) {
 
       const pName = project.projectName || "";
       const normalizedName = pName.replace(/_/g, " ").replace(/Tracker.*$/i, "").trim().toLowerCase();
-      const words = normalizedName.split(/\s+/).filter(w => w.length > 2);
+      const words = normalizedName.split(/\s+/).filter((w: any) => w.length > 2);
 
       const userTeamsChats = await db.select().from(msObjects).where(
         and(eq(msObjects.userId, userId), eq(msObjects.type, "teams"))
@@ -1054,7 +1054,7 @@ export function registerMsSyncRoutes(app: Express) {
       if (words.length > 0) {
         for (const chat of userTeamsChats) {
           const chatTitle = (chat.subjectOrTitle || "").toLowerCase();
-          const matchCount = words.filter(w => chatTitle.includes(w)).length;
+          const matchCount = words.filter((w: any) => chatTitle.includes(w)).length;
           if (matchCount >= Math.ceil(words.length * 0.6)) {
             autoMatch = chat;
             break;
@@ -1077,7 +1077,7 @@ export function registerMsSyncRoutes(app: Express) {
             chatType: meta?.chatType || "group",
             preview: autoMatch.preview,
           },
-          allChats: userTeamsChats.map(c => {
+          allChats: userTeamsChats.map((c: any) => {
             const m = c.metadata as any;
             return {
               id: c.id,
@@ -1094,7 +1094,7 @@ export function registerMsSyncRoutes(app: Express) {
 
       return res.json({
         found: false,
-        allChats: userTeamsChats.map(c => {
+        allChats: userTeamsChats.map((c: any) => {
           const m = c.metadata as any;
           return {
             id: c.id,
@@ -1147,7 +1147,7 @@ export function registerMsSyncRoutes(app: Express) {
         .where(and(eq(msObjects.userId, userId), eq(msObjects.type, "teams"), ne(msObjects.dismissed, true)))
         .orderBy(desc(msObjects.receivedOrStartDatetime));
 
-      const groups = teamsItems.map((item) => {
+      const groups = teamsItems.map((item: any) => {
         const meta = (item.metadata as any) || {};
         return {
           id: item.id,

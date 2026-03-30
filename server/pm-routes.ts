@@ -58,8 +58,8 @@ async function getPmProjectNames(userId: number): Promise<{ projects: any[]; pgA
     .where(eq(projectInfo.pmUserId, userId))
     .orderBy(projectInfo.projectName);
 
-  const projectNames = projects.map(p => p.projectName);
-  const pgArray = `{${projectNames.map(n => `"${n.replace(/"/g, '\\"')}"`).join(",")}}`;
+  const projectNames = projects.map((p: any) => p.projectName);
+  const pgArray = `{${projectNames.map((n: any) => `"${n.replace(/"/g, '\\"')}"`).join(",")}}`;
   return { projects, pgArray };
 }
 
