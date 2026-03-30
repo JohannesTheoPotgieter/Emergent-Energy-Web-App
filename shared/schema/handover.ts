@@ -67,6 +67,9 @@ export const ssegItems = pgTable("sseg_items", {
   actualDate: date("actual_date"),
   status: text("status").default("pending"),        // 'pending', 'submitted', 'approved', 'rejected', 'complete'
   notes: text("notes"),
+  // Commissioning gate flags (Prompt 7)
+  techsitterConfirmed: boolean("techsitter_confirmed").default(false),
+  meteringConfirmed: boolean("metering_confirmed").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   deletedAt: timestamp("deleted_at"),
