@@ -143,10 +143,22 @@ app.get("/api/gates/ready", async (_req, res) => {
   }
 });
 
-// ── Exceptions ──────────────────────────────────────────────
+// ── Exceptions (enhanced for Prompt 6) ─────────────────────
 
-app.get("/api/gates/exceptions", async (_req, res) => {
+app.get("/api/gates/exceptions", async (req, res) => {
   try {
+    const view = (req.query.view as string) || "all";
+    const userId = (req as any).user?.id;
+
+    let statusFilter = sql`1=1`;
+    if (view === "pending_my_approval") {
+      statusFilter = sql`pse.status = 'REQUESTED' AND pse.approver_user_id = ${userId || 0}`;
+    } else if (view === "overdue") {
+      statusFilter = sql`pse.status = 'REQUESTED' AND pse.created_at < NOW() - INTERVAL '3 days'`;
+    } else if (view === "all") {
+      statusFilter = sql`pse.status IN ('REQUESTED', 'APPROVED', 'APPROVED_WITH_CONDITIONS', 'RE_OPENED')`;
+    }
+
     const result = await db.execute(sql`
       SELECT
         pse.id,
@@ -154,23 +166,35 @@ app.get("/api/gates/exceptions", async (_req, res) => {
         pi.project_name,
         pse.stage_code,
         pse.requirement_code,
+        psr.item_name AS blocked_item_name,
         pse.reason_text,
         pse.risk_level,
-        pse.status,
-        pse.requested_by_user_id,
-        pse.created_at,
         pse.mitigation_text,
-        pse.closeout_due_date
+        pse.owner_user_id,
+        owner_u.name AS owner_name,
+        pse.approver_user_id,
+        approver_u.name AS approver_name,
+        pse.status,
+        pse.conditions_text,
+        pse.closeout_due_date,
+        COALESCE(EXTRACT(DAY FROM NOW() - pse.created_at)::int, 0) AS age_days,
+        pse.downstream_blocking_stage,
+        pse.created_at,
+        pse.approved_at,
+        pse.closed_at,
+        pse.updated_at
       FROM project_stage_exceptions pse
       JOIN project_info pi ON pi.id = pse.project_id
-      WHERE pse.status = 'REQUESTED'
+      LEFT JOIN project_stage_requirements psr
+        ON psr.project_id = pse.project_id
+        AND psr.stage_code = pse.stage_code
+        AND psr.item_code = pse.requirement_code
+      LEFT JOIN users owner_u ON owner_u.id = pse.owner_user_id
+      LEFT JOIN users approver_u ON approver_u.id = pse.approver_user_id
+      WHERE ${statusFilter}
       ORDER BY
         CASE pse.risk_level
-          WHEN 'CRITICAL' THEN 0
-          WHEN 'HIGH' THEN 1
-          WHEN 'MEDIUM' THEN 2
-          WHEN 'LOW' THEN 3
-          ELSE 4
+          WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 WHEN 'LOW' THEN 3 ELSE 4
         END,
         pse.created_at ASC
     `);
@@ -178,6 +202,87 @@ app.get("/api/gates/exceptions", async (_req, res) => {
     res.json({ exceptions: (result as any).rows ?? [] });
   } catch (err: any) {
     console.error("Gates exceptions error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Exception counts by view ───────────────────────────────
+
+app.get("/api/gates/exceptions/counts", async (req, res) => {
+  try {
+    const userId = (req as any).user?.id || 0;
+    const result = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE status IN ('REQUESTED','APPROVED','APPROVED_WITH_CONDITIONS','RE_OPENED')) AS all_count,
+        COUNT(*) FILTER (WHERE status = 'REQUESTED' AND approver_user_id = ${userId}) AS pending_my_approval,
+        COUNT(*) FILTER (WHERE status = 'REQUESTED' AND created_at < NOW() - INTERVAL '3 days') AS overdue_count
+      FROM project_stage_exceptions
+    `);
+    const row = ((result as any).rows ?? [])[0] || {};
+    res.json({
+      all: Number(row.all_count || 0),
+      pendingMyApproval: Number(row.pending_my_approval || 0),
+      overdue: Number(row.overdue_count || 0),
+    });
+  } catch (err: any) {
+    console.error("Gates exceptions counts error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Exception actions ──────────────────────────────────────
+
+app.patch("/api/gates/exceptions/:id/action", async (req, res) => {
+  try {
+    const exceptionId = Number(req.params.id);
+    const { action, conditionsText, comment } = req.body;
+    const userId = (req as any).user?.id;
+
+    const validActions = ["approve", "approve_with_conditions", "reject", "return", "close", "reopen", "escalate"];
+    if (!validActions.includes(action)) {
+      return res.status(400).json({ error: `Invalid action: ${action}` });
+    }
+
+    let newStatus: string;
+    let extraFields = sql``;
+    switch (action) {
+      case "approve":
+        newStatus = "APPROVED";
+        extraFields = sql`, approved_at = NOW()`;
+        break;
+      case "approve_with_conditions":
+        newStatus = "APPROVED_WITH_CONDITIONS";
+        extraFields = sql`, approved_at = NOW(), conditions_text = ${conditionsText || ""}`;
+        break;
+      case "reject":
+        newStatus = "REJECTED";
+        break;
+      case "return":
+        newStatus = "REQUESTED";
+        break;
+      case "close":
+        newStatus = "CLOSED";
+        extraFields = sql`, closed_at = NOW()`;
+        break;
+      case "reopen":
+        newStatus = "RE_OPENED";
+        break;
+      case "escalate":
+        newStatus = "REQUESTED"; // stays requested but we could log escalation
+        break;
+      default:
+        newStatus = "REQUESTED";
+    }
+
+    await db.execute(sql`
+      UPDATE project_stage_exceptions
+      SET status = ${newStatus}, updated_at = NOW() ${extraFields}
+      WHERE id = ${exceptionId}
+    `);
+
+    res.json({ success: true, newStatus });
+  } catch (err: any) {
+    console.error("Exception action error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -223,13 +328,94 @@ app.get("/api/gates/client-updates", async (_req, res) => {
   }
 });
 
-// ── Handovers ───────────────────────────────────────────────
+// ── Handovers (enhanced for Prompt 6) ──────────────────────
 
-app.get("/api/gates/handovers", async (_req, res) => {
+app.get("/api/gates/handovers", async (req, res) => {
   try {
-    const projects = await getProjectsWithStageData({
-      stageCodes: ["S08_OM_HANDOVER", "S09_CLIENT_HANDOVER"],
-    });
+    const view = (req.query.view as string) || "all";
+
+    const result = await db.execute(sql`
+      SELECT
+        pi.id AS project_id,
+        pi.project_name,
+        pi.client_name,
+        pi.pm,
+        pes.construction_manager,
+        pes.current_stage_code,
+        pes.gate_status,
+        pes.gate_readiness_pct,
+        pes.waiting_on_department,
+        COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) AS days_in_stage,
+        hp.pack_type AS handover_type,
+        COALESCE(hp.document_completeness_pct, 0) AS pack_completeness_pct,
+        COALESCE(hp.open_snags_count, 0) AS open_snags,
+        hp.checklist_status AS acceptance_status,
+        CASE
+          WHEN hp.checklist_status = 'complete' THEN 'accepted'
+          WHEN COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) > 7 THEN 'overdue'
+          WHEN COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) > 5 THEN 'approaching'
+          ELSE 'within'
+        END AS sla_status,
+        COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) AS days_waiting,
+        sseg.sseg_pending
+      FROM project_info pi
+      JOIN project_execution_state pes ON pes.project_id = pi.id
+      LEFT JOIN project_stage_instances psi
+        ON psi.project_id = pi.id AND psi.stage_code = pes.current_stage_code
+      LEFT JOIN (
+        SELECT DISTINCT ON (project_id)
+          project_id, pack_type, document_completeness_pct, open_snags_count, checklist_status
+        FROM handover_packs
+        ORDER BY project_id, created_at DESC
+      ) hp ON hp.project_id = pi.id
+      LEFT JOIN (
+        SELECT project_id, COUNT(*) FILTER (WHERE status != 'approved') AS sseg_pending
+        FROM sseg_items
+        GROUP BY project_id
+      ) sseg ON sseg.project_id = pi.id
+      WHERE pes.is_active = true
+        AND COALESCE(pes.archived_status, 'ACTIVE') = 'ACTIVE'
+        AND pes.current_stage_code IN ('S08_OM_HANDOVER', 'S09_CLIENT_HANDOVER')
+      ORDER BY days_in_stage DESC
+    `);
+
+    let projects = ((result as any).rows ?? []).map((r: any) => ({
+      projectId: r.project_id,
+      projectName: r.project_name,
+      clientName: r.client_name,
+      pm: r.pm,
+      constructionManager: r.construction_manager,
+      currentStageCode: r.current_stage_code,
+      gateStatus: r.gate_status,
+      gateReadinessPct: r.gate_readiness_pct ?? 0,
+      waitingOnDepartment: r.waiting_on_department,
+      daysInStage: r.days_in_stage ?? 0,
+      handoverType: r.current_stage_code === "S08_OM_HANDOVER" ? "O&M" : "Client",
+      packCompletenessPct: Number(r.pack_completeness_pct || 0),
+      openSnags: Number(r.open_snags || 0),
+      acceptanceStatus: r.acceptance_status || "pending",
+      slaStatus: r.sla_status || "within",
+      daysWaiting: r.days_waiting ?? 0,
+      ssegPending: Number(r.sseg_pending || 0),
+    }));
+
+    // Apply view filter
+    if (view === "om_queue") {
+      projects = projects.filter((p: any) => p.currentStageCode === "S08_OM_HANDOVER");
+    } else if (view === "client_queue") {
+      projects = projects.filter((p: any) => p.currentStageCode === "S09_CLIENT_HANDOVER");
+    } else if (view === "missing_docs") {
+      projects = projects.filter((p: any) => p.packCompletenessPct < 100);
+    } else if (view === "sseg_pending") {
+      projects = projects.filter((p: any) => p.ssegPending > 0);
+    } else if (view === "accepted") {
+      projects = projects.filter((p: any) => p.acceptanceStatus === "complete");
+    } else if (view === "waiting_matriarch") {
+      projects = projects.filter((p: any) => p.currentStageCode === "S08_OM_HANDOVER" && p.waitingOnDepartment === "OM");
+    } else if (view === "waiting_client") {
+      projects = projects.filter((p: any) => p.currentStageCode === "S09_CLIENT_HANDOVER" && p.waitingOnDepartment === "CLIENT");
+    }
+
     res.json({ projects });
   } catch (err: any) {
     console.error("Gates handovers error:", err);
