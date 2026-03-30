@@ -161,6 +161,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "gatesExceptions", path: "/gates/exceptions", label: "Gate Exceptions", iconKey: "AlertTriangle", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesExceptionsPage" },
   { id: "gatesClientUpdates", path: "/gates/client-updates", label: "Client Updates", iconKey: "CalendarCheck", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesClientUpdatesPage" },
   { id: "gatesHandovers", path: "/gates/handovers", label: "Handover Queue", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesHandoversPage" },
+  { id: "gatesQueries", path: "/gates/queries", label: "Open Queries", iconKey: "MessageSquare", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesQueriesPage" },
+  { id: "gatesCommitments", path: "/gates/commitments", label: "Client Commitments", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesCommitmentsPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY
