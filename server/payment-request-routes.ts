@@ -177,6 +177,7 @@ export function registerPaymentRequestRoutes(app: Express) {
         sourceEntityId: String(created?.id),
         summary: `Payment request created for R${parseFloat(amount).toLocaleString()}`,
         details: { paymentRequestId: created?.id, amount: parseFloat(amount) },
+        idempotencyKey: `payment-request-${created?.id}-${Date.now()}`,
       });
 
       res.json(created);

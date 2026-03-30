@@ -409,8 +409,8 @@ export async function compareCoreProjectPortfolioAssignmentsReadiness(): Promise
     const legacyKeys = new Set<string>(legacyRows.map(toKey));
     const promotedKeys = new Set<string>(promotedRows.map(toKey));
 
-    const missingInPromoted = legacyRows.map(toKey).filter((key) => !promotedKeys.has(key));
-    const extraInPromoted = promotedRows.map(toKey).filter((key) => !legacyKeys.has(key));
+    const missingInPromoted = legacyRows.map(toKey).filter((key: any) => !promotedKeys.has(key));
+    const extraInPromoted = promotedRows.map(toKey).filter((key: any) => !legacyKeys.has(key));
 
     return {
       domain: "project_portfolio_assignments",
@@ -428,8 +428,8 @@ export async function compareCoreProjectPortfolioAssignmentsReadiness(): Promise
         ...(missingInPromoted.length ? ["missing_assignment_links"] : []),
         ...(extraInPromoted.length ? ["extra_promoted_assignment_links"] : []),
       ],
-      sampleMissingInPromotedIds: limitIds(missingInPromoted.map((key) => Number(key.split("::")[0]))),
-      sampleExtraInPromotedIds: limitIds(extraInPromoted.map((key) => Number(key.split("::")[0]))),
+      sampleMissingInPromotedIds: limitIds(missingInPromoted.map((key: any) => Number(key.split("::")[0]))),
+      sampleExtraInPromotedIds: limitIds(extraInPromoted.map((key: any) => Number(key.split("::")[0]))),
       sampleFieldMismatchIds: [],
       notes: ["Assignment comparison is keyed by project_id + portfolio_id pairs."],
     };

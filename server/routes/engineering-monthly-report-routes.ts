@@ -104,7 +104,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
       }
       const userNames = await resolveUserNames(allUserIds);
 
-      const history = snapshots.map(s => ({
+      const history = snapshots.map((s: any) => ({
         ...s,
         reviewedByName: s.reviewedBy ? (userNames.get(s.reviewedBy) || null) : null,
         publishedByName: s.publishedBy ? (userNames.get(s.publishedBy) || null) : null,
@@ -120,7 +120,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   // POST review
   app.post("/api/reports/engineering/monthly/:id/review", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "User ID required" });
 
@@ -145,7 +145,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   // POST publish (requires publish permission; enforces segregation of duties)
   app.post("/api/reports/engineering/monthly/:id/publish", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "User ID required" });
 
@@ -171,7 +171,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   // POST revert
   app.post("/api/reports/engineering/monthly/:id/revert", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status === "published") return res.status(409).json({ error: "Published reports cannot be reverted" });
@@ -194,7 +194,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   // POST regenerate
   app.post("/api/reports/engineering/monthly/:id/regenerate", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status !== "draft") return res.status(409).json({ error: "Only draft reports can be regenerated" });
@@ -224,7 +224,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   // GET export PDF
   app.get("/api/reports/engineering/monthly/:id/export/pdf", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
 
@@ -242,7 +242,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   // GET export Excel
   app.get("/api/reports/engineering/monthly/:id/export/excel", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
 
@@ -292,8 +292,8 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   // GET per-project drill-down
   app.get("/api/reports/engineering/monthly/:id/project/:projectId", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      const projectId = parseInt(req.params.projectId);
+      const id = parseInt(req.params.id as string);
+      const projectId = parseInt(req.params.projectId as string);
 
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
@@ -317,7 +317,7 @@ export function registerEngineeringMonthlyReportRoutes(app: Express) {
   // Shared KPI/chart/exception drill-down
   app.get("/api/reports/engineering/monthly/:reportId/drilldown", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
-      const reportId = parseInt(req.params.reportId);
+      const reportId = parseInt(req.params.reportId as string);
       const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, reportId)).limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
 

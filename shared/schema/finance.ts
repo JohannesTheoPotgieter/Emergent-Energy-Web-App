@@ -814,7 +814,7 @@ export const invoiceCaptures = pgTable("invoice_captures", {
   amount: real("amount"),
   vatAmount: real("vat_amount"),
   linkedPoId: integer("linked_po_id"),  // FK added via migration to purchase_orders
-  linkedProcurementItemId: integer("linked_procurement_item_id").references(() => procurementItems.id, { onDelete: "set null" }),
+  linkedProcurementItemId: integer("linked_procurement_item_id"),  // FK to procurement_items managed via migration
   status: invoiceCaptureStatusEnum("status").notNull().default('captured'),
   capturedByUserId: integer("captured_by_user_id").references(() => users.id),
   documentPath: text("document_path"),
@@ -847,7 +847,7 @@ export const procurementItems = pgTable("procurement_items", {
   requiredDate: date("required_date"),
   poId: integer("po_id"),
   invoiceRef: text("invoice_ref"),
-  linkedInvoiceCaptureId: integer("linked_invoice_capture_id").references(() => invoiceCaptures.id),
+  linkedInvoiceCaptureId: integer("linked_invoice_capture_id"),  // FK to invoice_captures managed via migration
   budgetLine: text("budget_line"),
   linkedDeliverableId: integer("linked_deliverable_id"),
   linkedMilestone: text("linked_milestone"),

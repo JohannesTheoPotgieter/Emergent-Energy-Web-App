@@ -7,7 +7,7 @@ export function registerMicrosoftIntegrationEnhancementRoutes(app: Express) {
   app.get("/api/microsoft/presence/:id", requireAuth, async (req, res) => {
     try {
       const token = (req.headers.authorization || "").replace("Bearer ", "");
-      const data = await getPresenceCached(req.params.id, token);
+      const data = await getPresenceCached(req.params.id as string, token);
       res.json(data);
     } catch {
       res.json({ availability: "Unknown", activity: "Unknown", fetchedAt: Date.now() });

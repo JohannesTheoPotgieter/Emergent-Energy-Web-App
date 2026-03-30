@@ -57,7 +57,7 @@ export class MockConnector implements IntakeConnector {
 
   async fetchItems(_siteId: string, _listId: string, filter?: string): Promise<SpListItem[]> {
     const items = await db.select().from(mockSpItems);
-    let result: SpListItem[] = items.map(item => ({
+    let result: SpListItem[] = items.map((item: any) => ({
       id: item.mockItemId,
       fields: item.fields as Record<string, any>,
       etag: item.etag || `"mock-etag-${item.mockItemId}"`,

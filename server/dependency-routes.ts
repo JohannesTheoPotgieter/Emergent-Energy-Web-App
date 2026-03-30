@@ -143,7 +143,7 @@ export function registerDependencyRoutes(app: Express): void {
         return res.status(400).json({ error: "Validation failed", details: parsed.error.errors });
       }
 
-      const { predecessorId, successorId, depType, lagDays } = parsed.data;
+      const { predecessorId, successorId, depType, lagDays } = parsed.data as any;
 
       if (predecessorId === successorId) {
         return res.status(400).json({ error: "A task cannot depend on itself" });

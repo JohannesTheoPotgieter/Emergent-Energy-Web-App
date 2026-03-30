@@ -2,6 +2,7 @@ import { db } from "./db";
 import { eq } from "drizzle-orm";
 import { spListConfig, type SpListConfig } from "@shared/schema";
 import crypto from "crypto";
+import { getSharePointToken } from "./sharepoint-token";
 
 async function getAccessToken(): Promise<string> {
   const hostname = process.env.REPLIT_CONNECTORS_HOSTNAME;

@@ -21,7 +21,7 @@ export async function listProjects(params: { q?: string; page: number; pageSize:
     const linkedProjects = await db.select({ projectId: priorityProjects.projectId })
       .from(priorityProjects)
       .where(eq(priorityProjects.priorityId, params.priorityId));
-    const linkedIds = linkedProjects.map(l => l.projectId);
+    const linkedIds = linkedProjects.map((l: any) => l.projectId);
     if (linkedIds.length === 0) return { rows: [], total: 0 };
     filters.push(inArray(projectInfo.id, linkedIds));
   }
@@ -31,7 +31,7 @@ export async function listProjects(params: { q?: string; page: number; pageSize:
   const totalRow = await db.select({ total: count() }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(where);
   const order = params.sortDir === "desc" ? desc(projectInfo.updatedAt) : asc(projectInfo.updatedAt);
   const joinedRows = await db.select({ pi: projectInfo, pes: projectExecutionState }).from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)).where(where).orderBy(order).limit(params.pageSize).offset((params.page - 1) * params.pageSize);
-  const rows = joinedRows.map(r => ({ ...r.pi, ...r.pes, id: r.pi.id }));
+  const rows = joinedRows.map((r: any) => ({ ...r.pi, ...r.pes, id: r.pi.id }));
   return { rows, total: Number(totalRow[0]?.total ?? 0) };
 }
 
@@ -41,7 +41,7 @@ export async function getProjectById(projectId: number) {
 }
 
 export async function transitionProjectToConstruction(projectId: number, userId: number, reason: string) {
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx: any) => {
     const [current] = await tx.select().from(projectInfo).where(eq(projectInfo.id, projectId)).limit(1);
     if (!current) return null;
     if ((current.phase ?? "Development") !== "Development") {
@@ -167,8 +167,8 @@ export async function getProjectProcurement(projectId: number) {
     items,
     invoices,
     summary: {
-      openItems: items.filter((item) => !["closed", "received"].includes(String(item.status ?? ""))).length,
-      pendingInvoices: invoices.filter((invoice) => ["captured", "submitted", "verified"].includes(String(invoice.status ?? ""))).length,
+      openItems: items.filter((item: any) => !["closed", "received"].includes(String(item.status ?? ""))).length,
+      pendingInvoices: invoices.filter((invoice: any) => ["captured", "submitted", "verified"].includes(String(invoice.status ?? ""))).length,
     },
   };
 }
@@ -296,7 +296,7 @@ export async function patchEngineeringDesign(id: number, payload: any, userId: n
 export async function getProjectQuality(projectId: number) {
   const checklists = await db.select().from(qcChecklist).where(eq(qcChecklist.projectId, projectId));
   if (!checklists.length) return { checklists: [], checks: [] };
-  const checks = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklists.map((c) => c.id))).orderBy(desc(qcItemInstance.lastUpdatedAt));
+  const checks = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklists.map((c: any) => c.id))).orderBy(desc(qcItemInstance.lastUpdatedAt));
   return { checklists, checks };
 }
 
@@ -431,10 +431,10 @@ export async function getProjectQualitySummary(projectId: number) {
   ]);
   let checklistProgress: number | null = null;
   if (checklists.length > 0) {
-    const checklistIds = checklists.map((c) => c.id);
+    const checklistIds = checklists.map((c: any) => c.id);
     const instances = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds));
-    const applicable = instances.filter((i) => i.isApplicable);
-    const approved = applicable.filter((i) => i.approved);
+    const applicable = instances.filter((i: any) => i.isApplicable);
+    const approved = applicable.filter((i: any) => i.approved);
     checklistProgress = applicable.length > 0 ? approved.length / applicable.length : null;
   }
   return { checklistProgress, openWarnings: warnings.length };
@@ -451,7 +451,7 @@ export async function getProjectQualityDetail(projectId: number) {
   let items: any[] = [];
   let evidence: any[] = [];
   if (checklists.length > 0) {
-    const checklistIds = checklists.map((c) => c.id);
+    const checklistIds = checklists.map((c: any) => c.id);
     [items, evidence] = await Promise.all([
       db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds)),
       db.select().from(qcItemEvidence).where(eq(qcItemEvidence.projectId, projectId)),
@@ -465,7 +465,7 @@ export async function getProjectEngineeringDetail(projectId: number) {
   const engWorkItems = await db.select().from(workItems).where(and(eq(workItems.projectId, projectId), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
   let deliverables: any[] = [];
   if (stages.length > 0) {
-    const stageIds = stages.map((s) => s.id);
+    const stageIds = stages.map((s: any) => s.id);
     deliverables = await db.select().from(projectEngDeliverables).where(inArray(projectEngDeliverables.projectEngStageId, stageIds));
   }
   return { stages, workItems: engWorkItems, deliverables };

@@ -84,15 +84,15 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
     db.select().from(counterparties),
   ]);
 
-  const activeProjects = projectRows.map(r => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id })).filter(isActiveProject);
-  const activeProjectIds = new Set(activeProjects.map(p => p.id));
+  const activeProjects = projectRows.map((r: any) => ({ ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id })).filter(isActiveProject);
+  const activeProjectIds = new Set(activeProjects.map((p: any) => p.id));
 
   let rows: any[] = [];
   let sourceTables: string[] = [];
 
   if (filters.tab === "financial" || ["totalRevenue", "totalCost", "blendedGpMarginPct", "revenue", "cost", "revenueBridge", "costBridge", "gpBridge"].includes(filters.metric || "")) {
     if (["totalRevenue", "revenue", "revenueBridge"].includes(filters.metric || "")) {
-      rows = revenueRows.filter(r => activeProjectIds.has(r.projectId)).map(r => ({
+      rows = revenueRows.filter((r: any) => activeProjectIds.has(r.projectId)).map((r: any) => ({
         source: "normalized_revenue_lines",
         projectId: r.projectId,
         projectName: r.projectName,
@@ -108,7 +108,7 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
       }));
       sourceTables = ["normalized_revenue_lines"];
     } else {
-      rows = costRows.filter(r => activeProjectIds.has(r.projectId)).map(r => ({
+      rows = costRows.filter((r: any) => activeProjectIds.has(r.projectId)).map((r: any) => ({
         source: "normalized_cost_lines",
         projectId: r.projectId,
         projectName: r.projectName,
@@ -125,7 +125,7 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
       sourceTables = ["normalized_cost_lines"];
     }
   } else if (filters.tab === "tasks" || ["overdueTasks", "tasksCompletedThisMonth"].includes(filters.metric || "")) {
-    rows = taskRows.filter(t => activeProjectIds.has(t.projectId)).map(t => ({
+    rows = taskRows.filter((t: any) => activeProjectIds.has(t.projectId)).map((t: any) => ({
       source: "work_items",
       projectId: t.projectId,
       owner: t.ownerName,
@@ -142,7 +142,7 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
     }));
     sourceTables = ["work_items"];
   } else if (filters.tab === "raid" || filters.metric === "projectsAtRisk") {
-    rows = raidRows.filter(r => activeProjectIds.has(r.projectId)).map(r => ({
+    rows = raidRows.filter((r: any) => activeProjectIds.has(r.projectId)).map((r: any) => ({
       source: "raid_items",
       projectId: r.projectId,
       type: r.type,
@@ -157,8 +157,8 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
     sourceTables = ["raid_items"];
   } else if (filters.tab === "quality") {
     const checklistMapped = checklistRows
-      .filter(c => activeProjectIds.has(c.projectId))
-      .map(c => ({
+      .filter((c: any) => activeProjectIds.has(c.projectId))
+      .map((c: any) => ({
         source: "qc_checklist",
         recordType: "checklist",
         projectId: c.projectId,
@@ -167,7 +167,7 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
         checklistStatus: c.status,
         createdAt: c.createdAt ? new Date(c.createdAt).toISOString().substring(0, 10) : null,
       }));
-    const qcItemsMapped = qcItemRows.map(i => ({
+    const qcItemsMapped = qcItemRows.map((i: any) => ({
       source: "qc_item_instance",
       recordType: "item",
       checklistId: i.checklistId,
@@ -178,11 +178,11 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
       startDate: i.startDate,
       endDate: i.endDate,
     }));
-    const checklistById = new Map(checklistRows.map(c => [c.id, c]));
+    const checklistById: Map<number, any> = new Map(checklistRows.map((c: any) => [c.id, c]));
     const itemRowsWithProject = qcItemsMapped
-      .map(i => ({ ...i, projectId: checklistById.get(i.checklistId)?.projectId, projectName: checklistById.get(i.checklistId)?.projectName }))
-      .filter(i => i.projectId && activeProjectIds.has(i.projectId));
-    const warningMapped = warningRows.filter(w => activeProjectIds.has(w.projectId)).map(w => ({
+      .map((i: any) => ({ ...i, projectId: checklistById.get(i.checklistId)?.projectId, projectName: checklistById.get(i.checklistId)?.projectName }))
+      .filter((i: any) => i.projectId && activeProjectIds.has(i.projectId));
+    const warningMapped = warningRows.filter((w: any) => activeProjectIds.has(w.projectId)).map((w: any) => ({
       source: "qc_warning",
       recordType: "warning",
       projectId: w.projectId,
@@ -197,8 +197,8 @@ export async function getPmDrilldownRows(filters: DrillFilters) {
     rows = [...checklistMapped, ...itemRowsWithProject, ...warningMapped];
     sourceTables = ["qc_checklist", "qc_item_instance", "qc_warning"];
   } else {
-    const supplierMap = new Map(counterpartiesRows.map(c => [c.id, c.nameCanonical || c.nameDisplay || `Supplier ${c.id}`]));
-    rows = procurementRows.filter(p => activeProjectIds.has(p.projectId)).map(p => ({
+    const supplierMap = new Map(counterpartiesRows.map((c: any) => [c.id, c.nameCanonical || c.nameDisplay || `Supplier ${c.id}`]));
+    rows = procurementRows.filter((p: any) => activeProjectIds.has(p.projectId)).map((p: any) => ({
       source: "procurement_items",
       projectId: p.projectId,
       category: p.category,
@@ -244,8 +244,8 @@ export async function getEngineeringDrilldownRows(filters: DrillFilters) {
       db.select().from(workItems).where(and(isNull(workItems.deletedAt), eq(workItems.workstream, "ENG"))),
       db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
     ]);
-    const projectMap = new Map(projectRows.map((r: any) => [r.project_info.id, r.project_info.projectName]));
-    rows = allTasks.map(t => ({
+    const projectMap: Map<number, any> = new Map(projectRows.map((r: any) => [r.project_info.id, r.project_info.projectName]));
+    rows = allTasks.map((t: any) => ({
       source: "work_items",
       rowId: t.id,
       projectId: t.projectId,
@@ -265,7 +265,7 @@ export async function getEngineeringDrilldownRows(filters: DrillFilters) {
     sourceTables = ["work_items"];
   } else if (filters.tab === "deliverables") {
     const all = await db.select().from(deliverables);
-    rows = all.map(d => ({
+    rows = all.map((d: any) => ({
       source: "deliverables",
       rowId: d.id,
       projectId: d.projectId,
@@ -286,7 +286,7 @@ export async function getEngineeringDrilldownRows(filters: DrillFilters) {
       db.select().from(projectInfo).leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id)),
     ]);
     const projectMap = new Map(projectRows.map((r: any) => [r.project_info.id, r.project_info.projectName]));
-    rows = allStages.map(s => ({
+    rows = allStages.map((s: any) => ({
       source: "project_eng_stages",
       rowId: s.id,
       projectId: s.projectId,
@@ -305,10 +305,10 @@ export async function getEngineeringDrilldownRows(filters: DrillFilters) {
       db.select().from(projectEngStages),
       db.select().from(projectInfo),
     ]);
-    const stageMap = new Map(allStages.map(s => [s.id, s]));
-    const projectMap = new Map(allProjects.map(p => [p.id, p.projectName]));
-    rows = allApprovals.map(a => {
-      const stage = stageMap.get(a.projectEngStageId);
+    const stageMap = new Map(allStages.map((s: any) => [s.id, s]));
+    const projectMap = new Map(allProjects.map((p: any) => [p.id, p.projectName]));
+    rows = allApprovals.map((a: any) => {
+      const stage: any = stageMap.get(a.projectEngStageId);
       return {
         source: "project_eng_approvals",
         rowId: a.id,
@@ -350,13 +350,13 @@ export async function getProgrammeDrilldownRows(filters: DrillFilters) {
   let sourceTables: string[];
 
   if (filters.tab === "cost") {
-    rows = costs.map(c => ({ projectId: c.projectId, category: c.costCategory, supplier: c.counterpartyName, amountExVat: Number(c.amountExVat || 0), cosStatus: c.cosStatus, invoiceDate: c.invoiceDate, paidDate: c.paidDate }));
+    rows = costs.map((c: any) => ({ projectId: c.projectId, category: c.costCategory, supplier: c.counterpartyName, amountExVat: Number(c.amountExVat || 0), cosStatus: c.cosStatus, invoiceDate: c.invoiceDate, paidDate: c.paidDate }));
     sourceTables = ["normalized_cost_lines"];
   } else if (filters.tab === "quality") {
-    rows = warnings.map(w => ({ projectId: w.projectId, warningType: w.warningType, status: w.status, message: w.message, createdAt: w.createdAt?.toISOString().substring(0, 10) || null }));
+    rows = warnings.map((w: any) => ({ projectId: w.projectId, warningType: w.warningType, status: w.status, message: w.message, createdAt: w.createdAt?.toISOString().substring(0, 10) || null }));
     sourceTables = ["qc_warning"];
   } else {
-    rows = plans.map(p => ({ projectId: p.projectId, owner: p.ownerName, taskName: p.taskName, status: p.status, startDate: p.startDate, endDate: p.endDate, workstream: p.workstream }));
+    rows = plans.map((p: any) => ({ projectId: p.projectId, owner: p.ownerName, taskName: p.taskName, status: p.status, startDate: p.startDate, endDate: p.endDate, workstream: p.workstream }));
     sourceTables = ["work_items"];
   }
 
