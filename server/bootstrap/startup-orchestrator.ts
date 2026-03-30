@@ -1449,6 +1449,645 @@ async function runAdditiveSchemaAlignments() {
       AND LOWER(TRIM(mcp.assigned_to)) = LOWER(TRIM(u.name));
   `);
 
+  // Stage Lifecycle: Core gate-driven workflow tables
+  await safeExec("stage_definitions table", `
+    CREATE TABLE IF NOT EXISTS stage_definitions (
+      id SERIAL PRIMARY KEY,
+      stage_code TEXT NOT NULL UNIQUE,
+      stage_name TEXT NOT NULL,
+      stage_sequence INTEGER NOT NULL,
+      description TEXT,
+      default_owner_role TEXT,
+      default_approver_role TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("stage_checklist_templates table", `
+    CREATE TABLE IF NOT EXISTS stage_checklist_templates (
+      id SERIAL PRIMARY KEY,
+      stage_code TEXT NOT NULL,
+      department TEXT NOT NULL,
+      item_name TEXT NOT NULL,
+      item_code TEXT NOT NULL,
+      blocks_gate BOOLEAN NOT NULL DEFAULT false,
+      is_required BOOLEAN NOT NULL DEFAULT true,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("project_stage_instances table", `
+    CREATE TABLE IF NOT EXISTS project_stage_instances (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      stage_status TEXT NOT NULL DEFAULT 'NOT_STARTED',
+      stage_owner_user_id INTEGER REFERENCES users(id),
+      approver_user_id INTEGER REFERENCES users(id),
+      readiness_pct INTEGER NOT NULL DEFAULT 0,
+      started_at TIMESTAMP,
+      completed_at TIMESTAMP,
+      target_exit_date DATE,
+      waiting_on_department TEXT,
+      waiting_on_user_id INTEGER REFERENCES users(id),
+      next_required_action TEXT,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      CONSTRAINT project_stage_instances_project_stage_uq UNIQUE (project_id, stage_code)
+    );
+    CREATE INDEX IF NOT EXISTS psi_project_id_idx ON project_stage_instances(project_id);
+    CREATE INDEX IF NOT EXISTS psi_stage_status_idx ON project_stage_instances(stage_status);
+  `);
+
+  await safeExec("project_stage_requirements table", `
+    CREATE TABLE IF NOT EXISTS project_stage_requirements (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_instance_id INTEGER NOT NULL REFERENCES project_stage_instances(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      department TEXT NOT NULL,
+      item_name TEXT NOT NULL,
+      item_code TEXT NOT NULL,
+      owner_user_id INTEGER REFERENCES users(id),
+      due_date DATE,
+      status TEXT NOT NULL DEFAULT 'NOT_STARTED',
+      blocks_gate BOOLEAN NOT NULL DEFAULT false,
+      evidence_url TEXT,
+      evidence_attached BOOLEAN NOT NULL DEFAULT false,
+      completed_by_user_id INTEGER REFERENCES users(id),
+      completed_date TIMESTAMP,
+      contributors JSONB DEFAULT '[]',
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS psr_stage_instance_idx ON project_stage_requirements(stage_instance_id);
+    CREATE INDEX IF NOT EXISTS psr_department_idx ON project_stage_requirements(department);
+    CREATE INDEX IF NOT EXISTS psr_status_idx ON project_stage_requirements(status);
+  `);
+
+  await safeExec("project_stage_evidence table", `
+    CREATE TABLE IF NOT EXISTS project_stage_evidence (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_instance_id INTEGER NOT NULL REFERENCES project_stage_instances(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      evidence_type TEXT,
+      title TEXT NOT NULL,
+      file_url TEXT NOT NULL,
+      uploaded_by_user_id INTEGER REFERENCES users(id),
+      uploaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      inherited_from_stage TEXT,
+      review_status TEXT DEFAULT 'pending',
+      reviewed_by_user_id INTEGER REFERENCES users(id),
+      reviewed_at TIMESTAMP,
+      notes TEXT
+    );
+  `);
+
+  await safeExec("project_stage_exceptions table", `
+    CREATE TABLE IF NOT EXISTS project_stage_exceptions (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      requirement_code TEXT,
+      reason_text TEXT NOT NULL,
+      risk_level TEXT NOT NULL DEFAULT 'MEDIUM',
+      mitigation_text TEXT,
+      owner_user_id INTEGER REFERENCES users(id),
+      approver_user_id INTEGER REFERENCES users(id),
+      status TEXT NOT NULL DEFAULT 'REQUESTED',
+      conditions_text TEXT,
+      closeout_due_date DATE,
+      downstream_blocking_stage TEXT,
+      approved_at TIMESTAMP,
+      closed_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS pse_project_id_idx ON project_stage_exceptions(project_id);
+    CREATE INDEX IF NOT EXISTS pse_status_idx ON project_stage_exceptions(status);
+  `);
+
+  await safeExec("project_stage_decisions table", `
+    CREATE TABLE IF NOT EXISTS project_stage_decisions (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      decision_type TEXT NOT NULL,
+      decision_summary TEXT NOT NULL,
+      decided_by_user_id INTEGER REFERENCES users(id),
+      decided_date TIMESTAMP NOT NULL DEFAULT NOW(),
+      rationale TEXT,
+      impacted_departments JSONB DEFAULT '[]',
+      impacted_downstream_stages JSONB DEFAULT '[]',
+      evidence_url TEXT,
+      related_exception_id INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await safeExec("project_stage_dependencies table", `
+    CREATE TABLE IF NOT EXISTS project_stage_dependencies (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      from_department TEXT NOT NULL,
+      from_user_id INTEGER REFERENCES users(id),
+      to_department TEXT NOT NULL,
+      to_user_id INTEGER REFERENCES users(id),
+      description TEXT NOT NULL,
+      due_date DATE,
+      status TEXT NOT NULL DEFAULT 'WAITING',
+      escalated BOOLEAN NOT NULL DEFAULT false,
+      escalation_reason TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      resolved_at TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS psd_project_id_idx ON project_stage_dependencies(project_id);
+    CREATE INDEX IF NOT EXISTS psd_status_idx ON project_stage_dependencies(status);
+  `);
+
+  await safeExec("project_access table", `
+    CREATE TABLE IF NOT EXISTS project_access (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      access_level TEXT NOT NULL DEFAULT 'viewer',
+      role_on_project TEXT,
+      stages_visible TEXT[] NOT NULL DEFAULT '{}',
+      can_edit BOOLEAN NOT NULL DEFAULT false,
+      can_approve BOOLEAN NOT NULL DEFAULT false,
+      granted_by_user_id INTEGER REFERENCES users(id),
+      granted_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMP,
+      notes TEXT,
+      CONSTRAINT project_access_project_user_uq UNIQUE (project_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS pa_project_id_idx ON project_access(project_id);
+    CREATE INDEX IF NOT EXISTS pa_user_id_idx ON project_access(user_id);
+  `);
+
+  // Stage Data: flexible JSONB stage fields + project charters
+  await safeExec("project_stage_data table", `
+    CREATE TABLE IF NOT EXISTS project_stage_data (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      data JSONB NOT NULL DEFAULT '{}',
+      updated_by_user_id INTEGER REFERENCES users(id),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      CONSTRAINT project_stage_data_project_stage_uq UNIQUE (project_id, stage_code)
+    );
+    CREATE INDEX IF NOT EXISTS psd_data_project_id_idx ON project_stage_data(project_id);
+  `);
+
+  await safeExec("project_charters table", `
+    CREATE TABLE IF NOT EXISTS project_charters (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL UNIQUE REFERENCES project_info(id) ON DELETE CASCADE,
+      charter_project_name TEXT,
+      charter_site_name TEXT,
+      charter_site_address TEXT,
+      charter_gps_coordinates TEXT,
+      charter_facility_type TEXT,
+      charter_utility_supplier TEXT,
+      charter_existing_infrastructure TEXT,
+      charter_roof_type TEXT,
+      charter_access_method TEXT,
+      charter_special_site_notes TEXT,
+      charter_structural_assessment_done BOOLEAN DEFAULT false,
+      charter_structural_assessment_notes TEXT,
+      charter_client_name TEXT,
+      charter_client_type TEXT,
+      charter_primary_contact_name TEXT,
+      charter_primary_contact_email TEXT,
+      charter_primary_contact_phone TEXT,
+      charter_client_relationship_notes TEXT,
+      charter_pd_user_id INTEGER REFERENCES users(id),
+      charter_programme_manager_user_id INTEGER REFERENCES users(id),
+      charter_project_manager_user_id INTEGER REFERENCES users(id),
+      charter_procurement_manager_user_id INTEGER REFERENCES users(id),
+      charter_om_manager_user_id INTEGER REFERENCES users(id),
+      charter_asset_manager_user_id INTEGER REFERENCES users(id),
+      charter_compliance_officer_user_id INTEGER REFERENCES users(id),
+      charter_safety_officer_user_id INTEGER REFERENCES users(id),
+      charter_designer_user_id INTEGER REFERENCES users(id),
+      charter_preferred_installer TEXT,
+      charter_system_type TEXT,
+      charter_system_size_kwp REAL,
+      charter_inverter_capacity_kva REAL,
+      charter_battery_capacity_kwh REAL,
+      charter_module_spec TEXT,
+      charter_inverter_spec TEXT,
+      charter_mounting_type TEXT,
+      charter_monitoring_system TEXT,
+      charter_metering TEXT,
+      charter_diesel_gen_integration BOOLEAN DEFAULT false,
+      charter_dedicated_feeder BOOLEAN DEFAULT false,
+      charter_transformer_details TEXT,
+      charter_tie_in_points TEXT,
+      charter_main_breaker_details TEXT,
+      charter_internet_provision TEXT,
+      charter_hse_contact_established BOOLEAN DEFAULT false,
+      charter_lifelines_required BOOLEAN DEFAULT false,
+      charter_additional_security_required BOOLEAN DEFAULT false,
+      charter_hse_notes TEXT,
+      charter_sseg_application_status TEXT,
+      charter_grid_study_status TEXT,
+      charter_notification_number TEXT,
+      charter_om_contract_type TEXT,
+      charter_waterpoints_available BOOLEAN DEFAULT false,
+      charter_metering_billing_required BOOLEAN DEFAULT false,
+      charter_om_special_notes TEXT,
+      charter_alignment_meeting_date DATE,
+      charter_installer_walkthrough_date DATE,
+      charter_external_intro_meeting_date DATE,
+      charter_internal_review_date DATE,
+      charter_client_kickoff_date DATE,
+      charter_site_establishment_date DATE,
+      charter_expected_completion_date DATE,
+      charter_handover_date_target DATE,
+      charter_funding_model TEXT,
+      charter_payment_terms_text TEXT,
+      charter_invoice_conditions_text TEXT,
+      charter_funding_partner TEXT,
+      charter_deposit_status TEXT,
+      charter_bdp_commission TEXT,
+      charter_budget_notes TEXT,
+      charter_overview_risk_summary TEXT,
+      charter_stakeholder_risk_summary TEXT,
+      charter_scope_risk_summary TEXT,
+      charter_schedule_risk_summary TEXT,
+      charter_budget_risk_summary TEXT,
+      charter_triage_level TEXT,
+      charter_opportunities_text TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by_user_id INTEGER REFERENCES users(id),
+      updated_by_user_id INTEGER REFERENCES users(id),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // Stage Collaboration: client commitments, client updates, queries, financial close tracks
+  await safeExec("project_client_commitments table", `
+    CREATE TABLE IF NOT EXISTS project_client_commitments (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code_created TEXT,
+      commitment_text TEXT NOT NULL,
+      committed_by_user_id INTEGER REFERENCES users(id),
+      committed_date TIMESTAMP NOT NULL DEFAULT NOW(),
+      delivery_stage_code TEXT,
+      status TEXT NOT NULL DEFAULT 'OPEN',
+      delivered_date TIMESTAMP,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS pcc_project_id_idx ON project_client_commitments(project_id);
+    CREATE INDEX IF NOT EXISTS pcc_status_idx ON project_client_commitments(status);
+  `);
+
+  await safeExec("project_client_updates table", `
+    CREATE TABLE IF NOT EXISTS project_client_updates (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      update_number INTEGER NOT NULL,
+      due_date DATE,
+      status TEXT NOT NULL DEFAULT 'DRAFT',
+      progress_summary_text TEXT,
+      completed_this_period_text TEXT,
+      next_7_days_text TEXT,
+      blockers_text TEXT,
+      client_actions_required_text TEXT,
+      attachment_urls JSONB DEFAULT '[]',
+      sent_by_user_id INTEGER REFERENCES users(id),
+      reviewer_user_id INTEGER REFERENCES users(id),
+      sent_date TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      CONSTRAINT pcu_project_update_uq UNIQUE (project_id, update_number)
+    );
+    CREATE INDEX IF NOT EXISTS pcu_project_id_idx ON project_client_updates(project_id);
+    CREATE INDEX IF NOT EXISTS pcu_status_idx ON project_client_updates(status);
+  `);
+
+  await safeExec("project_queries table", `
+    CREATE TABLE IF NOT EXISTS project_queries (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code TEXT,
+      query_type TEXT NOT NULL,
+      raised_by_user_id INTEGER REFERENCES users(id),
+      raised_by_department TEXT,
+      assigned_to_user_id INTEGER REFERENCES users(id),
+      assigned_to_department TEXT,
+      subject TEXT NOT NULL,
+      description TEXT NOT NULL,
+      priority TEXT NOT NULL DEFAULT 'NORMAL',
+      status TEXT NOT NULL DEFAULT 'OPEN',
+      response_text TEXT,
+      responded_by_user_id INTEGER REFERENCES users(id),
+      responded_date TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS pq_project_id_idx ON project_queries(project_id);
+    CREATE INDEX IF NOT EXISTS pq_status_idx ON project_queries(status);
+    CREATE INDEX IF NOT EXISTS pq_assigned_to_idx ON project_queries(assigned_to_user_id);
+  `);
+
+  await safeExec("project_stage_financial_close_tracks table", `
+    CREATE TABLE IF NOT EXISTS project_stage_financial_close_tracks (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_instance_id INTEGER REFERENCES project_stage_instances(id) ON DELETE CASCADE,
+      track_code TEXT NOT NULL,
+      track_label TEXT NOT NULL,
+      is_required BOOLEAN NOT NULL DEFAULT true,
+      signed BOOLEAN NOT NULL DEFAULT false,
+      signed_date DATE,
+      document_url TEXT,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      CONSTRAINT psfct_project_track_uq UNIQUE (project_id, track_code)
+    );
+    CREATE INDEX IF NOT EXISTS psfct_project_id_idx ON project_stage_financial_close_tracks(project_id);
+    CREATE INDEX IF NOT EXISTS psfct_stage_instance_idx ON project_stage_financial_close_tracks(stage_instance_id);
+  `);
+
+  // Collaboration Workflow: acceptances, reservations, commitments, evidence requests, client updates
+  await safeExec("stage_acceptances table", `
+    CREATE TABLE IF NOT EXISTS stage_acceptances (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      outcome TEXT NOT NULL,
+      decided_by_user_id INTEGER REFERENCES users(id),
+      decided_date TIMESTAMP NOT NULL DEFAULT NOW(),
+      rejection_reason TEXT,
+      admin_override BOOLEAN NOT NULL DEFAULT false,
+      admin_override_reason TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS sa_project_id_idx ON stage_acceptances(project_id);
+    CREATE INDEX IF NOT EXISTS sa_stage_code_idx ON stage_acceptances(stage_code);
+  `);
+
+  await safeExec("acceptance_reservations table", `
+    CREATE TABLE IF NOT EXISTS acceptance_reservations (
+      id SERIAL PRIMARY KEY,
+      acceptance_id INTEGER NOT NULL REFERENCES stage_acceptances(id) ON DELETE CASCADE,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      description TEXT NOT NULL,
+      owner_user_id INTEGER REFERENCES users(id),
+      deadline DATE,
+      status TEXT NOT NULL DEFAULT 'open',
+      closed_date TIMESTAMP,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS ar_project_id_idx ON acceptance_reservations(project_id);
+    CREATE INDEX IF NOT EXISTS ar_acceptance_id_idx ON acceptance_reservations(acceptance_id);
+    CREATE INDEX IF NOT EXISTS ar_status_idx ON acceptance_reservations(status);
+  `);
+
+  await safeExec("client_commitments table", `
+    CREATE TABLE IF NOT EXISTS client_commitments (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code_created TEXT NOT NULL,
+      commitment_text TEXT NOT NULL,
+      committed_by_user_id INTEGER REFERENCES users(id),
+      committed_date TIMESTAMP NOT NULL DEFAULT NOW(),
+      delivery_stage_code TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      delivered_date TIMESTAMP,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS cc_project_id_idx ON client_commitments(project_id);
+    CREATE INDEX IF NOT EXISTS cc_status_idx ON client_commitments(status);
+  `);
+
+  await safeExec("evidence_requests table", `
+    CREATE TABLE IF NOT EXISTS evidence_requests (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      stage_code TEXT NOT NULL,
+      requested_by_user_id INTEGER REFERENCES users(id),
+      requested_from_department TEXT NOT NULL,
+      requested_from_user_id INTEGER REFERENCES users(id),
+      description TEXT NOT NULL,
+      due_date DATE,
+      status TEXT NOT NULL DEFAULT 'requested',
+      evidence_url TEXT,
+      fulfilled_date TIMESTAMP,
+      linked_dependency_id INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS er_project_id_idx ON evidence_requests(project_id);
+    CREATE INDEX IF NOT EXISTS er_status_idx ON evidence_requests(status);
+    CREATE INDEX IF NOT EXISTS er_stage_code_idx ON evidence_requests(stage_code);
+  `);
+
+  await safeExec("client_updates table", `
+    CREATE TABLE IF NOT EXISTS client_updates (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      update_number INTEGER NOT NULL DEFAULT 1,
+      last_client_update_date TIMESTAMP,
+      next_client_update_due_date TIMESTAMP,
+      client_update_status TEXT NOT NULL DEFAULT 'draft',
+      progress_summary_text TEXT,
+      completed_this_period_text TEXT,
+      next_7_days_text TEXT,
+      blockers_text TEXT,
+      client_actions_required_text TEXT,
+      attachment_urls JSONB DEFAULT '[]',
+      client_update_sent_by INTEGER REFERENCES users(id),
+      reviewer_user_id INTEGER REFERENCES users(id),
+      sent_date TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS cu_project_id_idx ON client_updates(project_id);
+    CREATE INDEX IF NOT EXISTS cu_status_idx ON client_updates(client_update_status);
+  `);
+
+  // Handover: lessons learnt, handover stakeholders
+  await safeExec("lessons_learnt table", `
+    CREATE TABLE IF NOT EXISTS lessons_learnt (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      tags JSONB DEFAULT '[]',
+      project_type TEXT,
+      technology_tags JSONB DEFAULT '[]',
+      added_by_user_id INTEGER REFERENCES users(id),
+      added_by_name TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+  `);
+
+  await safeExec("handover_stakeholders table", `
+    CREATE TABLE IF NOT EXISTS handover_stakeholders (
+      id SERIAL PRIMARY KEY,
+      handover_id INTEGER NOT NULL REFERENCES project_pd_pm_handover(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      company TEXT,
+      phone TEXT,
+      email TEXT,
+      notes TEXT,
+      counterparty_id INTEGER REFERENCES counterparties(id),
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // Finance: financial reviews
+  await safeExec("project_financial_reviews table", `
+    CREATE TABLE IF NOT EXISTS project_financial_reviews (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'DRAFT',
+      version INTEGER NOT NULL DEFAULT 1,
+      budget_baseline_id INTEGER,
+      snapshot_budget_total DECIMAL(15,2),
+      snapshot_actual_total DECIMAL(15,2),
+      snapshot_variance DECIMAL(15,2),
+      snapshot_variance_pct DECIMAL(8,4),
+      snapshot_margin DECIMAL(8,4),
+      snapshot_contingency_remaining DECIMAL(15,2),
+      snapshot_procurement_readiness REAL,
+      snapshot_data JSONB NOT NULL DEFAULT '{}',
+      snapshot_captured_at TIMESTAMP,
+      review_date DATE,
+      review_meeting_ref TEXT,
+      participants JSONB NOT NULL DEFAULT '[]',
+      budget_review JSONB NOT NULL DEFAULT '{}',
+      procurement_review JSONB NOT NULL DEFAULT '{}',
+      scope_review JSONB NOT NULL DEFAULT '{}',
+      logistics_review JSONB NOT NULL DEFAULT '{}',
+      hse_review JSONB NOT NULL DEFAULT '{}',
+      outcome TEXT,
+      outcome_conditions TEXT,
+      outcome_notes TEXT,
+      requested_by_user_id INTEGER REFERENCES users(id),
+      reviewed_by_user_id INTEGER REFERENCES users(id),
+      approved_by_user_id INTEGER REFERENCES users(id),
+      approved_at TIMESTAMP,
+      approval_id INTEGER,
+      gate_evaluation_id INTEGER,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      deleted_at TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_financial_reviews_project_status ON project_financial_reviews(project_id, status);
+  `);
+
+  // EPC Workflow: Payment Requests, Batches, Proof of Payment
+  await safeExec("payment enums", `
+    DO $$ BEGIN
+      CREATE TYPE payment_request_status AS ENUM ('new', 'in_review', 'loaded_for_payment', 'proof_attached', 'complete', 'requires_info', 'blocked');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+    DO $$ BEGIN
+      CREATE TYPE payment_batch_status AS ENUM ('preparing', 'submitted', 'approved', 'released', 'confirmed');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+    DO $$ BEGIN
+      CREATE TYPE po_status AS ENUM ('draft', 'submitted', 'in_review', 'requires_info', 'blocked', 'approved', 'cancelled');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
+
+  await safeExec("payment_requests table", `
+    CREATE TABLE IF NOT EXISTS payment_requests (
+      id SERIAL PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES project_info(id),
+      purchase_order_id INTEGER REFERENCES purchase_orders(id),
+      invoice_capture_id INTEGER,
+      counterparty_id INTEGER REFERENCES counterparties(id),
+      procurement_item_id INTEGER,
+      amount DECIMAL(15,2) NOT NULL,
+      due_date DATE,
+      status payment_request_status NOT NULL DEFAULT 'new',
+      submitted_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      cutoff_date DATE,
+      evidence_evaluation_id INTEGER,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_payment_req_project ON payment_requests(project_id);
+    CREATE INDEX IF NOT EXISTS idx_payment_req_status ON payment_requests(status);
+    CREATE INDEX IF NOT EXISTS idx_payment_req_cutoff ON payment_requests(cutoff_date);
+  `);
+
+  await safeExec("payment_batches table", `
+    CREATE TABLE IF NOT EXISTS payment_batches (
+      id SERIAL PRIMARY KEY,
+      batch_number TEXT NOT NULL UNIQUE,
+      cutoff_date DATE NOT NULL,
+      total_amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+      item_count INTEGER NOT NULL DEFAULT 0,
+      status payment_batch_status NOT NULL DEFAULT 'preparing',
+      prepared_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      approved_by_user_id INTEGER REFERENCES users(id),
+      released_by_user_id INTEGER REFERENCES users(id),
+      approval_id INTEGER,
+      approved_at TIMESTAMP,
+      released_at TIMESTAMP,
+      confirmed_at TIMESTAMP,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_payment_batch_status ON payment_batches(status);
+    CREATE INDEX IF NOT EXISTS idx_payment_batch_cutoff ON payment_batches(cutoff_date);
+  `);
+
+  await safeExec("payment_batch_items table", `
+    CREATE TABLE IF NOT EXISTS payment_batch_items (
+      id SERIAL PRIMARY KEY,
+      payment_batch_id INTEGER NOT NULL REFERENCES payment_batches(id) ON DELETE CASCADE,
+      payment_request_id INTEGER NOT NULL REFERENCES payment_requests(id),
+      amount DECIMAL(15,2) NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_batch_item_batch ON payment_batch_items(payment_batch_id);
+    CREATE INDEX IF NOT EXISTS idx_batch_item_request ON payment_batch_items(payment_request_id);
+  `);
+
+  await safeExec("proof_of_payment table", `
+    CREATE TABLE IF NOT EXISTS proof_of_payment (
+      id SERIAL PRIMARY KEY,
+      payment_request_id INTEGER REFERENCES payment_requests(id),
+      payment_batch_id INTEGER REFERENCES payment_batches(id),
+      bank_reference TEXT,
+      document_drive_id TEXT,
+      document_item_id TEXT,
+      document_url TEXT,
+      uploaded_by_user_id INTEGER NOT NULL REFERENCES users(id),
+      confirmed_at TIMESTAMP,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_pop_request ON proof_of_payment(payment_request_id);
+    CREATE INDEX IF NOT EXISTS idx_pop_batch ON proof_of_payment(payment_batch_id);
+  `);
+
   // EPC Workflow: Purchase Orders & Review Assignments
   await safeExec("po_review_decision enum", `
     DO $$ BEGIN
