@@ -207,6 +207,9 @@ export const workItems = pgTable("work_items", {
   taskTypeTag: text("task_type_tag"),
   blockerReason: text("blocker_reason"),
   pdTicketId: integer("pd_ticket_id"),
+  // Stage lifecycle extensions (Prompt 1)
+  relatedStageCode: text("related_stage_code"),
+  sourceScreen: text("source_screen"),
 }, (table) => ({
   projectIdIdx: index("work_items_project_id_idx").on(table.projectId),
   ownerUserIdIdx: index("work_items_owner_user_id_idx").on(table.ownerUserId),
