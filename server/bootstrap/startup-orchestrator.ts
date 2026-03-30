@@ -1592,6 +1592,15 @@ export async function runStartupOrchestrator(options: {
     log(`Integrity guard error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:IntegrityGuard");
   }
 
+  // Stage instance backfill — ensures all projects have stage instances,
+  // marks historical projects' prior stages as PROGRESSED (not forced through gates)
+  try {
+    const { runStageInstanceBackfill } = await import("./backfills/stage-instance-backfill");
+    await runStageInstanceBackfill(log);
+  } catch (err: unknown) {
+    log(`Stage instance backfill error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:StageInstanceBackfill");
+  }
+
   await runStartupBackfills({
     startupBackfillEnabled,
     allowStartupMutations,

@@ -1391,6 +1391,19 @@ export default function ProjectsSummary() {
   const [editProject, setEditProject] = useState<ProjectSummary | null>(null);
   const [viewTab, setViewTab] = useState<"active" | "archived">("active");
   const [quickFilter, setQuickFilter] = useState<"all" | "behind_plan" | "needs_attention" | "my_projects">("all");
+
+  // Stage-driven filter from secondary nav (Prompt 2)
+  const urlStageFilter = useMemo(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get("filter") || null;
+  }, []);
+
+  const STAGE_FILTER_PHASES: Record<string, string[]> = {
+    "pd-pipeline": ["First Assessment", "Cost Proposal", "Financial Close"],
+    "execution": ["Planning", "Construction"],
+    "closeout": ["QA", "Handover", "Compliance Handover"],
+    "post-handover": ["Commercial Close Out", "DLP"],
+  };
   const [writebackPromptProject, setWritebackPromptProject] = useState<string | null>(null);
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const resizingRef = useRef<{ key: string; startX: number; startWidth: number } | null>(null);
@@ -1533,6 +1546,11 @@ export default function ProjectsSummary() {
 
   const filtered = useMemo(() => {
     let result = [...currentProjects];
+    // Stage-driven filter from secondary nav (Prompt 2)
+    if (urlStageFilter && STAGE_FILTER_PHASES[urlStageFilter]) {
+      const allowedPhases = STAGE_FILTER_PHASES[urlStageFilter].map(p => p.toLowerCase());
+      result = result.filter((p) => p.phase && allowedPhases.includes(p.phase.toLowerCase()));
+    }
     // A4: Quick filter tabs
     if (quickFilter === "behind_plan") {
       result = result.filter((p) => (p.delta_vs_expected ?? 0) < -0.1);
@@ -1559,7 +1577,7 @@ export default function ProjectsSummary() {
       result = result.filter((p) => p.project_info_id != null && idSet.has(p.project_info_id));
     }
     return result;
-  }, [currentProjects, searchTerm, pmFilter, phaseFilter, ragFilter, priorityFilter, priorityProjectIds, quickFilter, currentUserName]);
+  }, [currentProjects, searchTerm, pmFilter, phaseFilter, ragFilter, priorityFilter, priorityProjectIds, quickFilter, currentUserName, urlStageFilter]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];

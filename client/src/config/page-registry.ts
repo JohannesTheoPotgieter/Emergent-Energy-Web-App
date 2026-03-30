@@ -23,15 +23,23 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/dashboard", redirectTo: "/execution-board" },
   { path: "/pm-dashboard", redirectTo: "/execution-board" },
   { path: "/revenue", redirectTo: "/revenue-tracker" },
-  { path: "/my-tool", redirectTo: "/my-work" },
+  { path: "/my-tool", redirectTo: "/" },
   { path: "/my-tool/week", redirectTo: "/my-work/calendar" },
   { path: "/my-tool/backlog", redirectTo: "/my-work/tasks" },
-  { path: "/my-tool/settings", redirectTo: "/my-work" },
-  { path: "/my-tool/help", redirectTo: "/my-work" },
+  { path: "/my-tool/settings", redirectTo: "/" },
+  { path: "/my-tool/help", redirectTo: "/" },
   { path: "/my-tool/meetings", redirectTo: "/my-work/meetings" },
   { path: "/company-priorities", redirectTo: "/priorities" },
   { path: "/admin", redirectTo: "/admin/control-center" },
   { path: "/admin/legacy-utilities", redirectTo: "/admin/control-center" },
+  // Prompt 2 — old nav destinations that moved
+  { path: "/lifecycle-board", redirectTo: "/gates" },
+  { path: "/execution-board", redirectTo: "/gates" },
+  { path: "/execution-board/program", redirectTo: "/gates" },
+  { path: "/execution-board/construction", redirectTo: "/gates" },
+  { path: "/execution-board/finance", redirectTo: "/gates" },
+  { path: "/exceptions", redirectTo: "/gates/exceptions" },
+  { path: "/weekly-reviews", redirectTo: "/gates/client-updates" },
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
@@ -146,6 +154,13 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminWorkflowConfig", path: "/admin/workflow-config", label: "Workflow Configuration", iconKey: "Workflow", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminWorkflowConfigPage" },
   { id: "adminBackfill", path: "/admin/data-migration-status", label: "Data Migration Status", iconKey: "Database", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminBackfillPage" },
   { id: "adminPipedrive", path: "/admin/pipedrive", label: "Pipedrive Integration", iconKey: "Plug", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminPipedrivePage" },
+  // Gates workspace (Prompt 2)
+  { id: "gatesPipeline", path: "/gates", label: "Gates Pipeline", iconKey: "Milestone", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesPipelinePage" },
+  { id: "gatesBlocked", path: "/gates/blocked", label: "Blocked Gates", iconKey: "ShieldAlert", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesBlockedPage" },
+  { id: "gatesReady", path: "/gates/ready", label: "Ready Gates", iconKey: "CheckCircle", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesReadyPage" },
+  { id: "gatesExceptions", path: "/gates/exceptions", label: "Gate Exceptions", iconKey: "AlertTriangle", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesExceptionsPage" },
+  { id: "gatesClientUpdates", path: "/gates/client-updates", label: "Client Updates", iconKey: "CalendarCheck", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesClientUpdatesPage" },
+  { id: "gatesHandovers", path: "/gates/handovers", label: "Handover Queue", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesHandoversPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY
@@ -182,18 +197,19 @@ export function getPermissionEntityForPath(pathname: string): PermissionEntity |
  * configured on each role in Admin → Roles & Permissions → Navigation.
  */
 const NAV_GROUP_TO_SECTION: Record<string, string> = {
-  MY_WORK: "MY_WORK",
-  EXCO: "MY_WORK",
+  MY_WORK: "HOME",
+  EXCO: "HOME",
   PROJECTS: "PROJECTS",
   PROJECT_DEVELOPMENT: "PROJECTS",
   PROJECT_MANAGEMENT: "PROJECTS",
-  ENGINEERING: "PROJECTS",
-  QUALITY: "PROJECTS",
+  ENGINEERING: "GATES",
+  QUALITY: "GATES",
+  GATES: "GATES",
   FINANCE: "FINANCE",
-  KNOWLEDGE: "REPORTS",
-  FEEDBACK: "REPORTS",
+  KNOWLEDGE: "ADMIN",
+  FEEDBACK: "ADMIN",
   PORTFOLIO: "PROJECTS",
-  REPORTS: "REPORTS",
+  REPORTS: "ADMIN",
   SYSTEM: "ADMIN",
 };
 
@@ -204,8 +220,13 @@ export function getAppSectionForPath(pathname: string): string | undefined {
   if (pathname === "/") {
     return "HOME";
   }
-  if (pathname === "/my-work" || pathname.startsWith("/my-work/")) {
-    return "MY_WORK";
+  // My Work absorbed into Home (Prompt 2)
+  if (pathname === "/my-work" || pathname.startsWith("/my-work/") || pathname === "/inbox") {
+    return "HOME";
+  }
+  // Gates section
+  if (pathname === "/gates" || pathname.startsWith("/gates/")) {
+    return "GATES";
   }
   const sorted = [...PAGE_REGISTRY]
     .filter((page) => !!page.navGroup && !page.path.includes(":"))

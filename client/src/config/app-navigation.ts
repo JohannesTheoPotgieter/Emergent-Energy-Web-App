@@ -17,30 +17,21 @@ function startsWithAny(pathname: string, prefixes: string[]) {
 }
 
 /**
- * Redesigned navigation (A1+A2):
- *   Home | My Work | Projects | Finance | Reports | Admin
+ * Navigation structure (Prompt 2):
+ *   Home | Projects | Gates | Finance | Admin
  *
- * - "Execution" items merged into "Projects"
- * - "Operations" (Engineering, Quality) merged into "Projects"
- * - "Insights" renamed to "Reports"
- * - "Project Development" lives as sub-items under "Projects" (visible to PD roles)
- * - Naming improvements applied throughout (A2)
+ * - Home absorbs My Work (same question: "what needs my attention")
+ * - "Gates" replaces "Lifecycle Board" — concrete word, everyone knows what a gate is
+ * - Reports moves under Admin — consumed mainly by Exco/Finance
+ * - 5 items instead of 7 — less cognitive load
  */
 export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Home",
     path: "/",
-    match: (pathname) => pathname === "/",
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox"]),
     secondary: [
-      { label: "Home", path: "/" },
-    ],
-  },
-  {
-    label: "My Work",
-    path: "/my-work",
-    match: (pathname) => startsWithAny(pathname, ["/my-work", "/inbox"]),
-    secondary: [
-      { label: "My Tasks", path: "/my-work" },
+      { label: "Actions", path: "/" },
       { label: "Approvals", path: "/my-work/approvals" },
       { label: "Calendar", path: "/my-work/calendar" },
       { label: "Meetings", path: "/my-work/meetings" },
@@ -51,28 +42,37 @@ export const TOP_SECTIONS: TopSection[] = [
     label: "Projects",
     path: "/projects",
     match: (pathname) => startsWithAny(pathname, [
-      "/projects", "/project", "/project-lifecycle", "/lifecycle-board", "/clients",
-      "/execution-board", "/pm-dashboard", "/dashboard",
-      "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/weekly-reviews",
-      "/pm/handover-review", "/portfolios", "/exceptions",
-      "/engineering", "/quality", "/construction", "/hse", "/handover",
+      "/projects", "/project", "/project-lifecycle", "/clients",
+      "/pm-dashboard", "/dashboard",
+      "/pm/deliverables", "/handover-control", "/pm/on-the-go", "/pm/handover-review",
+      "/portfolios",
       "/sites", "/opportunities",
       "/pd",
     ]),
     secondary: [
-      { label: "Project List", path: "/projects" },
-      { label: "Execution Board", path: "/execution-board" },
-      { label: "Lifecycle", path: "/lifecycle-board" },
-      { label: "Exceptions", path: "/exceptions" },
-      { label: "Deliverables", path: "/pm/deliverables" },
-      { label: "Weekly Reviews", path: "/weekly-reviews" },
-      { label: "Construction", path: "/construction" },
-      { label: "Engineering", path: "/engineering" },
-      { label: "Engineering Standup", path: "/engineering/standup" },
-      { label: "Quality", path: "/quality" },
-      { label: "Handover & Closeout", path: "/handover" },
-      { label: "Project Development", path: "/pd" },
+      { label: "All Projects", path: "/projects" },
+      { label: "PD Pipeline", path: "/projects?filter=pd-pipeline" },
+      { label: "Execution", path: "/projects?filter=execution" },
+      { label: "Closeout", path: "/projects?filter=closeout" },
+      { label: "Post-Handover", path: "/projects?filter=post-handover" },
       { label: "Clients", path: "/clients" },
+    ],
+  },
+  {
+    label: "Gates",
+    path: "/gates",
+    match: (pathname) => startsWithAny(pathname, [
+      "/gates", "/lifecycle-board", "/execution-board",
+      "/exceptions", "/weekly-reviews",
+      "/engineering", "/quality", "/construction", "/hse", "/handover",
+    ]),
+    secondary: [
+      { label: "Pipeline", path: "/gates" },
+      { label: "Blocked", path: "/gates/blocked" },
+      { label: "Ready", path: "/gates/ready" },
+      { label: "Exceptions", path: "/gates/exceptions" },
+      { label: "Client Updates", path: "/gates/client-updates" },
+      { label: "Handovers", path: "/gates/handovers" },
     ],
   },
   {
@@ -95,24 +95,9 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Reports",
-    path: "/reports/center",
-    match: (pathname) => startsWithAny(pathname, ["/priorities", "/reports", "/ee-info", "/feedback", "/training"]),
-    secondary: [
-      { label: "Report Center", path: "/reports/center" },
-      { label: "PM Monthly Report", path: "/reports/pm/monthly" },
-      { label: "Eng Monthly Report", path: "/reports/engineering/monthly" },
-      { label: "Programme Reports", path: "/reports/programme" },
-      { label: "Priorities", path: "/priorities" },
-      { label: "Processes & SOPs", path: "/ee-info" },
-      { label: "Training", path: "/training" },
-      { label: "Feedback", path: "/feedback" },
-    ],
-  },
-  {
     label: "Admin",
     path: "/admin/control-center",
-    match: (pathname) => startsWithAny(pathname, ["/admin", "/settings"]),
+    match: (pathname) => startsWithAny(pathname, ["/admin", "/settings", "/priorities", "/reports", "/ee-info", "/feedback", "/training"]),
     secondary: ADMIN_NAV_ITEMS,
   },
 ];
@@ -146,7 +131,20 @@ export function buildVisibleTopSections(options: {
 
 export function linkIsActive(current: string, target: string) {
   if (target === "/") return current === "/";
-  if (current === target || current.startsWith(`${target}/`)) {
+  // Strip query string for comparison when target has query params
+  const targetBase = target.split("?")[0];
+  const targetQuery = target.includes("?") ? target.split("?")[1] : null;
+
+  if (current === targetBase || current.startsWith(`${targetBase}/`)) {
+    // If target has query params, check they match
+    if (targetQuery) {
+      const params = new URLSearchParams(window.location.search);
+      const targetParams = new URLSearchParams(targetQuery);
+      for (const [key, val] of targetParams.entries()) {
+        if (params.get(key) !== val) return false;
+      }
+      return true;
+    }
     // When on /my-work/tasks?source=approvals, My Tasks pill (/my-work) should not be active
     if (target === "/my-work" && current === "/my-work/tasks") {
       const params = new URLSearchParams(window.location.search);
@@ -170,14 +168,14 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   // Priority detail breadcrumb
   const priorityDetailMatch = pathname.match(/^\/priorities\/(\d+)/);
   if (priorityDetailMatch) return [
-    { label: "Reports", path: "/priorities" },
+    { label: "Admin", path: "/priorities" },
     { label: "Priorities", path: "/priorities" },
     { label: `Priority #${priorityDetailMatch[1]}` },
   ];
 
   // Priority list breadcrumb
   if (pathname === "/priorities") return [
-    { label: "Reports" },
+    { label: "Admin" },
   ];
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
@@ -204,6 +202,14 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     { label: "Project Development", path: "/pd" },
     { label: "PD Tickets", path: "/pd/tickets" },
     { label: `Ticket ${decodeURIComponent(ticketMatch[1])}` },
+  ];
+
+  // Gates breadcrumbs
+  if (pathname.startsWith("/gates")) return [
+    { label: "Gates", path: "/gates" },
+    ...(pathname !== "/gates" ? [{
+      label: activeSection.secondary.find((item) => linkIsActive(pathname, item.path))?.label || pathname.split("/").pop() || "",
+    }] : []),
   ];
 
   const leaf = activeSection.secondary
