@@ -143,7 +143,7 @@ export const workItemDepTypeEnum = pgEnum('work_item_dep_type', ['FS', 'SS', 'FF
 export const workItems = pgTable("work_items", {
   id: serial("id").primaryKey(),
   clientId: integer("client_id").references(() => clients.id),
-  projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  projectId: integer("project_id").references(() => projectInfo.id),
   workstream: workItemWorkstreamEnum("workstream").notNull(),
   type: text("type"),
   source: workItemSourceEnum("source").notNull().default("UI"),
@@ -207,6 +207,15 @@ export const workItems = pgTable("work_items", {
   taskTypeTag: text("task_type_tag"),
   blockerReason: text("blocker_reason"),
   pdTicketId: integer("pd_ticket_id"),
+  // Personal-task columns (unified from mytool_tasks)
+  bucket: text("bucket"),  // 'project' | 'company_ops' | 'personal'
+  pinnedToday: boolean("pinned_today").default(false),
+  pinnedWeek: boolean("pinned_week").default(false),
+  sourceEmailId: text("source_email_id"),
+  sourceEmailSubject: text("source_email_subject"),
+  nextStep: text("next_step"),
+  definitionOfDone: text("definition_of_done"),
+  completionNote: text("completion_note"),
 }, (table) => ({
   projectIdIdx: index("work_items_project_id_idx").on(table.projectId),
   ownerUserIdIdx: index("work_items_owner_user_id_idx").on(table.ownerUserId),

@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { createTaskRequestId } from "@/lib/idempotency";
 import { useToast } from "@/hooks/use-toast";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
@@ -385,8 +386,7 @@ export default function MyWorkTasksPage() {
   }, [unifiedTasks, unifiedDetailOpen, unifiedDetailTask?._key]);
 
   const invalidateAll = useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/mytool/tasks"] });
+    invalidateAllTaskCaches(queryClient);
     queryClient.invalidateQueries({ queryKey: ["/api/ms-objects/mine", "action_required_tasks"] });
     queryClient.invalidateQueries({ queryKey: ["/api/tr-register"] });
   }, []);

@@ -2,6 +2,7 @@ import type { Express, NextFunction, Request, Response } from "express";
 import { z } from "zod";
 import { db } from "./db";
 import { eq, and, or, desc, asc, sql, inArray, isNull, ne } from "drizzle-orm";
+import { fromWorkItem, toPersonalTaskShape } from "@shared/types/unified-task";
 import {
   mytoolTasks, trItems, deliverables,
   projectEngApprovals, projectEngStages, engStageTemplates,
@@ -530,15 +531,17 @@ export function registerMsSyncRoutes(app: Express) {
 
       const userEmail = currentUser?.email || currentUser?.username || "";
 
-      const [personalTasks, opTasks, trRegisterItems, approvalData, deliverableItems, planTasks, engTasks, qualityTasks, microsoftItems] = await Promise.all([
-        db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)).orderBy(desc(mytoolTasks.createdAt)),
-
-        db.select().from(workItems).where(
-          and(
-            isNull(workItems.deletedAt),
-            sql`(${workItems.ownerUserId} = ${userId} OR EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = ${workItems.id} AND wia.user_id = ${userId}))`
-          )
-        ).orderBy(asc(workItems.sortOrder)),
+      const [allWorkItemsForUser, trRegisterItems, approvalData, deliverableItems, planTasks, engTasks, qualityTasks, microsoftItems] = await Promise.all([
+        db.execute(sql`
+          SELECT wi.*, pi.project_name
+          FROM work_items wi
+          LEFT JOIN project_info pi ON wi.project_id = pi.id
+          WHERE wi.deleted_at IS NULL
+            AND (wi.owner_user_id = ${userId}
+                 OR EXISTS (SELECT 1 FROM work_item_assignments wia
+                            WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
+          ORDER BY wi.sort_order ASC
+        `).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
 
         db.select().from(trItems).where(
             sql`(${userName} = ANY(${trItems.owners}) OR ${userId} = ANY(${trItems.ownerUserIds}))`
@@ -708,6 +711,10 @@ export function registerMsSyncRoutes(app: Express) {
           .orderBy(desc(msObjects.receivedOrStartDatetime)),
       ]);
 
+      // Split personal tasks from operational tasks (both now in work_items)
+      const personalTasks = allWorkItemsForUser.filter((t: any) => t.workstream === "PERSONAL");
+      const opTasks = allWorkItemsForUser.filter((t: any) => t.workstream !== "PERSONAL");
+
       const subtaskParentIds = opTasks.filter((t: any) => t.parentId === null || t.parentId === undefined).map((t: any) => t.id);
       let subtaskCounts: Record<number, number> = {};
       if (subtaskParentIds.length > 0) {
@@ -771,14 +778,17 @@ export function registerMsSyncRoutes(app: Express) {
 
       const visibleMicrosoftItems = await filterMicrosoftItemsForRequest(req, microsoftItems);
 
-      const personal = personalTasks.map((t: any) => withSourceLinks("personal", {
-        ...t,
-        resolvedOwner: resolveUserId(t.ownerUserId),
-      }, {
-        itemKey: `personal-${t.id}`,
-        rawId: t.id,
-        projectName: t.projectName,
-      }));
+      const personal = personalTasks.map((t: any) => {
+        const personalShape = toPersonalTaskShape(fromWorkItem(t));
+        return withSourceLinks("personal", {
+          ...personalShape,
+          resolvedOwner: resolveUserId(t.ownerUserId),
+        }, {
+          itemKey: `personal-${t.id}`,
+          rawId: t.id,
+          projectName: t.projectName ?? personalShape.projectName,
+        });
+      });
 
       const operational = opTasks.map((t: any) => {
         const isOwnerOrAssignee = t.ownerUserId === userId;

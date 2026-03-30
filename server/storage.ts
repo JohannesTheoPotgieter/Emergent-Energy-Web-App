@@ -315,12 +315,12 @@ export interface IStorage {
   // Admin Operations
   clearAllData(): Promise<{ tablesCleared: string[]; filesDeleted: number }>;
 
-  // My Tool - Tasks
-  getMytoolTasks(ownerUserId: number): Promise<MytoolTask[]>;
-  getMytoolTasksByDate(ownerUserId: number, date: string): Promise<MytoolTask[]>;
-  getMytoolTask(id: number): Promise<MytoolTask | undefined>;
-  createMytoolTask(data: InsertMytoolTask): Promise<MytoolTask>;
-  updateMytoolTask(id: number, data: Partial<InsertMytoolTask>): Promise<MytoolTask>;
+  // My Tool - Tasks (unified: backed by work_items with workstream='PERSONAL')
+  getMytoolTasks(ownerUserId: number): Promise<any[]>;
+  getMytoolTasksByDate(ownerUserId: number, date: string): Promise<any[]>;
+  getMytoolTask(id: number): Promise<any | undefined>;
+  createMytoolTask(data: any): Promise<any>;
+  updateMytoolTask(id: number, data: any): Promise<any>;
   deleteMytoolTask(id: number): Promise<void>;
 
   // My Tool - Timeblocks
@@ -2058,11 +2058,11 @@ export class DatabaseStorage implements IStorage {
   async updateKeyDateMapping(id: number, data: Partial<InsertKeyDateMapping>): Promise<KeyDateMapping> { return this.workManagementRepository.updateKeyDateMapping(id, data); }
   async deleteKeyDateMapping(id: number): Promise<void> { return this.workManagementRepository.deleteKeyDateMapping(id); }
 
-  async getMytoolTasks(ownerUserId: number): Promise<MytoolTask[]> { return this.workManagementRepository.getMytoolTasks(ownerUserId); }
-  async getMytoolTasksByDate(ownerUserId: number, date: string): Promise<MytoolTask[]> { return this.workManagementRepository.getMytoolTasksByDate(ownerUserId, date); }
-  async getMytoolTask(id: number): Promise<MytoolTask | undefined> { return this.workManagementRepository.getMytoolTask(id); }
-  async createMytoolTask(data: InsertMytoolTask): Promise<MytoolTask> { return this.workManagementRepository.createMytoolTask(data); }
-  async updateMytoolTask(id: number, data: Partial<InsertMytoolTask>): Promise<MytoolTask> { return this.workManagementRepository.updateMytoolTask(id, data); }
+  async getMytoolTasks(ownerUserId: number): Promise<any[]> { return this.workManagementRepository.getMytoolTasks(ownerUserId); }
+  async getMytoolTasksByDate(ownerUserId: number, date: string): Promise<any[]> { return this.workManagementRepository.getMytoolTasksByDate(ownerUserId, date); }
+  async getMytoolTask(id: number): Promise<any | undefined> { return this.workManagementRepository.getMytoolTask(id); }
+  async createMytoolTask(data: any): Promise<any> { return this.workManagementRepository.createMytoolTask(data); }
+  async updateMytoolTask(id: number, data: any): Promise<any> { return this.workManagementRepository.updateMytoolTask(id, data); }
   async deleteMytoolTask(id: number): Promise<void> { return this.workManagementRepository.deleteMytoolTask(id); }
 
   async getMytoolTimeblocks(ownerUserId: number, date: string): Promise<MytoolTimeblock[]> { return this.workManagementRepository.getMytoolTimeblocks(ownerUserId, date); }

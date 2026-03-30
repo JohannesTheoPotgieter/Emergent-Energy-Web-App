@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, invalidateProjectQueries } from "@/lib/queryClient";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { useToast } from "@/hooks/use-toast";
 import { getTaskWorkflowBlockReason } from "@/lib/task-workflow-guard";
 import { format, formatDistanceToNow, differenceInDays } from "date-fns";
@@ -188,13 +189,8 @@ export default function TaskDetailDrawer({
   });
 
   const invalidateAll = () => {
+    invalidateAllTaskCaches(queryClient);
     queryClient.invalidateQueries({ queryKey: detailQueryKey });
-    queryClient.invalidateQueries({
-      queryKey: ["operational-tasks", projectName],
-    });
-    queryClient.invalidateQueries({
-      queryKey: ["planning-tasks", projectName],
-    });
     queryClient.invalidateQueries({
       queryKey: ["working-plan", projectName],
     });

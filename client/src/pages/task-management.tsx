@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { PageShell, SectionHeader, FilterBar } from "@/components/layout/page-shell";
 import {
   LayoutGrid, List, Calendar as CalendarIcon, BarChart3, Plus, Search,
@@ -191,8 +192,7 @@ function BoardView({ filters }: { filters: Record<string, string> }) {
     mutationFn: ({ id, status }: { id: number; status: string }) =>
       apiFetch(`/api/tasks/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks-board"] });
-      queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      invalidateAllTaskCaches(queryClient);
     },
   });
 
@@ -680,9 +680,7 @@ export default function TaskManagementPage() {
   }, [search, statusFilter, priorityFilter, categoryFilter]);
 
   const handleCreated = () => {
-    queryClient.invalidateQueries({ queryKey: ["tasks"] });
-    queryClient.invalidateQueries({ queryKey: ["tasks-board"] });
-    queryClient.invalidateQueries({ queryKey: ["tasks-metrics"] });
+    invalidateAllTaskCaches(queryClient);
   };
 
   const seedMutation = useMutation({

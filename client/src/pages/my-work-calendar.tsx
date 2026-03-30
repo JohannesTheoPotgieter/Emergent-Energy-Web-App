@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import {
   format,
   startOfWeek,
@@ -498,7 +499,7 @@ export default function MyWorkCalendarPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
+      invalidateAllTaskCaches(queryClient);
     },
     onError: (err: Error) => {
       toast({
@@ -647,7 +648,7 @@ export default function MyWorkCalendarPage() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["outlook-events-calendar"] });
       queryClient.invalidateQueries({ queryKey: ["outlook-status"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/my-work/all-tasks"] });
+      invalidateAllTaskCaches(queryClient);
       if (data?.success === false && data?.error === "ms_sso_required") {
         toast({
           title: "Microsoft Sign-In Required",
