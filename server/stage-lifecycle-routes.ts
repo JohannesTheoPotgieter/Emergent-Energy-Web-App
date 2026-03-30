@@ -34,6 +34,7 @@ import {
   stageChecklistTemplates,
   projectStageInstances,
   projectStageRequirements,
+  projectStageDecisions,
 } from "@shared/schema";
 
 function getUser(req: Request): { id: number; role: string } {
@@ -531,6 +532,39 @@ export function registerStageLifecycleRoutes(app: Express): void {
         if (!projectId) return;
         const decisions = await getStageDecisions(projectId);
         res.json({ decisions });
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: msg });
+      }
+    },
+  );
+
+  // POST /api/projects/:projectId/stage-decisions
+  app.post(
+    "/api/projects/:projectId/stage-decisions",
+    jwtAuth,
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req, res);
+        if (!projectId) return;
+        const user = getUser(req);
+        const { stageCode, decisionType, decisionSummary, rationale } = req.body;
+
+        if (!stageCode || !decisionSummary) {
+          return res.status(400).json({ error: "stageCode and decisionSummary required" });
+        }
+
+        const [decision] = await db.insert(projectStageDecisions).values({
+          projectId,
+          stageCode,
+          decisionType: decisionType || "GATE_PASS",
+          decisionSummary,
+          decidedByUserId: user.id,
+          decidedDate: new Date(),
+          rationale: rationale || null,
+        }).returning();
+        res.status(201).json({ decision });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         res.status(500).json({ error: msg });
