@@ -14,6 +14,9 @@ import { useStageDetail } from "@/hooks/use-stage-lifecycle";
 import { useStageData, useSaveStageData } from "@/hooks/use-stage-data";
 import { useState } from "react";
 import { FileText, ShieldAlert, ChevronDown, ChevronRight, CheckCircle2, Circle } from "lucide-react";
+import { EvidenceRequestPanel } from "./EvidenceRequestPanel";
+import { QueryRouter } from "./QueryRouter";
+import { ClientCommitmentTracker } from "./ClientCommitmentTracker";
 
 const STAGE_CODE = "S03_SIGNATURE_FINANCIAL_CLOSE";
 
@@ -231,6 +234,9 @@ export function Stage3FinancialClose({ projectId, isAdmin }: Stage3Props) {
           <>
             <DependencyList projectId={projectId} stageCode={STAGE_CODE} />
             <DecisionLog projectId={projectId} stageCode={STAGE_CODE} />
+            <EvidenceRequestPanel projectId={projectId} stageCode={STAGE_CODE} />
+            <QueryRouter projectId={projectId} stageCode={STAGE_CODE} />
+            <ClientCommitmentTracker projectId={projectId} stageCode={STAGE_CODE} />
 
             <Card>
               <CardHeader className="pb-2">
