@@ -190,7 +190,7 @@ export function registerStandupRoutes(app: Express) {
   app.delete("/api/standups/schedules/:id", requireAuth, requirePermission("standups", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
-      await db.delete(standupSchedules).where(eq(standupSchedules.id, id));
+      await db.update(standupSchedules).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(standupSchedules.id, id)).returning();
       res.json({ success: true });
     } catch (err: unknown) {
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });

@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, desc, sql, inArray } from "drizzle-orm";
+import { eq, desc, sql, inArray, isNull } from "drizzle-orm";
 import {
   meetingSummaries,
   meetingActionItems,
@@ -93,6 +93,7 @@ export function registerMeetingRoutes(app: Express) {
       const meetings = await db
         .select()
         .from(meetingSummaries)
+        .where(isNull(meetingSummaries.deletedAt))
         .orderBy(desc(meetingSummaries.createdAt))
         .limit(50);
 
@@ -209,8 +210,8 @@ export function registerMeetingRoutes(app: Express) {
   app.delete("/api/meetings/:id", requireAuth, requirePermission("meetings", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(String(req.params.id));
-      await db.delete(meetingSummaries).where(eq(meetingSummaries.id, id));
-      res.json({ ok: true });
+      const [deleted] = await db.update(meetingSummaries).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(meetingSummaries.id, id)).returning();
+      res.json({ ok: true, record: deleted });
     } catch (err: unknown) {
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }

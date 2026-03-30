@@ -784,8 +784,10 @@ export const portfolios = pgTable("portfolios", {
   updatedBy: integer("updated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertPortfolioSchema = createInsertSchema(portfolios).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertPortfolioSchema = createInsertSchema(portfolios).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertPortfolio = z.infer<typeof insertPortfolioSchema>;
 export type Portfolio = typeof portfolios.$inferSelect;
 
@@ -798,8 +800,10 @@ export const portfolioRolloutPlans = pgTable("portfolio_rollout_plans", {
   updatedBy: integer("updated_by").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertPortfolioRolloutPlanSchema = createInsertSchema(portfolioRolloutPlans).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertPortfolioRolloutPlanSchema = createInsertSchema(portfolioRolloutPlans).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertPortfolioRolloutPlan = z.infer<typeof insertPortfolioRolloutPlanSchema>;
 export type PortfolioRolloutPlan = typeof portfolioRolloutPlans.$inferSelect;
 
@@ -886,8 +890,11 @@ export const changeRequests = pgTable("change_requests", {
   marginImpact: decimal("margin_impact", { precision: 15, scale: 2 }),
   evidenceLink: text("evidence_link"),
   finalDecision: text("final_decision"),       // 'approved', 'rejected', 'deferred'
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
+  deleteReason: text("delete_reason"),
 });
-export const insertChangeRequestSchema = createInsertSchema(changeRequests).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertChangeRequestSchema = createInsertSchema(changeRequests).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true, deleteReason: true } as any);
 export type InsertChangeRequest = z.infer<typeof insertChangeRequestSchema>;
 export type ChangeRequest = typeof changeRequests.$inferSelect;
 
@@ -913,8 +920,10 @@ export const raidItems = pgTable("raid_items", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   closedAt: timestamp("closed_at"),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertRaidItemSchema = createInsertSchema(raidItems).omit({ id: true, createdAt: true, updatedAt: true, closedAt: true } as any);
+export const insertRaidItemSchema = createInsertSchema(raidItems).omit({ id: true, createdAt: true, updatedAt: true, closedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertRaidItem = z.infer<typeof insertRaidItemSchema>;
 export type RaidItem = typeof raidItems.$inferSelect;
 

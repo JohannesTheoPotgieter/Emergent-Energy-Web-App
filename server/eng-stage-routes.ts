@@ -251,7 +251,7 @@ export function registerEngStageRoutes(app: Express) {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
       const taskId = parseInt(req.params.taskId);
-      const [deleted] = await db.delete(engTaskTemplates).where(eq(engTaskTemplates.id, taskId)).returning();
+      const [deleted] = await db.update(engTaskTemplates).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(engTaskTemplates.id, taskId)).returning();
       if (!deleted) return res.status(404).json({ error: "Task template not found" });
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "delete", changesJson: { description: "Task template deleted", title: deleted.title } });
       res.json({ success: true });
@@ -311,7 +311,7 @@ export function registerEngStageRoutes(app: Express) {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
       const delId = parseInt(req.params.delId);
-      const [deleted] = await db.delete(engDeliverableTemplates).where(eq(engDeliverableTemplates.id, delId)).returning();
+      const [deleted] = await db.update(engDeliverableTemplates).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(engDeliverableTemplates.id, delId)).returning();
       if (!deleted) return res.status(404).json({ error: "Deliverable template not found" });
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(delId), action: "delete", changesJson: { description: "Deliverable template deleted", name: deleted.name } });
       res.json({ success: true });

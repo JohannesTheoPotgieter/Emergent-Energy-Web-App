@@ -102,7 +102,7 @@ app.put("/api/projects/:id/access/:accessId", async (req, res) => {
 app.delete("/api/projects/:id/access/:accessId", async (req, res) => {
   try {
     const accessId = Number(req.params.accessId);
-    await db.delete(schema.projectAccess).where(eq(schema.projectAccess.id, accessId));
+    await db.update(schema.projectAccess).set({ deletedAt: new Date(), deletedBy: (req as any).user?.id }).where(eq(schema.projectAccess.id, accessId)).returning();
     res.json({ success: true });
   } catch (err: any) {
     console.error("Project access delete error:", err);

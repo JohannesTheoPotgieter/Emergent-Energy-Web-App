@@ -257,8 +257,10 @@ export const commissioningItems = pgTable("commissioning_items", {
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertCommissioningItemSchema = createInsertSchema(commissioningItems).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true } as any);
+export const insertCommissioningItemSchema = createInsertSchema(commissioningItems).omit({ id: true, createdAt: true, updatedAt: true, completedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertCommissioningItem = z.infer<typeof insertCommissioningItemSchema>;
 export type CommissioningItem = typeof commissioningItems.$inferSelect;
 

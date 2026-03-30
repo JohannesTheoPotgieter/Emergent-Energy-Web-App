@@ -108,8 +108,10 @@ export const handoverStakeholders = pgTable("handover_stakeholders", {
   notes: text("notes"),
   counterpartyId: integer("counterparty_id").references(() => counterparties.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
 
-export const insertHandoverStakeholderSchema = createInsertSchema(handoverStakeholders).omit({ id: true, createdAt: true } as any);
+export const insertHandoverStakeholderSchema = createInsertSchema(handoverStakeholders).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertHandoverStakeholder = z.infer<typeof insertHandoverStakeholderSchema>;
 export type HandoverStakeholder = typeof handoverStakeholders.$inferSelect;

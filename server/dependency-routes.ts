@@ -1,6 +1,6 @@
 import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, sql, inArray } from "drizzle-orm";
+import { eq, and, sql, inArray, isNull } from "drizzle-orm";
 import { workItemDependencies, workItems, insertWorkItemDependencySchema } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
@@ -90,7 +90,7 @@ export function registerDependencyRoutes(app: Express): void {
         .from(workItemDependencies)
         .innerJoin(predecessorTask, eq(workItemDependencies.predecessorId, predecessorTask.id))
         .innerJoin(successorTask, eq(workItemDependencies.successorId, successorTask.id))
-        .where(inArray(workItemDependencies.predecessorId, taskIds));
+        .where(and(inArray(workItemDependencies.predecessorId, taskIds), isNull(workItemDependencies.deletedAt)));
 
       res.json({ dependencies: deps });
     } catch (err: unknown) {
@@ -125,7 +125,10 @@ export function registerDependencyRoutes(app: Express): void {
       })
         .from(workItemDependencies)
         .where(
-          sql`(${workItemDependencies.predecessorId} = ANY(${taskIds}) OR ${workItemDependencies.successorId} = ANY(${taskIds}))`
+          and(
+            sql`(${workItemDependencies.predecessorId} = ANY(${taskIds}) OR ${workItemDependencies.successorId} = ANY(${taskIds}))`,
+            isNull(workItemDependencies.deletedAt),
+          )
         );
 
       res.json({ dependencies: deps });
@@ -242,7 +245,7 @@ export function registerDependencyRoutes(app: Express): void {
       const [existing] = await db.select().from(workItemDependencies).where(eq(workItemDependencies.id, depId));
       if (!existing) return res.status(404).json({ error: "Dependency not found" });
 
-      await db.delete(workItemDependencies).where(eq(workItemDependencies.id, depId));
+      await db.update(workItemDependencies).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(workItemDependencies.id, depId)).returning();
 
       logAuditFromReq(req, {
         entityType: "work_item_dependency",
