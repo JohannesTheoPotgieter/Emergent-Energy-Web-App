@@ -88,6 +88,21 @@ export async function runRoleLensBackfill(): Promise<BackfillReport> {
     console.error("[RoleLensBackfill] SSEG error:", err);
   }
 
+  // ============= STEP 6: Populate role homepage snapshots =============
+  try {
+    await populateHomepageSnapshots(report);
+  } catch (err) {
+    report.errors.push(`Homepage snapshots failed: ${err instanceof Error ? err.message : String(err)}`);
+    console.error("[RoleLensBackfill] Snapshots error:", err);
+  }
+
+  // ============= STEP 7: Persist migration report =============
+  try {
+    await persistMigrationReport(report);
+  } catch (err) {
+    console.error("[RoleLensBackfill] Report persistence error:", err);
+  }
+
   console.log("[RoleLensBackfill] Backfill complete.", JSON.stringify(report, null, 2));
   return report;
 }
@@ -406,7 +421,7 @@ async function backfillContracts(report: BackfillReport) {
       return;
     }
 
-    // Backfill from project_info where contract_value exists
+    // Phase 1: Backfill from project_info where contract_value exists
     const projectsWithContracts = await db.execute(sql.raw(`
       SELECT id, name, contract_value, contract_type, client_name
       FROM project_info
@@ -422,7 +437,7 @@ async function backfillContracts(report: BackfillReport) {
           clientName: (project.client_name as string) || null,
           contractType: (project.contract_type as string) || 'epc',
           contractReference: `PRJ-${project.id}`,
-          signatureStatus: 'signed', // Assume signed if they have a contract value
+          signatureStatus: 'signed',
           contractValue: project.contract_value as number,
           currency: 'ZAR',
           documentRefs: [],
@@ -432,6 +447,42 @@ async function backfillContracts(report: BackfillReport) {
       } catch (err) {
         skipped++;
       }
+    }
+
+    // Phase 2: Backfill from opportunities where contract data exists but no project link
+    try {
+      const opportunitiesWithContracts = await db.execute(sql.raw(`
+        SELECT o.id, o.project_name, o.contract_type, o.estimated_value, o.client_name, o.stage
+        FROM opportunities o
+        LEFT JOIN contracts c ON c.opportunity_id = o.id
+        WHERE c.id IS NULL
+          AND o.estimated_value IS NOT NULL
+          AND o.estimated_value > 0
+          AND o.deleted_at IS NULL
+          AND o.stage IN ('won', 'negotiating', 'proposal_sent')
+      `));
+
+      for (const opp of (opportunitiesWithContracts.rows ?? [])) {
+        try {
+          await db.insert(contracts).values({
+            opportunityId: opp.id as number,
+            clientName: (opp.client_name as string) || null,
+            contractType: (opp.contract_type as string) || 'epc',
+            contractReference: `OPP-${opp.id}`,
+            signatureStatus: (opp.stage as string) === 'won' ? 'signed' : 'negotiating',
+            contractValue: opp.estimated_value as number,
+            currency: 'ZAR',
+            documentRefs: [],
+            notes: `Auto-backfilled from opportunity ${opp.project_name || opp.id}`,
+          });
+          backfilled++;
+        } catch (err) {
+          skipped++;
+        }
+      }
+    } catch (err) {
+      // Opportunities table structure may differ — log but don't fail
+      report.warnings.push(`Contracts backfill (opportunities phase): ${err instanceof Error ? err.message : String(err)}`);
     }
   } catch (err) {
     report.warnings.push(`Contracts backfill: ${err instanceof Error ? err.message : String(err)}`);
@@ -493,4 +544,92 @@ async function backfillSsegApplications(report: BackfillReport) {
 
   report.rowsBackfilled["sseg_applications"] = backfilled;
   report.rowsSkipped["sseg_applications"] = skipped;
+}
+
+async function populateHomepageSnapshots(report: BackfillReport) {
+  let backfilled = 0;
+  let skipped = 0;
+
+  for (const lens of LENS_ROLES) {
+    try {
+      const existing = await db.select().from(roleHomepageSnapshots)
+        .where(sql`${roleHomepageSnapshots.lensRole} = ${lens} AND ${roleHomepageSnapshots.userId} IS NULL`)
+        .limit(1);
+
+      if (existing.length > 0) {
+        skipped++;
+        continue;
+      }
+
+      // Compute basic snapshot data from available tables
+      const snapshotData: Record<string, any> = {
+        computedAt: new Date().toISOString(),
+        lensRole: lens,
+      };
+
+      // Try to compute project counts
+      try {
+        const projectCounts = await db.execute(sql.raw(`
+          SELECT
+            COUNT(*) FILTER (WHERE deleted_at IS NULL) as total_projects,
+            COUNT(*) FILTER (WHERE phase = 'execution' AND deleted_at IS NULL) as active_projects,
+            COUNT(*) FILTER (WHERE deleted_at IS NULL AND rag_status = 'red') as red_projects
+          FROM project_info
+        `));
+        if (projectCounts.rows?.[0]) {
+          snapshotData.totalProjects = projectCounts.rows[0].total_projects ?? 0;
+          snapshotData.activeProjects = projectCounts.rows[0].active_projects ?? 0;
+          snapshotData.redProjects = projectCounts.rows[0].red_projects ?? 0;
+        }
+      } catch { /* project_info may not have these columns — safe to skip */ }
+
+      // Try to compute open task counts
+      try {
+        const taskCounts = await db.execute(sql.raw(`
+          SELECT COUNT(*) as open_tasks
+          FROM work_items
+          WHERE status NOT IN ('done', 'cancelled')
+            AND deleted_at IS NULL
+        `));
+        if (taskCounts.rows?.[0]) {
+          snapshotData.openTasks = taskCounts.rows[0].open_tasks ?? 0;
+        }
+      } catch { /* safe to skip */ }
+
+      await db.insert(roleHomepageSnapshots).values({
+        lensRole: lens,
+        userId: null,
+        snapshotData,
+      });
+      backfilled++;
+    } catch (err) {
+      report.warnings.push(`Snapshot ${lens}: ${err instanceof Error ? err.message : String(err)}`);
+      skipped++;
+    }
+  }
+
+  report.rowsBackfilled["role_homepage_snapshots"] = backfilled;
+  report.rowsSkipped["role_homepage_snapshots"] = skipped;
+}
+
+async function persistMigrationReport(report: BackfillReport) {
+  try {
+    // Store migration report as an app setting for audit/retrieval
+    await db.execute(sql.raw(`
+      INSERT INTO app_settings (key, value, updated_by, updated_at)
+      VALUES (
+        'role_lens_migration_report',
+        '${JSON.stringify(report).replace(/'/g, "''")}',
+        'system:backfill',
+        NOW()
+      )
+      ON CONFLICT (key) DO UPDATE SET
+        value = EXCLUDED.value,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = NOW()
+    `));
+    console.log("[RoleLensBackfill] Migration report persisted to app_settings.");
+  } catch (err) {
+    console.error("[RoleLensBackfill] Failed to persist migration report:", err);
+  }
 }

@@ -10,7 +10,7 @@
 
 import type { Express, Request, Response } from "express";
 import { db } from "../db";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, sql } from "drizzle-orm";
 import {
   roleLensProfiles,
   roleHomepageWidgets,
@@ -216,6 +216,61 @@ export function registerLensConfigRoutes(app: Express) {
     } catch (err) {
       console.error("[SSEG] Error:", err);
       return res.status(500).json({ error: "Failed to fetch SSEG applications" });
+    }
+  });
+
+  /**
+   * GET /api/admin/migration-report
+   * Returns the last role-lens migration report from app_settings.
+   */
+  app.get("/api/admin/migration-report", async (_req: Request, res: Response) => {
+    try {
+      const result = await db.execute(
+        sql`SELECT value, updated_at FROM app_settings WHERE key = 'role_lens_migration_report' LIMIT 1`
+      );
+      if (result.rows?.length) {
+        return res.json({
+          report: JSON.parse(result.rows[0].value as string),
+          lastRun: result.rows[0].updated_at,
+        });
+      }
+      return res.json({ report: null, lastRun: null });
+    } catch (err) {
+      console.error("[MigrationReport] Error:", err);
+      return res.status(500).json({ error: "Failed to fetch migration report" });
+    }
+  });
+
+  /**
+   * GET /api/lens/homepage-snapshot/:lensRole
+   * Returns pre-computed homepage snapshot data for a lens role.
+   */
+  app.get("/api/lens/homepage-snapshot/:lensRole", async (req: Request, res: Response) => {
+    try {
+      const { lensRole } = req.params;
+      const userId = req.query.userId ? Number(req.query.userId) : undefined;
+
+      // User-specific snapshot first, then role-level fallback
+      if (userId) {
+        const userSnapshot = await db.execute(
+          sql`SELECT * FROM role_homepage_snapshots WHERE lens_role = ${lensRole} AND user_id = ${userId} ORDER BY computed_at DESC LIMIT 1`
+        );
+        if (userSnapshot.rows?.length) {
+          return res.json({ snapshot: userSnapshot.rows[0], scope: "user" });
+        }
+      }
+
+      const roleSnapshot = await db.execute(
+        sql`SELECT * FROM role_homepage_snapshots WHERE lens_role = ${lensRole} AND user_id IS NULL ORDER BY computed_at DESC LIMIT 1`
+      );
+      if (roleSnapshot.rows?.length) {
+        return res.json({ snapshot: roleSnapshot.rows[0], scope: "role" });
+      }
+
+      return res.json({ snapshot: null, scope: null });
+    } catch (err) {
+      console.error("[HomepageSnapshot] Error:", err);
+      return res.status(500).json({ error: "Failed to fetch homepage snapshot" });
     }
   });
 }
