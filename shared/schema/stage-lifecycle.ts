@@ -321,7 +321,7 @@ export const projectAccess = pgTable("project_access", {
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
   userId: integer("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   accessLevel: text("access_level").notNull().default("viewer"),
-  roleOnProject: text("role_on_project").notNull(),
+  roleOnProject: text("role_on_project"),
   stagesVisible: text("stages_visible").array().notNull().default([]),   // empty = 'all'
   canEdit: boolean("can_edit").notNull().default(false),
   canApprove: boolean("can_approve").notNull().default(false),

@@ -113,7 +113,7 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
       );
     }
 
-    passport.authenticate("local", (err: Error | null, user: Express.User | false, info: { message: string }) => {
+    passport.authenticate("local", (err: Error | null, user: { id: number; email: string; name: string; role: string } | false, info: { message: string }) => {
       if (err) {
         logApiError("POST /api/auth/login", err);
 
