@@ -866,6 +866,10 @@ export class DatabaseStorage implements IStorage {
       "opportunity_id",
       "delivery_model",
       "project_code",
+      "site_establishment_date",
+      "site_establishment_actual",
+      "financial_review_status",
+      "financial_review_id",
     ];
 
     if (mode === "sqlite") {

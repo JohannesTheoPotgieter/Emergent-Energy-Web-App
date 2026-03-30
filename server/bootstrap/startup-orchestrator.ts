@@ -599,6 +599,10 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS practical_completion_actual TEXT;
     ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS cost_baseline NUMERIC(15,2);
     ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS margin_baseline NUMERIC(8,4);
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS site_establishment_date TEXT;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS site_establishment_actual TEXT;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS financial_review_status TEXT NOT NULL DEFAULT 'NOT_STARTED';
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS financial_review_id INTEGER;
   `);
 
   // ── users columns ──
@@ -1443,6 +1447,62 @@ async function runAdditiveSchemaAlignments() {
     WHERE mcp.assigned_to IS NOT NULL
       AND mcp.owner_user_id IS NULL
       AND LOWER(TRIM(mcp.assigned_to)) = LOWER(TRIM(u.name));
+  `);
+
+  // EPC Workflow: Purchase Orders & Review Assignments
+  await safeExec("po_review_decision enum", `
+    DO $$ BEGIN
+      CREATE TYPE po_review_decision AS ENUM ('pending', 'approved', 'requires_info', 'blocked');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
+
+  await safeExec("purchase_orders table", `
+    CREATE TABLE IF NOT EXISTS purchase_orders (
+      id SERIAL PRIMARY KEY,
+      po_ref TEXT NOT NULL UNIQUE,
+      po_number INTEGER NOT NULL,
+      project_name TEXT NOT NULL,
+      project_id INTEGER REFERENCES project_info(id),
+      supplier_name TEXT NOT NULL,
+      supplier_vat TEXT,
+      supplier_address TEXT,
+      supplier_contact TEXT,
+      line_items JSONB NOT NULL DEFAULT '[]',
+      subtotal DECIMAL(15,2) NOT NULL DEFAULT 0,
+      vat_amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+      total DECIMAL(15,2) NOT NULL DEFAULT 0,
+      payment_terms TEXT,
+      delivery_date TEXT,
+      delivery_address TEXT,
+      site_contact TEXT,
+      comments TEXT,
+      project_manager TEXT,
+      status TEXT NOT NULL DEFAULT 'draft',
+      created_by INTEGER NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      sent_at TIMESTAMP,
+      pdf_data TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_po_project ON purchase_orders(project_name);
+    CREATE INDEX IF NOT EXISTS idx_po_status ON purchase_orders(status);
+  `);
+
+  await safeExec("po_review_assignments table", `
+    CREATE TABLE IF NOT EXISTS po_review_assignments (
+      id SERIAL PRIMARY KEY,
+      purchase_order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+      reviewer_user_id INTEGER NOT NULL REFERENCES users(id),
+      reviewer_role TEXT NOT NULL,
+      decision po_review_decision NOT NULL DEFAULT 'pending',
+      decided_at TIMESTAMP,
+      notes TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_po_review_po_id ON po_review_assignments(purchase_order_id);
+    CREATE INDEX IF NOT EXISTS idx_po_review_reviewer ON po_review_assignments(reviewer_user_id);
   `);
 
   // C1: Construction module tables
