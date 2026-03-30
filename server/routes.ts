@@ -2089,78 +2089,10 @@ export async function registerRoutes(
 
   // ==================== REV TRACKER API ====================
 
-  app.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const [allInflows, manualEntries] = await Promise.all([
-        storage.getAllProgramInflows(),
-        storage.getTrackerMonthlyManual('REV'),
-      ]);
-
-      const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
-
-      const months: any[] = [];
-      const startMonth = new Date(Date.UTC(2025, 8, 1));
-
-      let ytdPlanned = 0, ytdRealised = 0, ytdOutstanding = 0, ytdBudget = 0;
-
-      for (let i = 0; i < 12; i++) {
-        const monthDate = new Date(startMonth);
-        monthDate.setUTCMonth(monthDate.getUTCMonth() + i);
-        const yr = monthDate.getUTCFullYear();
-        const mo = monthDate.getUTCMonth();
-        const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-        const monthStart = `${monthKey}-01`;
-        const nextMonth = new Date(Date.UTC(yr, mo + 1, 1));
-        const monthEnd = nextMonth.toISOString().split('T')[0];
-
-        let planned = 0;
-        for (const inflow of allInflows) {
-          const d = inflow.invoiceRaisedDate;
-          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-          if (d >= monthStart && d < monthEnd && inflow.milestoneAmount) {
-            planned += parseFloat(inflow.milestoneAmount) || 0;
-          }
-        }
-
-        const manual = manualMap.get(monthKey);
-        const realised = manual?.realised ? parseFloat(manual.realised) : 0;
-        const outstanding = manual?.outstanding ? parseFloat(manual.outstanding) : 0;
-        const budget = manual?.budget ? parseFloat(manual.budget) : 0;
-
-        const variance = planned - budget;
-        const variancePct = budget !== 0 ? ((planned - budget) / budget) * 100 : 0;
-
-        ytdPlanned += planned;
-        ytdRealised += realised;
-        ytdOutstanding += outstanding;
-        ytdBudget += budget;
-        const ytdVariance = ytdPlanned - ytdBudget;
-        const ytdVariancePct = ytdBudget !== 0 ? ((ytdPlanned - ytdBudget) / ytdBudget) * 100 : 0;
-
-        months.push({
-          monthKey,
-          label: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
-          planned,
-          realised,
-          outstanding,
-          budget,
-          variance,
-          variancePct,
-          ytdPlanned,
-          ytdRealised,
-          ytdOutstanding,
-          ytdBudget,
-          ytdVariance,
-          ytdVariancePct,
-        });
-      }
-
-      res.json(months);
-    } catch (error) {
-      console.error("REV tracker error:", error);
-      res.status(500).json({ error: "Failed to fetch REV tracker data", message: "Failed to fetch REV tracker data" });
-    }
-  });
+  // REMOVED: /api/rev-tracker duplicate (was requireAuth + requireAdmin).
+  // The legacy /api/rev-tracker route is now handled exclusively in finance-routes.ts
+  // with correct auth (requirePermission("revenue_tracker", "view")) and deprecation logging.
+  // Canonical route: /api/revenue-tracker (finance-routes.ts)
 
   // ==================== COS TRACKER API ====================
 
