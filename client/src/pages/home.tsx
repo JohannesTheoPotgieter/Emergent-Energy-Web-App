@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
@@ -41,7 +41,16 @@ import {
   Sun,
   Wallet,
   Activity,
+  Inbox,
+  Calendar,
+  MessageSquare,
 } from "lucide-react";
+
+// Lazy-load tab content from My Work pages
+const MyWorkTasksPage = lazy(() => import("@/pages/my-work-tasks"));
+const MyWorkCalendarPage = lazy(() => import("@/pages/my-work-calendar"));
+const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
+const InboxPage = lazy(() => import("@/pages/inbox"));
 
 const money = (n: number | null | undefined) =>
   `R ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
@@ -75,6 +84,16 @@ function resolveIcon(iconKey?: string): React.ReactNode {
   return (iconKey && ICON_MAP[iconKey]) || <ArrowRight className="w-4 h-4" />;
 }
 
+const HOME_TABS = [
+  { key: "actions", label: "Actions", icon: ListChecks },
+  { key: "approvals", label: "Approvals", icon: ClipboardCheck },
+  { key: "calendar", label: "Calendar", icon: Calendar },
+  { key: "meetings", label: "Meetings", icon: MessageSquare },
+  { key: "inbox", label: "Inbox", icon: Inbox },
+] as const;
+
+type HomeTab = typeof HOME_TABS[number]["key"];
+
 /**
  * Build a compact set of KPI cards from execution-dashboard data,
  * selected by the role's config kpi keys as a guide.
@@ -85,46 +104,44 @@ function getKpiCards(
   stats: any,
   isLoading: boolean,
 ) {
-  // Map config kpi keys to actual data from the execution-dashboard response
   const kpiKeyMap: Record<string, { label: string; value: string | number; icon: React.ReactNode }> = {
     revenue_vs_target: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    gp_margin: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—", icon: <TrendingUp className="w-4 h-4" /> },
+    gp_margin: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
     projects_off_track: { label: "Red RAG", value: stats.redProjects, icon: <AlertTriangle className="w-4 h-4" /> },
-    open_vos: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    open_vos: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
     projects_on_track: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    milestones_due: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
-    overdue_tasks: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    milestones_due: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
+    overdue_tasks: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
     my_projects_rag: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    my_overdue_tasks: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
-    my_approvals_pending: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    my_overdue_tasks: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
+    my_approvals_pending: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
     my_deliverables_due: { label: "Open Expenditure (FY)", value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
     my_eng_tasks: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    design_queue: { label: "Eng. Blockers", value: kpis.openEngineeringBlockers ?? "—", icon: <AlertTriangle className="w-4 h-4" /> },
-    review_queue: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
-    my_overdue_deliverables: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—", icon: <BarChart3 className="w-4 h-4" /> },
+    design_queue: { label: "Eng. Blockers", value: kpis.openEngineeringBlockers ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
+    review_queue: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
+    my_overdue_deliverables: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", icon: <BarChart3 className="w-4 h-4" /> },
     my_opportunities: { label: "Total Projects", value: stats.totalProjects, icon: <FolderOpen className="w-4 h-4" /> },
     handover_readiness: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
     pd_tickets_open: { label: "Planned Revenue (FY)", value: money(kpis.plannedRevenueFy), icon: <DollarSign className="w-4 h-4" /> },
     proposals_pending: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
     revenue_this_month: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    cos_this_month: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "—", icon: <TrendingUp className="w-4 h-4" /> },
+    cos_this_month: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
     cash_position: { label: "Gross Profit (FY)", value: money(kpis.grossProfitFy), icon: <DollarSign className="w-4 h-4" /> },
     margin_drift: { label: "Open Expenditure (FY)", value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
-    open_ncrs: { label: "Quality Warnings", value: kpis.openQualityWarnings ?? "—", icon: <AlertTriangle className="w-4 h-4" /> },
-    snags_due: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
-    inspections_pending: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—", icon: <BarChart3 className="w-4 h-4" /> },
+    open_ncrs: { label: "Quality Warnings", value: kpis.openQualityWarnings ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
+    snags_due: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
+    inspections_pending: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", icon: <BarChart3 className="w-4 h-4" /> },
     corrective_actions_open: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
     active_sites: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    site_readiness: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
+    site_readiness: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
     open_snags: { label: "Red RAG", value: stats.redProjects, icon: <AlertTriangle className="w-4 h-4" /> },
-    inspections_due: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
+    inspections_due: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
     my_tasks: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
-    my_approvals: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "—", icon: <CheckCircle2 className="w-4 h-4" /> },
-    my_projects: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "—", icon: <Clock className="w-4 h-4" /> },
-    upcoming_events: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "—", icon: <BarChart3 className="w-4 h-4" /> },
+    my_approvals: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
+    my_projects: { label: "Behind Plan", value: kpis.projectsBehindPlan ?? "\u2014", icon: <Clock className="w-4 h-4" /> },
+    upcoming_events: { label: "Avg Progress", value: kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", icon: <BarChart3 className="w-4 h-4" /> },
   };
 
-  // Deduplicate by label — some config kpi keys map to the same dashboard metric
   const seen = new Set<string>();
   const cards: Array<{ label: string; value: string | number; icon: React.ReactNode }> = [];
   for (const kpi of config.kpis) {
@@ -154,6 +171,9 @@ function getKpiCards(
 
 export default function HomePage() {
   const { user } = useAuth();
+  const searchString = useSearch();
+  const urlTab = new URLSearchParams(searchString).get("tab") as HomeTab | null;
+  const [activeTab, setActiveTab] = useState<HomeTab>(urlTab || "actions");
   const [prioritiesExpanded, setPrioritiesExpanded] = useState(false);
 
   const { data: dashData, isLoading: dashLoading, isError: dashIsError, error: dashError } = useQuery<any>({
@@ -181,7 +201,6 @@ export default function HomePage() {
     },
   });
 
-  // Role config — single source of truth
   const userRole = (user as any)?.role;
   const effectiveRole = normalizeRoleForPermissions(userRole) as CompanyRole;
   const config = getRoleDashboardConfig(effectiveRole);
@@ -237,10 +256,10 @@ export default function HomePage() {
   const attentionItems = useMemo((): AttentionItem[] => {
     const items: AttentionItem[] = [];
     if (stats.redProjects > 0) items.push({ label: "Red RAG Projects", value: stats.redProjects, color: "text-red-600 bg-red-50 border-red-200", href: "/projects" });
-    if (Number(kpis.projectsBehindPlan) > 0) items.push({ label: "Behind Plan", value: Number(kpis.projectsBehindPlan), color: "text-amber-700 bg-amber-50 border-amber-200", href: "/execution-board" });
+    if (Number(kpis.projectsBehindPlan) > 0) items.push({ label: "Behind Plan", value: Number(kpis.projectsBehindPlan), color: "text-amber-700 bg-amber-50 border-amber-200", href: "/gates" });
     if (Number(kpis.pendingApprovals) > 0) items.push({ label: "Pending Approvals", value: Number(kpis.pendingApprovals), color: "text-blue-700 bg-blue-50 border-blue-200", href: "/pm/approvals" });
-    if (Number(kpis.openEngineeringBlockers) > 0) items.push({ label: "Eng. Blockers", value: Number(kpis.openEngineeringBlockers), color: "text-violet-700 bg-violet-50 border-violet-200", href: "/engineering" });
-    if (Number(kpis.openQualityWarnings) > 0) items.push({ label: "Quality Warnings", value: Number(kpis.openQualityWarnings), color: "text-orange-700 bg-orange-50 border-orange-200", href: "/quality" });
+    if (Number(kpis.openEngineeringBlockers) > 0) items.push({ label: "Eng. Blockers", value: Number(kpis.openEngineeringBlockers), color: "text-violet-700 bg-violet-50 border-violet-200", href: "/gates/blocked" });
+    if (Number(kpis.openQualityWarnings) > 0) items.push({ label: "Quality Warnings", value: Number(kpis.openQualityWarnings), color: "text-orange-700 bg-orange-50 border-orange-200", href: "/gates" });
     if (myPendingActions > 0) items.push({ label: "My Overdue Actions", value: myPendingActions, color: "text-rose-700 bg-rose-50 border-rose-200", href: "/my-work/tasks" });
     return items;
   }, [stats, kpis, myPendingActions]);
@@ -258,147 +277,207 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 1. Greeting */}
-      <div className="mb-5">
-        <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
-          {greeting}, {displayName}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
+      {/* 1. Status Strip — personal summary */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight text-foreground" data-testid="text-greeting">
+            {greeting}, {displayName}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
+        </div>
+        <div className="flex items-center gap-4 text-sm">
+          {myPendingActions > 0 && (
+            <div className="flex items-center gap-1.5 text-rose-600 font-medium">
+              <AlertTriangle className="h-4 w-4" />
+              <span>{myPendingActions} overdue</span>
+            </div>
+          )}
+          <div className="flex items-center gap-1.5 text-muted-foreground">
+            <ListChecks className="h-4 w-4" />
+            <span>{myOpenTasks} open tasks</span>
+          </div>
+          {Number(kpis.pendingApprovals) > 0 && (
+            <div className="flex items-center gap-1.5 text-blue-600">
+              <ClipboardCheck className="h-4 w-4" />
+              <span>{kpis.pendingApprovals} approvals</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* 2. Attention Badges — what needs action now */}
+      {/* 2. Attention Badges */}
       {!isLoading && (
         <AttentionBadges items={attentionItems} threshold={0} />
       )}
 
-      {/* 3. Quick Actions + Cockpit Launch + My Work */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 mb-6">
-        {/* Left: Quick Actions */}
-        <div className="lg:col-span-3">
-          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-            Quick Actions
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            {config.quickActions.map((action) => (
-              <Link key={action.path} href={action.path}>
-                <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
-                  <CardContent className="p-3.5 flex items-center gap-3">
-                    <div className="text-muted-foreground group-hover:text-primary transition-colors">
-                      {resolveIcon(action.iconKey)}
-                    </div>
-                    <span className="text-sm font-medium text-foreground">{action.label}</span>
-                    <ArrowRight className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-primary/60 transition-colors" />
-                  </CardContent>
-                </Card>
-              </Link>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: My Work + Cockpit Launch */}
-        <div className="lg:col-span-2">
-          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-            Your Workspace
-          </h2>
-          <Card className="border-border/50">
-            <CardContent className="p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
-                  <p className="text-xs text-muted-foreground">open tasks</p>
-                </div>
-                {myPendingActions > 0 && (
-                  <div className="text-right">
-                    <p className="text-2xl font-semibold font-mono text-rose-600" data-testid="text-overdue-count">{myPendingActions}</p>
-                    <p className="text-xs text-rose-600">overdue</p>
-                  </div>
-                )}
-              </div>
-              <Link href="/my-work">
-                <Button className="w-full" data-testid="link-my-work">
-                  <CheckCircle2 className="w-4 h-4 mr-2" />
-                  Go to My Work
-                  {myOpenTasks > 0 && <Badge variant="secondary" className="ml-2 text-xs">{myOpenTasks} open</Badge>}
-                </Button>
-              </Link>
-              <Link href={config.cockpitPath}>
-                <Button variant="outline" className="w-full" data-testid="link-cockpit">
-                  <LayoutDashboard className="w-4 h-4 mr-2" />
-                  {config.cockpitLabel}
-                  <ArrowRight className="w-4 h-4 ml-auto" />
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
+      {/* 3. Tab Navigation — Home absorbs My Work */}
+      <div className="flex items-center gap-1 border-b mb-5 overflow-x-auto">
+        {HOME_TABS.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
+                activeTab === tab.key
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted-foreground/30"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* 4. Minimal KPIs — compact, role-relevant */}
-      <div className="mb-6">
-        <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-          Key Metrics
-        </h2>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          {getKpiCards(config, kpis, stats, isLoading)}
-        </div>
-      </div>
-
-      {/* 5. Company Priorities — Collapsible */}
-      {(companyPriorities && companyPriorities.length > 0) && (
-        <Collapsible open={prioritiesExpanded} onOpenChange={setPrioritiesExpanded}>
-          <Card className="border-border/60 mb-6" data-testid="card-company-priorities">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2.5">
-                  <Flame className="w-4 h-4 text-primary" />
-                  <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
-                  <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
-                </div>
-                <Link href="/priorities">
-                  <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
-                </Link>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {visiblePriorities.map((priority: any, i: number) => (
-                  <PriorityCard key={priority.id || i} priority={priority} index={i} />
+      {/* 4. Tab Content */}
+      {activeTab === "actions" && (
+        <div className="space-y-6">
+          {/* Quick Actions + Workspace */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+            <div className="lg:col-span-3">
+              <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+                Quick Actions
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {config.quickActions.map((action) => (
+                  <Link key={action.path} href={action.path}>
+                    <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
+                      <CardContent className="p-3.5 flex items-center gap-3">
+                        <div className="text-muted-foreground group-hover:text-primary transition-colors">
+                          {resolveIcon(action.iconKey)}
+                        </div>
+                        <span className="text-sm font-medium text-foreground">{action.label}</span>
+                        <ArrowRight className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-primary/60 transition-colors" />
+                      </CardContent>
+                    </Card>
+                  </Link>
                 ))}
               </div>
-              {hiddenPriorities.length > 0 && (
-                <>
-                  <CollapsibleContent>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                      {hiddenPriorities.map((priority: any, i: number) => (
-                        <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
-                      ))}
+            </div>
+
+            <div className="lg:col-span-2">
+              <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+                Your Workspace
+              </h2>
+              <Card className="border-border/50">
+                <CardContent className="p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
+                      <p className="text-xs text-muted-foreground">open tasks</p>
                     </div>
-                  </CollapsibleContent>
-                  <CollapsibleTrigger asChild>
-                    <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
-                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${prioritiesExpanded ? "rotate-180" : ""}`} />
-                      {prioritiesExpanded ? "Show less" : `Show ${hiddenPriorities.length} more`}
-                    </button>
-                  </CollapsibleTrigger>
-                </>
-              )}
-            </CardContent>
-          </Card>
-        </Collapsible>
-      )}
-      {!companyPriorities && prioritiesLoading && (
-        <div className="mb-6">
-          <Skeleton className="h-5 w-48 mb-2.5" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <Skeleton className="h-24 w-full rounded-lg" />
-            <Skeleton className="h-24 w-full rounded-lg" />
+                    {myPendingActions > 0 && (
+                      <div className="text-right">
+                        <p className="text-2xl font-semibold font-mono text-rose-600" data-testid="text-overdue-count">{myPendingActions}</p>
+                        <p className="text-xs text-rose-600">overdue</p>
+                      </div>
+                    )}
+                  </div>
+                  <Link href="/gates">
+                    <Button className="w-full" data-testid="link-gates">
+                      <LayoutDashboard className="w-4 h-4 mr-2" />
+                      Open Gates
+                    </Button>
+                  </Link>
+                  <Link href={config.cockpitPath}>
+                    <Button variant="outline" className="w-full" data-testid="link-cockpit">
+                      <LayoutDashboard className="w-4 h-4 mr-2" />
+                      {config.cockpitLabel}
+                      <ArrowRight className="w-4 h-4 ml-auto" />
+                    </Button>
+                  </Link>
+                </CardContent>
+              </Card>
+            </div>
           </div>
+
+          {/* Key Metrics */}
+          <div>
+            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+              Key Metrics
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {getKpiCards(config, kpis, stats, isLoading)}
+            </div>
+          </div>
+
+          {/* Company Priorities */}
+          {(companyPriorities && companyPriorities.length > 0) && (
+            <Collapsible open={prioritiesExpanded} onOpenChange={setPrioritiesExpanded}>
+              <Card className="border-border/60" data-testid="card-company-priorities">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2.5">
+                      <Flame className="w-4 h-4 text-primary" />
+                      <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
+                      <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
+                    </div>
+                    <Link href="/priorities">
+                      <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
+                    </Link>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {visiblePriorities.map((priority: any, i: number) => (
+                      <PriorityCard key={priority.id || i} priority={priority} index={i} />
+                    ))}
+                  </div>
+                  {hiddenPriorities.length > 0 && (
+                    <>
+                      <CollapsibleContent>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                          {hiddenPriorities.map((priority: any, i: number) => (
+                            <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                      <CollapsibleTrigger asChild>
+                        <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
+                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${prioritiesExpanded ? "rotate-180" : ""}`} />
+                          {prioritiesExpanded ? "Show less" : `Show ${hiddenPriorities.length} more`}
+                        </button>
+                      </CollapsibleTrigger>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </Collapsible>
+          )}
+          {!companyPriorities && prioritiesLoading && (
+            <div>
+              <Skeleton className="h-5 w-48 mb-2.5" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Skeleton className="h-24 w-full rounded-lg" />
+                <Skeleton className="h-24 w-full rounded-lg" />
+              </div>
+            </div>
+          )}
         </div>
       )}
-      {companyPriorities && companyPriorities.length === 0 && !prioritiesLoading && (
-        <Card className="border-border/60 mb-6">
-          <CardContent className="p-5 text-center">
-            <p className="text-sm text-muted-foreground">No active company priorities</p>
-          </CardContent>
-        </Card>
+
+      {activeTab === "approvals" && (
+        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+          <MyWorkTasksPage />
+        </Suspense>
+      )}
+
+      {activeTab === "calendar" && (
+        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+          <MyWorkCalendarPage />
+        </Suspense>
+      )}
+
+      {activeTab === "meetings" && (
+        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+          <MyWorkMeetingsPage />
+        </Suspense>
+      )}
+
+      {activeTab === "inbox" && (
+        <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+          <InboxPage />
+        </Suspense>
       )}
     </PageShell>
   );
