@@ -127,7 +127,7 @@ export const approvals = pgTable("approvals", {
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
   approvalCategory: text("approval_category"),
   // B8: Universal approval engine extensions
-  approvalType: text("approval_type"),          // 'handover', 'budget', 'vo', 'procurement', 'gate', 'handover_pack', 'exception'
+  approvalType: text("approval_type"),          // 'handover', 'budget', 'vo', 'procurement', 'gate', 'handover_pack', 'exception', 'hse_incident', 'hse_corrective_action', 'sseg_application', 'sseg_document', 'quality_ncr', 'quality_inspection', 'contract', 'general'
   urgency: text("urgency").default("normal"),   // 'critical', 'high', 'normal', 'low'
   evidenceLinks: text("evidence_links"),        // JSON array of evidence links
   deletedAt: timestamp("deleted_at"),

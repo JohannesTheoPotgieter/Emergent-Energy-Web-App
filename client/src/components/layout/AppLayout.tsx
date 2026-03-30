@@ -17,6 +17,7 @@ import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useNavPreferences } from "@/hooks/use-nav-preferences";
 import { NotificationBell } from "@/components/NotificationBell";
+import { LensSwitcher } from "@/components/layout/LensSwitcher";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { NavOnboardingTour } from "@/components/layout/NavOnboardingTour";
 import { NavOrderCustomizer } from "@/components/layout/NavOrderCustomizer";
@@ -313,6 +314,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </DropdownMenu>
           ) : null}
 
+          <LensSwitcher />
           <NotificationBell />
 
           <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
