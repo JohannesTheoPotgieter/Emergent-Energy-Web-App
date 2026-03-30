@@ -23,6 +23,7 @@ import {
   type InsertTaskComment,
   type InsertWritebackAuditLog,
   type InsertWritebackMapping,
+  type InsertWorkItem,
   type KeyDateMapping,
   type MytoolTask,
   type MytoolTimeblock,
@@ -31,9 +32,17 @@ import {
   type TaskChecklist,
   type TaskChecklistItem,
   type TaskComment,
+  type WorkItem,
   type WritebackAuditLog,
   type WritebackMapping,
 } from "@shared/schema";
+import {
+  toPersonalTaskShape,
+  fromWorkItem,
+  personalStatusToWorkItem,
+  personalPriorityToWorkItem,
+  workItemStatusToPersonal,
+} from "@shared/types/unified-task";
 
 type DbInstance = typeof db;
 
@@ -158,21 +167,135 @@ export class WorkManagementRepository {
   async updateKeyDateMapping(id: number, data: Partial<InsertKeyDateMapping>): Promise<KeyDateMapping> { const [updated] = await this.dbInstance.update(keyDateMappings).set({ ...data, updatedAt: new Date() }).where(eq(keyDateMappings.id, id)).returning(); return updated; }
   async deleteKeyDateMapping(id: number): Promise<void> { await this.dbInstance.delete(keyDateMappings).where(eq(keyDateMappings.id, id)); }
 
-  async getMytoolTasks(ownerUserId: number): Promise<MytoolTask[]> {
-    return this.dbInstance.select().from(mytoolTasks).where(and(eq(mytoolTasks.ownerUserId, ownerUserId), isNull(mytoolTasks.deletedAt))).orderBy(mytoolTasks.sortOrder);
+  // ── Personal Tasks (unified: reads/writes work_items with workstream='PERSONAL') ──
+
+  private workItemToMytoolShape(row: WorkItem): any {
+    return toPersonalTaskShape(fromWorkItem(row));
   }
-  async getMytoolTasksByDate(ownerUserId: number, date: string): Promise<MytoolTask[]> {
-    return this.dbInstance.select().from(mytoolTasks).where(and(eq(mytoolTasks.ownerUserId, ownerUserId), isNull(mytoolTasks.deletedAt), or(eq(mytoolTasks.plannedForDate, date), and(not(inArray(mytoolTasks.status, ["done", "cancelled"])), sql`${mytoolTasks.plannedForDate} < ${date}`), and(not(inArray(mytoolTasks.status, ["done", "cancelled"])), sql`${mytoolTasks.plannedForDate} IS NULL`)))).orderBy(mytoolTasks.sortOrder);
+
+  async getMytoolTasks(ownerUserId: number): Promise<any[]> {
+    const rows = await this.dbInstance.select().from(workItems).where(
+      and(
+        eq(workItems.workstream, "PERSONAL"),
+        eq(workItems.ownerUserId, ownerUserId),
+        isNull(workItems.deletedAt),
+      )
+    ).orderBy(workItems.sortOrder);
+    return rows.map((r: any) => this.workItemToMytoolShape(r));
   }
-  async getMytoolTask(id: number): Promise<MytoolTask | undefined> { const [task] = await this.dbInstance.select().from(mytoolTasks).where(eq(mytoolTasks.id, id)); return task; }
-  async createMytoolTask(data: InsertMytoolTask): Promise<MytoolTask> { const now = new Date(); const [created] = await this.dbInstance.insert(mytoolTasks).values({ ...data, createdAt: now, updatedAt: now }).returning(); return created; }
-  async updateMytoolTask(id: number, data: Partial<InsertMytoolTask>): Promise<MytoolTask> {
-    const updateData: Partial<InsertMytoolTask> & { updatedAt: Date; completedAt?: Date } = { ...data, updatedAt: new Date() };
-    if ((data as { status?: string }).status === "done") updateData.completedAt = new Date();
-    const [updated] = await this.dbInstance.update(mytoolTasks).set(updateData).where(eq(mytoolTasks.id, id)).returning();
-    return updated;
+
+  async getMytoolTasksByDate(ownerUserId: number, date: string): Promise<any[]> {
+    const rows = await this.dbInstance.select().from(workItems).where(
+      and(
+        eq(workItems.workstream, "PERSONAL"),
+        eq(workItems.ownerUserId, ownerUserId),
+        isNull(workItems.deletedAt),
+        or(
+          eq(workItems.scheduledDate, date),
+          and(
+            not(inArray(workItems.status, ["COMPLETE"])),
+            sql`${workItems.scheduledDate} < ${date}`
+          ),
+          and(
+            not(inArray(workItems.status, ["COMPLETE"])),
+            sql`${workItems.scheduledDate} IS NULL`
+          ),
+        )
+      )
+    ).orderBy(workItems.sortOrder);
+    return rows.map((r: any) => this.workItemToMytoolShape(r));
   }
-  async deleteMytoolTask(id: number): Promise<void> { await this.dbInstance.update(mytoolTasks).set({ deletedAt: new Date() }).where(eq(mytoolTasks.id, id)); }
+
+  async getMytoolTask(id: number): Promise<any | undefined> {
+    const [row] = await this.dbInstance.select().from(workItems).where(eq(workItems.id, id));
+    return row ? this.workItemToMytoolShape(row) : undefined;
+  }
+
+  async createMytoolTask(data: any): Promise<any> {
+    const now = new Date();
+    const [created] = await this.dbInstance.insert(workItems).values({
+      title: data.title,
+      description: data.notes || null,
+      status: personalStatusToWorkItem(data.status || "inbox"),
+      priority: personalPriorityToWorkItem(data.priority || "normal"),
+      workstream: "PERSONAL",
+      source: "UI",
+      ownerUserId: data.ownerUserId,
+      createdBy: data.ownerUserId,
+      projectId: data.projectId || null,
+      scheduledDate: data.plannedForDate || data.scheduledDate || null,
+      endDate: data.dueAt ? new Date(data.dueAt).toISOString().slice(0, 10) : null,
+      startDate: data.startDate || null,
+      bucket: data.bucket || "personal",
+      sourceEmailId: data.sourceEmailId || null,
+      sourceEmailSubject: data.sourceEmailSubject || null,
+      nextStep: data.nextStep || null,
+      definitionOfDone: data.definitionOfDone || null,
+      completionNote: data.completionNote || null,
+      pinnedToday: data.pinnedToday ?? false,
+      pinnedWeek: data.pinnedWeek ?? false,
+      sortOrder: data.sortOrder ?? 0,
+      isRecurring: data.isRecurring ?? false,
+      recurrenceFrequency: data.recurrenceFrequency || null,
+      recurrenceInterval: data.recurrenceInterval ?? 1,
+      recurrenceDaysOfWeek: data.recurrenceDaysOfWeek || null,
+      recurrenceEndDate: data.recurrenceEndDate || null,
+      recurrenceParentId: data.recurrenceParentId || null,
+      type: data.taskType === "milestone" ? "milestone" : null,
+      scheduledStartTime: data.scheduledStartTime || null,
+      scheduledEndTime: data.scheduledEndTime || null,
+      taskCategory: null,
+      taskTypeTag: data.tag || null,
+      holdReason: data.blockedReason || null,
+      createdAt: now,
+      updatedAt: now,
+    } as any).returning();
+    return this.workItemToMytoolShape(created);
+  }
+
+  async updateMytoolTask(id: number, data: any): Promise<any> {
+    const updateFields: Record<string, any> = { updatedAt: new Date() };
+
+    if (data.title !== undefined) updateFields.title = data.title;
+    if (data.notes !== undefined) updateFields.description = data.notes;
+    if (data.status !== undefined) {
+      updateFields.status = personalStatusToWorkItem(data.status);
+      if (data.status === "done") updateFields.completedAt = new Date();
+    }
+    if (data.priority !== undefined) updateFields.priority = personalPriorityToWorkItem(data.priority);
+    if (data.plannedForDate !== undefined) updateFields.scheduledDate = data.plannedForDate;
+    if (data.dueAt !== undefined) updateFields.endDate = data.dueAt ? new Date(data.dueAt).toISOString().slice(0, 10) : null;
+    if (data.startDate !== undefined) updateFields.startDate = data.startDate;
+    if (data.bucket !== undefined) updateFields.bucket = data.bucket;
+    if (data.projectName !== undefined) updateFields.subProjectName = data.projectName;
+    if (data.projectId !== undefined) updateFields.projectId = data.projectId || null;
+    if (data.sourceEmailId !== undefined) updateFields.sourceEmailId = data.sourceEmailId;
+    if (data.sourceEmailSubject !== undefined) updateFields.sourceEmailSubject = data.sourceEmailSubject;
+    if (data.blockedReason !== undefined) updateFields.holdReason = data.blockedReason;
+    if (data.nextStep !== undefined) updateFields.nextStep = data.nextStep;
+    if (data.definitionOfDone !== undefined) updateFields.definitionOfDone = data.definitionOfDone;
+    if (data.completionNote !== undefined) updateFields.completionNote = data.completionNote;
+    if (data.pinnedToday !== undefined) updateFields.pinnedToday = data.pinnedToday;
+    if (data.pinnedWeek !== undefined) updateFields.pinnedWeek = data.pinnedWeek;
+    if (data.sortOrder !== undefined) updateFields.sortOrder = data.sortOrder;
+    if (data.isRecurring !== undefined) updateFields.isRecurring = data.isRecurring;
+    if (data.recurrenceFrequency !== undefined) updateFields.recurrenceFrequency = data.recurrenceFrequency;
+    if (data.recurrenceInterval !== undefined) updateFields.recurrenceInterval = data.recurrenceInterval;
+    if (data.recurrenceDaysOfWeek !== undefined) updateFields.recurrenceDaysOfWeek = data.recurrenceDaysOfWeek;
+    if (data.recurrenceEndDate !== undefined) updateFields.recurrenceEndDate = data.recurrenceEndDate;
+    if (data.recurrenceParentId !== undefined) updateFields.recurrenceParentId = data.recurrenceParentId;
+    if (data.scheduledDate !== undefined) updateFields.scheduledDate = data.scheduledDate;
+    if (data.scheduledStartTime !== undefined) updateFields.scheduledStartTime = data.scheduledStartTime;
+    if (data.scheduledEndTime !== undefined) updateFields.scheduledEndTime = data.scheduledEndTime;
+    if (data.tag !== undefined) updateFields.taskTypeTag = data.tag;
+
+    const [updated] = await this.dbInstance.update(workItems).set(updateFields).where(eq(workItems.id, id)).returning();
+    return this.workItemToMytoolShape(updated);
+  }
+
+  async deleteMytoolTask(id: number): Promise<void> {
+    await this.dbInstance.update(workItems).set({ deletedAt: new Date() }).where(eq(workItems.id, id));
+  }
 
   async getMytoolTimeblocks(ownerUserId: number, date: string): Promise<MytoolTimeblock[]> {
     return this.dbInstance.select().from(mytoolTimeblocks).where(and(eq(mytoolTimeblocks.ownerUserId, ownerUserId), eq(mytoolTimeblocks.date, date)));

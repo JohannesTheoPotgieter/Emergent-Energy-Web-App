@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -163,6 +164,8 @@ export default function UserAssignmentPicker({
       } else {
         setLocalAssignments([]);
       }
+      // Invalidate all task caches so assignment changes propagate across all pages
+      invalidateAllTaskCaches(queryClient);
       for (const key of invalidateKeys) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }

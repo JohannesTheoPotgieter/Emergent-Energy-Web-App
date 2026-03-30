@@ -89,6 +89,16 @@ export interface UnifiedTask {
   isRecurring: boolean | null;
   recurrenceFrequency: string | null;
 
+  // Personal-task extension (unified from mytool_tasks)
+  bucket: string | null;
+  pinnedToday: boolean | null;
+  pinnedWeek: boolean | null;
+  sourceEmailId: string | null;
+  sourceEmailSubject: string | null;
+  nextStep: string | null;
+  definitionOfDone: string | null;
+  completionNote: string | null;
+
   // Resolved (populated at query time, not stored)
   resolvedAssignees?: ResolvedUser[] | null;
   resolvedOwner?: ResolvedUser | null;
@@ -184,6 +194,16 @@ export function fromWorkItem(row: Record<string, any>, overrides?: Partial<Unifi
     isRecurring: row.isRecurring ?? row.is_recurring ?? null,
     recurrenceFrequency: row.recurrenceFrequency ?? row.recurrence_frequency ?? null,
 
+    // Personal-task extension
+    bucket: row.bucket ?? null,
+    pinnedToday: row.pinnedToday ?? row.pinned_today ?? null,
+    pinnedWeek: row.pinnedWeek ?? row.pinned_week ?? null,
+    sourceEmailId: row.sourceEmailId ?? row.source_email_id ?? null,
+    sourceEmailSubject: row.sourceEmailSubject ?? row.source_email_subject ?? null,
+    nextStep: row.nextStep ?? row.next_step ?? null,
+    definitionOfDone: row.definitionOfDone ?? row.definition_of_done ?? null,
+    completionNote: row.completionNote ?? row.completion_note ?? null,
+
     canonical: true,
     ...overrides,
   };
@@ -267,5 +287,103 @@ export function toEngineeringTaskShape(t: UnifiedTask): Record<string, any> {
     scheduledEndTime: t.scheduledEndTime,
     createdAt: t.createdAt,
     updatedAt: t.updatedAt,
+  };
+}
+
+// ── Status / Priority mapping helpers (mytool ↔ work_items) ─────────
+
+const PERSONAL_STATUS_TO_WORK_ITEM: Record<string, string> = {
+  inbox: "TO DO",
+  planned: "TO DO",
+  in_progress: "IN PROGRESS",
+  blocked: "HOLD",
+  waiting: "HOLD",
+  done: "COMPLETE",
+  cancelled: "COMPLETE",
+};
+
+const WORK_ITEM_STATUS_TO_PERSONAL: Record<string, string> = {
+  "TO DO": "planned",
+  "Not Started": "inbox",
+  "IN PROGRESS": "in_progress",
+  "HOLD": "blocked",
+  "PROJECTS ASSISTANCE": "waiting",
+  "NEEDS APPROVAL": "waiting",
+  "COMPLETE": "done",
+  "QC APPROVED": "done",
+  "PROVIDE FEEDBACK": "waiting",
+  "OPERATIONAL APPROVAL": "waiting",
+};
+
+const PERSONAL_PRIORITY_TO_WORK_ITEM: Record<string, string> = {
+  low: "Low",
+  normal: "Med",
+  high: "High",
+  critical: "Urgent",
+};
+
+const WORK_ITEM_PRIORITY_TO_PERSONAL: Record<string, string> = {
+  Low: "low",
+  Med: "normal",
+  High: "high",
+  Urgent: "critical",
+};
+
+export function personalStatusToWorkItem(status: string): string {
+  return PERSONAL_STATUS_TO_WORK_ITEM[status] ?? "TO DO";
+}
+
+export function workItemStatusToPersonal(status: string): string {
+  return WORK_ITEM_STATUS_TO_PERSONAL[status] ?? "planned";
+}
+
+export function personalPriorityToWorkItem(priority: string): string {
+  return PERSONAL_PRIORITY_TO_WORK_ITEM[priority] ?? "Med";
+}
+
+export function workItemPriorityToPersonal(priority: string | null): string {
+  if (!priority) return "normal";
+  return WORK_ITEM_PRIORITY_TO_PERSONAL[priority] ?? "normal";
+}
+
+/** Map UnifiedTask → MytoolTask-compatible shape (response compat for /api/mytool/tasks) */
+export function toPersonalTaskShape(t: UnifiedTask): Record<string, any> {
+  return {
+    id: t.id,
+    ownerUserId: t.ownerUserId,
+    title: t.title,
+    status: workItemStatusToPersonal(t.status),
+    priority: workItemPriorityToPersonal(t.priority),
+    plannedForDate: t.scheduledDate,
+    dueAt: t.dueDate ?? t.endDate,
+    startDate: t.startDate,
+    notes: t.description,
+    bucket: t.bucket ?? "personal",
+    projectName: t.projectName,
+    projectId: t.projectId,
+    department: t.taskCategory,
+    tag: t.taskTypeTag,
+    sourceEmailId: t.sourceEmailId,
+    sourceEmailSubject: t.sourceEmailSubject,
+    blockedReason: t.holdReason ?? t.blockerReason,
+    nextStep: t.nextStep,
+    definitionOfDone: t.definitionOfDone,
+    completionNote: t.completionNote,
+    pinnedToday: t.pinnedToday ?? false,
+    pinnedWeek: t.pinnedWeek ?? false,
+    sortOrder: t.sortOrder ?? 0,
+    isRecurring: t.isRecurring ?? false,
+    recurrenceFrequency: t.recurrenceFrequency,
+    taskType: t.type === "milestone" ? "milestone" : "task",
+    scheduledDate: t.scheduledDate,
+    scheduledStartTime: t.scheduledStartTime,
+    scheduledEndTime: t.scheduledEndTime,
+    deletedAt: t.deletedAt,
+    createdAt: t.createdAt,
+    updatedAt: t.updatedAt,
+    completedAt: t.completedAt,
+    // Mark as canonical so frontend knows this came from work_items
+    _workItemId: t.id,
+    canonical: true,
   };
 }
