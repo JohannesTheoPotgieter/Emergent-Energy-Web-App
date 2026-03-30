@@ -67,7 +67,7 @@ export async function runDataSeedMigration() {
     }
   }
 
-  await db.transaction(async (tx) => {
+  await db.transaction(async (tx: any) => {
     await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
 
     for (const tableName of TABLE_ORDER) {

@@ -57,8 +57,8 @@ async function notifyStandupParticipants(
       : `${submitter.name} reported feeling ${entry.mood} in "${scheduleName}"`;
 
     const notificationRows = participants
-      .filter((p) => p.userId !== submitter.id)
-      .map((p) => ({
+      .filter((p: any) => p.userId !== submitter.id)
+      .map((p: any) => ({
         recipientUserId: p.userId,
         eventType: hasBlocker ? "standup.blocker" : "standup.mood_alert",
         title,
@@ -93,7 +93,7 @@ export function registerStandupRoutes(app: Express) {
         .from(standupParticipants)
         .where(eq(standupParticipants.userId, user.id));
 
-      const scheduleIds = participantRows.map((r) => r.scheduleId);
+      const scheduleIds = participantRows.map((r: any) => r.scheduleId);
 
       let schedules;
       if (scheduleIds.length > 0) {
@@ -670,11 +670,11 @@ export function registerStandupRoutes(app: Express) {
 
       // Build unified date series
       const dateSet = new Set<string>();
-      participationTrend.forEach((r) => dateSet.add(r.standupDate));
+      participationTrend.forEach((r: any) => dateSet.add(r.standupDate));
       const dates = Array.from(dateSet).sort();
 
-      const participationMap = new Map(participationTrend.map((r) => [r.standupDate, Number(r.submissions)]));
-      const blockerMap = new Map(blockerTrend.map((r) => [r.standupDate, Number(r.blockerCount)]));
+      const participationMap = new Map(participationTrend.map((r: any) => [r.standupDate, Number(r.submissions)]));
+      const blockerMap = new Map(blockerTrend.map((r: any) => [r.standupDate, Number(r.blockerCount)]));
 
       // Mood score: great=5, good=4, okay=3, struggling=2, blocked=1
       const moodScores: Record<string, number> = { great: 5, good: 4, okay: 3, struggling: 2, blocked: 1 };
@@ -692,7 +692,7 @@ export function registerStandupRoutes(app: Express) {
         return {
           date,
           submissions,
-          participationRate: Math.round((submissions / totalParticipants) * 100),
+          participationRate: Math.round((Number(submissions) / totalParticipants) * 100),
           blockers: blockerMap.get(date) || 0,
           avgMoodScore: moodData ? Math.round((moodData.total / moodData.count) * 10) / 10 : null,
         };
@@ -735,26 +735,26 @@ export function registerStandupRoutes(app: Express) {
         .orderBy(asc(standupEntries.standupDate));
 
       // Unique standup dates (total possible submissions)
-      const uniqueDates = new Set(entries.map((e) => e.standupDate));
+      const uniqueDates = new Set(entries.map((e: any) => e.standupDate));
       const totalStandups = uniqueDates.size;
 
       const moodScores: Record<string, number> = { great: 5, good: 4, okay: 3, struggling: 2, blocked: 1 };
 
-      const personStats = participants.map((p) => {
-        const userEntries = entries.filter((e) => e.userId === p.userId);
+      const personStats = participants.map((p: any) => {
+        const userEntries = entries.filter((e: any) => e.userId === p.userId);
         const totalSubmissions = userEntries.length;
-        const lateCount = userEntries.filter((e) => e.isLate).length;
-        const blockerCount = userEntries.filter((e) => e.blockers && e.blockers.trim()).length;
-        const moodEntries = userEntries.filter((e) => e.mood);
+        const lateCount = userEntries.filter((e: any) => e.isLate).length;
+        const blockerCount = userEntries.filter((e: any) => e.blockers && e.blockers.trim()).length;
+        const moodEntries = userEntries.filter((e: any) => e.mood);
         const avgMood = moodEntries.length > 0
-          ? Math.round((moodEntries.reduce((sum, e) => sum + (moodScores[e.mood!] || 3), 0) / moodEntries.length) * 10) / 10
+          ? Math.round((moodEntries.reduce((sum: any, e: any) => sum + (moodScores[e.mood!] || 3), 0) / moodEntries.length) * 10) / 10
           : null;
 
         // Calculate current streak (consecutive submissions from most recent)
         const sortedDates = Array.from(uniqueDates).sort().reverse();
         let streak = 0;
         for (const date of sortedDates) {
-          if (userEntries.some((e) => e.standupDate === date)) {
+          if (userEntries.some((e: any) => e.standupDate === date)) {
             streak++;
           } else {
             break;
@@ -817,11 +817,11 @@ export function registerStandupRoutes(app: Express) {
         .leftJoin(users, eq(standupParticipants.userId, users.id))
         .where(eq(standupParticipants.scheduleId, scheduleId));
 
-      const submittedNames = new Set(entries.map((e) => e.userName));
-      const missing = participants.filter((p) => !submittedNames.has(p.userName)).map((p) => p.userName);
+      const submittedNames = new Set(entries.map((e: any) => e.userName));
+      const missing = participants.filter((p: any) => !submittedNames.has(p.userName)).map((p: any) => p.userName);
 
       const scheduleName = schedule[0]?.name || "Standup";
-      const blockerEntries = entries.filter((e) => e.blockers && e.blockers.trim());
+      const blockerEntries = entries.filter((e: any) => e.blockers && e.blockers.trim());
 
       // Build text digest
       let text = `📋 ${scheduleName} — ${date}\n`;
@@ -917,12 +917,12 @@ export function registerStandupRoutes(app: Express) {
 
       // Build suggestions
       const whatIDid = recentChanges
-        .filter((c) => c.newStatus === "Complete" || c.newStatus === "In Progress")
-        .map((c) => `${c.newStatus === "Complete" ? "Completed" : "Started"}: ${c.title}`)
+        .filter((c: any) => c.newStatus === "Complete" || c.newStatus === "In Progress")
+        .map((c: any) => `${c.newStatus === "Complete" ? "Completed" : "Started"}: ${c.title}`)
         .slice(0, 5);
 
       const whatImDoing = inProgress
-        .map((item) => `Working on: ${item.title}`)
+        .map((item: any) => `Working on: ${item.title}`)
         .slice(0, 5);
 
       res.json({ whatIDid, whatImDoing });
@@ -976,12 +976,12 @@ export function registerStandupRoutes(app: Express) {
         ))
         .orderBy(asc(standupEntries.submittedAt));
 
-      const entryByUser = new Map(entries.map((e) => [e.userId, e]));
+      const entryByUser = new Map(entries.map((e: any) => [e.userId, e]));
 
       // For each participant, get their assigned work items (tasks)
       const todayStr = today();
       const meetingParticipants = await Promise.all(
-        participants.map(async (p) => {
+        participants.map(async (p: any) => {
           // Get tasks owned by or assigned to this user
           const ownedTasks = await db
             .select({
@@ -992,7 +992,7 @@ export function registerStandupRoutes(app: Express) {
               endDate: workItems.endDate,
               percentComplete: workItems.percentComplete,
               projectId: workItems.projectId,
-              projectName: projectInfo.name,
+              projectName: projectInfo.projectName,
             })
             .from(workItems)
             .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
@@ -1019,12 +1019,12 @@ export function registerStandupRoutes(app: Express) {
             .from(workItemAssignments)
             .where(eq(workItemAssignments.userId, p.userId));
 
-          const assignedIds = assignedTaskIds.map((r) => r.workItemId);
-          const ownedIds = new Set(ownedTasks.map((t) => t.id));
+          const assignedIds = assignedTaskIds.map((r: any) => r.workItemId);
+          const ownedIds = new Set(ownedTasks.map((t: any) => t.id));
 
           let additionalTasks: typeof ownedTasks = [];
           if (assignedIds.length > 0) {
-            const missingIds = assignedIds.filter((id) => !ownedIds.has(id));
+            const missingIds = assignedIds.filter((id: any) => !ownedIds.has(id));
             if (missingIds.length > 0) {
               additionalTasks = await db
                 .select({
@@ -1035,7 +1035,7 @@ export function registerStandupRoutes(app: Express) {
                   endDate: workItems.endDate,
                   percentComplete: workItems.percentComplete,
                   projectId: workItems.projectId,
-                  projectName: projectInfo.name,
+                  projectName: projectInfo.projectName,
                 })
                 .from(workItems)
                 .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
@@ -1140,8 +1140,8 @@ export function registerStandupRoutes(app: Express) {
 
       // Aggregate blockers across all entries
       const allBlockers = entries
-        .filter((e) => e.blockers && e.blockers.trim())
-        .map((e) => ({
+        .filter((e: any) => e.blockers && e.blockers.trim())
+        .map((e: any) => ({
           userId: e.userId,
           userName: e.userName,
           blockers: e.blockers!,

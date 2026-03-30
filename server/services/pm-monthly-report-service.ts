@@ -126,10 +126,10 @@ export async function generatePmReportData(month: string) {
   ]);
 
   // Build lookup maps
-  const projectMap = new Map(allProjectRows.map(r => [r.project_info.id, { ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }]));
-  const clientMap = new Map(allClients.map(c => [c.id, c]));
-  const userMap = new Map(allUsers.map(u => [u.id, u.name]));
-  const metricsMap = new Map(allMetrics.map(m => [m.projectId, m]));
+  const projectMap = new Map<number, any>(allProjectRows.map((r: any) => [r.project_info.id, { ...r.project_info, ...(r.project_execution_state || {}), id: r.project_info.id }]));
+  const clientMap: Map<number, any> = new Map(allClients.map((c: any) => [c.id, c]));
+  const userMap = new Map(allUsers.map((u: any) => [u.id, u.name]));
+  const metricsMap: Map<number, any> = new Map(allMetrics.map((m: any) => [m.projectId, m]));
 
   // Determine active projects
   const activeProjects = [...projectMap.values()].filter(p => {
@@ -155,11 +155,11 @@ export async function generatePmReportData(month: string) {
   };
 
   // Financial KPIs from revenue/cost lines for active projects
-  const activeRevLines = allRevLines.filter(r => activeProjectIds.has(r.projectId));
-  const activeCostLines = allCostLines.filter(r => activeProjectIds.has(r.projectId));
+  const activeRevLines = allRevLines.filter((r: any) => activeProjectIds.has(r.projectId));
+  const activeCostLines = allCostLines.filter((r: any) => activeProjectIds.has(r.projectId));
 
-  kpis.totalRevenue = activeRevLines.reduce((sum, r) => sum + toNum(r.amountExVat), 0);
-  kpis.totalCost = activeCostLines.reduce((sum, r) => sum + toNum(r.amountExVat), 0);
+  kpis.totalRevenue = activeRevLines.reduce((sum: any, r: any) => sum + toNum(r.amountExVat), 0);
+  kpis.totalCost = activeCostLines.reduce((sum: any, r: any) => sum + toNum(r.amountExVat), 0);
   kpis.blendedGpMarginPct = kpis.totalRevenue > 0 ? ((kpis.totalRevenue - kpis.totalCost) / kpis.totalRevenue) * 100 : 0;
   kpis.projectsAtRisk = activeProjects.filter(p => {
     const rag = (p.ragStatus || "").toUpperCase();
@@ -179,10 +179,10 @@ export async function generatePmReportData(month: string) {
 
   const revenueSummary = activeProjects.map(p => {
     const lines = revByProject.get(p.id) || [];
-    const totalInvoiced = lines.filter(r => r.invoiceDate).reduce((s, r) => s + toNum(r.amountExVat), 0);
-    const totalReceived = lines.filter(r => r.paidDate || r.inBankDate).reduce((s, r) => s + toNum(r.amountExVat), 0);
-    const invoicedThisMonth = lines.filter(r => isDateStrInMonth(r.invoiceDate, monthStartStr, monthEndStr)).reduce((s, r) => s + toNum(r.amountExVat), 0);
-    const receivedThisMonth = lines.filter(r => isDateStrInMonth(r.paidDate, monthStartStr, monthEndStr)).reduce((s, r) => s + toNum(r.amountExVat), 0);
+    const totalInvoiced = lines.filter((r: any) => r.invoiceDate).reduce((s: any, r: any) => s + toNum(r.amountExVat), 0);
+    const totalReceived = lines.filter((r: any) => r.paidDate || r.inBankDate).reduce((s: any, r: any) => s + toNum(r.amountExVat), 0);
+    const invoicedThisMonth = lines.filter((r: any) => isDateStrInMonth(r.invoiceDate, monthStartStr, monthEndStr)).reduce((s: any, r: any) => s + toNum(r.amountExVat), 0);
+    const receivedThisMonth = lines.filter((r: any) => isDateStrInMonth(r.paidDate, monthStartStr, monthEndStr)).reduce((s: any, r: any) => s + toNum(r.amountExVat), 0);
     return {
       projectId: p.id,
       projectName: p.projectName,
@@ -204,12 +204,12 @@ export async function generatePmReportData(month: string) {
 
   const costSummary = activeProjects.map(p => {
     const lines = costByProject.get(p.id) || [];
-    const budgetTotal = lines.reduce((s, c) => s + toNum(c.budgetTotal), 0);
-    const actualCost = lines.reduce((s, c) => s + toNum(c.amountExVat), 0);
-    const cosRealised = lines.filter(c => c.invoiceNumber && c.invoiceDate && isDateBlack(c.invoiceDateConfirmed, c.invoiceDateFontColor)).reduce((s, c) => s + toNum(c.amountExVat), 0);
-    const paid = lines.filter(c => c.paidDateConfirmed).reduce((s, c) => s + toNum(c.amountExVat), 0);
-    const committed = lines.filter(c => c.poNumber && !(c.invoiceNumber && c.invoiceDate && isDateBlack(c.invoiceDateConfirmed, c.invoiceDateFontColor))).reduce((s, c) => s + toNum(c.amountExVat), 0);
-    const costsThisMonth = lines.filter(c => isDateStrInMonth(c.invoiceDate, monthStartStr, monthEndStr)).reduce((s, c) => s + toNum(c.amountExVat), 0);
+    const budgetTotal = lines.reduce((s: any, c: any) => s + toNum(c.budgetTotal), 0);
+    const actualCost = lines.reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
+    const cosRealised = lines.filter((c: any) => c.invoiceNumber && c.invoiceDate && isDateBlack(c.invoiceDateConfirmed, c.invoiceDateFontColor)).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
+    const paid = lines.filter((c: any) => c.paidDateConfirmed).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
+    const committed = lines.filter((c: any) => c.poNumber && !(c.invoiceNumber && c.invoiceDate && isDateBlack(c.invoiceDateConfirmed, c.invoiceDateFontColor))).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
+    const costsThisMonth = lines.filter((c: any) => isDateStrInMonth(c.invoiceDate, monthStartStr, monthEndStr)).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
     return {
       projectId: p.id,
       projectName: p.projectName,
@@ -249,7 +249,7 @@ export async function generatePmReportData(month: string) {
   });
 
   // Revenue trend (last 12 months)
-  const revenueTrend = revenueMonthly.map(r => ({
+  const revenueTrend = revenueMonthly.map((r: any) => ({
     projectName: r.projectName,
     projectId: r.projectId,
     category: r.category,
@@ -258,7 +258,7 @@ export async function generatePmReportData(month: string) {
   }));
 
   // Cashflow
-  const cashflowTrend = cashflowPts.map(c => ({
+  const cashflowTrend = cashflowPts.map((c: any) => ({
     projectName: c.projectName,
     projectId: c.projectId,
     seriesName: c.seriesName,
@@ -292,19 +292,19 @@ export async function generatePmReportData(month: string) {
 
   // ===== SECTION 4: Tasks =====
   // Include all workstreams except ENG (engineering has its own report)
-  const pmWorkItems = allWorkItemRows.filter(w => activeProjectIds.has(w.projectId) && w.workstream !== "ENG");
+  const pmWorkItems = allWorkItemRows.filter((w: any) => activeProjectIds.has(w.projectId) && w.workstream !== "ENG");
 
   const programmeTaskMetrics = {
-    tasksCompletedThisMonth: pmWorkItems.filter(w => {
+    tasksCompletedThisMonth: pmWorkItems.filter((w: any) => {
       if (!w.completedAt) return false;
       return isTimestampInMonth(w.completedAt, monthStart, monthEnd);
     }).length,
-    overdueTasks: pmWorkItems.filter(w => {
+    overdueTasks: pmWorkItems.filter((w: any) => {
       const status = (w.status || "").toUpperCase();
       return w.endDate && w.endDate < monthEndStr && !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
     }).length,
-    milestonesAchieved: pmWorkItems.filter(w => w.isMilestone && w.completedAt && isTimestampInMonth(w.completedAt, monthStart, monthEnd)).length,
-    totalActiveTasks: pmWorkItems.filter(w => {
+    milestonesAchieved: pmWorkItems.filter((w: any) => w.isMilestone && w.completedAt && isTimestampInMonth(w.completedAt, monthStart, monthEnd)).length,
+    totalActiveTasks: pmWorkItems.filter((w: any) => {
       const status = (w.status || "").toUpperCase();
       return !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
     }).length,
@@ -320,9 +320,9 @@ export async function generatePmReportData(month: string) {
   const perProjectTasks = activeProjects.map(p => {
     const tasks = tasksByProject.get(p.id) || [];
     const total = tasks.length;
-    const completed = tasks.filter(t => COMPLETED_STATUSES.includes((t.status || "").toUpperCase())).length;
-    const inProgress = tasks.filter(t => (t.status || "").toUpperCase() === "IN PROGRESS").length;
-    const overdue = tasks.filter(t => {
+    const completed = tasks.filter((t: any) => COMPLETED_STATUSES.includes((t.status || "").toUpperCase())).length;
+    const inProgress = tasks.filter((t: any) => (t.status || "").toUpperCase() === "IN PROGRESS").length;
+    const overdue = tasks.filter((t: any) => {
       const status = (t.status || "").toUpperCase();
       return t.endDate && t.endDate < monthEndStr && !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
     }).length;
@@ -357,8 +357,8 @@ export async function generatePmReportData(month: string) {
   }));
 
   // ===== SECTION 5: RAID =====
-  const openRaid = allRaidRows.filter(r => r.status === "open");
-  const raidWithDetails = openRaid.map(r => {
+  const openRaid = allRaidRows.filter((r: any) => r.status === "open");
+  const raidWithDetails = openRaid.map((r: any) => {
     const proj = projectMap.get(r.projectId);
     return {
       projectId: r.projectId,
@@ -372,13 +372,13 @@ export async function generatePmReportData(month: string) {
       dueDate: r.dueDate,
       mitigation: r.mitigationResponse,
     };
-  }).sort((a, b) => {
+  }).sort((a: any, b: any) => {
     const priorityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
     return (priorityOrder[a.priority] ?? 4) - (priorityOrder[b.priority] ?? 4);
   });
 
   // Open QC warnings as quality risks
-  const openQcWarnings = allQcWarnings.filter(w => w.status === "open").map(w => ({
+  const openQcWarnings = allQcWarnings.filter((w: any) => w.status === "open").map((w: any) => ({
     projectId: w.projectId,
     projectName: w.projectName,
     type: "quality_warning" as const,
@@ -391,14 +391,14 @@ export async function generatePmReportData(month: string) {
   const raidSummary = {
     items: raidWithDetails,
     qcWarnings: openQcWarnings,
-    newThisMonth: allRaidRows.filter(r => isTimestampInMonth(r.createdAt, monthStart, monthEnd)).length,
-    closedThisMonth: allRaidRows.filter(r => r.closedAt && isTimestampInMonth(r.closedAt, monthStart, monthEnd)).length,
-    overdueItems: openRaid.filter(r => r.dueDate && r.dueDate < monthEndStr).length,
+    newThisMonth: allRaidRows.filter((r: any) => isTimestampInMonth(r.createdAt, monthStart, monthEnd)).length,
+    closedThisMonth: allRaidRows.filter((r: any) => r.closedAt && isTimestampInMonth(r.closedAt, monthStart, monthEnd)).length,
+    overdueItems: openRaid.filter((r: any) => r.dueDate && r.dueDate < monthEndStr).length,
   };
 
   // ===== SECTION 6: Quality =====
   // QC checklists with instances
-  const checklistIds = allQcChecklists.map(c => c.id);
+  const checklistIds = allQcChecklists.map((c: any) => c.id);
   const allInstances = checklistIds.length > 0
     ? await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds))
     : [];
@@ -409,12 +409,12 @@ export async function generatePmReportData(month: string) {
     instancesByChecklist.get(inst.checklistId)!.push(inst);
   }
 
-  const qcProgress = allQcChecklists.filter(c => activeProjectIds.has(c.projectId)).map(c => {
+  const qcProgress = allQcChecklists.filter((c: any) => activeProjectIds.has(c.projectId)).map((c: any) => {
     const instances = instancesByChecklist.get(c.id) || [];
-    const applicable = instances.filter(i => i.isApplicable).length;
-    const approved = instances.filter(i => i.isApplicable && i.approved).length;
+    const applicable = instances.filter((i: any) => i.isApplicable).length;
+    const approved = instances.filter((i: any) => i.isApplicable && i.approved).length;
     const proj = projectMap.get(c.projectId);
-    const warnings = allQcWarnings.filter(w => w.projectId === c.projectId && w.status === "open").length;
+    const warnings = allQcWarnings.filter((w: any) => w.projectId === c.projectId && w.status === "open").length;
     return {
       projectId: c.projectId,
       projectName: proj?.projectName || c.projectName,
@@ -427,14 +427,14 @@ export async function generatePmReportData(month: string) {
   });
 
   // ===== SECTION 7: Procurement =====
-  const activeProcurement = allProcurement.filter(p => activeProjectIds.has(p.projectId));
-  const supplierIds = [...new Set(activeProcurement.map(p => p.supplierId).filter((id): id is number => id != null))];
+  const activeProcurement = allProcurement.filter((p: any) => activeProjectIds.has(p.projectId));
+  const supplierIds = [...new Set(activeProcurement.map((p: any) => p.supplierId).filter((id: any): id is number => id != null))];
   const relevantCounterparties = supplierIds.length > 0
-    ? await db.select().from(counterparties).where(inArray(counterparties.id, supplierIds))
+    ? await db.select().from(counterparties).where(inArray(counterparties.id, supplierIds as any))
     : [];
-  const counterpartyMap = new Map(relevantCounterparties.map(c => [c.id, c]));
+  const counterpartyMap: Map<number, any> = new Map(relevantCounterparties.map((c: any) => [c.id, c]));
 
-  const procurement = activeProcurement.map(p => {
+  const procurement = activeProcurement.map((p: any) => {
     const proj = projectMap.get(p.projectId);
     const supplier = p.supplierId ? counterpartyMap.get(p.supplierId) : null;
     return {

@@ -320,17 +320,17 @@ export function registerReportRoutes(app: Express) {
         return true;
       };
 
-      const filteredCost = costRows.filter((r) => inPeriod(r.paidDate || r.invoiceDate));
-      const filteredPlan = planRows.filter((r) => inPeriod(r.endDate || r.startDate));
+      const filteredCost = costRows.filter((r: any) => inPeriod(r.paidDate || r.invoiceDate));
+      const filteredPlan = planRows.filter((r: any) => inPeriod(r.endDate || r.startDate));
 
-      const totalCost = filteredCost.reduce((sum, row) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);
+      const totalCost = filteredCost.reduce((sum: any, row: any) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);
       const marginAtRisk = filteredCost
-        .filter((r) => {
+        .filter((r: any) => {
           const cosStatus = ((r as any).cosStatus || "").toLowerCase();
           return cosStatus !== "paid" && cosStatus !== "realised";
         })
-        .reduce((sum, row) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);
-      const deliveryRisks = filteredPlan.filter((r) => {
+        .reduce((sum: any, row: any) => sum + (parseFloat(row.amountExVat || "0") || 0), 0);
+      const deliveryRisks = filteredPlan.filter((r: any) => {
         if (!r.endDate) return false;
         const done = ["done", "complete", "completed"].includes(String(r.status || "").toLowerCase());
         return !done && r.endDate < new Date().toISOString().substring(0, 10);
@@ -484,7 +484,7 @@ export function registerReportRoutes(app: Express) {
       .from(manualEditFlags)
       .where(eq(manualEditFlags.isProtected, true));
     // Return a set of entity IDs that have protected flags
-    return new Set(flags.map(f => `${f.entityType}::${f.entityId}`));
+    return new Set(flags.map((f: any) => `${f.entityType}::${f.entityId}`));
   }
 
   /** Helper: build staleness warning */
@@ -530,25 +530,25 @@ export function registerReportRoutes(app: Express) {
       let tasks = await wiQuery;
 
       if (projectFilter) {
-        tasks = tasks.filter(t => t.projectId != null);
+        tasks = tasks.filter((t: any) => t.projectId != null);
         const projIds = await db.select({ id: projectInfo.id }).from(projectInfo)
           .where(sql`${projectInfo.projectName} ILIKE ${'%' + projectFilter + '%'}`);
-        const idSet = new Set(projIds.map(p => p.id));
-        tasks = tasks.filter(t => t.projectId != null && idSet.has(t.projectId));
+        const idSet = new Set(projIds.map((p: any) => p.id));
+        tasks = tasks.filter((t: any) => t.projectId != null && idSet.has(t.projectId));
       }
 
       const importInfo = await getLastImportInfo();
       const protectedFields = await getProtectedFieldProjects();
 
       // Get project names for each task
-      const projectIdSet = new Set(tasks.filter(t => t.projectId).map(t => t.projectId!));
+      const projectIdSet = new Set(tasks.filter((t: any) => t.projectId).map((t: any) => t.projectId!));
       const projects = projectIdSet.size > 0
         ? await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)
             .where(inArray(projectInfo.id, [...projectIdSet] as number[]))
         : [];
-      const projNameMap = new Map(projects.map(p => [p.id, p.projectName]));
+      const projNameMap = new Map(projects.map((p: any) => [p.id, p.projectName]));
 
-      const rows = tasks.map(t => {
+      const rows = tasks.map((t: any) => {
         const pName = t.projectId ? (projNameMap.get(t.projectId) as string) || "" : "";
         const lastImport = importInfo.get(pName);
         const staleness = checkStaleness(lastImport?.committedAt);
@@ -606,10 +606,10 @@ export function registerReportRoutes(app: Express) {
       let costLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       if (projectFilter) {
-        costLines = costLines.filter(c => c.projectName?.toLowerCase().includes(projectFilter.toLowerCase()));
+        costLines = costLines.filter((c: any) => c.projectName?.toLowerCase().includes(projectFilter.toLowerCase()));
       }
       if (categoryFilter) {
-        costLines = costLines.filter(c => c.costCategory?.toLowerCase().includes(categoryFilter.toLowerCase()));
+        costLines = costLines.filter((c: any) => c.costCategory?.toLowerCase().includes(categoryFilter.toLowerCase()));
       }
 
       const importInfo = await getLastImportInfo();
@@ -632,7 +632,7 @@ export function registerReportRoutes(app: Express) {
         return isDateBlack(line.paidDateConfirmed, line.paidDateFontColor);
       }
 
-      const rows = costLines.map(c => {
+      const rows = costLines.map((c: any) => {
         const lastImport = importInfo.get(c.projectName || "");
         const staleness = checkStaleness(lastImport?.committedAt);
         const cosRealized = isCosRealizedCorrectly(c);
@@ -713,13 +713,13 @@ export function registerReportRoutes(app: Express) {
       const projects = await db.select().from(projectInfo);
       let filtered = projects;
       if (projectFilter) {
-        filtered = projects.filter(p => p.projectName?.toLowerCase().includes(projectFilter.toLowerCase()));
+        filtered = projects.filter((p: any) => p.projectName?.toLowerCase().includes(projectFilter.toLowerCase()));
       }
 
       const importInfo = await getLastImportInfo();
       const protectedFields = await getProtectedFieldProjects();
 
-      const rows = filtered.map(p => {
+      const rows = filtered.map((p: any) => {
         const lastImport = importInfo.get(p.projectName);
         const staleness = checkStaleness(lastImport?.committedAt);
 
@@ -771,18 +771,18 @@ export function registerReportRoutes(app: Express) {
         ));
 
       if (resourceFilter) {
-        tasks = tasks.filter(t => t.ownerName?.toLowerCase().includes(resourceFilter.toLowerCase()));
+        tasks = tasks.filter((t: any) => t.ownerName?.toLowerCase().includes(resourceFilter.toLowerCase()));
       }
 
-      const projectIdSet = new Set(tasks.filter(t => t.projectId).map(t => t.projectId!));
+      const projectIdSet = new Set(tasks.filter((t: any) => t.projectId).map((t: any) => t.projectId!));
       const projects = projectIdSet.size > 0
         ? await db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo)
             .where(inArray(projectInfo.id, [...projectIdSet] as number[]))
         : [];
-      const projNameMap = new Map(projects.map(p => [p.id, p.projectName]));
+      const projNameMap = new Map(projects.map((p: any) => [p.id, p.projectName]));
 
       if (projectFilter) {
-        tasks = tasks.filter(t => {
+        tasks = tasks.filter((t: any) => {
           const pName = t.projectId ? (projNameMap.get(t.projectId) as string) : "";
           return pName?.toLowerCase().includes(projectFilter.toLowerCase());
         });

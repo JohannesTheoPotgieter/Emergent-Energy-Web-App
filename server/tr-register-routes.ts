@@ -325,7 +325,7 @@ export function registerTrRegisterRoutes(app: Express) {
 
       // Sync entity_assignments when owners/ownerUserIds change
       if (req.body.owners !== undefined || req.body.ownerUserIds !== undefined) {
-        const newOwnerIds: number[] = Array.isArray(updated.ownerUserIds) ? updated.ownerUserIds.filter((id): id is number => id != null) : [];
+        const newOwnerIds: number[] = Array.isArray(updated.ownerUserIds) ? updated.ownerUserIds.filter((id: any): id is number => id != null) : [];
         const ownerNames: string[] = Array.isArray(updated.owners) ? (updated.owners as string[]) : [];
 
         // Deactivate existing OWNER assignments

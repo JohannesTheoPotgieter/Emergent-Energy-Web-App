@@ -146,15 +146,15 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
 
   let qcProgressPct: string | null = null;
   if (checklistRows.length > 0) {
-    const checklistIds = checklistRows.map((c) => c.id);
+    const checklistIds = checklistRows.map((c: any) => c.id);
     const instanceRows = await db
       .select()
       .from(qcItemInstance)
       .where(inArray(qcItemInstance.checklistId, checklistIds));
 
-    const totalItems = instanceRows.filter((i) => i.isApplicable).length;
+    const totalItems = instanceRows.filter((i: any) => i.isApplicable).length;
     const approvedItems = instanceRows.filter(
-      (i) => i.isApplicable && i.approved,
+      (i: any) => i.isApplicable && i.approved,
     ).length;
     qcProgressPct =
       totalItems > 0 ? (approvedItems / totalItems).toFixed(4) : null;
@@ -280,7 +280,7 @@ export async function refreshAllMetrics(): Promise<{ refreshed: number; failed: 
     // Table may not exist yet; refresh all
   }
 
-  const toRefresh = projects.filter((p) => !recentlyRefreshed.has(p.id));
+  const toRefresh = projects.filter((p: any) => !recentlyRefreshed.has(p.id));
   let refreshed = 0;
   let failed = 0;
   const failedProjectIds: number[] = [];
@@ -289,7 +289,7 @@ export async function refreshAllMetrics(): Promise<{ refreshed: number; failed: 
   for (let i = 0; i < toRefresh.length; i += CONCURRENCY_LIMIT) {
     const batch = toRefresh.slice(i, i + CONCURRENCY_LIMIT);
     const results = await Promise.allSettled(
-      batch.map((p) => refreshProjectMetrics(p.id)),
+      batch.map((p: any) => refreshProjectMetrics(p.id)),
     );
     for (let j = 0; j < results.length; j++) {
       if (results[j].status === "fulfilled") {

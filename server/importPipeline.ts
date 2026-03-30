@@ -419,7 +419,7 @@ export function startScheduler(): void {
     if (isRunning) return;
 
     try {
-      let settings: Awaited<ReturnType<typeof storage.getSpSettings>> = null;
+      let settings: Awaited<ReturnType<typeof storage.getSpSettings>> | null = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           settings = await storage.getSpSettings();

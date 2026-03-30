@@ -345,7 +345,7 @@ export function registerGamificationRoutes(app: Express) {
     try {
       const activities = await computeUserActivities();
       const allUsers = await db.select({ id: users.id, name: users.name, role: users.role, department: users.department }).from(users);
-      const userMap = Object.fromEntries(allUsers.map(u => [u.id, u]));
+      const userMap = Object.fromEntries(allUsers.map((u: any) => [u.id, u]));
 
       const existingBadges = await db.select().from(userBadges);
       const badgesByUser: Record<number, string[]> = {};
@@ -400,7 +400,7 @@ export function registerGamificationRoutes(app: Express) {
         };
       }).filter(Boolean);
 
-      leaderboard.sort((a: { points: number }, b: { points: number }) => b.points - a.points);
+      leaderboard.sort((a: any, b: any) => (b?.points ?? 0) - (a?.points ?? 0));
 
       const newBadges: { userId: number; badgeKey: string }[] = [];
       for (const entry of leaderboard) {

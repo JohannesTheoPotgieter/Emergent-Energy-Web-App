@@ -212,8 +212,8 @@ async function pruneOldImportRuns(projectName: string, currentRunId: number): Pr
     }
 
     const idsToDelete = runs
-      .filter((r) => !keepIds.has(r.id) && r.status !== "COMMITTED")
-      .map((r) => r.id);
+      .filter((r: any) => !keepIds.has(r.id) && r.status !== "COMMITTED")
+      .map((r: any) => r.id);
 
     if (idsToDelete.length > 0) {
       await db.delete(importIssues).where(inArray(importIssues.importRunId, idsToDelete));
@@ -221,7 +221,7 @@ async function pruneOldImportRuns(projectName: string, currentRunId: number): Pr
       console.log(`[SmartImport] Pruned ${idsToDelete.length} stale import runs for "${projectName}"`);
     }
   } catch (err: unknown) {
-    console.warn(`[SmartImport] Failed to prune old import runs:`, err?.message || err);
+    console.warn(`[SmartImport] Failed to prune old import runs:`, (err as any)?.message || err);
   }
 }
 
@@ -746,7 +746,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
             .from(workItems)
             .where(and(eq(workItems.projectId, projectId), eq(workItems.source, "SMART_IMPORT")))
         : [];
-      const existingMap = new Map<string, typeof existingTasks[number]>(existingTasks.map(t => [`${t.title}::${t.startDate || ""}`, t]));
+      const existingMap = new Map<string, typeof existingTasks[number]>(existingTasks.map((t: any) => [`${t.title}::${t.startDate || ""}`, t]));
       let added = 0, modified = 0, unchanged = 0;
       const details: any[] = [];
       const matchedKeys = new Set<string>();
@@ -781,7 +781,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
             .from(normalizedRevenueLines)
             .where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo)))
         : [];
-      const existingMap = new Map<string, typeof existingRevenue[number]>(existingRevenue.map(r => [`${r.milestoneName}::${r.amountExVat || ""}`, r]));
+      const existingMap = new Map<string, typeof existingRevenue[number]>(existingRevenue.map((r: any) => [`${r.milestoneName}::${r.amountExVat || ""}`, r]));
       let added = 0, modified = 0, unchanged = 0;
       const details: any[] = [];
       const matchedKeys = new Set<string>();
@@ -815,7 +815,7 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
             .from(normalizedCostLines)
             .where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)))
         : [];
-      const existingMap = new Map(existingCost.map(c => [`${c.description}::${c.amountExVat || ""}::${c.invoiceNumber || ""}`, c]));
+      const existingMap = new Map(existingCost.map((c: any) => [`${c.description}::${c.amountExVat || ""}::${c.invoiceNumber || ""}`, c]));
       let added = 0, modified = 0, unchanged = 0;
       const details: any[] = [];
       const matchedKeys = new Set<string>();
@@ -1356,7 +1356,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       const existingCostLines = await db.select().from(normalizedCostLines)
         .where(and(eq(normalizedCostLines.projectId, run.projectId), isNull(normalizedCostLines.effectiveTo)));
 
-      const manuallyModifiedRows = existingCostLines.filter(row =>
+      const manuallyModifiedRows = existingCostLines.filter((row: any) =>
         row.cosRealised === true ||
         row.invoiceDateConfirmed === true ||
         row.paidDateConfirmed === true ||
@@ -1497,7 +1497,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         const existingRevLines = await db.select().from(normalizedRevenueLines)
           .where(and(eq(normalizedRevenueLines.projectId, run.projectId), isNull(normalizedRevenueLines.effectiveTo)));
 
-        const revWithOverrides = existingRevLines.filter(row => !!row.adminDateOverride);
+        const revWithOverrides = existingRevLines.filter((row: any) => !!row.adminDateOverride);
         if (revWithOverrides.length > 0) {
           const importRevLines = norm?.revenueLines || [];
           for (const existing of revWithOverrides) {
@@ -2022,7 +2022,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           .where(eq(programInflows.projectName, projectName));
 
         // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
-        const editedInflowCount = oldInflows.filter(r => r.source === 'imported_edited').length;
+        const editedInflowCount = oldInflows.filter((r: any) => r.source === 'imported_edited').length;
         if (editedInflowCount > 0) {
           const msg = `Re-import overwrote ${editedInflowCount} user-edited program_inflows row(s)`;
           console.warn(`[SmartImport] ${msg} for "${projectName}"`);
@@ -2309,7 +2309,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           .where(eq(programExpense.projectName, projectName));
 
         // Conflict detection: warn about user-edited rows being overwritten (Prompt 4 — override collapse)
-        const editedExpenseCount = oldPeRows.filter(r => r.source === 'imported_edited').length;
+        const editedExpenseCount = oldPeRows.filter((r: any) => r.source === 'imported_edited').length;
         if (editedExpenseCount > 0) {
           const msg = `Re-import overwrote ${editedExpenseCount} user-edited program_expense row(s)`;
           console.warn(`[SmartImport] ${msg} for "${projectName}"`);
@@ -2323,10 +2323,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         if (norm.costLines.length > 0) {
           const costIgnored = ignoredRows.get("EXPENDITURE") || new Set();
           const costOverrides = overrideRows.get("EXPENDITURE") || new Map();
-          const oldPeByRow = new Map(
+          const oldPeByRow = new Map<number, any>(
             oldPeRows
-              .filter((r) => r.rowNumber != null)
-              .map((r) => [r.rowNumber as number, r]),
+              .filter((r: any) => r.rowNumber != null)
+              .map((r: any) => [r.rowNumber as number, r]),
           );
           let currentCategory = "";
           const peValues = norm.costLines
@@ -2381,13 +2381,13 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         const newPeRows = await tx.select({ id: programExpense.id, rowNumber: programExpense.rowNumber })
           .from(programExpense)
           .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
-        const newIdByRow = new Map(newPeRows.filter(r => r.rowNumber != null).map(r => [r.rowNumber!, r.id]));
-        const newIdSet = new Set(newPeRows.map(r => r.id));
+        const newIdByRow = new Map(newPeRows.filter((r: any) => r.rowNumber != null).map((r: any) => [r.rowNumber!, r.id]));
+        const newIdSet = new Set(newPeRows.map((r: any) => r.id));
 
         const existingLinks = await tx.select().from(expenseTaskLinks)
           .where(eq(expenseTaskLinks.projectName, projectName));
         for (const link of existingLinks) {
-          const oldRow = oldPeRows.find(r => r.id === link.expenseId);
+          const oldRow = oldPeRows.find((r: any) => r.id === link.expenseId);
           if (oldRow && oldRow.rowNumber != null) {
             const newId = newIdByRow.get(oldRow.rowNumber);
             if (newId && newId !== link.expenseId) {
@@ -2821,7 +2821,7 @@ router.get("/api/smart-import/normalized/:projectName/plan", requireAuth, async 
         eq(workItems.source, "SMART_IMPORT"),
       ));
 
-    res.json(records.map(wi => ({
+    res.json(records.map((wi: any) => ({
       id: wi.id,
       projectName: projectName,
       taskName: wi.title,
@@ -3079,7 +3079,7 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
 
     let filtered = runs;
     if (importType && importType !== "all") {
-      filtered = filtered.filter(r => {
+      filtered = filtered.filter((r: any) => {
         const summary = r.summaryJson as any;
         if (!summary?.normalization) return false;
         const norm = summary.normalization;
@@ -3093,10 +3093,10 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
       });
     }
     if (status && status !== "all") {
-      filtered = filtered.filter(r => r.status === status);
+      filtered = filtered.filter((r: any) => r.status === status);
     }
 
-    const enriched = await Promise.all(filtered.map(async (run) => {
+    const enriched = await Promise.all(filtered.map(async (run: any) => {
       const issues = await db.select().from(importIssues)
         .where(eq(importIssues.importRunId, run.id));
 
@@ -3108,7 +3108,7 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
       if (norm.costLines?.length > 0) sections.push("EXPENDITURE");
 
       const attempted = (norm.planTasks?.length || 0) + (norm.revenueLines?.length || 0) + (norm.costLines?.length || 0);
-      const failedIssues = issues.filter(i => i.severity === "BLOCKER" && !i.resolved);
+      const failedIssues = issues.filter((i: any) => i.severity === "BLOCKER" && !i.resolved);
 
       let uploaderName: string | null = null;
       if (run.uploadedBy) {
@@ -3133,8 +3133,8 @@ router.get("/api/import-control-tower/history", requireAuth, requirePermission("
         sections,
         totalIssues: issues.length,
         unresolvedBlockers: failedIssues.length,
-        unresolvedWarnings: issues.filter(i => i.severity !== "BLOCKER" && !i.resolved).length,
-        resolvedIssues: issues.filter(i => i.resolved).length,
+        unresolvedWarnings: issues.filter((i: any) => i.severity !== "BLOCKER" && !i.resolved).length,
+        resolvedIssues: issues.filter((i: any) => i.resolved).length,
       };
     }));
 
@@ -3156,7 +3156,7 @@ router.get("/api/import-control-tower/run/:runId/errors", requireAuth, requirePe
     const issues = await db.select().from(importIssues)
       .where(eq(importIssues.importRunId, runId));
 
-    const enrichedIssues = issues.map(issue => ({
+    const enrichedIssues = issues.map((issue: any) => ({
       id: issue.id,
       severity: issue.severity,
       section: issue.section,

@@ -155,7 +155,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   const rawRows = await db.select().from(projectInfo)
     .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
     .where(eq(projectInfo.projectName, projectName));
-  const projectRows = rawRows.map(r => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id, updatedAt: r.project_info.updatedAt })) as any[];
+  const projectRows = rawRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id, updatedAt: r.project_info.updatedAt })) as any[];
   const [project] = projectRows;
   const checklistRows: QcChecklistRow[] = await db.select().from(qcChecklist).where(eq(qcChecklist.projectName, projectName));
   const [checklist] = checklistRows;
@@ -223,7 +223,7 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   const assigneeRows = assigneeUserIds.length > 0
     ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, assigneeUserIds))
     : [];
-  const assigneeMap = new Map(assigneeRows.map((row) => [row.id, row.name]));
+  const assigneeMap = new Map(assigneeRows.map((row: any) => [row.id, row.name]));
 
   const governanceItems = itemInstances.map((instance) => {
     const templateItem = templateItemMap.get(instance.templateItemId);
@@ -515,10 +515,10 @@ export function registerQualityRoutes(app: Express) {
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
       const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, tid));
-      const phaseIds = phases.map(p => p.id);
+      const phaseIds = phases.map((p: any) => p.id);
 
       const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
-      const groupIds = groups.map(g => g.id);
+      const groupIds = groups.map((g: any) => g.id);
       const items = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
       const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
       const metrics = await db.select().from(qcTemplatePostmortemMetric);
@@ -549,7 +549,7 @@ export function registerQualityRoutes(app: Express) {
         : await db.select().from(qcChecklist)
             .where(sql`LOWER(TRIM(${qcChecklist.projectName})) = ${normalizedProjectName}`);
       let checklist = matchingChecklists
-        .sort((left, right) => right.id - left.id)[0];
+        .sort((left: any, right: any) => right.id - left.id)[0];
 
       if (!checklist) {
         const [activeTemplate] = await db.select().from(qcTemplate).where(eq(qcTemplate.isActive, true));
@@ -564,21 +564,21 @@ export function registerQualityRoutes(app: Express) {
         }).returning();
 
         const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, activeTemplate.id));
-        const phaseIds = phases.map(p => p.id);
+        const phaseIds = phases.map((p: any) => p.id);
         const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
-        const groupIds = groups.map(g => g.id);
+        const groupIds = groups.map((g: any) => g.id);
         const templateItems = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
 
         if (templateItems.length) {
           await db.insert(qcItemInstance).values(
-            templateItems.map(ti => ({ checklistId: checklist.id, templateItemId: ti.id }))
+            templateItems.map((ti: any) => ({ checklistId: checklist.id, templateItemId: ti.id }))
           );
         }
 
         const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
         if (riskQuestions.length) {
           await db.insert(qcRiskAnswer).values(
-            riskQuestions.map(rq => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
+            riskQuestions.map((rq: any) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
           );
         }
       }
@@ -586,15 +586,15 @@ export function registerQualityRoutes(app: Express) {
       const itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
       const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
 
-      const itemIds = itemInstances.map(i => i.id);
+      const itemIds = itemInstances.map((i: any) => i.id);
       const evidence = itemIds.length ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemIds)) : [];
       const assignmentMap = await getAssignmentsForEntities("quality_item", itemIds, "ASSIGNEE");
 
       const templateId = checklist.templateId;
       const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, templateId));
-      const phaseIds = phases.map(p => p.id);
+      const phaseIds = phases.map((p: any) => p.id);
       const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
-      const groupIds = groups.map(g => g.id);
+      const groupIds = groups.map((g: any) => g.id);
       const templateItems = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
       const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
 
@@ -603,7 +603,7 @@ export function registerQualityRoutes(app: Express) {
         phases,
         groups,
         templateItems,
-        itemInstances: itemInstances.map((item) => {
+        itemInstances: itemInstances.map((item: any) => {
           const assignments = assignmentMap.get(item.id) || [];
           const primaryAssignment = assignments[0] || null;
           return {
@@ -694,7 +694,7 @@ export function registerQualityRoutes(app: Express) {
 
       if (startDate && endDate) {
         const holidays = await db.select().from(calendarHoliday);
-        updates.workingDays = businessDaysBetween(startDate, endDate, holidays.map(h => h.date));
+        updates.workingDays = businessDaysBetween(startDate, endDate, holidays.map((h: any) => h.date));
       }
 
       const [updated] = await db.update(qcItemInstance).set(updates).where(eq(qcItemInstance.id, itemId)).returning();
@@ -718,8 +718,8 @@ export function registerQualityRoutes(app: Express) {
 
       // Refresh dashboard metrics for this project
       db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, pName)).limit(1)
-        .then(([row]) => { if (row) refreshProjectMetricsAsync(row.id); })
-        .catch((err) => console.warn("[Quality] Dashboard metrics refresh failed:", err?.message || err));
+        .then(([row]: any) => { if (row) refreshProjectMetricsAsync(row.id); })
+        .catch((err: any) => console.warn("[Quality] Dashboard metrics refresh failed:", err?.message || err));
 
       logAuditFromReq(req, {
         entityType: "quality_checklist",
@@ -780,8 +780,8 @@ export function registerQualityRoutes(app: Express) {
 
       // Refresh dashboard metrics for this project
       db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, pName)).limit(1)
-        .then(([row]) => { if (row) refreshProjectMetricsAsync(row.id); })
-        .catch((err) => console.warn("[Quality] Dashboard metrics refresh failed:", err?.message || err));
+        .then(([row]: any) => { if (row) refreshProjectMetricsAsync(row.id); })
+        .catch((err: any) => console.warn("[Quality] Dashboard metrics refresh failed:", err?.message || err));
 
       logAuditFromReq(req, { entityType: "quality_checklist", entityId: String(itemId), action: approved ? "approve" : "update", projectName: pName, changesJson: { description: approved ? "Quality item approved" : "Quality item approval revoked" } });
       res.json(updated);
@@ -1004,7 +1004,7 @@ export function registerQualityRoutes(app: Express) {
       );
       if (!instance) return res.status(404).json({ error: "Item not found in this project's checklist" });
 
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         await tx.delete(qcItemEvidence).where(eq(qcItemEvidence.itemInstanceId, itemId));
         await tx.delete(qcPlanLink).where(eq(qcPlanLink.itemInstanceId, itemId));
         await tx.delete(qcItemInstance).where(eq(qcItemInstance.id, itemId));
@@ -1227,7 +1227,7 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
-      const templateItemIds = uniqueNumberList(itemInstances.map((item) => item.templateItemId));
+      const templateItemIds = uniqueNumberList(itemInstances.map((item: any) => item.templateItemId));
       const templateItems: QcTemplateItemRow[] = templateItemIds.length > 0
         ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
         : [];
@@ -1239,7 +1239,7 @@ export function registerQualityRoutes(app: Express) {
       const groupMap = new Map<number, QcTemplateGroupRow>(groups.map((group) => [group.id, group]));
       const phases: QcTemplatePhaseRow[] = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, checklist.templateId));
       const evidenceRows: QcItemEvidenceRow[] = itemInstances.length > 0
-        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item) => item.id)))
+        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item: any) => item.id)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const evidence of evidenceRows) {
@@ -1251,11 +1251,11 @@ export function registerQualityRoutes(app: Express) {
       const phaseSummaries = phases.map((phase) => {
         const phaseGroups = groups.filter((group) => group.templatePhaseId === phase.id);
         const phaseGroupIds = phaseGroups.map((group) => group.id);
-        const phaseTemplateItems = templateItems.filter((item) => phaseGroupIds.includes(item.templateGroupId));
-        const phaseItemIds = phaseTemplateItems.map((item) => item.id);
-        const phaseInstances = itemInstances.filter((item) => phaseItemIds.includes(item.templateItemId));
-        const applicable = phaseInstances.filter((item) => item.isApplicable);
-        const approved = applicable.filter((item) => item.approved);
+        const phaseTemplateItems = templateItems.filter((item: any) => phaseGroupIds.includes(item.templateGroupId));
+        const phaseItemIds = phaseTemplateItems.map((item: any) => item.id);
+        const phaseInstances = itemInstances.filter((item: any) => phaseItemIds.includes(item.templateItemId));
+        const applicable = phaseInstances.filter((item: any) => item.isApplicable);
+        const approved = applicable.filter((item: any) => item.approved);
 
         return {
           phaseId: phase.id,
@@ -1275,7 +1275,7 @@ export function registerQualityRoutes(app: Express) {
         : [];
       const handover = handoverRows[0];
       const riskSummary = computeQualityRiskSummary({
-        items: itemInstances.map((item) => ({
+        items: itemInstances.map((item: any) => ({
           qmStatus: item.qmStatus,
           approved: item.approved,
           isApplicable: item.isApplicable,
@@ -1404,24 +1404,24 @@ export function registerQualityRoutes(app: Express) {
       const allInstances = await db.select().from(qcItemInstance);
       const allChecklists = await db.select().from(qcChecklist);
 
-      const checklistMap = new Map<number, QcChecklistRow>(allChecklists.map(cl => [cl.id, cl]));
+      const checklistMap = new Map<number, QcChecklistRow>(allChecklists.map((cl: any) => [cl.id, cl]));
 
       let filtered = allInstances;
       if (projectFilter) {
         const matchingChecklistIds = allChecklists
-          .filter(cl => cl.projectName === projectFilter)
-          .map(cl => cl.id);
-        filtered = filtered.filter(i => matchingChecklistIds.includes(i.checklistId));
+          .filter((cl: any) => cl.projectName === projectFilter)
+          .map((cl: any) => cl.id);
+        filtered = filtered.filter((i: any) => matchingChecklistIds.includes(i.checklistId));
       }
       if (statusFilter) {
-        filtered = filtered.filter(i => i.qmStatus === statusFilter);
+        filtered = filtered.filter((i: any) => i.qmStatus === statusFilter);
       }
 
       if (filtered.length === 0) {
         return res.json([]);
       }
 
-      const templateItemIds = uniqueNumberList(filtered.map(i => i.templateItemId));
+      const templateItemIds = uniqueNumberList(filtered.map((i: any) => i.templateItemId));
       const templateItems: QcTemplateItemRow[] = templateItemIds.length
         ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
         : [];
@@ -1439,7 +1439,7 @@ export function registerQualityRoutes(app: Express) {
         : [];
       const phaseMap = new Map<number, QcTemplatePhaseRow>(phases.map(p => [p.id, p]));
 
-      const itemInstanceIds = filtered.map(i => i.id);
+      const itemInstanceIds = filtered.map((i: any) => i.id);
       const allEvidence: QcItemEvidenceRow[] = itemInstanceIds.length
         ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstanceIds))
         : [];
@@ -1448,14 +1448,14 @@ export function registerQualityRoutes(app: Express) {
         evidenceCountMap.set(ev.itemInstanceId, (evidenceCountMap.get(ev.itemInstanceId) || 0) + 1);
       }
 
-      const assigneeUserIds = uniqueNumberList(filtered.map(i => i.assigneeUserId));
+      const assigneeUserIds = uniqueNumberList(filtered.map((i: any) => i.assigneeUserId));
       let userMap = new Map<number, string>();
       if (assigneeUserIds.length) {
         const assignees = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, assigneeUserIds));
-        userMap = new Map(assignees.map(u => [u.id, u.name]));
+        userMap = new Map(assignees.map((u: any) => [u.id, u.name]));
       }
 
-      let items = filtered.map(inst => {
+      let items = filtered.map((inst: any) => {
         const checklist = checklistMap.get(inst.checklistId);
         const templateItem = templateItemMap.get(inst.templateItemId);
         const group = templateItem ? groupMap.get(templateItem.templateGroupId) : undefined;
@@ -1497,7 +1497,7 @@ export function registerQualityRoutes(app: Express) {
       });
 
       if (phaseFilter) {
-        items = items.filter(i => i.phaseName === phaseFilter);
+        items = items.filter((i: any) => i.phaseName === phaseFilter);
       }
 
       res.json(items);
@@ -1576,7 +1576,7 @@ export function registerQualityRoutes(app: Express) {
         : [];
       const groupMap = new Map<number, QcTemplateGroupRow>(groups.map((group) => [group.id, group]));
       const evidenceRows: QcItemEvidenceRow[] = allItems.length > 0
-        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, allItems.map((item) => item.id)))
+        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: any) => item.id)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const evidence of evidenceRows) {
@@ -1585,20 +1585,20 @@ export function registerQualityRoutes(app: Express) {
 
       const result = await Promise.all(dedupedChecklists.map(async (cl) => {
         const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, cl.templateId));
-        const clItems = allItems.filter(i => i.checklistId === cl.id);
+        const clItems = allItems.filter((i: any) => i.checklistId === cl.id);
         const project = projectMap.get(cl.projectId);
         const handover = handoverMap.get(cl.projectId);
 
-        const phaseData = phases.map(phase => {
+        const phaseData = phases.map((phase: any) => {
           const phaseGroups = groups.filter(g => g.templatePhaseId === phase.id);
           const phaseGroupIds = phaseGroups.map(g => g.id);
           const phaseTemplateItems = templateItems.filter(ti => phaseGroupIds.includes(ti.templateGroupId));
           const phaseItemIds = phaseTemplateItems.map(ti => ti.id);
-          const phaseInstances = clItems.filter(ii => phaseItemIds.includes(ii.templateItemId));
-          const applicable = phaseInstances.filter(i => i.isApplicable);
-          const passed = applicable.filter(i => i.qmStatus === "pass" || (i.qmStatus === "not_started" && i.approved));
-          const failed = applicable.filter(i => i.qmStatus === "fail");
-          const inReview = applicable.filter(i => i.qmStatus === "review");
+          const phaseInstances = clItems.filter((ii: any) => phaseItemIds.includes(ii.templateItemId));
+          const applicable = phaseInstances.filter((i: any) => i.isApplicable);
+          const passed = applicable.filter((i: any) => i.qmStatus === "pass" || (i.qmStatus === "not_started" && i.approved));
+          const failed = applicable.filter((i: any) => i.qmStatus === "fail");
+          const inReview = applicable.filter((i: any) => i.qmStatus === "review");
 
           return {
             phaseId: phase.id,
@@ -1610,7 +1610,7 @@ export function registerQualityRoutes(app: Express) {
           };
         });
 
-        const governanceItems = clItems.map((item) => {
+        const governanceItems = clItems.map((item: any) => {
           const templateItem = templateItemMap.get(item.templateItemId);
           const group = templateItem ? groupMap.get(templateItem.templateGroupId) : null;
           const evidenceCount = evidenceCountMap.get(item.id) || 0;
@@ -1626,7 +1626,7 @@ export function registerQualityRoutes(app: Express) {
             groupName: group?.groupName || null,
           };
         });
-        const hasLoggedActivity = governanceItems.some((item) => (
+        const hasLoggedActivity = governanceItems.some((item: any) => (
           item.qmStatus !== "not_started" ||
           item.approved ||
           Boolean(item.endDate) ||
@@ -1635,7 +1635,7 @@ export function registerQualityRoutes(app: Express) {
           item.evidenceCount > 0
         ));
 
-        const storedProjectWarnings = allWarnings.filter((warning) => warning.projectName === cl.projectName);
+        const storedProjectWarnings = allWarnings.filter((warning: any) => warning.projectName === cl.projectName);
         const syntheticWarningCount = Math.max(0, (warningsByProject[cl.projectName] || 0) - storedProjectWarnings.length);
         const warningInputs = [
           ...storedProjectWarnings,
@@ -1692,7 +1692,7 @@ export function registerQualityRoutes(app: Express) {
       const allChecklists = await db.select().from(qcChecklist);
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
       const allItems = await db.select().from(qcItemInstance);
-      const projectIds = uniqueNumberList(allChecklists.map((checklist) => checklist.projectId));
+      const projectIds = uniqueNumberList(allChecklists.map((checklist: any) => checklist.projectId));
       const allProjectRows = projectIds.length > 0
         ? await db.select().from(projectInfo)
             .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
@@ -1708,21 +1708,21 @@ export function registerQualityRoutes(app: Express) {
         : [];
       const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
 
-      const templateItemIds = uniqueNumberList(allItems.map((item) => item.templateItemId));
+      const templateItemIds = uniqueNumberList(allItems.map((item: any) => item.templateItemId));
       const templateItems: QcTemplateItemRow[] = templateItemIds.length > 0
         ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
         : [];
-      const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map((item) => [item.id, item]));
+      const templateItemMap = new Map<number, QcTemplateItemRow>(templateItems.map((item: any) => [item.id, item]));
 
       const evidenceRows: QcItemEvidenceRow[] = allItems.length > 0
-        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, allItems.map((item) => item.id)))
+        ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, allItems.map((item: any) => item.id)))
         : [];
       const evidenceCountMap = new Map<number, number>();
       for (const evidence of evidenceRows) {
         evidenceCountMap.set(evidence.itemInstanceId, (evidenceCountMap.get(evidence.itemInstanceId) || 0) + 1);
       }
 
-      const pendingApprovals = allItems.filter(i => i.isApplicable && !i.approved);
+      const pendingApprovals = allItems.filter((i: any) => i.isApplicable && !i.approved);
       const projectWarningCounts: Record<string, { high: number; total: number; }> = {};
       for (const w of allWarnings) {
         if (!projectWarningCounts[w.projectName]) projectWarningCounts[w.projectName] = { high: 0, total: 0 };
@@ -1730,14 +1730,14 @@ export function registerQualityRoutes(app: Express) {
         if (w.severity === "High") projectWarningCounts[w.projectName].high++;
       }
 
-      const projectSummaries = allChecklists.map((checklist) => {
-        const projectItems = allItems.filter((item) => item.checklistId === checklist.id);
+      const projectSummaries = allChecklists.map((checklist: any) => {
+        const projectItems = allItems.filter((item: any) => item.checklistId === checklist.id);
         const project = projectMap.get(checklist.projectId);
         const handover = handoverMap.get(checklist.projectId);
-        const warningInputs = allWarnings.filter((warning) => warning.projectName === checklist.projectName);
+        const warningInputs = allWarnings.filter((warning: any) => warning.projectName === checklist.projectName);
 
         const riskSummary = computeQualityRiskSummary({
-          items: projectItems.map((item) => ({
+          items: projectItems.map((item: any) => ({
             qmStatus: item.qmStatus,
             approved: item.approved,
             isApplicable: item.isApplicable,
@@ -1767,8 +1767,8 @@ export function registerQualityRoutes(app: Express) {
       });
 
       const projectsAtRisk = projectSummaries
-        .filter((project) => project.level === "high" || project.level === "critical")
-        .map((project) => ({
+        .filter((project: any) => project.level === "high" || project.level === "critical")
+        .map((project: any) => ({
           projectName: project.projectName,
           high: project.exposures.highWarningCount,
           total: project.warningCount,
@@ -1779,23 +1779,23 @@ export function registerQualityRoutes(app: Express) {
           resubmissionCount: project.exposures.resubmissionCount,
           evidenceGapCount: project.exposures.evidenceGapCount,
         }))
-        .sort((left, right) => right.riskScore - left.riskScore);
+        .sort((left: any, right: any) => right.riskScore - left.riskScore);
 
       const postmortems = await db.select().from(qcPostmortem);
-      const checklistProjects = allChecklists.map(c => c.projectName);
-      const postmortemProjects = postmortems.filter(p => p.completedAt).map(p => p.projectName);
-      const outstandingPostmortems = checklistProjects.filter(p => !postmortemProjects.includes(p));
+      const checklistProjects = allChecklists.map((c: any) => c.projectName);
+      const postmortemProjects = postmortems.filter((p: any) => p.completedAt).map((p: any) => p.projectName);
+      const outstandingPostmortems = checklistProjects.filter((p: any) => !postmortemProjects.includes(p));
 
       res.json({
         totalChecklists: allChecklists.length,
         pendingApprovals: pendingApprovals.length,
-        openWarnings: allWarnings.filter(w => w.status === "open").length,
+        openWarnings: allWarnings.filter((w: any) => w.status === "open").length,
         totalWarnings: allWarnings.length,
         projectsAtRisk,
-        overdueActions: projectSummaries.reduce((sum, project) => sum + project.exposures.overdueCount, 0),
-        resubmissionNeeded: projectSummaries.reduce((sum, project) => sum + project.exposures.resubmissionCount, 0),
-        evidenceRequired: projectSummaries.reduce((sum, project) => sum + project.exposures.evidenceGapCount, 0),
-        blockedHandovers: projectSummaries.filter((project) => project.exposures.blockedHandover).length,
+        overdueActions: projectSummaries.reduce((sum: any, project: any) => sum + project.exposures.overdueCount, 0),
+        resubmissionNeeded: projectSummaries.reduce((sum: any, project: any) => sum + project.exposures.resubmissionCount, 0),
+        evidenceRequired: projectSummaries.reduce((sum: any, project: any) => sum + project.exposures.evidenceGapCount, 0),
+        blockedHandovers: projectSummaries.filter((project: any) => project.exposures.blockedHandover).length,
         atRiskProjects: projectsAtRisk.length,
         topRiskProjects: projectsAtRisk.slice(0, 5),
         outstandingPostmortems,
@@ -1856,7 +1856,7 @@ export function registerQualityRoutes(app: Express) {
       const values: any[] = [];
 
       for (const input of metricInputs) {
-        const metric = metrics.find(m => m.id === input.templateMetricId);
+        const metric = metrics.find((m: any) => m.id === input.templateMetricId);
         if (!metric) continue;
 
         let score: number | null = null;
@@ -1885,11 +1885,11 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const contractorMetrics = values.filter(v => {
-        const m = metrics.find(mm => mm.id === v.templateMetricId);
+        const m = metrics.find((mm: any) => mm.id === v.templateMetricId);
         return m?.metricGroup === "contractor_quality" && v.score != null;
       });
       const engineeringMetrics = values.filter(v => {
-        const m = metrics.find(mm => mm.id === v.templateMetricId);
+        const m = metrics.find((mm: any) => mm.id === v.templateMetricId);
         return m?.metricGroup === "engineering_quality" && v.score != null;
       });
 
@@ -2033,9 +2033,9 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, activeTemplate.id));
-      const phaseIds = phases.map(p => p.id);
+      const phaseIds = phases.map((p: any) => p.id);
       const groups = phaseIds.length ? await db.select().from(qcTemplateGroup).where(inArray(qcTemplateGroup.templatePhaseId, phaseIds)) : [];
-      const groupIds = groups.map(g => g.id);
+      const groupIds = groups.map((g: any) => g.id);
       const templateItems = groupIds.length ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.templateGroupId, groupIds)) : [];
       const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
 
@@ -2068,13 +2068,13 @@ export function registerQualityRoutes(app: Express) {
 
         if (templateItems.length) {
           await db.insert(qcItemInstance).values(
-            templateItems.map(ti => ({ checklistId: checklist.id, templateItemId: ti.id }))
+            templateItems.map((ti: any) => ({ checklistId: checklist.id, templateItemId: ti.id }))
           );
         }
 
         if (riskQuestions.length) {
           await db.insert(qcRiskAnswer).values(
-            riskQuestions.map(rq => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
+            riskQuestions.map((rq: any) => ({ checklistId: checklist.id, templateRiskQuestionId: rq.id }))
           );
         }
 
@@ -2098,11 +2098,11 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
 
   const items = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
   const templateItems = items.length
-    ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, items.map(i => i.templateItemId)))
+    ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, items.map((i: any) => i.templateItemId)))
     : [];
   const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
   const riskQuestions = riskAnswers.length
-    ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskAnswers.map(r => r.templateRiskQuestionId)))
+    ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskAnswers.map((r: any) => r.templateRiskQuestionId)))
     : [];
   const planLinks = await db.select().from(qcPlanLink).where(eq(qcPlanLink.projectName, projectName));
 
@@ -2116,7 +2116,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
 
   for (const item of items) {
     if (!item.isApplicable) continue;
-    const tmpl = templateItems.find(t => t.id === item.templateItemId);
+    const tmpl = templateItems.find((t: any) => t.id === item.templateItemId);
 
     if (item.endDate && item.endDate < today && !item.approved) {
       newWarnings.push({
@@ -2150,7 +2150,7 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
   }
 
   for (const answer of riskAnswers) {
-    const question = riskQuestions.find(q => q.id === answer.templateRiskQuestionId);
+    const question = riskQuestions.find((q: any) => q.id === answer.templateRiskQuestionId);
     if (!question || !question.triggersWarning) continue;
 
     let triggered = false;
@@ -2174,10 +2174,10 @@ export async function recalculateWarnings(projectName: string): Promise<number> 
       const task = planTasks.find(t => t.id === link.planItemId);
       if (!task) continue;
 
-      const linkedItem = link.itemInstanceId ? items.find(i => i.id === link.itemInstanceId) : null;
+      const linkedItem = link.itemInstanceId ? items.find((i: any) => i.id === link.itemInstanceId) : null;
       if (linkedItem && !linkedItem.approved && linkedItem.isApplicable) {
         const taskPct = task.actualPctComplete ?? 0;
-        const tmpl = templateItems.find(t => t.id === linkedItem.templateItemId);
+        const tmpl = templateItems.find((t: any) => t.id === linkedItem.templateItemId);
 
         if (taskPct >= 1) {
           newWarnings.push({

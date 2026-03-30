@@ -452,7 +452,7 @@ export function buildProjectLifecycleWorkspaceFromSources(params: {
     const latestUpdates: ProjectLifecycleWorkspaceClientUpdate[] = [];
     const linkedProjects: ProjectLifecycleWorkspaceClientLinkedProject[] = [];
     const signals = buildEmptyClientSignals();
-    const microsoft = {
+    const microsoft: ProjectLifecycleWorkspaceClientMicrosoftSummary = {
       totalLinkedItems: 0,
       linkedProjectCount: 0,
       latestActivityAt: null,
@@ -486,7 +486,7 @@ export function buildProjectLifecycleWorkspaceFromSources(params: {
         microsoft.linkedProjectCount += 1;
       }
       if (timestampOf(project.microsoft.latestLinkedAt) > timestampOf(microsoft.latestActivityAt)) {
-        microsoft.latestActivityAt = project.microsoft.latestLinkedAt;
+        microsoft.latestActivityAt = project.microsoft.latestLinkedAt as string | null;
       }
       for (const [type, count] of Object.entries(project.microsoft.byType) as Array<[MicrosoftTypeKey, number]>) {
         microsoft.byType[type] += count;
