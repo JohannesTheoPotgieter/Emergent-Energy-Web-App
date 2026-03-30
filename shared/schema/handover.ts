@@ -44,10 +44,6 @@ export const handoverChecklistItems = pgTable("handover_checklist_items", {
   completedByUserId: integer("completed_by_user_id").references(() => users.id),
   completedDate: timestamp("completed_date"),
   notes: text("notes"),
-  // Stage lifecycle extensions (Prompt 1)
-  department: text("department"),
-  blocksGate: boolean("blocks_gate").default(false),
-  stageCode: text("stage_code"),
 });
 
 export const insertHandoverChecklistItemSchema = createInsertSchema(handoverChecklistItems).omit({ id: true } as any);

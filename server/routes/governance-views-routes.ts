@@ -67,6 +67,9 @@ app.get("/api/governance/quality", async (req, res) => {
       qualityChecklist: (qualityChecklist as any).rows ?? [],
     });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ commissioningReviews: [], openSnags: [], qualityChecklist: [] });
+    }
     console.error("Quality governance error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -99,6 +102,9 @@ app.patch("/api/governance/quality/:id/action", async (req, res) => {
 
     res.json({ success: true });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ success: false, error: "Stage tables not yet migrated" });
+    }
     console.error("Quality action error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -163,6 +169,9 @@ app.get("/api/governance/compliance", async (req, res) => {
       meteringPending: (rmaItems as any).rows ?? [],
     });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ ssegByProject: [], authoritySubmissions: [], meteringPending: [] });
+    }
     console.error("Compliance governance error:", err);
     res.status(500).json({ error: err.message });
   }

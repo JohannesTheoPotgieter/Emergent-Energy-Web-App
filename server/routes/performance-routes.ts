@@ -99,6 +99,16 @@ app.get("/api/performance/v1", async (_req, res) => {
       repeatIssues: ((repeatIssuesResult as any).rows ?? [])[0] || {},
     });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({
+        stageDuration: [],
+        projectCompletion: {},
+        stageDistribution: [],
+        commissioning: {},
+        reviews: {},
+        repeatIssues: {},
+      });
+    }
     console.error("Performance V1 error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -143,6 +153,9 @@ app.get("/api/reports/gate-reports", async (_req, res) => {
       exceptionAgeing: (exceptionAgeing as any).rows ?? [],
     });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ blockedGates: [], exceptionAgeing: [] });
+    }
     console.error("Gate reports error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -210,6 +223,9 @@ app.get("/api/reports/operational", async (_req, res) => {
       weeklyCompliance: (weeklyCompliance as any).rows ?? [],
     });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ commissioningQueue: [], handoverQueue: [], weeklyCompliance: [] });
+    }
     console.error("Operational reports error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -254,6 +270,9 @@ app.get("/api/reports/quality-compliance", async (_req, res) => {
       complianceBlockers: (complianceBlockers as any).rows ?? [],
     });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ qualityBlockers: [], complianceBlockers: [] });
+    }
     console.error("Quality-compliance reports error:", err);
     res.status(500).json({ error: err.message });
   }

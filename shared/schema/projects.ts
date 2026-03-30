@@ -200,17 +200,6 @@ export const projectExecutionState = pgTable("project_execution_state", {
   costBaseline: decimal("cost_baseline", { precision: 15, scale: 2 }),
   marginBaseline: decimal("margin_baseline", { precision: 8, scale: 4 }),
 
-  // Stage lifecycle (Prompt 1 — gate-driven lifecycle)
-  currentStageCode: text("current_stage_code"),
-  gateStatus: text("gate_status"),
-  gateReadinessPct: integer("gate_readiness_pct").default(0),
-  stageOwnerUserId: integer("stage_owner_user_id").references(() => users.id),
-  stageApproverUserId: integer("stage_approver_user_id").references(() => users.id),
-  waitingOnDepartment: text("waiting_on_department"),
-  waitingOnUserId: integer("waiting_on_user_id").references(() => users.id),
-  nextRequiredAction: text("next_required_action"),
-  kamUserId: integer("kam_user_id").references(() => users.id),
-
   // Financial review gate
   siteEstablishmentDate: text("site_establishment_date"),
   siteEstablishmentActual: text("site_establishment_actual"),
