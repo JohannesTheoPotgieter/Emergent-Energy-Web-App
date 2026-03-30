@@ -654,10 +654,11 @@ export function registerRoleManagementRoutes(app: Express) {
         return res.status(400).json({ error: "Cannot delete your own account" });
       }
 
-      const [deleted] = await db.delete(users).where(eq(users.id, userId)).returning();
+      // Soft-delete: mark user as deleted instead of removing the row
+      const [deleted] = await db.update(users).set({ deletedAt: new Date(), deletedBy: currentUser?.id ?? null }).where(eq(users.id, userId)).returning();
       if (!deleted) return res.status(404).json({ error: "User not found" });
 
-      logAuditFromReq(req, { entityType: "user", action: "delete", entityId: String(userId), changesJson: { description: "User deleted", userName: deleted.name, email: deleted.email } });
+      logAuditFromReq(req, { entityType: "user", action: "soft_delete", entityId: String(userId), changesJson: { description: "User soft-deleted", userName: deleted.name, email: deleted.email } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -705,6 +706,7 @@ export function registerRoleManagementRoutes(app: Express) {
           .where(
             and(
               eq(userPermissionOverrides.userId, user.id),
+              isNull(userPermissionOverrides.deletedAt),
               or(
                 isNull(userPermissionOverrides.expiresAt),
                 gte(userPermissionOverrides.expiresAt, new Date())
@@ -761,7 +763,7 @@ export function registerRoleManagementRoutes(app: Express) {
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
       const overrides = await db.select().from(userPermissionOverrides)
-        .where(eq(userPermissionOverrides.userId, userId));
+        .where(and(eq(userPermissionOverrides.userId, userId), isNull(userPermissionOverrides.deletedAt)));
       res.json(overrides);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -775,12 +777,14 @@ export function registerRoleManagementRoutes(app: Express) {
         return res.status(400).json({ error: "userId, entity, and action are required" });
       }
 
-      // Upsert: delete existing then insert
-      await db.delete(userPermissionOverrides)
+      // Upsert: soft-delete existing then insert
+      await db.update(userPermissionOverrides)
+        .set({ deletedAt: new Date(), deletedBy: getEffectiveUser(req)?.id ?? null })
         .where(and(
           eq(userPermissionOverrides.userId, userId),
           eq(userPermissionOverrides.entity, entity),
           eq(userPermissionOverrides.action, action),
+          isNull(userPermissionOverrides.deletedAt),
         ));
 
       const [created] = await db.insert(userPermissionOverrides).values({
@@ -816,7 +820,10 @@ export function registerRoleManagementRoutes(app: Express) {
         .where(eq(userPermissionOverrides.id, overrideId));
       if (!existing) return res.status(404).json({ error: "Override not found" });
 
-      await db.delete(userPermissionOverrides).where(eq(userPermissionOverrides.id, overrideId));
+      // Soft-delete: mark override as deleted instead of removing the row
+      await db.update(userPermissionOverrides)
+        .set({ deletedAt: new Date(), deletedBy: getEffectiveUser(req)?.id ?? null })
+        .where(eq(userPermissionOverrides.id, overrideId));
       invalidateUserOverrideCache(existing.userId);
 
       logPermissionAudit(req, {

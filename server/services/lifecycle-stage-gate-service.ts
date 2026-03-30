@@ -7,6 +7,7 @@ import {
   stageGateOverrides,
   workItems,
 } from "@shared/schema";
+import { notDeleted } from "@shared/schema/soft-delete";
 import { db } from "../db";
 import { createProjectEvent } from "./project-event-service";
 
@@ -90,7 +91,7 @@ async function evaluateSingleRequirement(projectId: number, project: any, defini
       const rows = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(approvals)
-        .where(and(eq(approvals.projectId, projectId), eq(approvals.status, status as any)));
+        .where(and(eq(approvals.projectId, projectId), eq(approvals.status, status as any), notDeleted(approvals)));
       count = Number(rows[0]?.count || 0);
     } else if (table === "project_eng_deliverables") {
       const r: any = await db.execute(sql`
@@ -120,8 +121,8 @@ async function evaluateSingleRequirement(projectId: number, project: any, defini
       .from(approvals)
       .where(
         approvalCategory
-          ? and(eq(approvals.projectId, projectId), eq(approvals.status, "approved"), eq(approvals.approvalCategory, approvalCategory))
-          : and(eq(approvals.projectId, projectId), eq(approvals.status, "approved")),
+          ? and(eq(approvals.projectId, projectId), eq(approvals.status, "approved"), eq(approvals.approvalCategory, approvalCategory), notDeleted(approvals))
+          : and(eq(approvals.projectId, projectId), eq(approvals.status, "approved"), notDeleted(approvals)),
       );
     const count = Number(rows[0]?.count || 0);
     if (count < 1) {
@@ -201,8 +202,8 @@ async function evaluateSingleRequirement(projectId: number, project: any, defini
       .from(approvals)
       .where(
         category
-          ? and(eq(approvals.projectId, projectId), eq(approvals.status, "approved"), eq(approvals.approvalCategory, category))
-          : and(eq(approvals.projectId, projectId), eq(approvals.status, "approved")),
+          ? and(eq(approvals.projectId, projectId), eq(approvals.status, "approved"), eq(approvals.approvalCategory, category), notDeleted(approvals))
+          : and(eq(approvals.projectId, projectId), eq(approvals.status, "approved"), notDeleted(approvals)),
       );
     const count = Number(rows[0]?.count || 0);
     if (count < 1) {
@@ -331,7 +332,8 @@ export async function createStageGateOverride(params: {
       overrideReason: params.overrideReason,
       overriddenBy: params.overriddenBy,
       overriddenByRole: params.overriddenByRole,
-      expiresAt: params.expiresAt ?? null,
+      // Default override expiry to 90 days if not specified — prevents indefinite overrides
+      expiresAt: params.expiresAt ?? new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
       note: params.note ?? null,
       isActive: true,
     })

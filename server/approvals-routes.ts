@@ -2,7 +2,7 @@
 // @ts-nocheck
 import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, sql, inArray, desc } from "drizzle-orm";
+import { eq, and, sql, inArray, desc, isNull } from "drizzle-orm";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import {
   projectEngApprovals,
@@ -239,7 +239,7 @@ export function registerApprovalsRoutes(app: Express) {
       })
         .from(approvals)
         .innerJoin(projectInfo, eq(approvals.projectId, projectInfo.id))
-        .where(eq(approvals.status, "pending"))
+        .where(and(eq(approvals.status, "pending"), isNull(approvals.deletedAt)))
         .orderBy(desc(approvals.requestedAt));
 
       const generalApproverIds = [...new Set(
@@ -327,7 +327,7 @@ export function registerApprovalsRoutes(app: Express) {
       const categoryFilter = req.query.category as string || null;
       const statusFilter = req.query.status as string || null;
 
-      let conditions: ReturnType<typeof eq>[] = [];
+      let conditions: ReturnType<typeof eq>[] = [isNull(approvals.deletedAt) as any];
       if (projectIdFilter) conditions.push(eq(approvals.projectId, projectIdFilter));
       if (statusFilter) conditions.push(eq(approvals.status, statusFilter as any));
       if (categoryFilter) conditions.push(sql`${approvals.approvalCategory} = ${categoryFilter}`);
@@ -566,14 +566,21 @@ export function registerApprovalsRoutes(app: Express) {
       const id = parseInt(String(req.params.id), 10);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
 
-      await db.delete(approvals).where(eq(approvals.id, id));
+      // Soft-delete: mark approval as deleted instead of removing the row
+      const userId = getEffectiveUser(req)?.id ?? null;
+      const deleteReason = req.body?.deleteReason || null;
+      const [deleted] = await db.update(approvals).set({
+        deletedAt: new Date(),
+        deletedBy: userId,
+        deleteReason,
+      }).where(eq(approvals.id, id)).returning();
       logAuditFromReq(req, {
         entityType: "approvals",
         entityId: String(id),
-        action: "approval_deleted",
-        changesJson: {},
+        action: "approval_soft_deleted",
+        changesJson: { deleteReason },
       });
-      res.json({ success: true });
+      res.json({ success: true, deleted });
     } catch (err: unknown) {
       console.error("Error deleting approval:", err);
       res.status(500).json({ error: "Failed to delete approval" });

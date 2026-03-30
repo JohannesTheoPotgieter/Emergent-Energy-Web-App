@@ -36,6 +36,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Calendar", path: "/my-work/calendar" },
       { label: "Meetings", path: "/my-work/meetings" },
       { label: "Inbox", path: "/inbox" },
+      { label: "Settings", path: "/my-work/settings" },
     ],
   },
   {

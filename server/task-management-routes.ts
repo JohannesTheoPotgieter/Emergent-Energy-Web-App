@@ -579,7 +579,7 @@ export function registerTaskManagementRoutes(app: Express) {
         })
         .from(taskTimeEntries)
         .leftJoin(users, eq(taskTimeEntries.userId, users.id))
-        .where(eq(taskTimeEntries.workItemId, workItemId))
+        .where(and(eq(taskTimeEntries.workItemId, workItemId), isNull(taskTimeEntries.deletedAt)))
         .orderBy(desc(taskTimeEntries.date));
 
       const totalMinutes = entries.reduce((sum: any, e: any) => sum + e.durationMinutes, 0);
@@ -604,7 +604,7 @@ export function registerTaskManagementRoutes(app: Express) {
         return res.status(403).json({ error: "Can only delete your own time entries" });
       }
 
-      await db.delete(taskTimeEntries).where(eq(taskTimeEntries.id, entryId));
+      await db.update(taskTimeEntries).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(taskTimeEntries.id, entryId)).returning();
 
       // Re-aggregate actualHours
       const [totals] = await db
@@ -629,6 +629,7 @@ export function registerTaskManagementRoutes(app: Express) {
       const tags = await db
         .select()
         .from(taskTags)
+        .where(isNull(taskTags.deletedAt))
         .orderBy(asc(taskTags.category), asc(taskTags.name));
       res.json(tags);
     } catch (err: unknown) {
@@ -687,7 +688,7 @@ export function registerTaskManagementRoutes(app: Express) {
   app.delete("/api/tags/:id", requireAuth, requirePermission("task_management", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
-      await db.delete(taskTags).where(eq(taskTags.id, id));
+      await db.update(taskTags).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(taskTags.id, id)).returning();
       res.json({ success: true });
     } catch (err: unknown) {
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
