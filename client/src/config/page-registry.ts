@@ -109,6 +109,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "engMonthlyReportCompare", path: "/reports/engineering/monthly/compare", label: "Engineering Report Compare", permissionEntity: "reports", routeComponentKey: "EngMonthlyReportComparePage" },
   { id: "engMonthlyReportProject", path: "/reports/engineering/monthly/:month/project/:projectId", label: "Engineering Report Project", permissionEntity: "reports", routeComponentKey: "EngMonthlyReportProjectPage" },
   { id: "adminRecovery", path: "/admin/recovery", label: "Recovery Center", iconKey: "ShieldAlert", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminRecoveryPage" },
+  { id: "stageAdmin", path: "/admin/stage-lifecycle", label: "Stage Lifecycle", iconKey: "Milestone", navGroup: "SYSTEM", permissionEntity: "stage_admin", showInSidebar: false, routeComponentKey: "StageAdminPage" },
   { id: "adminControlCenter", path: "/admin/control-center", label: "Control Center", iconKey: "Gauge", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminControlCenterPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECTS", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },
   { id: "actionLaunchpad", path: "/actions/launchpad", label: "Quick Create", routeComponentKey: "ActionLaunchpadPage" },

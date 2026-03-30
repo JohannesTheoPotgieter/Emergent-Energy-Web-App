@@ -186,7 +186,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'revenue_tracker' | 'gp_tracker' | 'work_items'
   | 'task_management' | 'standups' | 'fye_revenue_tracking' | 'reports'
   | 'handover' | 'commissioning' | 'counterparties'
-  | 'pd_change_control' | 'pd_commissioning' | 'pd_dependencies' | 'pd_raid';
+  | 'pd_change_control' | 'pd_commissioning' | 'pd_dependencies' | 'pd_raid'
+  | 'stage_lifecycle' | 'stage_exceptions' | 'stage_dependencies' | 'stage_admin';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
 export const AUTHORITY_ACTIONS = [
   'view',

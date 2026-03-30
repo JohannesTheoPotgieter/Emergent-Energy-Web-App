@@ -78,6 +78,7 @@ const ImportControlTowerPage = lazy(() => import("@/pages/import-control-tower")
 const ProgrammeReportsPage = lazy(() => import("@/pages/programme-reports"));
 const KpiTraceabilityPage = lazy(() => import("@/pages/kpi-traceability"));
 const AdminRecoveryPage = lazy(() => import("@/pages/admin-recovery"));
+const StageAdminPage = lazy(() => import("@/components/stage-lifecycle/StageAdminPanel"));
 const AdminControlCenterPage = lazy(() => import("@/pages/admin-control-center"));
 const ActionLaunchpadPage = lazy(() => import("@/pages/action-launchpad"));
 const PdPmHandoverPage = lazy(() => import("@/pages/pd-pm-handover"));
@@ -187,6 +188,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   ImportControlTowerPage,
   ProgrammeReportsPage,
   AdminRecoveryPage,
+  StageAdminPage,
   AdminControlCenterPage,
   ClientsPage,
   ActionLaunchpadPage,

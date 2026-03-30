@@ -25,4 +25,7 @@ export async function registerProjectRoutes(app: Express) {
   // Financial Review Gate
   const { registerFinancialReviewRoutes } = await import("../financial-review-routes");
   registerFinancialReviewRoutes(app);
+  // Stage Lifecycle (Prompt 1 — gate-driven lifecycle)
+  const { registerStageLifecycleRoutes } = await import("../stage-lifecycle-routes");
+  registerStageLifecycleRoutes(app);
 }
