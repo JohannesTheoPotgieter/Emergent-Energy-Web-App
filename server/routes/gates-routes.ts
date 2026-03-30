@@ -110,6 +110,9 @@ app.get("/api/gates/pipeline", async (_req, res) => {
 
     res.json({ projects, stageCounts });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ projects: [], stageCounts: {} });
+    }
     console.error("Gates pipeline error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -124,6 +127,9 @@ app.get("/api/gates/blocked", async (_req, res) => {
     });
     res.json({ projects });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ projects: [] });
+    }
     console.error("Gates blocked error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -138,6 +144,9 @@ app.get("/api/gates/ready", async (_req, res) => {
     });
     res.json({ projects });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ projects: [] });
+    }
     console.error("Gates ready error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -201,6 +210,9 @@ app.get("/api/gates/exceptions", async (req, res) => {
 
     res.json({ exceptions: (result as any).rows ?? [] });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ exceptions: [] });
+    }
     console.error("Gates exceptions error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -225,6 +237,9 @@ app.get("/api/gates/exceptions/counts", async (req, res) => {
       overdue: Number(row.overdue_count || 0),
     });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ all: 0, pendingMyApproval: 0, overdue: 0 });
+    }
     console.error("Gates exceptions counts error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -282,6 +297,9 @@ app.patch("/api/gates/exceptions/:id/action", async (req, res) => {
 
     res.json({ success: true, newStatus });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ success: false, error: "Stage tables not yet migrated" });
+    }
     console.error("Exception action error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -323,6 +341,9 @@ app.get("/api/gates/client-updates", async (_req, res) => {
 
     res.json({ projects: (result as any).rows ?? [] });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ projects: [] });
+    }
     console.error("Gates client-updates error:", err);
     res.status(500).json({ error: err.message });
   }
@@ -418,6 +439,9 @@ app.get("/api/gates/handovers", async (req, res) => {
 
     res.json({ projects });
   } catch (err: any) {
+    if (err.code === "42P01" || err.code === "42703") {
+      return res.json({ projects: [] });
+    }
     console.error("Gates handovers error:", err);
     res.status(500).json({ error: err.message });
   }
