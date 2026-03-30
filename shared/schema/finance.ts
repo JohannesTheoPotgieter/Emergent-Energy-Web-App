@@ -447,8 +447,11 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   projectName: text("project_name").notNull(),
   description: text("description"),
   milestoneName: text("milestone_name"),
-  amountExVat: text("amount_ex_vat"),
-  vat: text("vat"),
+  amountExVat: decimal("amount_ex_vat", { precision: 15, scale: 2 }),
+  vat: decimal("vat", { precision: 15, scale: 2 }),
+  /** Legacy TEXT column preserved for 30-day rollback window. Remove after cleanup PR. */
+  amountExVatLegacy: text("amount_ex_vat_legacy"),
+  vatLegacy: text("vat_legacy"),
   invoiceNumber: text("invoice_number"),
   invoiceDate: date("invoice_date"),
   invoiceDateFontColor: text("invoice_date_font_color"),
@@ -475,7 +478,7 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   effectiveTo: timestamp("effective_to"),
   snapshotRunId: integer("snapshot_run_id"),
 });
-export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true } as any);
+export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, vatLegacy: true } as any);
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
 export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
@@ -489,7 +492,9 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   counterpartyName: text("counterparty_name"),
   counterpartyType: counterpartyTypeEnum("counterparty_type"),
   description: text("description"),
-  amountExVat: text("amount_ex_vat"),
+  amountExVat: decimal("amount_ex_vat", { precision: 15, scale: 2 }),
+  /** Legacy TEXT column preserved for 30-day rollback window. Remove after cleanup PR. */
+  amountExVatLegacy: text("amount_ex_vat_legacy"),
   invoiceNumber: text("invoice_number"),
   invoiceDate: date("invoice_date"),
   invoiceDateFontColor: text("invoice_date_font_color"),
@@ -532,7 +537,7 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   effectiveTo: timestamp("effective_to"),
   snapshotRunId: integer("snapshot_run_id"),
 });
-export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true } as any);
+export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
 export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
 
