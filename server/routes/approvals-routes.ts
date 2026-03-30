@@ -6,6 +6,18 @@ import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
+// Helper: execute a query, returning empty array if a referenced table/column doesn't exist
+async function safeQuery(query: ReturnType<typeof sql>) {
+  try {
+    const result = await db.execute(query);
+    return (result as any).rows ?? [];
+  } catch (err: any) {
+    // 42P01 = undefined_table, 42703 = undefined_column
+    if (err.code === "42P01" || err.code === "42703") return [];
+    throw err;
+  }
+}
+
 export function registerApprovalsRoutes(app: Express) {
 
 // ── Unified approvals queue ────────────────────────────────
@@ -16,7 +28,7 @@ app.get("/api/approvals", async (req, res) => {
     const typeFilter = req.query.type as string | undefined;
 
     // Gather gate approvals (stages READY_FOR_REVIEW where user is approver)
-    const gateApprovals = await db.execute(sql`
+    const gateRows = await safeQuery(sql`
       SELECT
         'gate' AS approval_type,
         psi.id AS item_id,
@@ -35,7 +47,7 @@ app.get("/api/approvals", async (req, res) => {
     `);
 
     // Gather exception approvals
-    const exceptionApprovals = await db.execute(sql`
+    const exceptionRows = await safeQuery(sql`
       SELECT
         'exception' AS approval_type,
         pse.id AS item_id,
@@ -54,12 +66,12 @@ app.get("/api/approvals", async (req, res) => {
     `);
 
     // Gather handover acceptances (packs awaiting review)
-    const handoverApprovals = await db.execute(sql`
+    const handoverRows = await safeQuery(sql`
       SELECT
         'handover' AS approval_type,
         hp.id AS item_id,
         pi.project_name,
-        pes.current_stage_code AS stage_code,
+        NULL AS stage_code,
         pi.pm AS requested_by,
         hp.updated_at AS date_requested,
         'normal' AS priority,
@@ -73,9 +85,9 @@ app.get("/api/approvals", async (req, res) => {
     `);
 
     let allApprovals = [
-      ...((gateApprovals as any).rows ?? []),
-      ...((exceptionApprovals as any).rows ?? []),
-      ...((handoverApprovals as any).rows ?? []),
+      ...gateRows,
+      ...exceptionRows,
+      ...handoverRows,
     ];
 
     // Filter by type if specified
@@ -99,26 +111,43 @@ app.get("/api/approvals/count", async (req, res) => {
   try {
     const userId = (req as any).user?.id || 0;
 
-    const result = await db.execute(sql`
-      SELECT
-        (SELECT COUNT(*) FROM project_stage_instances
-         WHERE stage_status = 'READY_FOR_REVIEW'
-           AND (approver_user_id = ${userId} OR ${userId} = 0)) AS gate_count,
-        (SELECT COUNT(*) FROM project_stage_exceptions
-         WHERE status = 'REQUESTED'
-           AND (approver_user_id = ${userId} OR ${userId} = 0)) AS exception_count,
-        (SELECT COUNT(*) FROM handover_packs
-         WHERE checklist_status = 'pending_review') AS handover_count
-    `);
+    let gateCount = 0;
+    let exceptionCount = 0;
+    let handoverCount = 0;
 
-    const row = ((result as any).rows ?? [])[0] || {};
-    const total = Number(row.gate_count || 0) + Number(row.exception_count || 0) + Number(row.handover_count || 0);
+    try {
+      const r = await db.execute(sql`
+        SELECT COUNT(*) AS cnt FROM project_stage_instances
+        WHERE stage_status = 'READY_FOR_REVIEW'
+          AND (approver_user_id = ${userId} OR ${userId} = 0)
+      `);
+      gateCount = Number(((r as any).rows ?? [])[0]?.cnt || 0);
+    } catch (e: any) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
+
+    try {
+      const r = await db.execute(sql`
+        SELECT COUNT(*) AS cnt FROM project_stage_exceptions
+        WHERE status = 'REQUESTED'
+          AND (approver_user_id = ${userId} OR ${userId} = 0)
+      `);
+      exceptionCount = Number(((r as any).rows ?? [])[0]?.cnt || 0);
+    } catch (e: any) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
+
+    try {
+      const r = await db.execute(sql`
+        SELECT COUNT(*) AS cnt FROM handover_packs
+        WHERE checklist_status = 'pending_review'
+      `);
+      handoverCount = Number(((r as any).rows ?? [])[0]?.cnt || 0);
+    } catch (e: any) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
+
+    const total = gateCount + exceptionCount + handoverCount;
 
     res.json({
       total,
-      gate: Number(row.gate_count || 0),
-      exception: Number(row.exception_count || 0),
-      handover: Number(row.handover_count || 0),
+      gate: gateCount,
+      exception: exceptionCount,
+      handover: handoverCount,
     });
   } catch (err: any) {
     console.error("Approval count error:", err);

@@ -1050,13 +1050,6 @@ export const purchaseOrders = pgTable("purchase_orders", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   sentAt: timestamp("sent_at"),
   pdfData: text("pdf_data"),  // BYTEA in DB, handled as Buffer in routes
-  // Workflow columns (added by epc_workflow_phase1 migration)
-  counterpartyId: integer("counterparty_id").references(() => counterparties.id),
-  approvalId: integer("approval_id"),
-  evidenceEvaluationId: integer("evidence_evaluation_id"),
-  submittedByUserId: integer("submitted_by_user_id").references(() => users.id),
-  submittedAt: timestamp("submitted_at"),
-  approvedAt: timestamp("approved_at"),
 }, (table) => ({
   projectIdx: index("idx_po_project").on(table.projectName),
   statusIdx: index("idx_po_status").on(table.status),
