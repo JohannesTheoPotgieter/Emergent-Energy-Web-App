@@ -28,4 +28,7 @@ export async function registerProjectRoutes(app: Express) {
   // Stage Lifecycle (Prompt 1 — gate-driven lifecycle)
   const { registerStageLifecycleRoutes } = await import("../stage-lifecycle-routes");
   registerStageLifecycleRoutes(app);
+  // Stage Data + Charter (Prompt 3 — stage workspaces 1-5)
+  const { registerStageDataRoutes } = await import("../stage-data-routes");
+  registerStageDataRoutes(app);
 }
