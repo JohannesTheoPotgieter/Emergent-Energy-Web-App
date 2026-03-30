@@ -7680,4 +7680,120 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drawing_revisions' AND column_name='revision') THEN
     ALTER TABLE "drawing_revisions" ADD COLUMN "drawing_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "revision" TEXT NOT NULL DEFAULT '', ADD COLUMN "revision_date" DATE NOT NULL DEFAULT CURRENT_DATE, ADD COLUMN "description" TEXT, ADD COLUMN "revised_by_user_id" INTEGER, ADD COLUMN "sharepoint_link" TEXT, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW();
   END IF;
+
+  -- ===================== Role-based UX upgrade: missing work_items columns =====================
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='bucket') THEN
+    ALTER TABLE "work_items" ADD COLUMN "bucket" TEXT, ADD COLUMN "pinned_today" BOOLEAN DEFAULT FALSE, ADD COLUMN "pinned_week" BOOLEAN DEFAULT FALSE, ADD COLUMN "source_email_id" TEXT, ADD COLUMN "source_email_subject" TEXT, ADD COLUMN "next_step" TEXT, ADD COLUMN "definition_of_done" TEXT, ADD COLUMN "completion_note" TEXT;
+  END IF;
+
+  -- ===================== Role-based UX upgrade: new tables =====================
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_lens_profiles') THEN
+    CREATE TABLE "role_lens_profiles" (
+      "id" SERIAL PRIMARY KEY,
+      "lens_role" TEXT NOT NULL UNIQUE,
+      "label" TEXT NOT NULL,
+      "description" TEXT,
+      "landing_page" TEXT NOT NULL,
+      "allowed_modules" TEXT[] NOT NULL DEFAULT '{}',
+      "nav_priority" TEXT[] NOT NULL DEFAULT '{}',
+      "quick_actions" JSONB NOT NULL DEFAULT '[]',
+      "default_filters" JSONB NOT NULL DEFAULT '{}',
+      "widget_layout" JSONB NOT NULL DEFAULT '[]',
+      "record_tab_emphasis" JSONB NOT NULL DEFAULT '{}',
+      "is_system" BOOLEAN NOT NULL DEFAULT TRUE,
+      "created_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updated_at" TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_homepage_widgets') THEN
+    CREATE TABLE "role_homepage_widgets" (
+      "id" SERIAL PRIMARY KEY,
+      "lens_role" TEXT NOT NULL,
+      "widget_key" TEXT NOT NULL,
+      "label" TEXT NOT NULL,
+      "widget_type" TEXT NOT NULL,
+      "data_source" TEXT,
+      "position" INTEGER NOT NULL DEFAULT 0,
+      "span" INTEGER NOT NULL DEFAULT 1,
+      "config" JSONB NOT NULL DEFAULT '{}',
+      "is_visible" BOOLEAN NOT NULL DEFAULT TRUE,
+      "created_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updated_at" TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='contracts') THEN
+    CREATE TABLE "contracts" (
+      "id" SERIAL PRIMARY KEY,
+      "project_id" INTEGER REFERENCES project_info(id),
+      "opportunity_id" INTEGER,
+      "client_name" TEXT,
+      "counterparty_name" TEXT,
+      "contract_type" TEXT,
+      "contract_reference" TEXT,
+      "signature_status" TEXT NOT NULL DEFAULT 'draft',
+      "signed_date" DATE,
+      "effective_date" DATE,
+      "expiry_date" DATE,
+      "contract_value" INTEGER,
+      "currency" TEXT DEFAULT 'ZAR',
+      "document_refs" JSONB NOT NULL DEFAULT '[]',
+      "financial_close_relevance" BOOLEAN DEFAULT FALSE,
+      "notes" TEXT,
+      "created_by_user_id" INTEGER REFERENCES users(id),
+      "created_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updated_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "deleted_at" TIMESTAMP,
+      "deleted_by" INTEGER
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='sseg_applications') THEN
+    CREATE TABLE "sseg_applications" (
+      "id" SERIAL PRIMARY KEY,
+      "project_id" INTEGER NOT NULL REFERENCES project_info(id),
+      "site_id" INTEGER,
+      "authority" TEXT NOT NULL,
+      "application_stage" TEXT NOT NULL DEFAULT 'preparation',
+      "reference_number" TEXT,
+      "submission_date" DATE,
+      "query_date" DATE,
+      "response_due_date" DATE,
+      "approval_date" DATE,
+      "expiry_date" DATE,
+      "required_documents" JSONB NOT NULL DEFAULT '[]',
+      "rejection_notes" TEXT,
+      "query_notes" TEXT,
+      "owner_user_id" INTEGER REFERENCES users(id),
+      "sseg_item_id" INTEGER,
+      "notes" TEXT,
+      "created_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updated_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "deleted_at" TIMESTAMP
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='lens_simulation_sessions') THEN
+    CREATE TABLE "lens_simulation_sessions" (
+      "id" SERIAL PRIMARY KEY,
+      "user_id" INTEGER NOT NULL REFERENCES users(id),
+      "simulated_lens_role" TEXT NOT NULL,
+      "simulated_user_id" INTEGER REFERENCES users(id),
+      "mode" TEXT NOT NULL DEFAULT 'read_only',
+      "is_active" BOOLEAN NOT NULL DEFAULT TRUE,
+      "started_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "ended_at" TIMESTAMP
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_homepage_snapshots') THEN
+    CREATE TABLE "role_homepage_snapshots" (
+      "id" SERIAL PRIMARY KEY,
+      "lens_role" TEXT NOT NULL,
+      "user_id" INTEGER REFERENCES users(id),
+      "snapshot_data" JSONB NOT NULL DEFAULT '{}',
+      "computed_at" TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  END IF;
 END $$;
