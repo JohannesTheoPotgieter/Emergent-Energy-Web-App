@@ -122,9 +122,17 @@ const PortfolioAnalyticsPage = lazy(() => import("@/pages/portfolio-analytics"))
 const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
 const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
 
-const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement"];
-const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement"];
-const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/hse", "/construction"];
+// Gates workspace (Prompt 2)
+const GatesPipelinePage = lazy(() => import("@/pages/gates/gates-pipeline"));
+const GatesBlockedPage = lazy(() => import("@/pages/gates/gates-blocked"));
+const GatesReadyPage = lazy(() => import("@/pages/gates/gates-ready"));
+const GatesExceptionsPage = lazy(() => import("@/pages/gates/gates-exceptions"));
+const GatesClientUpdatesPage = lazy(() => import("@/pages/gates/gates-client-updates"));
+const GatesHandoversPage = lazy(() => import("@/pages/gates/gates-handovers"));
+
+const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers"];
+const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers"];
+const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/hse", "/construction", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers"];
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
 
@@ -232,11 +240,18 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PortfolioAnalyticsPage,
   AdminBackfillPage,
   AdminWorkflowConfigPage,
+  // Gates workspace (Prompt 2)
+  GatesPipelinePage,
+  GatesBlockedPage,
+  GatesReadyPage,
+  GatesExceptionsPage,
+  GatesClientUpdatesPage,
+  GatesHandoversPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
   const effectiveRole = normalizeRoleForPermissions(userRole || companyRole);
-  return ROLE_LANDING_PAGE[effectiveRole] || "/execution-board";
+  return ROLE_LANDING_PAGE[effectiveRole] || "/gates";
 }
 
 function HomeRedirect() {

@@ -17,7 +17,7 @@ import {
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
   MessageSquare, FolderOpen, FileCheck, Search, X,
-  HardHat, Handshake, MapPin,
+  HardHat, Handshake, MapPin, LayoutDashboard, FileText, ClipboardList,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -839,11 +839,12 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
 };
 
 const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
-  delivery: "task-grid",
+  lifecycle: "task-grid",    // Overview tab defaults to Plan sub-tab
+  delivery: "",              // Current Gate — no sub-tabs
   commercial: "revenue-tracking",
-  engineering: "eng-tasks",
-  quality: "quality",
-  collaboration: "chat",
+  engineering: "",           // Timeline — no sub-tabs
+  quality: "",               // History — no sub-tabs
+  collaboration: "local-files", // Files & Evidence defaults to Documents
 };
 
 
@@ -1430,15 +1431,12 @@ export default function ProjectDetailPage() {
 
       <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
         {[
-          { key: "lifecycle", label: "Lifecycle", icon: Milestone, visible: canViewTab.overview },
-          { key: "delivery", label: "Delivery", icon: CalendarDays, visible: canViewTab.overview },
+          { key: "lifecycle", label: "Overview", icon: LayoutDashboard, visible: canViewTab.overview },
+          { key: "delivery", label: "Current Gate", icon: Milestone, visible: canViewTab.overview },
           { key: "commercial", label: "Finance", icon: DollarSign, visible: canViewTab.finance },
-          { key: "engineering", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
-          { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality },
-          { key: "readiness-gate", label: "Readiness Gate", icon: ShieldCheck, visible: canViewTab.overview },
-          { key: "construction", label: "Construction", icon: HardHat, visible: canViewTab.overview },
-          { key: "handover", label: "Handover", icon: Handshake, visible: canViewTab.overview },
-          { key: "collaboration", label: "Collaboration", icon: Users, visible: canViewSubTab.collaboration },
+          { key: "engineering", label: "Timeline", icon: CalendarDays, visible: canViewTab.overview },
+          { key: "collaboration", label: "Files & Evidence", icon: FileText, visible: canViewSubTab.collaboration },
+          { key: "quality", label: "History", icon: ClipboardList, visible: canViewTab.quality || canViewTab.history },
         ].filter(t => t.visible).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeSection === tab.key;
@@ -1460,18 +1458,13 @@ export default function ProjectDetailPage() {
         })}
       </div>
 
-      {activeSection === "lifecycle" && projectInfoId && (
-        <div className="space-y-4" data-testid="lifecycle-section">
-          <StageDetailPanel
-            projectId={projectInfoId}
-            stageCode={stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT"}
-            isAdmin={isAdmin}
-          />
-        </div>
-      )}
-
-      {activeSection === "delivery" && (
-        <div className="space-y-2" data-testid="delivery-section">
+      {/* Overview — gate readiness, status sentence, CriticalControlPanel + delivery overview */}
+      {activeSection === "lifecycle" && (
+        <div className="space-y-4" data-testid="overview-section">
+          {projectInfoId && (
+            <CriticalControlPanel projectId={projectInfoId} />
+          )}
+          {/* Delivery overview — Plan, Board, Calendar, RAID, Commissioning */}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="delivery-sub-tabs">
             {[
               { key: "task-grid", label: "Plan", icon: ListTodo },
@@ -1490,6 +1483,17 @@ export default function ProjectDetailPage() {
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "commissioning" && projectInfoId && <ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} />}
+        </div>
+      )}
+
+      {/* Current Gate — the active stage workspace */}
+      {activeSection === "delivery" && projectInfoId && (
+        <div className="space-y-4" data-testid="current-gate-section">
+          <StageDetailPanel
+            projectId={projectInfoId}
+            stageCode={stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT"}
+            isAdmin={isAdmin}
+          />
         </div>
       )}
 
@@ -1557,78 +1561,51 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {activeSection === "engineering" && canViewTab.engineering && (
-        <div className="space-y-4" data-testid="eng-section">
-          {canViewSubTab.engTasks && <EngTasksTab projectInfoId={projectInfoId ?? null} isAdmin={isAdmin} projectName={projectName} />}
-          {projectInfoId && <DrawingRegisterTab projectId={projectInfoId} projectName={projectName} />}
+      {/* Timeline — stage timeline + project timeline */}
+      {activeSection === "engineering" && (
+        <div className="space-y-4" data-testid="timeline-section">
+          {projectInfoId && (
+            <StageTimeline projectId={projectInfoId} />
+          )}
+          <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />
         </div>
       )}
 
-      {activeSection === "quality" && canViewTab.quality && (
-        <div className="space-y-2" data-testid="quality-section">
-          <QualityTab projectName={projectName} />
-        </div>
-      )}
-
-      {activeSection === "readiness-gate" && projectInfoId && (
-        <div className="space-y-2" data-testid="readiness-gate-section">
-          <FinancialReviewTab projectId={projectInfoId} projectName={projectName} />
-        </div>
-      )}
-
-      {activeSection === "construction" && (
-        <div className="space-y-2" data-testid="construction-section">
-          <div className="flex justify-end">
-            <Link href="/construction"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground gap-1">Open Construction Dashboard<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
-          </div>
-          {projectInfoId && <ProjectConstructionTab projectId={projectInfoId} projectName={projectName} />}
-        </div>
-      )}
-
-      {activeSection === "handover" && (
-        <div className="space-y-2" data-testid="handover-section">
-          <div className="flex justify-end">
-            <Link href="/handover"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground gap-1">Open Handover Dashboard<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
-          </div>
-          {projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} />}
-        </div>
-      )}
-
-      {activeSection === "collaboration" && canViewSubTab.collaboration && (
-        <div className="space-y-2" data-testid="collaboration-section">
-          <div className="flex gap-1.5 flex-nowrap overflow-x-auto scrollbar-hide" data-testid="collab-sub-tabs">
+      {/* Files & Evidence — documents, sharepoint, evidence organized by stage */}
+      {activeSection === "collaboration" && (
+        <div className="space-y-2" data-testid="files-section">
+          <div className="flex gap-1.5 flex-nowrap overflow-x-auto scrollbar-hide" data-testid="files-sub-tabs">
             {[
-              { key: "chat", label: "Comms", icon: MessageSquare, visible: true },
+              { key: "local-files", label: "Documents", icon: FolderOpen, visible: true },
               { key: "approvals", label: "Approvals", icon: FileCheck, visible: true },
-              { key: "local-files", label: "Docs", icon: FolderOpen, visible: true },
-              { key: "timeline", label: "Timeline", icon: History, visible: canViewTab.history },
-              { key: "history", label: "Audit", icon: History, visible: canViewTab.history },
+              { key: "chat", label: "Comms", icon: MessageSquare, visible: true },
             ].filter(st => st.visible).map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
               </Button>
             ))}
           </div>
-          {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
-          {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
           {activeSubTab === "local-files" && <LocalFolderTab projectName={projectName} />}
-          {activeSubTab === "timeline" && canViewTab.history && <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
-          {activeSubTab === "history" && canViewTab.history && (
-            <>
-              <WeeklyReviewWizard
-                projectName={projectName}
-                snapshotMetrics={{
-                  phase: phase || undefined,
-                  completion: projectInfo?.project_pct_complete ?? undefined,
-                  totalRevenue: totalPaidInflows,
-                  totalExpenses,
-                  margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
-                  overdueCount: overdueEngineeringCount,
-                }}
-              />
-              <ProjectHistoryTab projectName={projectName} />
-            </>
-          )}
+          {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
+          {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
+        </div>
+      )}
+
+      {/* History — decision log, meeting log, actions, exceptions, audit */}
+      {activeSection === "quality" && (
+        <div className="space-y-2" data-testid="history-section">
+          <WeeklyReviewWizard
+            projectName={projectName}
+            snapshotMetrics={{
+              phase: phase || undefined,
+              completion: projectInfo?.project_pct_complete ?? undefined,
+              totalRevenue: totalPaidInflows,
+              totalExpenses,
+              margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
+              overdueCount: overdueEngineeringCount,
+            }}
+          />
+          <ProjectHistoryTab projectName={projectName} />
         </div>
       )}
 
