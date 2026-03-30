@@ -1,6 +1,6 @@
 import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, isNull } from "drizzle-orm";
 import { raidItems, insertRaidItemSchema } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
@@ -15,7 +15,7 @@ export function registerRaidRoutes(app: Express): void {
       const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
-      const conditions: ReturnType<typeof eq>[] = [eq(raidItems.projectId, projectId)];
+      const conditions: ReturnType<typeof eq>[] = [eq(raidItems.projectId, projectId), isNull(raidItems.deletedAt) as any];
 
       const typeFilter = req.query.type as string | undefined;
       const statusFilter = req.query.status as string | undefined;
@@ -199,7 +199,15 @@ export function registerRaidRoutes(app: Express): void {
       const hardDelete = req.query.hard === "true";
 
       if (hardDelete) {
-        await db.delete(raidItems).where(eq(raidItems.id, id));
+        const [deleted] = await db.update(raidItems).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(raidItems.id, id)).returning();
+        logAuditFromReq(req, {
+          entityType: "raid_item",
+          entityId: String(id),
+          action: "raid.hard_deleted",
+          changesJson: { title: existing.title, type: existing.type, projectId: existing.projectId },
+        });
+        res.json({ success: true, action: "hard_deleted", record: deleted });
+        return;
       } else {
         await db.update(raidItems).set({ status: "closed", closedAt: new Date(), updatedAt: new Date() }).where(eq(raidItems.id, id));
       }
@@ -207,11 +215,11 @@ export function registerRaidRoutes(app: Express): void {
       logAuditFromReq(req, {
         entityType: "raid_item",
         entityId: String(id),
-        action: hardDelete ? "raid.hard_deleted" : "raid.soft_deleted",
+        action: "raid.soft_deleted",
         changesJson: { title: existing.title, type: existing.type, projectId: existing.projectId },
       });
 
-      res.json({ success: true, action: hardDelete ? "hard_deleted" : "soft_deleted" });
+      res.json({ success: true, action: "soft_deleted" });
     } catch (err: unknown) {
       console.error("[RAID] DELETE error:", err);
       const message = err instanceof Error ? err.message : String(err);

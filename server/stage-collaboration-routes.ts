@@ -570,7 +570,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
         const [existing] = await db.select().from(projectAccess).where(eq(projectAccess.id, id));
         if (!existing) return res.status(404).json({ error: "Access grant not found" });
 
-        await db.delete(projectAccess).where(eq(projectAccess.id, id));
+        await db.update(projectAccess).set({ deletedAt: new Date(), deletedBy: getUser(req).id }).where(eq(projectAccess.id, id)).returning();
         res.json({ success: true });
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);

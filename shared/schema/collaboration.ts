@@ -83,8 +83,10 @@ export const meetingSummaries = pgTable("meeting_summaries", {
   source: text("source").notNull().default("read_ai"),
   rawPayload: text("raw_payload"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertMeetingSummarySchema = createInsertSchema(meetingSummaries).omit({ id: true, createdAt: true } as any);
+export const insertMeetingSummarySchema = createInsertSchema(meetingSummaries).omit({ id: true, createdAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertMeetingSummary = z.infer<typeof insertMeetingSummarySchema>;
 export type MeetingSummary = typeof meetingSummaries.$inferSelect;
 
@@ -128,8 +130,11 @@ export const approvals = pgTable("approvals", {
   approvalType: text("approval_type"),          // 'handover', 'budget', 'vo', 'procurement', 'gate', 'handover_pack', 'exception'
   urgency: text("urgency").default("normal"),   // 'critical', 'high', 'normal', 'low'
   evidenceLinks: text("evidence_links"),        // JSON array of evidence links
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
+  deleteReason: text("delete_reason"),
 });
-export const insertApprovalSchema = createInsertSchema(approvals).omit({ id: true, requestedAt: true, decidedAt: true } as any);
+export const insertApprovalSchema = createInsertSchema(approvals).omit({ id: true, requestedAt: true, decidedAt: true, deletedAt: true, deletedBy: true, deleteReason: true } as any);
 export type InsertApproval = z.infer<typeof insertApprovalSchema>;
 export type Approval = typeof approvals.$inferSelect;
 
@@ -162,8 +167,10 @@ export const feedbackTickets = pgTable("feedback_tickets", {
   adminNotes: text("admin_notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertFeedbackTicketSchema = createInsertSchema(feedbackTickets).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertFeedbackTicketSchema = createInsertSchema(feedbackTickets).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertFeedbackTicket = z.infer<typeof insertFeedbackTicketSchema>;
 export type FeedbackTicket = typeof feedbackTickets.$inferSelect;
 

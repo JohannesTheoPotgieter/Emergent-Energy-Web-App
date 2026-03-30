@@ -1,6 +1,6 @@
 import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, isNull } from "drizzle-orm";
 import { changeRequests, approvals } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
@@ -43,7 +43,7 @@ export function registerChangeControlRoutes(app: Express): void {
         LEFT JOIN users u1 ON cr.requested_by_user_id = u1.id
         LEFT JOIN users u2 ON cr.owner_user_id = u2.id
         LEFT JOIN project_info pi ON cr.project_id = pi.id
-        WHERE cr.project_id = ${projectId}
+        WHERE cr.project_id = ${projectId} AND cr.deleted_at IS NULL
         ORDER BY cr.created_at DESC
       `));
       const items = rowsFromResult(rows);
@@ -228,16 +228,23 @@ export function registerChangeControlRoutes(app: Express): void {
       const existing = await db.select().from(changeRequests).where(eq(changeRequests.id, id));
       if (existing.length === 0) return res.status(404).json({ error: "Not found" });
 
-      await db.delete(changeRequests).where(eq(changeRequests.id, id));
+      // Soft-delete: mark change request as deleted instead of removing the row
+      const user = getEffectiveUser(req);
+      const deleteReason = req.body?.deleteReason || null;
+      const [deleted] = await db.update(changeRequests).set({
+        deletedAt: new Date(),
+        deletedBy: user?.id ?? null,
+        deleteReason,
+      }).where(eq(changeRequests.id, id)).returning();
 
       logAuditFromReq(req, {
         entityType: "change_request",
         entityId: String(id),
-        action: "delete",
-        changesJson: { title: existing[0].title, status: existing[0].status },
+        action: "soft_delete",
+        changesJson: { title: existing[0].title, status: existing[0].status, deleteReason },
       });
 
-      res.json({ success: true });
+      res.json({ success: true, deleted });
     } catch (err: unknown) {
       res.status(500).json({ error: "Failed to delete change request" });
     }

@@ -825,8 +825,10 @@ export const invoiceCaptures = pgTable("invoice_captures", {
   qbSyncStatus: text("qb_sync_status").default("not_synced"),
   documentDriveId: text("document_drive_id"),
   documentItemId: text("document_item_id"),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertInvoiceCaptureSchema = createInsertSchema(invoiceCaptures).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertInvoiceCaptureSchema = createInsertSchema(invoiceCaptures).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertInvoiceCapture = z.infer<typeof insertInvoiceCaptureSchema>;
 export type InvoiceCapture = typeof invoiceCaptures.$inferSelect;
 
@@ -869,8 +871,10 @@ export const procurementItems = pgTable("procurement_items", {
   deliveryActualDate: date("delivery_actual_date"),
   deliveryStatus: text("delivery_status").default("not_ordered"),         // 'not_ordered', 'ordered', 'shipped', 'delivered', 'partial'
   isLongLead: boolean("is_long_lead").default(false),
+  deletedAt: timestamp("deleted_at"),
+  deletedBy: integer("deleted_by"),
 });
-export const insertProcurementItemSchema = createInsertSchema(procurementItems).omit({ id: true, createdAt: true, updatedAt: true } as any);
+export const insertProcurementItemSchema = createInsertSchema(procurementItems).omit({ id: true, createdAt: true, updatedAt: true, deletedAt: true, deletedBy: true } as any);
 export type InsertProcurementItem = z.infer<typeof insertProcurementItemSchema>;
 export type ProcurementItem = typeof procurementItems.$inferSelect;
 

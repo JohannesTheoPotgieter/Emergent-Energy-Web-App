@@ -1164,7 +1164,7 @@ export function registerHandoverRoutes(app: Express) {
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
       const handoverRows = await db.select({ id: projectPdPmHandover.id }).from(projectPdPmHandover).where(eq(projectPdPmHandover.projectId, projectId)).limit(1);
       if (!handoverRows[0]) return res.json({ items: [] });
-      const rows = await db.select().from(handoverStakeholders).where(eq(handoverStakeholders.handoverId, handoverRows[0].id)).orderBy(handoverStakeholders.createdAt);
+      const rows = await db.select().from(handoverStakeholders).where(and(eq(handoverStakeholders.handoverId, handoverRows[0].id), isNull(handoverStakeholders.deletedAt))).orderBy(handoverStakeholders.createdAt);
       res.json({ items: rows });
     } catch (err: any) {
       console.error("[handover] GET stakeholders error:", err);
@@ -1223,9 +1223,9 @@ export function registerHandoverRoutes(app: Express) {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid stakeholder ID" });
-      const deleted = await db.delete(handoverStakeholders).where(eq(handoverStakeholders.id, id)).returning();
+      const deleted = await db.update(handoverStakeholders).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(handoverStakeholders.id, id)).returning();
       if (deleted.length === 0) return res.status(404).json({ error: "Stakeholder not found" });
-      res.json({ success: true });
+      res.json({ success: true, record: deleted[0] });
     } catch (err: any) {
       console.error("[handover] DELETE stakeholders error:", err);
       res.status(500).json({ error: "Could not delete stakeholder." });

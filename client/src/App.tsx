@@ -34,6 +34,7 @@ const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
 const MyWorkAdminSettingsPage = lazy(() => import("@/pages/my-work-admin-settings"));
 const MyWorkPrioritiesPage = lazy(() => import("@/pages/my-work-priorities"));
 const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
+const MyWorkSettingsPage = lazy(() => import("@/pages/my-work-settings"));
 const QmDashboardPage = lazy(() => import("@/pages/qm-dashboard"));
 const EngineeringDashboardPage = lazy(() => import("@/pages/engineering-dashboard"));
 const EngineeringTasksPage = lazy(() => import("@/pages/engineering-tasks"));
@@ -163,6 +164,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   LifecycleBoardPage,
   ExecutionBoardPage,
   MyWorkMeetingsPage,
+  MyWorkSettingsPage,
   RoleSettingsPage,
   SmartImportPage,
   SharePointIntakePage,
