@@ -21,3 +21,4 @@ export * from "./schema/imports";
 export * from "./schema/legacy";
 export * from "./schema/collaboration";
 export * from "./schema/soft-delete";
+export * from "./schema/stage-lifecycle";

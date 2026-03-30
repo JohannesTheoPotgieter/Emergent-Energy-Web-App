@@ -51,6 +51,11 @@ import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
+import { CriticalControlPanel } from "@/components/stage-lifecycle/CriticalControlPanel";
+import { StageTimeline } from "@/components/stage-lifecycle/StageTimeline";
+import { StageDetailPanel } from "@/components/stage-lifecycle/StageDetailPanel";
+import { useProjectStages } from "@/hooks/use-stage-lifecycle";
+import { Milestone } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
 import { PROJECT_PHASE_LABELS, TASK_STATUSES, type ProjectPhase, checkPermission } from "@shared/schema";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
@@ -965,6 +970,9 @@ export default function ProjectDetailPage() {
   const projectInfo = projectsSummary?.find((p: any) => p.project_name === projectName);
   const projectInfoId = projectInfo?.project_info_id;
 
+  // Stage lifecycle data for CriticalControlPanel and Lifecycle tab
+  const { data: stageData } = useProjectStages(projectInfoId);
+
   // ─── V2 Consolidated project query ─────────────────────────────
   const { data: v2Detail } = useProjectDetail(projectInfoId);
   const v2Perms: ProjectPermissions | null = v2Detail?.permissions ?? null;
@@ -1376,6 +1384,14 @@ export default function ProjectDetailPage() {
 
       />
 
+      {/* Stage Lifecycle — Critical Control Panel */}
+      {projectInfoId && (
+        <CriticalControlPanel
+          projectId={projectInfoId}
+          onViewGate={() => navigateToSection("lifecycle")}
+        />
+      )}
+
       {/* Priority badges */}
       <ProjectPriorityBadges projectId={projectInfoId ?? null} />
 
@@ -1414,6 +1430,7 @@ export default function ProjectDetailPage() {
 
       <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
         {[
+          { key: "lifecycle", label: "Lifecycle", icon: Milestone, visible: canViewTab.overview },
           { key: "delivery", label: "Delivery", icon: CalendarDays, visible: canViewTab.overview },
           { key: "commercial", label: "Finance", icon: DollarSign, visible: canViewTab.finance },
           { key: "engineering", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
@@ -1442,6 +1459,16 @@ export default function ProjectDetailPage() {
           );
         })}
       </div>
+
+      {activeSection === "lifecycle" && projectInfoId && (
+        <div className="space-y-4" data-testid="lifecycle-section">
+          <StageDetailPanel
+            projectId={projectInfoId}
+            stageCode={stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT"}
+            isAdmin={isAdmin}
+          />
+        </div>
+      )}
 
       {activeSection === "delivery" && (
         <div className="space-y-2" data-testid="delivery-section">
