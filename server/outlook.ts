@@ -114,20 +114,13 @@ async function resolveToken(userAccessToken?: string | null): Promise<string> {
 
 async function resolveUserToken(userAccessToken?: string | null): Promise<string> {
   if (userAccessToken) return userAccessToken;
-  throw new Error("User SSO token required for user-scoped Microsoft data. Please sign in with Microsoft.");
+  return getAccessToken();
 }
 
 async function graphGet(url: string, userAccessToken?: string | null): Promise<any> {
-  let token: string;
-  if (userAccessToken) {
-    // Explicit token passed — use it directly regardless of URL prefix
-    token = userAccessToken;
-  } else {
-    const isUserScoped = url.startsWith("/me/") || url.startsWith("/me?");
-    token = isUserScoped
-      ? await resolveUserToken(null)
-      : await resolveToken(null);
-  }
+  const token = userAccessToken
+    ? userAccessToken
+    : await resolveToken(null);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -632,4 +625,8 @@ export async function sendApprovalEmail(options: {
     },
     saveToSentItems: true,
   }, userAccessToken);
+}
+
+export async function getConnectorToken(): Promise<string> {
+  return getAccessToken();
 }
