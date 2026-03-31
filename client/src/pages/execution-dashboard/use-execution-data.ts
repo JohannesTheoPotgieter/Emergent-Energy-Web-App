@@ -77,6 +77,8 @@ export interface ComputedKpis {
   qualityOnTrack: number;
   inflowRiskProjects: number;
   outflowRiskProjects: number;
+  overdueInflowFy: number;
+  overdueOutflowFy: number;
 }
 
 export const ExecutionDashboardContext = createContext<ExecutionDashboardContextValue | null>(null);
@@ -172,6 +174,8 @@ export function useExecutionDataProvider(setLocation: (to: string) => void) {
       qualityOnTrack: fp.filter((p) => p.qualityStatus === "On Track").length,
       inflowRiskProjects: fp.filter((p) => p.inflowRisk).length,
       outflowRiskProjects: fp.filter((p) => p.outflowRisk).length,
+      overdueInflowFy: fp.reduce((s, p) => s + (p.overdueInflowFy || 0), 0),
+      overdueOutflowFy: fp.reduce((s, p) => s + (p.overdueOutflowFy || 0), 0),
     };
   }, [filteredProjects]);
 

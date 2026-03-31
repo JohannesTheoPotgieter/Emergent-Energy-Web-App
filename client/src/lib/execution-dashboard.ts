@@ -28,6 +28,8 @@ export interface ExecutionDashboardProject {
   openQualityWarningCount: number;
   pendingApprovalCount: number;
   criticalActionCount: number;
+  overdueInflowFy: number;
+  overdueOutflowFy: number;
 }
 
 export interface ExecutionDashboardResponse {
@@ -46,6 +48,8 @@ export interface ExecutionDashboardResponse {
     openExpenditureFy: number;
     grossProfitFy: number;
     grossMarginPctFy: number | null;
+    overdueInflowFy: number;
+    overdueOutflowFy: number;
     openEngineeringBlockers: number;
     openQualityWarnings: number;
     pendingApprovals: number;
