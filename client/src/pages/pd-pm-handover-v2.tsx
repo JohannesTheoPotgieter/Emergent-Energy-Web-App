@@ -1,3 +1,4 @@
+import { useRoute } from "wouter";
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -329,7 +330,21 @@ function StakeholderTab({ projectId, items, onRefresh, disabled }: { projectId: 
 
 // ===================== MAIN V2 COMPONENT =====================
 
-export default function PdPmHandoverV2({ projectId }: { projectId: number }) {
+/** Route-aware page wrapper used by App.tsx lazy import */
+export default function PdPmHandoverPage() {
+  const [, params] = useRoute("/pd/handover/:projectId");
+  const projectId = Number(params?.projectId);
+  if (!Number.isFinite(projectId) || projectId <= 0) {
+    return (
+      <PageShell className="p-4 md:p-6">
+        <p className="text-destructive">Invalid project ID.</p>
+      </PageShell>
+    );
+  }
+  return <PdPmHandoverV2 projectId={projectId} />;
+}
+
+export function PdPmHandoverV2({ projectId }: { projectId: number }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();

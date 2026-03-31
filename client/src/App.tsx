@@ -83,7 +83,7 @@ const AdminRecoveryPage = lazy(() => import("@/pages/admin-recovery"));
 const StageAdminPage = lazy(() => import("@/components/stage-lifecycle/StageAdminPanel"));
 const AdminControlCenterPage = lazy(() => import("@/pages/admin-control-center"));
 const ActionLaunchpadPage = lazy(() => import("@/pages/action-launchpad"));
-const PdPmHandoverPage = lazy(() => import("@/pages/pd-pm-handover"));
+const PdPmHandoverPage = lazy(() => import("@/pages/pd-pm-handover-v2"));
 const PmHandoverReviewPage = lazy(() => import("@/pages/pm-handover-review"));
 const FinancialReviewQueuePage = lazy(() => import("@/pages/financial-review-queue"));
 const HandoverControlPage = lazy(() => import("@/pages/handover-control"));
