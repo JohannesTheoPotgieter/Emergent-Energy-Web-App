@@ -135,18 +135,18 @@ export const projectExecutionState = pgTable("project_execution_state", {
   phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id),
   phaseNotes: text("phase_notes"),
 
-  // Key dates (planned)
-  pdHandoverDate: text("pd_handover_date"),
-  constructionStartDate: text("construction_start_date"),
-  commissioningDate: text("commissioning_date"),
-  omHandoverDate: text("om_handover_date"),
-  clientHandoverDate: text("client_handover_date"),
+  // Key dates (planned) — migrated from text to date in 20260331_convert_project_dates_to_date.sql
+  pdHandoverDate: date("pd_handover_date"),
+  constructionStartDate: date("construction_start_date"),
+  commissioningDate: date("commissioning_date"),
+  omHandoverDate: date("om_handover_date"),
+  clientHandoverDate: date("client_handover_date"),
 
   // Key dates (actual)
-  constructionStartActual: text("construction_start_actual"),
-  pdHandoverActual: text("pd_handover_actual"),
-  commissioningActual: text("commissioning_actual"),
-  clientHandoverActual: text("client_handover_actual"),
+  constructionStartActual: date("construction_start_actual"),
+  pdHandoverActual: date("pd_handover_actual"),
+  commissioningActual: date("commissioning_actual"),
+  clientHandoverActual: date("client_handover_actual"),
 
   // Escalation
   escalationLevel: text("escalation_level"),
@@ -170,12 +170,12 @@ export const projectExecutionState = pgTable("project_execution_state", {
 
   // Signing
   signedStatus: text("signed_status").notNull().default("NONE"),
-  signedDate: text("signed_date"),
+  signedDate: date("signed_date"),
   signedDocumentLink: text("signed_document_link"),
 
   // CP signed gate
   cpSigned: boolean("cp_signed").notNull().default(false),
-  cpSignedDate: text("cp_signed_date"),
+  cpSignedDate: date("cp_signed_date"),
   cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id),
   cpEvidenceType: text("cp_evidence_type"),
   cpEvidenceRef: text("cp_evidence_ref"),
@@ -201,8 +201,8 @@ export const projectExecutionState = pgTable("project_execution_state", {
   marginBaseline: decimal("margin_baseline", { precision: 8, scale: 4 }),
 
   // Financial review gate
-  siteEstablishmentDate: text("site_establishment_date"),
-  siteEstablishmentActual: text("site_establishment_actual"),
+  siteEstablishmentDate: date("site_establishment_date"),
+  siteEstablishmentActual: date("site_establishment_actual"),
   financialReviewStatus: text("financial_review_status").notNull().default("NOT_STARTED"),
   financialReviewId: integer("financial_review_id"),
 
