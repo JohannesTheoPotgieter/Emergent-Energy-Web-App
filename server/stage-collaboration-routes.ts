@@ -1,5 +1,13 @@
 // ============================================================
 // STAGE COLLABORATION ROUTES — Client commitments, updates, queries, access, financial close tracks
+//
+// DEPRECATION NOTICE (2026-03-31):
+// The client-commitments and client-updates routes in this file are DEPRECATED.
+// Canonical routes are now served by collaboration-workflow-routes.ts using
+// the client_commitments and client_updates tables.
+// These legacy routes are shadowed (canonical registered first in Express).
+// Legacy tables (project_client_commitments, project_client_updates) will be
+// dropped after 90 days of zero usage.
 // ============================================================
 
 import type { Express, Request, Response } from "express";
