@@ -7877,4 +7877,107 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='gate_readiness_pct') THEN
     ALTER TABLE "project_execution_state" ADD COLUMN "gate_readiness_pct" INTEGER;
   END IF;
+
+  -- Contracts soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='contracts') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contracts' AND column_name='deleted_at') THEN
+    ALTER TABLE "contracts" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='contracts') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contracts' AND column_name='deleted_by') THEN
+    ALTER TABLE "contracts" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Feedback tickets soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='feedback_tickets') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='feedback_tickets' AND column_name='deleted_at') THEN
+    ALTER TABLE "feedback_tickets" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='feedback_tickets') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='feedback_tickets' AND column_name='deleted_by') THEN
+    ALTER TABLE "feedback_tickets" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Handover stakeholders soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='handover_stakeholders') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='handover_stakeholders' AND column_name='deleted_at') THEN
+    ALTER TABLE "handover_stakeholders" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='handover_stakeholders') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='handover_stakeholders' AND column_name='deleted_by') THEN
+    ALTER TABLE "handover_stakeholders" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Invoice captures soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='invoice_captures') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_captures' AND column_name='deleted_at') THEN
+    ALTER TABLE "invoice_captures" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='invoice_captures') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_captures' AND column_name='deleted_by') THEN
+    ALTER TABLE "invoice_captures" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Lessons learnt soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='lessons_learnt') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='lessons_learnt' AND column_name='deleted_at') THEN
+    ALTER TABLE "lessons_learnt" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+
+  -- Portfolio rollout plans soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='portfolio_rollout_plans') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='portfolio_rollout_plans' AND column_name='deleted_at') THEN
+    ALTER TABLE "portfolio_rollout_plans" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+
+  -- Project access soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_access') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_access' AND column_name='deleted_at') THEN
+    ALTER TABLE "project_access" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_access') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_access' AND column_name='deleted_by') THEN
+    ALTER TABLE "project_access" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- SSEG applications soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='sseg_applications') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sseg_applications' AND column_name='deleted_at') THEN
+    ALTER TABLE "sseg_applications" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+
+  -- Stage checklist templates soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='deleted_at') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='deleted_by') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Task tags soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='task_tags') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='task_tags' AND column_name='deleted_at') THEN
+    ALTER TABLE "task_tags" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='task_tags') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='task_tags' AND column_name='deleted_by') THEN
+    ALTER TABLE "task_tags" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Task time entries soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='task_time_entries') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='task_time_entries' AND column_name='deleted_at') THEN
+    ALTER TABLE "task_time_entries" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='task_time_entries') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='task_time_entries' AND column_name='deleted_by') THEN
+    ALTER TABLE "task_time_entries" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Template overrides soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='template_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='template_overrides' AND column_name='deleted_at') THEN
+    ALTER TABLE "template_overrides" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='template_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='template_overrides' AND column_name='deleted_by') THEN
+    ALTER TABLE "template_overrides" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- User permission overrides soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='user_permission_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_permission_overrides' AND column_name='deleted_at') THEN
+    ALTER TABLE "user_permission_overrides" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='user_permission_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_permission_overrides' AND column_name='deleted_by') THEN
+    ALTER TABLE "user_permission_overrides" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Work item dependencies soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_item_dependencies') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_item_dependencies' AND column_name='deleted_at') THEN
+    ALTER TABLE "work_item_dependencies" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_item_dependencies') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_item_dependencies' AND column_name='deleted_by') THEN
+    ALTER TABLE "work_item_dependencies" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
 END $$;
