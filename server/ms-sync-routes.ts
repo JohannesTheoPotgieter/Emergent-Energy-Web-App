@@ -289,7 +289,19 @@ export function registerMsSyncRoutes(app: Express) {
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
       const existingAccount = await db.select().from(msAccounts).where(eq(msAccounts.userId, userId)).limit(1);
-      if (existingAccount.length === 0 || !existingAccount[0].ssoAccessToken) {
+      const hasSsoToken = existingAccount.length > 0 && !!existingAccount[0].ssoAccessToken;
+      let hasConnectorToken = false;
+      if (!hasSsoToken) {
+        try {
+          const { isOutlookConfigured, getConnectorToken } = await import("./outlook");
+          if (isOutlookConfigured()) {
+            await getConnectorToken();
+            hasConnectorToken = true;
+          }
+        } catch {}
+      }
+
+      if (!hasSsoToken && !hasConnectorToken) {
         return res.json({
           success: false,
           error: "ms_sso_required",
@@ -298,7 +310,7 @@ export function registerMsSyncRoutes(app: Express) {
         });
       }
 
-      if (existingAccount[0].status !== "active") {
+      if (existingAccount.length > 0 && existingAccount[0].status !== "active") {
         await db.update(msAccounts).set({ status: "active" }).where(eq(msAccounts.userId, userId));
       }
 

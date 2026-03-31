@@ -33,10 +33,14 @@ function shouldAbortSync(synced: number, errorCount: number, totalAttempted: num
 async function getUserToken(userId: number): Promise<string | null> {
   try {
     const { getSsoTokenForUser } = await import("./ms-account-service");
-    return await getSsoTokenForUser(userId);
-  } catch {
-    return null;
-  }
+    const token = await getSsoTokenForUser(userId);
+    if (token) return token;
+  } catch {}
+  try {
+    const { getConnectorToken } = await import("./outlook");
+    return await getConnectorToken();
+  } catch {}
+  return null;
 }
 
 export async function syncUserCalendar(userId: number): Promise<SyncResult> {
