@@ -7811,7 +7811,7 @@ export async function registerRoutes(
           assignedByUserId: userId,
           metadata: null,
           updatedAt: new Date(),
-        });
+        }).onConflictDoNothing();
       } catch (assignErr: any) {
         console.warn("[mytool-task-create] Failed to create entity_assignment, task still created:", assignErr?.message);
       }
