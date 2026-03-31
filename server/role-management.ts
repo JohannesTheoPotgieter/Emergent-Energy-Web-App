@@ -290,10 +290,15 @@ export function registerRoleManagementRoutes(app: Express) {
       const [existing] = await db.select().from(rolePermissions).where(eq(rolePermissions.role, roleKey));
       if (!existing) return res.status(404).json({ error: "Role not found" });
 
+      // Validate and sanitize sections — ensure it's always a clean string array
+      const resolvedSections = sections != null
+        ? migrateSections(parseSections(sections))
+        : parseSections(existing.sections);
+
       const updateData: Record<string, any> = {
         label: label ?? existing.label,
-        description: description ?? existing.description,
-        sections: sections ?? existing.sections,
+        description: description !== undefined ? description : existing.description,
+        sections: resolvedSections,
         canManageUsers: canManageUsers ?? existing.canManageUsers,
         canManageRoles: canManageRoles ?? existing.canManageRoles,
         canEditData: canEditData ?? existing.canEditData,
@@ -315,6 +320,7 @@ export function registerRoleManagementRoutes(app: Express) {
       logPermissionAudit(req, { eventType: "role_updated", targetRole: roleKey, changeDetail: { sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined } });
       res.json(updated);
     } catch (err: any) {
+      console.error("[Roles] PUT /api/roles/:role error:", err.message, err.stack);
       res.status(500).json({ error: err.message });
     }
   });
