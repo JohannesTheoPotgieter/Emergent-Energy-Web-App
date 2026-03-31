@@ -28,6 +28,14 @@ async function api(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
+  const method = (options?.method || "GET").toUpperCase();
+  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    const csrfToken = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith("csrf-token="))
+      ?.split("=")[1];
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+  }
   const res = await fetch(url, { ...options, headers, credentials: "include" });
   if (!res.ok) {
     const err = await res.json().catch(() => null);
