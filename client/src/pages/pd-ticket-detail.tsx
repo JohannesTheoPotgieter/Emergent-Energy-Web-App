@@ -69,8 +69,15 @@ export default function PdTicketDetailPage() {
         .filter((p: any) => p.name)
         .sort((a: any, b: any) => a.name.localeCompare(b.name));
     },
-    enabled: editing,
+    enabled: !!ticketId,
   });
+
+  const { data: allUsers = [] } = useQuery<any[]>({
+    queryKey: ["/api/pd/users"],
+    queryFn: () => pdFetch("/api/pd/users"),
+    enabled: !!ticketId,
+  });
+  const designers = useMemo(() => allUsers.filter((u: any) => u.role === "ENGINEER" || u.role === "PROJECT_DEVELOPER"), [allUsers]);
 
   // Check if linked project has a handover record (project reached PD→PM stage)
   const linkedProjectId = data?.ticket?.projectId;
@@ -136,6 +143,8 @@ export default function PdTicketDetailPage() {
       estimatedProjectValue: t.estimatedProjectValue || "",
       estimatedCost: t.estimatedCost || "",
       financialNotes: t.financialNotes || "",
+      designerUserId: t.designerUserId || "",
+      projectDeveloperUserId: t.projectDeveloperUserId || "",
     });
     setEditing(true);
   };
@@ -233,11 +242,57 @@ export default function PdTicketDetailPage() {
                   onValueChange={v => setEditForm(p => ({ ...p, projectId: v === "__none__" ? null : parseInt(v) }))}
                   placeholder="Select a project..."
                   triggerClassName="h-8 text-xs"
-                  options={[
-                    { value: "__none__", label: "Not linked" },
-                    ...projectsList.map((p: any) => ({ value: String(p.id), label: p.name })),
-                  ]}
+                  options={(() => {
+                    const opts = [
+                      { value: "__none__", label: "Not linked" },
+                      ...projectsList.map((p: any) => ({ value: String(p.id), label: p.name })),
+                    ];
+                    if (t.projectId && data.projectName && !opts.find(o => o.value === String(t.projectId))) {
+                      opts.splice(1, 0, { value: String(t.projectId), label: data.projectName });
+                    }
+                    return opts;
+                  })()}
                   data-testid="edit-project"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Developer</Label>
+                <SearchableSelect
+                  value={editForm.projectDeveloperUserId ? String(editForm.projectDeveloperUserId) : "__none__"}
+                  onValueChange={v => setEditForm(p => ({ ...p, projectDeveloperUserId: v === "__none__" ? null : parseInt(v) }))}
+                  placeholder="Select developer..."
+                  triggerClassName="h-8 text-xs"
+                  options={(() => {
+                    const opts = [
+                      { value: "__none__", label: "Unassigned" },
+                      ...allUsers.map((u: any) => ({ value: String(u.id), label: u.name })),
+                    ];
+                    if (t.projectDeveloperUserId && data.developerName && !opts.find(o => o.value === String(t.projectDeveloperUserId))) {
+                      opts.splice(1, 0, { value: String(t.projectDeveloperUserId), label: data.developerName });
+                    }
+                    return opts;
+                  })()}
+                  data-testid="edit-developer"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Designer</Label>
+                <SearchableSelect
+                  value={editForm.designerUserId ? String(editForm.designerUserId) : "__none__"}
+                  onValueChange={v => setEditForm(p => ({ ...p, designerUserId: v === "__none__" ? null : parseInt(v) }))}
+                  placeholder="Select designer..."
+                  triggerClassName="h-8 text-xs"
+                  options={(() => {
+                    const opts = [
+                      { value: "__none__", label: "Unassigned" },
+                      ...designers.map((u: any) => ({ value: String(u.id), label: u.name })),
+                    ];
+                    if (t.designerUserId && data.designerName && !opts.find(o => o.value === String(t.designerUserId))) {
+                      opts.splice(1, 0, { value: String(t.designerUserId), label: data.designerName });
+                    }
+                    return opts;
+                  })()}
+                  data-testid="edit-designer"
                 />
               </div>
               <div className="col-span-2 md:col-span-4 space-y-1">
@@ -572,7 +627,7 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate, ticketId }: 
                         </td>
                         <td className="p-2"><Badge className={`text-[10px] ${taskStatusColor(task.status)}`}>{task.status}</Badge></td>
                         <td className="p-2"><Badge variant="outline" className="text-[10px]">{task.priority}</Badge></td>
-                        <td className="p-2 text-xs text-muted-foreground">{(task.assignees || []).join(", ") || "—"}</td>
+                        <td className="p-2 text-xs text-muted-foreground">{task.ownerName || "—"}</td>
                         <td className={`p-2 text-xs ${taskOverdue ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
                           {task.dueDate || "—"}
                           {taskOverdue && <AlertTriangle className="h-3 w-3 inline ml-1 text-red-500" />}
