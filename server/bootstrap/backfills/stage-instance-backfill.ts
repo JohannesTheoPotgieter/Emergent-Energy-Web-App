@@ -3,27 +3,32 @@
  * and marks historical projects' prior stages as PROGRESSED.
  *
  * Historical projects should NOT be forced through gates they've already
- * passed. This backfill reads executionPhase from project_execution_state,
+ * passed. This backfill reads executionPhase/phase from project_execution_state,
  * maps it to a StageCode, and marks all prior stages as completed.
+ *
+ * For Hold/Internal/Gone projects, looks up project_phase_history to find
+ * the last real stage the project was in before being parked.
  *
  * Idempotent: only touches projects with zero existing stage instances.
  */
 
 import { db, getDbMode } from "../../db";
-import { eq, sql, and, inArray } from "drizzle-orm";
+import { eq, sql, and, inArray, desc } from "drizzle-orm";
 import {
   projectStageInstances,
   stageDefinitions,
   projectExecutionState,
+  projectPhaseHistory,
   STAGE_CODES,
   type StageCode,
 } from "@shared/schema";
 import {
-  PHASE_TO_STAGE,
-  FULLY_COMPLETED_PHASES,
+  resolveStageFromPhase,
+  isFullyCompletedPhase,
+  isSpecialPhase,
   stagesBefore,
+  SPECIAL_PHASES,
 } from "../../../shared/utils/phase-to-stage-map";
-import type { LifecyclePhase } from "@shared/schema";
 
 export async function runStageInstanceBackfill(
   log: (message: string, source?: string) => void,
@@ -62,19 +67,34 @@ export async function runStageInstanceBackfill(
       return;
     }
 
+    // Lowercase special phases for comparison
+    const specialPhasesLower = SPECIAL_PHASES.map(p => p.toLowerCase());
+
     let created = 0;
     let historicalMarked = 0;
 
     for (const row of rows) {
       const projectId = row.project_id as number;
-
-      // Skip if current_stage_code already set (already initialized through normal flow)
-      if (row.current_stage_code) continue;
-
-      // Determine current stage from executionPhase or phase
+      const existingStageCode = row.current_stage_code as string | null;
       const phaseStr = (row.execution_phase || row.phase || "") as string;
-      const mappedStage = PHASE_TO_STAGE[phaseStr as LifecyclePhase] ?? "S01_FIRST_ASSESSMENT";
-      const isFullyCompleted = FULLY_COMPLETED_PHASES.includes(phaseStr as LifecyclePhase);
+
+      // Determine the target stage code
+      let mappedStage: StageCode;
+      let isCompleted: boolean;
+
+      if (existingStageCode && STAGE_CODES.includes(existingStageCode as StageCode)) {
+        // current_stage_code already set — use it directly (but still create instances)
+        mappedStage = existingStageCode as StageCode;
+        isCompleted = isFullyCompletedPhase(phaseStr);
+      } else if (isSpecialPhase(phaseStr)) {
+        // Hold/Internal/Gone — look up phase history for the last real phase
+        mappedStage = await resolveFromPhaseHistory(projectId, specialPhasesLower);
+        isCompleted = false;
+      } else {
+        // Normal mapping from phase string
+        mappedStage = resolveStageFromPhase(phaseStr);
+        isCompleted = isFullyCompletedPhase(phaseStr);
+      }
 
       // Create all 10 stage instances
       const now = new Date();
@@ -91,7 +111,7 @@ export async function runStageInstanceBackfill(
       created++;
 
       // Mark prior stages as PROGRESSED
-      const priorStages = isFullyCompleted
+      const priorStages = isCompleted
         ? [...STAGE_CODES] as string[]  // All stages completed
         : stagesBefore(mappedStage) as string[];
 
@@ -112,7 +132,7 @@ export async function runStageInstanceBackfill(
       }
 
       // Set current stage to IN_PROGRESS (unless fully completed)
-      if (!isFullyCompleted) {
+      if (!isCompleted) {
         await db
           .update(projectStageInstances)
           .set({
@@ -130,9 +150,9 @@ export async function runStageInstanceBackfill(
       await db
         .update(projectExecutionState)
         .set({
-          currentStageCode: isFullyCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
-          gateStatus: isFullyCompleted ? "PROGRESSED" : "IN_PROGRESS",
-          gateReadinessPct: isFullyCompleted ? 100 : 0,
+          currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
+          gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
+          gateReadinessPct: isCompleted ? 100 : 0,
           updatedAt: now,
         })
         .where(eq(projectExecutionState.projectId, projectId));
@@ -144,4 +164,34 @@ export async function runStageInstanceBackfill(
   } catch (err: unknown) {
     log(`Stage instance backfill error: ${(err instanceof Error ? err.message : String(err))}`, SRC);
   }
+}
+
+/**
+ * For Hold/Internal/Gone projects, look up project_phase_history to find
+ * the last non-special phase the project was in. Falls back to S01.
+ */
+async function resolveFromPhaseHistory(
+  projectId: number,
+  specialPhasesLower: string[],
+): Promise<StageCode> {
+  try {
+    const history = await db
+      .select({ fromPhase: projectPhaseHistory.fromPhase })
+      .from(projectPhaseHistory)
+      .where(eq(projectPhaseHistory.projectId, projectId))
+      .orderBy(desc(projectPhaseHistory.changedAt))
+      .limit(10);
+
+    // Find the most recent fromPhase that isn't itself a special phase
+    for (const row of history) {
+      const from = row.fromPhase;
+      if (from && !specialPhasesLower.includes(from.trim().toLowerCase())) {
+        return resolveStageFromPhase(from);
+      }
+    }
+  } catch {
+    // Phase history table may not have data — fall through to default
+  }
+
+  return "S01_FIRST_ASSESSMENT";
 }
