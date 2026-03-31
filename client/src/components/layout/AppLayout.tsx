@@ -12,7 +12,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/component
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { buildVisibleTopSections, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
+import { buildVisibleTopSections, getAllowedSectionKeysForLens, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useNavPreferences } from "@/hooks/use-nav-preferences";
@@ -40,7 +40,7 @@ function isDirectResultUrl(url?: string | null) {
 }
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const { user, logout } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -80,8 +80,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const effectiveCompanyRole = companyRole || user?.role || null;
 
+  // Derive allowed section keys from lens profile when simulating
+  const lensAllowedSectionKeys = useMemo(() => {
+    if (!lens.simulation) return null;
+    const profile = lens.getActiveLensProfile();
+    return getAllowedSectionKeysForLens(profile.allowedModules);
+  }, [lens.simulation, lens.activeLens, lens.getActiveLensProfile]);
+
   const visibleSections = useMemo(() => {
-    const sections = buildVisibleTopSections({ canViewPath, companyRole: effectiveCompanyRole });
+    const sections = buildVisibleTopSections({
+      canViewPath,
+      companyRole: lens.simulation ? null : effectiveCompanyRole,
+      allowedSectionKeys: lensAllowedSectionKeys,
+    });
     // Apply user's custom section order if set
     if (sectionOrder.length > 0) {
       return [...sections].sort((a, b) => {
@@ -94,7 +105,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
     }
     return sections;
-  }, [canViewPath, sectionOrder, effectiveCompanyRole]);
+  }, [canViewPath, sectionOrder, effectiveCompanyRole, lensAllowedSectionKeys, lens.simulation]);
+
+  // Redirect to the active lens's landing page on lens switch
+  const prevLensRef = useRef(lens.activeLens);
+  useEffect(() => {
+    if (prevLensRef.current !== lens.activeLens) {
+      prevLensRef.current = lens.activeLens;
+      const profile = lens.getActiveLensProfile();
+      navigate(profile.landingPage);
+    }
+  }, [lens.activeLens, lens.getActiveLensProfile, navigate]);
 
   const activeSection = useMemo(() => visibleSections.find((section) => section.match(location)) ?? visibleSections[0], [location, visibleSections]);
   const quickCreateActions = useMemo(() => {

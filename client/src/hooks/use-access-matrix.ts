@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions, type PermissionAction, type PermissionEntity } from "@shared/schema";
 import { getPermissionEntityForPath, getAppSectionForPath } from "@/config/page-registry";
 import { useAuth } from "./use-auth";
+import { useLensContext } from "./use-lens-context";
 
 interface PermissionsResponse {
   entityPermissions?: Record<string, Record<string, boolean>> | null;
@@ -12,8 +13,13 @@ interface PermissionsResponse {
 
 export function useAccessMatrix() {
   const { user, isLoading: authLoading } = useAuth();
+  const lens = useLensContext();
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
-  const effectiveRole = normalizeRoleForPermissions(companyRole || user?.role || null);
+
+  // When simulating, use the lens's effective permission role instead of localStorage
+  const effectiveRole = lens.simulation
+    ? normalizeRoleForPermissions(lens.effectivePermissionRole)
+    : normalizeRoleForPermissions(companyRole || user?.role || null);
 
   const { data: permissions, isLoading: permissionsLoading } = useQuery<PermissionsResponse>({
     queryKey: ["auth-permissions-matrix", effectiveRole],
