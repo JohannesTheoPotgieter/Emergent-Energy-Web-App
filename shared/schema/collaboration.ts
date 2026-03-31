@@ -34,6 +34,7 @@ export const notifications = pgTable("notifications", {
   eventType: text("event_type").notNull(),
   title: text("title").notNull(),
   body: text("body"),
+  /** @deprecated Denormalized display field. Use projectId FK + join instead. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id),
   linkedTaskId: integer("linked_task_id"),
@@ -210,6 +211,7 @@ export const auditEvents = pgTable("audit_events", {
   entityId: text("entity_id"),
   action: text("action").notNull(),
   changesJson: jsonb("changes_json"),
+  /** @deprecated Denormalized display field. Use projectId FK + join instead. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id),
   correlationId: text("correlation_id"),
@@ -422,6 +424,7 @@ export const teamsChatGroups = pgTable("teams_chat_groups", {
   name: text("name").notNull(),
   groupType: text("group_type").notNull().default("department"),
   department: text("department"),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id),
   teamsChatId: text("teams_chat_id"),
