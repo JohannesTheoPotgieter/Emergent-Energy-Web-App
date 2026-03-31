@@ -117,6 +117,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminControlCenter", path: "/admin/control-center", label: "Control Center", iconKey: "Gauge", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminControlCenterPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECTS", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },
   { id: "actionLaunchpad", path: "/actions/launchpad", label: "Quick Create", routeComponentKey: "ActionLaunchpadPage" },
+  // Active version: pd-pm-handover-v2.tsx. v1 removed 2026-03-31.
   { id: "pdPmHandover", path: "/pd/handover/:projectId", label: "PD to PM Handover", permissionEntity: "handover", routeComponentKey: "PdPmHandoverPage" },
   { id: "pmHandoverReview", path: "/pm/handover-review", label: "PM Handover Review", permissionEntity: "handover", routeComponentKey: "PmHandoverReviewPage" },
   { id: "financialReviewQueue", path: "/governance/financial-reviews", label: "Financial Review Queue", iconKey: "DollarSign", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "approvals", showInSidebar: true, routeComponentKey: "FinancialReviewQueuePage" },
