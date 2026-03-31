@@ -190,7 +190,7 @@ export default function UserAssignmentPicker({
   const internalAssignables = assignables.filter((entry) => entry.assigneeType === "internal_user");
   const externalAssignables = assignables.filter((entry) => entry.assigneeType !== "internal_user");
 
-  const effectiveAssignmentSource = localAssignments ?? assignments ?? [];
+  const effectiveAssignmentSource = localAssignments ?? effectiveAssignments ?? [];
   const canonicalAssignments = effectiveAssignmentSource.filter((assignment) => assignment.active);
   const internalAssignments = canonicalAssignments.filter((assignment) => assignment.assigneeType === "internal_user");
   const externalAssignments = canonicalAssignments.filter((assignment) => assignment.assigneeType !== "internal_user");
