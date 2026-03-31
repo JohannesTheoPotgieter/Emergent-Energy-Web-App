@@ -72,8 +72,8 @@ function ProjectLinker({ priorityId, existingProjectIds, onDone }: { priorityId:
             : summaryData?.projects || summaryData?.data?.rows || [];
           if (summaryRows.length > 0) {
             return summaryRows.map((p: any) => ({
-              id: p.id,
-              projectName: p.projectName || p.project_name || p.name || `Project ${p.id}`,
+              id: p.id || p.project_info_id,
+              projectName: p.projectName || p.project_name || p.name || `Project ${p.id || p.project_info_id}`,
             }));
           }
         }
