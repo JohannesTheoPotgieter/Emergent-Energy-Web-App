@@ -665,6 +665,7 @@ export function registerMsSyncRoutes(app: Express) {
               LEFT JOIN project_info pi ON wi.project_id = pi.id
               WHERE wi.deleted_at IS NULL
                 AND wi.workstream IS DISTINCT FROM 'PERSONAL'
+                AND wi.workstream IS DISTINCT FROM 'ENG'
                 AND (wi.owner_user_id = ${userId}
                      OR EXISTS (SELECT 1 FROM work_item_assignments wia
                                 WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
@@ -672,7 +673,24 @@ export function registerMsSyncRoutes(app: Express) {
         ).then((r: any) => Array.isArray(r) ? r : (r.rows || [])),
 
         // Read ENG tasks from work_items
-        db.select().from(workItems).where(
+        db.select({
+          id: workItems.id,
+          title: workItems.title,
+          status: workItems.status,
+          projectId: workItems.projectId,
+          projectName: projectInfo.projectName,
+          ownerUserId: workItems.ownerUserId,
+          workstream: workItems.workstream,
+          source: workItems.source,
+          startDate: workItems.startDate,
+          endDate: workItems.endDate,
+          percentComplete: workItems.percentComplete,
+          scheduledDate: workItems.scheduledDate,
+          scheduledStartTime: workItems.scheduledStartTime,
+          scheduledEndTime: workItems.scheduledEndTime,
+        }).from(workItems)
+          .leftJoin(projectInfo, eq(workItems.projectId, projectInfo.id))
+          .where(
           and(
             eq(workItems.workstream, "ENG"),
             eq(workItems.ownerUserId, userId),
@@ -933,9 +951,9 @@ export function registerMsSyncRoutes(app: Express) {
         projectId: t.projectId ?? null,
         projectName: t.projectName,
         lifecyclePhase: t.lifecyclePhaseTag,
-        assigneeUserId: t.assigneeUserId,
+        assigneeUserId: t.ownerUserId ?? t.assigneeUserId,
         assigneeName: t.assigneeName,
-        resolvedAssignee: resolveUserId(t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
+        resolvedAssignee: resolveUserId(t.ownerUserId ?? t.assigneeUserId) || resolveTextNameToUser(t.assigneeName),
         scheduledDate: t.scheduledDate || null,
         scheduledStartTime: t.scheduledStartTime || null,
         scheduledEndTime: t.scheduledEndTime || null,
@@ -985,19 +1003,29 @@ export function registerMsSyncRoutes(app: Express) {
         });
       });
 
-      const allTasks = [
-        ...personal.map((t: any) => ({ ...t, _source: "personal" })),
-        ...operational.map((t: any) => ({ ...t, _source: "operational" })),
-        ...trRegister.map((t: any) => ({ ...t, _source: "tr_register" })),
-        ...approvalsEngineering.map((t: any) => ({ ...t, _source: "approvals" })),
-        ...approvalsQuality.map((t: any) => ({ ...t, _source: "approvals" })),
-        ...approvalsGeneral.map((t: any) => ({ ...t, _source: "approvals" })),
-        ...deliverablesMapped.map((t: any) => ({ ...t, _source: "deliverables" })),
-        ...planTasksMapped,
-        ...engineeringTasksMapped,
-        ...qualityTasksMapped,
-        ...microsoftItemsMapped.map((t: any) => ({ ...t, _source: "microsoft" })),
-      ];
+      const seenTaskIds = new Set<string>();
+      const dedupPush = (arr: any[], item: any) => {
+        const key = `${item._source}-${item.id}`;
+        if (!seenTaskIds.has(key)) {
+          seenTaskIds.add(key);
+          arr.push(item);
+        }
+      };
+      const allTasks: any[] = [];
+      for (const t of personal.map((t: any) => ({ ...t, _source: "personal" }))) dedupPush(allTasks, t);
+      for (const t of operational.map((t: any) => ({ ...t, _source: "operational" }))) dedupPush(allTasks, t);
+      for (const t of trRegister.map((t: any) => ({ ...t, _source: "tr_register" }))) dedupPush(allTasks, t);
+      for (const t of approvalsEngineering.map((t: any) => ({ ...t, _source: "approvals" }))) dedupPush(allTasks, t);
+      for (const t of approvalsQuality.map((t: any) => ({ ...t, _source: "approvals" }))) dedupPush(allTasks, t);
+      for (const t of approvalsGeneral.map((t: any) => ({ ...t, _source: "approvals" }))) dedupPush(allTasks, t);
+      for (const t of deliverablesMapped.map((t: any) => ({ ...t, _source: "deliverables" }))) dedupPush(allTasks, t);
+      for (const t of engineeringTasksMapped) dedupPush(allTasks, t);
+      for (const t of planTasksMapped) {
+        const globalKey = `engineering_task-${t.id}`;
+        if (!seenTaskIds.has(globalKey)) dedupPush(allTasks, t);
+      }
+      for (const t of qualityTasksMapped) dedupPush(allTasks, t);
+      for (const t of microsoftItemsMapped.map((t: any) => ({ ...t, _source: "microsoft" }))) dedupPush(allTasks, t);
 
       res.json({
         tasks: allTasks,
