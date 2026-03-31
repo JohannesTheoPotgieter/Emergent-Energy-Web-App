@@ -771,12 +771,6 @@ router.get("/api/outlook/events", requireAuth, async (req, res) => {
       } catch (graphErr: any) {
         console.log("[Outlook] Graph API call failed with user token:", graphErr.message);
       }
-    } else {
-      try {
-        events = await outlook.getCalendarEvents(start as string, end as string);
-      } catch (fallbackErr: any) {
-        console.log("[Outlook] Connector fallback failed:", fallbackErr.message);
-      }
     }
 
     if (events.length === 0 && userId) {
@@ -784,14 +778,15 @@ router.get("/api/outlook/events", requireAuth, async (req, res) => {
         const { db } = await import("../db");
         const { msObjects } = await import("@shared/schema");
         const { and, eq, gte, lte } = await import("drizzle-orm");
-        const startDate = `${start}T00:00:00`;
-        const endDate = `${end}T23:59:59`;
+        const startDate = new Date(`${start}T00:00:00`);
+        const endDate = new Date(`${end}T23:59:59`);
+        const { sql: sqlTag } = await import("drizzle-orm");
         const synced = await db.select().from(msObjects).where(
           and(
             eq(msObjects.userId, userId),
             eq(msObjects.type, "event"),
-            gte(msObjects.receivedOrStartDatetime, startDate),
-            lte(msObjects.receivedOrStartDatetime, endDate)
+            sqlTag`${msObjects.receivedOrStartDatetime} >= ${startDate}`,
+            sqlTag`${msObjects.receivedOrStartDatetime} <= ${endDate}`
           )
         );
         events = synced.map((s: any) => {

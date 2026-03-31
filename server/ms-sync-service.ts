@@ -36,10 +36,6 @@ async function getUserToken(userId: number): Promise<string | null> {
     const token = await getSsoTokenForUser(userId);
     if (token) return token;
   } catch {}
-  try {
-    const { getConnectorToken } = await import("./outlook");
-    return await getConnectorToken();
-  } catch {}
   return null;
 }
 

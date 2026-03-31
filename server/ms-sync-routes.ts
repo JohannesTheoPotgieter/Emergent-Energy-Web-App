@@ -289,28 +289,16 @@ export function registerMsSyncRoutes(app: Express) {
       if (!userId) return res.status(401).json({ error: "auth_required" });
 
       const existingAccount = await db.select().from(msAccounts).where(eq(msAccounts.userId, userId)).limit(1);
-      const hasSsoToken = existingAccount.length > 0 && !!existingAccount[0].ssoAccessToken;
-      let hasConnectorToken = false;
-      if (!hasSsoToken) {
-        try {
-          const { isOutlookConfigured, getConnectorToken } = await import("./outlook");
-          if (isOutlookConfigured()) {
-            await getConnectorToken();
-            hasConnectorToken = true;
-          }
-        } catch {}
-      }
-
-      if (!hasSsoToken && !hasConnectorToken) {
+      if (existingAccount.length === 0 || !existingAccount[0].ssoAccessToken) {
         return res.json({
           success: false,
           error: "ms_sso_required",
-          message: "Please sign in with Microsoft to sync your calendar, email, and teams data.",
+          message: "Please sign in with Microsoft to sync your calendar, email, and teams data. Each user must link their own Microsoft account to see their own calendar and emails.",
           results: [],
         });
       }
 
-      if (existingAccount.length > 0 && existingAccount[0].status !== "active") {
+      if (existingAccount[0].status !== "active") {
         await db.update(msAccounts).set({ status: "active" }).where(eq(msAccounts.userId, userId));
       }
 
