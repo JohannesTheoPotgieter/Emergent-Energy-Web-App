@@ -241,7 +241,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'hse' | '
   | 'stage_lifecycle' | 'stage_exceptions' | 'stage_dependencies' | 'stage_admin'
   | 'stage_gate' | 'exception' | 'stage_config' | 'gate_override'
   | 'project_charter' | 'client_update' | 'handover_acceptance'
-  | 'performance' | 'project_access_mgmt';
+  | 'performance' | 'project_access_mgmt'
+  | 'hse_dashboard' | 'hse_compliance' | 'hse_sseg' | 'hse_incidents';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
 export const AUTHORITY_ACTIONS = [
   'view',
@@ -400,6 +401,42 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'hse_dashboard',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'hse_compliance',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'hse_sseg',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'SSEG_MANAGER', 'HSE_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'SSEG_MANAGER', 'HSE_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'SSEG_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'hse_incidents',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
