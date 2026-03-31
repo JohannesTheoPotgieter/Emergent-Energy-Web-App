@@ -111,12 +111,16 @@ export const DEPARTMENTS = [
 ];
 
 export const NAV_SECTIONS = [
-  { key: "HOME", label: "Home", description: "Home dashboard" },
-  { key: "MY_WORK", label: "My Work", description: "My Tasks, Approvals, Inbox, Calendar, Meetings" },
-  { key: "PROJECTS", label: "Projects", description: "Project List, Lifecycle, Engineering, Quality, PD, Construction, Handover" },
-  { key: "FINANCE", label: "Finance", description: "Cashflow, Costs, Revenue, GP Tracker, Procurement" },
-  { key: "REPORTS", label: "Reports", description: "Priorities, PM Reports, Eng Reports, SOPs, Training, Feedback" },
-  { key: "ADMIN", label: "Admin", description: "Control Center, Smart Import, Roles & Permissions, Audit Log" },
+  { key: "HOME", label: "Home", description: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Priorities, Inbox" },
+  { key: "PORTFOLIO", label: "Company", description: "Lifecycle Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions" },
+  { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD Dashboard, Pipeline / Opportunities, PD Tickets, Clients, Handover Queue, PD Reports" },
+  { key: "PROJECT_DELIVERY", label: "Project Delivery", description: "Execution Dashboard, Portfolio, All Projects, Construction, Procurement, PO Approvals, Payment Requests, Milestones, Weekly Reviews, Handover & Closeout, Financial Reviews, Sites" },
+  { key: "HSE", label: "HSE", description: "HSE Dashboard, Compliance / SSEG" },
+  { key: "ENGINEERING", label: "Engineering", description: "Engineering Dashboard, Task Board, Standup" },
+  { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Inspections / NCRs" },
+  { key: "FINANCE", label: "Finance", description: "Cashflow, Revenue, COS, GP / Margin, FYE Revenue, Counterparties, Subcontractors, Invoice Patterns" },
+  { key: "REPORTS", label: "Reports", description: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance" },
+  { key: "ADMIN", label: "Admin", description: "Control Center, Users & Roles, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery" },
 ];
 
 export const ENTITY_DESCRIPTIONS: Record<string, string> = {
@@ -217,6 +221,10 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_commissioning: "Project detail > Commissioning & closeout",
   pd_dependencies: "Project detail > Linked dependencies",
   pd_raid: "Project detail > RAID log (Risks, Actions, Issues)",
+  hse_dashboard: "HSE Dashboard — health, safety & environment overview",
+  hse_compliance: "HSE Compliance — regulatory compliance tracking",
+  hse_sseg: "SSEG — small-scale embedded generation compliance",
+  hse_incidents: "HSE Incidents — incident reporting & investigation",
   dashboard_widgets: "Home dashboard — widget cards & charts",
   governance: "Governance — phase gate & compliance controls",
   operational_tasks: "Operational Tasks — ad-hoc task tracking (via work_items)",
@@ -247,6 +255,10 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
     label: "Engineering",
     entities: ["engineering", "eng_tasks", "eng_stages", "eng_sync", "eng_inbox"],
   },
+  hse: {
+    label: "HSE",
+    entities: ["hse_dashboard", "hse_compliance", "hse_sseg", "hse_incidents"],
+  },
   quality: {
     label: "Quality",
     entities: ["quality"],
@@ -255,13 +267,13 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
     label: "Finance",
     entities: ["cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
   },
-  knowledge: {
-    label: "Knowledge",
-    entities: ["ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "leaderboard", "training", "knowledge_game", "feedback", "department_scores"],
+  reports: {
+    label: "Reports & Knowledge",
+    entities: ["reports", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "leaderboard", "training", "knowledge_game", "feedback", "department_scores"],
   },
   collaboration: {
     label: "Collaboration",
-    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings", "reports"],
+    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings"],
   },
   admin: {
     label: "Admin",
