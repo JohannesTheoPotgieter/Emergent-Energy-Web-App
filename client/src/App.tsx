@@ -14,6 +14,7 @@ import { ShieldAlert, ArrowLeft, Loader2 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
+import { LensProvider } from "@/hooks/use-lens-context";
 import { lazy, Suspense, useEffect } from "react";
 
 // Eagerly loaded pages (critical path — login, home, not-found)
@@ -82,7 +83,7 @@ const AdminRecoveryPage = lazy(() => import("@/pages/admin-recovery"));
 const StageAdminPage = lazy(() => import("@/components/stage-lifecycle/StageAdminPanel"));
 const AdminControlCenterPage = lazy(() => import("@/pages/admin-control-center"));
 const ActionLaunchpadPage = lazy(() => import("@/pages/action-launchpad"));
-const PdPmHandoverPage = lazy(() => import("@/pages/pd-pm-handover"));
+const PdPmHandoverPage = lazy(() => import("@/pages/pd-pm-handover-v2"));
 const PmHandoverReviewPage = lazy(() => import("@/pages/pm-handover-review"));
 const FinancialReviewQueuePage = lazy(() => import("@/pages/financial-review-queue"));
 const HandoverControlPage = lazy(() => import("@/pages/handover-control"));
@@ -125,6 +126,8 @@ const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
 const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
 
 // Gates workspace (Prompt 2)
+const MilestoneTrackerPage = lazy(() => import("@/pages/milestone-tracker"));
+
 const GatesPipelinePage = lazy(() => import("@/pages/gates/gates-pipeline"));
 const GatesBlockedPage = lazy(() => import("@/pages/gates/gates-blocked"));
 const GatesReadyPage = lazy(() => import("@/pages/gates/gates-ready"));
@@ -134,9 +137,11 @@ const GatesHandoversPage = lazy(() => import("@/pages/gates/gates-handovers"));
 const GatesQueriesPage = lazy(() => import("@/pages/gates/gates-queries"));
 const GatesCommitmentsPage = lazy(() => import("@/pages/gates/gates-commitments"));
 
-const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
-const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
+const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/milestone-tracker", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
+const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/milestone-tracker", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
 const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/hse", "/construction", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers"];
+const HSE_ALLOWED_PATHS = ["/", "/hse", "/quality", "/quality/ncrs", "/projects", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/construction", "/handover", "/handover-control", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers", "/gates/client-updates", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/reports/center"];
+const SSEG_ALLOWED_PATHS = ["/", "/hse", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/construction", "/handover", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers", "/gates/client-updates", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/reports/center"];
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
 
@@ -246,6 +251,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PortfolioAnalyticsPage,
   AdminBackfillPage,
   AdminWorkflowConfigPage,
+  MilestoneTrackerPage,
   // Gates workspace (Prompt 2)
   GatesPipelinePage,
   GatesBlockedPage,
@@ -361,6 +367,24 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     }
   }
 
+  if (effectiveRole === "HSE_MANAGER") {
+    const allowed = HSE_ALLOWED_PATHS.some(p =>
+      p === location || (p === "/projects" && location.startsWith("/project/"))
+    );
+    if (!allowed) {
+      return <Redirect to="/hse" />;
+    }
+  }
+
+  if (effectiveRole === "SSEG_MANAGER") {
+    const allowed = SSEG_ALLOWED_PATHS.some(p =>
+      p === location || (p === "/projects" && location.startsWith("/project/"))
+    );
+    if (!allowed) {
+      return <Redirect to="/hse" />;
+    }
+  }
+
   const entity = getPermissionEntityForPath(location);
   if (entity && effectiveRole) {
     const ep = permissions?.entityPermissions;
@@ -403,6 +427,7 @@ function ProtectedPages() {
   usePageTitle(location);
 
   return (
+    <LensProvider>
     <RoleGuard>
     <AppLayout>
       <ErrorBoundary>
@@ -423,6 +448,7 @@ function ProtectedPages() {
       </ErrorBoundary>
     </AppLayout>
     </RoleGuard>
+    </LensProvider>
   );
 }
 

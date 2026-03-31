@@ -37,13 +37,7 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/admin", redirectTo: "/admin/control-center" },
   { path: "/admin/legacy-utilities", redirectTo: "/admin/control-center" },
   // Prompt 2 — old nav destinations that moved
-  { path: "/lifecycle-board", redirectTo: "/gates" },
-  { path: "/execution-board", redirectTo: "/gates" },
-  { path: "/execution-board/program", redirectTo: "/gates" },
-  { path: "/execution-board/construction", redirectTo: "/gates" },
-  { path: "/execution-board/finance", redirectTo: "/gates" },
   { path: "/exceptions", redirectTo: "/gates/exceptions" },
-  { path: "/weekly-reviews", redirectTo: "/gates/client-updates" },
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
@@ -67,10 +61,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "qualityNcrList", path: "/quality/ncrs", label: "NCR List", iconKey: "ListTodo", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "NcrListPage" },
   { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail", permissionEntity: "quality", showInSidebar: false, routeComponentKey: "NcrDetailPage" },
   { id: "engineering", path: "/engineering", label: "Engineering", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", roleLandingEligibility: ["ENGINEERING_MANAGER", "ENGINEER"] },
-  { id: "engineeringTasks", path: "/engineering/tasks", label: "Task Execution", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
+  { id: "engineeringTasks", path: "/engineering/tasks", label: "Task Board", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
   { id: "engineeringStandup", path: "/engineering/standup", label: "Engineering Standup", iconKey: "Users", navGroup: "ENGINEERING", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "EngineeringStandupPage" },
   { id: "engineeringAudit", path: "/engineering/audit", label: "Engineering Audit Log", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "EngineeringAuditPage" },
-  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "LifecycleBoardPage" },
+  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle Board", iconKey: "Layers", navGroup: "PORTFOLIO", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "LifecycleBoardPage" },
   { id: "executionBoard", path: "/execution-board", label: "Execution Board", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], roleLandingEligibility: ["PROJECT_MANAGER_SITE", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"], matchSubRoutes: true },
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardConstruction", path: "/execution-board/construction", label: "Construction View", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
@@ -127,17 +121,18 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminControlCenter", path: "/admin/control-center", label: "Control Center", iconKey: "Gauge", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminControlCenterPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECTS", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },
   { id: "actionLaunchpad", path: "/actions/launchpad", label: "Quick Create", routeComponentKey: "ActionLaunchpadPage" },
+  // Active version: pd-pm-handover-v2.tsx. v1 removed 2026-03-31.
   { id: "pdPmHandover", path: "/pd/handover/:projectId", label: "PD to PM Handover", permissionEntity: "handover", routeComponentKey: "PdPmHandoverPage" },
   { id: "pmHandoverReview", path: "/pm/handover-review", label: "PM Handover Review", permissionEntity: "handover", routeComponentKey: "PmHandoverReviewPage" },
   { id: "financialReviewQueue", path: "/governance/financial-reviews", label: "Financial Review Queue", iconKey: "DollarSign", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "approvals", showInSidebar: true, routeComponentKey: "FinancialReviewQueuePage" },
   { id: "pmApprovals", path: "/pm/approvals", label: "Approvals", iconKey: "ClipboardCheck", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "approvals", showInSidebar: true, routeComponentKey: "ApprovalsPage" },
   { id: "pmDeliverables", path: "/pm/deliverables", label: "Deliverables", iconKey: "Package", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "deliverables", showInSidebar: true, routeComponentKey: "PMDeliverablesPage" },
   { id: "handoverControl", path: "/handover-control", label: "PD to PM Handover", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
-  { id: "taskManagement", path: "/tasks", label: "Task Management", iconKey: "LayoutGrid", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "task_management", showInSidebar: true, routeComponentKey: "TaskManagementPage" },
+  // Task Management removed from Project Delivery navigation
   { id: "standups", path: "/standups", label: "Standups", iconKey: "Users", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "StandupsPage" },
   { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },
   { id: "phaseTemplates", path: "/admin/phase-templates", label: "Phase Templates", iconKey: "ListChecks", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "PhaseTemplatesPage" },
-  { id: "projectCreate", path: "/project-create", label: "Create Project", permissionEntity: "project_create", routeComponentKey: "ProjectCreatePage" },
+  { id: "projectCreate", path: "/project-create", label: "Create Project", permissionEntity: "project_creation", routeComponentKey: "ProjectCreatePage" },
   { id: "departmentScores", path: "/department-scores", label: "Department Scores", iconKey: "BarChart3", navGroup: "KNOWLEDGE", permissionEntity: "leaderboard", showInSidebar: false, routeComponentKey: "DepartmentScoresPage" },
   { id: "engTemplateAdmin", path: "/admin/eng-templates", label: "Engineering Templates", iconKey: "FileText", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "EngTemplateAdminPage" },
   { id: "exceptions", path: "/exceptions", label: "Exceptions", iconKey: "ShieldAlert", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExceptionsPage" },
@@ -146,12 +141,12 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "opportunities", path: "/opportunities", label: "Opportunities", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "OpportunitiesPage" },
   // New module pages (Phase C)
   { id: "constructionDashboard", path: "/construction", label: "Construction", iconKey: "HardHat", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ConstructionDashboardPage" },
-  { id: "procurementDashboard", path: "/procurement", label: "Procurement", iconKey: "Package", navGroup: "FINANCE", permissionEntity: "subcontractors", showInSidebar: true, routeComponentKey: "ProcurementDashboardPage" },
+  { id: "procurementDashboard", path: "/procurement", label: "Procurement", iconKey: "Package", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "ProcurementDashboardPage" },
   // EPC Workflow Phase 1
   { id: "poApprovalBoard", path: "/po-approval-board", label: "PO Approvals", iconKey: "FileText", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "POApprovalBoardPage" },
   { id: "paymentRequestBoard", path: "/payment-request-board", label: "Payment Requests", iconKey: "CreditCard", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "PaymentRequestBoardPage" },
   { id: "paymentBatchManager", path: "/payment-batch-manager", label: "Payment Batches", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "PaymentBatchManagerPage" },
-  { id: "hseDashboard", path: "/hse", label: "Health, Safety & Environment", iconKey: "ShieldAlert", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "HseDashboardPage" },
+  { id: "hseDashboard", path: "/hse", label: "Health, Safety & Environment", iconKey: "ShieldAlert", navGroup: "HSE", permissionEntity: "hse", showInSidebar: true, routeComponentKey: "HseDashboardPage", roleLandingEligibility: ["HSE_MANAGER", "SSEG_MANAGER"] },
   { id: "handoverDashboard", path: "/handover", label: "Handover & Closeout", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverDashboardPage" },
   // PD-PM Handover V2 extensions
   { id: "lessonsLearnt", path: "/admin/lessons", label: "Lessons Learnt", iconKey: "BookOpen", navGroup: "SYSTEM", permissionEntity: "handover", showInSidebar: false, routeComponentKey: "LessonsLearntPage" },
@@ -169,6 +164,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "gatesHandovers", path: "/gates/handovers", label: "Handover Queue", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesHandoversPage" },
   { id: "gatesQueries", path: "/gates/queries", label: "Open Queries", iconKey: "MessageSquare", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesQueriesPage" },
   { id: "gatesCommitments", path: "/gates/commitments", label: "Client Commitments", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesCommitmentsPage" },
+  // Milestone Tracker — standalone page for Construction Manager
+  { id: "milestoneTracker", path: "/milestone-tracker", label: "Milestone Tracker", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY
@@ -204,20 +201,25 @@ export function getPermissionEntityForPath(pathname: string): PermissionEntity |
  * This is the bridge between the navigation path and the section toggles
  * configured on each role in Admin → Roles & Permissions → Navigation.
  */
+/**
+ * Maps navGroup from PAGE_REGISTRY entries to the 10-section keys.
+ * Used by getAppSectionForPath to gate nav visibility via role_permissions.sections.
+ */
 const NAV_GROUP_TO_SECTION: Record<string, string> = {
   MY_WORK: "HOME",
   EXCO: "HOME",
-  PROJECTS: "PROJECTS",
-  PROJECT_DEVELOPMENT: "PROJECTS",
-  PROJECT_MANAGEMENT: "PROJECTS",
-  ENGINEERING: "GATES",
-  QUALITY: "GATES",
-  GATES: "GATES",
+  PROJECTS: "PROJECT_DELIVERY",
+  PROJECT_DEVELOPMENT: "PROJECT_DEVELOPMENT",
+  PROJECT_MANAGEMENT: "PROJECT_DELIVERY",
+  ENGINEERING: "ENGINEERING",
+  QUALITY: "QUALITY",
+  HSE: "HSE",
+  GATES: "PORTFOLIO",
   FINANCE: "FINANCE",
   KNOWLEDGE: "ADMIN",
   FEEDBACK: "ADMIN",
-  PORTFOLIO: "PROJECTS",
-  REPORTS: "ADMIN",
+  PORTFOLIO: "PORTFOLIO",
+  REPORTS: "REPORTS",
   SYSTEM: "ADMIN",
 };
 
@@ -228,13 +230,52 @@ export function getAppSectionForPath(pathname: string): string | undefined {
   if (pathname === "/") {
     return "HOME";
   }
-  // My Work absorbed into Home (Prompt 2)
   if (pathname === "/my-work" || pathname.startsWith("/my-work/") || pathname === "/inbox") {
     return "HOME";
   }
-  // Gates section
+  // Milestone Tracker lives under Project Delivery
+  if (pathname === "/gates/commitments" || pathname === "/milestone-tracker" || pathname.startsWith("/milestone-tracker/")) {
+    return "PROJECT_DELIVERY";
+  }
+  // Portfolio Dashboard lives under Project Delivery
+  if (pathname === "/portfolios" || pathname.startsWith("/portfolios/")) {
+    return "PROJECT_DELIVERY";
+  }
+  // Weekly Reviews lives under Project Delivery
+  if (pathname === "/weekly-reviews" || pathname.startsWith("/weekly-reviews/")) {
+    return "PROJECT_DELIVERY";
+  }
+  // Gates live under Portfolio
   if (pathname === "/gates" || pathname.startsWith("/gates/")) {
-    return "GATES";
+    return "PORTFOLIO";
+  }
+  // Quality (separate from HSE)
+  if (pathname === "/quality" || pathname.startsWith("/quality/")) {
+    return "QUALITY";
+  }
+  // HSE (separate from Quality)
+  if (pathname === "/hse" || pathname.startsWith("/hse/")) {
+    return "HSE";
+  }
+  // Engineering
+  if (pathname === "/engineering" || pathname.startsWith("/engineering/")) {
+    return "ENGINEERING";
+  }
+  // PD
+  if (pathname === "/pd" || pathname.startsWith("/pd/") || pathname === "/opportunities" || pathname === "/clients") {
+    return "PROJECT_DEVELOPMENT";
+  }
+  // Execution Board lives under Project Delivery
+  if (pathname === "/execution-board" || pathname.startsWith("/execution-board/")) {
+    return "PROJECT_DELIVERY";
+  }
+  // Portfolio paths (lifecycle)
+  if (pathname === "/project-lifecycle" || pathname.startsWith("/project-lifecycle/")) {
+    return "PORTFOLIO";
+  }
+  // Reports section
+  if (pathname === "/reports" || pathname.startsWith("/reports/")) {
+    return "REPORTS";
   }
   const sorted = [...PAGE_REGISTRY]
     .filter((page) => !!page.navGroup && !page.path.includes(":"))

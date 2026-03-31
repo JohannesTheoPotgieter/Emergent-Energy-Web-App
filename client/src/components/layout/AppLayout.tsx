@@ -17,6 +17,8 @@ import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useNavPreferences } from "@/hooks/use-nav-preferences";
 import { NotificationBell } from "@/components/NotificationBell";
+import { LensSwitcher } from "@/components/layout/LensSwitcher";
+import { useLensContext } from "@/hooks/use-lens-context";
 import { GlobalCommandPalette } from "@/components/GlobalCommandPalette";
 import { NavOnboardingTour } from "@/components/layout/NavOnboardingTour";
 import { NavOrderCustomizer } from "@/components/layout/NavOrderCustomizer";
@@ -51,6 +53,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { theme, setTheme } = useTheme();
   const { isMobile, isTablet } = useBreakpoint();
   const { sectionOrder } = useNavPreferences();
+  const lens = useLensContext();
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const subNavRef = useRef<HTMLDivElement>(null);
 
@@ -74,8 +77,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [location]);
 
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const effectiveCompanyRole = companyRole || user?.role || null;
+
   const visibleSections = useMemo(() => {
-    const sections = buildVisibleTopSections({ canViewPath });
+    const sections = buildVisibleTopSections({ canViewPath, companyRole: effectiveCompanyRole });
     // Apply user's custom section order if set
     if (sectionOrder.length > 0) {
       return [...sections].sort((a, b) => {
@@ -88,7 +94,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
     }
     return sections;
-  }, [canViewPath, sectionOrder]);
+  }, [canViewPath, sectionOrder, effectiveCompanyRole]);
 
   const activeSection = useMemo(() => visibleSections.find((section) => section.match(location)) ?? visibleSections[0], [location, visibleSections]);
   const quickCreateActions = useMemo(() => {
@@ -313,6 +319,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </DropdownMenu>
           ) : null}
 
+          <LensSwitcher />
           <NotificationBell />
 
           <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
@@ -327,7 +334,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <DropdownMenuContent align="end" className="w-56">
               <DropdownMenuLabel className="space-y-1">
                 <div className="font-medium flex items-center gap-2"><UserCircle2 className="h-4 w-4" />{user?.username || "User"}</div>
-                <div className="text-xs text-muted-foreground flex items-center gap-1"><Building2 className="h-3 w-3" />{user?.role || "role"}</div>
+                <div className="text-xs text-muted-foreground flex items-center gap-1"><Building2 className="h-3 w-3" />{lens.activeLensLabel}</div>
+                {lens.isCooSuperAdmin && !lens.simulation && (
+                  <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Super Admin</div>
+                )}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">Theme</DropdownMenuLabel>
@@ -413,6 +423,41 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         )}
       </header>
+
+      {/* Role-aware quick actions bar */}
+      {lens.getActiveLensProfile().quickActions.length > 0 && location === "/" && (
+        <div className="border-b border-border/40 bg-muted/10">
+          <div className="px-4 lg:px-6 py-2 mx-auto w-full max-w-[1440px] flex items-center gap-3 overflow-x-auto">
+            <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{lens.activeLensLabel}:</span>
+            {lens.getActiveLensProfile().quickActions.map((action) => (
+              <Link
+                key={action.path}
+                href={action.path}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-background border border-border/60 text-foreground hover:bg-muted/60 hover:border-border transition-colors whitespace-nowrap"
+              >
+                {action.label}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* COO simulation banner */}
+      {lens.simulation && (
+        <div className="border-b border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20">
+          <div className="px-4 lg:px-6 py-1.5 mx-auto w-full max-w-[1440px] flex items-center justify-between">
+            <span className="text-xs text-amber-800 dark:text-amber-200">
+              Simulating <strong>{lens.activeLensLabel}</strong> view ({lens.simulation.mode === "read_only" ? "read-only" : "full power"})
+            </span>
+            <button
+              onClick={() => lens.stopSimulation()}
+              className="text-xs text-amber-700 dark:text-amber-300 underline hover:no-underline"
+            >
+              Exit simulation
+            </button>
+          </div>
+        </div>
+      )}
 
       <main id="main-content" className={cn("px-4 lg:px-6 py-5", isTablet && "pb-24")}>{children}</main>
       <GlobalCommandPalette />

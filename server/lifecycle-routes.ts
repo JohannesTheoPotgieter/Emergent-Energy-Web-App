@@ -3,7 +3,7 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
-import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory } from "@shared/schema";
+import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory, projectPdPmHandover } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
@@ -921,6 +921,8 @@ export function registerLifecycleRoutes(app: Express) {
           openExpenditureFy,
           grossProfitFy,
           grossMarginPctFy,
+          overdueInflowFy: fin.inflowRisk,
+          overdueOutflowFy: fin.outflowRisk,
           engineeringStatus,
           qualityStatus,
           importFreshness,
@@ -958,6 +960,8 @@ export function registerLifecycleRoutes(app: Express) {
           openExpenditureFy: plannedExpenditure - paidExpenditure,
           grossProfitFy: plannedRevenue - plannedExpenditure,
           grossMarginPctFy: plannedRevenue > 0 ? Number((((plannedRevenue - plannedExpenditure) / plannedRevenue) * 100).toFixed(1)) : null,
+          overdueInflowFy: projectRows.reduce((s: number, p: any) => s + (p.overdueInflowFy || 0), 0),
+          overdueOutflowFy: projectRows.reduce((s: number, p: any) => s + (p.overdueOutflowFy || 0), 0),
           openEngineeringBlockers: projectRows.reduce((s, p) => s + p.engineeringBlockerCount, 0),
           openQualityWarnings: projectRows.reduce((s, p) => s + p.openQualityWarningCount, 0),
           pendingApprovals: projectRows.reduce((s, p) => s + p.pendingApprovalCount, 0),
@@ -991,6 +995,151 @@ export function registerLifecycleRoutes(app: Express) {
       });
     } catch (err: any) {
       console.error("[lifecycle-board] GET execution-dashboard error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ===================== OVERDUE PAYMENTS DRILL-DOWN =====================
+  app.get("/api/lifecycle-board/overdue-payments", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const fy = getCurrentFinancialYearBounds();
+      const today = new Date().toISOString().slice(0, 10);
+      const direction = String(req.query.direction || "all"); // "inflow" | "outflow" | "all"
+      const projectId = req.query.projectId ? parseInt(String(req.query.projectId)) : null;
+
+      const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
+      const isBlack = (v: any) => { const s = String(v || '').toLowerCase(); return s.includes('000000') || s.includes('black'); };
+
+      const overdueInflow: any[] = [];
+      const overdueOutflow: any[] = [];
+
+      if (direction === "all" || direction === "inflow") {
+        const revenueLines = await db.select({
+          id: normalizedRevenueLines.id,
+          projectId: normalizedRevenueLines.projectId,
+          projectName: normalizedRevenueLines.projectName,
+          description: normalizedRevenueLines.description,
+          milestoneName: normalizedRevenueLines.milestoneName,
+          amountExVat: normalizedRevenueLines.amountExVat,
+          invoiceNumber: normalizedRevenueLines.invoiceNumber,
+          invoiceDate: normalizedRevenueLines.invoiceDate,
+          expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+          paidDate: normalizedRevenueLines.paidDate,
+          paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
+          paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
+          inBankDate: normalizedRevenueLines.inBankDate,
+          sourceRow: normalizedRevenueLines.sourceRow,
+          status: normalizedRevenueLines.status,
+        }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+
+        for (const row of revenueLines) {
+          if (projectId && row.projectId !== projectId) continue;
+          const amount = parseFloat(row.amountExVat || "0") || 0;
+          if (amount <= 0) continue;
+          const dateKey = pickFirstPopulatedDate(row as any, ["expectedPaymentDate", "invoiceDate", "paidDate", "inBankDate"]);
+          if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
+
+          const baseReceived = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
+          const confirmedReceived = Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate);
+          const received = baseReceived || (hasText(row.invoiceNumber) && confirmedReceived);
+
+          if (!received && dateKey && dateKey < today) {
+            const daysOverdue = Math.floor((new Date(today).getTime() - new Date(dateKey).getTime()) / (1000 * 60 * 60 * 24));
+            overdueInflow.push({
+              id: row.id,
+              projectId: row.projectId,
+              projectName: row.projectName,
+              description: row.description || row.milestoneName || "Revenue line",
+              amount,
+              invoiceNumber: row.invoiceNumber || null,
+              dueDate: dateKey,
+              daysOverdue,
+              status: row.status,
+              type: "inflow" as const,
+            });
+          }
+        }
+      }
+
+      if (direction === "all" || direction === "outflow") {
+        const costLines = await db.select({
+          id: normalizedCostLines.id,
+          projectId: normalizedCostLines.projectId,
+          projectName: normalizedCostLines.projectName,
+          description: normalizedCostLines.description,
+          counterpartyName: normalizedCostLines.counterpartyName,
+          costCategory: normalizedCostLines.costCategory,
+          amountExVat: normalizedCostLines.amountExVat,
+          invoiceNumber: normalizedCostLines.invoiceNumber,
+          invoiceDate: normalizedCostLines.invoiceDate,
+          approvedDate: normalizedCostLines.approvedDate,
+          paidDate: normalizedCostLines.paidDate,
+          paidDateFontColor: normalizedCostLines.paidDateFontColor,
+          paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
+          cosRealised: normalizedCostLines.cosRealised,
+          poNumber: normalizedCostLines.poNumber,
+          invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
+          invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
+          sourceRow: normalizedCostLines.sourceRow,
+          status: normalizedCostLines.status,
+        }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+
+        for (const row of costLines) {
+          if (projectId && row.projectId !== projectId) continue;
+          const amount = parseFloat(row.amountExVat || "0") || 0;
+          if (amount <= 0) continue;
+          const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
+          if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
+
+          const basePaid = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
+          const confirmedPaid = Boolean(row.paidDateConfirmed);
+          const isRealised = classifyCosStatus({
+            expenseInvoiceNumber: row.invoiceNumber,
+            expenseInvoicedDate: row.invoiceDate,
+            expensePoNumber: row.poNumber,
+            invoiceDateConfirmed: row.invoiceDateConfirmed,
+            invoiceDateFontColor: row.invoiceDateFontColor,
+          }) === 'COS Realised';
+          const paid = basePaid || (hasText(row.invoiceNumber) && confirmedPaid) || isRealised;
+
+          if (!paid && dateKey && dateKey < today) {
+            const daysOverdue = Math.floor((new Date(today).getTime() - new Date(dateKey).getTime()) / (1000 * 60 * 60 * 24));
+            overdueOutflow.push({
+              id: row.id,
+              projectId: row.projectId,
+              projectName: row.projectName,
+              description: row.description || row.counterpartyName || row.costCategory || "Cost line",
+              counterparty: row.counterpartyName || null,
+              amount,
+              invoiceNumber: row.invoiceNumber || null,
+              poNumber: row.poNumber || null,
+              dueDate: dateKey,
+              daysOverdue,
+              status: row.status,
+              type: "outflow" as const,
+            });
+          }
+        }
+      }
+
+      // Sort by days overdue descending (most overdue first)
+      overdueInflow.sort((a, b) => b.daysOverdue - a.daysOverdue);
+      overdueOutflow.sort((a, b) => b.daysOverdue - a.daysOverdue);
+
+      res.json({
+        inflow: {
+          items: overdueInflow,
+          totalAmount: overdueInflow.reduce((s, i) => s + i.amount, 0),
+          count: overdueInflow.length,
+        },
+        outflow: {
+          items: overdueOutflow,
+          totalAmount: overdueOutflow.reduce((s, i) => s + i.amount, 0),
+          count: overdueOutflow.length,
+        },
+      });
+    } catch (err: any) {
+      console.error("[lifecycle-board] GET overdue-payments error:", err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -1398,6 +1547,29 @@ export function registerLifecycleRoutes(app: Express) {
         changedByUserId: userId,
         reason: `Phase changed from ${existing.phase || "unknown"} to ${phase.trim()}`,
       });
+
+      // Auto-create PD→PM handover DRAFT when project reaches the handover stage
+      const PD_PM_HANDOVER_PHASES = ["P2_PD_PM_HANDOVER", "S04_PD_PM_HANDOVER", "Planning"];
+      if (PD_PM_HANDOVER_PHASES.includes(phase.trim())) {
+        try {
+          const existingHandover = await db.select({ id: projectPdPmHandover.id })
+            .from(projectPdPmHandover)
+            .where(eq(projectPdPmHandover.projectId, id))
+            .limit(1);
+          if (existingHandover.length === 0) {
+            await db.insert(projectPdPmHandover).values({
+              projectId: id,
+              status: "DRAFT",
+              pdOwner: existing.pd || null,
+              pmOwner: existing.pm || null,
+              deliverables: {},
+            });
+            console.log(`[lifecycle-board] Auto-created PD→PM handover DRAFT for project ${id}`);
+          }
+        } catch (err: any) {
+          console.warn("[lifecycle-board] Handover auto-creation error (non-fatal):", err.message);
+        }
+      }
 
       let engStagesResult: any = null;
       const stageNames = PHASE_TO_ENG_STAGES[phase.trim()];

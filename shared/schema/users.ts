@@ -66,6 +66,9 @@ export const COMPANY_ROLES = [
   'ENGINEER',
   'PROJECT_MANAGER_SITE',
   'PROJECT_DEVELOPER',
+  // New roles added by role-based UX upgrade
+  'HSE_MANAGER',
+  'SSEG_MANAGER',
 ] as const;
 export type CompanyRole = typeof COMPANY_ROLES[number];
 
@@ -84,9 +87,46 @@ export const COMPANY_ROLE_LABELS: Record<CompanyRole, string> = {
   ENGINEER: "Engineer",
   PROJECT_MANAGER_SITE: "Project Manager",
   PROJECT_DEVELOPER: "Project Developer",
+  HSE_MANAGER: "HSE Manager",
+  SSEG_MANAGER: "SSEG Manager",
 };
 
 export const ADMIN_ROLES: CompanyRole[] = ['COO_ADMIN', 'CEO_ADMIN'];
+
+// ===================== ROLE PERMISSION GROUPS =====================
+// Use these groups when defining or updating entity permissions.
+// When a new role is added, update the relevant groups here — all entity
+// defaults that reference a group will automatically pick up the change.
+
+/** Every company role — use for entities all staff should access (home, feedback, my_work, etc.) */
+export const ALL_STAFF_ROLES: string[] = [...COMPANY_ROLES];
+
+/** Finance-view roles — can see financial dashboards, cashflow, revenue, COS, GP */
+export const FINANCE_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'] as const;
+
+/** Finance-edit roles — can create/edit financial records */
+export const FINANCE_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'] as const;
+
+/** Engineering-view roles — can see engineering dashboards, tasks, stages */
+export const ENG_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER', 'ENGINEER', 'QUALITY_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'CONSTRUCTION_MANAGER', 'SSEG_MANAGER'] as const;
+
+/** Engineering-edit roles — can create/edit engineering items */
+export const ENG_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER', 'SSEG_MANAGER'] as const;
+
+/** Quality & HSE view roles — can see quality, HSE, compliance dashboards */
+export const QUALITY_HSE_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'] as const;
+
+/** Quality & HSE edit roles — can create/edit quality/HSE items */
+export const QUALITY_HSE_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER', 'HSE_MANAGER'] as const;
+
+/** Project delivery view roles — can see projects, construction, tasks, milestones */
+export const DELIVERY_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'] as const;
+
+/** Project development view roles — can see PD dashboard, tickets, pipeline */
+export const PD_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER', 'PROGRAM_FINANCE_MANAGER'] as const;
+
+/** Project development edit roles — can create/edit PD items */
+export const PD_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER'] as const;
 
 export const roleCredentials = pgTable("role_credentials", {
   id: serial("id").primaryKey(),
@@ -116,18 +156,23 @@ export type AppSetting = typeof appSettings.$inferSelect;
 // ===================== UNIFIED ROLE PERMISSIONS =====================
 
 export const APP_SECTIONS = [
-  // Current 6-section navigation model
+  // Current 10-section navigation model
   'HOME',
-  'MY_WORK',
-  'PROJECTS',
+  'PORTFOLIO',
+  'PROJECT_DEVELOPMENT',
+  'PROJECT_DELIVERY',
+  'ENGINEERING',
+  'QUALITY',
+  'HSE',
   'FINANCE',
   'REPORTS',
   'ADMIN',
   // Legacy keys kept for backward compatibility with existing DB records
+  'QUALITY_HSE',
+  'MY_WORK',
+  'PROJECTS',
   'EXCO',
   'PROJECT_MANAGEMENT',
-  'ENGINEERING',
-  'QUALITY',
   'MY_TOOL',
   'OPERATIONS',
   'GOVERNANCE',
@@ -135,35 +180,41 @@ export const APP_SECTIONS = [
   'MONEY',
   'COLLABORATION',
   'INFORMATION',
-  'PROJECT_DEVELOPMENT',
+  'GATES',
 ] as const;
 export type AppSection = typeof APP_SECTIONS[number];
 
 export const APP_SECTION_LABELS: Record<AppSection, string> = {
+  // Current 10-section model
   HOME: "Home",
-  MY_WORK: "My Work (Tasks, Approvals, Inbox)",
-  PROJECTS: "Projects (Lifecycle, Engineering, Quality, PD, Construction)",
-  FINANCE: "Finance (Cashflow, COS, Revenue, Procurement)",
-  REPORTS: "Reports (Priorities, PM Reports, SOPs, Training, Feedback)",
+  PORTFOLIO: "Portfolio (Lifecycle, Gates, Programme)",
+  PROJECT_DEVELOPMENT: "Project Development (Pipeline, Clients, Handovers)",
+  PROJECT_DELIVERY: "Project Delivery (Execution, Projects, Construction, Procurement, Milestones)",
+  ENGINEERING: "Engineering (Design, Tasks, Reviews)",
+  QUALITY: "Quality (Inspections, NCRs, Checklists)",
+  HSE: "HSE (Health, Safety & Environment, Compliance)",
+  FINANCE: "Finance (Cashflow, Revenue, COS, Billing)",
+  REPORTS: "Reports (PM, Engineering, Programme, Performance)",
   ADMIN: "Admin (Settings, Templates, Import)",
-  // Legacy labels (kept for backward compat)
-  EXCO: "Executive (Lifecycle, Priorities)",
-  PROJECT_MANAGEMENT: "Project Management (Execution, Projects, Deliverables)",
-  ENGINEERING: "Engineering (Overview, Tasks, Stages)",
-  QUALITY: "Quality Management",
-  MY_TOOL: "My Tool (Daily Planner)",
-  OPERATIONS: "Operations (Finance, Engineering, Procurement)",
-  GOVERNANCE: "Quality (Quality Workspace)",
-  COCKPIT: "Home (Home, My Work)",
-  MONEY: "Finance (Cashflow, COS, Revenue, Procurement)",
-  COLLABORATION: "Collaboration (Chat, Meetings)",
-  INFORMATION: "Knowledge (Lifecycle & SOP, Leaderboard, Training)",
-  PROJECT_DEVELOPMENT: "Project Development (PD Dashboard, Tickets)",
+  // Legacy labels (kept for backward compat with existing DB records)
+  QUALITY_HSE: "Quality & HSE (legacy combined)",
+  MY_WORK: "My Work (Tasks, Approvals, Inbox)",
+  PROJECTS: "Projects (legacy)",
+  EXCO: "Executive (legacy)",
+  PROJECT_MANAGEMENT: "Project Management (legacy)",
+  MY_TOOL: "My Tool (legacy)",
+  OPERATIONS: "Operations (legacy)",
+  GOVERNANCE: "Quality (legacy)",
+  COCKPIT: "Home (legacy)",
+  MONEY: "Finance (legacy)",
+  COLLABORATION: "Collaboration (legacy)",
+  INFORMATION: "Knowledge (legacy)",
+  GATES: "Gates (legacy)",
 };
 
 export const UX_REDESIGN_ENABLED = true;
 
-export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineering' | 'procurement' | 'admin' | 'governance'
+export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'hse' | 'engineering' | 'procurement' | 'admin' | 'governance'
   | 'cos' | 'cashflow' | 'smart_import' | 'tr_register' | 'pm_dashboard'
   | 'eng_stages' | 'eng_tasks' | 'lifecycle' | 'my_tool' | 'create_project'
   | 'weekly_reviews' | 'ee_info'
@@ -190,7 +241,8 @@ export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'engineer
   | 'stage_lifecycle' | 'stage_exceptions' | 'stage_dependencies' | 'stage_admin'
   | 'stage_gate' | 'exception' | 'stage_config' | 'gate_override'
   | 'project_charter' | 'client_update' | 'handover_acceptance'
-  | 'performance' | 'project_access_mgmt';
+  | 'performance' | 'project_access_mgmt'
+  | 'hse_dashboard' | 'hse_compliance' | 'hse_sseg' | 'hse_incidents';
 export type PermissionAction = 'view' | 'create' | 'edit' | 'approve' | 'override' | 'delete';
 export const AUTHORITY_ACTIONS = [
   'view',
@@ -212,6 +264,12 @@ export type AuthorityScope = (typeof AUTHORITY_SCOPES)[number];
 export const ROLE_PERMISSION_ALIASES: Record<string, string> = {
   admin: "COO_ADMIN",
   COO: "COO_ADMIN",
+  // New lens role aliases — resolve to existing DB roles for permission checks
+  COO_SUPER_ADMIN: "COO_ADMIN",
+  CEO: "CEO_ADMIN",
+  HEAD_OF_PROJECT_DEVELOPMENT: "CCO",
+  PROJECT_MANAGER: "PROJECT_MANAGER_SITE",
+  // HSE_MANAGER and SSEG_MANAGER are real company roles — no alias needed
 };
 
 export function normalizeRoleForPermissions(role?: string | null): string {
@@ -232,7 +290,7 @@ export interface EntityPermissionRule {
 export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   {
     entity: 'projects',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO'],
@@ -286,18 +344,18 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'quality',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER', 'HSE_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER', 'HSE_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'HSE_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'engineering',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER', 'SSEG_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER', 'SSEG_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -339,6 +397,51 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
+    entity: 'hse',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'hse_dashboard',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'hse_compliance',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'hse_sseg',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'SSEG_MANAGER', 'HSE_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'SSEG_MANAGER', 'HSE_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'SSEG_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
+    entity: 'hse_incidents',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
     entity: 'governance',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
@@ -349,7 +452,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'weekly_reviews',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
@@ -367,7 +470,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'tr_register',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -376,7 +479,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pm_dashboard',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -385,7 +488,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'lifecycle',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -403,16 +506,16 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'my_tool',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
+    edit_roles: [...ALL_STAFF_ROLES],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'ee_info',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -421,7 +524,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_overview',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -430,7 +533,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_plan',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -466,7 +569,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_history',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -538,7 +641,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_gantt',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -547,7 +650,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_key_dates',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -556,7 +659,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'execution_board',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -565,7 +668,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'leaderboard',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -574,8 +677,8 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'training',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -583,7 +686,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'knowledge_game',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -592,7 +695,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'department_scores',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -601,19 +704,19 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'feedback',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
+    edit_roles: [...ALL_STAFF_ROLES],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'approvals',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'CFO'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
@@ -628,7 +731,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'company_priorities',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -637,9 +740,9 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'meetings',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
+    edit_roles: [...ALL_STAFF_ROLES],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -673,9 +776,9 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'notifications',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
+    edit_roles: [...ALL_STAFF_ROLES],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -709,7 +812,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'home',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -745,16 +848,16 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'triage_inbox',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
+    edit_roles: [...ALL_STAFF_ROLES],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'unclassified_tasks',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -817,7 +920,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'ee_info_lifecycle',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT', 'ENGINEER'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -826,7 +929,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'ee_info_departments',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT', 'ENGINEER'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -835,7 +938,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'ee_info_processes',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT', 'ENGINEER'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -844,7 +947,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'ee_info_templates',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT', 'ENGINEER'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -853,16 +956,16 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'teams_chat',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
+    edit_roles: [...ALL_STAFF_ROLES],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
   },
   {
     entity: 'financial_integration',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'],
@@ -871,16 +974,16 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_collaboration',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
+    edit_roles: [...ALL_STAFF_ROLES],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'operational_tasks',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -889,7 +992,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'gamification',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -898,9 +1001,9 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'dashboard_widgets',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
+    edit_roles: [...ALL_STAFF_ROLES],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -916,7 +1019,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'weekly_review_wizard',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -943,7 +1046,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'collaboration_hub',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -952,16 +1055,16 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'my_work',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
+    create_roles: [...ALL_STAFF_ROLES],
+    edit_roles: [...ALL_STAFF_ROLES],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
     entity: 'ms_sync',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -970,7 +1073,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'project_tagging',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -979,7 +1082,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'work_items',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'ENGINEER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'ENGINEER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
@@ -988,7 +1091,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'sharepoint_files',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -997,7 +1100,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'project_chat',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1006,7 +1109,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'deliverables',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1024,7 +1127,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'data_export',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1069,7 +1172,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'standups',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
@@ -1078,7 +1181,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'handover',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_DEVELOPER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_DEVELOPER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
@@ -1087,7 +1190,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'commissioning',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'QUALITY_MANAGER'],
@@ -1105,7 +1208,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_change_control',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CFO'],
@@ -1114,7 +1217,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_commissioning',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'QUALITY_MANAGER'],
@@ -1123,7 +1226,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_dependencies',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1132,7 +1235,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'pd_raid',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
@@ -1141,7 +1244,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'reports',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1150,7 +1253,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'task_management',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'ENGINEER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'ENGINEER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
@@ -1160,7 +1263,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   // ── Stage lifecycle permission defaults (Prompt 6) ──
   {
     entity: 'stage_lifecycle',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1169,7 +1272,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'stage_exceptions',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1178,7 +1281,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'stage_dependencies',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1196,7 +1299,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'stage_gate',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT'],
+    view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO'],
@@ -1205,7 +1308,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'exception',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1232,7 +1335,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'project_charter',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_DEVELOPER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_DEVELOPER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
@@ -1241,7 +1344,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'client_update',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
@@ -1250,7 +1353,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'handover_acceptance',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROJECT_MANAGER_SITE'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
@@ -1259,7 +1362,7 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
   },
   {
     entity: 'performance',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER'],
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'HSE_MANAGER', 'SSEG_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -1417,50 +1520,63 @@ export const ROLE_DEPARTMENT_MAP: Record<string, DepartmentCluster> = {
   CFO: 'FINANCE',
   PROGRAM_FINANCE_MANAGER: 'FINANCE',
   ACCOUNTANT: 'FINANCE',
+  HSE_MANAGER: 'PROJECT_MANAGEMENT',
+  SSEG_MANAGER: 'ENGINEERING',
 };
 
-/** Default workstream visibility per role — used when no DB config exists */
+/** Default workstream visibility per role — used when no DB config exists.
+ *  Sections use the canonical 10-section model: HOME, PORTFOLIO, PROJECT_DEVELOPMENT,
+ *  PROJECT_DELIVERY, ENGINEERING, QUALITY, HSE, FINANCE, REPORTS, ADMIN.
+ *  Must stay aligned with ROLE_VISIBLE_SECTIONS in app-navigation.ts and
+ *  DEFAULT_ROLE_PERMISSIONS.sections below.
+ */
 export const WORKSTREAM_VISIBILITY_DEFAULTS: Record<string, { workstreams: string[]; ticketTypes: string[]; scope: string; sections: string[] }> = {
   // ADMIN — full access
-  COO_ADMIN:  { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_DEVELOPMENT', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION', 'ADMIN'] },
-  CEO_ADMIN:  { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_DEVELOPMENT', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION', 'ADMIN'] },
+  COO_ADMIN:  { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['HOME', 'PORTFOLIO', 'PROJECT_DEVELOPMENT', 'PROJECT_DELIVERY', 'ENGINEERING', 'QUALITY', 'HSE', 'FINANCE', 'REPORTS', 'ADMIN'] },
+  CEO_ADMIN:  { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['HOME', 'PORTFOLIO', 'PROJECT_DEVELOPMENT', 'PROJECT_DELIVERY', 'FINANCE', 'REPORTS', 'ADMIN'] },
 
   // LEADERSHIP — full read
-  CCO:              { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_DEVELOPMENT', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
-  PROGRAM_MANAGER:  { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
+  CCO:              { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['HOME', 'PORTFOLIO', 'PROJECT_DEVELOPMENT', 'FINANCE', 'REPORTS'] },
+  PROGRAM_MANAGER:  { workstreams: ['PD', 'ENG', 'QUALITY', 'PM', 'FINANCE', 'PERSONAL', 'GOVERNANCE'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['HOME', 'PORTFOLIO', 'PROJECT_DELIVERY', 'QUALITY', 'HSE', 'FINANCE', 'REPORTS'] },
 
   // ENGINEERING
-  ENGINEERING_MANAGER: { workstreams: ['ENG', 'QUALITY', 'GOVERNANCE'], ticketTypes: ['engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
-  ENGINEER:            { workstreams: ['ENG'], ticketTypes: ['engineering'], scope: 'own', sections: ['COCKPIT', 'COLLABORATION', 'ENGINEERING', 'INFORMATION'] },
-  QUALITY_MANAGER:     { workstreams: ['QUALITY', 'GOVERNANCE'], ticketTypes: ['engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'GOVERNANCE', 'INFORMATION'] },
+  ENGINEERING_MANAGER: { workstreams: ['ENG', 'QUALITY', 'GOVERNANCE'], ticketTypes: ['engineering'], scope: 'all', sections: ['HOME', 'ENGINEERING', 'QUALITY', 'PROJECT_DELIVERY', 'REPORTS'] },
+  ENGINEER:            { workstreams: ['ENG'], ticketTypes: ['engineering'], scope: 'own', sections: ['HOME', 'ENGINEERING', 'QUALITY'] },
+  QUALITY_MANAGER:     { workstreams: ['QUALITY', 'GOVERNANCE'], ticketTypes: ['engineering'], scope: 'all', sections: ['HOME', 'QUALITY', 'PROJECT_DELIVERY', 'REPORTS'] },
 
   // PROJECT DEVELOPMENT
-  PROJECT_DEVELOPER:    { workstreams: ['PD'], ticketTypes: ['pd'], scope: 'own', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'PROJECT_DEVELOPMENT', 'GOVERNANCE', 'INFORMATION'] },
-  KEY_ACCOUNTS_MANAGER: { workstreams: ['PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'INFORMATION'] },
+  PROJECT_DEVELOPER:    { workstreams: ['PD'], ticketTypes: ['pd'], scope: 'own', sections: ['HOME', 'PROJECT_DEVELOPMENT', 'FINANCE'] },
+  KEY_ACCOUNTS_MANAGER: { workstreams: ['PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['HOME', 'PORTFOLIO', 'PROJECT_DEVELOPMENT', 'FINANCE'] },
 
-  // PROJECT MANAGEMENT — CONSTRUCTION_MANAGER now PM + QUALITY focused
-  CONSTRUCTION_MANAGER: { workstreams: ['PM', 'QUALITY'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'PROJECT_MANAGEMENT', 'GOVERNANCE', 'INFORMATION'] },
-  PROJECT_MANAGER_SITE: { workstreams: ['PM', 'PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
+  // PROJECT MANAGEMENT
+  CONSTRUCTION_MANAGER: { workstreams: ['PM', 'QUALITY'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['HOME', 'PROJECT_DELIVERY', 'FINANCE', 'QUALITY', 'HSE', 'REPORTS'] },
+  PROJECT_MANAGER_SITE: { workstreams: ['PM', 'PD'], ticketTypes: ['pd', 'engineering'], scope: 'all', sections: ['HOME', 'PROJECT_DELIVERY', 'QUALITY', 'HSE', 'FINANCE', 'REPORTS'] },
 
   // FINANCE
-  CFO:                     { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'GOVERNANCE', 'INFORMATION'] },
-  PROGRAM_FINANCE_MANAGER: { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'PROJECT_MANAGEMENT', 'ENGINEERING', 'GOVERNANCE', 'INFORMATION'] },
-  ACCOUNTANT:              { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['COCKPIT', 'COLLABORATION', 'PROJECTS', 'MONEY', 'INFORMATION'] },
+  CFO:                     { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['HOME', 'PORTFOLIO', 'FINANCE', 'PROJECT_DELIVERY', 'REPORTS'] },
+  PROGRAM_FINANCE_MANAGER: { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['HOME', 'PORTFOLIO', 'FINANCE', 'PROJECT_DELIVERY', 'REPORTS'] },
+  ACCOUNTANT:              { workstreams: ['FINANCE'], ticketTypes: [], scope: 'all', sections: ['HOME', 'FINANCE'] },
+
+  // HSE & SSEG
+  HSE_MANAGER:  { workstreams: ['QUALITY', 'PM', 'GOVERNANCE'], ticketTypes: ['engineering'], scope: 'all', sections: ['HOME', 'HSE', 'PROJECT_DELIVERY', 'REPORTS'] },
+  SSEG_MANAGER: { workstreams: ['ENG', 'QUALITY', 'PM'], ticketTypes: ['engineering'], scope: 'all', sections: ['HOME', 'HSE', 'QUALITY', 'ENGINEERING'] },
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: InsertRolePermission[] = [
-  { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
-  { role: "CCO", label: "CCO", description: "Commercial operations, project oversight", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "CFO", label: "CFO", description: "Financial oversight, cashflow, budgets", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Project management, engineering dashboard", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Project finance, cost tracking", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction oversight, site management — PM and quality focused", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality checklists, post-mortems, inspections", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering tasks, deliverables, approvals", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Site project manager — view-only access to assigned projects, dates, financials, quality, engineering", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
-  { role: "PROJECT_DEVELOPER", label: "Project Developer", description: "Project developer — manages project development, cost proposals, and client relations", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ENGINEER", label: "Engineer", description: "Engineering team member — engineering tasks, deliverables, stage checklists", sections: ["HOME", "MY_WORK", "PROJECTS", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
-  { role: "ACCOUNTANT", label: "Accountant", description: "Finance team — cashflow, COS tracking, invoice management", sections: ["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "COO_ADMIN", label: "COO", description: "Full executive access, settings, user management", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CEO_ADMIN", label: "CEO", description: "Full executive access, strategic oversight", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "ADMIN"], canManageUsers: true, canManageRoles: true, canEditData: true, isSystem: true },
+  { role: "CCO", label: "CCO", description: "Head of Project Development — commercial, pipeline, client relations", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CFO", label: "CFO", description: "Financial oversight — cashflow, budgets, margin, billing", sections: ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_MANAGER", label: "Program Manager", description: "Cross-project delivery — portfolio, gates, escalations", sections: ["HOME", "PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROGRAM_FINANCE_MANAGER", label: "Program Finance Manager", description: "Program finance — invoicing, forecasting, collections", sections: ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "CONSTRUCTION_MANAGER", label: "Construction Manager", description: "Construction delivery — sites, milestones, inflow planning, procurement", sections: ["HOME", "PROJECT_DELIVERY", "FINANCE", "QUALITY", "HSE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "QUALITY_MANAGER", label: "Quality Manager", description: "Quality workspace — NCRs, inspections, checklists, corrective actions", sections: ["HOME", "QUALITY", "PROJECT_DELIVERY", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ENGINEERING_MANAGER", label: "Engineering Manager", description: "Engineering lead — design, approvals, deliverables", sections: ["HOME", "ENGINEERING", "QUALITY", "PROJECT_DELIVERY", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "KEY_ACCOUNTS_MANAGER", label: "Key Accounts Manager", description: "Client relations, account management, pipeline", sections: ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "PROJECT_MANAGER_SITE", label: "Project Manager", description: "Project delivery — assigned projects, tasks, approvals, milestones", sections: ["HOME", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: false, isSystem: true },
+  { role: "PROJECT_DEVELOPER", label: "Project Developer", description: "Project development — pipeline, cost proposals, client relations", sections: ["HOME", "PROJECT_DEVELOPMENT", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ENGINEER", label: "Engineer", description: "Engineering team — tasks, deliverables, reviews, stage checklists", sections: ["HOME", "ENGINEERING", "QUALITY"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "ACCOUNTANT", label: "Accountant", description: "Finance team — cashflow, COS tracking, invoice management", sections: ["HOME", "FINANCE"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "HSE_MANAGER", label: "HSE Manager", description: "HSE compliance — incidents, audits, corrective actions, safety files", sections: ["HOME", "HSE", "PROJECT_DELIVERY", "REPORTS"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
+  { role: "SSEG_MANAGER", label: "SSEG Manager", description: "SSEG applications — authority tracking, queries, compliance", sections: ["HOME", "HSE", "QUALITY", "ENGINEERING"], canManageUsers: false, canManageRoles: false, canEditData: true, isSystem: true },
 ];

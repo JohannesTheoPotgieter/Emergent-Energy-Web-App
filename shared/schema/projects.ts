@@ -201,6 +201,11 @@ export const projectExecutionState = pgTable("project_execution_state", {
   costBaseline: decimal("cost_baseline", { precision: 15, scale: 2 }),
   marginBaseline: decimal("margin_baseline", { precision: 8, scale: 4 }),
 
+  // Stage lifecycle
+  currentStageCode: text("current_stage_code"),
+  gateStatus: text("gate_status"),
+  gateReadinessPct: integer("gate_readiness_pct"),
+
   // Financial review gate
   siteEstablishmentDate: date("site_establishment_date"),
   siteEstablishmentActual: date("site_establishment_actual"),

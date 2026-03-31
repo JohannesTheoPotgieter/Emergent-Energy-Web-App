@@ -177,6 +177,40 @@ const DEFAULT_CONFIG: RoleDashboardConfig = {
   cockpitLabel: "Execution Board",
 };
 
+const HSE_CONFIG: RoleDashboardConfig = {
+  kpis: [
+    { key: "incidents_open", label: "Open Incidents" },
+    { key: "corrective_actions_due", label: "Corrective Actions Due" },
+    { key: "safety_file_compliance", label: "Safety File Compliance" },
+    { key: "inspections_overdue", label: "Inspections Overdue" },
+  ],
+  attentionPriority: ["safety_incidents", "overdue_corrective_actions", "audit_findings", "compliance_gaps"],
+  quickActions: [
+    { label: "HSE Dashboard", path: "/hse", iconKey: "ShieldAlert" },
+    { label: "Quality", path: "/quality", iconKey: "ShieldCheck" },
+    { label: "Projects", path: "/projects", iconKey: "FileSpreadsheet" },
+  ],
+  cockpitPath: "/hse",
+  cockpitLabel: "HSE Dashboard",
+};
+
+const SSEG_CONFIG: RoleDashboardConfig = {
+  kpis: [
+    { key: "applications_pending", label: "Applications Pending" },
+    { key: "queries_outstanding", label: "Queries Outstanding" },
+    { key: "approvals_due", label: "Approvals Due" },
+    { key: "rejections_open", label: "Rejections Open" },
+  ],
+  attentionPriority: ["response_due", "missing_documents", "authority_queries", "expired_approvals"],
+  quickActions: [
+    { label: "HSE Dashboard", path: "/hse", iconKey: "ShieldAlert" },
+    { label: "Engineering", path: "/engineering", iconKey: "Wrench" },
+    { label: "Projects", path: "/projects", iconKey: "FileSpreadsheet" },
+  ],
+  cockpitPath: "/hse",
+  cockpitLabel: "SSEG Control Board",
+};
+
 const ROLE_CONFIG_MAP: Partial<Record<CompanyRole, RoleDashboardConfig>> = {
   COO_ADMIN: COO_CEO_CONFIG,
   CEO_ADMIN: COO_CEO_CONFIG,
@@ -192,6 +226,8 @@ const ROLE_CONFIG_MAP: Partial<Record<CompanyRole, RoleDashboardConfig>> = {
   ENGINEER: ENGINEER_CONFIG,
   PROJECT_MANAGER_SITE: PM_CONFIG,
   PROJECT_DEVELOPER: PD_CONFIG,
+  HSE_MANAGER: HSE_CONFIG,
+  SSEG_MANAGER: SSEG_CONFIG,
 };
 
 export function getRoleDashboardConfig(role: CompanyRole): RoleDashboardConfig {
@@ -208,4 +244,40 @@ export function getRoleAttentionFilters(role: CompanyRole): string[] {
 
 export function getRoleQuickActions(role: CompanyRole): RoleQuickAction[] {
   return getRoleDashboardConfig(role).quickActions;
+}
+
+// ===================== LENS-BASED DASHBOARD CONFIG =====================
+
+import { resolveUserLens, type LensRole } from "@shared/schema/role-based-upgrade";
+
+const LENS_CONFIG_MAP: Record<LensRole, RoleDashboardConfig> = {
+  CEO: COO_CEO_CONFIG,
+  COO_SUPER_ADMIN: { ...COO_CEO_CONFIG, cockpitPath: "/admin/control-center", cockpitLabel: "Command Center" },
+  CFO: FINANCE_CONFIG,
+  HEAD_OF_PROJECT_DEVELOPMENT: PD_CONFIG,
+  PROGRAM_MANAGER: PROGRAM_MANAGER_CONFIG,
+  CONSTRUCTION_MANAGER: CONSTRUCTION_CONFIG,
+  PROGRAM_FINANCE_MANAGER: FINANCE_CONFIG,
+  HSE_MANAGER: HSE_CONFIG,
+  SSEG_MANAGER: SSEG_CONFIG,
+  QUALITY_MANAGER: QUALITY_CONFIG,
+  ENGINEER: ENGINEER_CONFIG,
+  PROJECT_MANAGER: PM_CONFIG,
+  PROJECT_DEVELOPER: PD_CONFIG,
+};
+
+/**
+ * Get dashboard config based on lens role (new system).
+ * Falls back to legacy role-based config if lens not found.
+ */
+export function getLensDashboardConfig(dbRole?: string | null): RoleDashboardConfig {
+  const lens = resolveUserLens(dbRole);
+  return LENS_CONFIG_MAP[lens] ?? DEFAULT_CONFIG;
+}
+
+/**
+ * Get dashboard config for a specific lens role directly.
+ */
+export function getDashboardConfigForLens(lens: LensRole): RoleDashboardConfig {
+  return LENS_CONFIG_MAP[lens] ?? DEFAULT_CONFIG;
 }

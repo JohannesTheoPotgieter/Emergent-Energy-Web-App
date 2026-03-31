@@ -73,7 +73,7 @@ export function RolesSection() {
   const createMutation = useMutation({
     mutationFn: async ({ key, label }: { key: string; label: string }) => {
       if (!canManage) throw new Error("Not allowed");
-      const ok = await api.createRole({ role: key, label, sections: ["MY_WORK"], canEditData: true });
+      const ok = await api.createRole({ role: key, label, sections: ["HOME"], canEditData: true });
       if (!ok) throw new Error("Create role failed");
     },
     onSuccess: () => { setShowCreate(false); load(); toast({ title: "Role created" }); },

@@ -77,7 +77,7 @@ interface ProjectInfo {
   pmPercent: number | null;
 }
 
-const PRE_PM_PHASES = ["first_assessment", "cost_proposal"];
+const PRE_PM_PHASES = ["first_assessment", "design_cost_proposal", "signature_financial_close"];
 
 function phaseShowsPM(phaseKey: string): boolean {
   return !PRE_PM_PHASES.includes(phaseKey);
@@ -96,63 +96,79 @@ const PHASE_GROUPS = [
     key: "first_assessment",
     label: "First Assessment",
     phaseValue: "First Assessment",
-    matches: ["First Assessment", "P0_FIRST_ASSESSMENT", "P0"],
+    matches: ["First Assessment", "P0_FIRST_ASSESSMENT", "P0", "S01_FIRST_ASSESSMENT", "S01"],
     color: "bg-muted border-border",
     headerBg: "bg-slate-500",
   },
   {
-    key: "cost_proposal",
-    label: "Cost Proposal",
-    phaseValue: "Cost Proposal",
-    matches: ["Cost Proposal", "P1_COST_PROPOSAL_DESIGN", "P1"],
+    key: "design_cost_proposal",
+    label: "Design & Cost Proposal",
+    phaseValue: "Design & Cost Proposal",
+    matches: ["Cost Proposal", "Design & Cost Proposal", "P1_COST_PROPOSAL_DESIGN", "P1", "S02_DESIGN_COST_PROPOSAL", "S02"],
     color: "bg-blue-50 border-blue-300",
     headerBg: "bg-blue-500",
   },
   {
-    key: "planning",
-    label: "Planning",
-    phaseValue: "Planning",
-    matches: ["Planning", "P2_PD_PM_HANDOVER", "P2", "Financial Close", "P3_FINANCIAL_CLOSE", "P3"],
+    key: "signature_financial_close",
+    label: "Signature & Financial Close",
+    phaseValue: "Signature & Financial Close",
+    matches: ["Financial Close", "Signature & Financial Close", "P3_FINANCIAL_CLOSE", "P3", "S03_SIGNATURE_FINANCIAL_CLOSE", "S03"],
     color: "bg-indigo-50 border-indigo-300",
     headerBg: "bg-indigo-500",
+  },
+  {
+    key: "pd_pm_handover",
+    label: "PD-PM Handover",
+    phaseValue: "PD-PM Handover",
+    matches: ["Planning", "PD-PM Handover", "P2_PD_PM_HANDOVER", "P2", "S04_PD_PM_HANDOVER", "S04"],
+    color: "bg-sky-50 border-sky-300",
+    headerBg: "bg-sky-500",
+  },
+  {
+    key: "financial_review",
+    label: "Financial Review",
+    phaseValue: "Financial Review",
+    matches: ["Financial Review", "S05_FINANCIAL_REVIEW", "S05"],
+    color: "bg-amber-50 border-amber-300",
+    headerBg: "bg-amber-500",
   },
   {
     key: "construction",
     label: "Construction",
     phaseValue: "Construction",
-    matches: ["Construction", "P4_CONSTRUCTION_INSTALLATION", "P4"],
+    matches: ["Construction", "P4_CONSTRUCTION_INSTALLATION", "P4", "S06_CONSTRUCTION", "S06"],
     color: "bg-orange-50 border-orange-300",
     headerBg: "bg-orange-500",
   },
   {
-    key: "qa",
-    label: "QA",
-    phaseValue: "QA",
-    matches: ["QA", "Commissioning", "P5_COMMISSIONING_QA", "P5"],
+    key: "commissioning",
+    label: "Commissioning",
+    phaseValue: "Commissioning",
+    matches: ["QA", "Commissioning", "P5_COMMISSIONING_QA", "P5", "S07_COMMISSIONING", "S07"],
     color: "bg-violet-50 border-violet-300",
     headerBg: "bg-violet-500",
   },
   {
-    key: "handover",
-    label: "Handover",
-    phaseValue: "Handover",
-    matches: ["Handover", "P6_HANDOVER_DLP", "P6"],
-    color: "bg-teal-50 border-teal-300",
-    headerBg: "bg-teal-500",
-  },
-  {
-    key: "compliance_handover",
-    label: "Compliance Handover",
-    phaseValue: "Compliance Handover",
-    matches: ["Compliance Handover"],
+    key: "om_handover",
+    label: "O&M Handover",
+    phaseValue: "O&M Handover",
+    matches: ["O&M Handover", "Compliance Handover", "S08_OM_HANDOVER", "S08"],
     color: "bg-cyan-50 border-cyan-300",
     headerBg: "bg-cyan-600",
   },
   {
-    key: "closeout",
-    label: "Closeout",
-    phaseValue: "Commercial Close Out",
-    matches: ["DLP", "Commercial Close Out", "Commercial Close out", "Closeout", "P7_CLOSEOUT_POSTMORTEM", "P7"],
+    key: "client_handover",
+    label: "Client Handover",
+    phaseValue: "Client Handover",
+    matches: ["Handover", "Client Handover", "P6_HANDOVER_DLP", "P6", "S09_CLIENT_HANDOVER", "S09"],
+    color: "bg-teal-50 border-teal-300",
+    headerBg: "bg-teal-500",
+  },
+  {
+    key: "post_handover_review",
+    label: "Post-Handover Review",
+    phaseValue: "Post-Handover Review",
+    matches: ["DLP", "Commercial Close Out", "Commercial Close out", "Closeout", "Post-Handover Review", "P7_CLOSEOUT_POSTMORTEM", "P7", "S10_POST_HANDOVER_REVIEW", "S10"],
     color: "bg-emerald-50 border-emerald-300",
     headerBg: "bg-emerald-500",
   },
@@ -209,13 +225,16 @@ function mapPhaseToGroup(phase: string | null, source?: string): string {
       }
     }
     if (!found) {
-      if (normalized.startsWith("P0")) group = "first_assessment";
-      else if (normalized.startsWith("P1")) group = "cost_proposal";
-      else if (normalized.startsWith("P2") || normalized.startsWith("P3")) group = "planning";
-      else if (normalized.startsWith("P4")) group = "construction";
-      else if (normalized.startsWith("P5")) group = "qa";
-      else if (normalized.startsWith("P6")) group = "handover";
-      else if (normalized.startsWith("P7")) group = "closeout";
+      if (normalized.startsWith("P0") || normalized.startsWith("S01")) group = "first_assessment";
+      else if (normalized.startsWith("P1") || normalized.startsWith("S02")) group = "design_cost_proposal";
+      else if (normalized.startsWith("P3") || normalized.startsWith("S03")) group = "signature_financial_close";
+      else if (normalized.startsWith("P2") || normalized.startsWith("S04")) group = "pd_pm_handover";
+      else if (normalized.startsWith("S05")) group = "financial_review";
+      else if (normalized.startsWith("P4") || normalized.startsWith("S06")) group = "construction";
+      else if (normalized.startsWith("P5") || normalized.startsWith("S07")) group = "commissioning";
+      else if (normalized.startsWith("S08")) group = "om_handover";
+      else if (normalized.startsWith("P6") || normalized.startsWith("S09")) group = "client_handover";
+      else if (normalized.startsWith("P7") || normalized.startsWith("S10")) group = "post_handover_review";
     }
   }
   return group;
@@ -363,6 +382,7 @@ export default function LifecycleBoardPage() {
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
+  const [hideEmptyLanes, setHideEmptyLanes] = useState(false);
   const [draggedProject, setDraggedProject] = useState<ProjectInfo | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(null);
@@ -993,6 +1013,14 @@ export default function LifecycleBoardPage() {
           />
           <span className="text-sm text-muted-foreground">Active only</span>
         </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={hideEmptyLanes}
+            onCheckedChange={setHideEmptyLanes}
+            data-testid="switch-hide-empty"
+          />
+          <span className="text-sm text-muted-foreground">Hide empty lanes</span>
+        </div>
         <div className="ml-auto flex items-center gap-3">
           <span className="text-sm text-muted-foreground" data-testid="text-project-count">
             {filtered.length} project{filtered.length !== 1 ? "s" : ""}
@@ -1010,8 +1038,11 @@ export default function LifecycleBoardPage() {
       </div>
 
       <div className="pb-4 overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
-        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${PHASE_GROUPS.length}, minmax(200px, 1fr))`, minWidth: `${PHASE_GROUPS.length * 200}px` }}>
-          {PHASE_GROUPS.map((group) => {
+        {(() => {
+          const visibleGroups = hideEmptyLanes ? PHASE_GROUPS.filter(g => (grouped[g.key] || []).length > 0) : PHASE_GROUPS;
+          return (
+        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${visibleGroups.length}, minmax(200px, 1fr))`, minWidth: `${visibleGroups.length * 200}px` }}>
+          {visibleGroups.map((group) => {
             const items = grouped[group.key] || [];
             const isOver = dragOverColumn === group.key;
             return (
@@ -1130,6 +1161,8 @@ export default function LifecycleBoardPage() {
             );
           })}
         </div>
+          );
+        })()}
       </div>
 
       <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>

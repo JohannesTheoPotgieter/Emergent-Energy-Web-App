@@ -7680,4 +7680,336 @@ DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='drawing_revisions' AND column_name='revision') THEN
     ALTER TABLE "drawing_revisions" ADD COLUMN "drawing_id" INTEGER NOT NULL DEFAULT 0, ADD COLUMN "revision" TEXT NOT NULL DEFAULT '', ADD COLUMN "revision_date" DATE NOT NULL DEFAULT CURRENT_DATE, ADD COLUMN "description" TEXT, ADD COLUMN "revised_by_user_id" INTEGER, ADD COLUMN "sharepoint_link" TEXT, ADD COLUMN "created_at" TIMESTAMP DEFAULT NOW();
   END IF;
+
+  -- ===================== Role-based UX upgrade: missing work_items columns =====================
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='bucket') THEN
+    ALTER TABLE "work_items" ADD COLUMN "bucket" TEXT, ADD COLUMN "pinned_today" BOOLEAN DEFAULT FALSE, ADD COLUMN "pinned_week" BOOLEAN DEFAULT FALSE, ADD COLUMN "source_email_id" TEXT, ADD COLUMN "source_email_subject" TEXT, ADD COLUMN "next_step" TEXT, ADD COLUMN "definition_of_done" TEXT, ADD COLUMN "completion_note" TEXT;
+  END IF;
+
+  -- ===================== Role-based UX upgrade: new tables =====================
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_lens_profiles') THEN
+    CREATE TABLE "role_lens_profiles" (
+      "id" SERIAL PRIMARY KEY,
+      "lens_role" TEXT NOT NULL UNIQUE,
+      "label" TEXT NOT NULL,
+      "description" TEXT,
+      "landing_page" TEXT NOT NULL,
+      "allowed_modules" TEXT[] NOT NULL DEFAULT '{}',
+      "nav_priority" TEXT[] NOT NULL DEFAULT '{}',
+      "quick_actions" JSONB NOT NULL DEFAULT '[]',
+      "default_filters" JSONB NOT NULL DEFAULT '{}',
+      "widget_layout" JSONB NOT NULL DEFAULT '[]',
+      "record_tab_emphasis" JSONB NOT NULL DEFAULT '{}',
+      "is_system" BOOLEAN NOT NULL DEFAULT TRUE,
+      "created_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updated_at" TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_homepage_widgets') THEN
+    CREATE TABLE "role_homepage_widgets" (
+      "id" SERIAL PRIMARY KEY,
+      "lens_role" TEXT NOT NULL,
+      "widget_key" TEXT NOT NULL,
+      "label" TEXT NOT NULL,
+      "widget_type" TEXT NOT NULL,
+      "data_source" TEXT,
+      "position" INTEGER NOT NULL DEFAULT 0,
+      "span" INTEGER NOT NULL DEFAULT 1,
+      "config" JSONB NOT NULL DEFAULT '{}',
+      "is_visible" BOOLEAN NOT NULL DEFAULT TRUE,
+      "created_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updated_at" TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='contracts') THEN
+    CREATE TABLE "contracts" (
+      "id" SERIAL PRIMARY KEY,
+      "project_id" INTEGER REFERENCES project_info(id),
+      "opportunity_id" INTEGER,
+      "client_name" TEXT,
+      "counterparty_name" TEXT,
+      "contract_type" TEXT,
+      "contract_reference" TEXT,
+      "signature_status" TEXT NOT NULL DEFAULT 'draft',
+      "signed_date" DATE,
+      "effective_date" DATE,
+      "expiry_date" DATE,
+      "contract_value" INTEGER,
+      "currency" TEXT DEFAULT 'ZAR',
+      "document_refs" JSONB NOT NULL DEFAULT '[]',
+      "financial_close_relevance" BOOLEAN DEFAULT FALSE,
+      "notes" TEXT,
+      "created_by_user_id" INTEGER REFERENCES users(id),
+      "created_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updated_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "deleted_at" TIMESTAMP,
+      "deleted_by" INTEGER
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='sseg_applications') THEN
+    CREATE TABLE "sseg_applications" (
+      "id" SERIAL PRIMARY KEY,
+      "project_id" INTEGER NOT NULL REFERENCES project_info(id),
+      "site_id" INTEGER,
+      "authority" TEXT NOT NULL,
+      "application_stage" TEXT NOT NULL DEFAULT 'preparation',
+      "reference_number" TEXT,
+      "submission_date" DATE,
+      "query_date" DATE,
+      "response_due_date" DATE,
+      "approval_date" DATE,
+      "expiry_date" DATE,
+      "required_documents" JSONB NOT NULL DEFAULT '[]',
+      "rejection_notes" TEXT,
+      "query_notes" TEXT,
+      "owner_user_id" INTEGER REFERENCES users(id),
+      "sseg_item_id" INTEGER,
+      "notes" TEXT,
+      "created_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "updated_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "deleted_at" TIMESTAMP
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='lens_simulation_sessions') THEN
+    CREATE TABLE "lens_simulation_sessions" (
+      "id" SERIAL PRIMARY KEY,
+      "user_id" INTEGER NOT NULL REFERENCES users(id),
+      "simulated_lens_role" TEXT NOT NULL,
+      "simulated_user_id" INTEGER REFERENCES users(id),
+      "mode" TEXT NOT NULL DEFAULT 'read_only',
+      "is_active" BOOLEAN NOT NULL DEFAULT TRUE,
+      "started_at" TIMESTAMP NOT NULL DEFAULT NOW(),
+      "ended_at" TIMESTAMP
+    );
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='role_homepage_snapshots') THEN
+    CREATE TABLE "role_homepage_snapshots" (
+      "id" SERIAL PRIMARY KEY,
+      "lens_role" TEXT NOT NULL,
+      "user_id" INTEGER REFERENCES users(id),
+      "snapshot_data" JSONB NOT NULL DEFAULT '{}',
+      "computed_at" TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  END IF;
+
+  -- Project PD-PM handover V2 enhanced columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='handover_form_data') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "handover_form_data" JSONB DEFAULT '{}';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='readiness_checklist') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "readiness_checklist" JSONB DEFAULT '{}';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='readiness_score') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "readiness_score" INTEGER DEFAULT 0;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='pd_sign_off_at') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "pd_sign_off_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='pd_sign_off_by') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "pd_sign_off_by" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='pm_sign_off_at') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "pm_sign_off_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='pm_sign_off_by') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "pm_sign_off_by" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='kickoff_date') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "kickoff_date" DATE;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='lessons_reviewed') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "lessons_reviewed" BOOLEAN DEFAULT false;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='version') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "version" INTEGER DEFAULT 1;
+  END IF;
+
+  -- Meeting summaries soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='meeting_summaries') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meeting_summaries' AND column_name='deleted_at') THEN
+    ALTER TABLE "meeting_summaries" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='meeting_summaries') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meeting_summaries' AND column_name='deleted_by') THEN
+    ALTER TABLE "meeting_summaries" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Stage definitions soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_definitions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_definitions' AND column_name='deleted_at') THEN
+    ALTER TABLE "stage_definitions" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_definitions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_definitions' AND column_name='deleted_by') THEN
+    ALTER TABLE "stage_definitions" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Portfolios soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='portfolios') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='portfolios' AND column_name='deleted_at') THEN
+    ALTER TABLE "portfolios" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='portfolios') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='portfolios' AND column_name='deleted_by') THEN
+    ALTER TABLE "portfolios" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- RAID items soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='raid_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raid_items' AND column_name='deleted_at') THEN
+    ALTER TABLE "raid_items" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='raid_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raid_items' AND column_name='deleted_by') THEN
+    ALTER TABLE "raid_items" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Commissioning items soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='commissioning_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='commissioning_items' AND column_name='deleted_at') THEN
+    ALTER TABLE "commissioning_items" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='commissioning_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='commissioning_items' AND column_name='deleted_by') THEN
+    ALTER TABLE "commissioning_items" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Procurement items soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='procurement_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='deleted_at') THEN
+    ALTER TABLE "procurement_items" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='procurement_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='deleted_by') THEN
+    ALTER TABLE "procurement_items" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Change requests soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='change_requests') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='deleted_at') THEN
+    ALTER TABLE "change_requests" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='change_requests') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='deleted_by') THEN
+    ALTER TABLE "change_requests" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='change_requests') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='delete_reason') THEN
+    ALTER TABLE "change_requests" ADD COLUMN "delete_reason" TEXT;
+  END IF;
+
+  -- Approvals soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='approvals') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='approvals' AND column_name='deleted_at') THEN
+    ALTER TABLE "approvals" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='approvals') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='approvals' AND column_name='deleted_by') THEN
+    ALTER TABLE "approvals" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='approvals') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='approvals' AND column_name='delete_reason') THEN
+    ALTER TABLE "approvals" ADD COLUMN "delete_reason" TEXT;
+  END IF;
+
+  -- Project execution state: stage lifecycle columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='current_stage_code') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "current_stage_code" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='gate_status') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "gate_status" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='gate_readiness_pct') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "gate_readiness_pct" INTEGER;
+  END IF;
+
+  -- Contracts soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='contracts') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contracts' AND column_name='deleted_at') THEN
+    ALTER TABLE "contracts" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='contracts') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contracts' AND column_name='deleted_by') THEN
+    ALTER TABLE "contracts" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Feedback tickets soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='feedback_tickets') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='feedback_tickets' AND column_name='deleted_at') THEN
+    ALTER TABLE "feedback_tickets" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='feedback_tickets') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='feedback_tickets' AND column_name='deleted_by') THEN
+    ALTER TABLE "feedback_tickets" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Handover stakeholders soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='handover_stakeholders') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='handover_stakeholders' AND column_name='deleted_at') THEN
+    ALTER TABLE "handover_stakeholders" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='handover_stakeholders') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='handover_stakeholders' AND column_name='deleted_by') THEN
+    ALTER TABLE "handover_stakeholders" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Invoice captures soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='invoice_captures') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_captures' AND column_name='deleted_at') THEN
+    ALTER TABLE "invoice_captures" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='invoice_captures') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_captures' AND column_name='deleted_by') THEN
+    ALTER TABLE "invoice_captures" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Lessons learnt soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='lessons_learnt') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='lessons_learnt' AND column_name='deleted_at') THEN
+    ALTER TABLE "lessons_learnt" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+
+  -- Portfolio rollout plans soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='portfolio_rollout_plans') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='portfolio_rollout_plans' AND column_name='deleted_at') THEN
+    ALTER TABLE "portfolio_rollout_plans" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+
+  -- Project access soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_access') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_access' AND column_name='deleted_at') THEN
+    ALTER TABLE "project_access" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_access') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_access' AND column_name='deleted_by') THEN
+    ALTER TABLE "project_access" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- SSEG applications soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='sseg_applications') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sseg_applications' AND column_name='deleted_at') THEN
+    ALTER TABLE "sseg_applications" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+
+  -- Stage checklist templates soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='deleted_at') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_checklist_templates') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_checklist_templates' AND column_name='deleted_by') THEN
+    ALTER TABLE "stage_checklist_templates" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Task tags soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='task_tags') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='task_tags' AND column_name='deleted_at') THEN
+    ALTER TABLE "task_tags" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='task_tags') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='task_tags' AND column_name='deleted_by') THEN
+    ALTER TABLE "task_tags" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Task time entries soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='task_time_entries') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='task_time_entries' AND column_name='deleted_at') THEN
+    ALTER TABLE "task_time_entries" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='task_time_entries') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='task_time_entries' AND column_name='deleted_by') THEN
+    ALTER TABLE "task_time_entries" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Template overrides soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='template_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='template_overrides' AND column_name='deleted_at') THEN
+    ALTER TABLE "template_overrides" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='template_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='template_overrides' AND column_name='deleted_by') THEN
+    ALTER TABLE "template_overrides" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- User permission overrides soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='user_permission_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_permission_overrides' AND column_name='deleted_at') THEN
+    ALTER TABLE "user_permission_overrides" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='user_permission_overrides') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='user_permission_overrides' AND column_name='deleted_by') THEN
+    ALTER TABLE "user_permission_overrides" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Work item dependencies soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_item_dependencies') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_item_dependencies' AND column_name='deleted_at') THEN
+    ALTER TABLE "work_item_dependencies" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_item_dependencies') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_item_dependencies' AND column_name='deleted_by') THEN
+    ALTER TABLE "work_item_dependencies" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
 END $$;

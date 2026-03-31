@@ -9,6 +9,8 @@ export const PERMISSION_CATALOG = {
   ENGINEERING_MANAGER: ["dashboard.read", "projects.read", "engineering.read", "engineering.write", "work_items.write", "milestones.write"],
   QUALITY_MANAGER: ["dashboard.read", "projects.read", "quality.read", "quality.write", "work_items.read"],
   CONSTRUCTION_MANAGER: ["dashboard.read", "projects.read", "pm.read", "pm.write", "procurement.read", "milestones.write", "work_items.write", "quality.read"],
+  HSE_MANAGER: ["dashboard.read", "projects.read", "hse.read", "hse.write", "quality.read", "work_items.read"],
+  SSEG_MANAGER: ["dashboard.read", "projects.read", "hse.read", "hse.write", "quality.read", "engineering.read", "work_items.read"],
   KEY_ACCOUNTS_MANAGER: ["dashboard.read", "projects.read", "development.read"],
   PROJECT_MANAGER_SITE: ["dashboard.read", "projects.read", "pm.read", "engineering.read", "quality.read", "finance.read", "work_items.write"],
   ACCOUNTANT: ["dashboard.read", "projects.read", "finance.read", "finance.write", "procurement.read", "procurement.write", "invoice.write"],
