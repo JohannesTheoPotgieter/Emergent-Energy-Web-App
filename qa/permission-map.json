@@ -18,11 +18,16 @@
     "SSEG_MANAGER": { "label": "SSEG Manager", "level": "management", "isAdmin": false }
   },
   "permissionEntities": [
-    "COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT",
-    "DELIVERY", "GOVERNANCE", "INFORMATION", "ADMIN",
-    "portfolios", "notifications", "subcontractors",
-    "cos_control", "cashflow_forecast", "home",
-    "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates"
+    "home", "my_work", "my_tool", "company_priorities", "meetings", "teams_chat", "collaboration_hub",
+    "lifecycle", "create_project", "stage_lifecycle", "stage_gate", "stage_exceptions", "stage_dependencies", "stage_config", "stage_admin", "gate_override", "exception",
+    "pd_dashboard", "pd_tickets", "pd_clients", "handover", "project_charter", "client_update",
+    "projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "handover_acceptance", "commissioning", "task_management", "standups", "phase_templates", "project_access_mgmt", "project_creation", "work_items",
+    "hse_dashboard", "hse_compliance", "hse_sseg", "hse_incidents",
+    "engineering", "eng_tasks", "eng_stages",
+    "quality",
+    "cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "subcontractors", "invoice_patterns",
+    "reports", "performance", "leaderboard", "department_scores",
+    "admin", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "training", "knowledge_game", "feedback"
   ],
   "middlewareTypes": {
     "requireAuth": "Basic authentication - any logged-in user",
