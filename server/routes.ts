@@ -21,7 +21,7 @@ import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { fileTypeFromBuffer } from "file-type";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests } from "@shared/schema";
+import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests, projectEngApprovals, approvals } from "@shared/schema";
 import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -6367,11 +6367,11 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/calendar/schedule-task", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/calendar/schedule-task", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const userName = (req.user as any).username;
-      const { taskType, taskId, scheduledDate, scheduledStartTime, scheduledEndTime } = req.body;
+      const { taskType, taskId, scheduledDate, scheduledStartTime, scheduledEndTime, approvalSubType } = req.body;
       if (!taskType || !taskId) {
         return res.status(400).json({ error: "taskType and taskId required" });
       }
@@ -6503,8 +6503,69 @@ export async function registerRoutes(
             updatedAt: new Date(),
           })
           .where(eq(deliverables.id, taskId));
+      } else if (taskType === "approval") {
+        const userRole = (req.user as any).role || "";
+        const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+        const isAdmin = ADMIN_ROLES.includes(userRole);
+
+        if (approvalSubType === "engineering") {
+          const [task] = await db.select().from(projectEngApprovals).where(eq(projectEngApprovals.id, taskId));
+          if (!task) return res.status(404).json({ error: "Engineering approval not found" });
+          const APPROVAL_ROLE_TO_USER_ROLES: Record<string, string[]> = {
+            QA_REVIEW: ["QUALITY_MANAGER"],
+            TECHNICAL_SIGNOFF: ["ENGINEERING_MANAGER", "COO_ADMIN", "CEO_ADMIN"],
+            "Engineering Manager": ["ENGINEERING_MANAGER"],
+            "Quality Manager": ["QUALITY_MANAGER"],
+            "COO": ["COO_ADMIN"],
+          };
+          const isAssignedApprover = task.approverUserId === userId;
+          const allowedByRole = task.approverRole ? (APPROVAL_ROLE_TO_USER_ROLES[task.approverRole] || []).includes(userRole) : false;
+          if (!isAdmin && !isAssignedApprover && !allowedByRole) {
+            return res.status(403).json({ error: "You can only schedule approvals assigned to you" });
+          }
+          await db.update(projectEngApprovals)
+            .set({
+              scheduledDate: scheduledDate || null,
+              scheduledStartTime: scheduledStartTime || null,
+              scheduledEndTime: scheduledEndTime || null,
+              updatedAt: new Date(),
+            })
+            .where(eq(projectEngApprovals.id, taskId));
+        } else if (approvalSubType === "quality") {
+          const [task] = await db.select().from(qcItemInstance).where(eq(qcItemInstance.id, taskId));
+          if (!task) return res.status(404).json({ error: "Quality approval not found" });
+          const isQM = userRole === "QUALITY_MANAGER" || userRole === "quality_manager";
+          const isAssignee = task.assigneeUserId === userId;
+          if (!isAdmin && !isQM && !isAssignee) {
+            return res.status(403).json({ error: "You can only schedule quality items assigned to you" });
+          }
+          await db.update(qcItemInstance)
+            .set({
+              scheduledDate: scheduledDate || null,
+              scheduledStartTime: scheduledStartTime || null,
+              scheduledEndTime: scheduledEndTime || null,
+              lastUpdatedAt: new Date(),
+            })
+            .where(eq(qcItemInstance.id, taskId));
+        } else if (approvalSubType === "general") {
+          const [task] = await db.select().from(approvals).where(eq(approvals.id, taskId));
+          if (!task) return res.status(404).json({ error: "Approval not found" });
+          const isAssignedApprover = task.assignedApprover === userId;
+          if (!isAdmin && !isAssignedApprover) {
+            return res.status(403).json({ error: "You can only schedule approvals assigned to you" });
+          }
+          await db.update(approvals)
+            .set({
+              scheduledDate: scheduledDate || null,
+              scheduledStartTime: scheduledStartTime || null,
+              scheduledEndTime: scheduledEndTime || null,
+            })
+            .where(eq(approvals.id, taskId));
+        } else {
+          return res.status(400).json({ error: "approvalSubType must be 'engineering', 'quality', or 'general'" });
+        }
       } else {
-        return res.status(400).json({ error: "taskType must be 'mytool', 'operational', 'plan', 'engineering', 'quality', 'tr_register', or 'deliverable'" });
+        return res.status(400).json({ error: "taskType must be 'mytool', 'operational', 'plan', 'engineering', 'quality', 'tr_register', 'deliverable', or 'approval'" });
       }
 
       logAuditFromReq(req, {

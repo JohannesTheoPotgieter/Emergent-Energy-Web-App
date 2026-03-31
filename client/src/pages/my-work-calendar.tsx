@@ -78,6 +78,7 @@ interface CalendarTask {
   lifecyclePhase?: string | null;
   ragStatus?: string | null;
   department?: string | null;
+  approvalSubType?: "engineering" | "quality" | "general" | null;
   sourceHref?: string | null;
   projectHref?: string | null;
   externalHref?: string | null;
@@ -423,9 +424,10 @@ export default function MyWorkCalendarPage() {
         plannedForDate: null,
         dueDate: null,
         startDate: null,
-        scheduledDate: null,
-        scheduledStartTime: null,
-        scheduledEndTime: null,
+        scheduledDate: a.scheduledDate || null,
+        scheduledStartTime: a.scheduledStartTime || null,
+        scheduledEndTime: a.scheduledEndTime || null,
+        approvalSubType: "engineering",
       }, a));
     }
     for (const a of (allTaskData.approvals?.quality || [])) {
@@ -439,9 +441,10 @@ export default function MyWorkCalendarPage() {
         plannedForDate: null,
         dueDate: null,
         startDate: null,
-        scheduledDate: null,
-        scheduledStartTime: null,
-        scheduledEndTime: null,
+        scheduledDate: a.scheduledDate || null,
+        scheduledStartTime: a.scheduledStartTime || null,
+        scheduledEndTime: a.scheduledEndTime || null,
+        approvalSubType: "quality",
       }, a));
     }
     for (const a of (allTaskData.approvals?.general || [])) {
@@ -455,9 +458,10 @@ export default function MyWorkCalendarPage() {
         plannedForDate: null,
         dueDate: null,
         startDate: null,
-        scheduledDate: null,
-        scheduledStartTime: null,
-        scheduledEndTime: null,
+        scheduledDate: a.scheduledDate || null,
+        scheduledStartTime: a.scheduledStartTime || null,
+        scheduledEndTime: a.scheduledEndTime || null,
+        approvalSubType: "general",
       }, a));
     }
 
@@ -488,6 +492,7 @@ export default function MyWorkCalendarPage() {
       scheduledDate: string | null;
       scheduledStartTime: string | null;
       scheduledEndTime: string | null;
+      approvalSubType?: string | null;
     }) => {
       const res = await fetch("/api/calendar/schedule-task", {
         method: "PATCH",
@@ -614,10 +619,11 @@ export default function MyWorkCalendarPage() {
 
     scheduleMutation.mutate({
       taskType: draggedTask.taskType,
-      taskId: draggedTask.id,
+      taskId: draggedTask.id as number,
       scheduledDate: dayKey,
       scheduledStartTime: startTime,
       scheduledEndTime: endTime,
+      approvalSubType: draggedTask.approvalSubType || null,
     });
 
     setDraggedTask(null);
@@ -627,10 +633,11 @@ export default function MyWorkCalendarPage() {
     if (typeof task.id !== "number") return;
     scheduleMutation.mutate({
       taskType: task.taskType,
-      taskId: task.id,
+      taskId: task.id as number,
       scheduledDate: null,
       scheduledStartTime: null,
       scheduledEndTime: null,
+      approvalSubType: task.approvalSubType || null,
     });
   }, [scheduleMutation]);
 

@@ -131,6 +131,9 @@ export const approvals = pgTable("approvals", {
   approvalType: text("approval_type"),          // 'handover', 'budget', 'vo', 'procurement', 'gate', 'handover_pack', 'exception', 'hse_incident', 'hse_corrective_action', 'sseg_application', 'sseg_document', 'quality_ncr', 'quality_inspection', 'contract', 'general'
   urgency: text("urgency").default("normal"),   // 'critical', 'high', 'normal', 'low'
   evidenceLinks: text("evidence_links"),        // JSON array of evidence links
+  scheduledDate: date("scheduled_date"),
+  scheduledStartTime: text("scheduled_start_time"),
+  scheduledEndTime: text("scheduled_end_time"),
   deletedAt: timestamp("deleted_at"),
   deletedBy: integer("deleted_by"),
   deleteReason: text("delete_reason"),

@@ -222,6 +222,9 @@ export const projectEngApprovals = pgTable("project_eng_approvals", {
   approverUserId: integer("approver_user_id").references(() => users.id),
   status: engApprovalStatusEnum("status").notNull().default('pending'),
   comments: text("comments"),
+  scheduledDate: date("scheduled_date"),
+  scheduledStartTime: text("scheduled_start_time"),
+  scheduledEndTime: text("scheduled_end_time"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
