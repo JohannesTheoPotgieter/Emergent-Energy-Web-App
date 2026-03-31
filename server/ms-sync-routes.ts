@@ -703,7 +703,11 @@ export function registerMsSyncRoutes(app: Express) {
 
       // Split personal tasks from operational tasks (both now in work_items)
       const personalTasks = allWorkItemsForUser.filter((t: any) => t.workstream === "PERSONAL");
-      const opTasks = allWorkItemsForUser.filter((t: any) => t.workstream !== "PERSONAL");
+
+      // Collect IDs from plan and engineering queries to avoid duplicates in operational list
+      const planTaskIds = new Set((planTasks as any[]).map((t: any) => t.id));
+      const engTaskIds = new Set((engTasks as any[]).map((t: any) => t.id));
+      const opTasks = allWorkItemsForUser.filter((t: any) => t.workstream !== "PERSONAL" && !planTaskIds.has(t.id) && !engTaskIds.has(t.id));
 
       const subtaskParentIds = opTasks.filter((t: any) => t.parentId === null || t.parentId === undefined).map((t: any) => t.id);
       let subtaskCounts: Record<number, number> = {};
