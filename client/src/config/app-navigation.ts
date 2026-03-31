@@ -216,14 +216,49 @@ export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
   PROJECT_DEVELOPER:      ["HOME", "PROJECT_DEVELOPMENT", "FINANCE"],
 };
 
+/**
+ * Maps canonical module names (from lens profiles) to TopSection.key values.
+ * Used to translate lens profile `allowedModules` into nav section visibility.
+ */
+const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, string[]> = {
+  HOME:        ["HOME"],
+  EXECUTIVE:   ["PORTFOLIO"],
+  PORTFOLIO:   ["PORTFOLIO"],
+  PIPELINE:    ["PROJECT_DEVELOPMENT"],
+  PROJECTS:    ["PROJECT_DELIVERY"],
+  DELIVERY:    ["PROJECT_DELIVERY"],
+  FINANCE:     ["FINANCE"],
+  ENGINEERING: ["ENGINEERING"],
+  COMPLIANCE:  ["QUALITY", "HSE"],
+  DOCUMENTS:   [],
+  REPORTS:     ["REPORTS"],
+  ADMIN:       ["ADMIN"],
+};
+
+/**
+ * Converts a lens profile's allowedModules into TopSection key values.
+ */
+export function getAllowedSectionKeysForLens(allowedModules: string[]): string[] {
+  const keys = new Set<string>();
+  for (const mod of allowedModules) {
+    const mapped = CANONICAL_MODULE_TO_SECTION_KEYS[mod];
+    if (mapped) {
+      for (const k of mapped) keys.add(k);
+    }
+  }
+  return Array.from(keys);
+}
+
 export function buildVisibleTopSections(options: {
   canViewPath: (path: string) => boolean;
   companyRole?: string | null;
+  allowedSectionKeys?: string[] | null;
 }) {
-  const { canViewPath, companyRole } = options;
+  const { canViewPath, companyRole, allowedSectionKeys } = options;
 
-  // Get role-specific visible section keys
-  const allowedKeys = companyRole ? ROLE_VISIBLE_SECTIONS[companyRole] : null;
+  // Lens-driven keys take priority over DB role lookup
+  const allowedKeys = allowedSectionKeys
+    ?? (companyRole ? ROLE_VISIBLE_SECTIONS[companyRole] : null);
 
   return TOP_SECTIONS
     .map((section) => {
