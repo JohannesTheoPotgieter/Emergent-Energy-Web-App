@@ -3,6 +3,7 @@
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";
+import { encryptField, decryptField } from "./lib/field-encryption";
 import { eq, sql, and, isNull } from "drizzle-orm";
 import { softCloseRows, addTemporalColumns } from "./lib/temporal-helpers";
 import { extractSupplierName } from "./lib/calculations/supplierExtractor";
@@ -916,7 +917,14 @@ router.get("/api/subcontractor-dashboard/supplier-details/:name", requireAuth, a
     if (!row) {
       return res.json({ exists: false, name: req.params.name });
     }
-    res.json({ exists: true, ...row });
+    // Phase 3: Decrypt bank fields before returning to caller.
+    // decryptField() is safe for unencrypted legacy values (returns as-is).
+    res.json({
+      exists: true,
+      ...row,
+      bank_account_number: decryptField(row.bank_account_number as string | null),
+      bank_branch_code: decryptField(row.bank_branch_code as string | null),
+    });
   } catch (err: any) {
     console.error("[Procurement] Supplier details error:", err.message);
     res.status(500).json({ error: "Failed to fetch supplier details" });
@@ -947,8 +955,8 @@ router.patch("/api/subcontractor-dashboard/supplier-details/:name", requireAuth,
           contact_phone = ${contactPhone ?? null},
           contact_email = ${contactEmail ?? null},
           bank_name = ${bankName ?? null},
-          bank_account_number = ${bankAccountNumber ?? null},
-          bank_branch_code = ${bankBranchCode ?? null},
+          bank_account_number = ${encryptField(bankAccountNumber) ?? null},
+          bank_branch_code = ${encryptField(bankBranchCode) ?? null},
           payment_terms = ${paymentTerms ?? null},
           notes = ${notes ?? null}
         WHERE id = ${cpId}
@@ -967,7 +975,7 @@ router.patch("/api/subcontractor-dashboard/supplier-details/:name", requireAuth,
           bank_branch_code, payment_terms, notes, type_default)
         VALUES (${name}, ${vatNumber ?? null}, ${registrationNumber ?? null}, ${address ?? null},
           ${contactPerson ?? null}, ${contactPhone ?? null}, ${contactEmail ?? null},
-          ${bankName ?? null}, ${bankAccountNumber ?? null}, ${bankBranchCode ?? null},
+          ${bankName ?? null}, ${encryptField(bankAccountNumber) ?? null}, ${encryptField(bankBranchCode) ?? null},
           ${paymentTerms ?? null}, ${notes ?? null}, 'SUPPLIER')
         RETURNING id
       `);
