@@ -146,6 +146,8 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
       const token = localStorage.getItem('auth_token');
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (token) headers["Authorization"] = `Bearer ${token}`;
+      const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+      if (csrf) headers["X-CSRF-Token"] = csrf;
       const response = await fetch("/api/revenue-tracking/overrides", {
         credentials: "include",
         method: "POST",
@@ -186,6 +188,8 @@ export function RevenueTrackingEditableTab({ projectName }: RevenueTrackingEdita
       const token = localStorage.getItem('auth_token');
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
+      const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+      if (csrf) headers["X-CSRF-Token"] = csrf;
       const response = await fetch(`/api/revenue-tracking/overrides/${projectName}`, {
         credentials: "include",
         method: "DELETE",

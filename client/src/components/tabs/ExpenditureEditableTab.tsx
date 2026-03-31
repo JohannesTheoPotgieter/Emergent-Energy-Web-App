@@ -328,6 +328,8 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     const token = localStorage.getItem("auth_token");
     const h: Record<string, string> = {};
     if (token) h["Authorization"] = `Bearer ${token}`;
+    const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+    if (csrf) h["X-CSRF-Token"] = csrf;
     return h;
   }, []);
 

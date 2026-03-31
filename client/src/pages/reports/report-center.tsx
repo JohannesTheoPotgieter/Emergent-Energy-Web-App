@@ -37,6 +37,8 @@ async function authFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
+  const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+  if (csrf) headers["X-CSRF-Token"] = csrf;
   const res = await fetch(url, { ...options, headers, credentials: "include" });
   if (!res.ok) throw new Error("Request failed");
   return res.json();
