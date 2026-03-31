@@ -1,7 +1,11 @@
-// FROZEN: No new routes should be added to this file.
-// New routes go in server/routes/ or server/departments/ domain files.
-// See server/routes/register-all-routes.ts for the modular pattern.
-// TODO: Target < 500 lines. Current: 10,070. Track reduction each sprint.
+/**
+ * DEPRECATION STATUS: FROZEN — DO NOT ADD NEW ROUTES HERE
+ * Migration target: server/routes/<domain>-routes.ts
+ * Progress: docs/route-migration-status.md
+ *
+ * Total handlers at freeze: 187. Target: 0.
+ * New routes MUST go in server/routes/ or server/departments/ domain files.
+ */
 // TODO: remove @ts-nocheck
 // @ts-nocheck
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
@@ -7389,6 +7393,7 @@ export async function registerRoutes(
   });
 
   // ==================== MY TOOL - USER SCOPING HELPER ====================
+  // EXTRACTED to server/routes/mytool-routes.ts — remove after verification (34 handlers below)
 
   /** Resolve effective userId for mytool queries.
    *  ADMIN and PROGRAM_MANAGER may pass ?userId= to view another user's data.
