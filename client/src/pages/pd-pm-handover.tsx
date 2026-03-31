@@ -37,7 +37,7 @@ const READINESS_OPTIONS = [
   { value: "READY_FOR_HANDOVER", label: "Ready for handover" },
 ];
 
-const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "CCO", "admin"];
 const DELIVERABLES = [
   { key: "handoverCharter", label: "Handover Charter" },
   { key: "siteVisitReport", label: "Site Visit Report" },
@@ -284,7 +284,7 @@ function PdPmHandoverV1({ projectId }: { projectId: number }) {
   }
 
   const status = data.handover?.status || "DRAFT";
-  const pdCanEdit = user?.role === "PROJECT_DEVELOPER" || user?.role === "COO_ADMIN" || user?.role === "CEO_ADMIN";
+  const pdCanEdit = user?.role === "PROJECT_DEVELOPER" || user?.role === "COO_ADMIN" || user?.role === "CEO_ADMIN" || user?.role === "CCO";
   const pmCanReview = isPmRole(user?.role);
   const blockersText = (data.blockers || []).join(", ");
   const deliverablesComplete = DELIVERABLES.filter((item) => form.deliverables?.[item.key]?.reference).length;
@@ -421,7 +421,7 @@ function PdPmHandoverV1({ projectId }: { projectId: number }) {
             <Input placeholder="Reference or URL" value={newEvidence.valueRef} onChange={(e) => setNewEvidence({ ...newEvidence, valueRef: e.target.value })} />
           </div>
           <Button variant="outline" onClick={() => addEvidence.mutate()} disabled={addEvidence.isPending}>{addEvidence.isPending ? "Attaching..." : "Attach evidence"}</Button>
-          {["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN"].includes(user?.role || "") ? <Textarea value={evidenceOverrideReason} onChange={(e) => setEvidenceOverrideReason(e.target.value)} placeholder="Override reason if evidence is below threshold" rows={3} /> : null}
+          {["PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "CCO"].includes(user?.role || "") ? <Textarea value={evidenceOverrideReason} onChange={(e) => setEvidenceOverrideReason(e.target.value)} placeholder="Override reason if evidence is below threshold" rows={3} /> : null}
           {DELIVERABLES.map((item) => {
             const current = form.deliverables?.[item.key] || {};
             return (
