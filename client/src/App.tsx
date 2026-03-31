@@ -344,7 +344,8 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
       p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/pm/on-the-go" && location.startsWith("/pm/on-the-go"))
     );
     if (!allowed) {
-      return <Redirect to="/execution-board" />;
+      // Legacy: was /execution-board → /gates. Collapsed to direct.
+      return <Redirect to="/gates" />;
     }
   }
 

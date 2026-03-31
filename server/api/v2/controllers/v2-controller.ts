@@ -364,7 +364,27 @@ export const auditActivity = asyncHandler(async (_req, res) => ok(res, await ser
 
 // Prompt 12: Materialized dashboard metrics endpoint
 export const dashboardMetrics = asyncHandler(async (_req, res) => ok(res, await service.dashboardMetricsService()));
-export const dashboardRefresh = asyncHandler(async (_req, res) => ok(res, await service.dashboardRefreshService()));
+
+export const dashboardRefresh = asyncHandler(async (req, res) => {
+  const userId = (req.user as any).id;
+  const rateLimitResult = await service.checkRefreshRateLimit(userId);
+  if (!rateLimitResult.allowed) {
+    return res.status(429).json({
+      success: false,
+      data: null,
+      meta: null,
+      error: { code: "RATE_LIMITED", message: "Refresh already triggered within the last 5 minutes. Please wait." },
+    });
+  }
+  await service.setRefreshRateLimit(userId);
+  ok(res, await service.dashboardRefreshService());
+});
+
+export const dashboardLastRefresh = asyncHandler(async (req, res) => {
+  const userId = (req.user as any).id;
+  const role = (req.user as any).role;
+  ok(res, await service.dashboardLastRefreshService(userId, role));
+});
 
 // ─── Consolidated project endpoints with permissions + runtime validation ────
 

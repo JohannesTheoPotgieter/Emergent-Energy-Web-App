@@ -30,6 +30,7 @@ export const mytoolTasks = pgTable("mytool_tasks", {
   startDate: text("start_date"),
   notes: text("notes"),
   bucket: mytoolTaskBucketEnum("bucket").default('personal'),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id),
   department: text("department"),
@@ -82,6 +83,7 @@ export const mytoolRecurrenceTemplates = pgTable("mytool_recurrence_templates", 
   ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
   title: text("title").notNull(),
   description: text("description"),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id),
   defaultAssigneeRole: text("default_assignee_role"),
@@ -188,6 +190,7 @@ export const priorityLinks = pgTable("priority_links", {
   id: serial("id").primaryKey(),
   priorityId: integer("priority_id").notNull().references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
   linkType: text("link_type").notNull(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id),
   taskId: integer("task_id"),

@@ -1382,77 +1382,21 @@ router.get("/api/tracker-monthly/:type", requireAuth, requireTrackerPermission("
 
 // ==================== REV TRACKER API ====================
 
-router.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    const [allInflows, manualEntries] = await Promise.all([
-      storage.getAllProgramInflows(),
-      storage.getTrackerMonthlyManual('REV'),
-    ]);
-
-    const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
-
-    const months: any[] = [];
-    const startMonth = new Date(Date.UTC(2025, 8, 1));
-
-    let ytdPlanned = 0, ytdRealised = 0, ytdOutstanding = 0, ytdBudget = 0;
-
-    for (let i = 0; i < 12; i++) {
-      const monthDate = new Date(startMonth);
-      monthDate.setUTCMonth(monthDate.getUTCMonth() + i);
-      const yr = monthDate.getUTCFullYear();
-      const mo = monthDate.getUTCMonth();
-      const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-      const monthStart = `${monthKey}-01`;
-      const nextMonth = new Date(Date.UTC(yr, mo + 1, 1));
-      const monthEnd = nextMonth.toISOString().split('T')[0];
-
-      let planned = 0;
-      for (const inflow of allInflows) {
-        const d = inflow.invoiceRaisedDate;
-        if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-        if (d >= monthStart && d < monthEnd && inflow.milestoneAmount) {
-          planned += parseFloat(inflow.milestoneAmount) || 0;
-        }
-      }
-
-      const manual = manualMap.get(monthKey);
-      const realised = manual?.realised ? parseFloat(manual.realised) : 0;
-      const outstanding = manual?.outstanding ? parseFloat(manual.outstanding) : 0;
-      const budget = manual?.budget ? parseFloat(manual.budget) : 0;
-
-      const variance = planned - budget;
-      const variancePct = budget !== 0 ? ((planned - budget) / budget) * 100 : 0;
-
-      ytdPlanned += planned;
-      ytdRealised += realised;
-      ytdOutstanding += outstanding;
-      ytdBudget += budget;
-      const ytdVariance = ytdPlanned - ytdBudget;
-      const ytdVariancePct = ytdBudget !== 0 ? ((ytdPlanned - ytdBudget) / ytdBudget) * 100 : 0;
-
-      months.push({
-        monthKey,
-        label: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
-        planned,
-        realised,
-        outstanding,
-        budget,
-        variance,
-        variancePct,
-        ytdPlanned,
-        ytdRealised,
-        ytdOutstanding,
-        ytdBudget,
-        ytdVariance,
-        ytdVariancePct,
-      });
-    }
-
-    res.json(months);
-  } catch (error) {
-    console.error("REV tracker error:", error);
-    res.status(500).json({ error: "Failed to fetch REV tracker data", message: "Failed to fetch REV tracker data" });
-  }
+/**
+ * LEGACY ROUTE: /api/rev-tracker
+ * Canonical route: /api/revenue-tracker (below)
+ * Why: /api/revenue-tracker is the route called by the frontend (revenue-tracker.tsx),
+ *      uses correct permission-based auth, and has the newer calculation logic.
+ * Removal plan: Remove this route after one release window once logs confirm zero usage.
+ */
+router.get("/api/rev-tracker", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
+  console.warn("[DEPRECATION] GET /api/rev-tracker called — use /api/revenue-tracker instead", {
+    route: "/api/rev-tracker",
+    userAgent: req.headers["user-agent"],
+    referer: req.headers["referer"],
+    userId: (req as any).user?.id,
+  });
+  return revenueTrackerHandler(req, res);
 });
 
 // ==================== COS TRACKER API ====================
@@ -2556,7 +2500,8 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
+/** Shared handler for the revenue tracker endpoint (used by both canonical and legacy routes). */
+async function revenueTrackerHandler(req: Request, res: Response) {
   try {
     const [allExpenses, allInflowsRaw, manualEntries, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
@@ -2697,7 +2642,10 @@ router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_track
     console.error("Revenue tracker error:", error);
     res.status(500).json({ error: "Failed to fetch revenue tracker data" });
   }
-});
+}
+
+// Canonical route: /api/revenue-tracker — called by the frontend (revenue-tracker.tsx)
+router.get("/api/revenue-tracker", requireAuth, requirePermission("revenue_tracker", "view"), revenueTrackerHandler);
 
 router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
