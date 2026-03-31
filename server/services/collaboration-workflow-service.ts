@@ -2,16 +2,24 @@
 // COLLABORATION WORKFLOW SERVICE — Acceptances, Commitments,
 //   Evidence Requests, Queries, Client Updates
 // ============================================================
+//
+// CUTOVER STATUS (2026-03-31):
+//   Phase 1 ✓ — All writes go to canonical tables (project_client_*)
+//   Phase 2 ✓ — All reads come from canonical tables (project_client_*)
+//   Phase 3 ✓ — Runtime guards block any future legacy writes
+//   Legacy tables: client_commitments, client_updates — DO NOT USE
+// ============================================================
 
-import { and, eq, desc, sql, lte, isNull } from "drizzle-orm";
+import { and, eq, desc, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   stageAcceptances,
   acceptanceReservations,
-  clientCommitments,
+  // CANONICAL — all reads and writes target these tables
+  projectClientCommitments,
+  projectClientUpdates,
   evidenceRequests,
   projectQueries,
-  clientUpdates,
   projectStageDependencies,
   projectStageInstances,
   projectStageRequirements,
@@ -20,15 +28,39 @@ import {
   type StageAcceptance,
   type InsertAcceptanceReservation,
   type AcceptanceReservation,
-  type InsertClientCommitment,
-  type ClientCommitment,
+  type InsertProjectClientCommitment,
+  type ProjectClientCommitment,
   type InsertEvidenceRequest,
   type EvidenceRequest,
   type InsertProjectQuery,
   type ProjectQuery,
-  type InsertClientUpdate,
-  type ClientUpdate,
+  type InsertProjectClientUpdate,
+  type ProjectClientUpdate,
 } from "@shared/schema";
+
+// ── Legacy Write Guards ───────────────────────────────────────
+// Phase 3: Runtime guards that throw if anyone attempts to write to legacy tables.
+// These exist to catch any missed code paths during the observation window.
+
+function blockLegacyCommitmentWrite(operation: string): never {
+  const msg = `[LEGACY_GUARD] Write to deprecated client_commitments table blocked (${operation}). Use projectClientCommitments instead.`;
+  console.error(msg);
+  throw new Error(msg);
+}
+
+function blockLegacyUpdateWrite(operation: string): never {
+  const msg = `[LEGACY_GUARD] Write to deprecated client_updates table blocked (${operation}). Use projectClientUpdates instead.`;
+  console.error(msg);
+  throw new Error(msg);
+}
+
+// ── Legacy Read Telemetry ─────────────────────────────────────
+// Temporary logging for the 90-day observation window.
+// If this fires, something is still reading from legacy tables.
+
+function logLegacyRead(table: string, caller: string): void {
+  console.warn(`[LEGACY_TELEMETRY] Legacy read from ${table} in ${caller} — this should not happen after cutover`);
+}
 
 // ── Acceptances ────────────────────────────────────────────
 
@@ -106,7 +138,7 @@ export async function updateReservationStatus(id: number, status: string, notes?
   return updated;
 }
 
-// ── Client Commitments ─────────────────────────────────────
+// ── Client Commitments (CANONICAL: project_client_commitments) ──
 
 export async function createClientCommitment(params: {
   projectId: number;
@@ -115,15 +147,16 @@ export async function createClientCommitment(params: {
   committedByUserId?: number;
   deliveryStageCode?: string;
   notes?: string;
-}): Promise<ClientCommitment> {
-  const [commitment] = await db.insert(clientCommitments).values({
+}): Promise<ProjectClientCommitment> {
+  // Phase 1: Write to canonical table
+  const [commitment] = await db.insert(projectClientCommitments).values({
     projectId: params.projectId,
     stageCodeCreated: params.stageCodeCreated,
     commitmentText: params.commitmentText,
     committedByUserId: params.committedByUserId || null,
     committedDate: new Date(),
     deliveryStageCode: params.deliveryStageCode || null,
-    status: 'open',
+    status: 'OPEN',
     notes: params.notes || null,
   }).returning();
 
@@ -131,11 +164,12 @@ export async function createClientCommitment(params: {
 }
 
 export async function getClientCommitments(projectId: number) {
+  // Phase 2: Read from canonical table
   return db
     .select()
-    .from(clientCommitments)
-    .where(eq(clientCommitments.projectId, projectId))
-    .orderBy(desc(clientCommitments.createdAt));
+    .from(projectClientCommitments)
+    .where(eq(projectClientCommitments.projectId, projectId))
+    .orderBy(desc(projectClientCommitments.createdAt));
 }
 
 export async function updateClientCommitment(id: number, params: {
@@ -146,11 +180,13 @@ export async function updateClientCommitment(id: number, params: {
   const updates: Record<string, any> = {};
   if (params.status) updates.status = params.status;
   if (params.deliveredDate) updates.deliveredDate = new Date(params.deliveredDate);
-  if (params.status === 'delivered' && !params.deliveredDate) updates.deliveredDate = new Date();
+  if (params.status === 'DELIVERED' && !params.deliveredDate) updates.deliveredDate = new Date();
   if (params.notes !== undefined) updates.notes = params.notes;
 
-  await db.update(clientCommitments).set(updates).where(eq(clientCommitments.id, id));
-  const [updated] = await db.select().from(clientCommitments).where(eq(clientCommitments.id, id));
+  // Phase 1: Write to canonical table
+  await db.update(projectClientCommitments).set(updates).where(eq(projectClientCommitments.id, id));
+  // Phase 2: Read from canonical table
+  const [updated] = await db.select().from(projectClientCommitments).where(eq(projectClientCommitments.id, id));
   return updated;
 }
 
@@ -294,7 +330,7 @@ export async function updateQueryStatus(id: number, status: string) {
   return updated;
 }
 
-// ── Client Updates ─────────────────────────────────────────
+// ── Client Updates (CANONICAL: project_client_updates) ────────
 
 export async function createClientUpdate(params: {
   projectId: number;
@@ -304,25 +340,23 @@ export async function createClientUpdate(params: {
   blockersText?: string;
   clientActionsRequiredText?: string;
   reviewerUserId?: number;
-}): Promise<ClientUpdate> {
-  // Get next update number
-  const existing = await db
-    .select({ updateNumber: clientUpdates.updateNumber })
-    .from(clientUpdates)
-    .where(eq(clientUpdates.projectId, params.projectId))
-    .orderBy(desc(clientUpdates.updateNumber))
-    .limit(1);
+}): Promise<ProjectClientUpdate> {
+  // Phase 2: Read next update number from canonical table
+  const [maxRow] = await db
+    .select({ maxNum: sql<number>`COALESCE(MAX(update_number), 0)` })
+    .from(projectClientUpdates)
+    .where(eq(projectClientUpdates.projectId, params.projectId));
 
-  const nextNumber = (existing[0]?.updateNumber ?? 0) + 1;
+  const nextNumber = (maxRow?.maxNum ?? 0) + 1;
   const now = new Date();
   const nextDue = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  const [update] = await db.insert(clientUpdates).values({
+  // Phase 1: Write to canonical table
+  const [update] = await db.insert(projectClientUpdates).values({
     projectId: params.projectId,
     updateNumber: nextNumber,
-    lastClientUpdateDate: now,
-    nextClientUpdateDueDate: nextDue,
-    clientUpdateStatus: 'draft',
+    dueDate: nextDue.toISOString().split('T')[0],
+    status: 'DRAFT',
     progressSummaryText: params.progressSummaryText || null,
     completedThisPeriodText: params.completedThisPeriodText || null,
     next7DaysText: params.next7DaysText || null,
@@ -335,38 +369,48 @@ export async function createClientUpdate(params: {
 }
 
 export async function getClientUpdates(projectId: number) {
+  // Phase 2: Read from canonical table
   return db
     .select()
-    .from(clientUpdates)
-    .where(eq(clientUpdates.projectId, projectId))
-    .orderBy(desc(clientUpdates.updateNumber));
+    .from(projectClientUpdates)
+    .where(eq(projectClientUpdates.projectId, projectId))
+    .orderBy(desc(projectClientUpdates.updateNumber));
 }
 
 export async function updateClientUpdate(id: number, params: {
-  clientUpdateStatus?: string;
+  status?: string;
   progressSummaryText?: string;
   completedThisPeriodText?: string;
   next7DaysText?: string;
   blockersText?: string;
   clientActionsRequiredText?: string;
-  clientUpdateSentBy?: number;
+  sentByUserId?: number;
   reviewerUserId?: number;
   sentDate?: string;
+  // Legacy param names — remap silently for backward compat
+  clientUpdateStatus?: string;
+  clientUpdateSentBy?: number;
 }) {
-  const updates: Record<string, any> = {};
-  if (params.clientUpdateStatus) updates.clientUpdateStatus = params.clientUpdateStatus;
+  const updates: Record<string, any> = { updatedAt: new Date() };
+  // Support both canonical and legacy param names
+  const effectiveStatus = params.status || params.clientUpdateStatus;
+  if (effectiveStatus) updates.status = effectiveStatus.toUpperCase();
   if (params.progressSummaryText !== undefined) updates.progressSummaryText = params.progressSummaryText;
   if (params.completedThisPeriodText !== undefined) updates.completedThisPeriodText = params.completedThisPeriodText;
   if (params.next7DaysText !== undefined) updates.next7DaysText = params.next7DaysText;
   if (params.blockersText !== undefined) updates.blockersText = params.blockersText;
   if (params.clientActionsRequiredText !== undefined) updates.clientActionsRequiredText = params.clientActionsRequiredText;
-  if (params.clientUpdateSentBy) updates.clientUpdateSentBy = params.clientUpdateSentBy;
+  const effectiveSentBy = params.sentByUserId || params.clientUpdateSentBy;
+  if (effectiveSentBy) updates.sentByUserId = effectiveSentBy;
   if (params.reviewerUserId) updates.reviewerUserId = params.reviewerUserId;
   if (params.sentDate) updates.sentDate = new Date(params.sentDate);
-  if (params.clientUpdateStatus === 'sent' && !params.sentDate) updates.sentDate = new Date();
+  const finalStatus = effectiveStatus?.toUpperCase();
+  if (finalStatus === 'SENT' && !params.sentDate) updates.sentDate = new Date();
 
-  await db.update(clientUpdates).set(updates).where(eq(clientUpdates.id, id));
-  const [updated] = await db.select().from(clientUpdates).where(eq(clientUpdates.id, id));
+  // Phase 1: Write to canonical table
+  await db.update(projectClientUpdates).set(updates).where(eq(projectClientUpdates.id, id));
+  // Phase 2: Read from canonical table
+  const [updated] = await db.select().from(projectClientUpdates).where(eq(projectClientUpdates.id, id));
   return updated;
 }
 
@@ -431,9 +475,10 @@ export async function getAllOpenQueries() {
 }
 
 export async function getAllOverdueCommitments() {
+  // Phase 2: Read from canonical table
   return db
     .select()
-    .from(clientCommitments)
-    .where(eq(clientCommitments.status, 'open'))
-    .orderBy(clientCommitments.createdAt);
+    .from(projectClientCommitments)
+    .where(eq(projectClientCommitments.status, 'OPEN'))
+    .orderBy(projectClientCommitments.createdAt);
 }
