@@ -34,9 +34,13 @@ export async function fetchPermissions(): Promise<{ canManageRoles?: boolean; ca
   return (await parseJsonSafe<{ canManageRoles?: boolean; canManageUsers?: boolean }>(res)) || {};
 }
 
-export async function saveRole(roleKey: string, payload: Partial<RoleSummary>): Promise<boolean> {
+export async function saveRole(roleKey: string, payload: Partial<RoleSummary>): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`/api/roles/${roleKey}`, { method: "PUT", headers: authHeaders(), ...fetchOpts, body: JSON.stringify(payload) });
-  return res.ok;
+  if (!res.ok) {
+    const body = await parseJsonSafe<{ error?: string }>(res);
+    return { ok: false, error: body?.error || `Save failed (${res.status})` };
+  }
+  return { ok: true };
 }
 
 export async function createRole(payload: { role: string; label: string; sections?: string[]; canEditData?: boolean }): Promise<boolean> {
