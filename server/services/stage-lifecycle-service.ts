@@ -540,3 +540,88 @@ export async function getStageDecisions(projectId: number) {
     .where(eq(projectStageDecisions.projectId, projectId))
     .orderBy(projectStageDecisions.decidedDate);
 }
+
+export async function advanceToStage(params: {
+  projectId: number;
+  targetStageCode: StageCode;
+  actorUserId: number;
+  actorRole: string;
+  reason?: string;
+}): Promise<{ skipped: string[]; currentStage: string }> {
+  const { projectId, targetStageCode, actorUserId, reason } = params;
+  const targetSeq = STAGE_SEQUENCE[targetStageCode];
+  if (!targetSeq) throw new Error(`Unknown stage code: ${targetStageCode}`);
+
+  const instances = await db
+    .select()
+    .from(projectStageInstances)
+    .where(eq(projectStageInstances.projectId, projectId));
+
+  if (instances.length === 0) throw new Error("No stage instances found. Initialize lifecycle first.");
+
+  const skipped: string[] = [];
+  const now = new Date();
+
+  for (const inst of instances) {
+    const seq = STAGE_SEQUENCE[inst.stageCode as StageCode];
+    if (seq === undefined) continue;
+
+    if (seq < targetSeq && inst.stageStatus !== 'PROGRESSED') {
+      await db
+        .update(projectStageInstances)
+        .set({
+          stageStatus: 'PROGRESSED',
+          startedAt: inst.startedAt || now,
+          completedAt: now,
+          readinessPct: 100,
+          updatedAt: now,
+        })
+        .where(eq(projectStageInstances.id, inst.id));
+
+      await db.insert(projectStageDecisions).values({
+        projectId,
+        stageCode: inst.stageCode,
+        decisionType: 'STAGE_OVERRIDE',
+        decisionSummary: `Stage ${inst.stageCode} bulk-advanced to PROGRESSED (admin skip-to ${targetStageCode})${reason ? ': ' + reason : ''}`,
+        decidedByUserId: actorUserId,
+        decidedDate: now,
+        rationale: reason || 'Admin bulk advance — aligning project with current reality',
+      });
+
+      skipped.push(inst.stageCode);
+    }
+
+    if (seq === targetSeq && inst.stageStatus === 'NOT_STARTED') {
+      await db
+        .update(projectStageInstances)
+        .set({
+          stageStatus: 'IN_PROGRESS',
+          startedAt: now,
+          updatedAt: now,
+        })
+        .where(eq(projectStageInstances.id, inst.id));
+
+      await db.insert(projectStageDecisions).values({
+        projectId,
+        stageCode: inst.stageCode,
+        decisionType: 'STAGE_OVERRIDE',
+        decisionSummary: `Stage ${inst.stageCode} set to IN_PROGRESS (admin advance target)${reason ? ': ' + reason : ''}`,
+        decidedByUserId: actorUserId,
+        decidedDate: now,
+        rationale: reason || 'Admin bulk advance — aligning project with current reality',
+      });
+    }
+  }
+
+  await db
+    .update(projectExecutionState)
+    .set({
+      currentStageCode: targetStageCode,
+      updatedAt: now,
+    })
+    .where(eq(projectExecutionState.projectId, projectId));
+
+  await syncCurrentStage(projectId);
+
+  return { skipped, currentStage: targetStageCode };
+}

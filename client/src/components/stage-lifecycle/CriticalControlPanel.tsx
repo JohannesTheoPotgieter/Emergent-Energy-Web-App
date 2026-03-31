@@ -1,9 +1,13 @@
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useProjectStages, useInitializeStages, type StageDashboardPayload } from "@/hooks/use-stage-lifecycle";
-import { generateStatusSentence, getUnsatisfiedBlockers, computeDaysInStage } from "@shared/utils/stage-state-machine";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useProjectStages, useInitializeStages, useAdvanceToStage, type StageDashboardPayload } from "@/hooks/use-stage-lifecycle";
+import { STAGE_SEQUENCE } from "@shared/utils/stage-state-machine";
 import { useToast } from "@/hooks/use-toast";
 import {
   Clock,
@@ -14,6 +18,7 @@ import {
   XCircle,
   Loader2,
   PlayCircle,
+  FastForward,
 } from "lucide-react";
 
 interface CriticalControlPanelProps {
@@ -55,10 +60,18 @@ const STAGE_LABELS: Record<string, string> = {
   S10_POST_HANDOVER_REVIEW: "10. Post-Handover Review",
 };
 
+const ORDERED_STAGE_CODES = Object.entries(STAGE_SEQUENCE)
+  .sort(([, a], [, b]) => a - b)
+  .map(([code]) => code);
+
 export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }: CriticalControlPanelProps) {
   const { data, isLoading } = useProjectStages(projectId);
   const initMutation = useInitializeStages(projectId);
+  const advanceMutation = useAdvanceToStage(projectId);
   const { toast } = useToast();
+  const [advanceDialogOpen, setAdvanceDialogOpen] = useState(false);
+  const [selectedTarget, setSelectedTarget] = useState<string>("");
+  const [advanceReason, setAdvanceReason] = useState("");
 
   if (isLoading) {
     return (
@@ -103,58 +116,167 @@ export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }:
   const statusLabel = STATUS_LABELS[currentStage.stageStatus] || currentStage.stageStatus;
   const statusColor = STATUS_COLORS[currentStage.stageStatus] || "bg-gray-100 text-gray-700";
 
+  const currentSeq = STAGE_SEQUENCE[currentStage.stageCode as keyof typeof STAGE_SEQUENCE] || 1;
+  const advanceTargets = ORDERED_STAGE_CODES.filter(code => {
+    const seq = STAGE_SEQUENCE[code as keyof typeof STAGE_SEQUENCE];
+    return seq > currentSeq;
+  });
+
+  const handleAdvance = () => {
+    if (!selectedTarget) return;
+    advanceMutation.mutate(
+      { targetStageCode: selectedTarget, reason: advanceReason || undefined },
+      {
+        onSuccess: (result: any) => {
+          const skippedCount = result.skipped?.length || 0;
+          toast({
+            title: "Project advanced",
+            description: `Skipped ${skippedCount} stage${skippedCount !== 1 ? 's' : ''}. Now at ${STAGE_LABELS[result.currentStage] || result.currentStage}.`,
+          });
+          setAdvanceDialogOpen(false);
+          setSelectedTarget("");
+          setAdvanceReason("");
+        },
+        onError: (err: Error) => {
+          toast({ title: "Failed to advance", description: err.message, variant: "destructive" });
+        },
+      },
+    );
+  };
+
   return (
-    <div className="border-b bg-muted/30 px-4 py-2">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        {/* Stage name */}
-        <span className="text-sm font-semibold">{stageLabel}</span>
+    <>
+      <div className="border-b bg-muted/30 px-4 py-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <span className="text-sm font-semibold">{stageLabel}</span>
 
-        {/* Status badge */}
-        <Badge variant="outline" className={`text-xs ${statusColor}`}>
-          {statusLabel}
-        </Badge>
+          <Badge variant="outline" className={`text-xs ${statusColor}`}>
+            {statusLabel}
+          </Badge>
 
-        {/* Readiness */}
-        <div className="flex items-center gap-2 min-w-[120px]">
-          <Progress value={currentStage.readinessPct} className="h-2 w-20" />
-          <span className="text-xs text-muted-foreground">{currentStage.readinessPct}%</span>
+          <div className="flex items-center gap-2 min-w-[120px]">
+            <Progress value={currentStage.readinessPct} className="h-2 w-20" />
+            <span className="text-xs text-muted-foreground">{currentStage.readinessPct}%</span>
+          </div>
+
+          {currentStage.daysInStage > 0 && (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              {currentStage.daysInStage}d in stage
+            </div>
+          )}
+
+          {openExceptionCount > 0 && (
+            <div className="flex items-center gap-1">
+              <ShieldAlert className="h-3.5 w-3.5 text-orange-500" />
+              <span className="text-xs text-orange-600">{openExceptionCount} exception{openExceptionCount !== 1 ? 's' : ''}</span>
+            </div>
+          )}
+
+          {openDependencyCount > 0 && (
+            <div className="flex items-center gap-1">
+              <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+              <span className="text-xs text-amber-600">{openDependencyCount} waiting</span>
+            </div>
+          )}
+
+          <div className="ml-auto flex items-center gap-1">
+            {isAdmin && advanceTargets.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1.5"
+                onClick={() => setAdvanceDialogOpen(true)}
+                data-testid="button-advance-to-stage"
+              >
+                <FastForward className="h-3 w-3" />
+                Skip to Stage
+              </Button>
+            )}
+            {onViewGate && (
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onViewGate}>
+                View Gate
+                <ChevronRight className="ml-1 h-3 w-3" />
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Days in stage */}
-        {currentStage.daysInStage > 0 && (
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            {currentStage.daysInStage}d in stage
-          </div>
-        )}
-
-        {/* Open exceptions */}
-        {openExceptionCount > 0 && (
-          <div className="flex items-center gap-1">
-            <ShieldAlert className="h-3.5 w-3.5 text-orange-500" />
-            <span className="text-xs text-orange-600">{openExceptionCount} exception{openExceptionCount !== 1 ? 's' : ''}</span>
-          </div>
-        )}
-
-        {/* Open dependencies */}
-        {openDependencyCount > 0 && (
-          <div className="flex items-center gap-1">
-            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
-            <span className="text-xs text-amber-600">{openDependencyCount} waiting</span>
-          </div>
-        )}
-
-        {/* View Gate button */}
-        {onViewGate && (
-          <Button variant="ghost" size="sm" className="ml-auto h-7 text-xs" onClick={onViewGate}>
-            View Gate
-            <ChevronRight className="ml-1 h-3 w-3" />
-          </Button>
-        )}
+        <p className="mt-1 text-xs text-muted-foreground italic">{statusSentence}</p>
       </div>
 
-      {/* The one sentence that matters */}
-      <p className="mt-1 text-xs text-muted-foreground italic">{statusSentence}</p>
-    </div>
+      <Dialog open={advanceDialogOpen} onOpenChange={setAdvanceDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Skip to Stage</DialogTitle>
+            <DialogDescription>
+              Advance this project to the stage it's actually at. All earlier stages will be marked as completed (Progressed). This is logged in the decision register.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Current Stage</label>
+              <div className="text-sm text-muted-foreground px-3 py-2 bg-muted/50 rounded-md">
+                {stageLabel}
+                <Badge variant="outline" className={`ml-2 text-[10px] ${statusColor}`}>{statusLabel}</Badge>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Advance to</label>
+              <Select value={selectedTarget} onValueChange={setSelectedTarget}>
+                <SelectTrigger data-testid="select-advance-target">
+                  <SelectValue placeholder="Select target stage..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {advanceTargets.map(code => (
+                    <SelectItem key={code} value={code} data-testid={`option-advance-${code}`}>
+                      {STAGE_LABELS[code] || code}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedTarget && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+                <strong>
+                  {ORDERED_STAGE_CODES.filter(c => {
+                    const seq = STAGE_SEQUENCE[c as keyof typeof STAGE_SEQUENCE];
+                    return seq >= currentSeq && seq < (STAGE_SEQUENCE[selectedTarget as keyof typeof STAGE_SEQUENCE] || 0);
+                  }).length}
+                </strong> stage(s) will be marked as Progressed (skipped). The target stage will be set to In Progress.
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Reason <span className="text-muted-foreground font-normal">(optional)</span></label>
+              <Textarea
+                placeholder="e.g. Project already in construction — aligning system with reality"
+                value={advanceReason}
+                onChange={(e) => setAdvanceReason(e.target.value)}
+                rows={2}
+                data-testid="input-advance-reason"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAdvanceDialogOpen(false)} data-testid="button-advance-cancel">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAdvance}
+              disabled={!selectedTarget || advanceMutation.isPending}
+              data-testid="button-advance-confirm"
+            >
+              {advanceMutation.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <FastForward className="mr-1.5 h-3.5 w-3.5" />}
+              Advance
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

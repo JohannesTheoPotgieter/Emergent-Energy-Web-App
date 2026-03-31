@@ -13,6 +13,7 @@ import {
   addEvidence,
   getStageEvidence,
   getStageDecisions,
+  advanceToStage,
 } from "./services/stage-lifecycle-service";
 import {
   createException,
@@ -169,6 +170,39 @@ export function registerStageLifecycleRoutes(app: Express): void {
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error("[stage-lifecycle] transition error:", msg);
+        res.status(400).json({ error: msg });
+      }
+    },
+  );
+
+  // POST /api/projects/:projectId/stages/advance-to/:targetStageCode
+  app.post(
+    "/api/projects/:projectId/stages/advance-to/:targetStageCode",
+    jwtAuth,
+    requireAuth,
+    async (req: Request, res: Response) => {
+      try {
+        const projectId = parseProjectId(req, res);
+        if (!projectId) return;
+        const user = getUser(req);
+        const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+        if (!ADMIN_ROLES.includes(user.role)) {
+          return res.status(403).json({ error: "Only admin roles can advance stages" });
+        }
+        const targetStageCode = p(req.params.targetStageCode);
+        const { reason } = req.body || {};
+
+        const result = await advanceToStage({
+          projectId,
+          targetStageCode: targetStageCode as any,
+          actorUserId: user.id,
+          actorRole: user.role,
+          reason,
+        });
+        res.json(result);
+      } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error("[stage-lifecycle] advance-to error:", msg);
         res.status(400).json({ error: msg });
       }
     },
