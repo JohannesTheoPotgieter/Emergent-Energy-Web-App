@@ -41,12 +41,13 @@ export function useAccessMatrix() {
     INFORMATION: ["ADMIN"],
     COLLABORATION: ["HOME"],
     // Intermediate 6-section model keys
-    PROJECTS: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY_HSE"],
+    PROJECTS: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE"],
     MY_WORK: ["HOME"],
-    REPORTS: ["ADMIN"],
     GATES: ["PORTFOLIO"],
+    // Legacy combined section — expand to both new sections
+    QUALITY_HSE: ["QUALITY", "HSE"],
     // Legacy department keys
-    GOVERNANCE: ["QUALITY_HSE"],
+    GOVERNANCE: ["QUALITY", "HSE"],
     PROJECT_MANAGEMENT: ["PROJECT_DELIVERY"],
   };
 

@@ -1,8 +1,8 @@
 /**
  * Master Navigation Structure
  *
- * 8-section model reflecting the real business system:
- *   Home | Portfolio | Project Development | Project Delivery | Engineering | Quality & HSE | Finance | Admin
+ * 10-section model reflecting the real business system:
+ *   Home | Portfolio | Project Development | Project Delivery | Engineering | Quality | HSE | Finance | Reports | Admin
  *
  * Role-based visibility determines which sections each role sees.
  * "Gates" is not a top-level section — it lives inside Portfolio and functional areas.
@@ -40,7 +40,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Meetings", path: "/my-work/meetings" },
       { label: "Company Priorities", path: "/priorities" },
       { label: "Inbox", path: "/inbox" },
-      { label: "Settings", path: "/my-work/settings" },
     ],
   },
   {
@@ -48,19 +47,17 @@ export const TOP_SECTIONS: TopSection[] = [
     key: "PORTFOLIO",
     path: "/portfolios",
     match: (pathname) => startsWithAny(pathname, [
-      "/portfolios", "/execution-board", "/lifecycle-board",
+      "/portfolios", "/lifecycle-board",
       "/gates", "/exceptions", "/weekly-reviews",
       "/project-lifecycle",
     ]),
     secondary: [
       { label: "Portfolio Dashboard", path: "/portfolios" },
       { label: "Lifecycle Board", path: "/project-lifecycle" },
-      { label: "Execution Board", path: "/execution-board" },
       { label: "Gate Tracker", path: "/gates" },
       { label: "Blocked Gates", path: "/gates/blocked" },
       { label: "Exceptions", path: "/gates/exceptions" },
       { label: "Weekly Reviews", path: "/weekly-reviews" },
-      { label: "Reports", path: "/reports/programme" },
     ],
   },
   {
@@ -83,20 +80,24 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Project Delivery",
     key: "PROJECT_DELIVERY",
-    path: "/projects",
+    path: "/execution-board",
     match: (pathname) => startsWithAny(pathname, [
+      "/execution-board",
       "/projects", "/project", "/project-create",
       "/construction", "/procurement",
       "/tasks", "/standups", "/handover",
       "/pm", "/sites",
       "/governance/financial-reviews",
       "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
+      "/gates/commitments",
     ]),
     secondary: [
+      { label: "Execution Dashboard", path: "/execution-board" },
       { label: "All Projects", path: "/projects" },
       { label: "Construction", path: "/construction" },
       { label: "Procurement", path: "/procurement" },
       { label: "PO Approvals", path: "/po-approval-board" },
+      { label: "Payment Requests", path: "/payment-request-board" },
       { label: "Task Management", path: "/tasks" },
       { label: "Milestone Tracker", path: "/gates/commitments" },
       { label: "Handover & Closeout", path: "/handover" },
@@ -115,15 +116,23 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Quality & HSE",
-    key: "QUALITY_HSE",
+    label: "Quality",
+    key: "QUALITY",
     path: "/quality",
-    match: (pathname) => startsWithAny(pathname, ["/quality", "/hse"]),
+    match: (pathname) => startsWithAny(pathname, ["/quality"]),
     secondary: [
       { label: "Quality Dashboard", path: "/quality" },
-      { label: "HSE Dashboard", path: "/hse" },
       { label: "Inspections / NCRs", path: "/quality/ncrs" },
-      { label: "Compliance / SSEG", path: "/hse" },
+    ],
+  },
+  {
+    label: "HSE",
+    key: "HSE",
+    path: "/hse",
+    match: (pathname) => startsWithAny(pathname, ["/hse"]),
+    secondary: [
+      { label: "HSE Dashboard", path: "/hse" },
+      { label: "Compliance / SSEG", path: "/hse/compliance" },
     ],
   },
   {
@@ -147,11 +156,24 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
+    label: "Reports",
+    key: "REPORTS",
+    path: "/reports/centre",
+    match: (pathname) => startsWithAny(pathname, ["/reports"]),
+    secondary: [
+      { label: "Report Center", path: "/reports/center" },
+      { label: "Programme Reports", path: "/reports/programme" },
+      { label: "PM Monthly", path: "/reports/pm/monthly" },
+      { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
+      { label: "Performance", path: "/reports/performance" },
+    ],
+  },
+  {
     label: "Admin",
     key: "ADMIN",
     path: "/admin/control-center",
     match: (pathname) => startsWithAny(pathname, [
-      "/admin", "/settings", "/reports", "/ee-info", "/feedback", "/training",
+      "/admin", "/settings", "/ee-info", "/feedback", "/training",
       "/leaderboard", "/department-scores",
     ]),
     secondary: [
@@ -159,9 +181,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Users & Roles", path: "/admin/roles" },
       { label: "Smart Import", path: "/admin/smart-import" },
       { label: "Audit Log", path: "/admin/activity-log" },
-      { label: "Report Center", path: "/reports/center" },
-      { label: "PM Reports", path: "/reports/pm/monthly" },
-      { label: "Eng Reports", path: "/reports/engineering/monthly" },
       { label: "Processes & SOPs", path: "/ee-info" },
       { label: "Templates", path: "/admin/phase-templates" },
       { label: "Recovery", path: "/admin/recovery" },
@@ -175,20 +194,20 @@ export const TOP_SECTIONS: TopSection[] = [
  * Each role sees only the sections listed here.
  */
 export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
-  COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY_HSE", "FINANCE", "ADMIN"],
-  CEO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "ADMIN"],
-  CCO:                    ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE"],
+  COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "ADMIN"],
+  CEO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "ADMIN"],
+  CCO:                    ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS"],
   KEY_ACCOUNTS_MANAGER:   ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE"],
-  PROGRAM_MANAGER:        ["HOME", "PORTFOLIO", "PROJECT_DELIVERY", "QUALITY_HSE", "FINANCE"],
-  PROJECT_MANAGER_SITE:   ["HOME", "PROJECT_DELIVERY", "QUALITY_HSE", "FINANCE"],
-  CONSTRUCTION_MANAGER:   ["HOME", "PROJECT_DELIVERY", "FINANCE", "QUALITY_HSE"],
-  ENGINEER:               ["HOME", "ENGINEERING", "QUALITY_HSE"],
-  ENGINEERING_MANAGER:    ["HOME", "ENGINEERING", "QUALITY_HSE", "PROJECT_DELIVERY"],
-  QUALITY_MANAGER:        ["HOME", "QUALITY_HSE", "PROJECT_DELIVERY"],
-  HSE_MANAGER:            ["HOME", "QUALITY_HSE", "PROJECT_DELIVERY"],
-  SSEG_MANAGER:           ["HOME", "QUALITY_HSE", "ENGINEERING"],
-  CFO:                    ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY"],
-  PROGRAM_FINANCE_MANAGER:["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY"],
+  PROGRAM_MANAGER:        ["HOME", "PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS"],
+  PROJECT_MANAGER_SITE:   ["HOME", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS"],
+  CONSTRUCTION_MANAGER:   ["HOME", "PROJECT_DELIVERY", "FINANCE", "QUALITY", "HSE", "REPORTS"],
+  ENGINEER:               ["HOME", "ENGINEERING", "QUALITY"],
+  ENGINEERING_MANAGER:    ["HOME", "ENGINEERING", "QUALITY", "PROJECT_DELIVERY", "REPORTS"],
+  QUALITY_MANAGER:        ["HOME", "QUALITY", "PROJECT_DELIVERY", "REPORTS"],
+  HSE_MANAGER:            ["HOME", "HSE", "PROJECT_DELIVERY", "REPORTS"],
+  SSEG_MANAGER:           ["HOME", "HSE", "QUALITY", "ENGINEERING"],
+  CFO:                    ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS"],
+  PROGRAM_FINANCE_MANAGER:["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS"],
   ACCOUNTANT:             ["HOME", "FINANCE"],
   PROJECT_DEVELOPER:      ["HOME", "PROJECT_DEVELOPMENT", "FINANCE"],
 };
@@ -275,7 +294,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
 
   const projectMatch = pathname.match(/^\/project\/([^/]+)/);
   if (projectMatch) return [
-    { label: "Project Delivery", path: "/projects" },
+    { label: "Project Delivery", path: "/execution-board" },
     { label: decodeURIComponent(projectMatch[1]) },
   ];
 
