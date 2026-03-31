@@ -293,7 +293,7 @@ export const projectRevenueSummary = pgTable("project_revenue_summary", {
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
 });
 
 export const insertProjectRevenueSummarySchema = createInsertSchema(projectRevenueSummary).omit({ id: true, capturedAt: true, effectiveFrom: true, effectiveTo: true } as any);
