@@ -59,6 +59,8 @@ function authFetch(url: string, opts?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { ...(opts?.headers as Record<string, string> || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+  if (csrf) headers["X-CSRF-Token"] = csrf;
   return fetch(url, { ...opts, credentials: "include", headers });
 }
 
