@@ -731,10 +731,10 @@ export async function registerRoutes(
             return { hasChecklist: true, phases: Array.from(phaseMap.values()) };
           } catch { return { hasChecklist: false, phases: [] }; }
         })(),
-        storage.getProjectInfoByName(decodedName),
+        storage.getProjectInfo(decodedName),
         (async () => {
           try {
-            const pid = (await storage.getProjectInfoByName(decodedName))?.id;
+            const pid = (await storage.getProjectInfo(decodedName))?.id;
             if (!pid) return { stages: [] };
             const stagesRes = await db.query.projectEngStages?.findMany({ where: (s: any, { eq: eq2 }: any) => eq2(s.projectId, pid) });
             return { stages: stagesRes || [] };
@@ -742,7 +742,7 @@ export async function registerRoutes(
         })(),
         (async () => {
           try {
-            const pid = (await storage.getProjectInfoByName(decodedName))?.id;
+            const pid = (await storage.getProjectInfo(decodedName))?.id;
             if (!pid) return { tasks: [] };
             // Read from work_items (ENG workstream)
             const tasks = await db.select().from(workItems).where(and(eq(workItems.projectId, pid), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
