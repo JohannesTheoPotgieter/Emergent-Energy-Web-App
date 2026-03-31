@@ -334,6 +334,18 @@ async function resolveBearerUser(req: Request): Promise<AuthenticatedUser | null
   }
 
   const userId = Number(payload.userId);
+
+  // Role-auth tokens use userId=0 — resolve from JWT payload directly
+  if (userId === 0 && payload.role && payload.email) {
+    authDebug("resolveBearerUser.roleAuthToken", { role: payload.role, email: payload.email });
+    return {
+      id: 0,
+      email: String(payload.email),
+      name: String(payload.name ?? payload.role),
+      role: String(payload.role),
+    };
+  }
+
   if (!Number.isFinite(userId) || userId <= 0) {
     authDebug("resolveBearerUser.invalidUserId", { rawUserId: payload.userId });
     return null;
