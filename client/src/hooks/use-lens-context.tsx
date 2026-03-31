@@ -132,10 +132,10 @@ export function useLensLandingPage(): string {
  * Convenience hook: get the active lens profile's allowed modules.
  */
 export function useLensModules() {
-  const { getActiveLensProfile, isCooSuperAdmin } = useLensContext();
+  const { getActiveLensProfile, isCooSuperAdmin, simulation } = useLensContext();
   const profile = getActiveLensProfile();
-  // COO always sees all modules
-  if (isCooSuperAdmin) {
+  // COO sees all modules only when NOT simulating
+  if (isCooSuperAdmin && !simulation) {
     return [...CANONICAL_MODULES];
   }
   return profile.allowedModules;
