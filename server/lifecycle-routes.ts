@@ -3,7 +3,7 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
-import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory } from "@shared/schema";
+import { projectInfo, executionGateLog, mergeAuditLog, qcChecklist, qcItemInstance, PHASE_TO_ENG_STAGES, normalizedCostLines, normalizedRevenueLines, projectRagAudit, workItems, users, qcWarning, approvals, smartImportRuns, projectExecutionState, projectPhaseHistory, projectPdPmHandover } from "@shared/schema";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
@@ -1547,6 +1547,29 @@ export function registerLifecycleRoutes(app: Express) {
         changedByUserId: userId,
         reason: `Phase changed from ${existing.phase || "unknown"} to ${phase.trim()}`,
       });
+
+      // Auto-create PD→PM handover DRAFT when project reaches the handover stage
+      const PD_PM_HANDOVER_PHASES = ["P2_PD_PM_HANDOVER", "S04_PD_PM_HANDOVER", "Planning"];
+      if (PD_PM_HANDOVER_PHASES.includes(phase.trim())) {
+        try {
+          const existingHandover = await db.select({ id: projectPdPmHandover.id })
+            .from(projectPdPmHandover)
+            .where(eq(projectPdPmHandover.projectId, id))
+            .limit(1);
+          if (existingHandover.length === 0) {
+            await db.insert(projectPdPmHandover).values({
+              projectId: id,
+              status: "DRAFT",
+              pdOwner: existing.pd || null,
+              pmOwner: existing.pm || null,
+              deliverables: {},
+            });
+            console.log(`[lifecycle-board] Auto-created PD→PM handover DRAFT for project ${id}`);
+          }
+        } catch (err: any) {
+          console.warn("[lifecycle-board] Handover auto-creation error (non-fatal):", err.message);
+        }
+      }
 
       let engStagesResult: any = null;
       const stageNames = PHASE_TO_ENG_STAGES[phase.trim()];
