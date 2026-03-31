@@ -3,7 +3,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useStageDetail, useTransitionStage, useHydrateChecklist, useUpdateRequirement } from "@/hooks/use-stage-lifecycle";
+import { useStageDetail, useTransitionStage, useHydrateChecklist, useUpdateRequirement, useInitializeStages } from "@/hooks/use-stage-lifecycle";
+import { useToast } from "@/hooks/use-toast";
 import { CurrentGateCard } from "./CurrentGateCard";
 import { ExceptionDialog } from "./ExceptionDialog";
 import { DependencyList } from "./DependencyList";
@@ -19,7 +20,7 @@ import { Stage9ClientHandover } from "@/components/stage-workspaces/Stage9Client
 import { Stage10PostHandoverReview } from "@/components/stage-workspaces/Stage10PostHandoverReview";
 import { getValidNextStates } from "@shared/utils/stage-state-machine";
 import type { StageStatus } from "@shared/schema";
-import { Loader2, FileText, ShieldAlert, ArrowRight, Link2 } from "lucide-react";
+import { Loader2, FileText, ShieldAlert, ArrowRight, Link2, PlayCircle, Milestone } from "lucide-react";
 
 interface StageDetailPanelProps {
   projectId: number;
@@ -55,6 +56,8 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
   const { data, isLoading } = useStageDetail(projectId, stageCode);
   const transitionMutation = useTransitionStage(projectId);
   const hydrateMutation = useHydrateChecklist(projectId);
+  const initMutation = useInitializeStages(projectId);
+  const { toast } = useToast();
   const [exceptionDialogOpen, setExceptionDialogOpen] = useState(false);
   const [exceptionReqCode, setExceptionReqCode] = useState<string | undefined>();
 
@@ -63,7 +66,38 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
   }
 
   if (!data?.stage) {
-    return <div className="p-4 text-sm text-muted-foreground">Stage not found.</div>;
+    return (
+      <Card>
+        <CardContent className="py-12 flex flex-col items-center justify-center text-center">
+          <div className="rounded-full bg-muted p-3 mb-4">
+            <Milestone className="h-6 w-6 text-muted-foreground" />
+          </div>
+          <h3 className="text-base font-semibold mb-1">No Stage Lifecycle Found</h3>
+          <p className="text-sm text-muted-foreground mb-5 max-w-sm">
+            This project does not have a stage lifecycle set up yet. Initialize it to start tracking gates, checklists, and approvals.
+          </p>
+          {isAdmin && (
+            <Button
+              onClick={() => {
+                initMutation.mutate(undefined, {
+                  onSuccess: () => toast({ title: "Stage lifecycle initialized", description: "All stages have been created for this project." }),
+                  onError: (err: Error) => toast({ title: "Failed to initialize", description: err.message, variant: "destructive" }),
+                });
+              }}
+              disabled={initMutation.isPending}
+              className="gap-2"
+              data-testid="button-initialize-lifecycle-main"
+            >
+              {initMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlayCircle className="h-4 w-4" />}
+              Initialize Stage Lifecycle
+            </Button>
+          )}
+          {!isAdmin && (
+            <p className="text-xs text-muted-foreground">Contact a COO or admin to initialize this project's lifecycle.</p>
+          )}
+        </CardContent>
+      </Card>
+    );
   }
 
   // If a dedicated workspace exists for this stage, render it

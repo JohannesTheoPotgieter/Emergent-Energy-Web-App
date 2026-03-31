@@ -2,8 +2,9 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useProjectStages, type StageDashboardPayload } from "@/hooks/use-stage-lifecycle";
+import { useProjectStages, useInitializeStages, type StageDashboardPayload } from "@/hooks/use-stage-lifecycle";
 import { generateStatusSentence, getUnsatisfiedBlockers, computeDaysInStage } from "@shared/utils/stage-state-machine";
+import { useToast } from "@/hooks/use-toast";
 import {
   Clock,
   AlertTriangle,
@@ -12,11 +13,13 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  PlayCircle,
 } from "lucide-react";
 
 interface CriticalControlPanelProps {
   projectId: number;
   onViewGate?: () => void;
+  isAdmin?: boolean;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -52,8 +55,10 @@ const STAGE_LABELS: Record<string, string> = {
   S10_POST_HANDOVER_REVIEW: "10. Post-Handover Review",
 };
 
-export function CriticalControlPanel({ projectId, onViewGate }: CriticalControlPanelProps) {
+export function CriticalControlPanel({ projectId, onViewGate, isAdmin = false }: CriticalControlPanelProps) {
   const { data, isLoading } = useProjectStages(projectId);
+  const initMutation = useInitializeStages(projectId);
+  const { toast } = useToast();
 
   if (isLoading) {
     return (
@@ -69,8 +74,26 @@ export function CriticalControlPanel({ projectId, onViewGate }: CriticalControlP
 
   if (!data?.currentStage) {
     return (
-      <div className="border-b bg-muted/30 px-4 py-2 text-sm text-muted-foreground">
-        No stage lifecycle initialized for this project.
+      <div className="border-b bg-muted/30 px-4 py-2 flex items-center gap-3">
+        <span className="text-sm text-muted-foreground">No stage lifecycle initialized for this project.</span>
+        {isAdmin && (
+          <Button
+            size="sm"
+            variant="default"
+            className="h-7 text-xs gap-1.5"
+            onClick={() => {
+              initMutation.mutate(undefined, {
+                onSuccess: () => toast({ title: "Stage lifecycle initialized" }),
+                onError: (err: Error) => toast({ title: "Failed to initialize", description: err.message, variant: "destructive" }),
+              });
+            }}
+            disabled={initMutation.isPending}
+            data-testid="button-initialize-lifecycle"
+          >
+            {initMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <PlayCircle className="h-3 w-3" />}
+            Initialize Lifecycle
+          </Button>
+        )}
       </div>
     );
   }
