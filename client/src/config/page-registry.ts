@@ -41,6 +41,7 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
+  { id: "companyOverview", path: "/company-overview", label: "Company Overview", iconKey: "Activity", navGroup: "HOME", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "CompanyOverviewPage", roleLandingEligibility: ["COO_ADMIN", "CEO_ADMIN"] },
   { id: "projectLifecycle", path: "/project-lifecycle", label: "Project Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleStageGates", path: "/project-lifecycle/stage-gates", label: "Stage Gates", permissionEntity: "lifecycle", routeComponentKey: "ProjectLifecyclePage" },
   { id: "projectLifecycleLatestUpdates", path: "/project-lifecycle/latest-updates", label: "Latest Updates", permissionEntity: "projects", routeComponentKey: "ProjectLifecyclePage" },
