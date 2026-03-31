@@ -17,6 +17,14 @@ function getAuthToken(): string | null {
   return localStorage.getItem('auth_token');
 }
 
+function getCsrfToken(): string | undefined {
+  return document.cookie
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith("csrf-token="))
+    ?.split("=")[1];
+}
+
 export function setAuthToken(token: string | null) {
   if (token) {
     localStorage.setItem('auth_token', token);
@@ -28,6 +36,7 @@ export function setAuthToken(token: string | null) {
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   return runAsyncAction(async ({ signal, correlationId }) => {
     const token = getAuthToken();
+    const csrf = getCsrfToken();
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "X-Correlation-ID": correlationId,
@@ -35,6 +44,9 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
 
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
+    }
+    if (csrf) {
+      headers["X-CSRF-Token"] = csrf;
     }
 
     let response: Response;
@@ -104,10 +116,14 @@ export const uploadApi = {
     files.forEach(file => formData.append("files", file));
 
     const token = getAuthToken();
+    const csrf = getCsrfToken();
     const headers: Record<string, string> = {};
 
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
+    }
+    if (csrf) {
+      headers["X-CSRF-Token"] = csrf;
     }
 
     let response: Response;

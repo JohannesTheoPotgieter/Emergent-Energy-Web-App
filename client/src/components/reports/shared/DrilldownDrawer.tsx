@@ -18,8 +18,12 @@ type DrillContext = {
 };
 
 function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {};
   const token = localStorage.getItem("auth_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+  return headers;
 }
 
 export default function DrilldownDrawer({

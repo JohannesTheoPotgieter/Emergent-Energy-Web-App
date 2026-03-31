@@ -21,7 +21,9 @@ export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  return headers;
+  const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+    return headers;
 }
 
 export const STEP_LABELS = ["Upload", "Sections", "Mapping", "Issues", "Commit"];
