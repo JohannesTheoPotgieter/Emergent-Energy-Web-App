@@ -1,10 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
+import { CSRF_PROTECTED_METHODS, isCsrfExemptPath } from "./csrf-config";
 
 const CSRF_COOKIE = "csrf-token";
 const CSRF_HEADER = "x-csrf-token";
-const STATE_CHANGING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-const EXEMPT_PATHS = new Set(["/api/auth/login", "/api/auth/microsoft"]);
 
 function parseCookies(cookieHeader: string | undefined): Record<string, string> {
   const cookies: Record<string, string> = {};
@@ -26,7 +25,9 @@ function parseCookies(cookieHeader: string | undefined): Record<string, string> 
  * - For state-changing requests (POST/PUT/PATCH/DELETE), validates that the
  *   X-CSRF-Token header matches the csrf-token cookie.
  * - Skips validation for Bearer-token-only requests (not vulnerable to CSRF)
- *   and for exempt auth routes.
+ *   and for exempt paths defined in csrf-config.ts.
+ *
+ * See csrf-config.ts for the full exemption documentation and categories.
  */
 export function csrfProtection(req: Request, res: Response, next: NextFunction) {
   const cookies = parseCookies(req.headers.cookie);
@@ -44,12 +45,12 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
   });
 
   // Only validate state-changing methods
-  if (!STATE_CHANGING_METHODS.has(req.method)) {
+  if (!CSRF_PROTECTED_METHODS.has(req.method)) {
     return next();
   }
 
-  // Skip exempt paths
-  if (EXEMPT_PATHS.has(req.path)) {
+  // Skip exempt paths (auth bootstrap, webhooks, health checks)
+  if (isCsrfExemptPath(req.path)) {
     return next();
   }
 

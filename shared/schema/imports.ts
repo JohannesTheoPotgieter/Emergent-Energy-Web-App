@@ -141,6 +141,7 @@ export type SpFilePointer = typeof spFilePointers.$inferSelect;
 export const smartImportRuns = pgTable("smart_import_runs", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projectInfo.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   uploadedBy: integer("uploaded_by").references(() => users.id),
   uploadedAt: timestamp("uploaded_at").notNull().defaultNow(),
@@ -185,6 +186,7 @@ export type ImportIssue = typeof importIssues.$inferSelect;
 
 export const issueResolutionRules = pgTable("issue_resolution_rules", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id),
   issueType: text("issue_type").notNull(),
@@ -234,6 +236,7 @@ export type MappingRule = typeof mappingRules.$inferSelect;
 export const normalizedPlanTasks = pgTable("normalized_plan_tasks", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projectInfo.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   taskName: text("task_name").notNull(),
   taskNo: text("task_no"),
@@ -451,6 +454,7 @@ export const changeSets = pgTable("change_sets", {
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id"),
   projectId: integer("project_id"),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
   importRunId: integer("import_run_id"),
   smartImportRunId: integer("smart_import_run_id"),
@@ -482,6 +486,7 @@ export type FieldChange = typeof fieldChanges.$inferSelect;
 
 export const planEditNotifications = pgTable("plan_edit_notifications", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   taskId: integer("task_id"),
@@ -510,6 +515,7 @@ export const importLogs = pgTable("import_logs", {
   fileName: text("file_name").notNull(),
   importedByUserId: integer("imported_by_user_id").references(() => users.id),
   importedByName: text("imported_by_name"),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name"),
   projectId: integer("project_id").references(() => projectInfo.id),
   status: text("status").notNull(), // SUCCESS, PARTIAL, FAILED, REJECTED

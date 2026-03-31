@@ -10,8 +10,10 @@ import {
   projectRevenueSummary,
   workItems,
 } from "@shared/schema";
+import { projectStageInstances, projectStageExceptions, projectStageDecisions } from "@shared/schema";
 import { db } from "../db";
 import { createProjectEvent } from "./project-event-service";
+import { notifyUsers } from "./notification-service";
 
 // ===================== TYPES =====================
 
@@ -279,6 +281,28 @@ export async function submitReview(reviewId: number, actorUserId: number) {
 
 // ===================== APPROVE / DECIDE =====================
 
+/**
+ * Outcome → S05 stage status mapping:
+ *   GO              → APPROVED
+ *   CONDITIONAL_GO  → EXCEPTION_APPROVED (approved-with-conditions; creates exception record)
+ *   NO_GO           → BLOCKED
+ *   DEFERRED        → IN_PROGRESS (review deferred, stage remains active)
+ *
+ * Business interpretation for CONDITIONAL_GO:
+ *   The financial review is approved but with documented conditions that must be
+ *   met. The stage status is set to EXCEPTION_APPROVED (not plain APPROVED) to
+ *   signal that conditions are outstanding. A projectStageExceptions record is
+ *   created with status APPROVED_WITH_CONDITIONS to track closeout.
+ */
+const OUTCOME_TO_STAGE_STATUS: Record<ReviewOutcome, string> = {
+  GO: "APPROVED",
+  CONDITIONAL_GO: "EXCEPTION_APPROVED",
+  NO_GO: "BLOCKED",
+  DEFERRED: "IN_PROGRESS",
+};
+
+const S05_STAGE_CODE = "S05_FINANCIAL_REVIEW";
+
 export async function decideReview(params: {
   reviewId: number;
   outcome: ReviewOutcome;
@@ -299,54 +323,123 @@ export async function decideReview(params: {
         ? "DEFERRED"
         : "REJECTED";
 
-  let approvalId: number | null = null;
+  // Verify S05 stage instance exists before proceeding
+  const [s05Instance] = await db
+    .select()
+    .from(projectStageInstances)
+    .where(
+      and(
+        eq(projectStageInstances.projectId, review.projectId),
+        eq(projectStageInstances.stageCode, S05_STAGE_CODE),
+      ),
+    )
+    .limit(1);
 
-  // Create approval record for GO / CONDITIONAL_GO
-  if (newStatus === "APPROVED") {
-    const [approval] = await db
-      .insert(approvals)
-      .values({
-        type: "gate",
-        title: `Financial Review Gate — ${review.version > 1 ? `v${review.version}` : "Initial"}`,
-        description: params.outcomeNotes || `Financial Review ${params.outcome}`,
-        status: "approved",
-        requestedBy: review.requestedByUserId ?? params.actorUserId,
-        decidedBy: params.actorUserId,
-        decidedAt: new Date(),
-        decisionNote: params.outcomeConditions || params.outcomeNotes || null,
-        projectId: review.projectId,
-        approvalCategory: "financial_review",
-        approvalType: "gate",
-        urgency: "normal",
-      })
-      .returning();
-    approvalId = approval.id;
+  if (!s05Instance) {
+    throw new Error(
+      `No S05_FINANCIAL_REVIEW stage instance found for project ${review.projectId}. ` +
+      `Cannot record financial review outcome without a matching stage instance.`
+    );
   }
 
-  const [updated] = await db
-    .update(projectFinancialReviews)
-    .set({
-      status: newStatus,
-      outcome: params.outcome,
-      outcomeConditions: params.outcomeConditions ?? null,
-      outcomeNotes: params.outcomeNotes ?? null,
-      approvedByUserId: newStatus === "APPROVED" ? params.actorUserId : null,
-      approvedAt: newStatus === "APPROVED" ? new Date() : null,
-      approvalId,
-      updatedAt: new Date(),
-    })
-    .where(eq(projectFinancialReviews.id, params.reviewId))
-    .returning();
+  const previousStageStatus = s05Instance.stageStatus;
+  const newStageStatus = OUTCOME_TO_STAGE_STATUS[params.outcome];
+  const stageStatusChanged = previousStageStatus !== newStageStatus;
 
-  // Update execution state
-  await db
-    .update(projectExecutionState)
-    .set({
-      financialReviewStatus: newStatus,
-      updatedAt: new Date(),
-    })
-    .where(eq(projectExecutionState.projectId, review.projectId));
+  // ── All state changes in one transaction ──
+  const updated = await db.transaction(async (tx) => {
+    let approvalId: number | null = null;
 
+    // Create approval record for GO / CONDITIONAL_GO
+    if (newStatus === "APPROVED") {
+      const [approval] = await tx
+        .insert(approvals)
+        .values({
+          type: "gate",
+          title: `Financial Review Gate — ${review.version > 1 ? `v${review.version}` : "Initial"}`,
+          description: params.outcomeNotes || `Financial Review ${params.outcome}`,
+          status: "approved",
+          requestedBy: review.requestedByUserId ?? params.actorUserId,
+          decidedBy: params.actorUserId,
+          decidedAt: new Date(),
+          decisionNote: params.outcomeConditions || params.outcomeNotes || null,
+          projectId: review.projectId,
+          approvalCategory: "financial_review",
+          approvalType: "gate",
+          urgency: "normal",
+        })
+        .returning();
+      approvalId = approval.id;
+    }
+
+    // Persist review outcome
+    const [reviewResult] = await tx
+      .update(projectFinancialReviews)
+      .set({
+        status: newStatus,
+        outcome: params.outcome,
+        outcomeConditions: params.outcomeConditions ?? null,
+        outcomeNotes: params.outcomeNotes ?? null,
+        approvedByUserId: newStatus === "APPROVED" ? params.actorUserId : null,
+        approvedAt: newStatus === "APPROVED" ? new Date() : null,
+        approvalId,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectFinancialReviews.id, params.reviewId))
+      .returning();
+
+    // Update execution state
+    await tx
+      .update(projectExecutionState)
+      .set({
+        financialReviewStatus: newStatus,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectExecutionState.projectId, review.projectId));
+
+    // Update S05 stage instance
+    const stageUpdates: Record<string, unknown> = {
+      stageStatus: newStageStatus,
+      updatedAt: new Date(),
+    };
+    if (newStageStatus === "APPROVED" || newStageStatus === "EXCEPTION_APPROVED") {
+      stageUpdates.completedAt = new Date();
+    }
+    await tx
+      .update(projectStageInstances)
+      .set(stageUpdates)
+      .where(eq(projectStageInstances.id, s05Instance.id));
+
+    // Log stage decision
+    await tx.insert(projectStageDecisions).values({
+      projectId: review.projectId,
+      stageCode: S05_STAGE_CODE,
+      decisionType: newStageStatus === "BLOCKED" ? "GATE_FAIL" : "GATE_PASS",
+      decisionSummary: `Financial Review v${review.version} outcome: ${params.outcome} → stage ${newStageStatus}`,
+      decidedByUserId: params.actorUserId,
+      decidedDate: new Date(),
+      rationale: params.outcomeConditions || params.outcomeNotes || null,
+    });
+
+    // For CONDITIONAL_GO: create exception record with conditions
+    if (params.outcome === "CONDITIONAL_GO") {
+      await tx.insert(projectStageExceptions).values({
+        projectId: review.projectId,
+        stageCode: S05_STAGE_CODE,
+        reasonText: params.outcomeConditions || params.outcomeNotes || "Conditions apply",
+        riskLevel: "MEDIUM",
+        conditionsText: params.outcomeConditions || null,
+        status: "APPROVED_WITH_CONDITIONS",
+        approverUserId: params.actorUserId,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+
+    return reviewResult;
+  });
+
+  // ── Post-transaction: project event (idempotent) ──
   await createProjectEvent({
     projectId: review.projectId,
     eventType: `financial_review.${params.outcome.toLowerCase()}`,
@@ -360,10 +453,58 @@ export async function decideReview(params: {
       version: review.version,
       outcome: params.outcome,
       conditions: params.outcomeConditions,
-      approvalId,
     },
     idempotencyKey: `financial-review-decide:${params.reviewId}:${params.outcome}`,
   });
+
+  // ── Post-transaction: notifications (idempotent via throttle) ──
+  if (stageStatusChanged) {
+    // Collect notification recipients: stage owner, PM, PROGRAM_MANAGER
+    const recipientIds = new Set<number>();
+    if (s05Instance.stageOwnerUserId) recipientIds.add(s05Instance.stageOwnerUserId);
+
+    // Get PM and PROGRAM_MANAGER from execution state
+    const [execState] = await db
+      .select({
+        programManagerUserId: projectExecutionState.programManagerUserId,
+      })
+      .from(projectExecutionState)
+      .where(eq(projectExecutionState.projectId, review.projectId))
+      .limit(1);
+
+    // Get PM from project_info
+    const [projInfo] = await db
+      .select({ pmUserId: projectInfo.pmUserId })
+      .from(projectInfo)
+      .where(eq(projectInfo.id, review.projectId))
+      .limit(1);
+
+    if (projInfo?.pmUserId) recipientIds.add(projInfo.pmUserId);
+    if (execState?.programManagerUserId) recipientIds.add(execState.programManagerUserId);
+
+    // Remove the actor themselves from notifications
+    recipientIds.delete(params.actorUserId);
+
+    if (recipientIds.size > 0) {
+      const outcomeLabel = params.outcome === "NO_GO" ? "NO GO" : params.outcome.replace(/_/g, " ");
+      let body = `Financial Review outcome: ${outcomeLabel}. Stage S05 status changed from ${previousStageStatus} to ${newStageStatus}.`;
+      if (params.outcome === "NO_GO" && (params.outcomeNotes || params.outcomeConditions)) {
+        body += ` Reason: ${params.outcomeNotes || params.outcomeConditions}`;
+      }
+      if (params.outcome === "CONDITIONAL_GO" && params.outcomeConditions) {
+        body += ` Conditions: ${params.outcomeConditions}`;
+      }
+
+      await notifyUsers([...recipientIds], {
+        eventType: `financial_review.${params.outcome.toLowerCase()}`,
+        title: `Financial Review: ${outcomeLabel}`,
+        body,
+        projectId: review.projectId,
+        relatedEntityType: "project_financial_reviews",
+        relatedEntityId: params.reviewId,
+      });
+    }
+  }
 
   return updated;
 }

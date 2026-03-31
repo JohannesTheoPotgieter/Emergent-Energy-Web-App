@@ -290,7 +290,7 @@ export function registerTrRegisterRoutes(app: Express) {
           assignedByUserId: userId,
           metadata: null,
           updatedAt: new Date(),
-        });
+        }).onConflictDoNothing();
       }
 
       res.json(item);
@@ -357,7 +357,7 @@ export function registerTrRegisterRoutes(app: Express) {
             assignedByUserId: userId,
             metadata: null,
             updatedAt: new Date(),
-          });
+          }).onConflictDoNothing();
         }
       }
 

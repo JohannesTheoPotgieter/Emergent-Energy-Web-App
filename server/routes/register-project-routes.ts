@@ -32,6 +32,10 @@ export async function registerProjectRoutes(app: Express) {
   const { registerStageDataRoutes } = await import("../stage-data-routes");
   registerStageDataRoutes(app);
   // Stage Collaboration (Prompt 7 — client commitments, updates, queries, access, financial close tracks)
+  // Phase 1+2 cutover: canonical routes now serve all client-commitments and client-updates paths.
+  // Legacy stage-collaboration-routes still registers non-client paths (queries, financial close tracks).
+  const { registerCollaborationWorkflowRoutes } = await import("../collaboration-workflow-routes");
+  registerCollaborationWorkflowRoutes(app);
   const { registerStageCollaborationRoutes } = await import("../stage-collaboration-routes");
   registerStageCollaborationRoutes(app);
 }

@@ -74,7 +74,7 @@ export const programExpense = pgTable("program_expense", {
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
   deletedAt: timestamp("deleted_at"),
 }, (table) => ({
   projectForecastPaymentIdx: index("program_expense_project_forecast_payment_idx").on(table.projectId, table.forecastPaymentDate),
@@ -119,7 +119,7 @@ export const programInflows = pgTable("program_inflows", {
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
 });
 export const insertProgramInflowsSchema = createInsertSchema(programInflows).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertProgramInflows = z.infer<typeof insertProgramInflowsSchema>;
@@ -168,7 +168,7 @@ export const cashflowPoints = pgTable("cashflow_points", {
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
 });
 export const insertCashflowPointSchema = createInsertSchema(cashflowPoints).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertCashflowPoint = z.infer<typeof insertCashflowPointSchema>;
@@ -190,7 +190,7 @@ export const financeRevenueMonthly = pgTable("finance_revenue_monthly", {
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
 });
 export const insertFinanceRevenueMonthlySchema = createInsertSchema(financeRevenueMonthly).omit({ id: true, createdAt: true, effectiveFrom: true, effectiveTo: true } as any);
 export type InsertFinanceRevenueMonthly = z.infer<typeof insertFinanceRevenueMonthlySchema>;
@@ -212,7 +212,7 @@ export const financeCosMonthly = pgTable("finance_cos_monthly", {
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
 }, (table) => ({
   projectMonthIdx: index("finance_cos_monthly_project_month_idx").on(table.projectId, table.monthEndDate),
 }));
@@ -406,7 +406,9 @@ export const counterparties = pgTable("counterparties", {
   contactPhone: text("contact_phone"),
   contactEmail: text("contact_email"),
   bankName: text("bank_name"),
+  // stored encrypted at rest; decrypt only in server/lib/field-encryption.ts
   bankAccountNumber: text("bank_account_number"),
+  // stored encrypted at rest; decrypt only in server/lib/field-encryption.ts
   bankBranchCode: text("bank_branch_code"),
   paymentTerms: text("payment_terms"),
   notes: text("notes"),
@@ -447,8 +449,11 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   projectName: text("project_name").notNull(),
   description: text("description"),
   milestoneName: text("milestone_name"),
-  amountExVat: text("amount_ex_vat"),
-  vat: text("vat"),
+  amountExVat: decimal("amount_ex_vat", { precision: 15, scale: 2 }),
+  vat: decimal("vat", { precision: 15, scale: 2 }),
+  /** Legacy TEXT column preserved for 30-day rollback window. Remove after cleanup PR. */
+  amountExVatLegacy: text("amount_ex_vat_legacy"),
+  vatLegacy: text("vat_legacy"),
   invoiceNumber: text("invoice_number"),
   invoiceDate: date("invoice_date"),
   invoiceDateFontColor: text("invoice_date_font_color"),
@@ -473,9 +478,9 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
 });
-export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true } as any);
+export const insertNormalizedRevenueLineSchema = createInsertSchema(normalizedRevenueLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true, vatLegacy: true } as any);
 export type InsertNormalizedRevenueLine = z.infer<typeof insertNormalizedRevenueLineSchema>;
 export type NormalizedRevenueLine = typeof normalizedRevenueLines.$inferSelect;
 
@@ -489,7 +494,9 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   counterpartyName: text("counterparty_name"),
   counterpartyType: counterpartyTypeEnum("counterparty_type"),
   description: text("description"),
-  amountExVat: text("amount_ex_vat"),
+  amountExVat: decimal("amount_ex_vat", { precision: 15, scale: 2 }),
+  /** Legacy TEXT column preserved for 30-day rollback window. Remove after cleanup PR. */
+  amountExVatLegacy: text("amount_ex_vat_legacy"),
   invoiceNumber: text("invoice_number"),
   invoiceDate: date("invoice_date"),
   invoiceDateFontColor: text("invoice_date_font_color"),
@@ -530,9 +537,9 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
 });
-export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true } as any);
+export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
 export type NormalizedCostLine = typeof normalizedCostLines.$inferSelect;
 
