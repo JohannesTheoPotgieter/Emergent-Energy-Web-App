@@ -24,6 +24,8 @@ const MILESTONE_PHASES = [
   "Commissioning",
   "O&M Handover",
   "Client Handover",
+  "Financial Close",
+  "Compliance Handover",
 ];
 
 function isInMilestonePhase(phase: string | null): boolean {
