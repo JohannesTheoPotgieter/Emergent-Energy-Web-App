@@ -28,8 +28,8 @@ const STATUS_LABELS: Record<string, string> = {
   HANDOVER_COMPLETE: "Handover Complete",
 };
 
-const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "admin"];
-const PD_ROLES = ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "admin"];
+const PM_REVIEW_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "COO_ADMIN", "CEO_ADMIN", "CCO", "admin"];
+const PD_ROLES = ["PROJECT_DEVELOPER", "COO_ADMIN", "CEO_ADMIN", "CCO", "admin"];
 const PROJECT_TYPES = ["C&I", "Utility", "BESS", "Hybrid"];
 const SYSTEM_TYPES = ["Grid-tied", "Hybrid", "Off-grid", "BESS"];
 const FUNDING_MODELS = ["Self-funded", "Bank-financed", "PPA", "Lease", "Other"];

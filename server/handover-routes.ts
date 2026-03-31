@@ -434,10 +434,10 @@ export function registerHandoverRoutes(app: Express) {
           pm_sign_off_at: projectPdPmHandover.pmSignOffAt,
         })
         .from(projectInfo)
+        .innerJoin(projectPdPmHandover, eq(projectPdPmHandover.projectId, projectInfo.id))
         .leftJoin(clients, eq(clients.id, projectInfo.clientId))
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .leftJoin(projectSettings, eq(projectSettings.projectId, projectInfo.id))
-        .leftJoin(projectPdPmHandover, eq(projectPdPmHandover.projectId, projectInfo.id))
         .where(eq(projectExecutionState.isActive, true))
         .orderBy(sql`COALESCE(${projectPdPmHandover.updatedAt}, ${projectInfo.updatedAt}) DESC NULLS LAST`, projectInfo.projectName);
 
