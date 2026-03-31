@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ragBadgeClasses } from "@/lib/status-colors";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import {
   formatCurrencyCompact,
   formatCurrencyFull,
@@ -12,9 +13,11 @@ import {
 import {
   ArrowRight, ArrowUpDown, ChevronDown, ChevronUp,
   DollarSign, TrendingUp, TrendingDown, BarChart3,
-  AlertTriangle, ExternalLink, Info,
+  AlertTriangle, ExternalLink, Info, Clock, ArrowDownRight, ArrowUpRight,
+  RefreshCw, Eye,
 } from "lucide-react";
 import { useExecutionData } from "./use-execution-data";
+import { apiRequest } from "@/lib/queryClient";
 import RealisationKPIsPage from "./RealisationKPIsPage";
 
 type SortKey = "projectName" | "pm" | "plannedRevenue" | "receivedInflow" | "revenueVariance" | "plannedExpenditure" | "paidExpenditure" | "expenditureVariance" | "grossProfit" | "grossMargin" | "openInflow" | "openExpenditure";
@@ -41,11 +44,71 @@ function sortProjects(projects: ExecutionDashboardProject[], key: SortKey, dir: 
   });
 }
 
+interface OverdueItem {
+  id: number;
+  projectId: number;
+  projectName: string;
+  description: string;
+  amount: number;
+  invoiceNumber: string | null;
+  poNumber?: string | null;
+  counterparty?: string | null;
+  dueDate: string;
+  daysOverdue: number;
+  status: string;
+  type: "inflow" | "outflow";
+}
+
+interface OverdueData {
+  inflow: { items: OverdueItem[]; totalAmount: number; count: number };
+  outflow: { items: OverdueItem[]; totalAmount: number; count: number };
+}
+
 export default function FinancePage() {
   const { kpis, filteredProjects, actionRows, openProject, fyLabel } = useExecutionData();
   const [sortKey, setSortKey] = useState<SortKey>("grossMargin");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [expandedId, setExpandedId] = useState<number | null>(null);
+
+  // Overdue payments drill-down state
+  const [overdueDrawerOpen, setOverdueDrawerOpen] = useState(false);
+  const [overdueFilter, setOverdueFilter] = useState<"all" | "inflow" | "outflow">("all");
+  const [overdueData, setOverdueData] = useState<OverdueData | null>(null);
+  const [overdueLoading, setOverdueLoading] = useState(false);
+  const [overdueProjectFilter, setOverdueProjectFilter] = useState<number | null>(null);
+  const [overdueExpandedId, setOverdueExpandedId] = useState<number | null>(null);
+
+  const loadOverdueData = useCallback(async (direction: string = "all", projectId?: number) => {
+    try {
+      setOverdueLoading(true);
+      const params = new URLSearchParams();
+      if (direction !== "all") params.set("direction", direction);
+      if (projectId) params.set("projectId", String(projectId));
+      const res = await apiRequest("GET", `/api/lifecycle-board/overdue-payments?${params.toString()}`);
+      const data: OverdueData = await res.json();
+      setOverdueData(data);
+    } catch {
+      setOverdueData(null);
+    } finally {
+      setOverdueLoading(false);
+    }
+  }, []);
+
+  const openOverdueDrawer = useCallback((filter: "all" | "inflow" | "outflow" = "all", projectId?: number) => {
+    setOverdueFilter(filter);
+    setOverdueProjectFilter(projectId || null);
+    setOverdueExpandedId(null);
+    setOverdueDrawerOpen(true);
+    loadOverdueData(filter, projectId);
+  }, [loadOverdueData]);
+
+  const overdueItems = useMemo(() => {
+    if (!overdueData) return [];
+    const items: OverdueItem[] = [];
+    if (overdueFilter === "all" || overdueFilter === "inflow") items.push(...overdueData.inflow.items);
+    if (overdueFilter === "all" || overdueFilter === "outflow") items.push(...overdueData.outflow.items);
+    return items.sort((a, b) => b.daysOverdue - a.daysOverdue);
+  }, [overdueData, overdueFilter]);
 
   const sorted = useMemo(() => sortProjects(filteredProjects, sortKey, sortDir), [filteredProjects, sortKey, sortDir]);
 
@@ -108,6 +171,108 @@ export default function FinancePage() {
         />
         <KpiCard label="Inflow Risk Projects" value={kpis.inflowRiskProjects} icon={<AlertTriangle className="w-4 h-4 text-red-600" />} iconBg="bg-red-100" valueClass="text-red-600" sub={`${kpis.outflowRiskProjects} outflow risk`} />
       </div>
+
+      {/* OVERDUE PAYMENTS KPI */}
+      <Card className="border-red-200 bg-red-50/30">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock className="w-5 h-5 text-red-500" />
+            <h2 className="text-base font-semibold">Overdue Payments Outstanding</h2>
+            <Badge variant="outline" className="text-xs text-red-600 border-red-300">Past due date</Badge>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Total Overdue */}
+            <div
+              className="bg-white rounded-lg border border-red-200 p-3 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => openOverdueDrawer("all")}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center shrink-0">
+                  <Clock className="w-4 h-4 text-red-600" />
+                </div>
+                <span className="text-[10px] text-muted-foreground font-medium">TOTAL OVERDUE</span>
+              </div>
+              <p className="text-xl font-bold text-red-600 tabular-nums">
+                {formatCurrencyCompact(kpis.overdueInflowFy + kpis.overdueOutflowFy)}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Click to drill down to item level</p>
+            </div>
+
+            {/* Overdue Inflow */}
+            <div
+              className="bg-white rounded-lg border border-amber-200 p-3 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => openOverdueDrawer("inflow")}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                  <ArrowDownRight className="w-4 h-4 text-amber-600" />
+                </div>
+                <span className="text-[10px] text-muted-foreground font-medium">OVERDUE INFLOW (AR)</span>
+              </div>
+              <p className="text-xl font-bold text-amber-600 tabular-nums">
+                {formatCurrencyCompact(kpis.overdueInflowFy)}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Revenue past expected payment date</p>
+            </div>
+
+            {/* Overdue Outflow */}
+            <div
+              className="bg-white rounded-lg border border-orange-200 p-3 cursor-pointer hover:shadow-md transition-shadow"
+              onClick={() => openOverdueDrawer("outflow")}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <div className="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                  <ArrowUpRight className="w-4 h-4 text-orange-600" />
+                </div>
+                <span className="text-[10px] text-muted-foreground font-medium">OVERDUE OUTFLOW (AP)</span>
+              </div>
+              <p className="text-xl font-bold text-orange-600 tabular-nums">
+                {formatCurrencyCompact(kpis.overdueOutflowFy)}
+              </p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">Expenditure past approved/invoice date</p>
+            </div>
+          </div>
+
+          {/* Per-project overdue breakdown (top 5) */}
+          {filteredProjects.some((p) => (p.overdueInflowFy || 0) + (p.overdueOutflowFy || 0) > 0) && (
+            <div className="mt-3">
+              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wider mb-2">Top Overdue by Project</p>
+              <div className="rounded-lg border border-border/60 overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-muted/40 text-[11px] uppercase tracking-wider text-muted-foreground">
+                      <th className="text-left py-2 px-3 font-medium">Project</th>
+                      <th className="text-right py-2 px-3 font-medium">Overdue Inflow</th>
+                      <th className="text-right py-2 px-3 font-medium">Overdue Outflow</th>
+                      <th className="text-right py-2 px-3 font-medium">Total Overdue</th>
+                      <th className="w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...filteredProjects]
+                      .filter((p) => (p.overdueInflowFy || 0) + (p.overdueOutflowFy || 0) > 0)
+                      .sort((a, b) => ((b.overdueInflowFy || 0) + (b.overdueOutflowFy || 0)) - ((a.overdueInflowFy || 0) + (a.overdueOutflowFy || 0)))
+                      .slice(0, 8)
+                      .map((p) => (
+                        <tr key={p.projectId} className="border-t border-border/40 hover:bg-muted/30 cursor-pointer" onClick={() => openOverdueDrawer("all", p.projectId)}>
+                          <td className="py-2 px-3 font-medium truncate max-w-[200px]">{p.projectName}</td>
+                          <td className="py-2 px-3 text-right tabular-nums text-amber-600">{formatCurrencyCompact(p.overdueInflowFy || 0)}</td>
+                          <td className="py-2 px-3 text-right tabular-nums text-orange-600">{formatCurrencyCompact(p.overdueOutflowFy || 0)}</td>
+                          <td className="py-2 px-3 text-right tabular-nums font-medium text-red-600">{formatCurrencyCompact((p.overdueInflowFy || 0) + (p.overdueOutflowFy || 0))}</td>
+                          <td className="py-2 px-1">
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0">
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Data availability notice */}
       <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-xs">
@@ -349,6 +514,178 @@ export default function FinancePage() {
 
       {/* REALISATION KPIs DETAIL */}
       <RealisationKPIsPage />
+
+      {/* OVERDUE PAYMENTS DRILL-DOWN DRAWER */}
+      <Sheet open={overdueDrawerOpen} onOpenChange={setOverdueDrawerOpen}>
+        <SheetContent className="sm:max-w-[1000px] w-full overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-red-500" />
+              Overdue Payments
+              {overdueProjectFilter && overdueData && (
+                <Badge variant="outline" className="text-xs">
+                  {overdueItems[0]?.projectName || "Project"}
+                </Badge>
+              )}
+            </SheetTitle>
+          </SheetHeader>
+
+          {/* Filter tabs */}
+          <div className="mt-3 flex items-center gap-2">
+            {(["all", "inflow", "outflow"] as const).map((f) => (
+              <Button
+                key={f}
+                size="sm"
+                variant={overdueFilter === f ? "default" : "outline"}
+                className={`text-xs ${overdueFilter === f ? "" : ""}`}
+                onClick={() => {
+                  setOverdueFilter(f);
+                  setOverdueExpandedId(null);
+                  loadOverdueData(f, overdueProjectFilter || undefined);
+                }}
+              >
+                {f === "all" ? "All" : f === "inflow" ? "Inflow (AR)" : "Outflow (AP)"}
+              </Button>
+            ))}
+            <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+              <Button size="sm" variant="ghost" className="gap-1" onClick={() => loadOverdueData(overdueFilter, overdueProjectFilter || undefined)}>
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </Button>
+            </div>
+          </div>
+
+          {/* Summary strip */}
+          {overdueData && !overdueLoading && (
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <div className="bg-red-50 rounded-lg border border-red-200 p-2 text-center">
+                <p className="text-[10px] text-red-700 font-medium">TOTAL OVERDUE</p>
+                <p className="text-lg font-bold text-red-600 tabular-nums">
+                  {formatCurrencyCompact(overdueData.inflow.totalAmount + overdueData.outflow.totalAmount)}
+                </p>
+                <p className="text-[10px] text-muted-foreground">{overdueData.inflow.count + overdueData.outflow.count} items</p>
+              </div>
+              <div className="bg-amber-50 rounded-lg border border-amber-200 p-2 text-center">
+                <p className="text-[10px] text-amber-700 font-medium">INFLOW (AR)</p>
+                <p className="text-lg font-bold text-amber-600 tabular-nums">{formatCurrencyCompact(overdueData.inflow.totalAmount)}</p>
+                <p className="text-[10px] text-muted-foreground">{overdueData.inflow.count} items</p>
+              </div>
+              <div className="bg-orange-50 rounded-lg border border-orange-200 p-2 text-center">
+                <p className="text-[10px] text-orange-700 font-medium">OUTFLOW (AP)</p>
+                <p className="text-lg font-bold text-orange-600 tabular-nums">{formatCurrencyCompact(overdueData.outflow.totalAmount)}</p>
+                <p className="text-[10px] text-muted-foreground">{overdueData.outflow.count} items</p>
+              </div>
+            </div>
+          )}
+
+          {/* Item-level table */}
+          {overdueLoading ? (
+            <div className="text-sm text-muted-foreground mt-6 text-center py-8">Loading overdue items...</div>
+          ) : (
+            <div className="mt-3 border rounded-lg overflow-auto max-h-[65vh]">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/50 sticky top-0">
+                  <tr className="text-[11px] uppercase tracking-wider text-muted-foreground">
+                    <th className="text-left py-2 px-3 font-medium">Type</th>
+                    <th className="text-left py-2 px-3 font-medium">Project</th>
+                    <th className="text-left py-2 px-3 font-medium">Description</th>
+                    <th className="text-right py-2 px-3 font-medium">Amount</th>
+                    <th className="text-left py-2 px-3 font-medium">Invoice</th>
+                    <th className="text-left py-2 px-3 font-medium">Due Date</th>
+                    <th className="text-right py-2 px-3 font-medium">Days Overdue</th>
+                    <th className="w-8"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {overdueItems.length === 0 ? (
+                    <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">No overdue payments found</td></tr>
+                  ) : overdueItems.map((item) => {
+                    const isExpanded = overdueExpandedId === item.id;
+                    return (
+                      <React.Fragment key={`${item.type}-${item.id}`}>
+                        <tr
+                          className={`border-t border-border/40 cursor-pointer transition-colors ${isExpanded ? "bg-blue-50/40" : "hover:bg-muted/30"}`}
+                          onClick={() => setOverdueExpandedId(isExpanded ? null : item.id)}
+                        >
+                          <td className="py-2 px-3">
+                            <Badge className={`text-[10px] ${item.type === "inflow" ? "bg-amber-100 text-amber-700" : "bg-orange-100 text-orange-700"}`}>
+                              {item.type === "inflow" ? "AR" : "AP"}
+                            </Badge>
+                          </td>
+                          <td className="py-2 px-3 font-medium truncate max-w-[150px]">{item.projectName}</td>
+                          <td className="py-2 px-3 text-muted-foreground truncate max-w-[200px]">{item.description}</td>
+                          <td className="py-2 px-3 text-right tabular-nums font-medium">{formatCurrencyFull(item.amount)}</td>
+                          <td className="py-2 px-3 text-xs text-muted-foreground">{item.invoiceNumber || "—"}</td>
+                          <td className="py-2 px-3 text-xs tabular-nums">{formatDate(item.dueDate)}</td>
+                          <td className="py-2 px-3 text-right">
+                            <Badge className={`text-[10px] ${item.daysOverdue > 60 ? "bg-red-100 text-red-700" : item.daysOverdue > 30 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+                              {item.daysOverdue}d
+                            </Badge>
+                          </td>
+                          <td className="py-2 px-1 text-center">
+                            {isExpanded ? <ChevronUp className="w-4 h-4 text-muted-foreground" /> : <ChevronDown className="w-4 h-4 text-muted-foreground" />}
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="bg-muted/20 border-t border-border/40">
+                            <td colSpan={8} className="p-4">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+                                <div className="bg-white rounded-lg border p-3">
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Payment Details</p>
+                                  <div className="space-y-1.5 text-sm">
+                                    <p><span className="text-muted-foreground">Type:</span> {item.type === "inflow" ? "Revenue (Inflow)" : "Expenditure (Outflow)"}</p>
+                                    <p><span className="text-muted-foreground">Amount:</span> <span className="font-medium">{formatCurrencyFull(item.amount)}</span></p>
+                                    <p><span className="text-muted-foreground">Invoice #:</span> {item.invoiceNumber || "Not invoiced"}</p>
+                                    {item.poNumber && <p><span className="text-muted-foreground">PO #:</span> {item.poNumber}</p>}
+                                    {item.counterparty && <p><span className="text-muted-foreground">Counterparty:</span> {item.counterparty}</p>}
+                                    <p><span className="text-muted-foreground">Status:</span> <Badge variant="outline" className="text-[10px]">{item.status}</Badge></p>
+                                  </div>
+                                </div>
+                                <div className="bg-white rounded-lg border p-3">
+                                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Overdue Info</p>
+                                  <div className="space-y-1.5 text-sm">
+                                    <p><span className="text-muted-foreground">Due Date:</span> {formatDate(item.dueDate)}</p>
+                                    <p><span className="text-muted-foreground">Days Overdue:</span> <span className={`font-medium ${item.daysOverdue > 60 ? "text-red-600" : item.daysOverdue > 30 ? "text-amber-600" : ""}`}>{item.daysOverdue} days</span></p>
+                                    <p><span className="text-muted-foreground">Project:</span> {item.projectName}</p>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex gap-2 flex-wrap">
+                                <Button
+                                  size="sm"
+                                  className="gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const proj = filteredProjects.find((fp) => fp.projectId === item.projectId);
+                                    if (proj) openProject(proj, item.type === "inflow" ? "revenue" : "expenditure");
+                                  }}
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  Open in {item.type === "inflow" ? "Revenue" : "Expenditure"} Tab
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const proj = filteredProjects.find((fp) => fp.projectId === item.projectId);
+                                    if (proj) openProject(proj, "cashflow");
+                                  }}
+                                >
+                                  Cashflow
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
