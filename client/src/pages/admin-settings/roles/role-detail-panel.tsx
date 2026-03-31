@@ -1,14 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Archive, Check, Copy, Eye, Key, Layers, Lock, Pencil, Save, Shield, ShieldCheck, Trash2, Users, X, Compass } from "lucide-react";
-import type { RoleSummary, UserSummary } from "../settings-types";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { AlertTriangle, Archive, Check, Copy, Eye, Key, Layers, Lock, Pencil, Save, Shield, ShieldCheck, Trash2, Users, X, Compass, ChevronDown, ChevronRight } from "lucide-react";
+import type { RoleSummary, UserSummary, EffectivePermission } from "../settings-types";
+import { ACTIONS, ENTITY_CATEGORIES, ENTITY_DESCRIPTIONS, formatEntityName } from "../settings-types";
 import { RoleOverviewCard } from "./role-overview-card";
 import { RoleNavAccess } from "./role-nav-access";
 import { RolePermissionsMatrix } from "./role-permissions-matrix";
 import { RoleAuthorityConfig } from "./role-authority-config";
+import * as api from "../settings-api";
 
 type DetailTab = "overview" | "navigation" | "permissions" | "authority" | "users";
 
@@ -171,32 +174,172 @@ export function RoleDetailPanel({
             </div>
           )}
           {activeTab === "users" && (
-            <div className="space-y-3">
-              <h4 className="text-sm font-semibold text-gray-800">Users with role: {role.label}</h4>
-              {roleUsers.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground text-sm">No users assigned to this role.</div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {roleUsers.map((u) => (
-                    <div key={u.id} className="flex items-center gap-2.5 rounded-lg border border-gray-200 bg-white p-3 hover:bg-gray-50">
-                      <div className="h-8 w-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-xs shrink-0">
-                        {(u.name || "?").charAt(0).toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-gray-900 truncate">{u.name}</div>
-                        <div className="text-[11px] text-muted-foreground truncate">{u.email}</div>
-                      </div>
-                      {u.department && (
-                        <Badge variant="outline" className="text-[9px] ml-auto shrink-0">{u.department}</Badge>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <RoleUsersTab role={role} users={roleUsers} />
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+// ── Users Tab with effective permission preview ──
+
+function RoleUsersTab({ role, users }: { role: RoleSummary; users: UserSummary[] }) {
+  const [expandedUser, setExpandedUser] = useState<number | null>(null);
+  const [userPerms, setUserPerms] = useState<Record<number, EffectivePermission[]>>({});
+  const [loadingUser, setLoadingUser] = useState<number | null>(null);
+
+  const loadUserPerms = useCallback(async (userId: number) => {
+    if (userPerms[userId]) return;
+    setLoadingUser(userId);
+    try {
+      const perms = await api.fetchEffectivePermissions(userId);
+      setUserPerms((prev) => ({ ...prev, [userId]: perms }));
+    } catch {
+      // Silently fail — user will see empty state
+    } finally {
+      setLoadingUser(null);
+    }
+  }, [userPerms]);
+
+  const toggleUser = (userId: number) => {
+    if (expandedUser === userId) {
+      setExpandedUser(null);
+    } else {
+      setExpandedUser(userId);
+      loadUserPerms(userId);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold text-gray-800">Users with role: {role.label}</h4>
+        <span className="text-[11px] text-muted-foreground">{users.length} user{users.length !== 1 ? "s" : ""}</span>
+      </div>
+      {users.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">No users assigned to this role.</div>
+      ) : (
+        <div className="space-y-1">
+          {users.map((u) => {
+            const isExpanded = expandedUser === u.id;
+            const perms = userPerms[u.id];
+            const overrideCount = perms ? perms.filter((p) => p.source === "user_override").length : 0;
+            const grantedCount = perms ? perms.filter((p) => p.allowed).length : 0;
+            const totalCount = perms ? perms.length : 0;
+
+            return (
+              <div key={u.id} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full flex items-center gap-2.5 p-2.5 hover:bg-gray-50 text-left"
+                  onClick={() => toggleUser(u.id)}
+                >
+                  {isExpanded ? <ChevronDown className="h-3 w-3 text-gray-400 shrink-0" /> : <ChevronRight className="h-3 w-3 text-gray-400 shrink-0" />}
+                  <div className="h-7 w-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-[10px] shrink-0">
+                    {(u.name || "?").charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium text-gray-900 truncate">{u.name}</div>
+                    <div className="text-[10px] text-muted-foreground truncate">{u.email}</div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {u.department && (
+                      <Badge variant="outline" className="text-[9px] h-4">{u.department}</Badge>
+                    )}
+                    {perms && overrideCount > 0 && (
+                      <Badge variant="secondary" className="text-[9px] h-4 bg-amber-100 text-amber-700 border-amber-200">{overrideCount} overrides</Badge>
+                    )}
+                    {perms && (
+                      <span className="text-[9px] text-muted-foreground">{grantedCount}/{totalCount}</span>
+                    )}
+                  </div>
+                </button>
+
+                {isExpanded && (
+                  <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/50">
+                    {loadingUser === u.id ? (
+                      <div className="text-[11px] text-muted-foreground py-3 text-center">Loading effective permissions...</div>
+                    ) : perms ? (
+                      <UserPermissionSummary permissions={perms} />
+                    ) : (
+                      <div className="text-[11px] text-muted-foreground py-3 text-center">Click to load effective permissions</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Compact summary of a user's effective permissions grouped by category
+function UserPermissionSummary({ permissions }: { permissions: EffectivePermission[] }) {
+  const permMap = new Map<string, EffectivePermission>();
+  for (const p of permissions) {
+    permMap.set(`${p.entity}.${p.action}`, p);
+  }
+
+  const categories = Object.entries(ENTITY_CATEGORIES);
+  const overrides = permissions.filter((p) => p.source === "user_override");
+
+  return (
+    <div className="space-y-2">
+      {overrides.length > 0 && (
+        <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5">
+          <div className="text-[10px] font-semibold text-amber-800 mb-1">User-Specific Overrides ({overrides.length})</div>
+          <div className="flex flex-wrap gap-1">
+            {overrides.map((o) => (
+              <Badge
+                key={`${o.entity}.${o.action}`}
+                variant="outline"
+                className={`text-[8px] h-4 ${o.allowed ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-600 border-red-200"}`}
+              >
+                {formatEntityName(o.entity)} · {o.action} ({o.allowed ? "granted" : "denied"})
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+      <TooltipProvider delayDuration={150}>
+        <div className="grid grid-cols-2 gap-1.5">
+          {categories.map(([key, cat]) => {
+            let granted = 0;
+            let total = 0;
+            for (const entity of cat.entities) {
+              for (const action of ACTIONS) {
+                total++;
+                const perm = permMap.get(`${entity}.${action}`);
+                if (perm?.allowed) granted++;
+              }
+            }
+            const pct = total > 0 ? Math.round((granted / total) * 100) : 0;
+            return (
+              <Tooltip key={key}>
+                <TooltipTrigger asChild>
+                  <div className="flex items-center gap-1.5 rounded border border-gray-200 bg-white px-2 py-1 cursor-default">
+                    <div className="text-[10px] font-medium text-gray-700 flex-1 truncate">{cat.label}</div>
+                    <div className="w-10 h-1 bg-gray-200 rounded-full overflow-hidden shrink-0">
+                      <div
+                        className={`h-full rounded-full ${pct > 75 ? "bg-emerald-500" : pct > 25 ? "bg-amber-500" : "bg-gray-400"}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-muted-foreground w-8 text-right shrink-0">{granted}/{total}</span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-[10px]">
+                  <p className="font-medium">{cat.label}</p>
+                  <p className="text-muted-foreground">{granted} of {total} permissions granted ({pct}%)</p>
+                </TooltipContent>
+              </Tooltip>
+            );
+          })}
+        </div>
+      </TooltipProvider>
     </div>
   );
 }
