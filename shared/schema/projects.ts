@@ -158,7 +158,8 @@ export const projectExecutionState = pgTable("project_execution_state", {
   ragUpdatedByUserId: integer("rag_updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
 
   // Active / archived
-  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  /** @deprecated 2026-03-31: Use deletedAt IS NULL instead. Drop after 30-day observation. */
+  isActive: boolean("is_active").notNull().default(true),
   deletedAt: timestamp("deleted_at"),
   archivedStatus: text("archived_status").notNull().default("ACTIVE"),
 
