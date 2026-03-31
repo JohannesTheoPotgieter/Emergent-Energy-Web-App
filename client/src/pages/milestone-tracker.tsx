@@ -101,6 +101,8 @@ interface ProjectRow {
   latestUpdateBy: string | null;
   milestones: RevenueMilestone[];
   revenueSummary: RevenueTabData["summary"] | null;
+  /** Sorting category: 0 = overdue, 1 = upcoming 14 days, 2 = rest */
+  urgencyGroup: 0 | 1 | 2;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -124,6 +126,29 @@ function formatRelativeTime(dateStr: string | null): string {
   const days = Math.floor(hrs / 24);
   if (days < 30) return `${days}d ago`;
   return d.toLocaleDateString("en-ZA", { month: "short", day: "numeric" });
+}
+
+/** Determine urgency group: 0=overdue, 1=upcoming 14 days, 2=rest */
+function computeUrgencyGroup(milestones: RevenueMilestone[]): 0 | 1 | 2 {
+  const now = new Date();
+  now.setHours(0, 0, 0, 0);
+  const in14 = new Date(now);
+  in14.setDate(in14.getDate() + 14);
+
+  let hasOverdue = false;
+  let hasUpcoming = false;
+
+  for (const m of milestones) {
+    if (m.status === "overdue") { hasOverdue = true; break; }
+    if ((m.status === "planned" || m.status === "invoiced") && m.date) {
+      const d = new Date(m.date);
+      if (!isNaN(d.getTime()) && d >= now && d <= in14) hasUpcoming = true;
+    }
+  }
+
+  if (hasOverdue) return 0;
+  if (hasUpcoming) return 1;
+  return 2;
 }
 
 function ragDotClass(status: string | null): string {
@@ -323,6 +348,15 @@ export default function MilestoneTrackerPage() {
     return eligibleProjects.map((p: any, idx: number) => {
       const rawName = p.projectName || p.project_name || "";
       const revenueData = revenueQueries[idx]?.data as RevenueTabData | undefined;
+      const milestones = revenueData?.milestones || [];
+      const summary = revenueData?.summary || null;
+
+      // Calculate milestone revenue completion % from inBank / totalContract
+      let pctComplete = 0;
+      if (summary && summary.totalContract > 0) {
+        pctComplete = Math.round((summary.inBank / summary.totalContract) * 100);
+      }
+
       return {
         projectId: p.id,
         projectName: rawName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
@@ -332,16 +366,22 @@ export default function MilestoneTrackerPage() {
         contractValue: p.contractValue || null,
         sizeKwp: p.sizeKwp || null,
         ragStatus: p.ragStatus || null,
-        projectPctComplete: p.projectPctComplete || 0,
+        projectPctComplete: pctComplete,
         latestUpdate: p.latestUpdate || null,
         latestUpdateAt: p.latestUpdateAt || null,
         latestUpdateBy: p.latestUpdateBy || null,
-        milestones: revenueData?.milestones || [],
-        revenueSummary: revenueData?.summary || null,
+        milestones,
+        revenueSummary: summary,
+        urgencyGroup: computeUrgencyGroup(milestones),
       };
     })
     .filter((p) => p.projectName)
-    .sort((a, b) => a.projectName.localeCompare(b.projectName));
+    .sort((a, b) => {
+      // Primary: urgency group (overdue first, then upcoming, then rest)
+      if (a.urgencyGroup !== b.urgencyGroup) return a.urgencyGroup - b.urgencyGroup;
+      // Secondary: alphabetical
+      return a.projectName.localeCompare(b.projectName);
+    });
   }, [eligibleProjects, revenueQueries]);
 
   // Filters
@@ -439,13 +479,30 @@ export default function MilestoneTrackerPage() {
 
       {/* Project rows with their revenue milestones */}
       <div className="space-y-1.5">
-        {filtered.map((project) => {
+        {filtered.map((project, idx) => {
           const isExpanded = expandedProjects.has(project.projectId);
+          const prevGroup = idx > 0 ? filtered[idx - 1].urgencyGroup : -1;
+          const showGroupHeader = project.urgencyGroup !== prevGroup;
+          const headerBg = project.urgencyGroup === 0
+            ? "bg-red-50 border-l-2 border-l-red-400"
+            : project.urgencyGroup === 1
+            ? "bg-amber-50 border-l-2 border-l-amber-400"
+            : "bg-muted/30";
           return (
-          <Card key={project.projectId} className="overflow-hidden">
+          <div key={project.projectId}>
+            {showGroupHeader && (
+              <div className={`text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 mt-2 ${
+                project.urgencyGroup === 0 ? "text-red-700" :
+                project.urgencyGroup === 1 ? "text-amber-700" : "text-muted-foreground"
+              }`}>
+                {project.urgencyGroup === 0 ? "Overdue" :
+                 project.urgencyGroup === 1 ? "Upcoming (Next 14 Days)" : "Other Projects"}
+              </div>
+            )}
+          <Card className="overflow-hidden">
             {/* Project header row — click to expand/collapse */}
             <div
-              className="px-3 py-2 bg-muted/30 flex items-center gap-3 flex-wrap cursor-pointer select-none hover:bg-muted/50 transition-colors"
+              className={`px-3 py-2 flex items-center gap-3 flex-wrap cursor-pointer select-none hover:bg-muted/50 transition-colors ${headerBg}`}
               onClick={() => toggleProject(project.projectId)}
             >
               {/* Chevron */}
@@ -565,6 +622,7 @@ export default function MilestoneTrackerPage() {
               </>
             )}
           </Card>
+          </div>
           );
         })}
 
