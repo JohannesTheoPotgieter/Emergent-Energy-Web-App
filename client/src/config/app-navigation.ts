@@ -43,18 +43,18 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "Portfolio",
+    label: "Company",
     key: "PORTFOLIO",
-    path: "/lifecycle-board",
+    path: "/project-lifecycle",
     match: (pathname) => startsWithAny(pathname, [
       "/lifecycle-board",
       "/gates", "/exceptions",
       "/project-lifecycle",
     ]),
     secondary: [
+      { label: "Overview", path: "/project-lifecycle" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
       { label: "Gate Tracker", path: "/gates" },
-      { label: "Overview", path: "/project-lifecycle" },
       { label: "Blocked Gates", path: "/gates/blocked" },
       { label: "Exceptions", path: "/gates/exceptions" },
     ],
@@ -85,7 +85,7 @@ export const TOP_SECTIONS: TopSection[] = [
       "/portfolios",
       "/projects", "/project", "/project-create",
       "/construction", "/procurement",
-      "/tasks", "/standups", "/handover",
+      "/standups", "/handover",
       "/pm", "/sites",
       "/governance/financial-reviews",
       "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
@@ -101,7 +101,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Procurement", path: "/procurement" },
       { label: "PO Approvals", path: "/po-approval-board" },
       { label: "Payment Requests", path: "/payment-request-board" },
-      { label: "Task Management", path: "/tasks" },
       { label: "Milestone Tracker", path: "/milestone-tracker" },
       { label: "Weekly Reviews", path: "/weekly-reviews" },
       { label: "Handover & Closeout", path: "/handover" },
@@ -304,7 +303,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
 
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
   if (portfolioMatch) return [
-    { label: "Portfolio", path: "/portfolios" },
+    { label: "Company", path: "/project-lifecycle" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];
 
@@ -322,7 +321,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   ];
 
   if (pathname.startsWith("/gates")) return [
-    { label: "Portfolio", path: "/portfolios" },
+    { label: "Company", path: "/project-lifecycle" },
     { label: "Gate Tracker", path: "/gates" },
     ...(pathname !== "/gates" ? [{
       label: activeSection.secondary.find((item) => linkIsActive(pathname, item.path))?.label || pathname.split("/").pop() || "",

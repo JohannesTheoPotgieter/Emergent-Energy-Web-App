@@ -396,6 +396,15 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
+    entity: 'hse',
+    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'HSE_MANAGER', 'SSEG_MANAGER'],
+    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER'],
+    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER'],
+    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
+    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
+  },
+  {
     entity: 'governance',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
