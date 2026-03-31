@@ -1,11 +1,15 @@
 import { sql } from "drizzle-orm";
 import { db } from "../../db";
+import { hasBackfillRun, markBackfillComplete } from "./backfill-registry";
+
+const BACKFILL_KEY = "work_items_dates_v1";
 
 export async function runWorkItemsBackfill(
   startupBackfillEnabled: boolean,
   allowStartupMutations: boolean,
 ) {
   if (!startupBackfillEnabled) return;
+  if (await hasBackfillRun(BACKFILL_KEY)) return;
 
   await db.execute(sql.raw(`
     UPDATE work_items wi
@@ -37,4 +41,6 @@ export async function runWorkItemsBackfill(
     const { backfillWorkItems } = await import("../../work-items-backfill");
     await backfillWorkItems();
   }
+
+  await markBackfillComplete(BACKFILL_KEY);
 }

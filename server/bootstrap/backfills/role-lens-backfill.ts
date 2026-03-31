@@ -14,6 +14,7 @@
 
 import { db } from "../../db";
 import { sql, eq } from "drizzle-orm";
+import { hasBackfillRun, markBackfillComplete } from "./backfill-registry";
 import {
   roleLensProfiles,
   roleHomepageWidgets,
@@ -44,6 +45,9 @@ export async function runRoleLensBackfill(): Promise<BackfillReport> {
     errors: [],
     warnings: [],
   };
+
+  // One-time guard: skip if already completed
+  if (await hasBackfillRun("role_lens_v1")) return report;
 
   console.log("[RoleLensBackfill] Starting role-based UX upgrade backfill...");
 
@@ -104,6 +108,13 @@ export async function runRoleLensBackfill(): Promise<BackfillReport> {
   }
 
   console.log("[RoleLensBackfill] Backfill complete.", JSON.stringify(report, null, 2));
+
+  // Mark as complete so it never runs again
+  await markBackfillComplete("role_lens_v1", {
+    rowsBackfilled: report.rowsBackfilled,
+    errors: report.errors.length,
+  });
+
   return report;
 }
 
