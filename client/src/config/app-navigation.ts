@@ -249,32 +249,52 @@ export function getAllowedSectionKeysForLens(allowedModules: string[]): string[]
   return Array.from(keys);
 }
 
+export function parseDisabledSubPages(sections: string[]): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const entry of sections) {
+    if (entry.startsWith("!")) {
+      const colonIdx = entry.indexOf(":");
+      if (colonIdx > 1) {
+        const sectionKey = entry.substring(1, colonIdx);
+        const path = entry.substring(colonIdx + 1);
+        if (!map.has(sectionKey)) map.set(sectionKey, new Set());
+        map.get(sectionKey)!.add(path);
+      }
+    }
+  }
+  return map;
+}
+
 export function buildVisibleTopSections(options: {
   canViewPath: (path: string) => boolean;
   companyRole?: string | null;
   allowedSectionKeys?: string[] | null;
+  disabledSubPages?: Map<string, Set<string>> | null;
 }) {
-  const { canViewPath, companyRole, allowedSectionKeys } = options;
+  const { canViewPath, companyRole, allowedSectionKeys, disabledSubPages } = options;
 
-  // Lens-driven keys take priority over DB role lookup
   const allowedKeys = allowedSectionKeys
     ?? (companyRole ? ROLE_VISIBLE_SECTIONS[companyRole] : null);
 
   return TOP_SECTIONS
     .map((section) => {
-      // Role-based section filtering
       if (allowedKeys && !allowedKeys.includes(section.key)) {
         return null;
       }
 
-      const secondary = section.secondary.filter((item) => item.path === "/" || canViewPath(item.path));
+      const sectionDisabled = disabledSubPages?.get(section.key);
+      const secondary = section.secondary.filter((item) => {
+        if (sectionDisabled && sectionDisabled.has(item.path)) return false;
+        return item.path === "/" || canViewPath(item.path);
+      });
       const firstVisiblePath = secondary[0]?.path || section.path;
 
       if (section.key === "HOME") {
         return { ...section, path: firstVisiblePath, secondary };
       }
 
-      const canSeeSectionRoot = canViewPath(section.path);
+      const sectionRootDisabled = sectionDisabled && sectionDisabled.has(section.path);
+      const canSeeSectionRoot = !sectionRootDisabled && canViewPath(section.path);
       if (!canSeeSectionRoot && secondary.length === 0) {
         return null;
       }

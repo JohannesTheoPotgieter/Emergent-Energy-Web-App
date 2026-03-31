@@ -176,6 +176,10 @@ const SECTION_EXPANSION: Record<string, string[]> = {
 function migrateSections(sections: string[]): string[] {
   const migrated = new Set<string>();
   for (const s of sections) {
+    if (s.startsWith("!")) {
+      migrated.add(s);
+      continue;
+    }
     if (VALID_SECTIONS.has(s)) {
       migrated.add(s);
     } else if (SECTION_EXPANSION[s]) {

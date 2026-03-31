@@ -231,6 +231,26 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   hse_incidents: "HSE Incidents — incident reporting & investigation",
   project_creation: "Create Project — new project wizard",
   work_items: "Work Items — canonical task/work tracking",
+  milestone_tracker: "Milestone Tracker — revenue milestones per project",
+  construction: "Construction — construction management & tracking",
+  po_approvals: "PO Approvals — purchase order approval board",
+  payment_requests: "Payment Requests — payment request board & batches",
+  financial_reviews: "Financial Reviews — governance financial review sessions",
+  sites: "Sites — site management & map view",
+  handover_closeout: "Handover & Closeout — project handover and closeout management",
+  pd_pipeline: "Pipeline / Opportunities — PD pipeline tracking",
+  pd_handover_queue: "Handover Queue — PD-to-PM handover queue",
+  pd_reports: "PD Reports — project development reporting",
+  eng_standup: "Engineering Standup — daily standup management",
+  quality_ncrs: "Inspections / NCRs — quality inspections & non-conformances",
+  report_center: "Report Center — centralized report hub",
+  programme_reports: "Programme Reports — programme-level reporting",
+  pm_monthly: "PM Monthly — project manager monthly reports",
+  eng_monthly: "Engineering Monthly — engineering monthly reports",
+  admin_control_center: "Control Center — admin system overview",
+  admin_processes: "Processes & SOPs — process documentation management",
+  admin_templates: "Templates — phase & document template management",
+  admin_recovery: "Recovery — system recovery tools",
 };
 
 export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
@@ -244,11 +264,11 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   project_dev: {
     label: "Project Development",
-    entities: ["pd_dashboard", "pd_tickets", "pd_clients", "handover", "project_charter", "client_update"],
+    entities: ["pd_dashboard", "pd_pipeline", "pd_tickets", "pd_clients", "pd_handover_queue", "pd_reports", "handover", "project_charter", "client_update"],
   },
   project_delivery: {
     label: "Project Delivery",
-    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "handover_acceptance", "commissioning", "task_management", "standups", "phase_templates", "project_access_mgmt", "project_creation", "work_items"],
+    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "handover_acceptance", "commissioning", "task_management", "standups", "phase_templates", "project_access_mgmt", "project_creation", "work_items", "milestone_tracker", "construction", "po_approvals", "payment_requests", "financial_reviews", "sites", "handover_closeout"],
   },
   hse: {
     label: "HSE",
@@ -256,11 +276,11 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   engineering: {
     label: "Engineering",
-    entities: ["engineering", "eng_tasks", "eng_stages"],
+    entities: ["engineering", "eng_tasks", "eng_stages", "eng_standup"],
   },
   quality: {
     label: "Quality",
-    entities: ["quality"],
+    entities: ["quality", "quality_ncrs"],
   },
   finance: {
     label: "Finance",
@@ -268,11 +288,11 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   reports: {
     label: "Reports",
-    entities: ["reports", "performance", "leaderboard", "department_scores"],
+    entities: ["reports", "report_center", "programme_reports", "pm_monthly", "eng_monthly", "performance", "leaderboard", "department_scores"],
   },
   admin: {
     label: "Admin",
-    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "training", "knowledge_game", "feedback"],
+    entities: ["admin", "admin_control_center", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "admin_processes", "admin_templates", "admin_recovery", "training", "knowledge_game", "feedback"],
   },
   project_detail: {
     label: "Project Detail Tabs",
