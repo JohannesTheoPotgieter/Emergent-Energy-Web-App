@@ -1308,7 +1308,14 @@ export default function ProjectDetailPage() {
 
   const overallRag: "green" | "amber" | "red" = (healthSummary?.overall.rag as any) ?? computeOverallRag(scheduleRag, costRag, qualityRag);
   const commercialPendingCount = Math.max(revTabMilestones.filter((m: any) => m.status !== 'inBank').length, 0);
-  const unpaidExpenseCount = Math.max((expenseData as any[]).filter((e: any) => !isExpensePaid(e)).length, 0);
+  const isExpenseOverdue = (e: any): boolean => {
+    if (isExpensePaid(e)) return false;
+    const dueDate = e.expensePaymentDate || e.forecastPaymentDate || e.computedForecastPaymentDate || e.expenseInvoicedDate;
+    if (!dueDate || !String(dueDate).trim()) return false;
+    const dueDateStr = String(dueDate).substring(0, 10);
+    return dueDateStr < today;
+  };
+  const unpaidExpenseCount = Math.max((expenseData as any[]).filter((e: any) => isExpenseOverdue(e)).length, 0);
   const revenueReconciliation = revenueTrustData?.reconciliation;
   const expenditureReconciliation = expenditureTrustData?.reconciliation;
   const pendingCashApprovals = revenueReconciliation?.approvals?.affectingCashCount
@@ -1334,7 +1341,7 @@ export default function ProjectDetailPage() {
     { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => openExecutionArea("delivery", "task-grid") },
     { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => openExecutionArea("engineering", "eng-tasks") },
     { label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => openExecutionArea("quality", "quality") },
-    { label: "Unpaid supplier costs", count: unpaidExpenseCount, action: () => openExecutionArea("commercial", "expenditure") },
+    { label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => openExecutionArea("commercial", "expenditure") },
   ].filter((alert) => alert.count > 0);
   const collaborationSignals = {
     hasHistory: !!projectInfoId,
