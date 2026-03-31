@@ -209,7 +209,7 @@ export function registerPlanningTasksRoutes(app: Express) {
               percentComplete: pctComplete,
               expectedPercentComplete: computedExpPct,
               storedActualPct: pctComplete,
-              assignees: null,
+              assignees: ct.assignees || null,
               tags: null,
               blockerReason: null,
               plannedHours: null,
