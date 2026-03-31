@@ -97,12 +97,14 @@ export function registerStandupRoutes(app: Express) {
 
       let schedules;
       if (scheduleIds.length > 0) {
+        const isActiveVal = getDbMode() === "sqlite" ? 1 : true;
         schedules = await db
           .select()
           .from(standupSchedules)
           .where(and(
             inArray(standupSchedules.id, scheduleIds),
-            eq(standupSchedules.isActive, true)
+            eq(standupSchedules.isActive, isActiveVal as any),
+            isNull(standupSchedules.deletedAt)
           ))
           .orderBy(desc(standupSchedules.createdAt));
       } else {
@@ -293,7 +295,7 @@ export function registerStandupRoutes(app: Express) {
         .innerJoin(standupSchedules, eq(standupParticipants.scheduleId, standupSchedules.id))
         .where(and(
           eq(standupParticipants.userId, user.id),
-          eq(standupSchedules.isActive, true)
+          eq(standupSchedules.isActive, (getDbMode() === "sqlite" ? 1 : true) as any)
         ));
 
       // Check which have a standup today and if user already submitted
@@ -1227,11 +1229,14 @@ export function registerStandupRoutes(app: Express) {
   app.post("/api/standups/seed-default", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      // Check if a default project standup already exists
+      // Check if a default project standup already exists (ignore soft-deleted)
       const existing = await db
         .select()
         .from(standupSchedules)
-        .where(eq(standupSchedules.name, "Project Standup (Mon/Wed/Fri)"));
+        .where(and(
+          eq(standupSchedules.name, "Project Standup (Mon/Wed/Fri)"),
+          isNull(standupSchedules.deletedAt)
+        ));
 
       if (existing.length > 0) {
         return res.json({ seeded: false, message: "Default standup schedule already exists", schedule: existing[0] });
@@ -1246,29 +1251,44 @@ export function registerStandupRoutes(app: Express) {
       nextMonday.setDate(now.getDate() - dayOfWeek + 1); // Go to this week's Monday
       const anchorDate = nextMonday.toISOString().split("T")[0];
 
-      const [schedule] = await db.insert(standupSchedules).values({
-        name: "Project Standup (Mon/Wed/Fri)",
-        teamLabel: "All Teams",
-        cadence: "EVERY_2_DAYS",
-        cadenceDays: 2,
-        anchorDate,
-        deadlineTime: "09:00",
-        deadlineTimezone: "Africa/Johannesburg",
-        createdBy: user.id,
-      }).returning();
+      // Use raw SQL for SQLite compatibility (Drizzle pgTable defaults use NOW() which SQLite doesn't support)
+      const isSqlite = getDbMode() === "sqlite";
+      let schedule: any;
+      if (isSqlite) {
+        const result = await db.run(sql`INSERT INTO standup_schedules (name, team_label, cadence, cadence_days, anchor_date, deadline_time, deadline_timezone, created_by) VALUES ('Project Standup (Mon/Wed/Fri)', 'All Teams', 'EVERY_2_DAYS', 2, ${anchorDate}, '09:00', 'Africa/Johannesburg', ${user.id})`);
+        const lastId = (result as any)?.lastInsertRowid ?? (result as any)?.insertId;
+        const rows = await db.select().from(standupSchedules).where(eq(standupSchedules.id, Number(lastId)));
+        schedule = rows[0];
+      } else {
+        const [s] = await db.insert(standupSchedules).values({
+          name: "Project Standup (Mon/Wed/Fri)",
+          teamLabel: "All Teams",
+          cadence: "EVERY_2_DAYS",
+          cadenceDays: 2,
+          anchorDate,
+          deadlineTime: "09:00",
+          deadlineTimezone: "Africa/Johannesburg",
+          createdBy: user.id,
+        }).returning();
+        schedule = s;
+      }
 
       // Add creator as participant
-      await db.insert(standupParticipants).values({
-        scheduleId: schedule.id,
-        userId: user.id,
-        isRequired: true,
-      });
+      if (isSqlite) {
+        await db.run(sql`INSERT INTO standup_participants (schedule_id, user_id, is_required) VALUES (${schedule.id}, ${user.id}, 1)`);
+      } else {
+        await db.insert(standupParticipants).values({
+          scheduleId: schedule.id,
+          userId: user.id,
+          isRequired: true,
+        });
+      }
 
-      // Add all active users as participants
+      // Add all active users as participants (exclude soft-deleted users)
       const allUsers = await db
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.isActive, true));
+        .where(isNull(users.deletedAt));
 
       const participantValues = allUsers
         .filter((u: any) => u.id !== user.id)
@@ -1279,7 +1299,13 @@ export function registerStandupRoutes(app: Express) {
         }));
 
       if (participantValues.length > 0) {
-        await db.insert(standupParticipants).values(participantValues);
+        if (isSqlite) {
+          for (const pv of participantValues) {
+            await db.run(sql`INSERT INTO standup_participants (schedule_id, user_id, is_required) VALUES (${pv.scheduleId}, ${pv.userId}, 1)`);
+          }
+        } else {
+          await db.insert(standupParticipants).values(participantValues);
+        }
       }
 
       res.status(201).json({ seeded: true, schedule });
