@@ -105,6 +105,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Milestone Tracker", path: "/milestone-tracker" },
       { label: "Weekly Reviews", path: "/weekly-reviews" },
       { label: "Handover & Closeout", path: "/handover" },
+      { label: "Financial Reviews", path: "/governance/financial-reviews" },
       { label: "Sites", path: "/sites" },
     ],
   },
