@@ -652,6 +652,7 @@ export function registerMsSyncRoutes(app: Express) {
               FROM work_items wi
               LEFT JOIN project_info pi ON wi.project_id = pi.id
               WHERE wi.deleted_at IS NULL
+                AND wi.workstream IS DISTINCT FROM 'PERSONAL'
                 AND (wi.owner_user_id = ${userId}
                      OR EXISTS (SELECT 1 FROM work_item_assignments wia
                                 WHERE wia.work_item_id = wi.id AND wia.user_id = ${userId}))
