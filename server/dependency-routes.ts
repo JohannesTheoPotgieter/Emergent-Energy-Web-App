@@ -1,6 +1,6 @@
 import { Express, Request, Response } from "express";
 import { db } from "./db";
-import { eq, and, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, sql, inArray, isNull, or } from "drizzle-orm";
 import { workItemDependencies, workItems, insertWorkItemDependencySchema } from "@shared/schema";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
@@ -126,7 +126,10 @@ export function registerDependencyRoutes(app: Express): void {
         .from(workItemDependencies)
         .where(
           and(
-            sql`(${workItemDependencies.predecessorId} = ANY(${taskIds}) OR ${workItemDependencies.successorId} = ANY(${taskIds}))`,
+            or(
+              inArray(workItemDependencies.predecessorId, taskIds),
+              inArray(workItemDependencies.successorId, taskIds),
+            ),
             isNull(workItemDependencies.deletedAt),
           )
         );

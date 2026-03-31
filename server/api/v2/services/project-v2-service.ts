@@ -98,7 +98,8 @@ export async function financeSummaryService(projectId: number) {
 }
 
 export async function financeCashflowService(projectId: number) {
-  return { byStatus: await repo.getFinanceCashflow(projectId) };
+  const rows = await repo.getFinanceCashflow(projectId);
+  return { byStatus: rows.map((r: any) => ({ ...r, projected: Number(r.projected) || 0, actual: Number(r.actual) || 0 })) };
 }
 
 export async function financeCosService(projectId: number) {
@@ -279,11 +280,12 @@ export async function getProjectFinanceDetailService(projectId: number) {
   const project = await repo.getProjectById(projectId);
   if (!project) throw new ApiV2Error("NOT_FOUND", 404, "Project not found");
 
-  const [costLines, revenueLines, cashflow] = await Promise.all([
+  const [costLines, revenueLines, rawCashflow] = await Promise.all([
     repo.getFinanceCostLines(projectId),
     repo.getFinanceRevenueLines(projectId),
     repo.getFinanceCashflow(projectId),
   ]);
+  const cashflow = rawCashflow.map((r: any) => ({ ...r, projected: Number(r.projected) || 0, actual: Number(r.actual) || 0 }));
 
   return { costLines, revenueLines, cashflow };
 }
