@@ -165,23 +165,27 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
 const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
   home: {
     label: "Home",
-    entities: ["home", "my_work", "my_tool", "company_priorities"],
+    entities: ["home", "my_work", "my_tool", "company_priorities", "meetings", "teams_chat", "collaboration_hub"],
   },
-  lifecycle: {
-    label: "Project Lifecycle",
-    entities: ["lifecycle", "create_project", "pd_clients"],
+  portfolio: {
+    label: "Company",
+    entities: ["lifecycle", "create_project", "stage_lifecycle", "stage_gate", "stage_exceptions", "stage_dependencies", "stage_config", "stage_admin", "gate_override", "exception"],
   },
   project_dev: {
     label: "Project Development",
-    entities: ["pd_dashboard", "pd_tickets"],
+    entities: ["pd_dashboard", "pd_tickets", "pd_clients", "handover", "project_charter", "client_update"],
   },
-  project_management: {
-    label: "Project Management",
-    entities: ["projects", "project_normalized", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "triage_inbox", "unclassified_tasks", "handover", "commissioning", "task_management", "standups", "notifications", "phase_templates"],
+  project_delivery: {
+    label: "Project Delivery",
+    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "handover_acceptance", "commissioning", "task_management", "standups", "phase_templates", "project_access_mgmt", "project_creation", "work_items"],
+  },
+  hse: {
+    label: "HSE",
+    entities: ["hse_dashboard", "hse_compliance", "hse_sseg", "hse_incidents"],
   },
   engineering: {
     label: "Engineering",
-    entities: ["engineering", "eng_tasks", "eng_stages", "eng_sync", "eng_inbox"],
+    entities: ["engineering", "eng_tasks", "eng_stages"],
   },
   quality: {
     label: "Quality",
@@ -191,25 +195,17 @@ const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> =
     label: "Finance",
     entities: ["cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
   },
-  knowledge: {
-    label: "Knowledge",
-    entities: ["ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "leaderboard", "training", "knowledge_game", "feedback", "department_scores"],
-  },
-  collaboration: {
-    label: "Collaboration",
-    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings", "reports"],
+  reports: {
+    label: "Reports",
+    entities: ["reports", "performance", "leaderboard", "department_scores"],
   },
   admin: {
     label: "Admin",
-    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail"],
+    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "training", "knowledge_game", "feedback"],
   },
   project_detail: {
     label: "Project Detail Tabs",
     entities: ["pd_overview", "pd_plan", "pd_gantt", "pd_finance", "pd_revenue", "pd_cashflow", "pd_cos_tracker", "pd_expenditure", "pd_history", "pd_key_dates", "pd_quality", "pd_engineering", "pd_eng_tasks", "pd_eng_stages", "pd_collaboration", "pd_subcontractors", "pd_change_control", "pd_commissioning", "pd_dependencies", "pd_raid"],
-  },
-  other: {
-    label: "Other Permissions",
-    entities: ["dashboard_widgets", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
   },
 };
 

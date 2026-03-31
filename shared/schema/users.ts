@@ -214,26 +214,25 @@ export const APP_SECTION_LABELS: Record<AppSection, string> = {
 
 export const UX_REDESIGN_ENABLED = true;
 
-export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'hse' | 'engineering' | 'procurement' | 'admin' | 'governance'
+export type PermissionEntity = 'projects' | 'financials' | 'quality' | 'hse' | 'engineering' | 'procurement' | 'admin'
   | 'cos' | 'cashflow' | 'smart_import' | 'tr_register' | 'pm_dashboard'
   | 'eng_stages' | 'eng_tasks' | 'lifecycle' | 'my_tool' | 'create_project'
   | 'weekly_reviews' | 'ee_info'
   | 'execution_board' | 'leaderboard' | 'training' | 'knowledge_game' | 'department_scores' | 'feedback' | 'approvals' | 'activity_log'
   | 'company_priorities' | 'meetings' | 'phase_templates' | 'invoice_patterns'
-  | 'portfolios' | 'notifications' | 'subcontractors' | 'cos_control' | 'cashflow_forecast' | 'home'
+  | 'portfolios' | 'subcontractors' | 'cos_control' | 'cashflow_forecast' | 'home'
   | 'pd_overview' | 'pd_plan' | 'pd_finance' | 'pd_engineering' | 'pd_quality' | 'pd_history'
   | 'pd_revenue' | 'pd_expenditure' | 'pd_cos_tracker' | 'pd_cashflow' | 'pd_subcontractors'
   | 'pd_eng_tasks' | 'pd_eng_stages' | 'pd_gantt' | 'pd_key_dates'
   | 'pd_tickets' | 'pd_dashboard' | 'pd_clients'
-  | 'triage_inbox' | 'unclassified_tasks' | 'eng_sync' | 'eng_inbox'
-  | 'portfolio_detail' | 'project_normalized' | 'admin_roles' | 'revenue'
+  | 'portfolio_detail' | 'admin_roles' | 'revenue'
   | 'ee_info_lifecycle' | 'ee_info_departments' | 'ee_info_processes' | 'ee_info_templates'
-  | 'teams_chat' | 'financial_integration' | 'pd_collaboration' | 'operational_tasks' | 'gamification'
-  | 'dashboard_widgets' | 'pm_on_the_go' | 'weekly_review_wizard' | 'project_creation' | 'financial_linking'
-  | 'collaboration_hub' | 'sharepoint_files' | 'project_chat' | 'deliverables'
+  | 'teams_chat' | 'financial_integration' | 'pd_collaboration'
+  | 'pm_on_the_go' | 'weekly_review_wizard' | 'project_creation' | 'financial_linking'
+  | 'collaboration_hub' | 'deliverables'
   | 'data_import' | 'data_export' | 'audit_trail'
   | 'ms_integration'
-  | 'my_work' | 'ms_sync' | 'project_tagging' | 'database_migration'
+  | 'my_work' | 'ms_sync' | 'database_migration'
   | 'revenue_tracker' | 'gp_tracker' | 'work_items'
   | 'task_management' | 'standups' | 'fye_revenue_tracking' | 'reports'
   | 'handover' | 'commissioning' | 'counterparties'
@@ -438,15 +437,6 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER', 'CONSTRUCTION_MANAGER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'HSE_MANAGER'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'governance',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
@@ -775,15 +765,6 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
-    entity: 'notifications',
-    view_roles: [...ALL_STAFF_ROLES],
-    create_roles: [...ALL_STAFF_ROLES],
-    edit_roles: [...ALL_STAFF_ROLES],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
     entity: 'subcontractors',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ACCOUNTANT'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_FINANCE_MANAGER', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
@@ -847,55 +828,10 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
-    entity: 'triage_inbox',
-    view_roles: [...ALL_STAFF_ROLES],
-    create_roles: [...ALL_STAFF_ROLES],
-    edit_roles: [...ALL_STAFF_ROLES],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'unclassified_tasks',
-    view_roles: [...ALL_STAFF_ROLES],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'eng_sync',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'eng_inbox',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
     entity: 'portfolio_detail',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'KEY_ACCOUNTS_MANAGER'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'project_normalized',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
@@ -982,33 +918,6 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
-    entity: 'operational_tasks',
-    view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'CONSTRUCTION_MANAGER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'gamification',
-    view_roles: [...ALL_STAFF_ROLES],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'dashboard_widgets',
-    view_roles: [...ALL_STAFF_ROLES],
-    create_roles: [...ALL_STAFF_ROLES],
-    edit_roles: [...ALL_STAFF_ROLES],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
     entity: 'pm_on_the_go',
     view_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROJECT_MANAGER_SITE'],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROJECT_MANAGER_SITE'],
@@ -1072,38 +981,11 @@ export const ENTITY_PERMISSION_DEFAULTS: EntityPermissionRule[] = [
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
   {
-    entity: 'project_tagging',
-    view_roles: [...ALL_STAFF_ROLES],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
-  },
-  {
     entity: 'work_items',
     view_roles: [...ALL_STAFF_ROLES],
     create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'ENGINEER'],
     edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE', 'ENGINEER'],
     approve_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'sharepoint_files',
-    view_roles: [...ALL_STAFF_ROLES],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-    delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
-  },
-  {
-    entity: 'project_chat',
-    view_roles: [...ALL_STAFF_ROLES],
-    create_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
-    edit_roles: ['COO_ADMIN', 'CEO_ADMIN', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'PROJECT_MANAGER_SITE'],
-    approve_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     override_roles: ['COO_ADMIN', 'CEO_ADMIN'],
     delete_roles: ['COO_ADMIN', 'CEO_ADMIN'],
   },
