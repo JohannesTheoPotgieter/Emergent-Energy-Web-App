@@ -819,14 +819,16 @@ export function registerEngStageRoutes(app: Express) {
         .innerJoin(engStageTemplates, eq(projectEngStages.stageTemplateId, engStageTemplates.id))
         .where(eq(projectEngStages.id, approval.projectEngStageId));
 
+      let projName: string | undefined;
       if (stage) {
         const [proj] = await db.select({ projectName: projectInfo.projectName })
           .from(projectInfo).where(eq(projectInfo.id, stage.projectId));
         if (proj) {
+          projName = proj.projectName ?? undefined;
         }
       }
 
-      logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(id), action: status === "approved" ? "approve" : "reject", projectName: proj?.projectName, changesJson: { description: `Stage gate ${status}`, stageName: stage?.templateName, approverRole: approval.approverRole } });
+      logAuditFromReq(req, { entityType: "eng_stage_gate", entityId: String(id), action: status === "approved" ? "approve" : "reject", projectName: projName, changesJson: { description: `Stage gate ${status}`, stageName: stage?.templateName, approverRole: approval.approverRole } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[EngStages] Error:", err);
