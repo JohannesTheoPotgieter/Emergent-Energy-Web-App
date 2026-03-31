@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
+import LatestUpdateEditor from "@/components/LatestUpdateEditor";
 import { useAuth } from "@/hooks/use-auth";
 import type { PlatformProjectSummaryContract } from "@shared/platform-contracts";
 import { PROJECT_PHASES, PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
@@ -57,7 +58,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -917,98 +917,30 @@ function formatRelativeTime(dateStr: string | null | undefined): string {
   return new Date(dateStr).toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
 }
 
-function LatestUpdateCell({ project }: { project: ProjectSummary }) {
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [value, setValue] = useState(project.latest_update || "");
-  const [saving, setSaving] = useState(false);
+function LatestUpdateCellWrapper({ project }: { project: ProjectSummary }) {
   const queryClient = useQueryClient();
-
-  useEffect(() => {
-    setValue(project.latest_update || "");
-  }, [project.latest_update]);
-
-  const save = async () => {
-    const trimmed = value.trim();
-    if (trimmed === (project.latest_update || "")) { setDialogOpen(false); return; }
-    setSaving(true);
-    try {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      await fetch(`/api/projects-summary/${encodeURIComponent(project.project_name)}/latest-update`, {
-        method: "PATCH",
-        headers,
-        body: JSON.stringify({ latestUpdate: trimmed || null }),
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
-    } catch {
-      // Silent failure — will be visible on next refetch
-    }
-    setSaving(false);
-    setDialogOpen(false);
+  const handleSave = async (val: string | null) => {
+    const token = localStorage.getItem("auth_token");
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    await fetch(`/api/projects-summary/${encodeURIComponent(project.project_name)}/latest-update`, {
+      method: "PATCH",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ latestUpdate: val }),
+    });
+    queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
   };
 
-  const metaLine = [
-    project.latest_update_by,
-    project.latest_update_at ? formatRelativeTime(project.latest_update_at) : null,
-  ].filter(Boolean).join(", ");
-
   return (
-    <>
-      <div
-        className="cursor-pointer hover:bg-muted/40 rounded px-1 py-0.5 -mx-1 group"
-        onClick={(e) => { e.stopPropagation(); setDialogOpen(true); }}
-        data-interactive="true"
-        data-testid={`text-latest-update-${project.project_name}`}
-      >
-        {project.latest_update ? (
-          <>
-            <p className="text-[10px] text-foreground leading-snug line-clamp-2 whitespace-pre-line">
-              {project.latest_update}
-            </p>
-            {metaLine && (
-              <p className="text-[9px] text-muted-foreground mt-0.5">{metaLine}</p>
-            )}
-          </>
-        ) : (
-          <span className="text-[10px] text-muted-foreground italic">No update</span>
-        )}
-        <Pencil className="inline-block ml-1 h-2.5 w-2.5 opacity-0 group-hover:opacity-60 text-muted-foreground" />
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setValue(project.latest_update || ""); setDialogOpen(false); } }}>
-        <DialogContent className="max-w-lg" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Pencil className="h-4 w-4" />
-              Update Status — {project.project_name.replace(/_Tracker$/i, "")}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Textarea
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="Write a status update for this project..."
-              className="min-h-[160px] text-sm"
-              autoFocus
-              data-testid={`input-latest-update-${project.project_name}`}
-            />
-            {metaLine && (
-              <p className="text-xs text-muted-foreground">Last updated: {metaLine}</p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setValue(project.latest_update || ""); setDialogOpen(false); }}>
-              Cancel
-            </Button>
-            <Button onClick={save} disabled={saving} data-testid={`button-save-update-${project.project_name}`}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-              Save Update
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <LatestUpdateEditor
+      projectName={project.project_name}
+      latestUpdate={project.latest_update}
+      latestUpdateBy={project.latest_update_by}
+      latestUpdateAt={project.latest_update_at}
+      onSave={handleSave}
+      testIdSuffix={project.project_name}
+    />
   );
 }
 
@@ -2226,7 +2158,7 @@ export default function ProjectsSummary() {
       key: "latest_update",
       header: "Latest Update",
       render: (p: ProjectSummary) => (
-        <LatestUpdateCell project={p} />
+        <LatestUpdateCellWrapper project={p} />
       ),
     },
     {

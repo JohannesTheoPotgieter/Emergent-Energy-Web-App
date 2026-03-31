@@ -4,20 +4,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import LatestUpdateEditor from "@/components/LatestUpdateEditor";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
 import { PageShell, SectionHeader, FilterBar } from "@/components/layout/page-shell";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 import {
   Milestone, Search, CheckCircle2, Clock, AlertTriangle,
   Target, DollarSign, TrendingUp,
-  Pencil, Loader2, BanknoteIcon, FileText, CircleDot, ChevronDown, ChevronRight,
+  Loader2, BanknoteIcon, FileText, CircleDot, ChevronDown, ChevronRight,
 } from "lucide-react";
 
 // ── Construction-to-Client-Handover phase filter ───────────────────────────
@@ -208,91 +205,24 @@ function KPICard({ label, value, sub, color, icon: Icon }: { label: string; valu
   );
 }
 
-function LatestUpdateCell({ project, onSaved }: { project: ProjectRow; onSaved: () => void }) {
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [value, setValue] = useState(project.latestUpdate || "");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setValue(project.latestUpdate || "");
-  }, [project.latestUpdate]);
-
-  const save = async () => {
-    const trimmed = value.trim();
-    if (trimmed === (project.latestUpdate || "")) { setDialogOpen(false); return; }
-    setSaving(true);
-    try {
-      await apiFetch(`/api/projects-summary/${encodeURIComponent(project.projectNameRaw)}/latest-update`, {
-        method: "PATCH",
-        body: JSON.stringify({ latestUpdate: trimmed || null }),
-      });
-      onSaved();
-    } catch {
-      // Silent failure
-    }
-    setSaving(false);
-    setDialogOpen(false);
+function LatestUpdateCellWrapper({ project, onSaved }: { project: ProjectRow; onSaved: () => void }) {
+  const handleSave = async (val: string | null) => {
+    await apiFetch(`/api/projects-summary/${encodeURIComponent(project.projectNameRaw)}/latest-update`, {
+      method: "PATCH",
+      body: JSON.stringify({ latestUpdate: val }),
+    });
+    onSaved();
   };
 
-  const metaLine = [
-    project.latestUpdateBy,
-    project.latestUpdateAt ? formatRelativeTime(project.latestUpdateAt) : null,
-  ].filter(Boolean).join(", ");
-
   return (
-    <>
-      <div
-        className="cursor-pointer hover:bg-muted/40 rounded px-1 py-0.5 -mx-1 group min-w-0"
-        onClick={(e) => { e.stopPropagation(); setDialogOpen(true); }}
-        data-interactive="true"
-      >
-        {project.latestUpdate ? (
-          <>
-            <p className="text-[10px] text-foreground leading-snug line-clamp-2 whitespace-pre-line">
-              {project.latestUpdate}
-            </p>
-            {metaLine && (
-              <p className="text-[9px] text-muted-foreground mt-0.5">{metaLine}</p>
-            )}
-          </>
-        ) : (
-          <span className="text-[10px] text-muted-foreground italic">No update</span>
-        )}
-        <Pencil className="inline-block ml-1 h-2.5 w-2.5 opacity-0 group-hover:opacity-60 text-muted-foreground" />
-      </div>
-
-      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) { setValue(project.latestUpdate || ""); setDialogOpen(false); } }}>
-        <DialogContent className="max-w-lg" onClick={(e) => e.stopPropagation()}>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base">
-              <Pencil className="h-4 w-4" />
-              Update Status — {project.projectName}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Textarea
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              placeholder="Write a status update for this project..."
-              className="min-h-[160px] text-sm"
-              autoFocus
-            />
-            {metaLine && (
-              <p className="text-xs text-muted-foreground">Last updated: {metaLine}</p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setValue(project.latestUpdate || ""); setDialogOpen(false); }}>
-              Cancel
-            </Button>
-            <Button onClick={save} disabled={saving}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-              Save Update
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <LatestUpdateEditor
+      projectName={project.projectNameRaw}
+      displayName={project.projectName}
+      latestUpdate={project.latestUpdate}
+      latestUpdateBy={project.latestUpdateBy}
+      latestUpdateAt={project.latestUpdateAt}
+      onSave={handleSave}
+    />
   );
 }
 
@@ -562,7 +492,7 @@ export default function MilestoneTrackerPage() {
 
               {/* Last update */}
               <div className="w-[160px] shrink-0" onClick={(e) => e.stopPropagation()}>
-                <LatestUpdateCell project={project} onSaved={invalidate} />
+                <LatestUpdateCellWrapper project={project} onSaved={invalidate} />
               </div>
             </div>
 
