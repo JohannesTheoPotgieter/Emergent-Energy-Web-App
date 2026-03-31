@@ -68,10 +68,36 @@ export async function getAllWorkItemsForPlanTab(projectName: string): Promise<an
     )
     .orderBy(asc(workItems.id));
 
-  return mapWorkItemsToNormalizedFormat(items, projectName);
+  const ids = items.map(wi => wi.id);
+  const assignmentsByItem = new Map<number, string[]>();
+  if (ids.length > 0) {
+    const assignmentRows = await getAssignmentsByWorkItemIds(ids);
+    const { buildUserMap } = await import("./user-resolver");
+    const userMap = await buildUserMap();
+    for (const [workItemId, userIds] of assignmentRows) {
+      const names: string[] = [];
+      for (const uid of userIds) {
+        const resolved = userMap.get(uid);
+        if (resolved) names.push(resolved.name);
+      }
+      if (names.length > 0) assignmentsByItem.set(workItemId, names);
+    }
+    for (const wi of items) {
+      const ownerName = wi.ownerUserId ? userMap.get(wi.ownerUserId)?.name || null : null;
+      if (ownerName) {
+        const existing = assignmentsByItem.get(wi.id) || [];
+        if (!existing.includes(ownerName)) {
+          existing.push(ownerName);
+          assignmentsByItem.set(wi.id, existing);
+        }
+      }
+    }
+  }
+
+  return mapWorkItemsToNormalizedFormat(items, projectName, undefined, assignmentsByItem);
 }
 
-function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, forceWorkstream?: string): any[] {
+function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, forceWorkstream?: string, resolvedAssignees?: Map<number, string[]>): any[] {
   const parentIdToWbs = new Map<number, string>();
   for (const wi of items) {
     if (wi.wbsCode) parentIdToWbs.set(wi.id, wi.wbsCode);
@@ -80,6 +106,8 @@ function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, 
   return items.map((wi: WorkItem) => {
     const parentTaskNo = wi.parentId ? (parentIdToWbs.get(wi.parentId) || null) : null;
     const indentLevel = wi.wbsCode ? (wi.wbsCode.split('.').length - 1) : 0;
+    const resolvedNames = resolvedAssignees?.get(wi.id) || null;
+    const effectiveAssignees = resolvedNames || wi.assignees || null;
 
     return {
       id: wi.legacyId ?? wi.id,
@@ -95,8 +123,8 @@ function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, 
       actualStartDate: wi.actualStart || wi.startDate,
       actualEndDate: wi.actualEnd || wi.endDate,
       actualDurationDays: wi.actualDuration || wi.duration,
-      owner: wi.assignees && wi.assignees.length > 0 ? wi.assignees[0] : null,
-      assignees: wi.assignees || null,
+      owner: effectiveAssignees && effectiveAssignees.length > 0 ? effectiveAssignees[0] : null,
+      assignees: effectiveAssignees,
       assigneeUserId: wi.ownerUserId,
       assigneeUserIds: wi.assigneeUserIds || null,
       status: wi.status,
