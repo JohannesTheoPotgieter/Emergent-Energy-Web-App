@@ -32,12 +32,16 @@ const DEPARTMENTS = [
 
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
 const NAV_SECTIONS = [
-  { key: "HOME", label: "Home", description: "Home dashboard" },
-  { key: "MY_WORK", label: "My Work", description: "My Tasks, Approvals, Inbox, Calendar, Meetings" },
-  { key: "PROJECTS", label: "Projects", description: "Project List, Lifecycle, Engineering, Quality, PD, Construction, Handover" },
-  { key: "FINANCE", label: "Finance", description: "Cashflow, Costs, Revenue, GP Tracker, Procurement" },
-  { key: "REPORTS", label: "Reports", description: "Priorities, PM Reports, Eng Reports, SOPs, Training, Feedback" },
-  { key: "ADMIN", label: "Admin", description: "Control Center, Smart Import, Roles & Permissions, Audit Log" },
+  { key: "HOME", label: "Home", description: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Priorities, Inbox" },
+  { key: "PORTFOLIO", label: "Company", description: "Lifecycle Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions" },
+  { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD Dashboard, Pipeline / Opportunities, PD Tickets, Clients, Handover Queue, PD Reports" },
+  { key: "PROJECT_DELIVERY", label: "Project Delivery", description: "Execution Dashboard, Portfolio, All Projects, Construction, Procurement, PO Approvals, Payment Requests, Milestones, Weekly Reviews, Handover & Closeout, Financial Reviews, Sites" },
+  { key: "HSE", label: "HSE", description: "HSE Dashboard, Compliance / SSEG" },
+  { key: "ENGINEERING", label: "Engineering", description: "Engineering Dashboard, Task Board, Standup" },
+  { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Inspections / NCRs" },
+  { key: "FINANCE", label: "Finance", description: "Cashflow, Revenue, COS, GP / Margin, FYE Revenue, Counterparties, Subcontractors, Invoice Patterns" },
+  { key: "REPORTS", label: "Reports", description: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance" },
+  { key: "ADMIN", label: "Admin", description: "Control Center, Users & Roles, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery" },
 ];
 
 const ENTITY_DESCRIPTIONS: Record<string, string> = {
@@ -417,7 +421,7 @@ function RolesControlCenter() {
   const createRoleMutation = useMutation({
     mutationFn: async () => {
       if (!canManageRoles) throw new Error("Not allowed");
-      const res = await fetch("/api/roles", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: createKey.trim(), label: createLabel.trim(), sections: ["MY_WORK"], canEditData: true }) });
+      const res = await fetch("/api/roles", { method: "POST", headers: authHeaders(), credentials: "include", body: JSON.stringify({ role: createKey.trim(), label: createLabel.trim(), sections: ["HOME"], canEditData: true }) });
       if (!res.ok) throw new Error("Create role failed");
     },
     onSuccess: () => { setShowCreate(false); setCreateKey(""); setCreateLabel(""); load(); toast({ title: "Role created" }); },
