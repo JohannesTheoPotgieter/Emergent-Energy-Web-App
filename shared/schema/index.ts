@@ -20,3 +20,4 @@ export * from "./stage-data";
 export * from "./stage-collaboration";
 export * from "./collaboration-workflow";
 export * from "./template-overrides";
+export * from "./role-based-upgrade";

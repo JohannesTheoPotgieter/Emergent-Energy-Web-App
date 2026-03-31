@@ -13,7 +13,9 @@
     "PROJECT_DEVELOPER": { "label": "Project Developer", "level": "operational", "isAdmin": false },
     "ENGINEER": { "label": "Engineer", "level": "operational", "isAdmin": false },
     "ACCOUNTANT": { "label": "Accountant", "level": "operational", "isAdmin": false },
-    "KEY_ACCOUNTS_MANAGER": { "label": "Key Accounts Manager", "level": "operational", "isAdmin": false }
+    "KEY_ACCOUNTS_MANAGER": { "label": "Key Accounts Manager", "level": "operational", "isAdmin": false },
+    "HSE_MANAGER": { "label": "HSE Manager", "level": "management", "isAdmin": false },
+    "SSEG_MANAGER": { "label": "SSEG Manager", "level": "management", "isAdmin": false }
   },
   "permissionEntities": [
     "COCKPIT", "PROJECTS", "MONEY", "PROJECT_DEVELOPMENT",

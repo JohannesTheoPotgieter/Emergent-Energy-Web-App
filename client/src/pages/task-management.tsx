@@ -14,10 +14,14 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import { PageShell, SectionHeader, FilterBar } from "@/components/layout/page-shell";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/hooks/use-auth";
+import { normalizeRoleForPermissions } from "@shared/schema";
+import { useLocation } from "wouter";
 import {
   LayoutGrid, List, Calendar as CalendarIcon, BarChart3, Plus, Search,
   CheckCircle2, AlertTriangle, Loader2, Timer, ChevronLeft, ChevronRight,
-  Bug, Lightbulb, Sparkles, Circle,
+  Bug, Lightbulb, Sparkles, Circle, MoreVertical, FileText, Receipt, CreditCard,
 } from "lucide-react";
 
 // ── API helpers ──────────────────────────────────────────────────────────────
@@ -113,19 +117,55 @@ const CATEGORY_ICONS: Record<string, React.ReactNode> = {
 
 // ── Task Card Component ──────────────────────────────────────────────────────
 
-function TaskCard({ task, onStatusChange }: { task: TaskItem; onStatusChange: (id: number, status: string) => void }) {
+const PM_ROLES = ["PROJECT_MANAGER_SITE", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER", "COO_ADMIN", "CEO_ADMIN"];
+
+function useIsPmRole() {
+  const { user } = useAuth();
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const effectiveRole = normalizeRoleForPermissions(user?.role || companyRole);
+  return PM_ROLES.includes(effectiveRole);
+}
+
+function TaskCard({ task, onStatusChange, showPmActions }: { task: TaskItem; onStatusChange: (id: number, status: string) => void; showPmActions?: boolean }) {
   const borderClass = PRIORITY_BORDER[task.priority || ""] || "border-l-gray-200";
+  const tags = task.tags || [];
+  const [, navigate] = useLocation();
 
   return (
     <Card className={`hover:bg-muted/40 transition-all cursor-pointer border-l-3 ${borderClass}`}>
       <CardContent className="px-3 py-2.5 space-y-1.5">
         <div className="flex items-start justify-between gap-2">
           <p className="text-sm font-medium leading-tight line-clamp-2">{task.title}</p>
-          {task.taskCategory && (
-            <span className="shrink-0 text-muted-foreground">
-              {CATEGORY_ICONS[task.taskCategory] || null}
-            </span>
-          )}
+          <div className="flex items-center gap-1 shrink-0">
+            {task.taskCategory && (
+              <span className="text-muted-foreground">
+                {CATEGORY_ICONS[task.taskCategory] || null}
+              </span>
+            )}
+            {showPmActions && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={(e) => e.stopPropagation()}>
+                    <MoreVertical className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuItem onClick={() => navigate(`/po-approval-board?taskId=${task.id}`)}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Raise a PO
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate(`/payment-request-board?taskId=${task.id}&action=invoice`)}>
+                    <Receipt className="h-4 w-4 mr-2" />
+                    Capture an Invoice
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate(`/payment-request-board?taskId=${task.id}&action=payment`)}>
+                    <CreditCard className="h-4 w-4 mr-2" />
+                    Create Payment Request
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-1">
@@ -134,7 +174,7 @@ function TaskCard({ task, onStatusChange }: { task: TaskItem; onStatusChange: (i
               {task.priority}
             </Badge>
           )}
-          {task.tags.map((tag) => (
+          {tags.map((tag) => (
             <Badge key={tag.id} variant="outline" className="text-[10px] px-1.5 py-0 gap-1">
               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color }} />
               {tag.name}
@@ -175,7 +215,7 @@ function TaskCard({ task, onStatusChange }: { task: TaskItem; onStatusChange: (i
 
 // ── Kanban Board View ────────────────────────────────────────────────────────
 
-function BoardView({ filters }: { filters: Record<string, string> }) {
+function BoardView({ filters, showPmActions }: { filters: Record<string, string>; showPmActions?: boolean }) {
   const queryClient = useQueryClient();
 
   const params = new URLSearchParams();
@@ -232,6 +272,7 @@ function BoardView({ filters }: { filters: Record<string, string> }) {
                   key={task.id}
                   task={task}
                   onStatusChange={(id, newStatus) => updateMutation.mutate({ id, status: newStatus })}
+                  showPmActions={showPmActions}
                 />
               ))}
               {items.length === 0 && (
@@ -294,9 +335,9 @@ function ListView({ filters }: { filters: Record<string, string> }) {
               <div className="flex items-center gap-2 min-w-0">
                 <Circle className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span className="text-sm truncate">{task.title}</span>
-                {task.tags.length > 0 && (
+                {(task.tags || []).length > 0 && (
                   <div className="flex gap-0.5">
-                    {task.tags.slice(0, 2).map((tag) => (
+                    {(task.tags || []).slice(0, 2).map((tag) => (
                       <span key={tag.id} className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: tag.color }} title={tag.name} />
                     ))}
                   </div>
@@ -669,6 +710,7 @@ export default function TaskManagementPage() {
   const [priorityFilter, setPriorityFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const queryClient = useQueryClient();
+  const isPm = useIsPmRole();
 
   const filters = useMemo(() => {
     const f: Record<string, string> = {};
@@ -773,7 +815,7 @@ export default function TaskManagementPage() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="board"><BoardView filters={filters} /></TabsContent>
+        <TabsContent value="board"><BoardView filters={filters} showPmActions={isPm} /></TabsContent>
         <TabsContent value="list"><ListView filters={filters} /></TabsContent>
         <TabsContent value="calendar"><CalendarView filters={filters} /></TabsContent>
         <TabsContent value="metrics"><MetricsView filters={filters} /></TabsContent>

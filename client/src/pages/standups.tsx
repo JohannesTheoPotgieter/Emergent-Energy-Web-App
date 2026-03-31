@@ -16,6 +16,10 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { useAuth } from "@/hooks/use-auth";
+import { normalizeRoleForPermissions } from "@shared/schema";
+
+const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
 import {
   Users, BarChart3, Plus, Loader2, Send, Clock,
   CheckCircle2, AlertTriangle, MessageSquare,
@@ -1500,10 +1504,18 @@ function CreateScheduleDialog({ onCreated }: { onCreated: () => void }) {
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 
+function useIsAdminRole() {
+  const { user } = useAuth();
+  const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
+  const effectiveRole = normalizeRoleForPermissions(user?.role || companyRole);
+  return ADMIN_ROLES.includes(effectiveRole);
+}
+
 export default function StandupsPage() {
   const [selectedScheduleId, setSelectedScheduleId] = useState<number | null>(null);
   const [tab, setTab] = useState("meeting");
   const queryClient = useQueryClient();
+  const isAdmin = useIsAdminRole();
 
   const { data: schedules, isLoading: schedulesLoading, isError, error, refetch } = useQuery<StandupSchedule[]>({
     queryKey: ["standup-schedules"],
@@ -1519,6 +1531,18 @@ export default function StandupsPage() {
     queryKey: ["standups-today"],
     queryFn: () => apiFetch("/api/standups/today"),
   });
+
+  // Auto-seed default Mon/Wed/Fri standup if none exist
+  useEffect(() => {
+    if (allSchedules && allSchedules.length === 0) {
+      apiFetch("/api/standups/seed-default", { method: "POST" })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["standup-schedules"] });
+          queryClient.invalidateQueries({ queryKey: ["standup-schedules-all"] });
+        })
+        .catch(() => { /* silent */ });
+    }
+  }, [allSchedules]);
 
   useEffect(() => {
     if (!selectedScheduleId && schedules && schedules.length > 0) {
@@ -1567,15 +1591,17 @@ export default function StandupsPage() {
         icon={<Users className="h-5 w-5" />}
         title="Standups"
         description="Interactive engineering standup meeting mode. Cycle through each team member, review tasks and priorities, and flag blockers."
-        actions={<CreateScheduleDialog onCreated={handleRefresh} />}
+        actions={isAdmin ? <CreateScheduleDialog onCreated={handleRefresh} /> : undefined}
       />
 
       {displaySchedules.length === 0 ? (
         <div className="ee-empty-state">
           <Users className="h-10 w-10 text-muted-foreground/30 mb-3" />
           <p className="text-sm font-semibold">No standup schedules configured</p>
-          <p className="text-xs text-muted-foreground mt-1 mb-4">Create your first standup schedule to begin.</p>
-          <CreateScheduleDialog onCreated={handleRefresh} />
+          <p className="text-xs text-muted-foreground mt-1 mb-4">
+            {isAdmin ? "Create your first standup schedule to begin." : "Contact an admin to create a standup schedule."}
+          </p>
+          {isAdmin && <CreateScheduleDialog onCreated={handleRefresh} />}
         </div>
       ) : (
         <div className="space-y-4">

@@ -8,8 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CalendarDays, FileText, FolderKanban, Settings2 } from "lucide-react";
+import { CalendarDays, FileText, FolderKanban, Settings2, BarChart3, TrendingUp, ShieldCheck, Milestone } from "lucide-react";
 import { Link } from "wouter";
+import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { GateReports } from "@/components/reports/gate-reports";
 import { OperationalReports } from "@/components/reports/operational-reports";
 import { QualityComplianceReports } from "@/components/reports/quality-compliance-reports";
@@ -97,13 +98,59 @@ export default function ReportCenterPage() {
   const cron = scheduleType === "daily" ? `0 ${scheduleTime.split(":")[1]} ${scheduleTime.split(":")[0]} * * *` : scheduleType === "weekly" ? `0 ${scheduleTime.split(":")[1]} ${scheduleTime.split(":")[0]} * * 1` : `0 ${scheduleTime.split(":")[1]} ${scheduleTime.split(":")[0]} 1 * *`;
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
-      <div className="flex items-center gap-3">
-        <FolderKanban className="h-6 w-6 text-emerald-600" />
-        <div>
-          <h1 className="text-2xl font-semibold">Report Center</h1>
-          <p className="text-sm text-muted-foreground">Generate, schedule, and download advanced reports.</p>
-        </div>
+    <PageShell>
+      <SectionHeader
+        icon={<FolderKanban className="h-5 w-5" />}
+        title="Report Centre"
+        description="Generate, schedule, and download advanced reports across all departments."
+      />
+
+      {/* Wireframe: Report Centre overview dashboard */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card className="border-emerald-200">
+          <CardContent className="px-4 py-3 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-emerald-50 flex items-center justify-center">
+              <BarChart3 className="h-5 w-5 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Executive Packs</p>
+              <p className="text-lg font-bold">3 Reports</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-blue-200">
+          <CardContent className="px-4 py-3 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center">
+              <Milestone className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Gate Reports</p>
+              <p className="text-lg font-bold">Stage Engine</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-amber-200">
+          <CardContent className="px-4 py-3 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-amber-50 flex items-center justify-center">
+              <TrendingUp className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Operational</p>
+              <p className="text-lg font-bold">KPIs & Metrics</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="border-violet-200">
+          <CardContent className="px-4 py-3 flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-violet-50 flex items-center justify-center">
+              <ShieldCheck className="h-5 w-5 text-violet-600" />
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Compliance</p>
+              <p className="text-lg font-bold">Quality & HSE</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -239,6 +286,6 @@ export default function ReportCenterPage() {
           </Table>
         </CardContent>
       </Card>
-    </div>
+    </PageShell>
   );
 }
