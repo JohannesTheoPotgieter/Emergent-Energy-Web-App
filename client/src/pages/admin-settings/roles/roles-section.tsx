@@ -63,11 +63,11 @@ export function RolesSection() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!selected || !canManage) throw new Error("Not allowed");
-      const ok = await api.saveRole(selected.role, draft);
-      if (!ok) throw new Error("Save failed");
+      const result = await api.saveRole(selected.role, draft);
+      if (!result.ok) throw new Error(result.error || "Save failed");
     },
     onSuccess: () => { setDraft({}); load(); toast({ title: "Role saved successfully" }); },
-    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+    onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
   });
 
   const createMutation = useMutation({
