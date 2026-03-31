@@ -1222,4 +1222,69 @@ export function registerStandupRoutes(app: Express) {
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }
   });
+
+  // ── Auto-seed default standup schedule (Mon/Wed/Fri) ──────────────────────
+  app.post("/api/standups/seed-default", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      // Check if a default project standup already exists
+      const existing = await db
+        .select()
+        .from(standupSchedules)
+        .where(eq(standupSchedules.name, "Project Standup (Mon/Wed/Fri)"));
+
+      if (existing.length > 0) {
+        return res.json({ seeded: false, message: "Default standup schedule already exists", schedule: existing[0] });
+      }
+
+      // Anchor on a Monday so EVERY_2_DAYS hits Mon, Wed, Fri pattern
+      // Find the most recent Monday
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const daysToMonday = dayOfWeek === 0 ? 1 : (dayOfWeek === 1 ? 0 : 8 - dayOfWeek);
+      const nextMonday = new Date(now);
+      nextMonday.setDate(now.getDate() - dayOfWeek + 1); // Go to this week's Monday
+      const anchorDate = nextMonday.toISOString().split("T")[0];
+
+      const [schedule] = await db.insert(standupSchedules).values({
+        name: "Project Standup (Mon/Wed/Fri)",
+        teamLabel: "All Teams",
+        cadence: "EVERY_2_DAYS",
+        cadenceDays: 2,
+        anchorDate,
+        deadlineTime: "09:00",
+        deadlineTimezone: "Africa/Johannesburg",
+        createdBy: user.id,
+      }).returning();
+
+      // Add creator as participant
+      await db.insert(standupParticipants).values({
+        scheduleId: schedule.id,
+        userId: user.id,
+        isRequired: true,
+      });
+
+      // Add all active users as participants
+      const allUsers = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.isActive, true));
+
+      const participantValues = allUsers
+        .filter((u: any) => u.id !== user.id)
+        .map((u: any) => ({
+          scheduleId: schedule.id,
+          userId: u.id,
+          isRequired: true,
+        }));
+
+      if (participantValues.length > 0) {
+        await db.insert(standupParticipants).values(participantValues);
+      }
+
+      res.status(201).json({ seeded: true, schedule });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    }
+  });
 }

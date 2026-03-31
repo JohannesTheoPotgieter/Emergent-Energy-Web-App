@@ -46,6 +46,8 @@ export function useAccessMatrix() {
     GATES: ["PORTFOLIO"],
     // Legacy combined section — expand to both new sections
     QUALITY_HSE: ["QUALITY", "HSE"],
+    // Standalone QUALITY always implies HSE visibility
+    QUALITY: ["QUALITY", "HSE"],
     // Legacy department keys
     GOVERNANCE: ["QUALITY", "HSE"],
     PROJECT_MANAGEMENT: ["PROJECT_DELIVERY"],
