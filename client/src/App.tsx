@@ -24,6 +24,7 @@ import NotFound from "@/pages/not-found";
 import MsCallbackPage from "@/pages/ms-callback";
 
 // Lazy-loaded pages (code-split into separate chunks)
+const CompanyOverviewPage = lazy(() => import("@/pages/company-overview"));
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const ProjectLifecyclePage = lazy(() => import("@/pages/project-lifecycle"));
 const ProjectsSummary = lazy(() => import("@/pages/projects"));
@@ -151,6 +152,7 @@ const NAVIGATION_MODE = {
 } as const;
 
 const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
+  CompanyOverviewPage,
   Dashboard,
   ProjectLifecyclePage,
   ProjectsSummary,
