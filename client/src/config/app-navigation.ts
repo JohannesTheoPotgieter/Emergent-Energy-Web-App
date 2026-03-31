@@ -45,14 +45,15 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Portfolio",
     key: "PORTFOLIO",
-    path: "/gates",
+    path: "/lifecycle-board",
     match: (pathname) => startsWithAny(pathname, [
       "/lifecycle-board",
       "/gates", "/exceptions",
       "/project-lifecycle",
     ]),
     secondary: [
-      { label: "Lifecycle Board", path: "/gates" },
+      { label: "Lifecycle Board", path: "/lifecycle-board" },
+      { label: "Gate Tracker", path: "/gates" },
       { label: "Overview", path: "/project-lifecycle" },
       { label: "Blocked Gates", path: "/gates/blocked" },
       { label: "Exceptions", path: "/gates/exceptions" },
