@@ -7797,6 +7797,38 @@ DO $$ BEGIN
     );
   END IF;
 
+  -- Project PD-PM handover V2 enhanced columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='handover_form_data') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "handover_form_data" JSONB DEFAULT '{}';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='readiness_checklist') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "readiness_checklist" JSONB DEFAULT '{}';
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='readiness_score') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "readiness_score" INTEGER DEFAULT 0;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='pd_sign_off_at') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "pd_sign_off_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='pd_sign_off_by') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "pd_sign_off_by" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='pm_sign_off_at') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "pm_sign_off_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='pm_sign_off_by') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "pm_sign_off_by" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='kickoff_date') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "kickoff_date" DATE;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='lessons_reviewed') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "lessons_reviewed" BOOLEAN DEFAULT false;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_pd_pm_handover') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_pd_pm_handover' AND column_name='version') THEN
+    ALTER TABLE "project_pd_pm_handover" ADD COLUMN "version" INTEGER DEFAULT 1;
+  END IF;
+
   -- Meeting summaries soft-delete columns
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='meeting_summaries') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meeting_summaries' AND column_name='deleted_at') THEN
     ALTER TABLE "meeting_summaries" ADD COLUMN "deleted_at" TIMESTAMP;
