@@ -1846,6 +1846,16 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
   }
 });
 
+async function updateExpenseFieldsDualTable(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<any> {
+  const isNormalized = id >= 900000;
+  if (isNormalized) {
+    return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
+  }
+  const { programExpense: peTable } = await import("@shared/schema");
+  const result = await db.update(peTable).set(fields).where(eq(peTable.id, id)).returning();
+  return result[0] || null;
+}
+
 router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = parseInt(String(req.params.id || ""), 10);
@@ -1866,7 +1876,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "Cannot mark as realised without an invoice date" });
     }
 
-    const updated = await storage.updateProgramExpenseFields(id, {
+    const updated = await updateExpenseFieldsDualTable(id, {
       invoiceDateConfirmed: realised,
     }, expectedUpdatedAt);
 
@@ -1874,14 +1884,8 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
       return res.status(500).json({ error: "Failed to update expense fields" });
     }
 
-    const newState = classifyExpenseState(updated as any);
-    await storage.updateProgramExpenseFields(id, {
-      computedState: newState,
-    });
-
     res.json({ success: true, id, realised });
 
-    // Refresh dashboard metrics for the affected project
     if (expense.projectId) refreshProjectMetricsAsync(expense.projectId);
   } catch (error) {
     console.error("Toggle realised error:", error);
@@ -1904,7 +1908,6 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
       expectedUpdatedAt?: string;
     };
 
-    // Validate cosStatus
     const validStatuses = ['Planned', 'Committed', 'COS Realised', null];
     if (!validStatuses.includes(cosStatus)) {
       return res.status(400).json({ error: "cosStatus must be 'Planned', 'Committed', 'COS Realised', or null (to clear override)" });
@@ -1918,28 +1921,24 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
 
-    const fields: Record<string, any> = {
+    const overrideFields: Record<string, any> = {
       cosStatusOverride: cosStatus,
       cosStatusOverrideBy: cosStatus !== null ? req.user?.id ?? null : null,
       cosStatusOverrideAt: cosStatus !== null ? new Date() : null,
       cosStatusOverrideReason: cosStatus !== null ? reason : null,
     };
 
-    // Optional date override
     if (invoiceDate !== undefined) {
-      fields.expenseInvoicedDate = invoiceDate;
+      overrideFields.expenseInvoicedDate = invoiceDate;
     }
     if (invoiceDateConfirmedOverride !== undefined) {
-      fields.invoiceDateConfirmed = invoiceDateConfirmedOverride;
+      overrideFields.invoiceDateConfirmed = invoiceDateConfirmedOverride;
     }
 
-    const updated = await storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
+    const updated = await updateExpenseFieldsDualTable(id, overrideFields, expectedUpdatedAt);
     if (!updated) {
       return res.status(500).json({ error: "Failed to update expense fields" });
     }
-
-    const newState = classifyExpenseState(updated as any);
-    await storage.updateProgramExpenseFields(id, { computedState: newState });
 
     res.json({ success: true, id, cosStatus, overrideCleared: cosStatus === null });
 
@@ -1959,7 +1958,7 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
     if (isNaN(id)) return res.status(400).json({ error: "Invalid cost line id" });
     const { noRevenueLinked, expectedUpdatedAt } = req.body as { noRevenueLinked: boolean; expectedUpdatedAt?: string };
     if (typeof noRevenueLinked !== 'boolean') return res.status(400).json({ error: "noRevenueLinked (boolean) required" });
-    await storage.updateProgramExpenseFields(id, { noRevenueLinked }, expectedUpdatedAt);
+    await updateExpenseFieldsDualTable(id, { noRevenueLinked }, expectedUpdatedAt);
     res.json({ success: true, id, noRevenueLinked });
   } catch (error: any) {
     if (error.status === 409) return res.status(409).json({ error: error.message });

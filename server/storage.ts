@@ -1101,7 +1101,13 @@ export class DatabaseStorage implements IStorage {
 
       const legacyOnly = peRows.filter(pe => !projectsWithCostLines.has(pe.projectName) && !projectsWithCostLines.has(resolve(pe.projectName)));
       if (legacyOnly.length > 0) {
-        adapted.push(...legacyOnly);
+        adapted.push(...legacyOnly.map(pe => ({
+          ...pe,
+          _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
+          _cosOverrideBy: (pe as any).cosStatusOverrideBy ?? null,
+          _cosOverrideAt: (pe as any).cosStatusOverrideAt ?? null,
+          _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
+        })));
       }
     }
 
@@ -1117,7 +1123,13 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
 
     if (costLines.length === 0 && peRows.length > 0) {
-      return peRows as any[];
+      return peRows.map(pe => ({
+        ...pe,
+        _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
+        _cosOverrideBy: (pe as any).cosStatusOverrideBy ?? null,
+        _cosOverrideAt: (pe as any).cosStatusOverrideAt ?? null,
+        _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
+      })) as any[];
     }
 
     const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
