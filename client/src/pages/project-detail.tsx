@@ -837,6 +837,7 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "collaboration": { section: "collaboration", subTab: "chat" },
   "construction": { section: "construction", subTab: "" },
   "handover": { section: "handover", subTab: "" },
+  "readiness-gate": { section: "delivery", subTab: "" },
 };
 
 const SECTION_DEFAULT_SUBTAB: Record<string, string> = {

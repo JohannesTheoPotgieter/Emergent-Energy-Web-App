@@ -92,7 +92,7 @@ export default function FinancialReviewQueuePage() {
                     <span>Procurement: {((Number(review.snapshotProcurementReadiness || 0)) * 100).toFixed(0)}%</span>
                   </div>
                 </div>
-                <Link href={`/project/${encodeURIComponent(item.projectName || "")}?section=readiness-gate`}>
+                <Link href={`/project/${encodeURIComponent(item.projectName || "")}?tab=readiness-gate`}>
                   <Button size="sm" variant="outline" className="text-xs shrink-0">
                     Review
                   </Button>
