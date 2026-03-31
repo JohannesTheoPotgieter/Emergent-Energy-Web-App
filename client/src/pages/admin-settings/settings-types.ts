@@ -196,6 +196,19 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   standups: "Standups — manage standup schedules and entries",
   reports: "Reports — view project plan, cost, quality, resource reports",
   counterparties_manage: "Counterparties — manage external counterparty records",
+  stage_lifecycle: "Stage Lifecycle — project stage progression",
+  stage_exceptions: "Stage Exceptions — exception requests on stages",
+  stage_dependencies: "Stage Dependencies — inter-stage dependencies",
+  stage_admin: "Stage Admin — stage configuration & templates",
+  stage_gate: "Stage Gate — gate reviews & approvals",
+  stage_config: "Stage Config — stage template configuration",
+  gate_override: "Gate Override — override gate decisions",
+  exception: "Exception — exception requests & approvals",
+  project_charter: "Project Charter — project initiation document",
+  client_update: "Client Update — client communication updates",
+  handover_acceptance: "Handover Acceptance — accept/reject handovers",
+  performance: "Performance — team & project performance metrics",
+  project_access_mgmt: "Project Access — manage project team access",
   commissioning: "Commissioning — manage commissioning items and evidence",
   ms_integration: "Microsoft 365 integration setup",
   ms_sync: "MS Graph Sync — calendar, email, Teams",
@@ -241,7 +254,7 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   lifecycle: {
     label: "Project Lifecycle",
-    entities: ["lifecycle", "create_project", "pd_clients"],
+    entities: ["lifecycle", "create_project", "pd_clients", "stage_lifecycle", "stage_gate", "stage_exceptions", "stage_dependencies", "stage_config", "stage_admin", "gate_override", "exception"],
   },
   project_dev: {
     label: "Project Development",
@@ -249,7 +262,7 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   project_management: {
     label: "Project Management",
-    entities: ["projects", "project_normalized", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "triage_inbox", "unclassified_tasks", "handover", "commissioning", "task_management", "standups", "notifications", "phase_templates"],
+    entities: ["projects", "project_normalized", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "triage_inbox", "unclassified_tasks", "handover", "handover_acceptance", "commissioning", "task_management", "standups", "notifications", "phase_templates", "project_charter", "client_update", "project_access_mgmt"],
   },
   engineering: {
     label: "Engineering",
@@ -265,7 +278,7 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   finance: {
     label: "Finance",
-    entities: ["cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
+    entities: ["cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "counterparties_manage", "subcontractors", "invoice_patterns"],
   },
   reports: {
     label: "Reports & Knowledge",
@@ -285,7 +298,7 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   other: {
     label: "Other Permissions",
-    entities: ["dashboard_widgets", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items"],
+    entities: ["dashboard_widgets", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items", "performance"],
   },
 };
 
