@@ -33,9 +33,7 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/admin", redirectTo: "/admin/control-center" },
   { path: "/admin/legacy-utilities", redirectTo: "/admin/control-center" },
   // Prompt 2 — old nav destinations that moved
-  { path: "/lifecycle-board", redirectTo: "/gates" },
   { path: "/exceptions", redirectTo: "/gates/exceptions" },
-  { path: "/weekly-reviews", redirectTo: "/gates/client-updates" },
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
@@ -59,10 +57,10 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "qualityNcrList", path: "/quality/ncrs", label: "NCR List", iconKey: "ListTodo", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "NcrListPage" },
   { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail", permissionEntity: "quality", showInSidebar: false, routeComponentKey: "NcrDetailPage" },
   { id: "engineering", path: "/engineering", label: "Engineering", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", roleLandingEligibility: ["ENGINEERING_MANAGER", "ENGINEER"] },
-  { id: "engineeringTasks", path: "/engineering/tasks", label: "Task Execution", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
+  { id: "engineeringTasks", path: "/engineering/tasks", label: "Task Board", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
   { id: "engineeringStandup", path: "/engineering/standup", label: "Engineering Standup", iconKey: "Users", navGroup: "ENGINEERING", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "EngineeringStandupPage" },
   { id: "engineeringAudit", path: "/engineering/audit", label: "Engineering Audit Log", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "EngineeringAuditPage" },
-  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle", iconKey: "Layers", navGroup: "PROJECTS", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "LifecycleBoardPage" },
+  { id: "lifecycle", path: "/lifecycle-board", label: "Lifecycle Board", iconKey: "Layers", navGroup: "PORTFOLIO", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "LifecycleBoardPage" },
   { id: "executionBoard", path: "/execution-board", label: "Execution Board", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "ExecutionBoardPage", aliases: ["/execution-dashboard"], roleLandingEligibility: ["PROJECT_MANAGER_SITE", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "CONSTRUCTION_MANAGER"], matchSubRoutes: true },
   { id: "executionBoardProgram", path: "/execution-board/program", label: "Program View", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
   { id: "executionBoardConstruction", path: "/execution-board/construction", label: "Construction View", permissionEntity: "execution_board", routeComponentKey: "ExecutionBoardPage" },
@@ -161,6 +159,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "gatesHandovers", path: "/gates/handovers", label: "Handover Queue", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesHandoversPage" },
   { id: "gatesQueries", path: "/gates/queries", label: "Open Queries", iconKey: "MessageSquare", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesQueriesPage" },
   { id: "gatesCommitments", path: "/gates/commitments", label: "Client Commitments", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesCommitmentsPage" },
+  // Milestone Tracker — standalone page for Construction Manager
+  { id: "milestoneTracker", path: "/milestone-tracker", label: "Milestone Tracker", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY
@@ -228,8 +228,16 @@ export function getAppSectionForPath(pathname: string): string | undefined {
   if (pathname === "/my-work" || pathname.startsWith("/my-work/") || pathname === "/inbox") {
     return "HOME";
   }
-  // Milestone Tracker (gates/commitments) lives under Project Delivery
-  if (pathname === "/gates/commitments") {
+  // Milestone Tracker lives under Project Delivery
+  if (pathname === "/gates/commitments" || pathname === "/milestone-tracker" || pathname.startsWith("/milestone-tracker/")) {
+    return "PROJECT_DELIVERY";
+  }
+  // Portfolio Dashboard lives under Project Delivery
+  if (pathname === "/portfolios" || pathname.startsWith("/portfolios/")) {
+    return "PROJECT_DELIVERY";
+  }
+  // Weekly Reviews lives under Project Delivery
+  if (pathname === "/weekly-reviews" || pathname.startsWith("/weekly-reviews/")) {
     return "PROJECT_DELIVERY";
   }
   // Gates live under Portfolio
@@ -256,8 +264,8 @@ export function getAppSectionForPath(pathname: string): string | undefined {
   if (pathname === "/execution-board" || pathname.startsWith("/execution-board/")) {
     return "PROJECT_DELIVERY";
   }
-  // Portfolio paths
-  if (pathname === "/portfolios" || pathname.startsWith("/portfolios/") || pathname === "/project-lifecycle" || pathname.startsWith("/project-lifecycle/")) {
+  // Portfolio paths (lifecycle)
+  if (pathname === "/project-lifecycle" || pathname.startsWith("/project-lifecycle/")) {
     return "PORTFOLIO";
   }
   // Reports section

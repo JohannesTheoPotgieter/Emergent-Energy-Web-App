@@ -45,19 +45,18 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Portfolio",
     key: "PORTFOLIO",
-    path: "/portfolios",
+    path: "/lifecycle-board",
     match: (pathname) => startsWithAny(pathname, [
-      "/portfolios", "/lifecycle-board",
-      "/gates", "/exceptions", "/weekly-reviews",
+      "/lifecycle-board",
+      "/gates", "/exceptions",
       "/project-lifecycle",
     ]),
     secondary: [
-      { label: "Portfolio Dashboard", path: "/portfolios" },
-      { label: "Lifecycle Board", path: "/project-lifecycle" },
+      { label: "Lifecycle Board", path: "/lifecycle-board" },
       { label: "Gate Tracker", path: "/gates" },
+      { label: "Overview", path: "/project-lifecycle" },
       { label: "Blocked Gates", path: "/gates/blocked" },
       { label: "Exceptions", path: "/gates/exceptions" },
-      { label: "Weekly Reviews", path: "/weekly-reviews" },
     ],
   },
   {
@@ -83,6 +82,7 @@ export const TOP_SECTIONS: TopSection[] = [
     path: "/execution-board",
     match: (pathname) => startsWithAny(pathname, [
       "/execution-board",
+      "/portfolios",
       "/projects", "/project", "/project-create",
       "/construction", "/procurement",
       "/tasks", "/standups", "/handover",
@@ -90,18 +90,32 @@ export const TOP_SECTIONS: TopSection[] = [
       "/governance/financial-reviews",
       "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
       "/gates/commitments",
+      "/milestone-tracker",
+      "/weekly-reviews",
     ]),
     secondary: [
       { label: "Execution Dashboard", path: "/execution-board" },
+      { label: "Portfolio Dashboard", path: "/portfolios" },
       { label: "All Projects", path: "/projects" },
       { label: "Construction", path: "/construction" },
       { label: "Procurement", path: "/procurement" },
       { label: "PO Approvals", path: "/po-approval-board" },
       { label: "Payment Requests", path: "/payment-request-board" },
       { label: "Task Management", path: "/tasks" },
-      { label: "Milestone Tracker", path: "/gates/commitments" },
+      { label: "Milestone Tracker", path: "/milestone-tracker" },
+      { label: "Weekly Reviews", path: "/weekly-reviews" },
       { label: "Handover & Closeout", path: "/handover" },
       { label: "Sites", path: "/sites" },
+    ],
+  },
+  {
+    label: "HSE",
+    key: "HSE",
+    path: "/hse",
+    match: (pathname) => startsWithAny(pathname, ["/hse"]),
+    secondary: [
+      { label: "HSE Dashboard", path: "/hse" },
+      { label: "Compliance / SSEG", path: "/hse/compliance" },
     ],
   },
   {
@@ -111,7 +125,7 @@ export const TOP_SECTIONS: TopSection[] = [
     match: (pathname) => startsWithAny(pathname, ["/engineering"]),
     secondary: [
       { label: "Engineering Dashboard", path: "/engineering" },
-      { label: "Design Requests", path: "/engineering/tasks" },
+      { label: "Task Board", path: "/engineering/tasks" },
       { label: "Standup", path: "/engineering/standup" },
     ],
   },
@@ -123,16 +137,6 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Quality Dashboard", path: "/quality" },
       { label: "Inspections / NCRs", path: "/quality/ncrs" },
-    ],
-  },
-  {
-    label: "HSE",
-    key: "HSE",
-    path: "/hse",
-    match: (pathname) => startsWithAny(pathname, ["/hse"]),
-    secondary: [
-      { label: "HSE Dashboard", path: "/hse" },
-      { label: "Compliance / SSEG", path: "/hse/compliance" },
     ],
   },
   {
@@ -158,7 +162,7 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Reports",
     key: "REPORTS",
-    path: "/reports/centre",
+    path: "/reports/center",
     match: (pathname) => startsWithAny(pathname, ["/reports"]),
     secondary: [
       { label: "Report Center", path: "/reports/center" },
