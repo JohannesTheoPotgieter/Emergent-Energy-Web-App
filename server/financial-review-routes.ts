@@ -18,6 +18,14 @@ function getUser(req: Request): { id: number; role: string } {
 }
 
 export function registerFinancialReviewRoutes(app: Express): void {
+  // Roles allowed to initiate a financial review
+  const CREATE_REVIEW_ROLES = [
+    "PROJECT_MANAGER_SITE",
+    "PROGRAM_MANAGER",
+    "COO_ADMIN",
+    "CEO_ADMIN",
+  ];
+
   // ── Create new review ──────────────────────────────────────────
   app.post(
     "/api/projects/:projectId/financial-review",
@@ -28,6 +36,9 @@ export function registerFinancialReviewRoutes(app: Express): void {
         const projectId = parseInt(req.params.projectId as string, 10);
         if (Number.isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
         const user = getUser(req);
+        if (!CREATE_REVIEW_ROLES.includes(user.role)) {
+          return res.status(403).json({ error: "Only Project Managers, Programme Managers, and COO can initiate a financial review" });
+        }
         const review = await createFinancialReview({ projectId, requestedByUserId: user.id });
         res.status(201).json({ review });
       } catch (error: unknown) {

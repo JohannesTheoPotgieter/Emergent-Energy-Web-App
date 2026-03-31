@@ -837,6 +837,7 @@ const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = 
   "collaboration": { section: "collaboration", subTab: "chat" },
   "construction": { section: "construction", subTab: "" },
   "handover": { section: "handover", subTab: "" },
+  "readiness-gate": { section: "delivery", subTab: "financial-review" },
 };
 
 const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
@@ -1234,6 +1235,7 @@ export default function ProjectDetailPage() {
   const completionNum = projectInfo?.project_pct_complete != null ? projectInfo.project_pct_complete * 100 : 0;
   const isAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
   const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
+  const canInitiateFinancialReview = ['PROJECT_MANAGER_SITE', 'PROGRAM_MANAGER', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
   const ragStatus = v2Detail?.executionState?.ragStatus ?? projectInfo?.rag_status ?? null;
 
   // ─── KPI computation: V2 detail → healthSummary → client-side fallback ───
@@ -1490,11 +1492,26 @@ export default function ProjectDetailPage() {
       {/* Current Gate — the active stage workspace */}
       {activeSection === "delivery" && projectInfoId && (
         <div className="space-y-4" data-testid="current-gate-section">
-          <StageDetailPanel
-            projectId={projectInfoId}
-            stageCode={stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT"}
-            isAdmin={isAdmin}
-          />
+          {canInitiateFinancialReview && (
+            <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="delivery-sub-tabs">
+              <Button size="sm" variant={activeSubTab !== "financial-review" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("")} data-testid="subtab-current-gate">
+                <Milestone className="h-3 w-3 mr-1" /> Current Gate
+              </Button>
+              <Button size="sm" variant={activeSubTab === "financial-review" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("financial-review")} data-testid="subtab-financial-review">
+                <DollarSign className="h-3 w-3 mr-1" /> Financial Review
+              </Button>
+            </div>
+          )}
+          {activeSubTab !== "financial-review" && (
+            <StageDetailPanel
+              projectId={projectInfoId}
+              stageCode={stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT"}
+              isAdmin={isAdmin}
+            />
+          )}
+          {activeSubTab === "financial-review" && (
+            <FinancialReviewTab projectId={projectInfoId} projectName={projectName} />
+          )}
         </div>
       )}
 
