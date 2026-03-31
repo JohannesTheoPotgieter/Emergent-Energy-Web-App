@@ -26,12 +26,21 @@ export const PD_VIEW_ALL_ROLES = [
   "CCO",
 ] as const;
 
+/** Roles that can initiate and edit handovers (PD-side) */
+export const HANDOVER_INITIATE_ROLES = [
+  "PROJECT_DEVELOPER",
+  "COO_ADMIN",
+  "CEO_ADMIN",
+  "CCO",
+] as const;
+
 /** Roles that can review, accept, or reject handovers */
 export const PM_REVIEW_ROLES = [
   "PROJECT_MANAGER_SITE",
   "PROGRAM_MANAGER",
   "COO_ADMIN",
   "CEO_ADMIN",
+  "CCO",
 ] as const;
 
 /** Admin roles with full access */
@@ -63,6 +72,10 @@ export function canCreatePdTicket(role: string): boolean {
 
 export function canViewAllTickets(role: string): boolean {
   return (PD_VIEW_ALL_ROLES as readonly string[]).includes(role);
+}
+
+export function canInitiateHandover(role: string): boolean {
+  return (HANDOVER_INITIATE_ROLES as readonly string[]).includes(role);
 }
 
 export function canReviewHandover(role: string): boolean {

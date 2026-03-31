@@ -24,7 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Loader2, ArrowLeft, Building2, FolderKanban, FileEdit, ExternalLink,
   CheckCircle2, Clock, AlertTriangle, Activity, ListTodo, Pencil, Save, X,
-  CircleDot, Circle, PauseCircle, ArrowUpRight, Plus, Trash2,
+  CircleDot, Circle, PauseCircle, ArrowUpRight, Plus, Trash2, Handshake,
 } from "lucide-react";
 
 function pdFetch(url: string, opts?: RequestInit) {
@@ -71,6 +71,17 @@ export default function PdTicketDetailPage() {
     },
     enabled: editing,
   });
+
+  // Check if linked project has a handover record (project reached PD→PM stage)
+  const linkedProjectId = data?.ticket?.projectId;
+  const { data: handoverCheck } = useQuery<{ handover: any }>({
+    queryKey: ["pd-pm-handover", linkedProjectId],
+    queryFn: () => pdFetch(`/api/pd-pm-handover/${linkedProjectId}`),
+    enabled: !!linkedProjectId,
+    retry: false,
+    staleTime: 60_000,
+  });
+  const handoverReady = !!handoverCheck?.handover;
 
   const updateMutation = useMutation({
     mutationFn: (body: any) => pdFetch(`/api/pd/tickets/${ticketId}`, { method: "PATCH", body: JSON.stringify(body) }),
@@ -154,6 +165,11 @@ export default function PdTicketDetailPage() {
               </div>
             </div>
             <div className="flex gap-2">
+              {handoverReady && (
+                <Button size="sm" variant="default" onClick={() => navigate(`/pd/handover/${linkedProjectId}`)} data-testid="btn-open-handover">
+                  <Handshake className="h-3.5 w-3.5 mr-1" /> Open Handover
+                </Button>
+              )}
               {!editing ? (
                 <Button variant="outline" size="sm" onClick={startEdit} data-testid="btn-edit-ticket">
                   <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
