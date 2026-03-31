@@ -113,7 +113,10 @@ function useInvalidateStages(projectId: number | undefined) {
   const qc = useQueryClient();
   return () => {
     if (projectId) {
-      qc.invalidateQueries({ queryKey: [`/api/projects/${projectId}/stages`] });
+      qc.invalidateQueries({ predicate: (q) => {
+        const key = q.queryKey[0];
+        return typeof key === "string" && key.startsWith(`/api/projects/${projectId}/stages`);
+      }});
     }
   };
 }

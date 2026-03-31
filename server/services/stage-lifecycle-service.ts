@@ -37,7 +37,33 @@ import {
  * Create all 10 stage instances for a project.
  * Skips any that already exist (idempotent).
  */
+const DEFAULT_STAGE_DEFS = [
+  { stageCode: 'S01_FIRST_ASSESSMENT', stageName: 'First Assessment', stageSequence: 1, description: 'Initial site and feasibility assessment', defaultOwnerRole: 'PD', defaultApproverRole: 'COO' },
+  { stageCode: 'S02_DESIGN_COST_PROPOSAL', stageName: 'Design & Cost Proposal', stageSequence: 2, description: 'Engineering design and costing', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
+  { stageCode: 'S03_SIGNATURE_FINANCIAL_CLOSE', stageName: 'Financial Close', stageSequence: 3, description: 'Contract signature and financial close', defaultOwnerRole: 'PD', defaultApproverRole: 'CFO' },
+  { stageCode: 'S04_PD_PM_HANDOVER', stageName: 'PD to PM Handover', stageSequence: 4, description: 'Handover from project development to project management', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
+  { stageCode: 'S05_FINANCIAL_REVIEW', stageName: 'Financial Review', stageSequence: 5, description: 'Pre-construction financial review', defaultOwnerRole: 'FINANCE', defaultApproverRole: 'CFO' },
+  { stageCode: 'S06_CONSTRUCTION', stageName: 'Construction', stageSequence: 6, description: 'On-site construction phase', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
+  { stageCode: 'S07_COMMISSIONING', stageName: 'Commissioning', stageSequence: 7, description: 'System testing and commissioning', defaultOwnerRole: 'ENGINEERING', defaultApproverRole: 'COO' },
+  { stageCode: 'S08_OM_HANDOVER', stageName: 'O&M Handover', stageSequence: 8, description: 'Handover to operations and maintenance', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
+  { stageCode: 'S09_CLIENT_HANDOVER', stageName: 'Client Handover', stageSequence: 9, description: 'Final handover to the client', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
+  { stageCode: 'S10_POST_HANDOVER_REVIEW', stageName: 'Post-Handover Review', stageSequence: 10, description: 'Post-completion review and lessons learned', defaultOwnerRole: 'PM', defaultApproverRole: 'COO' },
+];
+
+async function ensureStageDefinitions() {
+  const existing = await db.select().from(stageDefinitions).where(eq(stageDefinitions.isActive, true));
+  if (existing.length >= 10) return;
+  const existingCodes = new Set(existing.map(e => e.stageCode));
+  const toSeed = DEFAULT_STAGE_DEFS.filter(d => !existingCodes.has(d.stageCode));
+  if (toSeed.length > 0) {
+    await db.insert(stageDefinitions).values(toSeed).onConflictDoNothing();
+    console.log(`[Stage Lifecycle] Seeded ${toSeed.length} stage definitions`);
+  }
+}
+
 export async function initializeProjectStages(projectId: number): Promise<ProjectStageInstance[]> {
+  await ensureStageDefinitions();
+
   const definitions = await db
     .select()
     .from(stageDefinitions)
@@ -67,17 +93,24 @@ export async function initializeProjectStages(projectId: number): Promise<Projec
     await db.insert(projectStageInstances).values(toCreate);
   }
 
-  // Set current_stage_code on project_execution_state if not set
-  const [execState] = await db
-    .select({ currentStageCode: projectExecutionState.currentStageCode })
-    .from(projectExecutionState)
-    .where(eq(projectExecutionState.projectId, projectId));
-
-  if (execState && !execState.currentStageCode && definitions.length > 0) {
-    await db
-      .update(projectExecutionState)
-      .set({ currentStageCode: definitions[0].stageCode, updatedAt: new Date() })
+  // Set current_stage_code on project_execution_state
+  if (definitions.length > 0) {
+    const [execState] = await db
+      .select({ currentStageCode: projectExecutionState.currentStageCode })
+      .from(projectExecutionState)
       .where(eq(projectExecutionState.projectId, projectId));
+
+    if (execState && !execState.currentStageCode) {
+      await db
+        .update(projectExecutionState)
+        .set({ currentStageCode: definitions[0].stageCode, updatedAt: new Date() })
+        .where(eq(projectExecutionState.projectId, projectId));
+    } else if (!execState) {
+      await db.insert(projectExecutionState).values({
+        projectId,
+        currentStageCode: definitions[0].stageCode,
+      }).onConflictDoNothing();
+    }
   }
 
   return db

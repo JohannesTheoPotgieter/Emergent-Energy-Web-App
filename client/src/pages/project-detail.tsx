@@ -1393,6 +1393,7 @@ export default function ProjectDetailPage() {
         <CriticalControlPanel
           projectId={projectInfoId}
           onViewGate={() => navigateToSection("lifecycle")}
+          isAdmin={isAdmin}
         />
       )}
 
@@ -1465,7 +1466,7 @@ export default function ProjectDetailPage() {
       {activeSection === "lifecycle" && (
         <div className="space-y-4" data-testid="overview-section">
           {projectInfoId && (
-            <CriticalControlPanel projectId={projectInfoId} />
+            <CriticalControlPanel projectId={projectInfoId} isAdmin={isAdmin} />
           )}
           {/* Delivery overview — Plan, Board, Calendar, RAID, Commissioning */}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="delivery-sub-tabs">
