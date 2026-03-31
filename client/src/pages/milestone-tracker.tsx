@@ -257,6 +257,19 @@ export default function MilestoneTrackerPage() {
     queryKey: ["/api/project-info"],
   });
 
+  // 1b. Fetch projects-summary for latest update data
+  const { data: projectsSummary = [] } = useQuery<any[]>({
+    queryKey: ["/api/projects-summary"],
+  });
+
+  const summaryByName = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const s of projectsSummary) {
+      if (s.project_name) map.set(s.project_name, s);
+    }
+    return map;
+  }, [projectsSummary]);
+
   // 2. Filter to Construction-Client Handover
   const eligibleProjects = useMemo(() => {
     if (!allProjects) return [];
@@ -284,11 +297,16 @@ export default function MilestoneTrackerPage() {
       const milestones = revenueData?.milestones || [];
       const summary = revenueData?.summary || null;
 
-      // Calculate milestone revenue completion % from inBank / totalContract
+      const allInBank = milestones.length > 0 && milestones.every((m: any) => m.status === "inBank");
+
       let pctComplete = 0;
-      if (summary && summary.totalContract > 0) {
-        pctComplete = Math.round((summary.inBank / summary.totalContract) * 100);
+      if (allInBank) {
+        pctComplete = 100;
+      } else if (summary && summary.totalContract > 0) {
+        pctComplete = Math.min(99, Math.round((summary.inBank / summary.totalContract) * 100));
       }
+
+      const sumRow = summaryByName.get(rawName);
 
       return {
         projectId: p.id,
@@ -300,9 +318,9 @@ export default function MilestoneTrackerPage() {
         sizeKwp: p.sizeKwp || null,
         ragStatus: p.ragStatus || null,
         projectPctComplete: pctComplete,
-        latestUpdate: p.latestUpdate || null,
-        latestUpdateAt: p.latestUpdateAt || null,
-        latestUpdateBy: p.latestUpdateBy || null,
+        latestUpdate: sumRow?.latest_update || p.latestUpdate || null,
+        latestUpdateAt: sumRow?.latest_update_at || p.latestUpdateAt || null,
+        latestUpdateBy: sumRow?.latest_update_by || p.latestUpdateBy || null,
         milestones,
         revenueSummary: summary,
         urgencyGroup: computeUrgencyGroup(milestones),
@@ -310,12 +328,10 @@ export default function MilestoneTrackerPage() {
     })
     .filter((p) => p.projectName)
     .sort((a, b) => {
-      // Primary: urgency group (overdue first, then upcoming, then rest)
       if (a.urgencyGroup !== b.urgencyGroup) return a.urgencyGroup - b.urgencyGroup;
-      // Secondary: alphabetical
       return a.projectName.localeCompare(b.projectName);
     });
-  }, [eligibleProjects, revenueQueries]);
+  }, [eligibleProjects, revenueQueries, summaryByName]);
 
   // Filters
   const filtered = useMemo(() => {
