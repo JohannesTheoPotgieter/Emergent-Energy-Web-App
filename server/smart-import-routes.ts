@@ -6,8 +6,9 @@ import multer from "multer";
 import crypto from "crypto";
 import { logAuditFromReq } from "./audit-logger";
 import { db } from "./db";
-import { requirePermission } from "./permission-middleware";
+import { requirePermission, hasImportPermission } from "./permission-middleware";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
 import {
   smartImportRuns,
@@ -1289,7 +1290,7 @@ router.post("/api/smart-import/:runId/apply-prior-resolutions", requireAuth, req
 });
 
 // POST /api/smart-import/:runId/commit
-router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("smart_import", "approve"), async (req: Request, res: Response) => {
   try {
     // Ensure DB columns exist before attempting any inserts
     await ensureSchemaReady();
@@ -2689,7 +2690,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 });
 
 // POST /api/smart-import/:runId/rollback
-router.post("/api/smart-import/:runId/rollback", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
+router.post("/api/smart-import/:runId/rollback", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
@@ -2897,7 +2898,7 @@ router.get("/api/smart-import/normalized/:projectName/expenditure", requireAuth,
 });
 
 // POST /api/smart-import/bulk-commit
-router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("smart_import", "edit"), async (req: Request, res: Response) => {
+router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("smart_import", "approve"), async (req: Request, res: Response) => {
   try {
     // Ensure DB columns exist before attempting any inserts
     await ensureSchemaReady();
@@ -3215,6 +3216,37 @@ router.post("/api/import-control-tower/retry/:runId", requireAuth, requirePermis
     res.json({ success: true, runId, newStatus: "PREVIEW" });
   } catch (err: unknown) {
     console.error("[import-control-tower] POST retry error:", err);
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+  }
+});
+
+// ── Smart-import audit log endpoint (admin-only, paginated) ────────
+router.get("/api/smart-import/audit-log", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page as string) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize as string) || 25));
+    const offset = (page - 1) * pageSize;
+
+    const [countResult, rows] = await Promise.all([
+      db.select({ count: sql<number>`count(*)` })
+        .from(auditEvents)
+        .where(eq(auditEvents.entityType, "smart_import")),
+      db.select()
+        .from(auditEvents)
+        .where(eq(auditEvents.entityType, "smart_import"))
+        .orderBy(desc(auditEvents.createdAt))
+        .limit(pageSize)
+        .offset(offset),
+    ]);
+
+    const total = Number(countResult[0]?.count ?? 0);
+    res.json({
+      success: true,
+      data: rows,
+      meta: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
+    });
+  } catch (err: unknown) {
+    console.error("[smart-import] GET audit-log error:", err);
     res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });

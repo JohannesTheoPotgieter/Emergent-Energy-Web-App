@@ -4,7 +4,7 @@ import { auditEvents, invoiceCaptures, normalizedCostLines, normalizedRevenueLin
 import { syncProjectSplitTables } from "../../../lib/project-info-sync";
 
 export async function listProjects(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null; priorityId?: number }) {
-  const filters = [eq(projectExecutionState.isActive, true)];
+  const filters = [isNull(projectExecutionState.deletedAt)];
   if (params.q) filters.push(ilike(projectInfo.projectName, `%${params.q}%`));
 
   // RLS: scope to user's assigned projects when provided
@@ -349,8 +349,8 @@ export async function dashboardCoreTotals(scopeProjectIds?: Set<number> | null) 
   }
 
   const projectFilter = hasScope
-    ? and(eq(projectExecutionState.isActive, true), inArray(projectInfo.id, ids))
-    : eq(projectExecutionState.isActive, true);
+    ? and(isNull(projectExecutionState.deletedAt), inArray(projectInfo.id, ids))
+    : isNull(projectExecutionState.deletedAt);
 
   const workFilter = hasScope
     ? and(isNull(workItems.deletedAt), sql`${workItems.status} != 'Complete'`, inArray(workItems.projectId, ids))

@@ -120,7 +120,7 @@ export async function getExceptionDashboard(params: { userId: number; role?: str
     .select({ id: projectInfo.id, projectName: projectInfo.projectName, pmUserId: projectInfo.pmUserId })
     .from(projectInfo)
     .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-    .where(eq(projectExecutionState.isActive, true));
+    .where(isNull(projectExecutionState.deletedAt));
 
   const projectIdsByRole = (() => {
     if (["coo", "program_manager", "finance"].includes(cluster)) return scopedProjects.map((p: any) => p.id);

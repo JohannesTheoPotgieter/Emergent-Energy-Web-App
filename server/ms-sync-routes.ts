@@ -425,22 +425,12 @@ export function registerMsSyncRoutes(app: Express) {
           return res.json({ success: true, assignment: null });
         }
 
-        const existing = await db.select({ id: workItemAssignments.id })
-          .from(workItemAssignments)
-          .where(and(
-            eq(workItemAssignments.workItemId, taskId),
-            eq(workItemAssignments.userId, viewerUserId),
-            eq(workItemAssignments.role, "VIEWER"),
-          ))
-          .limit(1);
-        if (existing.length === 0) {
-          await db.insert(workItemAssignments).values({
-            workItemId: taskId,
-            userId: viewerUserId,
-            role: "VIEWER",
-            allocationPct: null,
-          });
-        }
+        await db.insert(workItemAssignments).values({
+          workItemId: taskId,
+          userId: viewerUserId,
+          role: "VIEWER",
+          allocationPct: null,
+        }).onConflictDoNothing();
         logAuditFromReq(req, {
           entityType: "work_item_assignment",
           entityId: String(taskId),

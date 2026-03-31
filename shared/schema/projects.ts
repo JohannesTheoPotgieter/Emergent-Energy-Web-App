@@ -135,18 +135,18 @@ export const projectExecutionState = pgTable("project_execution_state", {
   phaseUpdatedByUserId: integer("phase_updated_by_user_id").references(() => users.id),
   phaseNotes: text("phase_notes"),
 
-  // Key dates (planned)
-  pdHandoverDate: text("pd_handover_date"),
-  constructionStartDate: text("construction_start_date"),
-  commissioningDate: text("commissioning_date"),
-  omHandoverDate: text("om_handover_date"),
-  clientHandoverDate: text("client_handover_date"),
+  // Key dates (planned) — migrated from text to date in 20260331_convert_project_dates_to_date.sql
+  pdHandoverDate: date("pd_handover_date"),
+  constructionStartDate: date("construction_start_date"),
+  commissioningDate: date("commissioning_date"),
+  omHandoverDate: date("om_handover_date"),
+  clientHandoverDate: date("client_handover_date"),
 
   // Key dates (actual)
-  constructionStartActual: text("construction_start_actual"),
-  pdHandoverActual: text("pd_handover_actual"),
-  commissioningActual: text("commissioning_actual"),
-  clientHandoverActual: text("client_handover_actual"),
+  constructionStartActual: date("construction_start_actual"),
+  pdHandoverActual: date("pd_handover_actual"),
+  commissioningActual: date("commissioning_actual"),
+  clientHandoverActual: date("client_handover_actual"),
 
   // Escalation
   escalationLevel: text("escalation_level"),
@@ -158,7 +158,8 @@ export const projectExecutionState = pgTable("project_execution_state", {
   ragUpdatedByUserId: integer("rag_updated_by_user_id").references(() => users.id, { onDelete: "set null" }),
 
   // Active / archived
-  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
+  /** @deprecated 2026-03-31: Use deletedAt IS NULL instead. Drop after 30-day observation. */
+  isActive: boolean("is_active").notNull().default(true),
   deletedAt: timestamp("deleted_at"),
   archivedStatus: text("archived_status").notNull().default("ACTIVE"),
 
@@ -170,12 +171,12 @@ export const projectExecutionState = pgTable("project_execution_state", {
 
   // Signing
   signedStatus: text("signed_status").notNull().default("NONE"),
-  signedDate: text("signed_date"),
+  signedDate: date("signed_date"),
   signedDocumentLink: text("signed_document_link"),
 
   // CP signed gate
   cpSigned: boolean("cp_signed").notNull().default(false),
-  cpSignedDate: text("cp_signed_date"),
+  cpSignedDate: date("cp_signed_date"),
   cpSignedByUserId: integer("cp_signed_by_user_id").references(() => users.id),
   cpEvidenceType: text("cp_evidence_type"),
   cpEvidenceRef: text("cp_evidence_ref"),
@@ -206,8 +207,8 @@ export const projectExecutionState = pgTable("project_execution_state", {
   gateReadinessPct: integer("gate_readiness_pct"),
 
   // Financial review gate
-  siteEstablishmentDate: text("site_establishment_date"),
-  siteEstablishmentActual: text("site_establishment_actual"),
+  siteEstablishmentDate: date("site_establishment_date"),
+  siteEstablishmentActual: date("site_establishment_actual"),
   financialReviewStatus: text("financial_review_status").notNull().default("NOT_STARTED"),
   financialReviewId: integer("financial_review_id"),
 
@@ -282,6 +283,7 @@ export type ProjectRagAudit = typeof projectRagAudit.$inferSelect;
 // Project Revenue Summary Table (top summary block values)
 export const projectRevenueSummary = pgTable("project_revenue_summary", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull().unique(),
   plannedRevenue: decimal("planned_revenue", { precision: 15, scale: 2 }),
   plannedExpenditure: decimal("planned_expenditure", { precision: 15, scale: 2 }),
@@ -298,7 +300,7 @@ export const projectRevenueSummary = pgTable("project_revenue_summary", {
   // Temporal columns (Prompt 9)
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
-  snapshotRunId: integer("snapshot_run_id"),
+  snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
 });
 
 export const insertProjectRevenueSummarySchema = createInsertSchema(projectRevenueSummary).omit({ id: true, capturedAt: true, effectiveFrom: true, effectiveTo: true } as any);
@@ -326,6 +328,7 @@ export type HomeNotes = typeof homeNotes.$inferSelect;
 
 export const projectEditableFields = pgTable("project_editable_fields", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull().unique(),
   projectId: integer("project_id").references(() => projectInfo.id),
   costProposalSigned: text("cost_proposal_signed"),
@@ -582,6 +585,7 @@ export const calendarHoliday = pgTable("calendar_holiday", {
 
 export const projectTeamMembers = pgTable("project_team_members", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   userId: integer("user_id").notNull().references(() => users.id),
@@ -859,6 +863,7 @@ export type ProjectClientHistory = typeof projectClientHistory.$inferSelect;
 export const userProjectFolders = pgTable("user_project_folders", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   folderName: text("folder_name").notNull(),
@@ -937,6 +942,7 @@ export type RaidItem = typeof raidItems.$inferSelect;
 export const derivedProjectKpis = pgTable("derived_project_kpis", {
   id: serial("id").primaryKey(),
   projectKey: text("project_key").notNull().unique(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   phase: text("phase"),
@@ -1023,6 +1029,7 @@ export type Scenario = typeof scenarios.$inferSelect;
 
 export const keyDateMappings = pgTable("key_date_mappings", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   keyDateName: text("key_date_name").notNull(),
@@ -1046,6 +1053,7 @@ export type KeyDateMapping = typeof keyDateMappings.$inferSelect;
 export const normalizedExecutionPhases = pgTable("normalized_execution_phases", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   phaseName: text("phase_name").notNull(),
   phaseDate: text("phase_date"),

@@ -1,7 +1,11 @@
-// FROZEN: No new routes should be added to this file.
-// New routes go in server/routes/ or server/departments/ domain files.
-// See server/routes/register-all-routes.ts for the modular pattern.
-// TODO: Target < 500 lines. Current: 10,070. Track reduction each sprint.
+/**
+ * DEPRECATION STATUS: FROZEN — DO NOT ADD NEW ROUTES HERE
+ * Migration target: server/routes/<domain>-routes.ts
+ * Progress: docs/route-migration-status.md
+ *
+ * Total handlers at freeze: 187. Target: 0.
+ * New routes MUST go in server/routes/ or server/departments/ domain files.
+ */
 // TODO: remove @ts-nocheck
 // @ts-nocheck
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
@@ -1783,7 +1787,7 @@ export async function registerRoutes(
       })
         .from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-        .where(sql`${projectExecutionState.isActive} IS NOT FALSE`);
+        .where(isNull(projectExecutionState.deletedAt));
       const activeNames = new Set(
         activeProjectsResult
           .filter(p => {
@@ -2089,78 +2093,10 @@ export async function registerRoutes(
 
   // ==================== REV TRACKER API ====================
 
-  app.get("/api/rev-tracker", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const [allInflows, manualEntries] = await Promise.all([
-        storage.getAllProgramInflows(),
-        storage.getTrackerMonthlyManual('REV'),
-      ]);
-
-      const manualMap = new Map(manualEntries.map(e => [e.monthKey, e]));
-
-      const months: any[] = [];
-      const startMonth = new Date(Date.UTC(2025, 8, 1));
-
-      let ytdPlanned = 0, ytdRealised = 0, ytdOutstanding = 0, ytdBudget = 0;
-
-      for (let i = 0; i < 12; i++) {
-        const monthDate = new Date(startMonth);
-        monthDate.setUTCMonth(monthDate.getUTCMonth() + i);
-        const yr = monthDate.getUTCFullYear();
-        const mo = monthDate.getUTCMonth();
-        const monthKey = `${yr}-${String(mo + 1).padStart(2, '0')}`;
-        const monthStart = `${monthKey}-01`;
-        const nextMonth = new Date(Date.UTC(yr, mo + 1, 1));
-        const monthEnd = nextMonth.toISOString().split('T')[0];
-
-        let planned = 0;
-        for (const inflow of allInflows) {
-          const d = inflow.invoiceRaisedDate;
-          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-          if (d >= monthStart && d < monthEnd && inflow.milestoneAmount) {
-            planned += parseFloat(inflow.milestoneAmount) || 0;
-          }
-        }
-
-        const manual = manualMap.get(monthKey);
-        const realised = manual?.realised ? parseFloat(manual.realised) : 0;
-        const outstanding = manual?.outstanding ? parseFloat(manual.outstanding) : 0;
-        const budget = manual?.budget ? parseFloat(manual.budget) : 0;
-
-        const variance = planned - budget;
-        const variancePct = budget !== 0 ? ((planned - budget) / budget) * 100 : 0;
-
-        ytdPlanned += planned;
-        ytdRealised += realised;
-        ytdOutstanding += outstanding;
-        ytdBudget += budget;
-        const ytdVariance = ytdPlanned - ytdBudget;
-        const ytdVariancePct = ytdBudget !== 0 ? ((ytdPlanned - ytdBudget) / ytdBudget) * 100 : 0;
-
-        months.push({
-          monthKey,
-          label: monthDate.toLocaleString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
-          planned,
-          realised,
-          outstanding,
-          budget,
-          variance,
-          variancePct,
-          ytdPlanned,
-          ytdRealised,
-          ytdOutstanding,
-          ytdBudget,
-          ytdVariance,
-          ytdVariancePct,
-        });
-      }
-
-      res.json(months);
-    } catch (error) {
-      console.error("REV tracker error:", error);
-      res.status(500).json({ error: "Failed to fetch REV tracker data", message: "Failed to fetch REV tracker data" });
-    }
-  });
+  // REMOVED: /api/rev-tracker duplicate (was requireAuth + requireAdmin).
+  // The legacy /api/rev-tracker route is now handled exclusively in finance-routes.ts
+  // with correct auth (requirePermission("revenue_tracker", "view")) and deprecation logging.
+  // Canonical route: /api/revenue-tracker (finance-routes.ts)
 
   // ==================== COS TRACKER API ====================
 
@@ -7456,9 +7392,31 @@ export async function registerRoutes(
     }
   });
 
+  // ==================== MY TOOL - USER SCOPING HELPER ====================
+  // EXTRACTED to server/routes/mytool-routes.ts — remove after verification (34 handlers below)
+
+  /** Resolve effective userId for mytool queries.
+   *  ADMIN and PROGRAM_MANAGER may pass ?userId= to view another user's data.
+   *  All other roles get their own userId only. */
+  const MYTOOL_OVERSIGHT_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
+
+  function resolveMyToolUserId(req: Request): number {
+    const authUserId = (req.user as any).id;
+    const role = (req.user as any).role;
+    const requestedUserId = req.query.userId ? parseInt(req.query.userId as string) : null;
+    if (requestedUserId && !isNaN(requestedUserId) && MYTOOL_OVERSIGHT_ROLES.includes(role)) {
+      return requestedUserId;
+    }
+    return authUserId;
+  }
+
+  function isMyToolOversightRole(req: Request): boolean {
+    return MYTOOL_OVERSIGHT_ROLES.includes((req.user as any).role);
+  }
+
   // ==================== MY TOOL - SETTINGS ====================
 
-  app.get("/api/mytool/settings", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/settings", requireAuth, async (req, res) => {
     try {
       const settings = await storage.getMytoolSettings();
       res.json(settings);
@@ -7467,7 +7425,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/mytool/settings", requireAuth, requireAdmin, async (req, res) => {
+  app.put("/api/mytool/settings", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateMytoolSettings(req.body);
       logAuditFromReq(req, { entityType: "mytool_settings", action: "update", changesJson: { description: "MyTool settings updated" } });
@@ -7479,7 +7437,7 @@ export async function registerRoutes(
 
   // ==================== CALENDAR - COMBINED TASKS ====================
 
-  app.get("/api/calendar/my-tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/calendar/my-tasks", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const userName = (req.user as any).username;
@@ -7775,7 +7733,7 @@ export async function registerRoutes(
 
   app.get("/api/mytool/tasks", requireAuth, async (req, res) => {
     try {
-      const userId = (req.user as any).id;
+      const userId = resolveMyToolUserId(req);
 
       const useCanonical = await isWorkItemsEnabled();
       if (useCanonical) {
@@ -7858,7 +7816,7 @@ export async function registerRoutes(
           assignedByUserId: userId,
           metadata: null,
           updatedAt: new Date(),
-        });
+        }).onConflictDoNothing();
       } catch (assignErr: any) {
         console.warn("[mytool-task-create] Failed to create entity_assignment, task still created:", assignErr?.message);
       }
@@ -7888,6 +7846,9 @@ export async function registerRoutes(
       if (req.body.status) req.body.status = toMytoolDbStatus(normalizeStatus(req.body.status));
       if (req.body.priority) req.body.priority = toMytoolDbPriority(normalizePriority(req.body.priority));
       const existingTask = await storage.getMytoolTask(taskId);
+      if (existingTask && existingTask.ownerUserId !== userId && !isMyToolOversightRole(req)) {
+        return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
+      }
 
       if (req.body.bucket !== undefined || req.body.projectName !== undefined) {
         const bucket = req.body.bucket || existingTask?.bucket || 'personal';
@@ -7967,7 +7928,13 @@ export async function registerRoutes(
 
   app.delete("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteMytoolTask(parseInt(req.params.id));
+      const taskId = parseInt(req.params.id);
+      const userId = (req.user as any).id;
+      const existingTask = await storage.getMytoolTask(taskId);
+      if (existingTask && existingTask.ownerUserId !== userId && !isMyToolOversightRole(req)) {
+        return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
+      }
+      await storage.deleteMytoolTask(taskId);
       logAuditFromReq(req, { entityType: "mytool_task", action: "delete", entityId: req.params.id, changesJson: { description: "MyTool task deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -7978,6 +7945,11 @@ export async function registerRoutes(
   app.get("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const taskId = Number(req.params.id);
+      const userId = (req.user as any).id;
+      const task = await storage.getMytoolTask(taskId);
+      if (task && task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
+        return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
+      }
       const deps = await db.select().from(mytoolTaskDependencies).where(or(eq(mytoolTaskDependencies.predecessorTaskId, taskId), eq(mytoolTaskDependencies.successorTaskId, taskId)));
       res.json(deps);
     } catch (err: any) {
@@ -7987,9 +7959,15 @@ export async function registerRoutes(
 
   app.post("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
+      const userId = (req.user as any).id;
       const successorTaskId = Number(req.params.id);
       const predecessorTaskId = Number(req.body.predecessorTaskId);
       const dependencyType = req.body.dependencyType || "finish_to_start";
+      // Verify user owns the successor task
+      const task = await storage.getMytoolTask(successorTaskId);
+      if (task && task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
+        return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
+      }
       const validationMessage = validateDependencyPair(predecessorTaskId, successorTaskId);
       if (validationMessage) return res.status(400).json({ error: validationMessage });
 
@@ -8008,6 +7986,12 @@ export async function registerRoutes(
 
   app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, async (req, res) => {
     try {
+      const userId = (req.user as any).id;
+      const taskId = Number(req.params.id);
+      const task = await storage.getMytoolTask(taskId);
+      if (task && task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
+        return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
+      }
       const dependencyId = Number(req.params.dependencyId);
       const [dep] = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
       await db.delete(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
@@ -8018,16 +8002,17 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/mytool/recurrence-templates", requireAuth, requireAdmin, async (_req, res) => {
+  app.get("/api/mytool/recurrence-templates", requireAuth, async (req, res) => {
     try {
-      const templates = await db.select().from(mytoolRecurrenceTemplates).orderBy(desc(mytoolRecurrenceTemplates.updatedAt));
+      const userId = resolveMyToolUserId(req);
+      const templates = await db.select().from(mytoolRecurrenceTemplates).where(eq(mytoolRecurrenceTemplates.ownerUserId, userId)).orderBy(desc(mytoolRecurrenceTemplates.updatedAt));
       res.json(templates);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post("/api/mytool/recurrence-templates", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/recurrence-templates", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const [template] = await db.insert(mytoolRecurrenceTemplates).values({ ...req.body, ownerUserId: userId }).returning();
@@ -8039,7 +8024,7 @@ export async function registerRoutes(
 
   // ==================== MY TOOL - TIMEBLOCKS ====================
 
-  app.get("/api/mytool/timeblocks", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/timeblocks", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const { date } = req.query;
@@ -8053,7 +8038,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/timeblocks", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/timeblocks", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const block = await storage.createMytoolTimeblock({ ...req.body, ownerUserId: userId });
@@ -8064,7 +8049,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
     try {
       const block = await storage.updateMytoolTimeblock(parseInt(req.params.id), req.body);
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "update", entityId: req.params.id, changesJson: { description: "Timeblock updated" } });
@@ -8074,7 +8059,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteMytoolTimeblock(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "delete", entityId: req.params.id, changesJson: { description: "Timeblock deleted" } });
@@ -8086,7 +8071,7 @@ export async function registerRoutes(
 
   // ==================== MY TOOL - DAILY REVIEWS ====================
 
-  app.get("/api/mytool/daily-review", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/daily-review", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const { date } = req.query;
@@ -8100,7 +8085,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/mytool/daily-review", requireAuth, requireAdmin, async (req, res) => {
+  app.put("/api/mytool/daily-review", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const review = await storage.upsertMytoolDailyReview({ ...req.body, ownerUserId: userId });
@@ -8113,7 +8098,7 @@ export async function registerRoutes(
 
   // Company priorities and priority-link APIs are served by departments/exco-routes.ts.
 
-  app.get("/api/mytool/escalated-priorities", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/escalated-priorities", requireAuth, async (req, res) => {
     try {
       const [allProjectInfo, allOpTasks] = await Promise.all([
         storage.getAllProjectInfo(),
@@ -8177,7 +8162,7 @@ export async function registerRoutes(
 
   // ==================== MY TOOL - USER PREFERENCES ====================
 
-  app.get("/api/mytool/preferences", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/preferences", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const prefs = await storage.getMytoolUserPreferences(userId);
@@ -8187,7 +8172,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/mytool/preferences", requireAuth, requireAdmin, async (req, res) => {
+  app.put("/api/mytool/preferences", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const prefs = await storage.upsertMytoolUserPreferences({ ...req.body, ownerUserId: userId });
@@ -8200,7 +8185,7 @@ export async function registerRoutes(
 
   // ==================== MY TOOL - EMAIL LINKS ====================
 
-  app.get("/api/mytool/email-links", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/email-links", requireAuth, async (req, res) => {
     try {
       const { taskId, priorityId, operationalTaskId } = req.query;
       if (taskId) {
@@ -8221,7 +8206,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/email-links", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/email-links", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any)?.id || null;
       const link = await storage.createEmailLink({ ...req.body, createdBy: userId });
@@ -8232,7 +8217,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/email-links/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/email-links/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteEmailLink(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "email_link", action: "delete", entityId: req.params.id, changesJson: { description: "Email link deleted" } });
@@ -8243,7 +8228,7 @@ export async function registerRoutes(
   });
 
   // My Tool - DoD Templates
-  app.get("/api/mytool/dod-templates", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/dod-templates", requireAuth, async (req, res) => {
     try {
       const templates = await storage.getMytoolDodTemplates();
       res.json(templates);
@@ -8252,7 +8237,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/dod-templates", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/dod-templates", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const template = await storage.createMytoolDodTemplate({ ...req.body, createdBy: userId });
@@ -8263,7 +8248,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/dod-templates/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/dod-templates/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteMytoolDodTemplate(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "dod_template", action: "delete", entityId: req.params.id, changesJson: { description: "DoD template deleted" } });
@@ -8298,6 +8283,7 @@ export async function registerRoutes(
     }
   });
 
+  // Support tickets listing is admin-only (cross-user administrative view)
   app.get("/api/mytool/support-tickets", requireAuth, requireAdmin, async (req, res) => {
     try {
       const tickets = await storage.getSupportTickets();
@@ -9190,7 +9176,7 @@ export async function registerRoutes(
 
   // ==================== TRIAGE RULES CRUD ====================
 
-  app.get("/api/mytool/triage-rules", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/triage-rules", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const { triageRules: triageRulesTable } = await import("@shared/schema");
@@ -9201,7 +9187,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/triage-rules", requireAuth, requireAdmin, async (req, res) => {
+  app.post("/api/mytool/triage-rules", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const { ruleType, value } = req.body;
@@ -9220,10 +9206,15 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.patch("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
     try {
+      const userId = (req.user as any).id;
       const ruleId = parseInt(req.params.id);
       const { triageRules: triageRulesTable } = await import("@shared/schema");
+      const [existing] = await db.select().from(triageRulesTable).where(eq(triageRulesTable.id, ruleId)).limit(1);
+      if (existing && existing.ownerUserId !== userId && !isMyToolOversightRole(req)) {
+        return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
+      }
       const updates: any = {};
       if (req.body.value !== undefined) updates.value = req.body.value.trim();
       if (req.body.enabled !== undefined) updates.enabled = req.body.enabled;
@@ -9235,10 +9226,15 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
+  app.delete("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
     try {
+      const userId = (req.user as any).id;
       const ruleId = parseInt(req.params.id);
       const { triageRules: triageRulesTable } = await import("@shared/schema");
+      const [existing] = await db.select().from(triageRulesTable).where(eq(triageRulesTable.id, ruleId)).limit(1);
+      if (existing && existing.ownerUserId !== userId && !isMyToolOversightRole(req)) {
+        return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
+      }
       await db.delete(triageRulesTable).where(eq(triageRulesTable.id, ruleId));
       logAuditFromReq(req, { entityType: "triage_rule", action: "delete", entityId: String(ruleId), changesJson: { description: "Triage rule deleted" } });
       res.json({ success: true });
@@ -9249,7 +9245,7 @@ export async function registerRoutes(
 
   // ==================== TRIAGE INBOX ====================
 
-  app.get("/api/mytool/triage-inbox", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/triage-inbox", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const outlook = await import("./outlook");
@@ -9314,14 +9310,18 @@ export async function registerRoutes(
 
   // ==================== UNCLASSIFIED TASKS ====================
 
-  app.get("/api/mytool/unclassified-tasks", requireAuth, requireAdmin, async (req, res) => {
+  app.get("/api/mytool/unclassified-tasks", requireAuth, async (req, res) => {
     try {
+      const userId = resolveMyToolUserId(req);
       const { mytoolTasks: mytoolTasksTable } = await import("@shared/schema");
       const tasks = await db.select().from(mytoolTasksTable)
         .where(
-          or(
-            isNull(mytoolTasksTable.bucket),
-            and(eq(mytoolTasksTable.bucket, 'project'), isNull(mytoolTasksTable.projectName))
+          and(
+            eq(mytoolTasksTable.ownerUserId, userId),
+            or(
+              isNull(mytoolTasksTable.bucket),
+              and(eq(mytoolTasksTable.bucket, 'project'), isNull(mytoolTasksTable.projectName))
+            )
           )
         );
       res.json(tasks);

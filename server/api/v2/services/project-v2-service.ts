@@ -2,7 +2,9 @@ import * as repo from "../repositories/project-v2-repository";
 import { ApiV2Error, paginationMeta } from "../utils/http";
 import { db } from "../../../db";
 import { dashboardProjectMetrics, dashboardProgramMetrics } from "@shared/schema";
+import { ADMIN_ROLES } from "@shared/schema/users";
 import { refreshAllMetrics, refreshProjectMetricsAsync } from "../../../services/dashboard-metrics";
+import { cacheGet, cacheSet, isRedisCache } from "../../../lib/cache";
 
 export async function listProjectsService(params: { q?: string; page: number; pageSize: number; sortBy?: string; sortDir: "asc" | "desc"; scopeProjectIds?: Set<number> | null; priorityId?: number }) {
   const { rows, total } = await repo.listProjects(params);
@@ -208,6 +210,45 @@ export async function dashboardRefreshService() {
     failedProjectIds: result.failedProjectIds.length > 0 ? result.failedProjectIds : undefined,
     timestamp: new Date().toISOString(),
   };
+}
+
+/**
+ * Rate-limit check for manual dashboard refresh.
+ *
+ * Limiter type:
+ * - When REDIS_URL is set: distributed/shared-safe (Redis-backed cache with TTL).
+ * - Without REDIS_URL: temporary single-instance only (in-memory cache with TTL).
+ *   Safe for the current single-instance deployment; will NOT survive restarts.
+ */
+const REFRESH_RATE_LIMIT_SECONDS = 300; // 5 minutes
+
+export async function checkRefreshRateLimit(userId: number): Promise<{ allowed: boolean }> {
+  const key = `dashboard:refresh-limit:${userId}`;
+  const existing = await cacheGet<string>(key);
+  return { allowed: existing === null };
+}
+
+export async function setRefreshRateLimit(userId: number): Promise<void> {
+  const key = `dashboard:refresh-limit:${userId}`;
+  await cacheSet(key, new Date().toISOString(), REFRESH_RATE_LIMIT_SECONDS);
+}
+
+export async function dashboardLastRefreshService(userId: number, role: string) {
+  const [program] = await db.select().from(dashboardProgramMetrics).limit(1);
+  const lastRefreshedAt = program?.lastRefreshedAt?.toISOString() ?? null;
+
+  // Estimate next auto-refresh: metrics service uses 5-minute cooldown per project,
+  // but there's no global scheduled auto-refresh; return null to indicate manual-only.
+  const nextAutoRefreshAt: string | null = null;
+
+  const isAdmin = ADMIN_ROLES.includes(role as any);
+  let manualRefreshAllowed = false;
+  if (isAdmin) {
+    const { allowed } = await checkRefreshRateLimit(userId);
+    manualRefreshAllowed = allowed;
+  }
+
+  return { lastRefreshedAt, nextAutoRefreshAt, manualRefreshAllowed };
 }
 
 // ─── Prompt 14: Consolidated project endpoint services ─────────────

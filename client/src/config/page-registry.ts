@@ -4,6 +4,8 @@ export interface PageRegistryEntry {
   id: string;
   path: string;
   label: string;
+  /** 'page' = renders a component; 'alias' = redirects to another path */
+  type?: "page" | "alias";
   iconKey?: string;
   navGroup?: string;
   permissionEntity?: PermissionEntity;
@@ -20,8 +22,10 @@ export interface PageRegistryEntry {
  * Kept separate from PAGE_REGISTRY so they don't pollute command palette or sidebar.
  */
 export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
-  { path: "/dashboard", redirectTo: "/execution-board" },
-  { path: "/pm-dashboard", redirectTo: "/execution-board" },
+  // Legacy: /dashboard → /execution-board → /gates. Collapsed to direct.
+  { path: "/dashboard", redirectTo: "/gates" },
+  // Legacy: /pm-dashboard → /execution-board → /gates. Collapsed to direct.
+  { path: "/pm-dashboard", redirectTo: "/gates" },
   { path: "/revenue", redirectTo: "/revenue-tracker" },
   { path: "/my-tool", redirectTo: "/" },
   { path: "/my-tool/week", redirectTo: "/my-work/calendar" },
@@ -53,7 +57,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminMyTool", path: "/admin/my-tool-settings", label: "My Work Settings", permissionEntity: "admin", routeComponentKey: "MyWorkAdminSettingsPage" },
   { id: "sharepointIntake", path: "/admin/sharepoint-intake", label: "SharePoint Intake", iconKey: "Cloud", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "SharePointIntakePage" },
   { id: "quality", path: "/quality", label: "Quality", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage", roleLandingEligibility: ["QUALITY_MANAGER"] },
-  { id: "qualityDashboardV2", path: "/quality/dashboard", label: "Quality Dashboard (Project)", permissionEntity: "quality", redirectTo: "/quality" },
+  { id: "qualityDashboardV2", path: "/quality/dashboard", label: "Quality Dashboard (Project)", type: "alias", permissionEntity: "quality", redirectTo: "/quality" },
   { id: "qualityNcrList", path: "/quality/ncrs", label: "NCR List", iconKey: "ListTodo", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "NcrListPage" },
   { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail", permissionEntity: "quality", showInSidebar: false, routeComponentKey: "NcrDetailPage" },
   { id: "engineering", path: "/engineering", label: "Engineering", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", roleLandingEligibility: ["ENGINEERING_MANAGER", "ENGINEER"] },
@@ -83,17 +87,17 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pdTicketCreate", path: "/pd/tickets/create", label: "Create PD Ticket", routeComponentKey: "PdTicketCreatePage" },
   { id: "pdTicketDetail", path: "/pd/tickets/:id", label: "PD Ticket Detail", routeComponentKey: "PdTicketDetailPage" },
   { id: "pdReports", path: "/pd/reports", label: "PD Reports", iconKey: "BarChart3", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "PdReportsPage" },
-  { id: "teamsChats", path: "/teams/chats", label: "Teams Chat", permissionEntity: "teams_chat", redirectTo: "/my-work/teams" },
-  { id: "collaboration", path: "/collaboration", label: "Collaboration Hub", permissionEntity: "collaboration_hub", redirectTo: "/my-work" },
-  { id: "collabEmail", path: "/collaboration/email", label: "Collaboration Email", permissionEntity: "collaboration_hub", redirectTo: "/my-work/email" },
-  { id: "collabTeams", path: "/collaboration/teams", label: "Collaboration Teams", permissionEntity: "teams_chat", redirectTo: "/my-work/teams" },
+  { id: "teamsChats", path: "/teams/chats", label: "Teams Chat", type: "alias", permissionEntity: "teams_chat", redirectTo: "/my-work/teams" },
+  { id: "collaboration", path: "/collaboration", label: "Collaboration Hub", type: "alias", permissionEntity: "collaboration_hub", redirectTo: "/my-work" },
+  { id: "collabEmail", path: "/collaboration/email", label: "Collaboration Email", type: "alias", permissionEntity: "collaboration_hub", redirectTo: "/my-work/email" },
+  { id: "collabTeams", path: "/collaboration/teams", label: "Collaboration Teams", type: "alias", permissionEntity: "teams_chat", redirectTo: "/my-work/teams" },
   { id: "pmOnTheGo", path: "/pm/on-the-go", label: "Mobile View", iconKey: "Smartphone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_on_the_go", showInSidebar: true, routeComponentKey: "PMOnTheGoHome" },
   { id: "pmOnTheGoProject", path: "/pm/on-the-go/project/:projectId", label: "On-The-Go Project", routeComponentKey: "PMOnTheGoProject" },
   { id: "myWork", path: "/my-work", label: "My Work", iconKey: "Home", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "MyWorkHomePage", matchSubRoutes: true },
   { id: "inbox", path: "/inbox", label: "Inbox", iconKey: "Inbox", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "InboxPage" },
   { id: "myWorkCalendar", path: "/my-work/calendar", label: "Calendar", iconKey: "CalendarCheck", navGroup: "MY_WORK", permissionEntity: "my_work", showInSidebar: true, routeComponentKey: "MyWorkCalendarPage" },
   { id: "myWorkTasks", path: "/my-work/tasks", label: "Tasks", iconKey: "ListChecks", navGroup: "MY_WORK", permissionEntity: "my_tool", showInSidebar: true, routeComponentKey: "MyWorkTasksPage" },
-  { id: "myWorkApprovals", path: "/my-work/approvals", label: "Approvals", iconKey: "ClipboardCheck", navGroup: "MY_WORK", permissionEntity: "my_work", showInSidebar: true, redirectTo: "/my-work/tasks?source=approvals" },
+  { id: "myWorkApprovals", path: "/my-work/approvals", label: "Approvals", iconKey: "ClipboardCheck", navGroup: "MY_WORK", type: "alias", permissionEntity: "my_work", showInSidebar: true, redirectTo: "/my-work/tasks?source=approvals" },
   { id: "myWorkMeetings", path: "/my-work/meetings", label: "Meetings", iconKey: "MessageSquareText", navGroup: "MY_WORK", permissionEntity: "meetings", showInSidebar: true, routeComponentKey: "MyWorkMeetingsPage" },
   { id: "myWorkEmail", path: "/my-work/email", label: "Email", iconKey: "Mail", navGroup: "MY_WORK", permissionEntity: "collaboration_hub", showInSidebar: true, routeComponentKey: "CollabEmailPage" },
   { id: "myWorkTeams", path: "/my-work/teams", label: "Teams Chat", iconKey: "MessagesSquare", navGroup: "MY_WORK", permissionEntity: "teams_chat", showInSidebar: true, routeComponentKey: "TeamsChatsPage" },
@@ -117,6 +121,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminControlCenter", path: "/admin/control-center", label: "Control Center", iconKey: "Gauge", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminControlCenterPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECTS", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },
   { id: "actionLaunchpad", path: "/actions/launchpad", label: "Quick Create", routeComponentKey: "ActionLaunchpadPage" },
+  // Active version: pd-pm-handover-v2.tsx. v1 removed 2026-03-31.
   { id: "pdPmHandover", path: "/pd/handover/:projectId", label: "PD to PM Handover", permissionEntity: "handover", routeComponentKey: "PdPmHandoverPage" },
   { id: "pmHandoverReview", path: "/pm/handover-review", label: "PM Handover Review", permissionEntity: "handover", routeComponentKey: "PmHandoverReviewPage" },
   { id: "financialReviewQueue", path: "/governance/financial-reviews", label: "Financial Review Queue", iconKey: "DollarSign", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "approvals", showInSidebar: true, routeComponentKey: "FinancialReviewQueuePage" },
