@@ -81,11 +81,31 @@ export default function EngineeringStandupPage() {
 
   const activeScheduleId = schedules[0]?.id ? String(schedules[0].id) : "";
 
-  const { data: participants = [], isLoading: participantsLoading, refetch: refetchParticipants } = useQuery<Participant[]>({
+  const { data: allParticipants = [], isLoading: participantsLoading, refetch: refetchParticipants } = useQuery<Participant[]>({
     queryKey: ["/api/standups/schedules", activeScheduleId, "participants"],
     queryFn: () => api(`/api/standups/schedules/${activeScheduleId}/participants`),
     enabled: !!activeScheduleId,
   });
+
+  const { data: allEngTasks = [], isLoading: allTasksLoading } = useQuery<EngTask[]>({
+    queryKey: ["eng-tasks-all-standup"],
+    queryFn: async () => {
+      const data = await api("/api/eng/tasks");
+      return Array.isArray(data) ? data : data.items || [];
+    },
+  });
+
+  const participants = useMemo(() => {
+    if (allEngTasks.length === 0) return allParticipants;
+    const activeStatuses = ["TO DO", "IN PROGRESS", "HOLD"];
+    const ownerIds = new Set(
+      allEngTasks
+        .filter(t => activeStatuses.includes(t.status) && t.ownerUserId != null)
+        .map(t => t.ownerUserId!)
+    );
+    const filtered = allParticipants.filter(p => ownerIds.has(p.userId));
+    return filtered.length > 0 ? filtered : allParticipants;
+  }, [allParticipants, allEngTasks]);
 
   // Active speaker's engineering tasks
   const activeSpeaker = phase === "running" ? queue[activeIndex] : null;
@@ -332,7 +352,7 @@ export default function EngineeringStandupPage() {
 
   // ── Loading / error states ────────────────────────────────────────────
 
-  const isLoading = schedulesLoading || (!!activeScheduleId && participantsLoading);
+  const isLoading = schedulesLoading || (!!activeScheduleId && participantsLoading) || allTasksLoading;
 
   if (isLoading) return <PageSkeleton lines={5} />;
 
