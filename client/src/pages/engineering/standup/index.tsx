@@ -1,380 +1,511 @@
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageSkeleton, PageError } from "@/components/ui/page-states";
+import { useToast } from "@/hooks/use-toast";
+import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import {
-  Users, Send, AlertTriangle, CheckCircle2, Clock,
-  Smile, Meh, Frown, ThumbsUp, XCircle, BarChart3,
+  Users, Play, Pause, Square, CheckCircle2, Timer,
 } from "lucide-react";
+
+import { StandupQueue } from "./StandupQueue";
+import { TaskLanes } from "./TaskLanes";
+import { BlockerStrip } from "./BlockerStrip";
+import { StandupSummary } from "./StandupSummary";
+import {
+  type Participant, type EngTask, type TaskMovement, type StandupPhase,
+  MOODS, formatTime, timerColor, initials,
+} from "./types";
+
+// ── API helper ──────────────────────────────────────────────────────────
 
 async function api(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { ...options, headers, credentials: "include" });
-  if (!res.ok) throw new Error("Request failed");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Request failed" }));
+    throw new Error(err.error || "Request failed");
+  }
   return res.json();
 }
 
-interface Schedule {
-  id: number;
-  name: string;
-  teamLabel: string | null;
-  cadence: string;
-  cadenceDays: number;
-  isActive: boolean;
-}
-
-interface TodayStandup {
-  schedule: Schedule;
-  isRequired: boolean;
-  hasSubmitted: boolean;
-  entry: StandupEntry | null;
-}
-
-interface StandupEntry {
-  id: number;
-  scheduleId: number;
-  userId: number;
-  standupDate: string;
-  whatIDid: string | null;
-  whatImDoing: string | null;
-  blockers: string | null;
-  mood: string | null;
-  isLate: boolean;
-  submittedAt: string;
-  userName?: string;
-  userEmail?: string;
-}
-
-const MOODS = [
-  { value: "great", label: "Great", icon: ThumbsUp, color: "text-green-600" },
-  { value: "good", label: "Good", icon: Smile, color: "text-blue-600" },
-  { value: "okay", label: "Okay", icon: Meh, color: "text-amber-600" },
-  { value: "struggling", label: "Struggling", icon: Frown, color: "text-orange-600" },
-  { value: "blocked", label: "Blocked", icon: XCircle, color: "text-red-600" },
-];
-
-function moodBadge(mood: string | null) {
-  const m = MOODS.find(x => x.value === mood);
-  if (!m) return null;
-  const Icon = m.icon;
-  return <Badge variant="outline" className={`text-[10px] gap-1 ${m.color}`}><Icon className="h-3 w-3" />{m.label}</Badge>;
-}
-
-function initials(name?: string) {
-  if (!name) return "?";
-  return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-}
+// ── Main Component ──────────────────────────────────────────────────────
 
 export default function EngineeringStandupPage() {
   const queryClient = useQueryClient();
-  const [whatIDid, setWhatIDid] = useState("");
-  const [whatImDoing, setWhatImDoing] = useState("");
-  const [blockers, setBlockers] = useState("");
-  const [mood, setMood] = useState("good");
+  const { toast } = useToast();
+
+  // Session state
+  const [phase, setPhase] = useState<StandupPhase>("waiting");
+  const [isPaused, setIsPaused] = useState(false);
+  const [queue, setQueue] = useState<Participant[]>([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [completedIndices, setCompletedIndices] = useState<Set<number>>(new Set());
+  const [skippedIndices, setSkippedIndices] = useState<Set<number>>(new Set());
+  const [speakerTimings, setSpeakerTimings] = useState<Map<number, number>>(new Map());
+  const [speakerSeconds, setSpeakerSeconds] = useState(0);
+  const [totalSeconds, setTotalSeconds] = useState(0);
+  const [taskMovements, setTaskMovements] = useState<TaskMovement[]>([]);
+  const [moods, setMoods] = useState<Map<number, string>>(new Map());
+  const [facilitatorNotes, setFacilitatorNotes] = useState<Map<number, string>>(new Map());
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>("");
 
-  // Fetch today's standup status
-  const { data: todayData, isLoading, isError, error, refetch } = useQuery<TodayStandup[]>({
-    queryKey: ["/api/standups/today"],
-    queryFn: () => api("/api/standups/today"),
-  });
+  // Blocker tracking across all speakers
+  const [heldTasks, setHeldTasks] = useState<Array<{ taskTitle: string; userName: string; holdReason: string; blockedType?: string }>>([]);
 
-  // Fetch all schedules
-  const { data: schedules = [] } = useQuery<Schedule[]>({
+  // Timer ref
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Data fetching ─────────────────────────────────────────────────────
+
+  const { data: schedules = [], isLoading: schedulesLoading } = useQuery<any[]>({
     queryKey: ["/api/standups/schedules"],
     queryFn: () => api("/api/standups/schedules"),
   });
 
-  // Auto-select first schedule
   const activeScheduleId = selectedScheduleId || (schedules[0]?.id ? String(schedules[0].id) : "");
 
-  // Fetch team entries for the selected schedule
-  const { data: teamEntries = [] } = useQuery<StandupEntry[]>({
-    queryKey: ["/api/standups/entries", activeScheduleId],
-    queryFn: () => api(`/api/standups/entries/${activeScheduleId}`),
+  const { data: participants = [], isLoading: participantsLoading } = useQuery<Participant[]>({
+    queryKey: ["/api/standups/schedules", activeScheduleId, "participants"],
+    queryFn: () => api(`/api/standups/schedules/${activeScheduleId}/participants`),
     enabled: !!activeScheduleId,
   });
 
-  // Fetch analytics
-  const { data: analytics } = useQuery<any>({
-    queryKey: ["/api/standups/analytics", activeScheduleId],
-    queryFn: () => api(`/api/standups/analytics/${activeScheduleId}`),
-    enabled: !!activeScheduleId,
+  // Active speaker's engineering tasks
+  const activeSpeaker = phase === "running" ? queue[activeIndex] : null;
+  const {
+    data: speakerTasksRaw = [],
+    isLoading: tasksLoading,
+  } = useQuery<EngTask[]>({
+    queryKey: ["eng-tasks-standup", activeSpeaker?.userId],
+    queryFn: async () => {
+      const data = await api(`/api/eng/tasks?ownerUserId=${activeSpeaker!.userId}`);
+      // API may return array or { items: [] }
+      return Array.isArray(data) ? data : data.items || [];
+    },
+    enabled: !!activeSpeaker,
   });
 
-  // Submit standup entry
-  const submitMutation = useMutation({
-    mutationFn: () =>
-      api("/api/standups/entries", {
-        method: "POST",
-        body: JSON.stringify({
-          scheduleId: Number(activeScheduleId),
-          whatIDid,
-          whatImDoing,
-          blockers: blockers || null,
-          mood,
-        }),
-      }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/standups/today"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/standups/entries"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/standups/analytics"] });
-      setWhatIDid(whatImDoing);
-      setWhatImDoing("");
-      setBlockers("");
+  // Filter to only the 4 standup lanes and add project name
+  const speakerTasks = useMemo(() => {
+    const validStatuses = ["TO DO", "IN PROGRESS", "HOLD", "COMPLETE"];
+    return speakerTasksRaw.filter(t => validStatuses.includes(t.status));
+  }, [speakerTasksRaw]);
+
+  // ── Timer logic ───────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (phase === "running" && !isPaused) {
+      timerRef.current = setInterval(() => {
+        setSpeakerSeconds(s => s + 1);
+        setTotalSeconds(s => s + 1);
+      }, 1000);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [phase, isPaused, activeIndex]);
+
+  // ── Session controls ──────────────────────────────────────────────────
+
+  function startStandup() {
+    const q = [...participants];
+    // Shuffle for fairness
+    for (let i = q.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [q[i], q[j]] = [q[j], q[i]];
+    }
+    setQueue(q);
+    setActiveIndex(0);
+    setCompletedIndices(new Set());
+    setSkippedIndices(new Set());
+    setSpeakerTimings(new Map());
+    setSpeakerSeconds(0);
+    setTotalSeconds(0);
+    setTaskMovements([]);
+    setMoods(new Map());
+    setFacilitatorNotes(new Map());
+    setHeldTasks([]);
+    setPhase("running");
+    setIsPaused(false);
+  }
+
+  function nextSpeaker() {
+    if (!activeSpeaker) return;
+
+    // Save current speaker's timing
+    setSpeakerTimings(prev => {
+      const next = new Map(prev);
+      next.set(activeSpeaker.userId, speakerSeconds);
+      return next;
+    });
+    setCompletedIndices(prev => new Set(prev).add(activeIndex));
+
+    // Collect any held tasks from this speaker for the blocker strip
+    const currentHolds = speakerTasks
+      .filter(t => t.status === "HOLD" && t.holdReason)
+      .map(t => ({
+        taskTitle: t.title,
+        userName: activeSpeaker.userName,
+        holdReason: t.holdReason!,
+        blockedType: t.blockedType || undefined,
+      }));
+    if (currentHolds.length > 0) {
+      setHeldTasks(prev => [...prev, ...currentHolds]);
+    }
+
+    // Find next uncompleted, unskipped
+    let next = activeIndex + 1;
+    while (next < queue.length && (completedIndices.has(next) || skippedIndices.has(next))) {
+      next++;
+    }
+
+    if (next >= queue.length) {
+      // All done
+      setPhase("ended");
+    } else {
+      setActiveIndex(next);
+      setSpeakerSeconds(0);
+    }
+  }
+
+  function skipSpeaker() {
+    setSkippedIndices(prev => new Set(prev).add(activeIndex));
+
+    let next = activeIndex + 1;
+    while (next < queue.length && (completedIndices.has(next) || skippedIndices.has(next))) {
+      next++;
+    }
+    if (next >= queue.length) {
+      setPhase("ended");
+    } else {
+      setActiveIndex(next);
+      setSpeakerSeconds(0);
+    }
+  }
+
+  function shuffleRemaining() {
+    const remaining: number[] = [];
+    for (let i = activeIndex + 1; i < queue.length; i++) {
+      if (!completedIndices.has(i) && !skippedIndices.has(i)) {
+        remaining.push(i);
+      }
+    }
+    // Fisher-Yates on remaining indices
+    for (let i = remaining.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      // Swap the actual queue entries
+      const newQueue = [...queue];
+      const [a, b] = [remaining[i], remaining[j]];
+      [newQueue[a], newQueue[b]] = [newQueue[b], newQueue[a]];
+      setQueue(newQueue);
+    }
+  }
+
+  function endStandup() {
+    // Save current speaker timing if still active
+    if (activeSpeaker && phase === "running") {
+      setSpeakerTimings(prev => {
+        const next = new Map(prev);
+        next.set(activeSpeaker.userId, speakerSeconds);
+        return next;
+      });
+      setCompletedIndices(prev => new Set(prev).add(activeIndex));
+    }
+    setPhase("ended");
+  }
+
+  // ── Task mutation ─────────────────────────────────────────────────────
+
+  const moveTaskMutation = useMutation({
+    mutationFn: async ({ taskId, status, holdReason, blockedType }: {
+      taskId: number; status: string; holdReason?: string; blockedType?: string;
+    }) => {
+      const body: Record<string, unknown> = { status };
+      if (holdReason) body.holdReason = holdReason;
+      if (blockedType) body.blockedType = blockedType;
+      return api(`/api/eng/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+    },
+    onSuccess: (_, vars) => {
+      // Invalidate the speaker's tasks to refresh lanes
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks-standup", activeSpeaker?.userId] });
+      invalidateAllTaskCaches(queryClient);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to update task", description: err.message, variant: "destructive" });
     },
   });
 
-  const todayStandups = todayData || [];
-  const currentStandup = todayStandups.find(s => String(s.schedule.id) === activeScheduleId);
-  const hasSubmitted = currentStandup?.hasSubmitted || false;
-  const blockersCount = useMemo(() => teamEntries.filter(e => e.blockers && e.blockers.trim()).length, [teamEntries]);
-  const submittedCount = teamEntries.length;
+  function handleMoveTask(taskId: number, newStatus: string, holdReason?: string, blockedType?: string) {
+    const task = speakerTasks.find(t => t.id === taskId);
+    if (!task || !activeSpeaker) return;
+
+    const fromStatus = task.status;
+
+    // Track the movement
+    setTaskMovements(prev => [...prev, {
+      taskId,
+      taskTitle: task.title,
+      userId: activeSpeaker.userId,
+      userName: activeSpeaker.userName,
+      fromStatus,
+      toStatus: newStatus,
+      holdReason,
+    }]);
+
+    // Fire the mutation
+    moveTaskMutation.mutate({ taskId, status: newStatus, holdReason, blockedType });
+  }
+
+  // ── Mood selection ────────────────────────────────────────────────────
+
+  function setMood(mood: string) {
+    if (!activeSpeaker) return;
+    setMoods(prev => {
+      const next = new Map(prev);
+      next.set(activeSpeaker.userId, mood);
+      return next;
+    });
+  }
+
+  function setNote(note: string) {
+    if (!activeSpeaker) return;
+    setFacilitatorNotes(prev => {
+      const next = new Map(prev);
+      next.set(activeSpeaker.userId, note);
+      return next;
+    });
+  }
+
+  // ── Blocker count for queue ───────────────────────────────────────────
+  const holdMovements = taskMovements.filter(m => m.toStatus === "HOLD");
+  const totalBlockers = heldTasks.length + holdMovements.length;
+
+  // ── Loading / error states ────────────────────────────────────────────
+
+  const isLoading = schedulesLoading || participantsLoading;
 
   if (isLoading) return <PageSkeleton lines={5} />;
-  if (isError) return (
-    <PageShell className="p-4 md:p-6">
-      <PageError title="Unable to load standup" message={error instanceof Error ? error.message : "Failed to load"} onRetry={() => refetch()} />
-    </PageShell>
-  );
+
+  if (schedules.length === 0) {
+    return (
+      <PageShell className="p-4 md:p-6" data-testid="page-engineering-standup">
+        <SectionHeader icon={<Users className="h-5 w-5" />} eyebrow="Engineering" title="Engineering Standup" description="Live standup facilitator" />
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Users className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+            <p className="text-sm font-medium">No standup schedules configured</p>
+            <p className="text-xs text-muted-foreground mt-1">Create a standup schedule in Admin to get started.</p>
+          </CardContent>
+        </Card>
+      </PageShell>
+    );
+  }
+
+  // ── RENDER ────────────────────────────────────────────────────────────
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="page-engineering-standup">
-      <SectionHeader
-        icon={<Users className="h-5 w-5" />}
-        eyebrow="Engineering"
-        title="Engineering Standup"
-        description="Daily team check-in and blocker tracking"
-      />
+      {/* Header bar */}
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <SectionHeader
+            icon={<Users className="h-5 w-5" />}
+            eyebrow="Engineering"
+            title="Engineering Standup"
+            description={phase === "running"
+              ? `${completedIndices.size} of ${queue.length} done`
+              : phase === "ended"
+                ? "Standup complete"
+                : `${participants.length} participants`}
+          />
+        </div>
 
-      {/* Schedule selector */}
-      {schedules.length > 1 && (
-        <div className="max-w-xs">
-          <Select value={activeScheduleId} onValueChange={setSelectedScheduleId}>
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Select standup" />
-            </SelectTrigger>
-            <SelectContent>
-              {schedules.map(s => (
-                <SelectItem key={s.id} value={String(s.id)}>{s.name}{s.teamLabel ? ` — ${s.teamLabel}` : ""}</SelectItem>
+        <div className="flex items-center gap-3">
+          {/* Schedule selector */}
+          {schedules.length > 1 && phase === "waiting" && (
+            <Select value={activeScheduleId} onValueChange={setSelectedScheduleId}>
+              <SelectTrigger className="h-9 w-48">
+                <SelectValue placeholder="Select standup" />
+              </SelectTrigger>
+              <SelectContent>
+                {schedules.map((s: any) => (
+                  <SelectItem key={s.id} value={String(s.id)}>
+                    {s.name}{s.teamLabel ? ` — ${s.teamLabel}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {/* Global timer */}
+          {phase === "running" && (
+            <div className="flex items-center gap-1.5 text-sm tabular-nums">
+              <Timer className="h-4 w-4 text-muted-foreground" />
+              <span className="font-mono font-medium">{formatTime(totalSeconds)}</span>
+            </div>
+          )}
+
+          {/* Phase controls */}
+          {phase === "waiting" && (
+            <Button onClick={startStandup} disabled={participants.length === 0} className="gap-1.5">
+              <Play className="h-4 w-4" /> Start Standup
+            </Button>
+          )}
+          {phase === "running" && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsPaused(p => !p)}
+                className="gap-1"
+              >
+                {isPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                {isPaused ? "Resume" : "Pause"}
+              </Button>
+              <Button variant="destructive" size="sm" onClick={endStandup} className="gap-1">
+                <Square className="h-3.5 w-3.5" /> End
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── WAITING PHASE ──────────────────────────────────────────────── */}
+      {phase === "waiting" && (
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="text-sm font-semibold mb-3">Participants ({participants.length})</h3>
+            <div className="flex flex-wrap gap-3">
+              {participants.map(p => (
+                <div key={p.userId} className="flex items-center gap-2 rounded-lg border px-3 py-2">
+                  <Avatar className="h-7 w-7">
+                    <AvatarFallback className="text-xs">{initials(p.userName)}</AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm">{p.userName}</span>
+                  {!p.isRequired && <Badge variant="outline" className="text-[9px]">Optional</Badge>}
+                </div>
               ))}
-            </SelectContent>
-          </Select>
+            </div>
+            <p className="text-xs text-muted-foreground mt-4">
+              Press <strong>Start Standup</strong> to begin. Participants will be shuffled into a random order.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── RUNNING PHASE ──────────────────────────────────────────────── */}
+      {phase === "running" && activeSpeaker && (
+        <div className="flex gap-4">
+          {/* Left rail — queue */}
+          <StandupQueue
+            queue={queue}
+            activeIndex={activeIndex}
+            completedIndices={completedIndices}
+            skippedIndices={skippedIndices}
+            speakerTimings={speakerTimings}
+            activeSpeakerSeconds={speakerSeconds}
+            totalBlockers={totalBlockers}
+            onSkip={skipSpeaker}
+            onShuffle={shuffleRemaining}
+            isRunning={true}
+          />
+
+          {/* Center — active speaker card + task lanes */}
+          <div className="flex-1 space-y-3 min-w-0">
+            {/* Speaker header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10">
+                  <AvatarFallback>{initials(activeSpeaker.userName)}</AvatarFallback>
+                </Avatar>
+                <div>
+                  <div className="font-semibold text-lg">{activeSpeaker.userName}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {speakerTasks.length} active tasks
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className={`text-2xl font-mono font-bold tabular-nums ${timerColor(speakerSeconds)}`}>
+                  {formatTime(speakerSeconds)}
+                </span>
+              </div>
+            </div>
+
+            {/* Task lanes */}
+            <TaskLanes
+              tasks={speakerTasks}
+              onMoveTask={handleMoveTask}
+              isLoading={tasksLoading}
+            />
+
+            {/* Facilitator note + mood + next */}
+            <div className="flex items-end gap-3">
+              <div className="flex-1">
+                <Textarea
+                  placeholder="Facilitator note (optional)..."
+                  value={facilitatorNotes.get(activeSpeaker.userId) || ""}
+                  onChange={(e) => setNote(e.target.value)}
+                  className="min-h-[44px] h-11 text-sm resize-none"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                {MOODS.map(m => (
+                  <button
+                    key={m.value}
+                    onClick={() => setMood(m.value)}
+                    className={`text-lg p-1.5 rounded-md border transition-all ${
+                      moods.get(activeSpeaker.userId) === m.value
+                        ? m.color + " scale-110"
+                        : "border-transparent opacity-50 hover:opacity-100"
+                    }`}
+                    title={m.label}
+                  >
+                    {m.emoji}
+                  </button>
+                ))}
+              </div>
+              <Button onClick={nextSpeaker} className="gap-1.5 h-11">
+                <CheckCircle2 className="h-4 w-4" /> Next
+              </Button>
+            </div>
+
+            {/* Blocker strip */}
+            <BlockerStrip
+              heldTasks={heldTasks}
+              newHolds={holdMovements}
+            />
+          </div>
         </div>
       )}
 
-      {/* Status cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="p-3">
-            <div className="text-2xl font-bold">{submittedCount}</div>
-            <div className="text-xs text-muted-foreground">Submitted Today</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <div className="flex items-center gap-1.5">
-              {hasSubmitted
-                ? <CheckCircle2 className="h-5 w-5 text-green-600" />
-                : <Clock className="h-5 w-5 text-amber-600" />}
-              <span className="text-sm font-medium">{hasSubmitted ? "Submitted" : "Pending"}</span>
-            </div>
-            <div className="text-xs text-muted-foreground">Your Status</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <div className="text-2xl font-bold text-red-600">{blockersCount}</div>
-            <div className="text-xs text-muted-foreground">Blockers Flagged</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <div className="text-2xl font-bold">{analytics?.completionRate ?? "—"}%</div>
-            <div className="text-xs text-muted-foreground">Completion Rate</div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Tabs defaultValue={hasSubmitted ? "team" : "entry"} className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="entry">My Entry</TabsTrigger>
-          <TabsTrigger value="team">Team Board</TabsTrigger>
-          <TabsTrigger value="blockers">Blockers ({blockersCount})</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
-
-        {/* My Entry Tab */}
-        <TabsContent value="entry">
-          {hasSubmitted ? (
-            <Card>
-              <CardContent className="py-8 text-center space-y-2">
-                <CheckCircle2 className="h-8 w-8 text-green-600 mx-auto" />
-                <p className="text-sm font-medium">You've submitted today's standup</p>
-                <p className="text-xs text-muted-foreground">Your entry is visible on the Team Board tab</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Daily Standup Entry</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label className="text-xs font-medium">What I did (yesterday)</Label>
-                  <Textarea value={whatIDid} onChange={(e) => setWhatIDid(e.target.value)} rows={3} placeholder="Completed design review for Project X..." />
-                </div>
-                <div>
-                  <Label className="text-xs font-medium">What I'm doing (today)</Label>
-                  <Textarea value={whatImDoing} onChange={(e) => setWhatImDoing(e.target.value)} rows={3} placeholder="Starting electrical layout for Building A..." />
-                </div>
-                <div>
-                  <Label className="text-xs font-medium">Blockers / Risks</Label>
-                  <Textarea value={blockers} onChange={(e) => setBlockers(e.target.value)} rows={2} placeholder="Waiting on client sign-off before proceeding..." />
-                </div>
-                <div>
-                  <Label className="text-xs font-medium mb-2 block">How are you feeling?</Label>
-                  <div className="flex items-center gap-2">
-                    {MOODS.map(m => {
-                      const Icon = m.icon;
-                      return (
-                        <button
-                          key={m.value}
-                          onClick={() => setMood(m.value)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
-                            mood === m.value
-                              ? `${m.color} border-current bg-current/5`
-                              : "text-muted-foreground border-transparent hover:border-border"
-                          }`}
-                        >
-                          <Icon className="h-3.5 w-3.5" /> {m.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <Button
-                  onClick={() => submitMutation.mutate()}
-                  disabled={submitMutation.isPending || (!whatIDid.trim() && !whatImDoing.trim())}
-                  className="gap-1.5"
-                >
-                  <Send className="h-4 w-4" /> Submit Entry
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-        </TabsContent>
-
-        {/* Team Board Tab */}
-        <TabsContent value="team">
-          <div className="space-y-3">
-            {teamEntries.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <Users className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground">No entries submitted yet today.</p>
-                </CardContent>
-              </Card>
-            ) : teamEntries.map(entry => (
-              <Card key={entry.id} className="hover:shadow-sm transition-shadow">
-                <CardContent className="p-4 space-y-2">
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="text-xs">{initials(entry.userName)}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium">{entry.userName || `User #${entry.userId}`}</span>
-                      <span className="text-xs text-muted-foreground ml-2">
-                        {new Date(entry.submittedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </div>
-                    {moodBadge(entry.mood)}
-                    {entry.isLate && <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200">Late</Badge>}
-                  </div>
-                  <div className="grid md:grid-cols-3 gap-3 text-sm pl-11">
-                    <div>
-                      <div className="text-xs font-medium text-muted-foreground mb-0.5">Yesterday</div>
-                      <p className="text-sm">{entry.whatIDid || "—"}</p>
-                    </div>
-                    <div>
-                      <div className="text-xs font-medium text-muted-foreground mb-0.5">Today</div>
-                      <p className="text-sm">{entry.whatImDoing || "—"}</p>
-                    </div>
-                    <div>
-                      <div className="text-xs font-medium text-muted-foreground mb-0.5">Blockers</div>
-                      <p className={`text-sm ${entry.blockers ? "text-red-600 font-medium" : ""}`}>
-                        {entry.blockers || "None"}
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        {/* Blockers Tab */}
-        <TabsContent value="blockers">
-          <div className="space-y-3">
-            {blockersCount === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <CheckCircle2 className="h-8 w-8 text-green-600 mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground">No active blockers. Team is unblocked!</p>
-                </CardContent>
-              </Card>
-            ) : teamEntries.filter(e => e.blockers && e.blockers.trim()).map(entry => (
-              <Card key={entry.id} className="border-red-100 dark:border-red-900/30">
-                <CardContent className="p-4">
-                  <div className="flex items-center gap-3 mb-2">
-                    <AlertTriangle className="h-4 w-4 text-red-600 shrink-0" />
-                    <span className="text-sm font-medium">{entry.userName || `User #${entry.userId}`}</span>
-                    {moodBadge(entry.mood)}
-                  </div>
-                  <p className="text-sm text-red-700 dark:text-red-400 pl-7">{entry.blockers}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        {/* Analytics Tab */}
-        <TabsContent value="analytics">
-          <div className="grid md:grid-cols-3 gap-3">
-            <Card>
-              <CardContent className="p-4 text-center">
-                <BarChart3 className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-                <div className="text-2xl font-bold">{analytics?.completionRate ?? "—"}%</div>
-                <div className="text-xs text-muted-foreground">30-day Completion Rate</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <Clock className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-                <div className="text-2xl font-bold">{analytics?.avgSubmissionTime ?? "—"}</div>
-                <div className="text-xs text-muted-foreground">Avg Submission Time</div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 text-center">
-                <AlertTriangle className="h-6 w-6 text-muted-foreground mx-auto mb-2" />
-                <div className="text-2xl font-bold">{analytics?.blockerRate ?? "—"}%</div>
-                <div className="text-xs text-muted-foreground">Blocker Frequency</div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+      {/* ── ENDED PHASE ────────────────────────────────────────────────── */}
+      {phase === "ended" && (
+        <StandupSummary
+          totalSeconds={totalSeconds}
+          participants={queue.length > 0 ? queue : participants}
+          completedCount={completedIndices.size}
+          skippedCount={skippedIndices.size}
+          speakerTimings={speakerTimings}
+          taskMovements={taskMovements}
+          moods={moods}
+          facilitatorNotes={facilitatorNotes}
+          onClose={() => setPhase("waiting")}
+        />
+      )}
     </PageShell>
   );
 }
