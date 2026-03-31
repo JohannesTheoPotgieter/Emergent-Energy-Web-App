@@ -17,7 +17,7 @@ import { useLocation } from "wouter";
 import {
   Milestone, Search, CheckCircle2, Clock, AlertTriangle,
   Target, DollarSign, TrendingUp,
-  Pencil, Loader2, BanknoteIcon, FileText, CircleDot,
+  Pencil, Loader2, BanknoteIcon, FileText, CircleDot, ChevronDown, ChevronRight,
 } from "lucide-react";
 
 // ── Construction-to-Client-Handover phase filter ───────────────────────────
@@ -274,8 +274,25 @@ function LatestUpdateCell({ project, onSaved }: { project: ProjectRow; onSaved: 
 export default function MilestoneTrackerPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
+
+  const toggleProject = (id: number) => {
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = (projectIds: number[]) => {
+    setExpandedProjects((prev) => {
+      const allExpanded = projectIds.every((id) => prev.has(id));
+      return allExpanded ? new Set() : new Set(projectIds);
+    });
+  };
 
   // 1. Fetch all projects
   const { data: allProjects, isLoading: projectsLoading, isError, error } = useQuery<any[]>({
@@ -401,6 +418,16 @@ export default function MilestoneTrackerPage() {
               <SelectItem value="planned">Planned</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs h-8"
+            onClick={() => toggleAll(filtered.map((p) => p.projectId))}
+          >
+            {filtered.length > 0 && filtered.every((p) => expandedProjects.has(p.projectId))
+              ? "Collapse All"
+              : "Expand All"}
+          </Button>
           {revenueLoading && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -411,30 +438,44 @@ export default function MilestoneTrackerPage() {
       </FilterBar>
 
       {/* Project rows with their revenue milestones */}
-      <div className="space-y-3">
-        {filtered.map((project) => (
+      <div className="space-y-1.5">
+        {filtered.map((project) => {
+          const isExpanded = expandedProjects.has(project.projectId);
+          return (
           <Card key={project.projectId} className="overflow-hidden">
-            {/* Project header row */}
-            <div className="px-4 py-3 bg-muted/30 border-b flex items-center gap-4 flex-wrap">
-              <div
-                className="flex-1 min-w-[200px] cursor-pointer"
-                onClick={() => navigate(`/project/${encodeURIComponent(project.projectNameRaw)}`)}
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${ragDotClass(project.ragStatus)} shrink-0`} />
-                  <span className="text-sm font-semibold">{project.projectName}</span>
-                  <Badge variant="outline" className="text-[9px] px-1.5 py-0">{project.phase}</Badge>
-                </div>
-                <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
-                  <span>{project.pm || "No PM"}</span>
-                  <span>{formatZAR(project.contractValue)}</span>
-                  {project.sizeKwp && <span>{parseFloat(project.sizeKwp).toFixed(0)} kWp</span>}
-                </div>
+            {/* Project header row — click to expand/collapse */}
+            <div
+              className="px-3 py-2 bg-muted/30 flex items-center gap-3 flex-wrap cursor-pointer select-none hover:bg-muted/50 transition-colors"
+              onClick={() => toggleProject(project.projectId)}
+            >
+              {/* Chevron */}
+              {isExpanded
+                ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              }
+
+              {/* RAG dot + name + phase */}
+              <div className="flex items-center gap-2 min-w-[180px]">
+                <div className={`w-2 h-2 rounded-full ${ragDotClass(project.ragStatus)} shrink-0`} />
+                <span
+                  className="text-sm font-semibold hover:underline"
+                  onClick={(e) => { e.stopPropagation(); navigate(`/project/${encodeURIComponent(project.projectNameRaw)}`); }}
+                >
+                  {project.projectName}
+                </span>
+                <Badge variant="outline" className="text-[9px] px-1.5 py-0">{project.phase}</Badge>
+              </div>
+
+              {/* Compact info */}
+              <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
+                <span>{project.pm || "No PM"}</span>
+                <span>{formatZAR(project.contractValue)}</span>
+                {project.sizeKwp && <span>{parseFloat(project.sizeKwp).toFixed(0)} kWp</span>}
               </div>
 
               {/* Revenue summary badges */}
               {project.revenueSummary && (
-                <div className="flex items-center gap-2 text-[10px]">
+                <div className="flex items-center gap-2 text-[10px] ml-auto">
                   <span className="text-emerald-700 font-semibold">
                     In Bank: {formatZAR(project.revenueSummary.inBank)}
                   </span>
@@ -450,77 +491,82 @@ export default function MilestoneTrackerPage() {
               )}
 
               {/* Progress bar */}
-              <div className="flex items-center gap-1.5 w-[100px] shrink-0">
+              <div className="flex items-center gap-1.5 w-[80px] shrink-0">
                 <Progress value={project.projectPctComplete} className="h-1.5 flex-1" />
                 <span className="text-[9px] font-semibold tabular-nums">{project.projectPctComplete}%</span>
               </div>
 
               {/* Last update */}
-              <div className="w-[180px] shrink-0">
+              <div className="w-[160px] shrink-0" onClick={(e) => e.stopPropagation()}>
                 <LatestUpdateCell project={project} onSaved={invalidate} />
               </div>
             </div>
 
-            {/* Milestone table */}
-            {project.milestones.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-[11px]">
-                  <thead>
-                    <tr className="border-b bg-muted/20 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      <th className="px-3 py-1.5 text-left w-[40px]">#</th>
-                      <th className="px-3 py-1.5 text-left">Milestone</th>
-                      <th className="px-3 py-1.5 text-right w-[120px]">Amount</th>
-                      <th className="px-3 py-1.5 text-center w-[90px]">Date</th>
-                      <th className="px-3 py-1.5 text-center w-[100px]">Invoice</th>
-                      <th className="px-3 py-1.5 text-center w-[80px]">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {project.milestones.map((m) => {
-                      const amt = parseFloat(m.milestoneAmount || "0");
-                      return (
-                        <tr key={m.id} className="border-b last:border-b-0 hover:bg-muted/20">
-                          <td className="px-3 py-1.5 text-muted-foreground">{m.milestoneNo || m.rowNumber}</td>
-                          <td className="px-3 py-1.5 font-medium">
-                            {m.milestoneName || "—"}
-                            {m.milestoneNotes && (
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="ml-1 text-muted-foreground cursor-help">*</span>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="max-w-xs text-xs">
-                                    {m.milestoneNotes}
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                            )}
-                          </td>
-                          <td className="px-3 py-1.5 text-right tabular-nums font-medium">
-                            {isNaN(amt) || amt === 0 ? "—" : formatZAR(amt)}
-                          </td>
-                          <td className={`px-3 py-1.5 text-center tabular-nums ${m.isRed ? "text-red-600 font-semibold" : ""}`}>
-                            {formatDate(m.date)}
-                          </td>
-                          <td className="px-3 py-1.5 text-center text-muted-foreground">
-                            {m.milestoneInvoiceNumber || "—"}
-                          </td>
-                          <td className="px-3 py-1.5 text-center">
-                            <MilestoneStatusBadge status={m.status} />
-                          </td>
+            {/* Milestone table — only shown when expanded */}
+            {isExpanded && (
+              <>
+                {project.milestones.length > 0 ? (
+                  <div className="overflow-x-auto border-t">
+                    <table className="w-full text-[11px]">
+                      <thead>
+                        <tr className="border-b bg-muted/20 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          <th className="px-3 py-1.5 text-left w-[40px]">#</th>
+                          <th className="px-3 py-1.5 text-left">Milestone</th>
+                          <th className="px-3 py-1.5 text-right w-[120px]">Amount</th>
+                          <th className="px-3 py-1.5 text-center w-[90px]">Date</th>
+                          <th className="px-3 py-1.5 text-center w-[100px]">Invoice</th>
+                          <th className="px-3 py-1.5 text-center w-[80px]">Status</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="px-4 py-3 text-center text-[11px] text-muted-foreground italic">
-                {revenueLoading ? "Loading milestones..." : "No revenue milestones found for this project"}
-              </div>
+                      </thead>
+                      <tbody>
+                        {project.milestones.map((m) => {
+                          const amt = parseFloat(m.milestoneAmount || "0");
+                          return (
+                            <tr key={m.id} className="border-b last:border-b-0 hover:bg-muted/20">
+                              <td className="px-3 py-1.5 text-muted-foreground">{m.milestoneNo || m.rowNumber}</td>
+                              <td className="px-3 py-1.5 font-medium">
+                                {m.milestoneName || "—"}
+                                {m.milestoneNotes && (
+                                  <TooltipProvider>
+                                    <Tooltip>
+                                      <TooltipTrigger asChild>
+                                        <span className="ml-1 text-muted-foreground cursor-help">*</span>
+                                      </TooltipTrigger>
+                                      <TooltipContent className="max-w-xs text-xs">
+                                        {m.milestoneNotes}
+                                      </TooltipContent>
+                                    </Tooltip>
+                                  </TooltipProvider>
+                                )}
+                              </td>
+                              <td className="px-3 py-1.5 text-right tabular-nums font-medium">
+                                {isNaN(amt) || amt === 0 ? "—" : formatZAR(amt)}
+                              </td>
+                              <td className={`px-3 py-1.5 text-center tabular-nums ${m.isRed ? "text-red-600 font-semibold" : ""}`}>
+                                {formatDate(m.date)}
+                              </td>
+                              <td className="px-3 py-1.5 text-center text-muted-foreground">
+                                {m.milestoneInvoiceNumber || "—"}
+                              </td>
+                              <td className="px-3 py-1.5 text-center">
+                                <MilestoneStatusBadge status={m.status} />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="px-4 py-3 text-center text-[11px] text-muted-foreground italic border-t">
+                    {revenueLoading ? "Loading milestones..." : "No revenue milestones found for this project"}
+                  </div>
+                )}
+              </>
             )}
           </Card>
-        ))}
+          );
+        })}
 
         {filtered.length === 0 && (
           <Card>
