@@ -15,7 +15,6 @@ import { getRoleDashboardConfig, getLensDashboardConfig } from "@/config/role-da
 import { COMPANY_ROLE_LABELS, normalizeRoleForPermissions } from "@shared/schema/users";
 import type { CompanyRole } from "@shared/schema/users";
 import { useLensContext } from "@/hooks/use-lens-context";
-import { LifecycleGatesChecklist } from "@/components/dashboard/LifecycleGatesChecklist";
 import {
   LayoutDashboard,
   FolderOpen,
@@ -424,17 +423,6 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* Lifecycle Gates — operational surface */}
-          <div>
-            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-              Lifecycle Gates
-            </h2>
-            <Card className="border-border/50">
-              <CardContent className="p-4">
-                <LifecycleGatesChecklist compact />
-              </CardContent>
-            </Card>
-          </div>
 
           {/* Company Priorities */}
           {(companyPriorities && companyPriorities.length > 0) && (
