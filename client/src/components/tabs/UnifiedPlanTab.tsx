@@ -2038,7 +2038,9 @@ export default function UnifiedPlanTab({ projectName, projectId, onTaskClick }: 
                       {isColumnVisible("resource") && (
                       <td className="px-1 text-center border-r text-[10px] text-muted-foreground truncate" data-testid={`lead-${task.id}`}>
                         {task.assignees ? (
-                          <span className="truncate">{typeof task.assignees === 'string' ? task.assignees.split(',')[0] : '—'}</span>
+                          <span className="truncate" title={Array.isArray(task.assignees) ? task.assignees.join(', ') : String(task.assignees)}>
+                            {Array.isArray(task.assignees) ? (task.assignees[0] || '—') : (typeof task.assignees === 'string' ? task.assignees.split(',')[0] : '—')}
+                          </span>
                         ) : "—"}
                       </td>
                       )}
