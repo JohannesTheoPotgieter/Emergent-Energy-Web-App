@@ -1,4 +1,4 @@
-import { eq, isNull, and, SQL } from "drizzle-orm";
+import { eq, isNull, not, and, SQL } from "drizzle-orm";
 import { timestamp, integer, text } from "drizzle-orm/pg-core";
 import type { PgTable } from "drizzle-orm/pg-core";
 
@@ -47,7 +47,7 @@ export const notDeleted = <T extends SoftDeleteTable>(table: T): SQL =>
 export const onlyDeleted = <T extends SoftDeleteTable>(table: T): SQL => {
   const { deletedAt } = table as any;
   // isNotNull equivalent
-  return isNull(deletedAt).invert();
+  return not(isNull(deletedAt));
 };
 
 // ─── Mutation Helpers ────────────────────────────────────────────────────────

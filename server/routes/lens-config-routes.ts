@@ -160,7 +160,7 @@ export function registerLensConfigRoutes(app: Express) {
    */
   app.get("/api/lens/widgets/:lensRole", async (req: Request, res: Response) => {
     try {
-      const { lensRole } = req.params;
+      const lensRole = String(req.params.lensRole);
       const widgets = await db.select()
         .from(roleHomepageWidgets)
         .where(and(
