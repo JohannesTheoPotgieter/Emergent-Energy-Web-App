@@ -147,6 +147,19 @@ export function useTransitionStage(projectId: number | undefined) {
   });
 }
 
+export function useAdvanceToStage(projectId: number | undefined) {
+  const invalidate = useInvalidateStages(projectId);
+  return useMutation({
+    mutationFn: async (params: { targetStageCode: string; reason?: string }) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/stages/advance-to/${params.targetStageCode}`, {
+        reason: params.reason,
+      });
+      return res.json();
+    },
+    onSuccess: invalidate,
+  });
+}
+
 export function useHydrateChecklist(projectId: number | undefined) {
   const invalidate = useInvalidateStages(projectId);
   return useMutation({
