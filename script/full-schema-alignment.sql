@@ -7796,4 +7796,77 @@ DO $$ BEGIN
       "computed_at" TIMESTAMP NOT NULL DEFAULT NOW()
     );
   END IF;
+
+  -- Stage definitions soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_definitions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_definitions' AND column_name='deleted_at') THEN
+    ALTER TABLE "stage_definitions" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_definitions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_definitions' AND column_name='deleted_by') THEN
+    ALTER TABLE "stage_definitions" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Portfolios soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='portfolios') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='portfolios' AND column_name='deleted_at') THEN
+    ALTER TABLE "portfolios" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='portfolios') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='portfolios' AND column_name='deleted_by') THEN
+    ALTER TABLE "portfolios" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- RAID items soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='raid_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raid_items' AND column_name='deleted_at') THEN
+    ALTER TABLE "raid_items" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='raid_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raid_items' AND column_name='deleted_by') THEN
+    ALTER TABLE "raid_items" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Commissioning items soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='commissioning_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='commissioning_items' AND column_name='deleted_at') THEN
+    ALTER TABLE "commissioning_items" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='commissioning_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='commissioning_items' AND column_name='deleted_by') THEN
+    ALTER TABLE "commissioning_items" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Procurement items soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='procurement_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='deleted_at') THEN
+    ALTER TABLE "procurement_items" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='procurement_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='procurement_items' AND column_name='deleted_by') THEN
+    ALTER TABLE "procurement_items" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
+  -- Change requests soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='change_requests') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='deleted_at') THEN
+    ALTER TABLE "change_requests" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='change_requests') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='deleted_by') THEN
+    ALTER TABLE "change_requests" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='change_requests') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='change_requests' AND column_name='delete_reason') THEN
+    ALTER TABLE "change_requests" ADD COLUMN "delete_reason" TEXT;
+  END IF;
+
+  -- Approvals soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='approvals') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='approvals' AND column_name='deleted_at') THEN
+    ALTER TABLE "approvals" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='approvals') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='approvals' AND column_name='deleted_by') THEN
+    ALTER TABLE "approvals" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='approvals') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='approvals' AND column_name='delete_reason') THEN
+    ALTER TABLE "approvals" ADD COLUMN "delete_reason" TEXT;
+  END IF;
+
+  -- Project execution state: stage lifecycle columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='current_stage_code') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "current_stage_code" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='gate_status') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "gate_status" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='gate_readiness_pct') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "gate_readiness_pct" INTEGER;
+  END IF;
 END $$;
