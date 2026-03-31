@@ -110,7 +110,10 @@ export type InsertAcceptanceReservation = z.infer<typeof insertAcceptanceReserva
 export type AcceptanceReservation = typeof acceptanceReservations.$inferSelect;
 
 // ===================== CLIENT COMMITMENTS =====================
-// Promises made to clients, tracked across stages
+// @deprecated 2026-03-31 — Use projectClientCommitments from stage-collaboration.ts instead.
+// Data migrated via 20260331_consolidate_client_tables.sql.
+// This table will be dropped after 90 days of zero reads/writes.
+// DO NOT add new reads or writes to this table.
 
 export const clientCommitments = pgTable("client_commitments", {
   id: serial("id").primaryKey(),
@@ -161,7 +164,10 @@ export type InsertEvidenceRequest = z.infer<typeof insertEvidenceRequestSchema>;
 export type EvidenceRequest = typeof evidenceRequests.$inferSelect;
 
 // ===================== CLIENT UPDATES =====================
-// Weekly client communication records (active during stages 4-9)
+// @deprecated 2026-03-31 — Use projectClientUpdates from stage-collaboration.ts instead.
+// Data migrated via 20260331_consolidate_client_tables.sql.
+// This table will be dropped after 90 days of zero reads/writes.
+// DO NOT add new reads or writes to this table.
 
 export const clientUpdates = pgTable("client_updates", {
   id: serial("id").primaryKey(),

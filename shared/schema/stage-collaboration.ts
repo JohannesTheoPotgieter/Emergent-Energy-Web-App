@@ -32,6 +32,7 @@ export const projectClientCommitments = pgTable("project_client_commitments", {
   deliveredDate: timestamp("delivered_date"),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  migratedFromLegacy: boolean("migrated_from_legacy").notNull().default(false),
 }, (table) => ({
   projectIdIdx: index("pcc_project_id_idx").on(table.projectId),
   statusIdx: index("pcc_status_idx").on(table.status),
@@ -61,6 +62,7 @@ export const projectClientUpdates = pgTable("project_client_updates", {
   sentDate: timestamp("sent_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  migratedFromLegacy: boolean("migrated_from_legacy").notNull().default(false),
 }, (table) => ({
   projectUpdateUnique: unique("pcu_project_update_uq").on(table.projectId, table.updateNumber),
   projectIdIdx: index("pcu_project_id_idx").on(table.projectId),
