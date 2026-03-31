@@ -81,6 +81,7 @@ export type QcTemplatePostmortemMetric = typeof qcTemplatePostmortemMetric.$infe
 export const qcChecklist = pgTable("qc_checklist", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   templateId: integer("template_id").notNull().references(() => qcTemplate.id),
   status: text("status").notNull().default("active"),
@@ -143,6 +144,7 @@ export type QcRiskAnswer = typeof qcRiskAnswer.$inferSelect;
 
 export const qcPlanLink = pgTable("qc_plan_link", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   planItemId: integer("plan_item_id").notNull(),
@@ -157,6 +159,7 @@ export type QcPlanLink = typeof qcPlanLink.$inferSelect;
 
 export const qcWarning = pgTable("qc_warning", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   severity: text("severity").notNull().default("Medium"),
@@ -189,6 +192,7 @@ export type QcWarningEvent = typeof qcWarningEvent.$inferSelect;
 
 export const qcPostmortem = pgTable("qc_postmortem", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   completedAt: timestamp("completed_at"),

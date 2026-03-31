@@ -278,6 +278,7 @@ export type ProjectRagAudit = typeof projectRagAudit.$inferSelect;
 // Project Revenue Summary Table (top summary block values)
 export const projectRevenueSummary = pgTable("project_revenue_summary", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull().unique(),
   plannedRevenue: decimal("planned_revenue", { precision: 15, scale: 2 }),
   plannedExpenditure: decimal("planned_expenditure", { precision: 15, scale: 2 }),
@@ -322,6 +323,7 @@ export type HomeNotes = typeof homeNotes.$inferSelect;
 
 export const projectEditableFields = pgTable("project_editable_fields", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull().unique(),
   projectId: integer("project_id").references(() => projectInfo.id),
   costProposalSigned: text("cost_proposal_signed"),
@@ -578,6 +580,7 @@ export const calendarHoliday = pgTable("calendar_holiday", {
 
 export const projectTeamMembers = pgTable("project_team_members", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   userId: integer("user_id").notNull().references(() => users.id),
@@ -855,6 +858,7 @@ export type ProjectClientHistory = typeof projectClientHistory.$inferSelect;
 export const userProjectFolders = pgTable("user_project_folders", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull().references(() => users.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   folderName: text("folder_name").notNull(),
@@ -933,6 +937,7 @@ export type RaidItem = typeof raidItems.$inferSelect;
 export const derivedProjectKpis = pgTable("derived_project_kpis", {
   id: serial("id").primaryKey(),
   projectKey: text("project_key").notNull().unique(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   phase: text("phase"),
@@ -1019,6 +1024,7 @@ export type Scenario = typeof scenarios.$inferSelect;
 
 export const keyDateMappings = pgTable("key_date_mappings", {
   id: serial("id").primaryKey(),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   projectId: integer("project_id").references(() => projectInfo.id),
   keyDateName: text("key_date_name").notNull(),
@@ -1042,6 +1048,7 @@ export type KeyDateMapping = typeof keyDateMappings.$inferSelect;
 export const normalizedExecutionPhases = pgTable("normalized_execution_phases", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   phaseName: text("phase_name").notNull(),
   phaseDate: text("phase_date"),

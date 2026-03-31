@@ -18,6 +18,7 @@ export type DeliverableStatus = typeof DELIVERABLE_STATUSES[number];
 export const deliverables = pgTable("deliverables", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
+  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
   projectName: text("project_name").notNull(),
   deliverableType: text("deliverable_type").notNull(),
   title: text("title").notNull(),
