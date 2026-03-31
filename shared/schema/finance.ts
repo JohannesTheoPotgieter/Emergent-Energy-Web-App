@@ -406,7 +406,9 @@ export const counterparties = pgTable("counterparties", {
   contactPhone: text("contact_phone"),
   contactEmail: text("contact_email"),
   bankName: text("bank_name"),
+  // stored encrypted at rest; decrypt only in server/lib/field-encryption.ts
   bankAccountNumber: text("bank_account_number"),
+  // stored encrypted at rest; decrypt only in server/lib/field-encryption.ts
   bankBranchCode: text("bank_branch_code"),
   paymentTerms: text("payment_terms"),
   notes: text("notes"),
