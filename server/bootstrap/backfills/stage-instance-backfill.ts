@@ -29,6 +29,9 @@ import {
   stagesBefore,
   SPECIAL_PHASES,
 } from "../../../shared/utils/phase-to-stage-map";
+import { hasBackfillRun, markBackfillComplete } from "./backfill-registry";
+
+const BACKFILL_KEY = "stage_instance_v1";
 
 export async function runStageInstanceBackfill(
   log: (message: string, source?: string) => void,
@@ -38,6 +41,8 @@ export async function runStageInstanceBackfill(
   const SRC = "Startup:StageInstanceBackfill";
 
   try {
+    // One-time guard: skip if this backfill has already completed
+    if (await hasBackfillRun(BACKFILL_KEY)) return;
     // Find projects that have execution state but NO stage instances
     const projectsWithoutStages = await db.execute(sql.raw(`
       SELECT pes.project_id, pes.execution_phase, pes.phase, pes.current_stage_code
@@ -158,8 +163,17 @@ export async function runStageInstanceBackfill(
         .where(eq(projectExecutionState.projectId, projectId));
     }
 
+    // Mark backfill as complete so it never runs again
+    await markBackfillComplete(BACKFILL_KEY, {
+      projectsCreated: created,
+      historicalMarked,
+      totalProjectsScanned: rows.length,
+    });
+
     if (created > 0) {
       log(`Backfilled stage instances for ${created} projects (${historicalMarked} with historical stages marked PROGRESSED)`, SRC);
+    } else {
+      log("Stage instance backfill: no projects needed backfilling", SRC);
     }
   } catch (err: unknown) {
     log(`Stage instance backfill error: ${(err instanceof Error ? err.message : String(err))}`, SRC);

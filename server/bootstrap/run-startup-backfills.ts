@@ -6,6 +6,7 @@ import { runWorkItemsBackfill } from "./backfills/work-items-backfill";
 import { runAssigneeUserIdsBackfill } from "./backfills/assignee-user-ids-backfill";
 import { runIntegrityGuard } from "./backfills/integrity-guard";
 import { runRoleLensBackfill } from "./backfills/role-lens-backfill";
+import { hasBackfillRun, markBackfillComplete } from "./backfills/backfill-registry";
 
 export async function runStartupBackfills(options: {
   startupBackfillEnabled: boolean;
@@ -14,6 +15,9 @@ export async function runStartupBackfills(options: {
 }) {
   const { startupBackfillEnabled, allowStartupMutations, log } = options;
   if (!startupBackfillEnabled) return;
+
+  // One-time guard: skip all startup backfills if they've already completed
+  if (await hasBackfillRun("startup_backfills_v1")) return;
 
   await runPmUserBackfill(log).catch((err) => log(`[Backfill] PM user sync error: ${err}`, "Startup:Backfill"));
   await runProjectIdsBackfill().catch((err) => log(`[Backfill] Project IDs error: ${err}`, "Startup:Backfill"));
@@ -33,4 +37,7 @@ export async function runStartupBackfills(options: {
   await runRoleLensBackfill().catch((err: any) =>
     log(`[Backfill] role lens backfill error: ${err?.message || err}`, "Startup:Backfill"),
   );
+
+  // Mark all startup backfills as complete
+  await markBackfillComplete("startup_backfills_v1").catch(() => {});
 }
