@@ -8022,3 +8022,9 @@ DO $$ BEGIN
     ALTER TABLE "work_item_dependencies" ADD COLUMN "deleted_by" INTEGER;
   END IF;
 END $$;
+-- COS override columns on program_expense
+ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS cos_status_override TEXT;
+ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS cos_status_override_by INTEGER REFERENCES users(id);
+ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS cos_status_override_at TIMESTAMPTZ;
+ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS cos_status_override_reason TEXT;
+
