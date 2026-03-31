@@ -31,15 +31,23 @@ export function useAccessMatrix() {
 
   // Normalize legacy section keys to the current 6-section navigation model.
   // Existing DB records may still contain old keys (COCKPIT, MONEY, etc.).
+  // Normalize legacy + current section keys to the 8-section nav model.
+  // DB records may contain old keys (COCKPIT, MONEY, etc.) or
+  // the intermediate 6-section keys (PROJECTS, REPORTS, etc.).
   const OLD_TO_NEW_SECTIONS: Record<string, string[]> = {
-    COCKPIT: ["HOME", "MY_WORK"],
+    // Legacy keys
+    COCKPIT: ["HOME"],
     MONEY: ["FINANCE"],
-    INFORMATION: ["REPORTS"],
-    GOVERNANCE: ["PROJECTS"],
-    PROJECT_DEVELOPMENT: ["PROJECTS"],
-    PROJECT_MANAGEMENT: ["PROJECTS"],
-    ENGINEERING: ["PROJECTS"],
-    COLLABORATION: ["PROJECTS"],
+    INFORMATION: ["ADMIN"],
+    COLLABORATION: ["HOME"],
+    // Intermediate 6-section model keys
+    PROJECTS: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY_HSE"],
+    MY_WORK: ["HOME"],
+    REPORTS: ["ADMIN"],
+    GATES: ["PORTFOLIO"],
+    // Legacy department keys
+    GOVERNANCE: ["QUALITY_HSE"],
+    PROJECT_MANAGEMENT: ["PROJECT_DELIVERY"],
   };
 
   // Build a set of allowed sections from the role's section toggles
