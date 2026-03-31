@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useQueries } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,11 +12,12 @@ import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useLocation } from "wouter";
 import {
-  Milestone, Search, Calendar, CheckCircle2, Clock, AlertTriangle,
-  ArrowRight, Target, BarChart3, Filter, DollarSign, TrendingUp,
-  Pencil, Loader2,
+  Milestone, Search, CheckCircle2, Clock, AlertTriangle,
+  Target, DollarSign, TrendingUp,
+  Pencil, Loader2, BanknoteIcon, FileText, CircleDot,
 } from "lucide-react";
 
 // ── Construction-to-Client-Handover phase filter ───────────────────────────
@@ -46,50 +47,61 @@ function getAuthHeaders(): HeadersInit {
   };
 }
 
+async function apiFetch(url: string, options?: RequestInit) {
+  const res = await fetch(url, { ...options, headers: getAuthHeaders(), credentials: "include" });
+  if (!res.ok) throw new Error("Failed to load data");
+  return res.json();
+}
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
-interface ProjectMilestone {
+interface RevenueMilestone {
+  id: number;
+  rowNumber: number;
+  milestoneNo: string;
+  milestoneName: string;
+  milestonePercent: string;
+  milestoneAmount: string;
+  date: string | null;
+  isRed: boolean;
+  milestoneInvoiceNumber: string | null;
+  invoiceRaisedDate: string | null;
+  inBank: boolean;
+  status: "planned" | "invoiced" | "overdue" | "inBank";
+  flags: string[];
+  hasOverride: boolean;
+  milestoneNotes: string | null;
+}
+
+interface RevenueTabData {
+  milestones: RevenueMilestone[];
+  summary: {
+    totalContract: number;
+    invoiced: number;
+    inBank: number;
+    pending: number;
+    overdue: number;
+    milestoneCount: number;
+    issueCount: number;
+  };
+}
+
+interface ProjectRow {
   projectId: number;
   projectName: string;
+  projectNameRaw: string;
   phase: string | null;
   pm: string | null;
   contractValue: string | null;
   sizeKwp: string | null;
-  updatedAt: string | null;
   ragStatus: string | null;
   projectPctComplete: number;
-  constructionStartDate: string | null;
-  commissioningDate: string | null;
-  clientHandoverDate: string | null;
   latestUpdate: string | null;
   latestUpdateAt: string | null;
   latestUpdateBy: string | null;
-  milestones: {
-    name: string;
-    targetDate: string | null;
-    status: "completed" | "on_track" | "at_risk" | "overdue" | "upcoming";
-  }[];
+  milestones: RevenueMilestone[];
+  revenueSummary: RevenueTabData["summary"] | null;
 }
-
-// ── Status helpers ──────────────────────────────────────────────────────────
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; dotColor: string; icon: typeof CheckCircle2 }> = {
-  completed: { label: "Done", color: "bg-emerald-100 text-emerald-800", dotColor: "bg-emerald-500", icon: CheckCircle2 },
-  on_track: { label: "On Track", color: "bg-blue-100 text-blue-800", dotColor: "bg-blue-500", icon: ArrowRight },
-  at_risk: { label: "At Risk", color: "bg-amber-100 text-amber-800", dotColor: "bg-amber-500", icon: AlertTriangle },
-  overdue: { label: "Overdue", color: "bg-red-100 text-red-800", dotColor: "bg-red-500", icon: Clock },
-  upcoming: { label: "Upcoming", color: "bg-gray-100 text-gray-600", dotColor: "bg-gray-300", icon: Calendar },
-};
-
-// ── Revenue milestones (construction onwards) ──────────────────────────────
-
-const REVENUE_MILESTONES = [
-  { key: "construction_start", name: "Construction Start", revenueLabel: "1st Progress Claim" },
-  { key: "50pct_complete", name: "50% Complete", revenueLabel: "Mid-stage Claim" },
-  { key: "commissioning", name: "Commissioning", revenueLabel: "Commissioning Claim" },
-  { key: "client_handover", name: "Client Handover", revenueLabel: "Final Invoice" },
-  { key: "dlp_close", name: "DLP Close", revenueLabel: "Retention Release" },
-];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -123,15 +135,30 @@ function ragDotClass(status: string | null): string {
   }
 }
 
+function formatDate(d: string | null): string {
+  if (!d) return "—";
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-ZA", { day: "numeric", month: "short", year: "2-digit" });
+}
+
+const MILESTONE_STATUS_CONFIG = {
+  inBank: { label: "In Bank", bg: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-500", icon: BanknoteIcon },
+  invoiced: { label: "Invoiced", bg: "bg-blue-100 text-blue-800", dot: "bg-blue-500", icon: FileText },
+  overdue: { label: "Overdue", bg: "bg-red-100 text-red-800", dot: "bg-red-500", icon: Clock },
+  planned: { label: "Planned", bg: "bg-gray-100 text-gray-600", dot: "bg-gray-300", icon: CircleDot },
+};
+
 // ── Components ──────────────────────────────────────────────────────────────
 
-function MilestoneDot({ status }: { status: string }) {
-  const config = STATUS_CONFIG[status] || STATUS_CONFIG.upcoming;
+function MilestoneStatusBadge({ status }: { status: RevenueMilestone["status"] }) {
+  const config = MILESTONE_STATUS_CONFIG[status] || MILESTONE_STATUS_CONFIG.planned;
+  const Icon = config.icon;
   return (
-    <div className="flex flex-col items-center gap-0.5" title={config.label}>
-      <div className={`w-3.5 h-3.5 rounded-full ${config.dotColor} ring-2 ring-white shadow-sm`} />
-      <span className="text-[8px] font-semibold text-muted-foreground">{config.label}</span>
-    </div>
+    <Badge className={`${config.bg} text-[9px] px-1.5 py-0 gap-0.5 font-semibold`}>
+      <Icon className="h-2.5 w-2.5" />
+      {config.label}
+    </Badge>
   );
 }
 
@@ -154,7 +181,7 @@ function KPICard({ label, value, sub, color, icon: Icon }: { label: string; valu
   );
 }
 
-function LatestUpdateCell({ project, onSaved }: { project: ProjectMilestone; onSaved: () => void }) {
+function LatestUpdateCell({ project, onSaved }: { project: ProjectRow; onSaved: () => void }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [value, setValue] = useState(project.latestUpdate || "");
   const [saving, setSaving] = useState(false);
@@ -168,9 +195,8 @@ function LatestUpdateCell({ project, onSaved }: { project: ProjectMilestone; onS
     if (trimmed === (project.latestUpdate || "")) { setDialogOpen(false); return; }
     setSaving(true);
     try {
-      await fetch(`/api/projects-summary/${encodeURIComponent(project.projectName)}/latest-update`, {
+      await apiFetch(`/api/projects-summary/${encodeURIComponent(project.projectNameRaw)}/latest-update`, {
         method: "PATCH",
-        headers: getAuthHeaders(),
         body: JSON.stringify({ latestUpdate: trimmed || null }),
       });
       onSaved();
@@ -213,7 +239,7 @@ function LatestUpdateCell({ project, onSaved }: { project: ProjectMilestone; onS
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Pencil className="h-4 w-4" />
-              Update Status — {project.projectName.replace(/_Tracker$/i, "").replace(/_/g, " ")}
+              Update Status — {project.projectName}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -248,73 +274,62 @@ function LatestUpdateCell({ project, onSaved }: { project: ProjectMilestone; onS
 export default function MilestoneTrackerPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [view, setView] = useState<"timeline" | "table">("timeline");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
 
-  const { data: projects, isLoading, isError, error } = useQuery<any[]>({
+  // 1. Fetch all projects
+  const { data: allProjects, isLoading: projectsLoading, isError, error } = useQuery<any[]>({
     queryKey: ["/api/project-info"],
   });
 
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/project-info"] });
-    queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
-  };
+  // 2. Filter to Construction-Client Handover
+  const eligibleProjects = useMemo(() => {
+    if (!allProjects) return [];
+    return allProjects.filter((p: any) => p.isActive !== false && isInMilestonePhase(p.phase));
+  }, [allProjects]);
 
-  // Transform project data — only include Construction to Client Handover
-  const milestoneData: ProjectMilestone[] = useMemo(() => {
-    if (!projects) return [];
-    return projects
-      .filter((p: any) => p.isActive !== false && isInMilestonePhase(p.phase))
-      .map((p: any) => {
-        const pctComplete = p.projectPctComplete || 0;
+  // 3. Fetch revenue milestones for each eligible project
+  const revenueQueries = useQueries({
+    queries: eligibleProjects.map((p: any) => ({
+      queryKey: ["revenue-tab", p.projectName || p.project_name],
+      queryFn: () => apiFetch(`/api/revenue-tab/${encodeURIComponent(p.projectName || p.project_name)}`),
+      enabled: !!(p.projectName || p.project_name),
+      staleTime: 60_000,
+      retry: 1,
+    })),
+  });
 
-        const milestones = REVENUE_MILESTONES.map((rm, idx) => {
-          const threshold = ((idx + 1) / REVENUE_MILESTONES.length) * 100;
-          let status: ProjectMilestone["milestones"][0]["status"] = "upcoming";
-          if (pctComplete >= threshold) status = "completed";
-          else if (pctComplete >= threshold - 12) status = "on_track";
-          else if (pctComplete >= threshold - 25 && pctComplete > 0) status = "at_risk";
+  const revenueLoading = revenueQueries.some(q => q.isLoading);
 
-          let targetDate: string | null = null;
-          if (rm.key === "construction_start") targetDate = p.constructionStartDate || null;
-          if (rm.key === "commissioning") targetDate = p.commissioningDate || null;
-          if (rm.key === "client_handover") targetDate = p.clientHandoverDate || null;
-
-          if (targetDate && status !== "completed") {
-            const target = new Date(targetDate);
-            if (target < new Date()) status = "overdue";
-          }
-
-          return { name: rm.name, targetDate, status };
-        });
-
-        return {
-          projectId: p.id,
-          projectName: (p.projectName || p.project_name || "").replace(/_Tracker.*$/i, "").replace(/_/g, " "),
-          phase: p.phase,
-          pm: p.pm || null,
-          contractValue: p.contractValue || null,
-          sizeKwp: p.sizeKwp || null,
-          updatedAt: p.updatedAt || null,
-          ragStatus: p.ragStatus || null,
-          projectPctComplete: pctComplete,
-          constructionStartDate: p.constructionStartDate || null,
-          commissioningDate: p.commissioningDate || null,
-          clientHandoverDate: p.clientHandoverDate || null,
-          latestUpdate: p.latestUpdate || null,
-          latestUpdateAt: p.latestUpdateAt || null,
-          latestUpdateBy: p.latestUpdateBy || null,
-          milestones,
-        };
-      })
-      .filter((p) => p.projectName)
-      .sort((a, b) => a.projectName.localeCompare(b.projectName));
-  }, [projects]);
+  // 4. Merge project info with revenue milestones
+  const projectRows: ProjectRow[] = useMemo(() => {
+    return eligibleProjects.map((p: any, idx: number) => {
+      const rawName = p.projectName || p.project_name || "";
+      const revenueData = revenueQueries[idx]?.data as RevenueTabData | undefined;
+      return {
+        projectId: p.id,
+        projectName: rawName.replace(/_Tracker.*$/i, "").replace(/_/g, " "),
+        projectNameRaw: rawName,
+        phase: p.phase,
+        pm: p.pm || null,
+        contractValue: p.contractValue || null,
+        sizeKwp: p.sizeKwp || null,
+        ragStatus: p.ragStatus || null,
+        projectPctComplete: p.projectPctComplete || 0,
+        latestUpdate: p.latestUpdate || null,
+        latestUpdateAt: p.latestUpdateAt || null,
+        latestUpdateBy: p.latestUpdateBy || null,
+        milestones: revenueData?.milestones || [],
+        revenueSummary: revenueData?.summary || null,
+      };
+    })
+    .filter((p) => p.projectName)
+    .sort((a, b) => a.projectName.localeCompare(b.projectName));
+  }, [eligibleProjects, revenueQueries]);
 
   // Filters
   const filtered = useMemo(() => {
-    let result = milestoneData;
+    let result = projectRows;
     if (search) {
       const term = search.toLowerCase();
       result = result.filter((p) =>
@@ -328,19 +343,22 @@ export default function MilestoneTrackerPage() {
       );
     }
     return result;
-  }, [milestoneData, search, statusFilter]);
+  }, [projectRows, search, statusFilter]);
 
-  // KPI summary
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/project-info"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
+  };
+
+  // KPI summary — from actual revenue data
   const totalProjects = filtered.length;
-  const atRiskCount = filtered.filter((p) => p.milestones.some((m) => m.status === "at_risk")).length;
-  const overdueCount = filtered.filter((p) => p.milestones.some((m) => m.status === "overdue")).length;
-  const totalContractValue = filtered.reduce((sum, p) => {
-    const val = parseFloat(p.contractValue || "0");
-    return sum + (isNaN(val) ? 0 : val);
-  }, 0);
-  const avgProgress = totalProjects > 0 ? Math.round(filtered.reduce((s, p) => s + p.projectPctComplete, 0) / totalProjects) : 0;
+  const totalContract = filtered.reduce((sum, p) => sum + (p.revenueSummary?.totalContract || 0), 0);
+  const totalInBank = filtered.reduce((sum, p) => sum + (p.revenueSummary?.inBank || 0), 0);
+  const totalOverdue = filtered.reduce((sum, p) => sum + (p.revenueSummary?.overdue || 0), 0);
+  const totalPending = filtered.reduce((sum, p) => sum + (p.revenueSummary?.pending || 0), 0);
+  const overdueProjects = filtered.filter(p => (p.revenueSummary?.overdue || 0) > 0).length;
 
-  if (isLoading) return <PageShell><PageSkeleton lines={8} /></PageShell>;
+  if (projectsLoading) return <PageShell><PageSkeleton lines={8} /></PageShell>;
   if (isError) return <PageShell><PageError title="Failed to load milestones" message={error instanceof Error ? error.message : "Failed to fetch"} /></PageShell>;
 
   return (
@@ -348,16 +366,22 @@ export default function MilestoneTrackerPage() {
       <SectionHeader
         icon={<Milestone className="h-5 w-5" />}
         title="Milestone Tracker"
-        description="Construction through Client Handover — track milestones and capture latest project updates."
+        description="Construction through Client Handover — revenue milestones mapped from each project's inflows."
       />
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-        <KPICard label="Active Projects" value={totalProjects} icon={Target} />
-        <KPICard label="Portfolio Value" value={formatZAR(totalContractValue)} icon={DollarSign} color="text-emerald-600" />
-        <KPICard label="Avg Progress" value={`${avgProgress}%`} icon={TrendingUp} color="text-blue-600" />
-        <KPICard label="At Risk" value={atRiskCount} icon={AlertTriangle} color="text-amber-600" />
-        <KPICard label="Overdue" value={overdueCount} icon={Clock} color="text-red-600" />
+        <KPICard label="Projects" value={totalProjects} icon={Target} />
+        <KPICard label="Total Contract" value={formatZAR(totalContract)} icon={DollarSign} color="text-emerald-600" />
+        <KPICard label="In Bank" value={formatZAR(totalInBank)} icon={BanknoteIcon} color="text-green-600" />
+        <KPICard label="Pending" value={formatZAR(totalPending)} icon={TrendingUp} color="text-blue-600" />
+        <KPICard
+          label="Overdue"
+          value={overdueProjects}
+          sub={totalOverdue > 0 ? formatZAR(totalOverdue) : undefined}
+          icon={AlertTriangle}
+          color="text-red-600"
+        />
       </div>
 
       {/* Filters */}
@@ -371,134 +395,142 @@ export default function MilestoneTrackerPage() {
             <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-              <SelectItem value="on_track">On Track</SelectItem>
-              <SelectItem value="at_risk">At Risk</SelectItem>
+              <SelectItem value="inBank">In Bank</SelectItem>
+              <SelectItem value="invoiced">Invoiced</SelectItem>
               <SelectItem value="overdue">Overdue</SelectItem>
+              <SelectItem value="planned">Planned</SelectItem>
             </SelectContent>
           </Select>
-          <div className="flex gap-1 border rounded-md p-0.5">
-            <Button size="sm" variant={view === "timeline" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setView("timeline")}>
-              <BarChart3 className="h-3.5 w-3.5 mr-1" /> Timeline
-            </Button>
-            <Button size="sm" variant={view === "table" ? "default" : "ghost"} className="h-7 px-2" onClick={() => setView("table")}>
-              <Filter className="h-3.5 w-3.5 mr-1" /> Table
-            </Button>
-          </div>
+          {revenueLoading && (
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              Loading milestones...
+            </div>
+          )}
         </div>
       </FilterBar>
 
-      {/* Timeline view — revenue milestones as swim lane dots */}
-      {view === "timeline" ? (
-        <Card className="overflow-x-auto">
-          {/* Column headers */}
-          <div className="bg-muted px-3 py-2 grid gap-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground min-w-[1100px]"
-               style={{ gridTemplateColumns: `220px repeat(${REVENUE_MILESTONES.length}, 1fr) 200px` }}>
-            <span>Project</span>
-            {REVENUE_MILESTONES.map((rm) => (
-              <span key={rm.key} className="text-center">
-                <div>{rm.name}</div>
-                <div className="font-normal text-[8px] opacity-70">{rm.revenueLabel}</div>
-              </span>
-            ))}
-            <span>Last Update</span>
-          </div>
-
-          {/* Rows */}
-          <div className="max-h-[600px] overflow-y-auto">
-            {filtered.map((project) => (
+      {/* Project rows with their revenue milestones */}
+      <div className="space-y-3">
+        {filtered.map((project) => (
+          <Card key={project.projectId} className="overflow-hidden">
+            {/* Project header row */}
+            <div className="px-4 py-3 bg-muted/30 border-b flex items-center gap-4 flex-wrap">
               <div
-                key={project.projectId}
-                className="px-3 py-2 grid gap-1 items-center border-b last:border-b-0 hover:bg-muted/40 transition-all min-w-[1100px]"
-                style={{ gridTemplateColumns: `220px repeat(${REVENUE_MILESTONES.length}, 1fr) 200px` }}
+                className="flex-1 min-w-[200px] cursor-pointer"
+                onClick={() => navigate(`/project/${encodeURIComponent(project.projectNameRaw)}`)}
               >
-                {/* Project info column */}
-                <div
-                  className="min-w-0 space-y-0.5 cursor-pointer"
-                  onClick={() => navigate(`/project/${encodeURIComponent(project.projectName.replace(/ /g, "_"))}`)}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <div className={`w-2 h-2 rounded-full ${ragDotClass(project.ragStatus)} shrink-0`} />
-                    <p className="text-sm font-medium truncate">{project.projectName}</p>
-                  </div>
-                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                    <span>{project.pm || "No PM"}</span>
-                    <span className="opacity-50">|</span>
-                    <span>{formatZAR(project.contractValue)}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <Progress value={project.projectPctComplete} className="h-1 flex-1" />
-                    <span className="text-[9px] font-semibold tabular-nums w-[30px] text-right">{project.projectPctComplete}%</span>
-                  </div>
-                  <Badge variant="outline" className="text-[9px] px-1 py-0">{project.phase}</Badge>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2.5 h-2.5 rounded-full ${ragDotClass(project.ragStatus)} shrink-0`} />
+                  <span className="text-sm font-semibold">{project.projectName}</span>
+                  <Badge variant="outline" className="text-[9px] px-1.5 py-0">{project.phase}</Badge>
                 </div>
+                <div className="flex items-center gap-3 mt-1 text-[10px] text-muted-foreground">
+                  <span>{project.pm || "No PM"}</span>
+                  <span>{formatZAR(project.contractValue)}</span>
+                  {project.sizeKwp && <span>{parseFloat(project.sizeKwp).toFixed(0)} kWp</span>}
+                </div>
+              </div>
 
-                {/* Revenue milestone dots */}
-                {project.milestones.map((m, idx) => (
-                  <div key={idx} className="flex justify-center">
-                    <MilestoneDot status={m.status} />
-                  </div>
-                ))}
+              {/* Revenue summary badges */}
+              {project.revenueSummary && (
+                <div className="flex items-center gap-2 text-[10px]">
+                  <span className="text-emerald-700 font-semibold">
+                    In Bank: {formatZAR(project.revenueSummary.inBank)}
+                  </span>
+                  {project.revenueSummary.overdue > 0 && (
+                    <span className="text-red-600 font-semibold">
+                      Overdue: {formatZAR(project.revenueSummary.overdue)}
+                    </span>
+                  )}
+                  <span className="text-muted-foreground">
+                    {project.revenueSummary.milestoneCount} milestones
+                  </span>
+                </div>
+              )}
 
-                {/* Last Update column */}
+              {/* Progress bar */}
+              <div className="flex items-center gap-1.5 w-[100px] shrink-0">
+                <Progress value={project.projectPctComplete} className="h-1.5 flex-1" />
+                <span className="text-[9px] font-semibold tabular-nums">{project.projectPctComplete}%</span>
+              </div>
+
+              {/* Last update */}
+              <div className="w-[180px] shrink-0">
                 <LatestUpdateCell project={project} onSaved={invalidate} />
               </div>
-            ))}
-            {filtered.length === 0 && (
-              <div className="ee-empty-state py-12">
-                <Target className="h-10 w-10 text-muted-foreground/30 mb-3" />
-                <p className="text-sm font-semibold">No projects in Construction — Client Handover match your filters</p>
+            </div>
+
+            {/* Milestone table */}
+            {project.milestones.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead>
+                    <tr className="border-b bg-muted/20 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <th className="px-3 py-1.5 text-left w-[40px]">#</th>
+                      <th className="px-3 py-1.5 text-left">Milestone</th>
+                      <th className="px-3 py-1.5 text-right w-[120px]">Amount</th>
+                      <th className="px-3 py-1.5 text-center w-[90px]">Date</th>
+                      <th className="px-3 py-1.5 text-center w-[100px]">Invoice</th>
+                      <th className="px-3 py-1.5 text-center w-[80px]">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {project.milestones.map((m) => {
+                      const amt = parseFloat(m.milestoneAmount || "0");
+                      return (
+                        <tr key={m.id} className="border-b last:border-b-0 hover:bg-muted/20">
+                          <td className="px-3 py-1.5 text-muted-foreground">{m.milestoneNo || m.rowNumber}</td>
+                          <td className="px-3 py-1.5 font-medium">
+                            {m.milestoneName || "—"}
+                            {m.milestoneNotes && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="ml-1 text-muted-foreground cursor-help">*</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent className="max-w-xs text-xs">
+                                    {m.milestoneNotes}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 text-right tabular-nums font-medium">
+                            {isNaN(amt) || amt === 0 ? "—" : formatZAR(amt)}
+                          </td>
+                          <td className={`px-3 py-1.5 text-center tabular-nums ${m.isRed ? "text-red-600 font-semibold" : ""}`}>
+                            {formatDate(m.date)}
+                          </td>
+                          <td className="px-3 py-1.5 text-center text-muted-foreground">
+                            {m.milestoneInvoiceNumber || "—"}
+                          </td>
+                          <td className="px-3 py-1.5 text-center">
+                            <MilestoneStatusBadge status={m.status} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="px-4 py-3 text-center text-[11px] text-muted-foreground italic">
+                {revenueLoading ? "Loading milestones..." : "No revenue milestones found for this project"}
               </div>
             )}
-          </div>
-        </Card>
-      ) : (
-        /* Table view */
-        <Card className="overflow-x-auto">
-          <div className="bg-muted px-3 py-2 grid grid-cols-[1fr_100px_100px_90px_100px_200px_80px] gap-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground min-w-[900px]">
-            <span>Project</span>
-            <span>Phase</span>
-            <span>Contract Value</span>
-            <span>Progress</span>
-            <span>At Risk</span>
-            <span>Last Update</span>
-            <span>PM</span>
-          </div>
-          <div className="max-h-[600px] overflow-y-auto">
-            {filtered.map((project) => {
-              const atRisk = project.milestones.filter((m) => m.status === "at_risk" || m.status === "overdue").length;
-              return (
-                <div
-                  key={project.projectId}
-                  className="px-3 py-2 grid grid-cols-[1fr_100px_100px_90px_100px_200px_80px] gap-2 items-center border-b last:border-b-0 hover:bg-muted/40 min-w-[900px]"
-                >
-                  <div
-                    className="min-w-0 cursor-pointer"
-                    onClick={() => navigate(`/project/${encodeURIComponent(project.projectName.replace(/ /g, "_"))}`)}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      <div className={`w-2 h-2 rounded-full ${ragDotClass(project.ragStatus)} shrink-0`} />
-                      <span className="text-sm font-medium truncate">{project.projectName}</span>
-                    </div>
-                    {project.sizeKwp && <span className="text-[9px] text-muted-foreground">{project.sizeKwp} kWp</span>}
-                  </div>
-                  <Badge variant="outline" className="text-[10px] w-fit">{project.phase || "—"}</Badge>
-                  <span className="text-xs font-medium tabular-nums">{formatZAR(project.contractValue)}</span>
-                  <div className="flex items-center gap-1">
-                    <Progress value={project.projectPctComplete} className="h-1.5 flex-1" />
-                    <span className="text-[10px] tabular-nums">{project.projectPctComplete}%</span>
-                  </div>
-                  <span className={`text-xs font-semibold ${atRisk > 0 ? "text-red-600" : "text-emerald-600"}`}>
-                    {atRisk > 0 ? `${atRisk} milestones` : "On track"}
-                  </span>
-                  <LatestUpdateCell project={project} onSaved={invalidate} />
-                  <span className="text-xs text-muted-foreground truncate">{project.pm || "—"}</span>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
+          </Card>
+        ))}
+
+        {filtered.length === 0 && (
+          <Card>
+            <CardContent className="py-12 text-center">
+              <Target className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+              <p className="text-sm font-semibold">No projects in Construction — Client Handover match your filters</p>
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </PageShell>
   );
 }
