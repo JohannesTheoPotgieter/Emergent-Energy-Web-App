@@ -1036,14 +1036,16 @@ export class DatabaseStorage implements IStorage {
       .set({ isActive: false })
       .where(not(inArray(projectInfo.projectName, activeNames)));
 
-    // Dual-write: sync isActive to project_execution_state via raw SQL for bulk operation
+    // Dual-write: sync soft-delete to project_execution_state
+    // isActive kept in sync during 30-day observation window (deprecated 2026-03-31)
     await this.dbInstance.execute(sql`
-      UPDATE project_execution_state SET is_active = true, updated_at = NOW()
+      UPDATE project_execution_state SET deleted_at = NULL, is_active = true, updated_at = NOW()
       WHERE project_id IN (SELECT id FROM project_info WHERE project_name = ANY(${activeNames}))
     `);
     await this.dbInstance.execute(sql`
-      UPDATE project_execution_state SET is_active = false, updated_at = NOW()
+      UPDATE project_execution_state SET deleted_at = NOW(), is_active = false, updated_at = NOW()
       WHERE project_id IN (SELECT id FROM project_info WHERE project_name != ALL(${activeNames}))
+        AND deleted_at IS NULL
     `);
   }
 
@@ -1052,7 +1054,7 @@ export class DatabaseStorage implements IStorage {
       .select({ count: count() })
       .from(projectInfo)
       .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-      .where(eq(projectExecutionState.isActive, true));
+      .where(isNull(projectExecutionState.deletedAt));
     const [totalResult] = await this.dbInstance
       .select({ count: count() })
       .from(projectInfo);

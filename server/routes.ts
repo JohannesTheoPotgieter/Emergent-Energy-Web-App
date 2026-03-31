@@ -1783,7 +1783,7 @@ export async function registerRoutes(
       })
         .from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-        .where(sql`${projectExecutionState.isActive} IS NOT FALSE`);
+        .where(isNull(projectExecutionState.deletedAt));
       const activeNames = new Set(
         activeProjectsResult
           .filter(p => {
