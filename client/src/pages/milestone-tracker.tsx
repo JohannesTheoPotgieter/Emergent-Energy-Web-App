@@ -231,6 +231,7 @@ function LatestUpdateCellWrapper({ project, onSaved }: { project: ProjectRow; on
 export default function MilestoneTrackerPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [showCompleted, setShowCompleted] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
@@ -319,6 +320,9 @@ export default function MilestoneTrackerPage() {
   // Filters
   const filtered = useMemo(() => {
     let result = projectRows;
+    if (!showCompleted) {
+      result = result.filter((p) => p.projectPctComplete < 100);
+    }
     if (search) {
       const term = search.toLowerCase();
       result = result.filter((p) =>
@@ -332,7 +336,9 @@ export default function MilestoneTrackerPage() {
       );
     }
     return result;
-  }, [projectRows, search, statusFilter]);
+  }, [projectRows, search, statusFilter, showCompleted]);
+
+  const completedCount = useMemo(() => projectRows.filter(p => p.projectPctComplete >= 100).length, [projectRows]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/project-info"] });
@@ -395,6 +401,16 @@ export default function MilestoneTrackerPage() {
               <SelectItem value="planned">Planned</SelectItem>
             </SelectContent>
           </Select>
+          <Button
+            variant={showCompleted ? "secondary" : "outline"}
+            size="sm"
+            className="text-xs h-8 gap-1"
+            onClick={() => setShowCompleted(prev => !prev)}
+            data-testid="btn-toggle-completed"
+          >
+            <CheckCircle2 className="h-3.5 w-3.5" />
+            {showCompleted ? "Hide" : "Show"} 100% ({completedCount})
+          </Button>
           <Button
             variant="ghost"
             size="sm"
