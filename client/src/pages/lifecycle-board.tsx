@@ -382,6 +382,7 @@ export default function LifecycleBoardPage() {
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
+  const [hideEmptyLanes, setHideEmptyLanes] = useState(false);
   const [draggedProject, setDraggedProject] = useState<ProjectInfo | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<ProjectInfo | null>(null);
@@ -1012,6 +1013,14 @@ export default function LifecycleBoardPage() {
           />
           <span className="text-sm text-muted-foreground">Active only</span>
         </div>
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={hideEmptyLanes}
+            onCheckedChange={setHideEmptyLanes}
+            data-testid="switch-hide-empty"
+          />
+          <span className="text-sm text-muted-foreground">Hide empty lanes</span>
+        </div>
         <div className="ml-auto flex items-center gap-3">
           <span className="text-sm text-muted-foreground" data-testid="text-project-count">
             {filtered.length} project{filtered.length !== 1 ? "s" : ""}
@@ -1029,8 +1038,11 @@ export default function LifecycleBoardPage() {
       </div>
 
       <div className="pb-4 overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
-        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${PHASE_GROUPS.length}, minmax(200px, 1fr))`, minWidth: `${PHASE_GROUPS.length * 200}px` }}>
-          {PHASE_GROUPS.map((group) => {
+        {(() => {
+          const visibleGroups = hideEmptyLanes ? PHASE_GROUPS.filter(g => (grouped[g.key] || []).length > 0) : PHASE_GROUPS;
+          return (
+        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${visibleGroups.length}, minmax(200px, 1fr))`, minWidth: `${visibleGroups.length * 200}px` }}>
+          {visibleGroups.map((group) => {
             const items = grouped[group.key] || [];
             const isOver = dragOverColumn === group.key;
             return (
@@ -1149,6 +1161,8 @@ export default function LifecycleBoardPage() {
             );
           })}
         </div>
+          );
+        })()}
       </div>
 
       <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
