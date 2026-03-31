@@ -160,9 +160,9 @@ export function RoleDetailPanel({
           {activeTab === "permissions" && (
             <div className="space-y-3">
               <div className="rounded-md border border-blue-100 bg-blue-50/50 px-3 py-2">
-                <p className="text-xs text-blue-700"><span className="font-semibold">Permissions</span> control <span className="font-semibold">what</span> this role can do — grant or deny specific actions (view, create, edit, approve, override, delete) on each entity.</p>
+                <p className="text-xs text-blue-700"><span className="font-semibold">Permissions</span> control <span className="font-semibold">what</span> this role can do — grant or deny specific actions (view, create, edit, approve, override, delete) on each entity. Categories with disabled navigation are greyed out.</p>
               </div>
-              <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} />
+              <RolePermissionsMatrix role={role} draft={draft} onUpdateDraft={onUpdateDraft} canManageRoles={canManageRoles} enabledNavSections={(draft.sections ?? role.sections) || []} />
             </div>
           )}
           {activeTab === "authority" && (

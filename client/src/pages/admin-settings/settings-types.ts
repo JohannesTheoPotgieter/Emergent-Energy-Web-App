@@ -280,6 +280,23 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
 };
 
+export const NAV_SECTION_TO_PERM_CATEGORY: Record<string, string> = {
+  HOME: "home",
+  PORTFOLIO: "portfolio",
+  PROJECT_DEVELOPMENT: "project_dev",
+  PROJECT_DELIVERY: "project_delivery",
+  HSE: "hse",
+  ENGINEERING: "engineering",
+  QUALITY: "quality",
+  FINANCE: "finance",
+  REPORTS: "reports",
+  ADMIN: "admin",
+};
+
+export const PERM_CATEGORY_TO_NAV_SECTION: Record<string, string> = Object.fromEntries(
+  Object.entries(NAV_SECTION_TO_PERM_CATEGORY).map(([k, v]) => [v, k])
+);
+
 export function formatEntityName(entity: string): string {
   return entity
     .replace(/^pd_/, "PD ")
