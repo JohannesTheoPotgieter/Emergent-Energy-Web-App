@@ -7797,6 +7797,14 @@ DO $$ BEGIN
     );
   END IF;
 
+  -- Meeting summaries soft-delete columns
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='meeting_summaries') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meeting_summaries' AND column_name='deleted_at') THEN
+    ALTER TABLE "meeting_summaries" ADD COLUMN "deleted_at" TIMESTAMP;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='meeting_summaries') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='meeting_summaries' AND column_name='deleted_by') THEN
+    ALTER TABLE "meeting_summaries" ADD COLUMN "deleted_by" INTEGER;
+  END IF;
+
   -- Stage definitions soft-delete columns
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='stage_definitions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='stage_definitions' AND column_name='deleted_at') THEN
     ALTER TABLE "stage_definitions" ADD COLUMN "deleted_at" TIMESTAMP;
