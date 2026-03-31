@@ -647,7 +647,7 @@ router.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/projects-summary", requireAuth, async (req, res) => {
   try {
-    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, workItemsResult, handoverRows] = await Promise.all([
+    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, smartImportRows, workItemsResult, handoverRows] = await Promise.all([
       storage.getAllProjectInfo().catch((e: any) => { console.warn("[dept-projects] allProjectInfo failed:", e.message); return []; }),
       storage.getAllProgramExpenses().catch((e: any) => { console.warn("[dept-projects] allExpenses failed:", e.message); return []; }),
       storage.getAllProgramInflows().catch((e: any) => { console.warn("[dept-projects] rawInflows failed:", e.message); return []; }),
@@ -656,6 +656,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       storage.getAllMilestoneTaskLinks().catch((e: any) => { console.warn("[dept-projects] allTaskLinks failed:", e.message); return []; }),
       storage.getAllOperationalTasks().catch((e: any) => { console.warn("[dept-projects] allOpTasks failed:", e.message); return []; }),
       db.execute(sql`SELECT DISTINCT file_name FROM upload_metadata`).catch((e: any) => { console.warn("[dept-projects] uploadMetadata failed:", e.message); return { rows: [] }; }),
+      db.execute(sql`SELECT DISTINCT project_name FROM smart_import_runs WHERE status = 'COMMITTED'`).catch((e: any) => { console.warn("[dept-projects] smartImportRuns failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`).catch(() => ({ rows: [] })),
     ]);
@@ -689,6 +690,16 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       importedProjectNames.add(stripped.replace(/_/g, ' '));
       importedProjectNames.add(stripped + '_Tracker');
       importedProjectNames.add(stripped.replace(/ /g, '_') + '_Tracker');
+    }
+    // Also include projects from smart import system
+    for (const row of (smartImportRows as any).rows || []) {
+      const pName = (row as any).project_name as string;
+      if (!pName) continue;
+      importedProjectNames.add(pName);
+      importedProjectNames.add(pName.replace(/ /g, '_'));
+      importedProjectNames.add(pName.replace(/_/g, ' '));
+      importedProjectNames.add(pName + '_Tracker');
+      importedProjectNames.add(pName.replace(/ /g, '_') + '_Tracker');
     }
 
     const today = new Date().toISOString().split("T")[0];
