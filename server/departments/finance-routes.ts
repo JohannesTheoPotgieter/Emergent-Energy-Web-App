@@ -3241,16 +3241,18 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
 
-    const useCanonical = await isWorkItemsEnabled();
+    let useCanonical = false;
+    try { useCanonical = await isWorkItemsEnabled(); } catch (_e) { /* feature flag unavailable */ }
+
     const [rawInflows, overrides, projectInfoList, savedSummary, canonicalTasks, legacyOperationalTasks, planTasks, taskLinks] = await Promise.all([
       storage.getProgramInflowsByProject(projectName),
       Promise.resolve([]),
       storage.getAllProjectInfo(),
-      storage.getProjectRevenueSummary(projectName),
-      useCanonical ? getWorkItemsAsOperationalTasks(projectName) : Promise.resolve([]),
-      storage.getOperationalTasksByProject(projectName),
-      storage.getProjectPlansByProject(projectName),
-      storage.getMilestoneTaskLinks(projectName),
+      storage.getProjectRevenueSummary(projectName).catch(() => undefined),
+      useCanonical ? getWorkItemsAsOperationalTasks(projectName).catch(() => []) : Promise.resolve([]),
+      storage.getOperationalTasksByProject(projectName).catch(() => []),
+      storage.getProjectPlansByProject(projectName).catch(() => []),
+      storage.getMilestoneTaskLinks(projectName).catch(() => []),
     ]);
     const operationalTasks = (useCanonical && canonicalTasks.length > 0) ? canonicalTasks : legacyOperationalTasks;
 
@@ -3275,13 +3277,27 @@ router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
     const today = new Date().toISOString().split('T')[0];
     const pInfo = projectInfoList.find((p: any) => p.projectName === projectName);
     const contractValue = pInfo ? parseFloat(String(pInfo.contractValue || '0')) : 0;
-    const governance = await loadProjectFinanceGovernanceContext(
-      projectName,
-      (pInfo as any)?.id ?? null,
-      overrides
-        .map((row: any) => row.createdBy)
-        .filter((id: any): id is number => typeof id === "number" && Number.isFinite(id))
-    );
+
+    const emptyGovernance = {
+      latestChangeByEntity: new Map<string, any>(),
+      userNameById: new Map<number, string>(),
+      recentChanges: [] as any[],
+      approvals: { pendingCount: 0, affectingCashCount: 0, pending: [] as any[] },
+      editRequests: { pendingCount: 0, pending: [] as any[] },
+      microsoft: { linkedCount: 0, actionRequiredCount: 0, unreadCount: 0, linkedTaskCount: 0, recent: [] as any[] },
+    };
+    let governance = emptyGovernance;
+    try {
+      governance = await loadProjectFinanceGovernanceContext(
+        projectName,
+        (pInfo as any)?.id ?? null,
+        overrides
+          .map((row: any) => row.createdBy)
+          .filter((id: any): id is number => typeof id === "number" && Number.isFinite(id))
+      );
+    } catch (govError) {
+      console.error("Revenue tab: governance context failed, continuing with empty governance:", govError);
+    }
 
     const milestones = inflows.filter(isRealMilestone).map((r: any) => {
       const hasInvoice = !!(r.milestoneInvoiceNumber && r.milestoneInvoiceNumber.trim());

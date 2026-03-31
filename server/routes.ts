@@ -4480,6 +4480,424 @@ export async function registerRoutes(
 
   app.patch("/api/expenditure/font-color-toggle", requireAuth, async (req, res) => {
     try {
+      const { projectName } = req.query;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      res.json([]);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
+    }
+  });
+
+  app.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
+    try {
+      const { overrides, overrideCategory, overrideComment } = req.body;
+      if (!Array.isArray(overrides)) {
+        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
+      }
+      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
+      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
+      const userId = req.user?.id;
+
+      // Apply overrides directly to the base table (normalized_revenue_lines)
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName).filter(Boolean))];
+      const saved: any[] = [];
+
+      for (const pn of projectNames) {
+        const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+        const inflows = await storage.getProgramInflowsByProject(pn);
+        const rowMap = new Map(inflows.map((r: any) => [r.rowNumber, r]));
+
+        const rowGroups = new Map<number, Record<string, any>>();
+        for (const ov of projectOverrides) {
+          const inflow = rowMap.get(ov.rowNumber);
+          if (!inflow) continue;
+          if (!rowGroups.has(inflow.id)) rowGroups.set(inflow.id, {});
+          const fields = rowGroups.get(inflow.id)!;
+          const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+          fields[ov.fieldName] = effectiveValue;
+        }
+
+        for (const [inflowId, fields] of rowGroups.entries()) {
+          if (Object.keys(fields).length > 0) {
+            const result = await storage.updateProgramInflowFields(inflowId, fields);
+            if (result) saved.push(result);
+          }
+        }
+      }
+
+      try {
+        for (const o of overrides) {
+          await recordOverride({
+            actorUserId: userId,
+            actorRole: (req as any).user?.role,
+            entityType: "revenue_tracking_override",
+            entityId: `${o.projectName}|row${o.rowNumber}|${o.fieldName}`,
+            projectName: o.projectName,
+            action: "REVENUE_OVERRIDE",
+            overrideCategory,
+            overrideComment: overrideComment.trim(),
+            oldRecord: {},
+            newRecord: { [o.fieldName]: o.overrideValue },
+          });
+
+          // Record manual edit flag for import conflict detection
+          recordManualEditFlag({
+            entityType: "revenue_tracking",
+            entityId: o.rowNumber,
+            fieldName: o.fieldName,
+            editedByUserId: userId,
+            editedByName: (req as any).user?.name,
+          });
+        }
+      } catch (auditErr: any) {
+        console.warn("[audit] Revenue override audit failed:", auditErr.message);
+      }
+
+      logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "create", changesJson: { description: `${overrides.length} revenue tracking override(s) saved`, count: overrides.length, projectNames } });
+      res.json({ message: "Revenue tracking overrides saved", count: saved.length, overrides: saved });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save revenue tracking overrides", message: error instanceof Error ? error.message : "Failed to save revenue tracking overrides" });
+    }
+  });
+
+  app.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      // Override tables collapsed into base tables — no separate overrides to delete
+      logAuditFromReq(req, { entityType: "revenue_tracking_override", action: "delete", projectName, changesJson: { description: "All revenue tracking overrides deleted for project", projectName } });
+      res.json({ message: `Revenue tracking overrides deleted for project: ${projectName}` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete revenue tracking overrides", message: "Failed to delete revenue tracking overrides" });
+    }
+  });
+
+  // Revenue tab routes (/api/revenue-tab/*) are now handled exclusively by finance-routes.ts
+  // Legacy handlers removed to eliminate duplicate route registration that caused
+  // the canonical handler (with governance context) to shadow the legacy one,
+  // and to prevent confusion about which handler serves each request.
+
+  // Expenditure Overrides API
+  app.get("/api/expenditure/overrides", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      res.json([]);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch expenditure overrides", message: "Failed to fetch expenditure overrides" });
+    }
+  });
+
+  // Expenditure overrides now handled by finance-routes.ts with approval workflow
+  // This legacy route is kept as a fallback redirect to the approval flow
+  app.post("/api/expenditure/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
+    try {
+      const { overrides, overrideCategory, overrideComment } = req.body;
+      if (!Array.isArray(overrides)) {
+        return res.status(400).json({ error: "Overrides must be an array", message: "Overrides must be an array" });
+      }
+      const effectiveCategory = overrideCategory && OVERRIDE_CATEGORIES.includes(overrideCategory) ? overrideCategory : 'DATA_CORRECTION';
+      const effectiveComment = (overrideComment && typeof overrideComment === "string" && overrideComment.trim().length >= 3) ? overrideComment : "Inline edit";
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+
+      // Admin users apply overrides directly (this legacy route requires requireAdmin)
+      const projectNames = [...new Set(overrides.map((o: any) => o.projectName))];
+      const fieldToColumnMap: Record<string, string> = {
+        expenseInvoicedDate: "expenseInvoicedDate",
+        expensePaymentDate: "expensePaymentDate",
+        expensePoNumber: "expensePoNumber",
+        expenseInvoiceNumber: "expenseInvoiceNumber",
+        expenseLineItem: "expenseLineItem",
+        expenseActualTotal: "expenseActualTotal",
+        budgetTotal: "budgetTotal",
+        forecastPaymentDate: "forecastPaymentDate",
+        expenseQty: "expenseQty",
+        expenseRateUnit: "expenseRateUnit",
+        budgetQty: "budgetQty",
+        budgetRateUnit: "budgetRateUnit",
+        invoiceDateFontColor: "invoiceDateFontColor",
+        paymentDateFontColor: "paymentDateFontColor",
+        supplierName: "supplierName",
+      };
+
+      for (const pn of projectNames) {
+        const projectOverrides = overrides.filter((o: any) => o.projectName === pn);
+        const expenses = await storage.getProgramExpensesByProject(pn as string);
+        const rowMap = new Map(expenses.map((e: any) => [e.rowNumber, e]));
+
+        const rowGroups = new Map<number, Record<string, any>>();
+        for (const ov of projectOverrides) {
+          const colName = fieldToColumnMap[ov.fieldName];
+          if (!colName) continue;
+          const expense = rowMap.get(ov.rowNumber);
+          if (!expense) continue;
+          if (!rowGroups.has(expense.id)) rowGroups.set(expense.id, {});
+          const fields = rowGroups.get(expense.id)!;
+          const effectiveValue = ov.overrideValue === "__null__" ? null : ov.overrideValue;
+          fields[colName] = effectiveValue;
+          if (ov.fieldName === 'expenseInvoicedDate' && !effectiveValue) {
+            fields.invoiceDateConfirmed = false;
+          }
+          if (ov.fieldName === 'expensePaymentDate' && !effectiveValue) {
+            fields.paymentDateConfirmed = false;
+          }
+        }
+
+        for (const [expenseId, fields] of rowGroups.entries()) {
+          if (Object.keys(fields).length > 0) {
+            await storage.updateProgramExpenseFields(expenseId, fields);
+          }
+        }
+      }
+
+      logAuditFromReq(req, { entityType: "expenditure_override", action: "direct_apply", changesJson: { description: `${overrides.length} expenditure override(s) applied directly by admin`, count: overrides.length, projectNames } });
+      res.json({ message: "Expenditure overrides applied successfully", count: overrides.length });
+    } catch (error) {
+      console.error("Failed to submit expenditure overrides for approval:", error);
+      res.status(500).json({ error: "Failed to save overrides", message: error instanceof Error ? error.message : "Failed to save overrides" });
+    }
+  });
+
+  app.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const projectName = req.params.projectName;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      // Override tables collapsed into base tables — no separate overrides to delete
+      logAuditFromReq(req, { entityType: "expenditure_override", action: "delete", projectName, changesJson: { description: "All expenditure overrides deleted for project", projectName } });
+      res.json({ message: `Expenditure overrides deleted for project: ${projectName}` });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to delete expenditure overrides", message: "Failed to delete expenditure overrides" });
+    }
+  });
+
+  // ==================== EXPENSE TASK LINKS API ====================
+
+  app.get("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const links = await storage.getExpenseTaskLinks(req.params.projectName);
+      res.json(links);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch expense task links" });
+    }
+  });
+
+  app.post("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { expenseId, taskId } = req.body;
+      if (!expenseId || taskId === undefined) {
+        return res.status(400).json({ error: "expenseId and taskId are required" });
+      }
+      const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
+
+      logAuditFromReq(req, { entityType: "expense_link", action: "create", projectName: req.params.projectName, changesJson: { description: "Expense linked to task", expenseId, taskId } });
+      res.json(link);
+    } catch (error) {
+      console.error("Link expense task error:", error);
+      res.status(500).json({ error: "Failed to link task" });
+    }
+  });
+
+  app.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      await storage.deleteExpenseTaskLink(req.params.projectName, parseInt(req.params.expenseId));
+
+      logAuditFromReq(req, { entityType: "expense_link", action: "delete", projectName: req.params.projectName, changesJson: { description: "Expense task link removed", expenseId: req.params.expenseId } });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to unlink task" });
+    }
+  });
+
+  app.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { dateOverride, reason } = req.body;
+      const projectName = req.params.projectName;
+      const expenseId = parseInt(req.params.expenseId);
+      await storage.updateExpenseTaskLinkDateOverride(projectName, expenseId, dateOverride, reason);
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "expense_date_override",
+          entityId: `${projectName}|expense${expenseId}`,
+          projectName,
+          action: "EXPENSE_DATE_OVERRIDDEN",
+          summary: `Overrode expense ${expenseId} date to ${dateOverride}${reason ? ` (${reason})` : ''}`,
+          oldRecord: {},
+          newRecord: { expenseId, dateOverride, reason },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Expense date override audit failed:", auditErr.message);
+      }
+
+      logAuditFromReq(req, { entityType: "expense_date_override", action: "update", projectName, changesJson: { description: "Expense date overridden", expenseId, dateOverride, reason } });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to save date override" });
+    }
+  });
+
+  // ==================== MANUAL EXPENSE ROWS API ====================
+
+  app.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate } = req.body;
+      if (!projectName || !expenseCategory) {
+        return res.status(400).json({ error: "projectName and expenseCategory are required" });
+      }
+      const maxRow = await storage.getProgramExpensesByProject(projectName);
+      const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
+      const newExpense = await storage.createManualExpense({
+        projectName,
+        rowNumber: maxRowNum + 1,
+        rowType: 'item',
+        expenseCategory,
+        expenseLineItem: expenseLineItem || null,
+        expenseActualTotal: expenseActualTotal || null,
+        expensePoNumber: expensePoNumber || null,
+        expenseInvoiceNumber: expenseInvoiceNumber || null,
+        expenseInvoicedDate: expenseInvoicedDate || null,
+        expensePaymentDate: expensePaymentDate || null,
+        lineStatus: 'Planned',
+        isManual: true,
+      });
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "expense_line",
+          entityId: `${projectName}|row${newExpense.rowNumber}`,
+          projectName,
+          action: "MANUAL_EXPENSE_ADDED",
+          summary: `Added manual expense line: ${expenseLineItem || expenseCategory}`,
+          oldRecord: {},
+          newRecord: { expenseCategory, expenseLineItem, expenseActualTotal, isManual: true },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Manual expense add audit failed:", auditErr.message);
+      }
+
+      logAuditFromReq(req, { entityType: "expense_line", action: "create", projectName, changesJson: { description: "Manual expense line added", expenseCategory, expenseLineItem } });
+      res.json(newExpense);
+    } catch (error) {
+      console.error("Add expense line error:", error);
+      res.status(500).json({ error: "Failed to add expense line item" });
+    }
+  });
+
+  app.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { projectName, categoryName } = req.body;
+      if (!projectName || !categoryName) {
+        return res.status(400).json({ error: "projectName and categoryName are required" });
+      }
+      const maxRow = await storage.getProgramExpensesByProject(projectName);
+      const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
+      const newCategory = await storage.createManualExpense({
+        projectName,
+        rowNumber: maxRowNum + 1,
+        rowType: 'category',
+        expenseCategory: categoryName,
+        expenseLineItem: categoryName,
+        isManual: true,
+      });
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "expense_category",
+          entityId: `${projectName}|row${newCategory.rowNumber}`,
+          projectName,
+          action: "MANUAL_CATEGORY_ADDED",
+          summary: `Added manual expense category: ${categoryName}`,
+          oldRecord: {},
+          newRecord: { expenseCategory: categoryName, isManual: true },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Manual category add audit failed:", auditErr.message);
+      }
+
+      logAuditFromReq(req, { entityType: "expense_category", action: "create", projectName, changesJson: { description: "Manual expense category added", categoryName } });
+      res.json(newCategory);
+    } catch (error) {
+      console.error("Add category error:", error);
+      res.status(500).json({ error: "Failed to add category" });
+    }
+  });
+
+  app.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { projectName, taskId, expenseCategory } = req.body;
+      if (!projectName || !taskId || !expenseCategory) {
+        return res.status(400).json({ error: "projectName, taskId, and expenseCategory are required" });
+      }
+      const [opTasks, planTasks] = await Promise.all([
+        storage.getOperationalTasksByProject(projectName),
+        storage.getProjectPlansByProject(projectName),
+      ]);
+      let taskTitle = '';
+      let taskEndDate: string | null = null;
+      if (taskId > 0) {
+        const opTask = opTasks.find((t: any) => t.id === taskId);
+        if (opTask) { taskTitle = opTask.title || ''; taskEndDate = opTask.dueDate || null; }
+      } else {
+        const planTask = planTasks.find((t: any) => t.id === Math.abs(taskId));
+        if (planTask) { taskTitle = (planTask as any).highLevelProgramme || `Task ${(planTask as any).taskNo || ''}`; taskEndDate = (planTask as any).actualEnd || null; }
+      }
+      const maxRow = await storage.getProgramExpensesByProject(projectName);
+      const maxRowNum = maxRow.reduce((max: number, r: any) => Math.max(max, r.rowNumber || 0), 0);
+      const newExpense = await storage.createManualExpense({
+        projectName,
+        rowNumber: maxRowNum + 1,
+        rowType: 'item',
+        expenseCategory,
+        expenseLineItem: taskTitle,
+        expensePaymentDate: taskEndDate,
+        lineStatus: 'Planned',
+        isManual: true,
+      });
+      await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
+
+      try {
+        await recordManualEdit({
+          actorUserId: req.user?.id,
+          actorRole: (req as any).user?.role,
+          entityType: "expense_line",
+          entityId: `${projectName}|row${newExpense.rowNumber}`,
+          projectName,
+          action: "TASK_INSERTED_AS_EXPENSE",
+          summary: `Inserted task "${taskTitle}" as expense line in ${expenseCategory}`,
+          oldRecord: {},
+          newRecord: { expenseCategory, expenseLineItem: taskTitle, taskId, isManual: true },
+        });
+      } catch (auditErr: any) {
+        console.warn("[audit] Insert task as expense audit failed:", auditErr.message);
+      }
+
+      logAuditFromReq(req, { entityType: "expense_line", action: "create", projectName, changesJson: { description: "Task inserted as expense line", taskId, taskTitle, expenseCategory } });
+      res.json(newExpense);
+    } catch (error) {
+      console.error("Insert task as line error:", error);
+      res.status(500).json({ error: "Failed to insert task as line item" });
+    }
+  });
+
+  // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
+
+  app.patch("/api/expenditure/font-color-toggle", requireAuth, async (req, res) => {
+    try {
       const { projectName, rowNumber, field, color } = req.body;
       if (!projectName || rowNumber == null || !field || !color) {
         return res.status(400).json({ error: "Missing required fields" });
