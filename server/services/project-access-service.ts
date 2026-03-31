@@ -9,7 +9,7 @@
  *   3. entity_assignments where assignee is the user
  */
 
-import { and, eq, isNotNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db } from "../db";
 import { projectInfo, projectTeamMembers, entityAssignments, projectExecutionState } from "@shared/schema";
 
@@ -71,7 +71,7 @@ export async function resolveProjectScope(
       .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
       .where(
         and(
-          eq(projectExecutionState.isActive, true),
+          isNull(projectExecutionState.deletedAt),
           sql`(${projectInfo.pmUserId} = ${userId} OR ${projectInfo.pdUserId} = ${userId})`,
         ),
       ),
@@ -91,7 +91,7 @@ export async function resolveProjectScope(
       .where(
         and(
           eq(projectTeamMembers.userId, userId),
-          eq(projectExecutionState.isActive, true),
+          isNull(projectExecutionState.deletedAt),
         ),
       ),
 

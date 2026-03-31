@@ -13,6 +13,7 @@ import { jwtAuth, requireAuth } from "./auth-context";
 import { enforceRuntimeEnvironmentGuards } from "./bootstrap/env-guard";
 import { applyRequestLogging } from "./bootstrap/http-observability";
 import { csrfProtection } from "./middleware/csrf";
+import { getCsrfExemptSummary, CSRF_PROTECTED_METHODS } from "./middleware/csrf-config";
 import { registerGlobalErrorHandler } from "./bootstrap/error-handling";
 import { getEnvironmentStatus } from "./bootstrap/environment-status";
 import { getRuntimeMutationPolicy } from "./bootstrap/runtime-mutation-policy";
@@ -89,6 +90,8 @@ async function bootstrap() {
   app.use(passport.session());
   app.use(jwtAuth);
   app.use(csrfProtection);
+  const csrfSummary = getCsrfExemptSummary();
+  log(`CSRF enabled for [${[...CSRF_PROTECTED_METHODS].join(", ")}], exempt routes loaded: ${csrfSummary.total} (auth: ${csrfSummary.auth}, webhooks: ${csrfSummary.webhooks}, health: ${csrfSummary.health})`);
   applyRequestLogging(app, log);
 
   app.get("/api/environment/status", requireAuth, async (_req, res) => res.status(200).json(getEnvironmentStatus()));

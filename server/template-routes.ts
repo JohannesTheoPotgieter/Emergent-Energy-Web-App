@@ -2,7 +2,7 @@
 // @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { eq, and, desc, asc, sql, ilike } from "drizzle-orm";
+import { eq, and, desc, asc, sql, ilike, isNull } from "drizzle-orm";
 import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import {
@@ -696,7 +696,7 @@ export function registerTemplateRoutes(app: Express) {
       const allProjects = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
         .from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-        .where(eq(projectExecutionState.isActive, true));
+        .where(isNull(projectExecutionState.deletedAt));
 
       const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
       const needle = normalise(name);
@@ -830,7 +830,7 @@ export function registerTemplateRoutes(app: Express) {
         isActive: projectExecutionState.isActive,
       }).from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-        .where(eq(projectExecutionState.isActive, true))
+        .where(isNull(projectExecutionState.deletedAt))
         .orderBy(asc(projectInfo.projectName));
 
       const result = [];

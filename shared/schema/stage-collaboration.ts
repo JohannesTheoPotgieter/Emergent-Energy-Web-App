@@ -18,7 +18,8 @@ export const FINANCIAL_CLOSE_TRACK_CODES = ['COST_PROPOSAL', 'EPC', 'FUNDING_CON
 export type FinancialCloseTrackCode = typeof FINANCIAL_CLOSE_TRACK_CODES[number];
 
 // ===================== PROJECT CLIENT COMMITMENTS =====================
-// Client promise tracking — log once, track until delivered
+// @deprecated 2026-03-31: Replaced by client_commitments in collaboration-workflow.ts.
+// Data migrated via 20260331_consolidate_client_tables.sql. Drop after 90 days of zero usage.
 
 export const projectClientCommitments = pgTable("project_client_commitments", {
   id: serial("id").primaryKey(),
@@ -43,7 +44,8 @@ export type InsertProjectClientCommitment = z.infer<typeof insertProjectClientCo
 export type ProjectClientCommitment = typeof projectClientCommitments.$inferSelect;
 
 // ===================== PROJECT CLIENT UPDATES =====================
-// Weekly client communication — auto-generated drafts, review workflow
+// @deprecated 2026-03-31: Replaced by client_updates in collaboration-workflow.ts.
+// Data migrated via 20260331_consolidate_client_tables.sql. Drop after 90 days of zero usage.
 
 export const projectClientUpdates = pgTable("project_client_updates", {
   id: serial("id").primaryKey(),

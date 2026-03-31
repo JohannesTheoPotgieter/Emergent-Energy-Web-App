@@ -316,7 +316,9 @@ export const workItemAssignments = pgTable("work_item_assignments", {
   role: workItemAssignmentRoleEnum("role").notNull().default("ASSIGNEE"),
   allocationPct: real("allocation_pct"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  uniqueWorkItemUserRole: unique("uq_work_item_user_role").on(table.workItemId, table.userId, table.role),
+}));
 export const insertWorkItemAssignmentSchema = createInsertSchema(workItemAssignments).omit({ id: true, createdAt: true } as any);
 export type InsertWorkItemAssignment = z.infer<typeof insertWorkItemAssignmentSchema>;
 export type WorkItemAssignment = typeof workItemAssignments.$inferSelect;
