@@ -46,7 +46,7 @@ function getUser(req: Request): { id: number; role: string } {
 }
 
 function parseProjectId(req: Request, res: Response): number | null {
-  const id = parseInt(req.params.projectId, 10);
+  const id = parseInt(String(req.params.projectId), 10);
   if (Number.isNaN(id)) {
     res.status(400).json({ error: "Invalid projectId" });
     return null;
@@ -107,7 +107,7 @@ export function registerCollaborationWorkflowRoutes(app: Express): void {
 
   app.patch("/api/projects/:projectId/acceptance-reservations/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const reservation = await updateReservationStatus(id, req.body.status, req.body.notes);
       res.json({ reservation });
@@ -150,7 +150,7 @@ export function registerCollaborationWorkflowRoutes(app: Express): void {
 
   app.patch("/api/projects/:projectId/client-commitments/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const commitment = await updateClientCommitment(id, req.body);
       res.json({ commitment });
@@ -194,7 +194,7 @@ export function registerCollaborationWorkflowRoutes(app: Express): void {
 
   app.patch("/api/projects/:projectId/evidence-requests/:id/fulfill", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const request = await fulfillEvidenceRequest(id, req.body.evidenceUrl);
       res.json({ request });
@@ -206,7 +206,7 @@ export function registerCollaborationWorkflowRoutes(app: Express): void {
 
   app.patch("/api/projects/:projectId/evidence-requests/:id/status", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const request = await updateEvidenceRequestStatus(id, req.body.status);
       res.json({ request });
@@ -250,7 +250,7 @@ export function registerCollaborationWorkflowRoutes(app: Express): void {
 
   app.patch("/api/projects/:projectId/queries/:id/respond", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const user = getUser(req);
       const query = await respondToQuery(id, {
@@ -266,7 +266,7 @@ export function registerCollaborationWorkflowRoutes(app: Express): void {
 
   app.patch("/api/projects/:projectId/queries/:id/status", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const query = await updateQueryStatus(id, req.body.status);
       res.json({ query });
@@ -304,7 +304,7 @@ export function registerCollaborationWorkflowRoutes(app: Express): void {
 
   app.patch("/api/projects/:projectId/client-updates/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id, 10);
+      const id = parseInt(String(req.params.id), 10);
       if (Number.isNaN(id)) return res.status(400).json({ error: "Invalid id" });
       const user = getUser(req);
       const update = await updateClientUpdate(id, {
