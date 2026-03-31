@@ -1222,7 +1222,7 @@ export function TaskDetailDrawer({
     <div className="fixed inset-0 z-50 flex justify-end" data-testid="task-detail-drawer">
       <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
       <ErrorBoundary>
-      <div className="relative w-full max-w-full sm:max-w-2xl bg-background border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+      <div className="relative h-full w-full max-w-full sm:max-w-2xl bg-background border-l shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
         <div className="flex items-center justify-between p-4 border-b">
           <div className="flex items-center gap-2 min-w-0">
             <Badge className={`text-[10px] shrink-0 ${getTaskStatusBadgeClass(task.status)}`}>{task.status}</Badge>
@@ -1256,7 +1256,7 @@ export function TaskDetailDrawer({
           </div>
         )}
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0">
           <div className="p-4 space-y-5">
             <div>
               <h2 className="text-xl font-bold leading-tight" data-testid="text-drawer-title">{task.title}</h2>
