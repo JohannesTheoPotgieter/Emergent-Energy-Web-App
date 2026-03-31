@@ -30,8 +30,9 @@ async function api(url: string, options?: RequestInit) {
   if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(url, { ...options, headers, credentials: "include" });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Request failed" }));
-    throw new Error(err.error || "Request failed");
+    const err = await res.json().catch(() => null);
+    const message = err?.error || err?.message || `Request failed (${res.status})`;
+    throw new Error(message);
   }
   return res.json();
 }
@@ -119,7 +120,7 @@ export default function EngineeringStandupPage() {
       let pList = participants;
       // Auto-seed a default schedule if none exists, then refresh data
       if (schedules.length === 0) {
-        await api("/api/standups/seed-default", { method: "POST" });
+        await api("/api/standups/seed-default", { method: "POST", body: JSON.stringify({}) });
         const newSchedules = await refetchSchedules();
         const newScheduleId = newSchedules.data?.[0]?.id;
         if (newScheduleId) {

@@ -80,7 +80,33 @@ async function ensureStandupV2Table() {
   await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (${sql.raw(idCol)}, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TIMESTAMP NOT NULL ${sql.raw(tsDefault)})`);
 }
 
+/** Ensure deleted_at/deleted_by columns exist on standup_schedules (mirrors migration 20260372) */
+async function ensureStandupScheduleColumns() {
+  try {
+    if (getDbMode() === "postgres") {
+      await db.execute(sql`ALTER TABLE standup_schedules ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+      await db.execute(sql`ALTER TABLE standup_schedules ADD COLUMN IF NOT EXISTS deleted_by INTEGER REFERENCES users(id)`);
+    } else {
+      // SQLite: check pragma then add if missing
+      const cols: any[] = await db.all(sql`PRAGMA table_info(standup_schedules)`);
+      const colNames = cols.map((c: any) => c.name);
+      if (!colNames.includes("deleted_at")) {
+        await db.run(sql`ALTER TABLE standup_schedules ADD COLUMN deleted_at TIMESTAMP`);
+      }
+      if (!colNames.includes("deleted_by")) {
+        await db.run(sql`ALTER TABLE standup_schedules ADD COLUMN deleted_by INTEGER`);
+      }
+    }
+  } catch (err) {
+    console.error("[Standup] Failed to ensure standup_schedules columns:", err);
+  }
+}
+
 export function registerStandupRoutes(app: Express) {
+  // Auto-repair schema on startup so queries referencing deleted_at don't crash
+  ensureStandupScheduleColumns().catch(err =>
+    console.error("[Standup] Column repair failed:", err),
+  );
 
   // ── Schedules ──────────────────────────────────────────────────────────────
 
