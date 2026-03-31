@@ -3,7 +3,7 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, desc, sql, and, inArray, isNull, ilike } from "drizzle-orm";
-import { projectInfo, projectPhaseHistory, users, projectExecutionState, projectPdPmHandover, projectHandoverHistory, clients, evidenceOverrideRecords, lessonsLearnt, handoverStakeholders } from "@shared/schema";
+import { projectInfo, projectPhaseHistory, users, projectExecutionState, projectPdPmHandover, projectHandoverHistory, clients, evidenceOverrideRecords, lessonsLearnt, handoverStakeholders, projectSettings } from "@shared/schema";
 import { syncProjectSplitTables } from "./lib/project-info-sync";
 import { logAuditFromReq } from "./audit-logger";
 import { evaluateEvidence, isEvidenceOverrideAuthorized, upsertEvidenceItem } from "./services/evidence-evaluation-service";
@@ -417,8 +417,8 @@ export function registerHandoverRoutes(app: Express) {
           client_name: sql<string>`COALESCE(${clients.name}, '')`,
           pd: projectInfo.pd,
           pm: projectInfo.pm,
-          excel_tracker_link: projectInfo.excelTrackerLink,
-          execution_enabled: projectInfo.executionEnabled,
+          excel_tracker_link: projectSettings.excelTrackerLink,
+          execution_enabled: projectExecutionState.executionEnabled,
           handover_status: projectPdPmHandover.status,
           pd_owner: projectPdPmHandover.pdOwner,
           pm_owner: projectPdPmHandover.pmOwner,
@@ -435,8 +435,10 @@ export function registerHandoverRoutes(app: Express) {
         })
         .from(projectInfo)
         .leftJoin(clients, eq(clients.id, projectInfo.clientId))
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .leftJoin(projectSettings, eq(projectSettings.projectId, projectInfo.id))
         .leftJoin(projectPdPmHandover, eq(projectPdPmHandover.projectId, projectInfo.id))
-        .where(eq(projectInfo.isActive, true))
+        .where(eq(projectExecutionState.isActive, true))
         .orderBy(sql`COALESCE(${projectPdPmHandover.updatedAt}, ${projectInfo.updatedAt}) DESC NULLS LAST`, projectInfo.projectName);
 
       const now = Date.now();
