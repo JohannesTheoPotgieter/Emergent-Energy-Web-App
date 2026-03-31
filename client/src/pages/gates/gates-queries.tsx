@@ -57,7 +57,7 @@ export default function GatesQueriesPage() {
         </div>
         {staleCount > 0 && (
           <Badge className="bg-red-100 text-red-700">
-            <AlertCircle className="mr-1 h-3 w-3" /> {staleCount} overdue (>3 days)
+            <AlertCircle className="mr-1 h-3 w-3" /> {staleCount} overdue ({'>'}3 days)
           </Badge>
         )}
         <Badge variant="secondary">{filtered.length} open queries</Badge>
