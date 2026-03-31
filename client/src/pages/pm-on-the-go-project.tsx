@@ -47,7 +47,9 @@ function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  return headers;
+  const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+    return headers;
 }
 
 async function apiFetch<T>(url: string, options?: RequestInit): Promise<T> {

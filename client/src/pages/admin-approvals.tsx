@@ -92,8 +92,12 @@ const typeConfig = {
 };
 
 function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = localStorage.getItem("auth_token");
-  return token ? { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } : { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+  return headers;
 }
 
 export default function AdminApprovalsPage() {

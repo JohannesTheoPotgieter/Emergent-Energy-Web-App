@@ -39,12 +39,13 @@ function isInMilestonePhase(phase: string | null): boolean {
 
 // ── API helper ──────────────────────────────────────────────────────────────
 
-function getAuthHeaders(): HeadersInit {
+function getAuthHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = localStorage.getItem("auth_token");
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
+  if (csrf) headers["X-CSRF-Token"] = csrf;
+  return headers;
 }
 
 async function apiFetch(url: string, options?: RequestInit) {
