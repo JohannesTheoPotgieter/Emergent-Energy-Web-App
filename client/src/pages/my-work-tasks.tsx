@@ -154,6 +154,11 @@ function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
   const h: Record<string, string> = {};
   if (token) h["Authorization"] = `Bearer ${token}`;
+  const csrfToken = document.cookie
+    .split("; ")
+    .find((c) => c.startsWith("csrf-token="))
+    ?.split("=")[1];
+  if (csrfToken) h["X-CSRF-Token"] = csrfToken;
   return h;
 }
 
@@ -288,7 +293,7 @@ export default function MyWorkTasksPage() {
   const [newTask, setNewTask] = useState({
     title: "", description: "", priority: "normal" as TaskPriority,
     status: "todo" as TaskStatus, dueDate: "", projectName: "",
-    department: "", ragStatus: "", type: "personal" as "personal" | "action",
+    department: "", ragStatus: "", type: "personal" as "personal" | "engineering" | "quality" | "plan",
     assignees: [] as { id: number; name: string }[],
   });
 
@@ -427,6 +432,48 @@ export default function MyWorkTasksPage() {
     onError: () => { toast({ title: "Failed to create action item", variant: "destructive" }); },
   });
 
+  const createEngTaskMutation = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const res = await fetch("/api/eng/tasks", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Failed to create engineering task");
+      return res.json();
+    },
+    onSuccess: () => { invalidateAll(); toast({ title: "Engineering task created" }); },
+    onError: () => { toast({ title: "Failed to create engineering task", variant: "destructive" }); },
+  });
+
+  const createPlanTaskMutation = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const res = await fetch("/api/planning-tasks", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.message || "Failed to create plan task"); }
+      return res.json();
+    },
+    onSuccess: () => { invalidateAll(); toast({ title: "Plan task created" }); },
+    onError: (err: any) => { toast({ title: err.message || "Failed to create plan task", variant: "destructive" }); },
+  });
+
+  const createQualityTaskMutation = useMutation({
+    mutationFn: async (body: Record<string, unknown>) => {
+      const res = await fetch("/api/eng/tasks", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("Failed to create quality task");
+      return res.json();
+    },
+    onSuccess: () => { invalidateAll(); toast({ title: "Quality task created" }); },
+    onError: () => { toast({ title: "Failed to create quality task", variant: "destructive" }); },
+  });
+
   const updateTaskMutation = useMutation({
     mutationFn: async ({ id, ...body }: Record<string, unknown> & { id: number }) => {
       await apiRequest("PATCH", `/api/mytool/tasks/${id}`, body);
@@ -516,19 +563,43 @@ export default function MyWorkTasksPage() {
 
   const handleCreateTask = useCallback(() => {
     if (!newTask.title.trim()) return;
-    if (createTaskSubmitLockRef.current || createTaskMutation.isPending || createTrItemMutation.isPending) {
-      return;
-    }
-    if (newTask.type === "action") {
-      createTrItemMutation.mutate({
-        actionDescription: newTask.title.trim(),
-        department: newTask.department || "Engineering",
-        ragStatus: newTask.ragStatus || "Green",
+    const anyPending = createTaskSubmitLockRef.current || createTaskMutation.isPending || createTrItemMutation.isPending || createEngTaskMutation.isPending || createPlanTaskMutation.isPending || createQualityTaskMutation.isPending;
+    if (anyPending) return;
+
+    if (newTask.type === "engineering") {
+      createEngTaskMutation.mutate({
+        title: newTask.title.trim(),
+        description: newTask.description || null,
+        status: "TO DO",
+        priority: newTask.priority === "critical" ? "Urgent" : newTask.priority === "high" ? "High" : newTask.priority === "low" ? "Low" : "Med",
+        projectName: newTask.projectName || null,
         dueDate: newTask.dueDate || null,
-        owners: newTask.assignees.length > 0 ? newTask.assignees.map(a => a.name) : (user?.name ? [user.name] : []),
-        ownerUserIds: newTask.assignees.length > 0 ? newTask.assignees.map(a => a.id) : (user?.id ? [user.id] : []),
-        status: "Active",
-        supportingInfo: newTask.description || "",
+        ownerUserId: newTask.assignees.length > 0 ? newTask.assignees[0].id : (user?.id || null),
+        assignees: newTask.assignees.length > 0 ? newTask.assignees.map(a => a.name) : (user?.name ? [user.name] : []),
+      });
+    } else if (newTask.type === "quality") {
+      createQualityTaskMutation.mutate({
+        title: newTask.title.trim(),
+        description: newTask.description || null,
+        status: "TO DO",
+        priority: newTask.priority === "critical" ? "Urgent" : newTask.priority === "high" ? "High" : newTask.priority === "low" ? "Low" : "Med",
+        projectName: newTask.projectName || null,
+        dueDate: newTask.dueDate || null,
+        ownerUserId: newTask.assignees.length > 0 ? newTask.assignees[0].id : (user?.id || null),
+        assignees: newTask.assignees.length > 0 ? newTask.assignees.map(a => a.name) : (user?.name ? [user.name] : []),
+        phase: "Quality",
+      });
+    } else if (newTask.type === "plan") {
+      if (!newTask.projectName) {
+        toast({ title: "Project is required for plan tasks", variant: "destructive" });
+        return;
+      }
+      createPlanTaskMutation.mutate({
+        title: newTask.title.trim(),
+        projectName: newTask.projectName,
+        status: "Not Started",
+        priority: newTask.priority === "critical" ? "Critical" : newTask.priority === "high" ? "High" : newTask.priority === "low" ? "Low" : "Normal",
+        dueDate: newTask.dueDate || null,
       });
     } else {
       createTaskSubmitLockRef.current = true;
@@ -550,7 +621,7 @@ export default function MyWorkTasksPage() {
     }
     setNewTask({ title: "", description: "", priority: "normal", status: "todo", dueDate: "", projectName: "", department: "", ragStatus: "", type: "personal", assignees: [] as { id: number; name: string }[] });
     setCreateDialogOpen(false);
-  }, [newTask, createTaskMutation, createTrItemMutation, user]);
+  }, [newTask, createTaskMutation, createTrItemMutation, createEngTaskMutation, createPlanTaskMutation, createQualityTaskMutation, user]);
 
   const handleStatusChange = useCallback((id: number, status: TaskStatus) => {
     updateTaskMutation.mutate({ id, status });
@@ -1341,22 +1412,33 @@ export default function MyWorkTasksPage() {
             <DialogTitle className="flex items-center gap-2 text-base"><Plus className="h-4 w-4" /> New Task</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 pt-1">
-            <div className="flex gap-2">
-              <button onClick={() => setNewTask(t => ({ ...t, type: "personal" }))} className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${newTask.type === "personal" ? "bg-blue-50 border-blue-300 text-blue-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-personal">
-                <ClipboardList className="h-4 w-4 mx-auto mb-0.5" /> Personal Task
-              </button>
-              <button onClick={() => setNewTask(t => ({ ...t, type: "action" }))} className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium transition-all ${newTask.type === "action" ? "bg-purple-50 border-purple-300 text-purple-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-action">
-                <BookOpen className="h-4 w-4 mx-auto mb-0.5" /> Action Item
-              </button>
+            <div>
+              <Label className="text-xs font-medium mb-1.5 block">Add to Lane</Label>
+              <div className="grid grid-cols-4 gap-1.5">
+                <button onClick={() => setNewTask(t => ({ ...t, type: "personal" }))} className={`px-2 py-2 rounded-lg border text-xs font-medium transition-all ${newTask.type === "personal" ? "bg-blue-50 border-blue-300 text-blue-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-personal">
+                  <ClipboardList className="h-4 w-4 mx-auto mb-0.5" /> Personal
+                </button>
+                <button onClick={() => setNewTask(t => ({ ...t, type: "engineering" }))} className={`px-2 py-2 rounded-lg border text-xs font-medium transition-all ${newTask.type === "engineering" ? "bg-cyan-50 border-cyan-300 text-cyan-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-engineering">
+                  <Wrench className="h-4 w-4 mx-auto mb-0.5" /> Engineering
+                </button>
+                <button onClick={() => setNewTask(t => ({ ...t, type: "quality" }))} className={`px-2 py-2 rounded-lg border text-xs font-medium transition-all ${newTask.type === "quality" ? "bg-rose-50 border-rose-300 text-rose-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-quality">
+                  <ShieldCheck className="h-4 w-4 mx-auto mb-0.5" /> Quality
+                </button>
+                <button onClick={() => setNewTask(t => ({ ...t, type: "plan" }))} className={`px-2 py-2 rounded-lg border text-xs font-medium transition-all ${newTask.type === "plan" ? "bg-violet-50 border-violet-300 text-violet-700 shadow-sm" : "border-border text-muted-foreground hover:bg-muted"}`} data-testid="btn-type-plan">
+                  <Calendar className="h-4 w-4 mx-auto mb-0.5" /> Plan
+                </button>
+              </div>
             </div>
             <div>
               <Label className="text-xs font-medium">Title <span className="text-red-500">*</span></Label>
-              <Input placeholder={newTask.type === "action" ? "Describe the action..." : "What needs to be done?"} value={newTask.title} onChange={e => setNewTask(t => ({ ...t, title: e.target.value }))} className="mt-1 h-8 text-sm" data-testid="input-new-title" autoFocus />
+              <Input placeholder="What needs to be done?" value={newTask.title} onChange={e => setNewTask(t => ({ ...t, title: e.target.value }))} className="mt-1 h-8 text-sm" data-testid="input-new-title" autoFocus />
             </div>
-            <div>
-              <Label className="text-xs font-medium">Description</Label>
-              <Textarea placeholder="Additional details..." value={newTask.description} onChange={e => setNewTask(t => ({ ...t, description: e.target.value }))} className="mt-1 min-h-[50px] text-sm" data-testid="input-new-desc" />
-            </div>
+            {(newTask.type === "personal" || newTask.type === "engineering" || newTask.type === "quality") && (
+              <div>
+                <Label className="text-xs font-medium">Description</Label>
+                <Textarea placeholder="Additional details..." value={newTask.description} onChange={e => setNewTask(t => ({ ...t, description: e.target.value }))} className="mt-1 min-h-[50px] text-sm" data-testid="input-new-desc" />
+              </div>
+            )}
             <div className={`grid ${newTask.type === "personal" ? "grid-cols-3" : "grid-cols-2"} gap-2`}>
               <div>
                 <Label className="text-xs font-medium">Priority</Label>
@@ -1396,57 +1478,55 @@ export default function MyWorkTasksPage() {
                 <Input type="date" value={newTask.dueDate} onChange={e => setNewTask(t => ({ ...t, dueDate: e.target.value }))} className="mt-1 h-7 text-xs" data-testid="input-new-due" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className={`grid ${newTask.type === "personal" ? "grid-cols-2" : ""} gap-2`}>
               <div>
-                <Label className="text-xs font-medium">Project</Label>
+                <Label className="text-xs font-medium">Project {newTask.type === "plan" && <span className="text-red-500">*</span>}</Label>
                 <SearchableSelect
                   value={newTask.projectName}
                   onValueChange={v => setNewTask(t => ({ ...t, projectName: v === "__none" ? "" : v }))}
-                  placeholder="None"
+                  placeholder={newTask.type === "plan" ? "Select project..." : "None"}
                   triggerClassName="mt-1 h-7 text-xs"
                   data-testid="select-new-project"
                   options={[
-                    { value: "__none", label: "None" },
+                    ...(newTask.type !== "plan" ? [{ value: "__none", label: "None" }] : []),
                     ...allProjects.map(p => ({ value: p, label: p.replace(/_Tracker.*$/i, "").replace(/_/g, " ") })),
                   ]}
                 />
               </div>
-              <div>
-                <Label className="text-xs font-medium">Department</Label>
-                <SearchableSelect
-                  value={newTask.department}
-                  onValueChange={v => setNewTask(t => ({ ...t, department: v === "__none" ? "" : v }))}
-                  placeholder="None"
-                  triggerClassName="mt-1 h-7 text-xs"
-                  data-testid="select-new-dept"
-                  options={[
-                    { value: "__none", label: "None" },
-                    ...DEPARTMENTS.map(d => ({ value: d, label: d })),
-                  ]}
-                />
-              </div>
-            </div>
-            <div>
-              <Label className="text-xs font-medium">Assign To</Label>
-              <AssignToSelector selected={newTask.assignees} onChange={(a: { id: number; name: string }[]) => setNewTask(t => ({ ...t, assignees: a }))} />
-            </div>
-            {newTask.type === "action" && (
-              <div>
-                <Label className="text-xs font-medium">RAG Status</Label>
-                <div className="flex gap-1.5 mt-1">
-                  {["Green", "Amber", "Red"].map(rag => (
-                    <button key={rag} onClick={() => setNewTask(t => ({ ...t, ragStatus: rag }))} className={`flex items-center gap-1 px-2.5 py-1 rounded-md border text-xs font-medium transition-all ${newTask.ragStatus === rag ? (rag === "Red" ? "bg-red-50 border-red-300 text-red-700" : rag === "Amber" ? "bg-amber-50 border-amber-300 text-amber-700" : "bg-emerald-50 border-emerald-300 text-emerald-700") : "border-border text-muted-foreground hover:bg-muted"}`} data-testid={`btn-rag-${rag.toLowerCase()}`}>
-                      <span className={`w-2 h-2 rounded-full ${rag === "Red" ? "bg-red-500" : rag === "Amber" ? "bg-amber-500" : "bg-emerald-500"}`} /> {rag}
-                    </button>
-                  ))}
+              {newTask.type === "personal" && (
+                <div>
+                  <Label className="text-xs font-medium">Department</Label>
+                  <SearchableSelect
+                    value={newTask.department}
+                    onValueChange={v => setNewTask(t => ({ ...t, department: v === "__none" ? "" : v }))}
+                    placeholder="None"
+                    triggerClassName="mt-1 h-7 text-xs"
+                    data-testid="select-new-dept"
+                    options={[
+                      { value: "__none", label: "None" },
+                      ...DEPARTMENTS.map(d => ({ value: d, label: d })),
+                    ]}
+                  />
                 </div>
+              )}
+            </div>
+            {(newTask.type === "engineering" || newTask.type === "quality") && (
+              <div>
+                <Label className="text-xs font-medium">Assign To</Label>
+                <AssignToSelector selected={newTask.assignees} onChange={(a: { id: number; name: string }[]) => setNewTask(t => ({ ...t, assignees: a }))} />
+              </div>
+            )}
+            {newTask.type === "personal" && (
+              <div>
+                <Label className="text-xs font-medium">Assign To</Label>
+                <AssignToSelector selected={newTask.assignees} onChange={(a: { id: number; name: string }[]) => setNewTask(t => ({ ...t, assignees: a }))} />
               </div>
             )}
           </div>
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setCreateDialogOpen(false)} data-testid="button-cancel-create">Cancel</Button>
-            <Button size="sm" onClick={handleCreateTask} disabled={!newTask.title.trim() || createTaskMutation.isPending || createTrItemMutation.isPending} data-testid="button-submit-create">
-              {(createTaskMutation.isPending || createTrItemMutation.isPending) ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />} Create
+            <Button size="sm" onClick={handleCreateTask} disabled={!newTask.title.trim() || (newTask.type === "plan" && !newTask.projectName) || createTaskMutation.isPending || createEngTaskMutation.isPending || createPlanTaskMutation.isPending || createQualityTaskMutation.isPending} data-testid="button-submit-create">
+              {(createTaskMutation.isPending || createEngTaskMutation.isPending || createPlanTaskMutation.isPending || createQualityTaskMutation.isPending) ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />} Create
             </Button>
           </DialogFooter>
         </DialogContent>
