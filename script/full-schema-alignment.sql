@@ -3397,6 +3397,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='amount_ex_vat') THEN
     ALTER TABLE "normalized_cost_lines" ADD COLUMN "amount_ex_vat" TEXT;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='amount_ex_vat_legacy') THEN
+    ALTER TABLE "normalized_cost_lines" ADD COLUMN "amount_ex_vat_legacy" TEXT;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='invoice_number') THEN
     ALTER TABLE "normalized_cost_lines" ADD COLUMN "invoice_number" TEXT;
   END IF;
@@ -3622,8 +3625,14 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='amount_ex_vat') THEN
     ALTER TABLE "normalized_revenue_lines" ADD COLUMN "amount_ex_vat" TEXT;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='amount_ex_vat_legacy') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "amount_ex_vat_legacy" TEXT;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='vat') THEN
     ALTER TABLE "normalized_revenue_lines" ADD COLUMN "vat" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='vat_legacy') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "vat_legacy" TEXT;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_revenue_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='invoice_number') THEN
     ALTER TABLE "normalized_revenue_lines" ADD COLUMN "invoice_number" TEXT;
