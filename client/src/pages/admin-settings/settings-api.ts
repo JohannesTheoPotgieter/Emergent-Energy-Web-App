@@ -1,8 +1,21 @@
 import type { RoleSummary, UserSummary, UserOverrideRow, AuditLogEntry, PdVisConfig, WorkstreamVisConfig, EffectivePermission, RoleComparisonResult } from "./settings-types";
 
+function getCsrfToken(): string | undefined {
+  return document.cookie
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith("csrf-token="))
+    ?.split("=")[1];
+}
+
 function authHeaders(): HeadersInit {
   const token = localStorage.getItem("auth_token");
-  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+  const csrf = getCsrfToken();
+  return {
+    "Content-Type": "application/json",
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+  };
 }
 
 async function parseJsonSafe<T>(res: Response): Promise<T | null> {
