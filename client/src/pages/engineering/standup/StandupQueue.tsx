@@ -12,6 +12,7 @@ interface StandupQueueProps {
   speakerTimings: Map<number, number>;
   activeSpeakerSeconds: number;
   totalBlockers: number;
+  taskCounts?: Map<number, number>;
   onSkip: () => void;
   onShuffle: () => void;
   isRunning: boolean;
@@ -25,6 +26,7 @@ export function StandupQueue({
   speakerTimings,
   activeSpeakerSeconds,
   totalBlockers,
+  taskCounts,
   onSkip,
   onShuffle,
   isRunning,
@@ -69,10 +71,14 @@ export function StandupQueue({
                 <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               )}
 
-              {/* Name */}
               <span className="truncate flex-1">{p.userName}</span>
 
-              {/* Timer */}
+              {taskCounts && !isDone && !isSkipped && (
+                <Badge variant="secondary" className="text-[9px] px-1 py-0 shrink-0">
+                  {taskCounts.get(p.userId) || 0}
+                </Badge>
+              )}
+
               {time != null && (
                 <span className={`text-xs tabular-nums ${isActive ? timerColor(time) : "text-muted-foreground"}`}>
                   {formatTime(time)}
