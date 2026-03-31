@@ -38,20 +38,18 @@ function mapRole(raw: string): string {
   return normalizeRoleForPermissions(LEGACY_ROLE_MAP[raw] || raw);
 }
 
-const VALID_SECTIONS = new Set(["HOME", "MY_WORK", "PROJECTS", "FINANCE", "REPORTS", "ADMIN"]);
+const VALID_SECTIONS = new Set(["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "HSE", "ENGINEERING", "QUALITY", "FINANCE", "REPORTS", "ADMIN"]);
 const SECTION_MIGRATION: Record<string, string[]> = {
-  COCKPIT: ["HOME", "MY_WORK"],
-  EXCO: ["HOME", "MY_WORK"],
-  MY_TOOL: ["HOME", "MY_WORK"],
-  OPERATIONS: ["PROJECTS"],
-  PROJECT_DEVELOPMENT: ["PROJECTS"],
-  PROJECT_MANAGEMENT: ["PROJECTS"],
-  ENGINEERING: ["PROJECTS"],
-  GOVERNANCE: ["PROJECTS"],
-  COLLABORATION: ["PROJECTS"],
-  QUALITY: ["PROJECTS"],
+  COCKPIT: ["HOME"],
+  EXCO: ["HOME"],
+  MY_TOOL: ["HOME"],
+  MY_WORK: ["HOME"],
+  OPERATIONS: ["PROJECT_DELIVERY"],
+  PROJECTS: ["PROJECT_DELIVERY"],
+  PROJECT_MANAGEMENT: ["PROJECT_DELIVERY"],
+  GOVERNANCE: ["PROJECT_DELIVERY"],
+  COLLABORATION: ["PROJECT_DELIVERY"],
   MONEY: ["FINANCE"],
-  FINANCE: ["FINANCE"],
   INFORMATION: ["REPORTS"],
   FEEDBACK: ["REPORTS"],
 };
@@ -172,7 +170,7 @@ async function ensureRolePermissionsSeeded() {
 }
 
 const SECTION_EXPANSION: Record<string, string[]> = {
-  DELIVERY: ["PROJECTS"],
+  DELIVERY: ["PROJECT_DELIVERY"],
 };
 
 function migrateSections(sections: string[]): string[] {
