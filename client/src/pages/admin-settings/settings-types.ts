@@ -134,7 +134,6 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_dashboard: "PD Dashboard — project development pipeline",
   pd_tickets: "PD Tickets — development tickets & tracking",
   projects: "Project List — all projects summary table",
-  project_normalized: "Project Normalized — standardized project view",
   execution_board: "Execution Dashboard — delivery KPIs & cards",
   deliverables: "Deliverables tracker across projects",
   pm_dashboard: "Project Manager Dashboard",
@@ -145,15 +144,10 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   portfolios: "Portfolio view — grouped project analysis",
   portfolio_detail: "Portfolio detail — drilldown view",
   tr_register: "Technical Register — technical tracking & records",
-  triage_inbox: "Triage Inbox — incoming items to classify",
-  unclassified_tasks: "Unclassified Tasks — tasks pending classification",
-  notifications: "Notifications — system & user notifications",
   phase_templates: "Phase Templates — project phase configuration",
   engineering: "Engineering Overview — team workload & status",
   eng_tasks: "Engineering Requests & Tasks",
   eng_stages: "Engineering 5-Stage Checklist system",
-  eng_sync: "Engineering Sync — synchronize engineering data",
-  eng_inbox: "Engineering Inbox — incoming engineering requests",
   quality: "Quality Workspace — QA gates & inspections",
   cashflow: "Cashflow — inflows, outflows, forecast",
   cashflow_forecast: "Cashflow Forecast — forward-looking projections",
@@ -168,7 +162,7 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   financial_linking: "Financial Linking — expense/revenue pairing",
   procurement: "Procurement Hub & subcontractor management",
   subcontractors: "Counterparties & procurement pipeline",
-  counterparties: "Counterparties — external counterparty records",
+  counterparties: "Counterparties — external counterparty records & management",
   invoice_patterns: "Invoice Pattern Library",
   ee_info: "Lifecycle & SOP — company knowledge base",
   ee_info_lifecycle: "EE Info > Lifecycle — lifecycle knowledge articles",
@@ -181,9 +175,7 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   feedback: "Feedback & Support — suggestions & issues",
   department_scores: "Department Scores — team performance",
   teams_chat: "Teams Chat — Microsoft Teams messages",
-  project_chat: "Project Chat — per-project messaging",
   collaboration_hub: "Collaboration Hub — files & communication",
-  sharepoint_files: "SharePoint Files — document library",
   meetings: "Meetings — calendar & meeting notes",
   admin: "Admin Control Center — system settings",
   admin_roles: "Roles & Permissions management",
@@ -195,7 +187,6 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   handover: "PD-PM Handover — submit, approve, reject, reopen handovers",
   standups: "Standups — manage standup schedules and entries",
   reports: "Reports — view project plan, cost, quality, resource reports",
-  counterparties_manage: "Counterparties — manage external counterparty records",
   stage_lifecycle: "Stage Lifecycle — project stage progression",
   stage_exceptions: "Stage Exceptions — exception requests on stages",
   stage_dependencies: "Stage Dependencies — inter-stage dependencies",
@@ -238,39 +229,34 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   hse_compliance: "HSE Compliance — regulatory compliance tracking",
   hse_sseg: "SSEG — small-scale embedded generation compliance",
   hse_incidents: "HSE Incidents — incident reporting & investigation",
-  dashboard_widgets: "Home dashboard — widget cards & charts",
-  governance: "Governance — phase gate & compliance controls",
-  operational_tasks: "Operational Tasks — ad-hoc task tracking (via work_items)",
-  gamification: "Gamification — points, streaks & leaderboard",
   project_creation: "Create Project — new project wizard",
-  project_tagging: "Project Tagging — labels & categories",
   work_items: "Work Items — canonical task/work tracking",
 };
 
 export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
   home: {
     label: "Home",
-    entities: ["home", "my_work", "my_tool", "company_priorities"],
+    entities: ["home", "my_work", "my_tool", "company_priorities", "meetings", "teams_chat", "collaboration_hub"],
   },
-  lifecycle: {
-    label: "Project Lifecycle",
-    entities: ["lifecycle", "create_project", "pd_clients", "stage_lifecycle", "stage_gate", "stage_exceptions", "stage_dependencies", "stage_config", "stage_admin", "gate_override", "exception"],
+  portfolio: {
+    label: "Company",
+    entities: ["lifecycle", "create_project", "stage_lifecycle", "stage_gate", "stage_exceptions", "stage_dependencies", "stage_config", "stage_admin", "gate_override", "exception"],
   },
   project_dev: {
     label: "Project Development",
-    entities: ["pd_dashboard", "pd_tickets"],
+    entities: ["pd_dashboard", "pd_tickets", "pd_clients", "handover", "project_charter", "client_update"],
   },
-  project_management: {
-    label: "Project Management",
-    entities: ["projects", "project_normalized", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "triage_inbox", "unclassified_tasks", "handover", "handover_acceptance", "commissioning", "task_management", "standups", "notifications", "phase_templates", "project_charter", "client_update", "project_access_mgmt"],
-  },
-  engineering: {
-    label: "Engineering",
-    entities: ["engineering", "eng_tasks", "eng_stages", "eng_sync", "eng_inbox"],
+  project_delivery: {
+    label: "Project Delivery",
+    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "handover_acceptance", "commissioning", "task_management", "standups", "phase_templates", "project_access_mgmt", "project_creation", "work_items"],
   },
   hse: {
     label: "HSE",
     entities: ["hse_dashboard", "hse_compliance", "hse_sseg", "hse_incidents"],
+  },
+  engineering: {
+    label: "Engineering",
+    entities: ["engineering", "eng_tasks", "eng_stages"],
   },
   quality: {
     label: "Quality",
@@ -278,27 +264,19 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   finance: {
     label: "Finance",
-    entities: ["cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "counterparties_manage", "subcontractors", "invoice_patterns"],
+    entities: ["cashflow", "cashflow_forecast", "cos", "cos_control", "revenue_tracker", "revenue", "gp_tracker", "fye_revenue_tracking", "financials", "financial_integration", "financial_linking", "procurement", "counterparties", "subcontractors", "invoice_patterns"],
   },
   reports: {
-    label: "Reports & Knowledge",
-    entities: ["reports", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "leaderboard", "training", "knowledge_game", "feedback", "department_scores"],
-  },
-  collaboration: {
-    label: "Collaboration",
-    entities: ["teams_chat", "project_chat", "collaboration_hub", "sharepoint_files", "meetings"],
+    label: "Reports",
+    entities: ["reports", "performance", "leaderboard", "department_scores"],
   },
   admin: {
     label: "Admin",
-    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail"],
+    entities: ["admin", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "training", "knowledge_game", "feedback"],
   },
   project_detail: {
     label: "Project Detail Tabs",
     entities: ["pd_overview", "pd_plan", "pd_gantt", "pd_finance", "pd_revenue", "pd_cashflow", "pd_cos_tracker", "pd_expenditure", "pd_history", "pd_key_dates", "pd_quality", "pd_engineering", "pd_eng_tasks", "pd_eng_stages", "pd_collaboration", "pd_subcontractors", "pd_change_control", "pd_commissioning", "pd_dependencies", "pd_raid"],
-  },
-  other: {
-    label: "Other Permissions",
-    entities: ["dashboard_widgets", "governance", "operational_tasks", "gamification", "project_creation", "project_tagging", "work_items", "performance"],
   },
 };
 

@@ -41,7 +41,7 @@ export const COO_OPERATIONAL_ACCESS_MATRIX: DomainAccessSpec[] = [
   },
   {
     domain: "quality",
-    entities: ["quality", "governance", "pd_quality"],
+    entities: ["quality", "pd_quality"],
     requiredActions: FULL_OPERATIONAL_ACTIONS,
     discoverablePaths: ["/quality", "/project/:projectName"],
   },
@@ -65,7 +65,7 @@ export const COO_OPERATIONAL_ACCESS_MATRIX: DomainAccessSpec[] = [
   },
   {
     domain: "hse_compliance",
-    entities: ["quality", "governance", "audit_trail"],
+    entities: ["quality", "audit_trail"],
     requiredActions: FULL_OPERATIONAL_ACTIONS,
     discoverablePaths: ["/quality", "/admin/activity-log"],
   },
