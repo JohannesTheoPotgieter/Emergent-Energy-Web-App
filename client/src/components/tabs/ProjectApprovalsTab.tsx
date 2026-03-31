@@ -90,19 +90,40 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
 
   const approveMutation = useMutation({
     mutationFn: async ({ id, type }: { id: string; type: string }) => {
+      let res: Response;
       if (type === "general" && id.startsWith("gen-")) {
         const realId = id.replace("gen-", "");
-        const res = await engFetch(`/api/approvals/general/${realId}`, {
+        res = await engFetch(`/api/approvals/general/${realId}`, {
           method: "PATCH",
           body: JSON.stringify({ status: "approved", decisionNote: comment }),
         });
-        if (!res.ok) throw new Error("Failed to approve");
-        return res.json();
+      } else if (type === "engineering" && id.startsWith("eng-")) {
+        const realId = id.replace("eng-", "");
+        res = await engFetch(`/api/eng-stages/approvals/${realId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "approved", comments: comment }),
+        });
+      } else if (type === "quality" && id.startsWith("qc-")) {
+        const realId = id.replace("qc-", "");
+        const projName = selectedApproval?.projectName || "";
+        res = await engFetch(`/api/quality/project/${encodeURIComponent(projName)}/item/${realId}/approve`, {
+          method: "POST",
+          body: JSON.stringify({ approved: true, comment }),
+        });
+      } else if (type === "deliverable" && id.startsWith("del-")) {
+        const realId = id.replace("del-", "");
+        const currentStatus = selectedApproval?.status || "";
+        const nextStatus = currentStatus === "NEEDS APPROVAL" ? "QC APPROVED"
+          : currentStatus === "QC APPROVED" ? "OPERATIONAL APPROVAL"
+          : currentStatus === "OPERATIONAL APPROVAL" ? "COMPLETE"
+          : "COMPLETE";
+        res = await engFetch(`/api/deliverables/${realId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: nextStatus }),
+        });
+      } else {
+        throw new Error("Unknown approval type");
       }
-      const res = await engFetch(`/api/approvals/${id}/approve`, {
-        method: "POST",
-        body: JSON.stringify({ type, comment }),
-      });
       if (!res.ok) throw new Error("Failed to approve");
       return res.json();
     },
@@ -119,19 +140,35 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
 
   const rejectMutation = useMutation({
     mutationFn: async ({ id, type }: { id: string; type: string }) => {
+      let res: Response;
       if (type === "general" && id.startsWith("gen-")) {
         const realId = id.replace("gen-", "");
-        const res = await engFetch(`/api/approvals/general/${realId}`, {
+        res = await engFetch(`/api/approvals/general/${realId}`, {
           method: "PATCH",
           body: JSON.stringify({ status: "rejected", decisionNote: comment }),
         });
-        if (!res.ok) throw new Error("Failed to reject");
-        return res.json();
+      } else if (type === "engineering" && id.startsWith("eng-")) {
+        const realId = id.replace("eng-", "");
+        res = await engFetch(`/api/eng-stages/approvals/${realId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "rejected", comments: comment }),
+        });
+      } else if (type === "quality" && id.startsWith("qc-")) {
+        const realId = id.replace("qc-", "");
+        const projName = selectedApproval?.projectName || "";
+        res = await engFetch(`/api/quality/project/${encodeURIComponent(projName)}/item/${realId}/approve`, {
+          method: "POST",
+          body: JSON.stringify({ approved: false, comment }),
+        });
+      } else if (type === "deliverable" && id.startsWith("del-")) {
+        const realId = id.replace("del-", "");
+        res = await engFetch(`/api/deliverables/${realId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "PROVIDE FEEDBACK" }),
+        });
+      } else {
+        throw new Error("Unknown approval type");
       }
-      const res = await engFetch(`/api/approvals/${id}/reject`, {
-        method: "POST",
-        body: JSON.stringify({ type, comment }),
-      });
       if (!res.ok) throw new Error("Failed to reject");
       return res.json();
     },
