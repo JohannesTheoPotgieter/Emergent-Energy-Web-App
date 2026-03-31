@@ -114,13 +114,14 @@ async function resolveToken(userAccessToken?: string | null): Promise<string> {
 
 async function resolveUserToken(userAccessToken?: string | null): Promise<string> {
   if (userAccessToken) return userAccessToken;
-  return getAccessToken();
+  throw new Error("User-scoped Microsoft API calls require an individual SSO token. Please sign in with Microsoft.");
 }
 
 async function graphGet(url: string, userAccessToken?: string | null): Promise<any> {
-  const token = userAccessToken
-    ? userAccessToken
-    : await resolveToken(null);
+  const isUserScoped = url.startsWith("/me/") || url.startsWith("/me?") || url === "/me";
+  const token = isUserScoped
+    ? await resolveUserToken(userAccessToken)
+    : await resolveToken(userAccessToken);
   const res = await fetch(`https://graph.microsoft.com/v1.0${url}`, {
     headers: {
       Authorization: `Bearer ${token}`,
