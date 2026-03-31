@@ -10,16 +10,21 @@ export interface Participant {
 export interface EngTask {
   id: number;
   title: string;
+  description?: string | null;
   status: string;
   priority: string | null;
   workstream: string;
   projectId: number | null;
   projectName?: string;
   ownerUserId: number | null;
+  ownerName?: string | null;
   holdReason?: string | null;
   blockedType?: string | null;
+  startDate?: string | null;
   endDate?: string | null;
   percentComplete?: number | null;
+  phase?: string | null;
+  taskTypeTag?: string | null;
 }
 
 export interface TaskMovement {
@@ -53,10 +58,10 @@ export interface StandupSession {
 
 // The 4 lanes we show during standup
 export const STANDUP_LANES = [
-  { key: "TO DO", label: "To Do", color: "bg-slate-50 dark:bg-slate-900/40", border: "border-slate-200 dark:border-slate-800" },
-  { key: "IN PROGRESS", label: "In Progress", color: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800" },
-  { key: "HOLD", label: "Hold", color: "bg-red-50 dark:bg-red-950/30", border: "border-red-200 dark:border-red-800" },
-  { key: "COMPLETE", label: "Done", color: "bg-green-50 dark:bg-green-950/30", border: "border-green-200 dark:border-green-800" },
+  { key: "TO DO", label: "To Do", color: "bg-slate-50", border: "border-slate-200" },
+  { key: "IN PROGRESS", label: "In Progress", color: "bg-blue-50", border: "border-blue-200" },
+  { key: "HOLD", label: "Hold", color: "bg-red-50", border: "border-red-200" },
+  { key: "COMPLETE", label: "Done", color: "bg-green-50", border: "border-green-200" },
 ] as const;
 
 export const MOODS = [

@@ -95,17 +95,22 @@ export default function EngineeringStandupPage() {
     },
   });
 
+  const taskCountByUser = useMemo(() => {
+    const counts = new Map<number, number>();
+    const activeStatuses = ["TO DO", "IN PROGRESS", "HOLD"];
+    for (const t of allEngTasks) {
+      if (activeStatuses.includes(t.status) && t.ownerUserId != null) {
+        counts.set(t.ownerUserId, (counts.get(t.ownerUserId) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [allEngTasks]);
+
   const participants = useMemo(() => {
     if (allEngTasks.length === 0) return allParticipants;
-    const activeStatuses = ["TO DO", "IN PROGRESS", "HOLD"];
-    const ownerIds = new Set(
-      allEngTasks
-        .filter(t => activeStatuses.includes(t.status) && t.ownerUserId != null)
-        .map(t => t.ownerUserId!)
-    );
-    const filtered = allParticipants.filter(p => ownerIds.has(p.userId));
+    const filtered = allParticipants.filter(p => (taskCountByUser.get(p.userId) || 0) > 0);
     return filtered.length > 0 ? filtered : allParticipants;
-  }, [allParticipants, allEngTasks]);
+  }, [allParticipants, allEngTasks, taskCountByUser]);
 
   // Active speaker's engineering tasks
   const activeSpeaker = phase === "running" ? queue[activeIndex] : null;
@@ -173,7 +178,15 @@ export default function EngineeringStandupPage() {
   }
 
   function startStandup(overrideParticipants?: Participant[]) {
-    const pList = overrideParticipants ?? (participants.length > 0 ? participants : []);
+    let pList = overrideParticipants ?? (participants.length > 0 ? participants : []);
+    if (allEngTasks.length > 0 && overrideParticipants) {
+      const activeStatuses = ["TO DO", "IN PROGRESS", "HOLD"];
+      const ownerIds = new Set(
+        allEngTasks.filter(t => activeStatuses.includes(t.status) && t.ownerUserId != null).map(t => t.ownerUserId!)
+      );
+      const filtered = pList.filter(p => ownerIds.has(p.userId));
+      if (filtered.length > 0) pList = filtered;
+    }
     if (pList.length === 0) return;
     const q = [...pList];
     // Shuffle for fairness
@@ -295,9 +308,9 @@ export default function EngineeringStandupPage() {
         body: JSON.stringify(body),
       });
     },
-    onSuccess: (_, vars) => {
-      // Invalidate the speaker's tasks to refresh lanes
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["eng-tasks-standup", activeSpeaker?.userId] });
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks-all-standup"] });
       invalidateAllTaskCaches(queryClient);
     },
     onError: (err: Error) => {
@@ -311,7 +324,6 @@ export default function EngineeringStandupPage() {
 
     const fromStatus = task.status;
 
-    // Track the movement
     setTaskMovements(prev => [...prev, {
       taskId,
       taskTitle: task.title,
@@ -322,8 +334,44 @@ export default function EngineeringStandupPage() {
       holdReason,
     }]);
 
-    // Fire the mutation
     moveTaskMutation.mutate({ taskId, status: newStatus, holdReason, blockedType });
+  }
+
+  const editTaskMutation = useMutation({
+    mutationFn: async ({ taskId, updates }: { taskId: number; updates: Record<string, unknown> }) => {
+      return api(`/api/eng/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify(updates),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks-standup", activeSpeaker?.userId] });
+      queryClient.invalidateQueries({ queryKey: ["eng-tasks-all-standup"] });
+      invalidateAllTaskCaches(queryClient);
+      toast({ title: "Task updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to update task", description: err.message, variant: "destructive" });
+    },
+  });
+
+  async function handleEditTask(taskId: number, updates: Partial<EngTask>) {
+    if (Object.keys(updates).length === 0) return;
+    if (updates.status && updates.status !== speakerTasks.find(t => t.id === taskId)?.status) {
+      const task = speakerTasks.find(t => t.id === taskId);
+      if (task && activeSpeaker) {
+        setTaskMovements(prev => [...prev, {
+          taskId,
+          taskTitle: task.title,
+          userId: activeSpeaker.userId,
+          userName: activeSpeaker.userName,
+          fromStatus: task.status,
+          toStatus: updates.status!,
+          holdReason: updates.holdReason as string | undefined,
+        }]);
+      }
+    }
+    await editTaskMutation.mutateAsync({ taskId, updates });
   }
 
   // ── Mood selection ────────────────────────────────────────────────────
@@ -413,7 +461,7 @@ export default function EngineeringStandupPage() {
             </div>
             <h3 className="text-lg font-semibold mb-1">Ready to Stand Up?</h3>
             <p className="text-sm text-muted-foreground mb-6 max-w-md">
-              Start the engineering standup session. All team members will be shuffled into a random speaking order.
+              Start the engineering standup session. Only team members with active tasks will participate, shuffled into a random order.
             </p>
             <Button
               size="lg"
@@ -433,11 +481,15 @@ export default function EngineeringStandupPage() {
                 </>
               )}
             </Button>
-            {participants.length > 0 && (
+            {participants.length > 0 ? (
               <p className="text-xs text-muted-foreground mt-4">
-                {participants.length} team member{participants.length !== 1 ? "s" : ""} will participate
+                {participants.length} team member{participants.length !== 1 ? "s" : ""} with active tasks will participate
               </p>
-            )}
+            ) : allParticipants.length > 0 && allEngTasks.length > 0 ? (
+              <p className="text-xs text-amber-600 mt-4">
+                No team members have active engineering tasks right now.
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       )}
@@ -454,6 +506,7 @@ export default function EngineeringStandupPage() {
             speakerTimings={speakerTimings}
             activeSpeakerSeconds={speakerSeconds}
             totalBlockers={totalBlockers}
+            taskCounts={taskCountByUser}
             onSkip={skipSpeaker}
             onShuffle={shuffleRemaining}
             isRunning={true}
@@ -485,6 +538,7 @@ export default function EngineeringStandupPage() {
             <TaskLanes
               tasks={speakerTasks}
               onMoveTask={handleMoveTask}
+              onEditTask={handleEditTask}
               isLoading={tasksLoading}
             />
 
