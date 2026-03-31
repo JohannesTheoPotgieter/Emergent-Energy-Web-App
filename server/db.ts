@@ -265,7 +265,16 @@ async function ensureSqliteSchema() {
     try {
       await db.run(sql.raw(`ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0`));
     } catch {}
-     
+    try {
+      await db.run(sql.raw(`ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1`));
+    } catch {}
+    try {
+      await db.run(sql.raw(`ALTER TABLE users ADD COLUMN department TEXT`));
+    } catch {}
+    try {
+      await db.run(sql.raw(`ALTER TABLE users ADD COLUMN deleted_at TEXT`));
+    } catch {}
+
     // Project Info table (matches Drizzle schema)
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS project_info (
@@ -905,11 +914,17 @@ async function ensureSqliteSchema() {
         deadline_time TEXT DEFAULT '10:00',
         deadline_timezone TEXT NOT NULL DEFAULT 'Africa/Johannesburg',
         is_active INTEGER NOT NULL DEFAULT 1,
+        deleted_at TEXT,
+        deleted_by INTEGER,
         created_by INTEGER,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP,
         updated_at TEXT DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    // Add deleted_at/deleted_by to existing standup_schedules tables
+    try { await db.run(sql`ALTER TABLE standup_schedules ADD COLUMN deleted_at TEXT`); } catch (_e) { /* column already exists */ }
+    try { await db.run(sql`ALTER TABLE standup_schedules ADD COLUMN deleted_by INTEGER`); } catch (_e) { /* column already exists */ }
+
     await db.run(sql`
       CREATE TABLE IF NOT EXISTS standup_participants (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
