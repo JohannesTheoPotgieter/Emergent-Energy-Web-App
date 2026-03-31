@@ -8028,3 +8028,14 @@ ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS cos_status_override_by INTE
 ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS cos_status_override_at TIMESTAMPTZ;
 ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS cos_status_override_reason TEXT;
 
+
+-- Scheduling columns for project_eng_approvals
+ALTER TABLE project_eng_approvals ADD COLUMN IF NOT EXISTS scheduled_date DATE;
+ALTER TABLE project_eng_approvals ADD COLUMN IF NOT EXISTS scheduled_start_time TEXT;
+ALTER TABLE project_eng_approvals ADD COLUMN IF NOT EXISTS scheduled_end_time TEXT;
+
+-- Scheduling columns for approvals
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS scheduled_date DATE;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS scheduled_start_time TEXT;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS scheduled_end_time TEXT;
+

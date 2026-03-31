@@ -547,6 +547,9 @@ export function registerMsSyncRoutes(app: Express) {
             projectName: projectInfo.projectName,
             projectId: projectInfo.id,
             approverUserId: projectEngApprovals.approverUserId,
+            scheduledDate: projectEngApprovals.scheduledDate,
+            scheduledStartTime: projectEngApprovals.scheduledStartTime,
+            scheduledEndTime: projectEngApprovals.scheduledEndTime,
           })
             .from(projectEngApprovals)
             .innerJoin(projectEngStages, eq(projectEngApprovals.projectEngStageId, projectEngStages.id))
@@ -579,6 +582,9 @@ export function registerMsSyncRoutes(app: Express) {
             projectName: qcChecklist.projectName,
             projectId: qcChecklist.projectId,
             lastUpdatedAt: qcItemInstance.lastUpdatedAt,
+            scheduledDate: qcItemInstance.scheduledDate,
+            scheduledStartTime: qcItemInstance.scheduledStartTime,
+            scheduledEndTime: qcItemInstance.scheduledEndTime,
           })
             .from(qcItemInstance)
             .innerJoin(qcChecklist, eq(qcItemInstance.checklistId, qcChecklist.id))
@@ -598,6 +604,9 @@ export function registerMsSyncRoutes(app: Express) {
             assignedApprover: approvals.assignedApprover,
             relatedEntityType: approvals.relatedEntityType,
             relatedEntityId: approvals.relatedEntityId,
+            scheduledDate: approvals.scheduledDate,
+            scheduledStartTime: approvals.scheduledStartTime,
+            scheduledEndTime: approvals.scheduledEndTime,
           })
             .from(approvals)
             .leftJoin(projectInfo, eq(approvals.projectId, projectInfo.id))
@@ -843,6 +852,9 @@ export function registerMsSyncRoutes(app: Express) {
         status: a.status,
         createdAt: a.createdAt,
         type: "engineering" as const,
+        scheduledDate: a.scheduledDate || null,
+        scheduledStartTime: a.scheduledStartTime || null,
+        scheduledEndTime: a.scheduledEndTime || null,
       }, {
         itemKey: `approval-eng-${a.id}`,
         rawId: a.id,
@@ -858,6 +870,9 @@ export function registerMsSyncRoutes(app: Express) {
         status: "review",
         createdAt: q.lastUpdatedAt,
         type: "quality" as const,
+        scheduledDate: q.scheduledDate || null,
+        scheduledStartTime: q.scheduledStartTime || null,
+        scheduledEndTime: q.scheduledEndTime || null,
       }, {
         itemKey: `approval-qc-${q.id}`,
         rawId: q.id,
@@ -880,6 +895,9 @@ export function registerMsSyncRoutes(app: Express) {
           relatedEntityId: approval.relatedEntityId,
           assignments: approval.assignments || [],
           assigneeDisplay: primaryAssignment?.displayLabel || (approval.assignedApprover ? resolveUserId(approval.assignedApprover)?.name || null : null),
+          scheduledDate: approval.scheduledDate || null,
+          scheduledStartTime: approval.scheduledStartTime || null,
+          scheduledEndTime: approval.scheduledEndTime || null,
         }, {
           itemKey: `approval-gen-${approval.id}`,
           rawId: approval.id,
