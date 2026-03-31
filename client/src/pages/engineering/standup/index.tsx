@@ -116,29 +116,35 @@ export default function EngineeringStandupPage() {
   async function initiateStandup() {
     setIsInitiating(true);
     try {
+      let pList = participants;
       // Auto-seed a default schedule if none exists, then refresh data
       if (schedules.length === 0) {
         await api("/api/standups/seed-default", { method: "POST" });
         const newSchedules = await refetchSchedules();
         const newScheduleId = newSchedules.data?.[0]?.id;
         if (newScheduleId) {
-          await refetchParticipants();
+          // Fetch participants directly since activeScheduleId hasn't updated yet
+          const freshParticipants = await api(`/api/standups/schedules/${newScheduleId}/participants`);
+          pList = freshParticipants;
+          // Also update the query cache so React state catches up
+          queryClient.setQueryData(
+            ["/api/standups/schedules", String(newScheduleId), "participants"],
+            freshParticipants,
+          );
         }
         toast({ title: "Standup initiated", description: "Schedule created with all team members." });
       }
-      // Small delay for queries to settle, then start
-      setTimeout(() => {
-        startStandup();
-        setIsInitiating(false);
-      }, 500);
+      // Start with the resolved participant list
+      startStandup(pList);
+      setIsInitiating(false);
     } catch (err: any) {
       toast({ title: "Failed to initiate standup", description: err.message, variant: "destructive" });
       setIsInitiating(false);
     }
   }
 
-  function startStandup() {
-    const pList = participants.length > 0 ? participants : [];
+  function startStandup(overrideParticipants?: Participant[]) {
+    const pList = overrideParticipants ?? (participants.length > 0 ? participants : []);
     if (pList.length === 0) return;
     const q = [...pList];
     // Shuffle for fairness
@@ -382,7 +388,7 @@ export default function EngineeringStandupPage() {
             </p>
             <Button
               size="lg"
-              onClick={schedules.length > 0 && participants.length > 0 ? startStandup : initiateStandup}
+              onClick={schedules.length > 0 && participants.length > 0 ? () => startStandup() : initiateStandup}
               disabled={isInitiating}
               className="gap-2 px-8"
             >
