@@ -8,12 +8,13 @@ import { eq, and, isNull, desc } from "drizzle-orm";
 import { jwtAuth, requireAuth } from "../auth-context";
 import { logAuditFromReq } from "../audit-logger";
 import * as schema from "@shared/schema";
+import { TEMPLATE_TYPES, templateOverrides } from "@shared/schema/template-overrides";
 
 const COO_ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
 function getUser(req: Request): { id: number; name: string; role: string } {
   const u = (req as any).user;
-  return { id: u.id || u.userId, name: u.name, role: u.role };
+  return { id: u?.id || u?.userId, name: u?.name || "unknown", role: u?.role || "unknown" };
 }
 
 function isAdmin(role: string): boolean {
@@ -39,9 +40,9 @@ app.get("/api/templates/stage-checklist", jwtAuth, requireAuth, async (req: Requ
       .orderBy(schema.stageChecklistTemplates.stageCode, schema.stageChecklistTemplates.sortOrder);
 
     res.json({ templates });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("List stage checklist templates error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Failed to list stage checklist templates" });
   }
 });
 
@@ -72,9 +73,9 @@ app.get("/api/templates/stage-checklist/:id/versions", jwtAuth, requireAuth, asy
       .orderBy(desc(schema.stageChecklistTemplates.version));
 
     res.json({ versions });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Template version history error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Failed to fetch template version history" });
   }
 });
 
@@ -145,9 +146,9 @@ app.post("/api/templates/stage-checklist/:id/version", jwtAuth, requireAuth, asy
     });
 
     res.json({ template: newVersion });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Create template version error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Failed to create template version" });
   }
 });
 
@@ -169,12 +170,12 @@ app.post("/api/templates/overrides", jwtAuth, requireAuth, async (req: Request, 
       });
     }
 
-    if (!schema.TEMPLATE_TYPES.includes(templateType)) {
-      return res.status(400).json({ error: `Invalid templateType. Must be one of: ${schema.TEMPLATE_TYPES.join(", ")}` });
+    if (!TEMPLATE_TYPES.includes(templateType)) {
+      return res.status(400).json({ error: `Invalid templateType. Must be one of: ${TEMPLATE_TYPES.join(", ")}` });
     }
 
     const [override] = await db
-      .insert(schema.templateOverrides)
+      .insert(templateOverrides)
       .values({
         templateType,
         sourceTemplateId,
@@ -199,9 +200,9 @@ app.post("/api/templates/overrides", jwtAuth, requireAuth, async (req: Request, 
     });
 
     res.json({ override });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Create template override error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Failed to create template override" });
   }
 });
 
@@ -213,20 +214,20 @@ app.get("/api/templates/overrides/:projectId", jwtAuth, requireAuth, async (req:
 
     const overrides = await db
       .select()
-      .from(schema.templateOverrides)
+      .from(templateOverrides)
       .where(
         and(
-          eq(schema.templateOverrides.projectId, projectId),
-          eq(schema.templateOverrides.isActive, true),
-          isNull(schema.templateOverrides.deletedAt),
+          eq(templateOverrides.projectId, projectId),
+          eq(templateOverrides.isActive, true),
+          isNull(templateOverrides.deletedAt),
         ),
       )
-      .orderBy(desc(schema.templateOverrides.createdAt));
+      .orderBy(desc(templateOverrides.createdAt));
 
     res.json({ overrides });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Get template overrides error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Failed to fetch template overrides" });
   }
 });
 
@@ -243,21 +244,21 @@ app.delete("/api/templates/overrides/:id", jwtAuth, requireAuth, async (req: Req
 
     const [existing] = await db
       .select()
-      .from(schema.templateOverrides)
-      .where(eq(schema.templateOverrides.id, id));
+      .from(templateOverrides)
+      .where(eq(templateOverrides.id, id));
 
     if (!existing) return res.status(404).json({ error: "Override not found" });
     if (existing.deletedAt) return res.status(400).json({ error: "Override already deactivated" });
 
     await db
-      .update(schema.templateOverrides)
+      .update(templateOverrides)
       .set({
         isActive: false,
         deletedAt: new Date(),
         deletedBy: user.id,
         updatedAt: new Date(),
       })
-      .where(eq(schema.templateOverrides.id, id));
+      .where(eq(templateOverrides.id, id));
 
     await logAuditFromReq(req, {
       entityType: "template_override",
@@ -271,9 +272,9 @@ app.delete("/api/templates/overrides/:id", jwtAuth, requireAuth, async (req: Req
     });
 
     res.json({ success: true });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Deactivate template override error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Failed to deactivate template override" });
   }
 });
 
@@ -286,11 +287,11 @@ app.get("/api/templates/overrides/:id/status", jwtAuth, requireAuth, async (req:
     // Check if there is an active override for this source template
     const [override] = await db
       .select()
-      .from(schema.templateOverrides)
+      .from(templateOverrides)
       .where(
         and(
-          eq(schema.templateOverrides.id, id),
-          isNull(schema.templateOverrides.deletedAt),
+          eq(templateOverrides.id, id),
+          isNull(templateOverrides.deletedAt),
         ),
       );
 
@@ -316,9 +317,9 @@ app.get("/api/templates/overrides/:id/status", jwtAuth, requireAuth, async (req:
       isActive: override.isActive,
       overriddenAt: override.overriddenAt,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error("Override status check error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: "Failed to check override status" });
   }
 });
 

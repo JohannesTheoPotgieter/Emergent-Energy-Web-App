@@ -383,7 +383,7 @@ export async function generateClientUpdateDraft(projectId: number): Promise<{
     .from(projectStageInstances)
     .where(eq(projectStageInstances.projectId, projectId));
 
-  const currentStage = stages.find(s => s.stageStatus === 'IN_PROGRESS') || stages[0];
+  const currentStage = stages.find((s: any) => s.stageStatus === 'IN_PROGRESS') || stages[0];
   const stageName = currentStage?.stageCode?.replace(/_/g, ' ').replace(/S\d+\s/, '') || 'Unknown';
 
   // Get recent completed requirements
@@ -406,8 +406,8 @@ export async function generateClientUpdateDraft(projectId: number): Promise<{
       eq(projectStageDependencies.status, 'WAITING'),
     ));
 
-  const completedItems = recentCompleted.map(r => `- ${r.itemName}`).join('\n') || '- No recently completed items';
-  const blockerItems = openDeps.map(d => `- ${d.description} (waiting on ${d.toDepartment})`).join('\n') || '- No current blockers';
+  const completedItems = recentCompleted.map((r: any) => `- ${r.itemName}`).join('\n') || '- No recently completed items';
+  const blockerItems = openDeps.map((d: any) => `- ${d.description} (waiting on ${d.toDepartment})`).join('\n') || '- No current blockers';
 
   return {
     progressSummaryText: `Project is currently in ${stageName} stage. Readiness: ${currentStage?.readinessPct ?? 0}%.`,
