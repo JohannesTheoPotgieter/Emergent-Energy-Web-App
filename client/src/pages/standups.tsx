@@ -1532,6 +1532,18 @@ export default function StandupsPage() {
     queryFn: () => apiFetch("/api/standups/today"),
   });
 
+  // Auto-seed default Mon/Wed/Fri standup if none exist
+  useEffect(() => {
+    if (allSchedules && allSchedules.length === 0) {
+      apiFetch("/api/standups/seed-default", { method: "POST" })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ["standup-schedules"] });
+          queryClient.invalidateQueries({ queryKey: ["standup-schedules-all"] });
+        })
+        .catch(() => { /* silent */ });
+    }
+  }, [allSchedules]);
+
   useEffect(() => {
     if (!selectedScheduleId && schedules && schedules.length > 0) {
       setSelectedScheduleId(schedules[0].id);
