@@ -107,10 +107,11 @@ interface ProjectRow {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatZAR(value: string | number | null): string {
+function formatZAR(value: string | number | null, showZero = false): string {
   if (value == null) return "—";
   const num = typeof value === "string" ? parseFloat(value) : value;
-  if (isNaN(num) || num === 0) return "—";
+  if (isNaN(num)) return "—";
+  if (num === 0 && !showZero) return "—";
   return `R ${num.toLocaleString("en-ZA", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
@@ -407,9 +408,14 @@ export default function MilestoneTrackerPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/projects-summary"] });
   };
 
-  // KPI summary — from actual revenue data
+  // KPI summary — from actual revenue data, with contractValue fallback
   const totalProjects = filtered.length;
-  const totalContract = filtered.reduce((sum, p) => sum + (p.revenueSummary?.totalContract || 0), 0);
+  const totalContract = filtered.reduce((sum, p) => {
+    const revTotal = p.revenueSummary?.totalContract || 0;
+    if (revTotal > 0) return sum + revTotal;
+    // Fallback to project_info contractValue when revenue data unavailable
+    return sum + (p.contractValue ? parseFloat(p.contractValue) || 0 : 0);
+  }, 0);
   const totalInBank = filtered.reduce((sum, p) => sum + (p.revenueSummary?.inBank || 0), 0);
   const totalOverdue = filtered.reduce((sum, p) => sum + (p.revenueSummary?.overdue || 0), 0);
   const totalPending = filtered.reduce((sum, p) => sum + (p.revenueSummary?.pending || 0), 0);
@@ -429,9 +435,9 @@ export default function MilestoneTrackerPage() {
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <KPICard label="Projects" value={totalProjects} icon={Target} />
-        <KPICard label="Total Contract" value={formatZAR(totalContract)} icon={DollarSign} color="text-emerald-600" />
-        <KPICard label="In Bank" value={formatZAR(totalInBank)} icon={BanknoteIcon} color="text-green-600" />
-        <KPICard label="Pending" value={formatZAR(totalPending)} icon={TrendingUp} color="text-blue-600" />
+        <KPICard label="Total Contract" value={formatZAR(totalContract, true)} icon={DollarSign} color="text-emerald-600" />
+        <KPICard label="In Bank" value={formatZAR(totalInBank, true)} icon={BanknoteIcon} color="text-green-600" />
+        <KPICard label="Pending" value={formatZAR(totalPending, true)} icon={TrendingUp} color="text-blue-600" />
         <KPICard
           label="Overdue"
           value={overdueProjects}
