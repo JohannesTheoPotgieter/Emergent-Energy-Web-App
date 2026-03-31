@@ -1,20 +1,16 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { PageSkeleton, PageError } from "@/components/ui/page-states";
 import { useToast } from "@/hooks/use-toast";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import {
-  Users, Play, Pause, Square, CheckCircle2, Timer,
+  Users, Play, Pause, Square, CheckCircle2, Timer, Rocket,
 } from "lucide-react";
 
 import { StandupQueue } from "./StandupQueue";
@@ -59,7 +55,7 @@ export default function EngineeringStandupPage() {
   const [taskMovements, setTaskMovements] = useState<TaskMovement[]>([]);
   const [moods, setMoods] = useState<Map<number, string>>(new Map());
   const [facilitatorNotes, setFacilitatorNotes] = useState<Map<number, string>>(new Map());
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string>("");
+  const [isInitiating, setIsInitiating] = useState(false);
 
   // Blocker tracking across all speakers
   const [heldTasks, setHeldTasks] = useState<Array<{ taskTitle: string; userName: string; holdReason: string; blockedType?: string }>>([]);
@@ -69,14 +65,14 @@ export default function EngineeringStandupPage() {
 
   // ── Data fetching ─────────────────────────────────────────────────────
 
-  const { data: schedules = [], isLoading: schedulesLoading } = useQuery<any[]>({
+  const { data: schedules = [], isLoading: schedulesLoading, refetch: refetchSchedules } = useQuery<any[]>({
     queryKey: ["/api/standups/schedules"],
     queryFn: () => api("/api/standups/schedules"),
   });
 
-  const activeScheduleId = selectedScheduleId || (schedules[0]?.id ? String(schedules[0].id) : "");
+  const activeScheduleId = schedules[0]?.id ? String(schedules[0].id) : "";
 
-  const { data: participants = [], isLoading: participantsLoading } = useQuery<Participant[]>({
+  const { data: participants = [], isLoading: participantsLoading, refetch: refetchParticipants } = useQuery<Participant[]>({
     queryKey: ["/api/standups/schedules", activeScheduleId, "participants"],
     queryFn: () => api(`/api/standups/schedules/${activeScheduleId}/participants`),
     enabled: !!activeScheduleId,
@@ -117,8 +113,34 @@ export default function EngineeringStandupPage() {
 
   // ── Session controls ──────────────────────────────────────────────────
 
+  async function initiateStandup() {
+    setIsInitiating(true);
+    try {
+      // Auto-seed a default schedule if none exists, then refresh data
+      if (schedules.length === 0) {
+        await api("/api/standups/seed-default", { method: "POST" });
+        const newSchedules = await refetchSchedules();
+        const newScheduleId = newSchedules.data?.[0]?.id;
+        if (newScheduleId) {
+          await refetchParticipants();
+        }
+        toast({ title: "Standup initiated", description: "Schedule created with all team members." });
+      }
+      // Small delay for queries to settle, then start
+      setTimeout(() => {
+        startStandup();
+        setIsInitiating(false);
+      }, 500);
+    } catch (err: any) {
+      toast({ title: "Failed to initiate standup", description: err.message, variant: "destructive" });
+      setIsInitiating(false);
+    }
+  }
+
   function startStandup() {
-    const q = [...participants];
+    const pList = participants.length > 0 ? participants : [];
+    if (pList.length === 0) return;
+    const q = [...pList];
     // Shuffle for fairness
     for (let i = q.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -295,24 +317,9 @@ export default function EngineeringStandupPage() {
 
   // ── Loading / error states ────────────────────────────────────────────
 
-  const isLoading = schedulesLoading || participantsLoading;
+  const isLoading = schedulesLoading || (!!activeScheduleId && participantsLoading);
 
   if (isLoading) return <PageSkeleton lines={5} />;
-
-  if (schedules.length === 0) {
-    return (
-      <PageShell className="p-4 md:p-6" data-testid="page-engineering-standup">
-        <SectionHeader icon={<Users className="h-5 w-5" />} eyebrow="Engineering" title="Engineering Standup" description="Live standup facilitator" />
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Users className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm font-medium">No standup schedules configured</p>
-            <p className="text-xs text-muted-foreground mt-1">Create a standup schedule in Admin to get started.</p>
-          </CardContent>
-        </Card>
-      </PageShell>
-    );
-  }
 
   // ── RENDER ────────────────────────────────────────────────────────────
 
@@ -329,27 +336,11 @@ export default function EngineeringStandupPage() {
               ? `${completedIndices.size} of ${queue.length} done`
               : phase === "ended"
                 ? "Standup complete"
-                : `${participants.length} participants`}
+                : "Live standup facilitator"}
           />
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Schedule selector */}
-          {schedules.length > 1 && phase === "waiting" && (
-            <Select value={activeScheduleId} onValueChange={setSelectedScheduleId}>
-              <SelectTrigger className="h-9 w-48">
-                <SelectValue placeholder="Select standup" />
-              </SelectTrigger>
-              <SelectContent>
-                {schedules.map((s: any) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.name}{s.teamLabel ? ` — ${s.teamLabel}` : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
           {/* Global timer */}
           {phase === "running" && (
             <div className="flex items-center gap-1.5 text-sm tabular-nums">
@@ -359,11 +350,6 @@ export default function EngineeringStandupPage() {
           )}
 
           {/* Phase controls */}
-          {phase === "waiting" && (
-            <Button onClick={startStandup} disabled={participants.length === 0} className="gap-1.5">
-              <Play className="h-4 w-4" /> Start Standup
-            </Button>
-          )}
           {phase === "running" && (
             <div className="flex items-center gap-2">
               <Button
@@ -383,25 +369,40 @@ export default function EngineeringStandupPage() {
         </div>
       </div>
 
-      {/* ── WAITING PHASE ──────────────────────────────────────────────── */}
+      {/* ── WAITING PHASE — Simple Initiate Button ─────────────────────── */}
       {phase === "waiting" && (
         <Card>
-          <CardContent className="p-6">
-            <h3 className="text-sm font-semibold mb-3">Participants ({participants.length})</h3>
-            <div className="flex flex-wrap gap-3">
-              {participants.map(p => (
-                <div key={p.userId} className="flex items-center gap-2 rounded-lg border px-3 py-2">
-                  <Avatar className="h-7 w-7">
-                    <AvatarFallback className="text-xs">{initials(p.userName)}</AvatarFallback>
-                  </Avatar>
-                  <span className="text-sm">{p.userName}</span>
-                  {!p.isRequired && <Badge variant="outline" className="text-[9px]">Optional</Badge>}
-                </div>
-              ))}
+          <CardContent className="py-16 flex flex-col items-center justify-center text-center">
+            <div className="rounded-full bg-primary/10 p-4 mb-4">
+              <Rocket className="h-8 w-8 text-primary" />
             </div>
-            <p className="text-xs text-muted-foreground mt-4">
-              Press <strong>Start Standup</strong> to begin. Participants will be shuffled into a random order.
+            <h3 className="text-lg font-semibold mb-1">Ready to Stand Up?</h3>
+            <p className="text-sm text-muted-foreground mb-6 max-w-md">
+              Start the engineering standup session. All team members will be shuffled into a random speaking order.
             </p>
+            <Button
+              size="lg"
+              onClick={schedules.length > 0 && participants.length > 0 ? startStandup : initiateStandup}
+              disabled={isInitiating}
+              className="gap-2 px-8"
+            >
+              {isInitiating ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Setting up...
+                </>
+              ) : (
+                <>
+                  <Play className="h-5 w-5" />
+                  Initiate Standup
+                </>
+              )}
+            </Button>
+            {participants.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-4">
+                {participants.length} team member{participants.length !== 1 ? "s" : ""} will participate
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
