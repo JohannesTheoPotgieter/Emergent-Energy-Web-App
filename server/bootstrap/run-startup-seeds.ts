@@ -1,6 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { appSettings } from "@shared/schema";
+import { hasBackfillRun, markBackfillComplete } from "./backfills/backfill-registry";
 
 export async function runStartupSeeds(options: {
   startupDataSeedEnabled: boolean;
@@ -10,6 +11,9 @@ export async function runStartupSeeds(options: {
   const { startupDataSeedEnabled, allowStartupMutations, log } = options;
 
   if (!startupDataSeedEnabled) return;
+
+  // One-time guard: skip if all seeds have already completed
+  if (await hasBackfillRun("startup_seeds_v1")) return;
 
   const { seedQualityTemplate } = await import("../seed-quality-template");
   await seedQualityTemplate().catch((err) => log(`[Seed] Quality template error: ${err}`, "Startup"));
@@ -74,4 +78,7 @@ export async function runStartupSeeds(options: {
 
   const { seedLessonsLearnt } = await import("../seed-lessons-learnt");
   await seedLessonsLearnt().catch((err) => log(`[Lessons-Learnt] Seed error: ${err}`, "Startup"));
+
+  // Mark all seeds as complete
+  await markBackfillComplete("startup_seeds_v1").catch(() => {});
 }

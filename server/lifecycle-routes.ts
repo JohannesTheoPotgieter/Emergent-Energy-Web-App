@@ -14,6 +14,9 @@ import { actorFromReq, createProjectEvent } from "./services/project-event-servi
 import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle-stage-gate-service";
 import { buildProjectLifecycleWorkspace } from "./services/project-lifecycle-workspace-service";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
+import { initializeProjectStages } from "./services/stage-lifecycle-service";
+import { projectStageInstances, STAGE_CODES } from "@shared/schema";
+import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../shared/utils/phase-to-stage-map";
 import { jwtAuth, requireAuth } from "./auth-context";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -1538,6 +1541,44 @@ export function registerLifecycleRoutes(app: Express) {
       };
       const [updated] = await db.update(projectInfo).set(stageTransitionFields).where(eq(projectInfo.id, id)).returning();
       await syncProjectSplitTables(id, stageTransitionFields);
+
+      // Sync stage lifecycle: ensure stage instances exist and current stage is set
+      try {
+        await initializeProjectStages(id); // idempotent — skips existing
+
+        const mappedStage = resolveStageFromPhase(phase.trim());
+        const isCompleted = isFullyCompletedPhase(phase.trim());
+
+        // Mark all prior stages as PROGRESSED
+        const priorStageCodes = isCompleted
+          ? ([...STAGE_CODES] as string[])
+          : (stagesBefore(mappedStage) as string[]);
+
+        if (priorStageCodes.length > 0) {
+          await db.update(projectStageInstances)
+            .set({ stageStatus: "PROGRESSED", readinessPct: 100, completedAt: new Date(), updatedAt: new Date() })
+            .where(and(eq(projectStageInstances.projectId, id), inArray(projectStageInstances.stageCode, priorStageCodes)));
+        }
+
+        // Set current stage to IN_PROGRESS (unless fully completed)
+        if (!isCompleted) {
+          await db.update(projectStageInstances)
+            .set({ stageStatus: "IN_PROGRESS", startedAt: new Date(), updatedAt: new Date() })
+            .where(and(eq(projectStageInstances.projectId, id), eq(projectStageInstances.stageCode, mappedStage)));
+        }
+
+        // Update execution state with the mapped stage code
+        await db.update(projectExecutionState)
+          .set({
+            currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
+            gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
+            gateReadinessPct: isCompleted ? 100 : 0,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectExecutionState.projectId, id));
+      } catch (stageErr: any) {
+        console.warn("[lifecycle-board] Stage lifecycle sync error (non-fatal):", stageErr.message);
+      }
 
       // Record phase transition in dedicated history table
       await db.insert(projectPhaseHistory).values({
