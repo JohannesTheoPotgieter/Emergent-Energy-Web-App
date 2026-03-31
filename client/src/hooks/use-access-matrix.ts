@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions, type PermissionAction, type PermissionEntity } from "@shared/schema";
 import { getPermissionEntityForPath, getAppSectionForPath } from "@/config/page-registry";
+import { parseDisabledSubPages } from "@/config/app-navigation";
 import { useAuth } from "./use-auth";
 import { useLensContext } from "./use-lens-context";
 
@@ -59,12 +60,12 @@ export function useAccessMatrix() {
     PROJECT_MANAGEMENT: ["PROJECT_DELIVERY"],
   };
 
-  // Build a set of allowed sections from the role's section toggles
   const allowedSections = useMemo(() => {
     const s = permissions?.sections;
     if (!s || s.length === 0) return null;
     const normalized = new Set<string>();
     for (const key of s) {
+      if (key.startsWith("!")) continue;
       const mapped = OLD_TO_NEW_SECTIONS[key];
       if (mapped) {
         for (const k of mapped) normalized.add(k);
@@ -73,6 +74,13 @@ export function useAccessMatrix() {
       }
     }
     return normalized;
+  }, [permissions?.sections]);
+
+  const disabledSubPages = useMemo(() => {
+    const s = permissions?.sections;
+    if (!s || s.length === 0) return null;
+    const parsed = parseDisabledSubPages(s);
+    return parsed.size > 0 ? parsed : null;
   }, [permissions?.sections]);
 
   const canAccessEntityAction = useMemo(() => {
@@ -102,10 +110,6 @@ export function useAccessMatrix() {
     return (path: string) => {
       if (path === "/") return true;
 
-      // Section-level gate: if the role's allowed sections don't include
-      // the section this path belongs to, deny access immediately.
-      // This is what makes the Admin → Roles & Permissions → Navigation
-      // toggles actually control top-level nav visibility.
       if (allowedSections) {
         const section = getAppSectionForPath(path);
         if (section && !allowedSections.has(section)) {
@@ -113,16 +117,23 @@ export function useAccessMatrix() {
         }
       }
 
+      if (disabledSubPages) {
+        for (const [sectionKey, paths] of disabledSubPages) {
+          if (paths.has(path)) return false;
+        }
+      }
+
       const entity = getPermissionEntityForPath(path);
       if (!entity) return true;
       return canAccessEntityAction(entity, "view");
     };
-  }, [canAccessEntityAction, allowedSections]);
+  }, [canAccessEntityAction, allowedSections, disabledSubPages]);
 
   return {
     effectiveRole,
     canAccessEntityAction,
     canViewPath,
+    disabledSubPages,
     loading: authLoading || permissionsLoading,
   };
 }

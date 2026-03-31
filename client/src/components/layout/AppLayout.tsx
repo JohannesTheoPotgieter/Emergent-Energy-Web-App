@@ -49,7 +49,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [microsoftMenuOpen, setMicrosoftMenuOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const { canAccessEntityAction, canViewPath } = useAccessMatrix();
+  const { canAccessEntityAction, canViewPath, disabledSubPages } = useAccessMatrix();
   const { theme, setTheme } = useTheme();
   const { isMobile, isTablet } = useBreakpoint();
   const { sectionOrder } = useNavPreferences();
@@ -92,6 +92,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       canViewPath,
       companyRole: lens.simulation ? null : effectiveCompanyRole,
       allowedSectionKeys: lensAllowedSectionKeys,
+      disabledSubPages: disabledSubPages,
     });
     // Apply user's custom section order if set
     if (sectionOrder.length > 0) {
@@ -105,7 +106,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
     }
     return sections;
-  }, [canViewPath, sectionOrder, effectiveCompanyRole, lensAllowedSectionKeys, lens.simulation]);
+  }, [canViewPath, sectionOrder, effectiveCompanyRole, lensAllowedSectionKeys, lens.simulation, disabledSubPages]);
 
   // Redirect to the active lens's landing page on lens switch
   const prevLensRef = useRef(lens.activeLens);
