@@ -72,6 +72,7 @@ import {
   RotateCw,
   ArrowRightLeft,
   RefreshCw,
+  CornerDownRight,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -480,6 +481,12 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
           <span className="text-[9px] text-muted-foreground/60 truncate flex-1">{projectDisplay}</span>
           {task.dueDate && <span className={`text-[9px] ${overdue ? "text-red-600 font-bold" : "text-muted-foreground"}`}>{label || formatDateShort(task.dueDate)}</span>}
         </div>
+        {task.parentTaskTitle && (
+          <div className="flex items-center gap-1 mt-0.5">
+            <CornerDownRight className="h-2.5 w-2.5 text-muted-foreground/50 shrink-0" />
+            <span className="text-[8px] text-muted-foreground/50 truncate">Sub-task of {task.parentTaskTitle}</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -540,7 +547,13 @@ export function TaskCard({ task, onClick, onStatusChange, onPriorityChange, onDu
         </div>
       </div>
 
-      <p className="text-[10px] text-muted-foreground/70 mb-1.5 truncate">{projectDisplay}</p>
+      <p className="text-[10px] text-muted-foreground/70 mb-0.5 truncate">{projectDisplay}</p>
+      {task.parentTaskTitle && (
+        <div className="flex items-center gap-1 mb-1.5">
+          <CornerDownRight className="h-2.5 w-2.5 text-violet-400 shrink-0" />
+          <span className="text-[10px] text-violet-600/70 truncate max-w-[200px]">{task.parentTaskTitle}</span>
+        </div>
+      )}
 
       <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
         <div onClick={(e) => e.stopPropagation()}>
@@ -3388,6 +3401,12 @@ export function MyTasksView({
                             <td className="p-2 pl-3">
                               <div className="flex flex-col">
                                 <span className="font-medium text-sm truncate max-w-[280px]" data-testid={`my-task-title-${task.id}`}>{task.title}</span>
+                                {task.parentTaskTitle && (
+                                  <span className="text-[10px] text-violet-600/70 flex items-center gap-0.5 mt-0.5">
+                                    <CornerDownRight className="h-2.5 w-2.5 shrink-0" />
+                                    <span className="truncate max-w-[220px]">{task.parentTaskTitle}</span>
+                                  </span>
+                                )}
                                 {task.holdReason && (
                                   <span className="text-[10px] text-red-500 flex items-center gap-0.5 mt-0.5">
                                     <PauseCircle className="h-3 w-3 shrink-0" />

@@ -34,6 +34,7 @@ import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
+import { runCascadesAfterUpdate, validateParentCompletion } from "./services/task-cascade-service";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -678,6 +679,14 @@ export function registerEngineeringRoutes(app: Express) {
         }
       }
 
+      // Validate parent completion: can't mark complete if children are still open
+      if (updates.status && ["Complete", "COMPLETE"].includes(updates.status)) {
+        const blockMsg = await validateParentCompletion(id);
+        if (blockMsg) {
+          return sendError(res, badRequest(blockMsg));
+        }
+      }
+
       if (updates.status === "HOLD" && !updates.holdReason) {
         return sendError(res, badRequest("Hold reason required when setting status to HOLD"));
       }
@@ -732,6 +741,17 @@ export function registerEngineeringRoutes(app: Express) {
             `Task status: ${updated.title}`, `Status changed to "${updates.status}"`,
             { linkedTaskId: id });
         }
+      }
+
+      // Run cascades (dates rollup to parent, status propagation)
+      try {
+        await runCascadesAfterUpdate(id, {
+          status: updates.status,
+          startDate: updates.startDate,
+          dueDate: updates.dueDate,
+        });
+      } catch (cascadeErr: any) {
+        console.warn("[Engineering] Non-fatal cascade error:", cascadeErr.message);
       }
 
       const mappedItems = await listEngineeringWorkItems({ projectId: updated.projectId || undefined });
@@ -1678,9 +1698,13 @@ export function registerEngineeringRoutes(app: Express) {
         createdBy: getUser(req).id,
       });
 
-      // Set parentId on the newly created work item
+      // Set parentId on the newly created work item and inherit parent dates
       await db.update(workItems)
-        .set({ parentId: parentId })
+        .set({
+          parentId: parentId,
+          startDate: parent.startDate || null,
+          endDate: parent.dueDate || parent.endDate || null,
+        })
         .where(eq(workItems.id, subtaskWorkItem.id));
 
       await db.insert(taskActivityLog).values({

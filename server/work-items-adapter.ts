@@ -99,8 +99,10 @@ export async function getAllWorkItemsForPlanTab(projectName: string): Promise<an
 
 function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, forceWorkstream?: string, resolvedAssignees?: Map<number, string[]>): any[] {
   const parentIdToWbs = new Map<number, string>();
+  const parentIdToTitle = new Map<number, string>();
   for (const wi of items) {
     if (wi.wbsCode) parentIdToWbs.set(wi.id, wi.wbsCode);
+    parentIdToTitle.set(wi.id, wi.title);
   }
 
   return items.map((wi: WorkItem) => {
@@ -134,6 +136,7 @@ function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, 
       isMilestone: wi.isMilestone === true || wi.type === "milestone",
       parentTaskNo,
       parentWorkItemId: wi.parentId || null,
+      parentTaskTitle: wi.parentId ? (parentIdToTitle.get(wi.parentId) || null) : null,
       indentLevel: wi.indentLevel ?? indentLevel,
       sortOrder: wi.sortOrder ?? 0,
       sourceSheet: null,
@@ -675,6 +678,12 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
     }
   }
 
+  // Build parent title lookup from the items themselves
+  const parentTitleMap = new Map<number, string>();
+  for (const wi of items) {
+    parentTitleMap.set(wi.id, wi.title);
+  }
+
   return items.map((wi: any) => ({
     id: wi.id,
     projectId: wi.projectId,
@@ -684,6 +693,7 @@ export async function listEngineeringWorkItems(options: EngineeringListOptions =
     importedTaskId: null,
     taskNumber: wi.wbsCode,
     parentTaskId: wi.parentId,
+    parentTaskTitle: wi.parentId ? (parentTitleMap.get(wi.parentId) || null) : null,
     title: wi.title,
     description: wi.description,
     status: mapToOpsStatus(wi.status),

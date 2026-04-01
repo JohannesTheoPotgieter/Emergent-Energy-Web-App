@@ -53,6 +53,7 @@ export interface Task {
   externalSource: string | null;
   externalTaskId: string | null;
   parentTaskId: number | null;
+  parentTaskTitle?: string | null;
   linkedPlanItemId: number | null;
   linkedDeliverableId: number | null;
   linkedQualityItemInstanceId: number | null;

@@ -58,6 +58,7 @@ import {
   Target,
   Eye,
   Layers,
+  CornerDownRight,
 } from "lucide-react";
 import UserAssignmentPicker from "@/components/UserAssignmentPicker";
 import DependencyManager from "@/components/DependencyManager";
@@ -552,6 +553,12 @@ function TaskDetailContent({
             >
               {task.title}
             </h2>
+          )}
+          {task.parentTaskTitle && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <CornerDownRight className="h-3 w-3 text-violet-400 shrink-0" />
+              <span className="text-xs text-violet-600/80">Sub-task of <span className="font-medium">{task.parentTaskTitle}</span></span>
+            </div>
           )}
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             <Badge
