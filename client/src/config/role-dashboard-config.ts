@@ -34,9 +34,12 @@ const COO_CEO_CONFIG: RoleDashboardConfig = {
   ],
   attentionPriority: ["exceptions", "gate_failures", "handover_bottlenecks", "budget_deviation"],
   quickActions: [
-    { label: "Exceptions", path: "/exceptions", iconKey: "AlertTriangle" },
     { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
+    { label: "Exceptions", path: "/exceptions", iconKey: "AlertTriangle" },
     { label: "GP Tracker", path: "/gp-tracker", iconKey: "Activity" },
+    { label: "Gate Pipeline", path: "/gates", iconKey: "Milestone" },
+    { label: "Reports", path: "/reports", iconKey: "FileText" },
+    { label: "Control Center", path: "/admin/control-center", iconKey: "Gauge" },
   ],
   cockpitPath: "/execution-board",
   cockpitLabel: "Execution Board",
