@@ -148,10 +148,11 @@ export default function PmMonthlyReport() {
     const openWarnings = quality.reduce((sum: number, q: any) => sum + Number(q.openWarnings || 0), 0);
     const procurementAtRisk = procurement.filter((p: any) => ["late", "blocked"].includes(String(p.status || "").toLowerCase())).length;
     return {
-      activeProjects: kpis.activeProjects || 0,
-      revenueThisMonth: reportData.financials?.revenueSummary?.reduce((s: number, r: any) => s + Number(r.invoicedThisMonth || 0), 0) || 0,
-      costThisMonth: reportData.financials?.costSummary?.reduce((s: number, r: any) => s + Number(r.costsThisMonth || 0), 0) || 0,
-      blendedGp: Number(kpis.blendedGpMarginPct || 0),
+      activeProjects: kpis.activePmProjects || kpis.activeProjects || 0,
+      realisedRevenueThisMonth: Number(kpis.actualRealisedRevenueMonth || 0),
+      plannedRevenueThisMonth: Number(kpis.plannedRevenueMonth || kpis.totalRevenue || 0),
+      plannedCostThisMonth: Number(kpis.plannedCostMonth || kpis.totalCost || 0),
+      blendedGp: Number(kpis.plannedGpMarginPctMonth || kpis.blendedGpMarginPct || 0),
       projectsAtRisk: kpis.projectsAtRisk || 0,
       overdueTasks: tasks.overdueTasks || 0,
       openRaidCount: (raid.items || []).length,
@@ -193,10 +194,11 @@ export default function PmMonthlyReport() {
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load PM monthly report" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const kpiTiles: KPITile[] = [
-    { label: "Active Projects", value: summary.activeProjects, onClick: () => setDrill({ title: "Active Projects", context: { tab: "projects" } }) },
-    { label: "Revenue This Month", value: formatCurrency(summary.revenueThisMonth), onClick: () => setDrill({ title: "Revenue This Month", context: { tab: "financial", metric: "revenueBridge", ...monthRange(month) } }) },
-    { label: "Cost This Month", value: formatCurrency(summary.costThisMonth), onClick: () => setDrill({ title: "Cost This Month", context: { tab: "financial", metric: "costBridge", ...monthRange(month) } }) },
-    { label: "Blended GP %", value: `${summary.blendedGp.toFixed(1)}%`, onClick: () => setDrill({ title: "GP Bridge", context: { tab: "financial", metric: "gpBridge", ...monthRange(month) } }) },
+    { label: "Active PM Projects", value: summary.activeProjects, onClick: () => setDrill({ title: "Active PM Projects", context: { tab: "projects" } }) },
+    { label: "Actual Realised Revenue", value: formatCurrency(summary.realisedRevenueThisMonth), onClick: () => setDrill({ title: "Actual Realised Revenue", context: { tab: "financial", metric: "revenueBridge", ...monthRange(month) } }) },
+    { label: "Planned Revenue", value: formatCurrency(summary.plannedRevenueThisMonth), onClick: () => setDrill({ title: "Planned Revenue", context: { tab: "financial", metric: "revenueBridge", ...monthRange(month) } }) },
+    { label: "Planned Cost", value: formatCurrency(summary.plannedCostThisMonth), onClick: () => setDrill({ title: "Planned Cost", context: { tab: "financial", metric: "costBridge", ...monthRange(month) } }) },
+    { label: "Planned GP %", value: `${summary.blendedGp.toFixed(1)}%`, onClick: () => setDrill({ title: "GP Bridge", context: { tab: "financial", metric: "gpBridge", ...monthRange(month) } }) },
     { label: "Projects At Risk", value: summary.projectsAtRisk, color: summary.projectsAtRisk > 0 ? "red" : "default", onClick: () => setDrill({ title: "Projects At Risk", context: { tab: "projects", status: "at-risk" } }) },
     { label: "Overdue Tasks", value: summary.overdueTasks, color: summary.overdueTasks > 0 ? "red" : "default", onClick: () => setDrill({ title: "Overdue Tasks", context: { tab: "tasks", status: "overdue" } }) },
     { label: "Open RAID", value: summary.openRaidCount, onClick: () => setDrill({ title: "Open RAID", context: { tab: "raid", status: "open" } }) },

@@ -68,13 +68,14 @@ function generatePmExcel(workbook: ExcelJS.Workbook, data: any, monthLabel: stri
   ];
   const kpiRows = [
     { metric: "Report Month", value: monthLabel },
-    { metric: "Active Projects", value: kpis.activeProjects ?? 0 },
-    { metric: "Total Contract Value", value: kpis.totalContractValue ?? 0 },
+    { metric: "Active PM Projects", value: kpis.activePmProjects ?? kpis.activeProjects ?? 0 },
+    { metric: "Actual Realised Revenue (Month)", value: kpis.actualRealisedRevenueMonth ?? 0 },
+    { metric: "Planned Revenue (Month)", value: kpis.plannedRevenueMonth ?? kpis.totalRevenue ?? 0 },
+    { metric: "Planned Cost (Month)", value: kpis.plannedCostMonth ?? kpis.totalCost ?? 0 },
     { metric: "Construction Starts", value: kpis.constructionStarts ?? 0 },
     { metric: "Commissionings", value: kpis.commissionings ?? 0 },
-    { metric: "Total Revenue", value: kpis.totalRevenue ?? 0 },
-    { metric: "Total Cost", value: kpis.totalCost ?? 0 },
-    { metric: "Blended GP Margin %", value: kpis.blendedGpMarginPct ? `${kpis.blendedGpMarginPct.toFixed(1)}%` : "0%" },
+    { metric: "Client Handovers (Planned)", value: kpis.clientHandoversPlanned ?? kpis.clientHandovers ?? 0 },
+    { metric: "Planned GP Margin %", value: (kpis.plannedGpMarginPctMonth ?? kpis.blendedGpMarginPct) ? `${(kpis.plannedGpMarginPctMonth ?? kpis.blendedGpMarginPct).toFixed(1)}%` : "0%" },
     { metric: "Projects at Risk", value: kpis.projectsAtRisk ?? 0 },
     { metric: "Avg Health Score", value: kpis.avgHealthScore ? kpis.avgHealthScore.toFixed(1) : "0" },
   ];
