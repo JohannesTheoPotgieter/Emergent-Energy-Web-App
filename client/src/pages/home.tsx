@@ -226,7 +226,17 @@ export default function HomePage() {
   const effectiveRole = normalizeRoleForPermissions(userRole) as CompanyRole;
   const config = getLensDashboardConfig(effectiveRole);
   const roleLabel = lens.activeLensLabel;
-  const isLeadership = (["CEO", "COO_SUPER_ADMIN"] as LensRole[]).includes(lens.activeLens);
+  type LayoutGroup = 'leadership' | 'portfolio-manager' | 'delivery' | 'specialist' | 'finance' | 'default';
+  const layoutGroup: LayoutGroup = useMemo(() => {
+    switch (lens.activeLens) {
+      case 'CEO': case 'COO_SUPER_ADMIN': return 'leadership';
+      case 'PROGRAM_MANAGER': return 'portfolio-manager';
+      case 'PROJECT_MANAGER': case 'CONSTRUCTION_MANAGER': return 'delivery';
+      case 'ENGINEER': case 'QUALITY_MANAGER': return 'specialist';
+      case 'CFO': case 'PROGRAM_FINANCE_MANAGER': return 'finance';
+      default: return 'default';
+    }
+  }, [lens.activeLens]);
 
   const stats = useMemo(() => {
     const projects: any[] = dashData?.projects || [];
@@ -289,6 +299,55 @@ export default function HomePage() {
   const visiblePriorities = companyPriorities?.slice(0, 3) || [];
   const hiddenPriorities = companyPriorities?.slice(3) || [];
 
+  /** Render a single KPI metric card */
+  function kpiCard(label: string, value: string | number, icon: React.ReactNode, opts?: { color?: string; scopeLabel?: string }) {
+    return (
+      <Card key={label} className="border-border/50">
+        <CardContent className="p-3.5">
+          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
+            {icon}
+            <span className="text-[11px] uppercase tracking-wide">{label}</span>
+          </div>
+          {isLoading ? <Skeleton className="h-5 w-16" /> : (
+            <p className={`text-base font-semibold font-mono ${opts?.color || "text-foreground"}`}>{value}</p>
+          )}
+          {opts?.scopeLabel && <p className="text-[10px] text-muted-foreground/60 mt-0.5">{opts.scopeLabel}</p>}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  /** Render the workspace card with task counts and action links */
+  function workspaceCard(links: Array<{ href: string; label: string; icon: React.ReactNode; variant?: "default" | "outline" }>) {
+    return (
+      <Card className="border-border/50">
+        <CardContent className="p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
+              <p className="text-xs text-muted-foreground">open tasks</p>
+            </div>
+            {myPendingActions > 0 && (
+              <div className="text-right">
+                <p className="text-2xl font-semibold font-mono text-rose-600" data-testid="text-overdue-count">{myPendingActions}</p>
+                <p className="text-xs text-rose-600">overdue</p>
+              </div>
+            )}
+          </div>
+          {links.map((link) => (
+            <Link key={link.href} href={link.href}>
+              <Button variant={link.variant || "outline"} className="w-full">
+                {link.icon}
+                {link.label}
+                <ArrowRight className="w-4 h-4 ml-auto" />
+              </Button>
+            </Link>
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <PageShell data-testid="home-page">
       {(dashIsError || prioritiesIsError || myWorkIsError) && (
@@ -307,59 +366,55 @@ export default function HomePage() {
         <p className="text-sm text-muted-foreground mt-0.5" data-testid="text-role-badge">{roleLabel}</p>
       </div>
 
-      {/* 2. Company Priorities — strategic view first for leadership */}
-      {isLeadership && (
-        <>
-          {(companyPriorities && companyPriorities.length > 0) && (
-            <Collapsible open={prioritiesExpanded} onOpenChange={setPrioritiesExpanded}>
-              <Card className="border-border/60 mb-5" data-testid="card-company-priorities">
-                <CardContent className="p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2.5">
-                      <Flame className="w-4 h-4 text-primary" />
-                      <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
-                      <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
-                    </div>
-                    <Link href="/priorities">
-                      <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
-                    </Link>
-                  </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {visiblePriorities.map((priority: any, i: number) => (
-                      <PriorityCard key={priority.id || i} priority={priority} index={i} />
-                    ))}
-                  </div>
-                  {hiddenPriorities.length > 0 && (
-                    <>
-                      <CollapsibleContent>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                          {hiddenPriorities.map((priority: any, i: number) => (
-                            <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
-                          ))}
-                        </div>
-                      </CollapsibleContent>
-                      <CollapsibleTrigger asChild>
-                        <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
-                          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${prioritiesExpanded ? "rotate-180" : ""}`} />
-                          {prioritiesExpanded ? "Show less" : `Show ${hiddenPriorities.length} more`}
-                        </button>
-                      </CollapsibleTrigger>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </Collapsible>
-          )}
-          {!companyPriorities && prioritiesLoading && (
-            <div className="mb-5">
-              <Skeleton className="h-5 w-48 mb-2.5" />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <Skeleton className="h-24 w-full rounded-lg" />
-                <Skeleton className="h-24 w-full rounded-lg" />
+      {/* 2. Company Priorities — shown for all roles */}
+      {(companyPriorities && companyPriorities.length > 0) && (
+        <Collapsible open={prioritiesExpanded} onOpenChange={setPrioritiesExpanded}>
+          <Card className="border-border/60 mb-5" data-testid="card-company-priorities">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2.5">
+                  <Flame className="w-4 h-4 text-primary" />
+                  <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
+                  <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
+                </div>
+                <Link href="/priorities">
+                  <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
+                </Link>
               </div>
-            </div>
-          )}
-        </>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {visiblePriorities.map((priority: any, i: number) => (
+                  <PriorityCard key={priority.id || i} priority={priority} index={i} />
+                ))}
+              </div>
+              {hiddenPriorities.length > 0 && (
+                <>
+                  <CollapsibleContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                      {hiddenPriorities.map((priority: any, i: number) => (
+                        <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                  <CollapsibleTrigger asChild>
+                    <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${prioritiesExpanded ? "rotate-180" : ""}`} />
+                      {prioritiesExpanded ? "Show less" : `Show ${hiddenPriorities.length} more`}
+                    </button>
+                  </CollapsibleTrigger>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </Collapsible>
+      )}
+      {!companyPriorities && prioritiesLoading && (
+        <div className="mb-5">
+          <Skeleton className="h-5 w-48 mb-2.5" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <Skeleton className="h-24 w-full rounded-lg" />
+            <Skeleton className="h-24 w-full rounded-lg" />
+          </div>
+        </div>
       )}
 
       {/* 3. Attention Badges */}
@@ -391,284 +446,211 @@ export default function HomePage() {
       {/* 5. Tab Content */}
       {activeTab === "actions" && (
         <div className="space-y-6">
-          {/* Leadership layout: Portfolio Health + Financial Snapshot + Workspace + Navigate To */}
-          {isLeadership ? (
+
+          {/* === LEADERSHIP LAYOUT (COO, CEO) === */}
+          {layoutGroup === 'leadership' && (
             <>
-              {/* Portfolio Health + Your Workspace */}
               <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
                 <div className="lg:col-span-3 space-y-5">
                   <div>
-                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-                      Portfolio Health
-                    </h2>
+                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Portfolio Health</h2>
                     <div className="grid grid-cols-3 gap-2">
-                      <Card className="border-border/50">
-                        <CardContent className="p-3.5">
-                          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
-                            <FolderOpen className="w-4 h-4" />
-                            <span className="text-[11px] uppercase tracking-wide">Active Projects</span>
-                          </div>
-                          {isLoading ? <Skeleton className="h-5 w-12" /> : (
-                            <p className="text-base font-semibold font-mono text-foreground">{stats.activeProjects}</p>
-                          )}
-                        </CardContent>
-                      </Card>
-                      <Card className="border-border/50">
-                        <CardContent className="p-3.5">
-                          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
-                            <AlertTriangle className="w-4 h-4" />
-                            <span className="text-[11px] uppercase tracking-wide">Red RAG</span>
-                          </div>
-                          {isLoading ? <Skeleton className="h-5 w-12" /> : (
-                            <p className={`text-base font-semibold font-mono ${stats.redProjects > 0 ? "text-red-600" : "text-foreground"}`}>{stats.redProjects}</p>
-                          )}
-                        </CardContent>
-                      </Card>
-                      <Card className="border-border/50">
-                        <CardContent className="p-3.5">
-                          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
-                            <Clock className="w-4 h-4" />
-                            <span className="text-[11px] uppercase tracking-wide">Behind Plan</span>
-                          </div>
-                          {isLoading ? <Skeleton className="h-5 w-12" /> : (
-                            <p className={`text-base font-semibold font-mono ${Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : "text-foreground"}`}>{kpis.projectsBehindPlan ?? "\u2014"}</p>
-                          )}
-                        </CardContent>
-                      </Card>
+                      {kpiCard("Active Projects", stats.activeProjects, <FolderOpen className="w-4 h-4" />)}
+                      {kpiCard("Red RAG", stats.redProjects, <AlertTriangle className="w-4 h-4" />, { color: stats.redProjects > 0 ? "text-red-600" : undefined })}
+                      {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined })}
                     </div>
                   </div>
-
-                  {/* Financial Snapshot */}
                   <div>
-                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-                      Financial Snapshot
-                    </h2>
+                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Financial Snapshot</h2>
                     <div className="grid grid-cols-3 gap-2">
-                      <Card className="border-border/50">
-                        <CardContent className="p-3.5">
-                          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
-                            <DollarSign className="w-4 h-4" />
-                            <span className="text-[11px] uppercase tracking-wide">Inflow (FY)</span>
-                          </div>
-                          {isLoading ? <Skeleton className="h-5 w-20" /> : (
-                            <p className="text-base font-semibold font-mono text-foreground">{money(kpis.receivedInflowFy)}</p>
-                          )}
-                        </CardContent>
-                      </Card>
-                      <Card className="border-border/50">
-                        <CardContent className="p-3.5">
-                          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
-                            <TrendingUp className="w-4 h-4" />
-                            <span className="text-[11px] uppercase tracking-wide">Gross Margin</span>
-                          </div>
-                          {isLoading ? <Skeleton className="h-5 w-16" /> : (
-                            <p className="text-base font-semibold font-mono text-foreground">
-                              {kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014"}
-                            </p>
-                          )}
-                        </CardContent>
-                      </Card>
-                      <Card className="border-border/50">
-                        <CardContent className="p-3.5">
-                          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
-                            <DollarSign className="w-4 h-4" />
-                            <span className="text-[11px] uppercase tracking-wide">Gross Profit</span>
-                          </div>
-                          {isLoading ? <Skeleton className="h-5 w-20" /> : (
-                            <p className="text-base font-semibold font-mono text-foreground">{money(kpis.grossProfitFy)}</p>
-                          )}
-                        </CardContent>
-                      </Card>
+                      {kpiCard("Inflow (FY)", money(kpis.receivedInflowFy), <DollarSign className="w-4 h-4" />)}
+                      {kpiCard("Gross Margin", kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", <TrendingUp className="w-4 h-4" />)}
+                      {kpiCard("Gross Profit", money(kpis.grossProfitFy), <DollarSign className="w-4 h-4" />)}
                     </div>
                   </div>
                 </div>
-
-                {/* Your Workspace */}
                 <div className="lg:col-span-2">
-                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-                    Your Workspace
-                  </h2>
-                  <Card className="border-border/50">
-                    <CardContent className="p-4 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
-                          <p className="text-xs text-muted-foreground">open tasks</p>
-                        </div>
-                        {myPendingActions > 0 && (
-                          <div className="text-right">
-                            <p className="text-2xl font-semibold font-mono text-rose-600" data-testid="text-overdue-count">{myPendingActions}</p>
-                            <p className="text-xs text-rose-600">overdue</p>
-                          </div>
-                        )}
-                      </div>
-                      <Link href="/my-work/tasks">
-                        <Button variant="outline" className="w-full" data-testid="link-my-tasks">
-                          <ListChecks className="w-4 h-4 mr-2" />
-                          View My Tasks
-                          <ArrowRight className="w-4 h-4 ml-auto" />
-                        </Button>
-                      </Link>
-                      {Number(kpis.pendingApprovals) > 0 && (
-                        <Link href="/pm/approvals">
-                          <Button variant="outline" className="w-full" data-testid="link-approvals">
-                            <ClipboardCheck className="w-4 h-4 mr-2" />
-                            Approvals ({kpis.pendingApprovals})
-                            <ArrowRight className="w-4 h-4 ml-auto" />
-                          </Button>
-                        </Link>
-                      )}
-                    </CardContent>
-                  </Card>
+                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
+                  {workspaceCard([
+                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
+                  ])}
                 </div>
               </div>
-
-              {/* Navigate To */}
-              <div>
-                <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-                  Navigate To
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {config.quickActions.map((action) => (
-                    <Link key={action.path} href={action.path}>
-                      <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
-                        <CardContent className="p-3.5 flex items-center gap-3">
-                          <div className="text-muted-foreground group-hover:text-primary transition-colors">
-                            {resolveIcon(action.iconKey)}
-                          </div>
-                          <span className="text-sm font-medium text-foreground">{action.label}</span>
-                          <ArrowRight className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-primary/60 transition-colors" />
-                        </CardContent>
-                      </Card>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : (
-            /* Non-leadership layout: original Quick Actions + Workspace + Key Metrics + Company Priorities */
-            <>
-              {/* Quick Actions + Workspace */}
-              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-                <div className="lg:col-span-3">
-                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-                    Quick Actions
-                  </h2>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    {config.quickActions.map((action) => (
-                      <Link key={action.path} href={action.path}>
-                        <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
-                          <CardContent className="p-3.5 flex items-center gap-3">
-                            <div className="text-muted-foreground group-hover:text-primary transition-colors">
-                              {resolveIcon(action.iconKey)}
-                            </div>
-                            <span className="text-sm font-medium text-foreground">{action.label}</span>
-                            <ArrowRight className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-primary/60 transition-colors" />
-                          </CardContent>
-                        </Card>
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="lg:col-span-2">
-                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-                    Your Workspace
-                  </h2>
-                  <Card className="border-border/50">
-                    <CardContent className="p-4 space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-2xl font-semibold font-mono text-foreground" data-testid="text-open-tasks">{myOpenTasks}</p>
-                          <p className="text-xs text-muted-foreground">open tasks</p>
-                        </div>
-                        {myPendingActions > 0 && (
-                          <div className="text-right">
-                            <p className="text-2xl font-semibold font-mono text-rose-600" data-testid="text-overdue-count">{myPendingActions}</p>
-                            <p className="text-xs text-rose-600">overdue</p>
-                          </div>
-                        )}
-                      </div>
-                      <Link href="/gates">
-                        <Button className="w-full" data-testid="link-gates">
-                          <LayoutDashboard className="w-4 h-4 mr-2" />
-                          Open Gates
-                        </Button>
-                      </Link>
-                      <Link href={config.cockpitPath}>
-                        <Button variant="outline" className="w-full" data-testid="link-cockpit">
-                          <LayoutDashboard className="w-4 h-4 mr-2" />
-                          {config.cockpitLabel}
-                          <ArrowRight className="w-4 h-4 ml-auto" />
-                        </Button>
-                      </Link>
-                    </CardContent>
-                  </Card>
-                </div>
-              </div>
-
-              {/* Key Metrics */}
-              <div>
-                <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
-                  Key Metrics
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {getKpiCards(config, kpis, stats, isLoading)}
-                </div>
-              </div>
-
-              {/* Company Priorities */}
-              {(companyPriorities && companyPriorities.length > 0) && (
-                <Collapsible open={prioritiesExpanded} onOpenChange={setPrioritiesExpanded}>
-                  <Card className="border-border/60" data-testid="card-company-priorities">
-                    <CardContent className="p-5">
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-2.5">
-                          <Flame className="w-4 h-4 text-primary" />
-                          <h2 className="text-sm font-semibold text-foreground">Company Priorities</h2>
-                          <Badge variant="secondary" className="text-[11px]">{companyPriorities.length} active</Badge>
-                        </div>
-                        <Link href="/priorities">
-                          <span className="text-xs text-primary hover:underline font-medium cursor-pointer">View all</span>
-                        </Link>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {visiblePriorities.map((priority: any, i: number) => (
-                          <PriorityCard key={priority.id || i} priority={priority} index={i} />
-                        ))}
-                      </div>
-                      {hiddenPriorities.length > 0 && (
-                        <>
-                          <CollapsibleContent>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                              {hiddenPriorities.map((priority: any, i: number) => (
-                                <PriorityCard key={priority.id || (i + 3)} priority={priority} index={i + 3} />
-                              ))}
-                            </div>
-                          </CollapsibleContent>
-                          <CollapsibleTrigger asChild>
-                            <button className="mt-3 flex items-center gap-1 text-xs text-primary hover:underline font-medium mx-auto">
-                              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${prioritiesExpanded ? "rotate-180" : ""}`} />
-                              {prioritiesExpanded ? "Show less" : `Show ${hiddenPriorities.length} more`}
-                            </button>
-                          </CollapsibleTrigger>
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Collapsible>
-              )}
-              {!companyPriorities && prioritiesLoading && (
-                <div>
-                  <Skeleton className="h-5 w-48 mb-2.5" />
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <Skeleton className="h-24 w-full rounded-lg" />
-                    <Skeleton className="h-24 w-full rounded-lg" />
-                  </div>
-                </div>
-              )}
             </>
           )}
+
+          {/* === PORTFOLIO-MANAGER LAYOUT (Program Manager) === */}
+          {layoutGroup === 'portfolio-manager' && (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                <div className="lg:col-span-3 space-y-5">
+                  <div>
+                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Portfolio Overview</h2>
+                    <div className="grid grid-cols-3 gap-2">
+                      {kpiCard("Active Projects", stats.activeProjects, <FolderOpen className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                      {kpiCard("Red RAG", stats.redProjects, <AlertTriangle className="w-4 h-4" />, { color: stats.redProjects > 0 ? "text-red-600" : undefined, scopeLabel: "Portfolio" })}
+                      {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined, scopeLabel: "Portfolio" })}
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Delivery Health</h2>
+                    <div className="grid grid-cols-3 gap-2">
+                      {kpiCard("Avg Progress", kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", <BarChart3 className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                      {kpiCard("Eng. Blockers", kpis.openEngineeringBlockers ?? "\u2014", <AlertTriangle className="w-4 h-4" />, { color: Number(kpis.openEngineeringBlockers) > 0 ? "text-violet-600" : undefined, scopeLabel: "Portfolio" })}
+                      {kpiCard("Quality Warnings", kpis.openQualityWarnings ?? "\u2014", <ShieldCheck className="w-4 h-4" />, { color: Number(kpis.openQualityWarnings) > 0 ? "text-orange-600" : undefined, scopeLabel: "Portfolio" })}
+                    </div>
+                  </div>
+                </div>
+                <div className="lg:col-span-2">
+                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
+                  {workspaceCard([
+                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
+                  ])}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* === DELIVERY LAYOUT (Project Manager, Construction Manager) — Workspace LEFT === */}
+          {layoutGroup === 'delivery' && (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                <div className="lg:col-span-2">
+                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
+                  {workspaceCard([
+                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
+                    { href: "/pm/deliverables", label: "Deliverables", icon: <Package className="w-4 h-4 mr-2" /> },
+                  ])}
+                </div>
+                <div className="lg:col-span-3 space-y-5">
+                  <div>
+                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Delivery Status</h2>
+                    <div className="grid grid-cols-2 gap-2">
+                      {kpiCard("Active Projects", stats.activeProjects, <FolderOpen className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                      {kpiCard("Red RAG", stats.redProjects, <AlertTriangle className="w-4 h-4" />, { color: stats.redProjects > 0 ? "text-red-600" : undefined, scopeLabel: "Portfolio" })}
+                      {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined, scopeLabel: "Portfolio" })}
+                      {kpiCard("Avg Progress", kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", <BarChart3 className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* === SPECIALIST LAYOUT (Engineer, Quality Manager) — Workspace LEFT === */}
+          {layoutGroup === 'specialist' && (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                <div className="lg:col-span-2">
+                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
+                  {workspaceCard([
+                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    { href: config.cockpitPath, label: config.cockpitLabel, icon: <LayoutDashboard className="w-4 h-4 mr-2" /> },
+                  ])}
+                </div>
+                <div className="lg:col-span-3">
+                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+                    {lens.activeLens === 'ENGINEER' ? 'Engineering Health' : 'Quality & Delivery'}
+                  </h2>
+                  <div className="grid grid-cols-2 gap-2">
+                    {lens.activeLens === 'ENGINEER' ? (
+                      <>
+                        {kpiCard("Eng. Blockers", kpis.openEngineeringBlockers ?? "\u2014", <AlertTriangle className="w-4 h-4" />, { color: Number(kpis.openEngineeringBlockers) > 0 ? "text-violet-600" : undefined, scopeLabel: "Portfolio" })}
+                        {kpiCard("Quality Warnings", kpis.openQualityWarnings ?? "\u2014", <ShieldCheck className="w-4 h-4" />, { color: Number(kpis.openQualityWarnings) > 0 ? "text-orange-600" : undefined, scopeLabel: "Portfolio" })}
+                        {kpiCard("Avg Progress", kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", <BarChart3 className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                        {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined, scopeLabel: "Portfolio" })}
+                      </>
+                    ) : (
+                      <>
+                        {kpiCard("Quality Warnings", kpis.openQualityWarnings ?? "\u2014", <ShieldCheck className="w-4 h-4" />, { color: Number(kpis.openQualityWarnings) > 0 ? "text-orange-600" : undefined, scopeLabel: "Portfolio" })}
+                        {kpiCard("Pending Approvals", kpis.pendingApprovals ?? "\u2014", <CheckCircle2 className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                        {kpiCard("Avg Progress", kpis.averageActualProgressPct != null ? `${Number(kpis.averageActualProgressPct).toFixed(0)}%` : "\u2014", <BarChart3 className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                        {kpiCard("Behind Plan", kpis.projectsBehindPlan ?? "\u2014", <Clock className="w-4 h-4" />, { color: Number(kpis.projectsBehindPlan) > 0 ? "text-amber-600" : undefined, scopeLabel: "Portfolio" })}
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* === FINANCE LAYOUT (Program Finance Manager, CFO) === */}
+          {layoutGroup === 'finance' && (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                <div className="lg:col-span-3 space-y-5">
+                  <div>
+                    <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Financial Overview</h2>
+                    <div className="grid grid-cols-3 gap-2">
+                      {kpiCard("Inflow (FY)", money(kpis.receivedInflowFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                      {kpiCard("Gross Margin", kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", <TrendingUp className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                      {kpiCard("Gross Profit", money(kpis.grossProfitFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {kpiCard("Open Expenditure", money(kpis.openExpenditureFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                      {kpiCard("Paid Expenditure", money(kpis.paidExpenditureFy), <DollarSign className="w-4 h-4" />, { scopeLabel: "Portfolio" })}
+                      {kpiCard("Overdue Inflow", money(kpis.overdueInflowFy), <AlertTriangle className="w-4 h-4" />, { color: Number(kpis.overdueInflowFy) > 0 ? "text-red-600" : undefined, scopeLabel: "Portfolio" })}
+                    </div>
+                  </div>
+                </div>
+                <div className="lg:col-span-2">
+                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
+                  {workspaceCard([
+                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
+                  ])}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* === DEFAULT LAYOUT (all other roles) === */}
+          {layoutGroup === 'default' && (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                <div className="lg:col-span-2">
+                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
+                  {workspaceCard([
+                    { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
+                    { href: config.cockpitPath, label: config.cockpitLabel, icon: <LayoutDashboard className="w-4 h-4 mr-2" /> },
+                  ])}
+                </div>
+                <div className="lg:col-span-3">
+                  <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Key Metrics</h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {getKpiCards(config, kpis, stats, isLoading)}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Navigate To — shown for all layouts */}
+          <div>
+            <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">
+              Navigate To
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {config.quickActions.map((action) => (
+                <Link key={action.path} href={action.path}>
+                  <Card className="border-border/50 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer group">
+                    <CardContent className="p-3.5 flex items-center gap-3">
+                      <div className="text-muted-foreground group-hover:text-primary transition-colors">
+                        {resolveIcon(action.iconKey)}
+                      </div>
+                      <span className="text-sm font-medium text-foreground">{action.label}</span>
+                      <ArrowRight className="w-3.5 h-3.5 ml-auto text-muted-foreground/40 group-hover:text-primary/60 transition-colors" />
+                    </CardContent>
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 
