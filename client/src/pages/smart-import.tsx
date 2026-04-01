@@ -346,7 +346,7 @@ export function UploadStep({
         {files.length > 0 && (
           <div className="border rounded-lg divide-y max-h-64 overflow-y-auto" data-testid="file-list">
             {files.map((entry, idx) => (
-              <div key={idx} data-testid={`file-row-${idx}`}>
+              <div key={entry.file.name} data-testid={`file-row-${idx}`}>
                 <div className="flex items-center gap-2 px-3 py-2 text-sm">
                   <FileSpreadsheet className={`w-4 h-4 flex-shrink-0 ${
                     entry.status === "success" ? "text-emerald-500" :
@@ -515,7 +515,7 @@ export function UploadStep({
             <div className="flex flex-wrap gap-1.5">
               {files.filter(f => f.status === "success").map((entry, idx) => (
                 <Button
-                  key={idx}
+                  key={entry.runId ?? entry.file.name}
                   variant="outline"
                   size="sm"
                   className="text-xs border-emerald-300 hover:bg-emerald-100"
@@ -725,7 +725,7 @@ export function SectionDetectionStep({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {sections.map((section: any, idx: number) => (
-          <Card key={idx} className="bg-card rounded-xl shadow-sm" data-testid={`card-section-${section.section || section.name || idx}`}>
+          <Card key={section.section || section.name || idx} className="bg-card rounded-xl shadow-sm" data-testid={`card-section-${section.section || section.name || idx}`}>
             <CardContent className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="font-semibold text-sm">{section.section || section.name}</span>
@@ -784,7 +784,7 @@ export function SectionDetectionStep({
           <CardContent>
             <ul className="space-y-1 text-xs text-muted-foreground mb-2">
               {unmatchedSheets.filter((s: any) => s.reason?.startsWith("Purchase Order")).map((sheet: any, idx: number) => (
-                <li key={idx} className="flex items-center gap-2" data-testid={`po-sheet-${idx}`}>
+                <li key={sheet.sheetName} className="flex items-center gap-2" data-testid={`po-sheet-${idx}`}>
                   <FileSpreadsheet className="w-3 h-3 text-blue-500" />
                   <span className="font-medium">{sheet.sheetName}</span>
                 </li>
@@ -804,7 +804,7 @@ export function SectionDetectionStep({
           <CardContent>
             <ul className="space-y-1 text-xs text-muted-foreground">
               {unmatchedSheets.filter((s: any) => !s.reason?.startsWith("Purchase Order")).map((sheet: any, idx: number) => (
-                <li key={idx} className="flex items-center gap-2" data-testid={`unmatched-sheet-${idx}`}>
+                <li key={typeof sheet === "string" ? sheet : sheet.name || sheet.sheetName} className="flex items-center gap-2" data-testid={`unmatched-sheet-${idx}`}>
                   <X className="w-3 h-3 text-slate-500" />
                   <span className="font-medium">{typeof sheet === "string" ? sheet : sheet.name || sheet.sheetName}</span>
                   {sheet.reason && <span className="text-slate-500">— {sheet.reason}</span>}
@@ -1131,7 +1131,7 @@ export function ColumnMappingStep({
                                 const isMs = row.isMilestone === true;
                                 const indent = row.indentLevel || 0;
                                 return (
-                                <tr key={idx} className={`border-b border-border ${isMs ? "bg-amber-50/60 font-semibold" : "hover:bg-muted/50"}`}>
+                                <tr key={row.sourceRow ?? idx} className={`border-b border-border ${isMs ? "bg-amber-50/60 font-semibold" : "hover:bg-muted/50"}`}>
                                   <td className="px-2 py-1 text-slate-500">{row.sourceRow || idx + 1}</td>
                                   {Object.entries(row).filter(([k]) => !["sourceSheet", "sourceRow", "isMilestone", "parentTaskNo", "indentLevel"].includes(k)).slice(0, 10).map(([key, val]) => {
                                     const isBudgetCell = key.startsWith("budget") || key === "forecastPaymentDate";
@@ -1263,7 +1263,7 @@ export const IssueRowDetail = memo(function IssueRowDetail({ issue, normalizatio
             </thead>
             <tbody>
               {rows.map((r: any, idx: number) => (
-                <tr key={idx} className={idx % 2 === 0 ? "bg-card" : "bg-muted"}>
+                <tr key={r.sourceRow} className={idx % 2 === 0 ? "bg-card" : "bg-muted"}>
                   <td className="px-2 py-1 border border-border font-mono">{r.sourceRow}</td>
                   {fields.map(f => (
                     <td key={f.key} className={`px-2 py-1 border border-border ${f.key === "invoiceNumber" ? "font-semibold text-amber-700 bg-amber-50" : ""}`}>
@@ -2640,7 +2640,7 @@ export function PreviewCommitStep({
                     {data.details.length > 0 && (
                       <ul className="space-y-0.5 text-[10px] text-muted-foreground max-h-32 overflow-y-auto">
                         {data.details.map((d: any, i: number) => (
-                          <li key={i} className="flex items-start gap-1.5">
+                          <li key={`${d.type}-${d.name}`} className="flex items-start gap-1.5">
                             <span className={`font-medium flex-shrink-0 ${d.type === "added" ? "text-emerald-600" : d.type === "modified" ? "text-blue-600" : "text-red-600"}`}>
                               {d.type === "added" ? "+" : d.type === "modified" ? "~" : "-"}
                             </span>
@@ -2698,7 +2698,7 @@ export function PreviewCommitStep({
                       const isMs = row.isMilestone === true;
                       const indent = row.indentLevel || 0;
                       return (
-                      <tr key={idx} className={`border-b border-border ${isMs ? "bg-amber-50/60 font-semibold" : ""}`}>
+                      <tr key={row.taskNo || row.sourceRow || idx} className={`border-b border-border ${isMs ? "bg-amber-50/60 font-semibold" : ""}`}>
                         <td className="px-3 py-1.5 text-muted-foreground font-mono text-[10px]">{row.taskNo || "—"}</td>
                         <td className="px-3 py-1.5">
                           <span style={{ paddingLeft: `${indent * 16}px` }} className={isMs ? "text-amber-800" : ""}>
@@ -2748,7 +2748,7 @@ export function PreviewCommitStep({
                   </thead>
                   <tbody>
                     {revenueRows.slice(0, 10).map((row: any, idx: number) => (
-                      <tr key={idx} className="border-b border-border">
+                      <tr key={row.milestoneName || row.description || idx} className="border-b border-border">
                         <td className="px-3 py-1.5">{row.milestoneName || row.description || "—"}</td>
                         <td className="px-3 py-1.5">{row.amountExVat || "—"}</td>
                         <td className="px-3 py-1.5">{row.status || "—"}</td>
@@ -2786,7 +2786,7 @@ export function PreviewCommitStep({
                   </thead>
                   <tbody>
                     {costRows.slice(0, 10).map((row: any, idx: number) => (
-                      <tr key={idx} className="border-b border-border">
+                      <tr key={`${row.costCategory}-${row.counterpartyName}-${idx}`} className="border-b border-border">
                         <td className="px-3 py-1.5">{row.costCategory || "—"}</td>
                         <td className="px-3 py-1.5">{row.counterpartyName || "—"}</td>
                         <td className="px-3 py-1.5">{row.amountExVat || "—"}</td>
@@ -2883,7 +2883,7 @@ export function PreviewCommitStep({
                             const key = `${c.sourceRow}::${c.field}`;
                             const isKeep = conflictResolutions[key] === "keep";
                             return (
-                              <tr key={i} className={`border-b border-slate-100 ${isKeep ? "bg-emerald-50/30" : "bg-red-50/20"}`}>
+                              <tr key={key} className={`border-b border-slate-100 ${isKeep ? "bg-emerald-50/30" : "bg-red-50/20"}`}>
                                 <td className="px-3 py-1.5 text-slate-500 font-mono">{c.sourceRow}</td>
                                 <td className="px-3 py-1.5 text-slate-700 max-w-[160px] truncate" title={`${c.costCategory}: ${c.description}`}>
                                   {c.description || c.costCategory}
@@ -3436,7 +3436,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
             <CardContent>
               <div className="divide-y" data-testid="bulk-results-list">
                 {commitResults.map((r, idx) => (
-                  <div key={idx} className="flex items-center gap-3 py-2.5" data-testid={`bulk-result-${idx}`}>
+                  <div key={r.projectName} className="flex items-center gap-3 py-2.5" data-testid={`bulk-result-${idx}`}>
                     {r.status === "committed" ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                     ) : r.status === "skipped" ? (
@@ -3818,7 +3818,7 @@ export function SmartImportGovernancePanel({
               {healthExpanded && (
                 <div className="mt-2 space-y-1 max-h-[200px] overflow-y-auto">
                   {healthData.filter(p => p.staleness !== "fresh").map((project, idx) => (
-                    <div key={idx} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs" data-testid={`health-project-${idx}`}>
+                    <div key={project.projectName} className="flex items-center justify-between gap-2 rounded-lg border border-border/70 p-2 text-xs" data-testid={`health-project-${idx}`}>
                       <div className="min-w-0 flex-1">
                         <p className="font-medium truncate">{project.projectName}</p>
                         <p className="text-[10px] text-muted-foreground">

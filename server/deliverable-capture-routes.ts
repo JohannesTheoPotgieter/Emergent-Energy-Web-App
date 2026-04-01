@@ -23,7 +23,7 @@ const deliverableUpload = multer({
       cb(null, `${ts}_${sanitizeFilename(file.originalname)}`);
     },
   }),
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024, files: 10 },
   fileFilter: allowedMimeFilter,
 });
 

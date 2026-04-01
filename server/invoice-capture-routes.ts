@@ -19,7 +19,7 @@ const upload = multer({
     destination: (_req, _file, cb) => cb(null, uploadDir),
     filename: (_req, file, cb) => cb(null, `${Date.now()}-${sanitizeFilename(file.originalname)}`),
   }),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 10 },
   fileFilter: allowedFileFilter,
 });
 
