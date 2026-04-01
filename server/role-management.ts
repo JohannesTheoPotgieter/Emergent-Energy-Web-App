@@ -38,10 +38,10 @@ function mapRole(raw: string): string {
   return normalizeRoleForPermissions(LEGACY_ROLE_MAP[raw] || raw);
 }
 
-const VALID_SECTIONS = new Set(["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "HSE", "ENGINEERING", "QUALITY", "FINANCE", "REPORTS", "ADMIN"]);
+const VALID_SECTIONS = new Set(["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "HSE", "ENGINEERING", "QUALITY", "FINANCE", "REPORTS", "EXCO", "ADMIN"]);
 const SECTION_MIGRATION: Record<string, string[]> = {
   COCKPIT: ["HOME"],
-  EXCO: ["HOME"],
+  EXCO: ["EXCO"],
   MY_TOOL: ["HOME"],
   MY_WORK: ["HOME"],
   OPERATIONS: ["PROJECT_DELIVERY"],
