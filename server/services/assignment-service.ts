@@ -119,7 +119,7 @@ const ENTITY_PERMISSION_BY_TYPE: Record<AssignmentEntityType, string> = {
 };
 
 const MULTI_ASSIGNMENT_TYPES = new Set<AssignmentEntityType>(["operational_task", "tr_item", "work_item"]);
-const EXTERNAL_ASSIGNMENT_TYPES = new Set<AssignmentEntityType>(["operational_task", "tr_item", "quality_item", "deliverable"]);
+const EXTERNAL_ASSIGNMENT_TYPES = new Set<AssignmentEntityType>(["operational_task", "tr_item", "quality_item", "deliverable", "work_item"]);
 
 function toInt(value: unknown): number | null {
   const parsed = Number(value);
