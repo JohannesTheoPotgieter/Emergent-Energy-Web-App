@@ -6235,10 +6235,19 @@ export async function registerRoutes(
       const displayName = (req.user as any).name || userName;
 
       const [myToolTasksResult, opTasksForUser, planTasksForUser, engTasksForUser, qcItemsForUser] = await Promise.all([
-        db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)),
+        // Canonical: personal tasks now read from work_items (workstream=PERSONAL)
+        db.select().from(workItems).where(
+          and(
+            eq(workItems.workstream, "PERSONAL"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt),
+          )
+        ),
+        // Operational tasks: exclude PERSONAL (fetched above), ENG (fetched below), and PM (fetched separately)
         db.select().from(workItems).where(
           and(
             isNull(workItems.deletedAt),
+            sql`${workItems.workstream} NOT IN ('PERSONAL', 'ENG', 'PM')`,
             or(
               eq(workItems.ownerUserId, userId),
               sql`EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = ${workItems.id} AND wia.user_id = ${userId})`
@@ -6291,9 +6300,9 @@ export async function registerRoutes(
           title: t.title,
           status: t.status,
           priority: t.priority,
-          projectName: t.projectName,
-          plannedForDate: t.plannedForDate,
-          dueDate: t.dueAt ? t.dueAt.toISOString().split("T")[0] : null,
+          projectName: t.subProjectName || null,
+          plannedForDate: t.scheduledDate,
+          dueDate: t.endDate || null,
           startDate: t.startDate,
           scheduledDate: t.scheduledDate,
           scheduledStartTime: t.scheduledStartTime,
@@ -6388,19 +6397,25 @@ export async function registerRoutes(
       }
 
       if (taskType === "mytool") {
-        const [task] = await db.select().from(mytoolTasks).where(
-          and(eq(mytoolTasks.id, taskId), eq(mytoolTasks.ownerUserId, userId))
+        // Canonical: personal tasks now live in work_items (workstream=PERSONAL)
+        const [task] = await db.select().from(workItems).where(
+          and(
+            eq(workItems.id, taskId),
+            eq(workItems.workstream, "PERSONAL"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt),
+          )
         );
         if (!task) return res.status(404).json({ error: "Task not found or not owned by you" });
 
-        await db.update(mytoolTasks)
+        await db.update(workItems)
           .set({
             scheduledDate: scheduledDate || null,
             scheduledStartTime: scheduledStartTime || null,
             scheduledEndTime: scheduledEndTime || null,
             updatedAt: new Date(),
           })
-          .where(eq(mytoolTasks.id, taskId));
+          .where(eq(workItems.id, taskId));
       } else if (taskType === "operational") {
         const [task] = await db.select().from(workItems).where(and(eq(workItems.id, taskId), isNull(workItems.deletedAt)));
         if (!task) return res.status(404).json({ error: "Task not found" });
@@ -6587,14 +6602,7 @@ export async function registerRoutes(
     try {
       const userId = resolveMyToolUserId(req);
 
-      const useCanonical = await isWorkItemsEnabled();
-      if (useCanonical) {
-        const canonicalTasks = await getWorkItemsAsMytoolTasks(userId);
-        if (canonicalTasks.length > 0) {
-          return res.json(canonicalTasks);
-        }
-      }
-
+      // Canonical: always read from work_items via repository (no feature-flag gating)
       const { date } = req.query;
       let tasks;
       if (date && typeof date === 'string') {
@@ -6740,11 +6748,13 @@ export async function registerRoutes(
 
         if (!existingTask.recurrenceEndDate || nextDate <= existingTask.recurrenceEndDate) {
           const recurrenceParentId = existingTask.recurrenceParentId || existingTask.id;
-          const existingInstance = await db.select().from(mytoolTasks).where(and(
-            eq(mytoolTasks.ownerUserId, userId),
-            eq(mytoolTasks.recurrenceParentId, recurrenceParentId),
-            eq(mytoolTasks.plannedForDate, nextDate),
-            isNull(mytoolTasks.deletedAt),
+          // Canonical: check work_items for existing recurrence instances
+          const existingInstance = await db.select().from(workItems).where(and(
+            eq(workItems.workstream, "PERSONAL"),
+            eq(workItems.ownerUserId, userId),
+            eq(workItems.recurrenceParentId, recurrenceParentId),
+            eq(workItems.scheduledDate, nextDate),
+            isNull(workItems.deletedAt),
           )).limit(1);
 
           if (!existingInstance.length) {
