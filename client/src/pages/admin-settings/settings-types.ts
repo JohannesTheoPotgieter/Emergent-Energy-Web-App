@@ -114,7 +114,7 @@ export const NAV_SECTIONS = [
   { key: "HOME", label: "Home", description: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Inbox" },
   { key: "PORTFOLIO", label: "Company", description: "Company Overview, Lifecycle Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions" },
   { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD Dashboard, Pipeline / Opportunities, PD Tickets, Clients, Handover Queue, PD Reports" },
-  { key: "PROJECT_DELIVERY", label: "Project Delivery", description: "Execution Dashboard, PM Dashboard, Portfolio, All Projects, Procurement, PO Approvals, Payment Requests, Payment Batches, Milestones, Weekly Reviews, Standups, PM Deliverables, PM Approvals, PM On-The-Go, Handover & Closeout, Financial Reviews, SSEG, Sites" },
+  { key: "PROJECT_DELIVERY", label: "Project Delivery", description: "Execution Dashboard, PM Dashboard, Portfolio, All Projects, Procurement, PO Approvals, Payment Requests, Payment Batches, Milestones, Weekly Reviews, Standups, PM Deliverables, PM Approvals, PM On-The-Go, Handover & Closeout (including SSEG), Financial Reviews, Sites" },
   { key: "HSE", label: "HSE", description: "HSE Dashboard" },
   { key: "ENGINEERING", label: "Engineering", description: "Engineering Dashboard, Task Board, Standup" },
   { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Commissioning, Inspections / NCRs" },

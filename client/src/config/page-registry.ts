@@ -38,6 +38,7 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/exceptions", redirectTo: "/gates/exceptions" },
   { path: "/project-lifecycle", redirectTo: "/lifecycle-board" },
   { path: "/command-center", redirectTo: "/my-work" },
+  { path: "/sseg", redirectTo: "/handover?tab=sseg" },
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
@@ -176,8 +177,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "gatesCommitments", path: "/gates/commitments", label: "Client Commitments", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesCommitmentsPage" },
   // Milestone Tracker — standalone page for Construction Manager
   { id: "milestoneTracker", path: "/milestone-tracker", label: "Milestone Tracker", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
-  // Commissioning Control Tower — workbook-driven dashboard (project-scoped)
-  { id: "sseg", path: "/sseg", label: "SSEG", iconKey: "Zap", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "SsegPage" },
   { id: "commissioningOverview", path: "/commissioning-dashboard", label: "Commissioning", iconKey: "Shield", navGroup: "QUALITY", permissionEntity: "commissioning", showInSidebar: true, routeComponentKey: "CommissioningDashboardPage" },
   { id: "commissioningDashboard", path: "/commissioning-dashboard/:projectId", label: "Commissioning Dashboard", permissionEntity: "commissioning", showInSidebar: false, routeComponentKey: "CommissioningDashboardPage" },
 ];
@@ -281,10 +280,6 @@ export function getAppSectionForPath(pathname: string): string | undefined {
   }
   // Execution Board lives under Project Delivery
   if (pathname === "/execution-board" || pathname.startsWith("/execution-board/")) {
-    return "PROJECT_DELIVERY";
-  }
-  // SSEG lives under Project Delivery
-  if (pathname === "/sseg" || pathname.startsWith("/sseg/")) {
     return "PROJECT_DELIVERY";
   }
   // PM Dashboard lives under Project Delivery

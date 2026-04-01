@@ -127,8 +127,6 @@ const AdminPipedrivePage = lazy(() => import("@/pages/admin-pipedrive"));
 const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
 const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
 
-const SsegPage = lazy(() => import("@/pages/sseg"));
-
 // Commissioning Control Tower
 const CommissioningDashboardPage = lazy(() => import("@/pages/commissioning-dashboard"));
 
@@ -270,7 +268,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   GatesQueriesPage,
   GatesCommitmentsPage,
   CommissioningDashboardPage,
-  SsegPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
