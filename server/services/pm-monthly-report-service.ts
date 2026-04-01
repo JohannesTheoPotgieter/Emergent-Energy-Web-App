@@ -30,7 +30,6 @@ import {
 import { desc } from "drizzle-orm";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
 
-const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
 const COMPLETED_STATUSES = ["COMPLETE", "COMPLETED", "DONE"];
 const CANCELLED_STATUSES = ["CANCELLED", "CANCELED"];
 
@@ -55,6 +54,27 @@ function isTimestampInMonth(ts: Date | string | null | undefined, monthStart: Da
   if (!ts) return false;
   const d = typeof ts === "string" ? new Date(ts) : ts;
   return d >= monthStart && d <= monthEnd;
+}
+
+function inPmExecutionWindow(project: any, monthEndStr: string): boolean {
+  const pdHandoverActual = (project?.pdHandoverActual || "").substring(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(pdHandoverActual)) return false;
+  const clientHandoverActual = (project?.clientHandoverActual || "").substring(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clientHandoverActual) && clientHandoverActual <= monthEndStr) return false;
+  return true;
+}
+
+function getEffectiveRevenueDate(row: any): string | null {
+  return row.expectedPaymentDate || row.invoiceDate || row.paidDate || row.inBankDate || null;
+}
+
+function getEffectiveCostDate(row: any): string | null {
+  return row.approvedDate || row.forecastPaymentDate || row.invoiceDate || row.paidDate || null;
+}
+
+function isRealisedRevenueCategory(category: unknown): boolean {
+  const c = String(category || "").trim().toLowerCase();
+  return c.includes("actual") || c.includes("realised") || c.includes("realized") || c.includes("received");
 }
 
 export function parseMonth(monthStr: string): { monthStart: Date; monthEnd: Date; monthStartStr: string; monthEndStr: string } | null {
@@ -132,21 +152,23 @@ export async function generatePmReportData(month: string) {
   const metricsMap: Map<number, any> = new Map(allMetrics.map((m: any) => [m.projectId, m]));
 
   // Determine active projects
-  const activeProjects = [...projectMap.values()].filter(p => {
-    if (!p.isActive) return false;
-    const phase = (p.phase || "").trim();
-    return !INACTIVE_STATUSES.some(s => s.toLowerCase() === phase.toLowerCase());
-  });
+  const activeProjects = [...projectMap.values()].filter(p => inPmExecutionWindow(p, monthEndStr));
   const activeProjectIds = new Set(activeProjects.map(p => p.id));
 
   // ===== SECTION 1: KPIs =====
   const kpis = {
     activeProjects: activeProjects.length,
+    activePmProjects: activeProjects.length,
     totalContractValue: activeProjects.reduce((sum, p) => sum + toNum(p.contractValue), 0),
     constructionStarts: [...projectMap.values()].filter(p => isDateStrInMonth(p.constructionStartActual, monthStartStr, monthEndStr)).length,
     commissionings: [...projectMap.values()].filter(p => isDateStrInMonth(p.commissioningActual, monthStartStr, monthEndStr)).length,
     pdPmHandovers: [...projectMap.values()].filter(p => isDateStrInMonth(p.pdHandoverActual, monthStartStr, monthEndStr)).length,
-    clientHandovers: [...projectMap.values()].filter(p => isDateStrInMonth(p.clientHandoverDate, monthStartStr, monthEndStr)).length,
+    clientHandoversPlanned: [...projectMap.values()].filter(p => isDateStrInMonth(p.clientHandoverDate, monthStartStr, monthEndStr)).length,
+    clientHandovers: 0,
+    actualRealisedRevenueMonth: 0,
+    plannedRevenueMonth: 0,
+    plannedCostMonth: 0,
+    plannedGpMarginPctMonth: 0,
     totalRevenue: 0,
     totalCost: 0,
     blendedGpMarginPct: 0,
@@ -158,16 +180,31 @@ export async function generatePmReportData(month: string) {
   const activeRevLines = allRevLines.filter((r: any) => activeProjectIds.has(r.projectId));
   const activeCostLines = allCostLines.filter((r: any) => activeProjectIds.has(r.projectId));
 
-  kpis.totalRevenue = activeRevLines.reduce((sum: any, r: any) => sum + toNum(r.amountExVat), 0);
-  kpis.totalCost = activeCostLines.reduce((sum: any, r: any) => sum + toNum(r.amountExVat), 0);
+  kpis.plannedRevenueMonth = activeRevLines
+    .filter((r: any) => isDateStrInMonth(getEffectiveRevenueDate(r), monthStartStr, monthEndStr))
+    .reduce((sum: any, r: any) => sum + toNum(r.amountExVat), 0);
+  kpis.plannedCostMonth = activeCostLines
+    .filter((r: any) => isDateStrInMonth(getEffectiveCostDate(r), monthStartStr, monthEndStr))
+    .reduce((sum: any, r: any) => sum + toNum(r.amountExVat), 0);
+  kpis.totalRevenue = kpis.plannedRevenueMonth;
+  kpis.totalCost = kpis.plannedCostMonth;
   kpis.blendedGpMarginPct = kpis.totalRevenue > 0 ? ((kpis.totalRevenue - kpis.totalCost) / kpis.totalRevenue) * 100 : 0;
+  kpis.plannedGpMarginPctMonth = kpis.blendedGpMarginPct;
+  kpis.clientHandovers = kpis.clientHandoversPlanned;
   kpis.projectsAtRisk = activeProjects.filter(p => {
     const rag = (p.ragStatus || "").toUpperCase();
-    return rag === "RED" || rag === "AMBER";
+    return rag === "RED" || rag === "AMBER" || rag === "AT RISK";
   }).length;
 
   const healthScores = activeProjects.map(p => toNum(metricsMap.get(p.id)?.healthScore)).filter(h => h > 0);
   kpis.avgHealthScore = healthScores.length > 0 ? healthScores.reduce((a, b) => a + b, 0) / healthScores.length : 0;
+
+  const activeRevenueMonthly = revenueMonthly.filter((r: any) => activeProjectIds.has(r.projectId));
+  const realisedMonthlyRows = activeRevenueMonthly.filter((r: any) => isRealisedRevenueCategory(r.category));
+  const realisedMonthlySource = realisedMonthlyRows.length > 0 ? realisedMonthlyRows : activeRevenueMonthly;
+  kpis.actualRealisedRevenueMonth = realisedMonthlySource
+    .filter((r: any) => isDateStrInMonth(r.monthEndDate, monthStartStr, monthEndStr))
+    .reduce((sum: number, r: any) => sum + toNum(r.value), 0);
 
   // ===== SECTION 2: Financial Summary =====
   // Revenue per project

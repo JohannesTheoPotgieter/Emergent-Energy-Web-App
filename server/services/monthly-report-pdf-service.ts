@@ -64,11 +64,13 @@ export async function generateReportPdf(reportType: string, data: any, month: st
 
     const kpis = data.kpis || {};
     const kpiItems = reportType === "pm" ? [
-      { label: "Active Projects", value: String(kpis.activeProjects ?? 0) },
-      { label: "Total Contract Value", value: formatCurrency(kpis.totalContractValue ?? 0) },
+      { label: "Active PM Projects", value: String(kpis.activePmProjects ?? kpis.activeProjects ?? 0) },
+      { label: "Actual Realised Revenue (Month)", value: formatCurrency(kpis.actualRealisedRevenueMonth ?? 0) },
+      { label: "Planned Revenue (Month)", value: formatCurrency(kpis.plannedRevenueMonth ?? kpis.totalRevenue ?? 0) },
+      { label: "Planned Cost (Month)", value: formatCurrency(kpis.plannedCostMonth ?? kpis.totalCost ?? 0) },
       { label: "Construction Starts", value: String(kpis.constructionStarts ?? 0) },
       { label: "Commissionings", value: String(kpis.commissionings ?? 0) },
-      { label: "GP Margin", value: formatPct(kpis.blendedGpMarginPct ?? 0) },
+      { label: "Planned GP Margin", value: formatPct(kpis.plannedGpMarginPctMonth ?? kpis.blendedGpMarginPct ?? 0) },
       { label: "Projects at Risk", value: String(kpis.projectsAtRisk ?? 0) },
     ] : [
       { label: "Total Eng Tasks", value: String(kpis.totalEngineeringTasks ?? 0) },
