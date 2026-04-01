@@ -73,6 +73,7 @@ export function registerMsSyncRoutes(app: Express) {
       assigneeType: z.enum(["internal_user", "external_counterparty", "external_contact"]).nullable().optional(),
       assigneeId: z.coerce.number().finite().int().positive().nullable().optional(),
       userId: z.coerce.number().finite().int().positive().nullable().optional(), // legacy shape
+      action: z.enum(["assign", "remove"]).optional(),
     })
     .superRefine((data, ctx) => {
       const effectiveAssigneeType = data.assigneeType ?? (data.userId != null ? "internal_user" : null);
@@ -445,7 +446,17 @@ export function registerMsSyncRoutes(app: Express) {
         return res.status(400).json({ error: `Unknown task source: ${taskSource}` });
       }
 
-      const mode = ["operational", "tr_register", "plan"].includes(taskSource) && assigneeType ? "append" : "replace";
+      const action = parsed.data.action || "assign";
+      let mode: "replace" | "append" | "clear" | "remove";
+      if (action === "remove" && assigneeType && assigneeId) {
+        mode = "remove";
+      } else if (!assigneeType) {
+        mode = "clear";
+      } else if (["operational", "tr_register", "plan"].includes(taskSource)) {
+        mode = "append";
+      } else {
+        mode = "replace";
+      }
       const assignmentRole = taskSource === "tr_register" ? "OWNER" : "ASSIGNEE";
       const assignments = await setEntityAssignment(req, {
         entityType,
@@ -453,7 +464,7 @@ export function registerMsSyncRoutes(app: Express) {
         assignmentRole,
         assigneeType,
         assigneeId,
-        mode: assigneeType ? mode : "clear",
+        mode,
       });
       console.log("[Reassign] Assignment saved to DB:", { entityType, taskId, assignmentRole, mode, resultCount: assignments.length });
 
