@@ -205,6 +205,12 @@ export const projectExecutionState = pgTable("project_execution_state", {
   currentStageCode: text("current_stage_code"),
   gateStatus: text("gate_status"),
   gateReadinessPct: integer("gate_readiness_pct"),
+  waitingOnDepartment: text("waiting_on_department"),
+  waitingOnUserId: integer("waiting_on_user_id").references(() => users.id),
+  nextRequiredAction: text("next_required_action"),
+  stageOwnerUserId: integer("stage_owner_user_id").references(() => users.id),
+  stageApproverUserId: integer("stage_approver_user_id").references(() => users.id),
+  kamUserId: integer("kam_user_id").references(() => users.id),
 
   // Financial review gate
   siteEstablishmentDate: date("site_establishment_date"),

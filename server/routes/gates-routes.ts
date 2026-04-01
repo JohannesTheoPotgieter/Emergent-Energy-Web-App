@@ -13,6 +13,7 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { jwtAuth, requireAuth } from "../auth-context";
 
 // ── Shared query builder ────────────────────────────────────
 
@@ -44,7 +45,7 @@ async function getProjectsWithStageData(filter?: {
       ) AS days_in_stage,
       COALESCE(exc.open_exception_count, 0)::int AS open_exception_count
     FROM project_info pi
-    JOIN project_execution_state pes ON pes.project_id = pi.id
+    LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
     LEFT JOIN project_stage_instances psi
       ON psi.project_id = pi.id
       AND psi.stage_code = pes.current_stage_code
@@ -54,7 +55,7 @@ async function getProjectsWithStageData(filter?: {
       WHERE status = 'REQUESTED'
       GROUP BY project_id
     ) exc ON exc.project_id = pi.id
-    WHERE pes.is_active = true
+    WHERE COALESCE(pes.is_active, true) = true
       AND COALESCE(pes.archived_status, 'ACTIVE') = 'ACTIVE'
   `;
 
@@ -97,7 +98,7 @@ export function registerGatesRoutes(app: Express) {
 
 // ── Pipeline (all active projects) ──────────────────────────
 
-app.get("/api/gates/pipeline", async (_req, res) => {
+app.get("/api/gates/pipeline", jwtAuth, requireAuth, async (_req, res) => {
   try {
     const projects = await getProjectsWithStageData();
 
@@ -120,7 +121,7 @@ app.get("/api/gates/pipeline", async (_req, res) => {
 
 // ── Blocked ─────────────────────────────────────────────────
 
-app.get("/api/gates/blocked", async (_req, res) => {
+app.get("/api/gates/blocked", jwtAuth, requireAuth, async (_req, res) => {
   try {
     const projects = await getProjectsWithStageData({
       gateStatuses: ["BLOCKED"],
@@ -137,7 +138,7 @@ app.get("/api/gates/blocked", async (_req, res) => {
 
 // ── Ready ───────────────────────────────────────────────────
 
-app.get("/api/gates/ready", async (_req, res) => {
+app.get("/api/gates/ready", jwtAuth, requireAuth, async (_req, res) => {
   try {
     const projects = await getProjectsWithStageData({
       gateStatuses: ["READY_FOR_REVIEW", "APPROVED"],
@@ -154,7 +155,7 @@ app.get("/api/gates/ready", async (_req, res) => {
 
 // ── Exceptions (enhanced for Prompt 6) ─────────────────────
 
-app.get("/api/gates/exceptions", async (req, res) => {
+app.get("/api/gates/exceptions", jwtAuth, requireAuth, async (req, res) => {
   try {
     const view = (req.query.view as string) || "all";
     const userId = (req as any).user?.id;
@@ -220,7 +221,7 @@ app.get("/api/gates/exceptions", async (req, res) => {
 
 // ── Exception counts by view ───────────────────────────────
 
-app.get("/api/gates/exceptions/counts", async (req, res) => {
+app.get("/api/gates/exceptions/counts", jwtAuth, requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id || 0;
     const result = await db.execute(sql`
@@ -247,7 +248,7 @@ app.get("/api/gates/exceptions/counts", async (req, res) => {
 
 // ── Exception actions ──────────────────────────────────────
 
-app.patch("/api/gates/exceptions/:id/action", async (req, res) => {
+app.patch("/api/gates/exceptions/:id/action", jwtAuth, requireAuth, async (req, res) => {
   try {
     const exceptionId = Number(req.params.id);
     const { action, conditionsText, comment } = req.body;
@@ -307,7 +308,7 @@ app.patch("/api/gates/exceptions/:id/action", async (req, res) => {
 
 // ── Client Updates ──────────────────────────────────────────
 
-app.get("/api/gates/client-updates", async (_req, res) => {
+app.get("/api/gates/client-updates", jwtAuth, requireAuth, async (_req, res) => {
   try {
     // Show projects in active execution stages (S04-S09) with their last weekly review status
     const result = await db.execute(sql`
@@ -351,7 +352,7 @@ app.get("/api/gates/client-updates", async (_req, res) => {
 
 // ── Handovers (enhanced for Prompt 6) ──────────────────────
 
-app.get("/api/gates/handovers", async (req, res) => {
+app.get("/api/gates/handovers", jwtAuth, requireAuth, async (req, res) => {
   try {
     const view = (req.query.view as string) || "all";
 
