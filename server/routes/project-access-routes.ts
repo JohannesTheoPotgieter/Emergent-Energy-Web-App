@@ -6,12 +6,14 @@ import type { Express } from "express";
 import { db } from "../db";
 import { eq, and } from "drizzle-orm";
 import * as schema from "@shared/schema";
+import { jwtAuth, requireAuth } from "../auth-context";
+import { requirePermission } from "../permission-middleware";
 
 export function registerProjectAccessRoutes(app: Express) {
 
 // ── List project team ──────────────────────────────────────
 
-app.get("/api/projects/:id/access", async (req, res) => {
+app.get("/api/projects/:id/access", jwtAuth, requireAuth, requirePermission("project_access_mgmt", "view"), async (req, res) => {
   try {
     const projectId = Number(req.params.id);
 
@@ -46,7 +48,7 @@ app.get("/api/projects/:id/access", async (req, res) => {
 
 // ── Add user to project ────────────────────────────────────
 
-app.post("/api/projects/:id/access", async (req, res) => {
+app.post("/api/projects/:id/access", jwtAuth, requireAuth, requirePermission("project_access_mgmt", "edit"), async (req, res) => {
   try {
     const projectId = Number(req.params.id);
     const grantedBy = (req as any).user?.id;
@@ -73,7 +75,7 @@ app.post("/api/projects/:id/access", async (req, res) => {
 
 // ── Update project access ──────────────────────────────────
 
-app.put("/api/projects/:id/access/:accessId", async (req, res) => {
+app.put("/api/projects/:id/access/:accessId", jwtAuth, requireAuth, requirePermission("project_access_mgmt", "edit"), async (req, res) => {
   try {
     const accessId = Number(req.params.accessId);
     const { accessLevel, roleOnProject, stagesVisible, canEdit, canApprove, expiresAt, notes } = req.body;
@@ -99,7 +101,7 @@ app.put("/api/projects/:id/access/:accessId", async (req, res) => {
 
 // ── Remove project access ──────────────────────────────────
 
-app.delete("/api/projects/:id/access/:accessId", async (req, res) => {
+app.delete("/api/projects/:id/access/:accessId", jwtAuth, requireAuth, requirePermission("project_access_mgmt", "delete"), async (req, res) => {
   try {
     const accessId = Number(req.params.accessId);
     await db.update(schema.projectAccess).set({ deletedAt: new Date(), deletedBy: (req as any).user?.id }).where(eq(schema.projectAccess.id, accessId)).returning();
@@ -112,7 +114,7 @@ app.delete("/api/projects/:id/access/:accessId", async (req, res) => {
 
 // ── Bulk assign from template ──────────────────────────────
 
-app.post("/api/projects/:id/access/bulk", async (req, res) => {
+app.post("/api/projects/:id/access/bulk", jwtAuth, requireAuth, requirePermission("project_access_mgmt", "edit"), async (req, res) => {
   try {
     const projectId = Number(req.params.id);
     const grantedBy = (req as any).user?.id;

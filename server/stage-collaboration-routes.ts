@@ -12,6 +12,7 @@
 
 import type { Express, Request, Response } from "express";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 import { db } from "./db";
 import { and, eq, desc, sql } from "drizzle-orm";
 import {
@@ -61,6 +62,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/client-commitments",
     jwtAuth,
     requireAuth,
+    requirePermission("client_update", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -97,6 +99,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/client-commitments",
     jwtAuth,
     requireAuth,
+    requirePermission("client_update", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -132,6 +135,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/client-commitments/:id",
     jwtAuth,
     requireAuth,
+    requirePermission("client_update", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req, res);
@@ -170,6 +174,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/client-updates",
     jwtAuth,
     requireAuth,
+    requirePermission("client_update", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -195,6 +200,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/client-updates",
     jwtAuth,
     requireAuth,
+    requirePermission("client_update", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -244,6 +250,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/client-updates/:id",
     jwtAuth,
     requireAuth,
+    requirePermission("client_update", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req, res);
@@ -278,6 +285,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/client-updates/:id/status",
     jwtAuth,
     requireAuth,
+    requirePermission("client_update", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req, res);
@@ -318,6 +326,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/queries",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_collaboration", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -349,6 +358,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/queries",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_collaboration", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -391,6 +401,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/queries/:id",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_collaboration", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req, res);
@@ -597,6 +608,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/financial-close-tracks",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -622,6 +634,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/financial-close-tracks",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -655,6 +668,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/financial-close-tracks/:id",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req, res);
@@ -687,6 +701,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/financial-close-tracks/initialize",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);

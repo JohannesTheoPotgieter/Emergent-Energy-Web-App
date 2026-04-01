@@ -4,6 +4,7 @@
 
 import type { Express, Request, Response } from "express";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 import {
   initializeProjectStages,
   hydrateStageChecklist,
@@ -65,6 +66,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -84,6 +86,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/:stageCode",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -128,6 +131,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/initialize",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "create"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -147,6 +151,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/:stageCode/status",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -180,6 +185,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/advance-to/:targetStageCode",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_gate", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -215,6 +221,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/:stageCode/requirements",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -247,6 +254,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/:stageCode/requirements/hydrate",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "create"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -267,6 +275,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/requirements/:requirementId",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const requirementId = parseInt(p(req.params.requirementId), 10);
@@ -307,6 +316,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/:stageCode/evidence",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "create"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -339,6 +349,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stages/:stageCode/evidence",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -360,6 +371,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-exceptions",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_exceptions", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -379,6 +391,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-exceptions",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_exceptions", "create"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -414,6 +427,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-exceptions/:id/approve",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseInt(p(req.params.id), 10);
@@ -434,6 +448,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-exceptions/:id/reject",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseInt(p(req.params.id), 10);
@@ -455,6 +470,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-exceptions/:id/close",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_exceptions", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseInt(p(req.params.id), 10);
@@ -476,6 +492,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-dependencies",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -495,6 +512,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-dependencies",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "create"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -528,6 +546,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-dependencies/:id/resolve",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseInt(p(req.params.id), 10);
@@ -547,6 +566,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-dependencies/:id/escalate",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseInt(p(req.params.id), 10);
@@ -569,6 +589,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-decisions",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -587,6 +608,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/projects/:projectId/stage-decisions",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "create"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -622,6 +644,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/admin/stage-definitions",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "view"),
     async (_req: Request, res: Response) => {
       try {
         const definitions = await db
@@ -641,6 +664,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/admin/stage-definitions/:id",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseInt(p(req.params.id), 10);
@@ -670,6 +694,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/admin/stage-checklist-templates",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "view"),
     async (req: Request, res: Response) => {
       try {
         const stageCode = req.query.stageCode as string | undefined;
@@ -691,6 +716,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/admin/stage-checklist-templates",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "create"),
     async (req: Request, res: Response) => {
       try {
         const { stageCode, department, itemName, itemCode, blocksGate, sortOrder } = req.body;
@@ -718,6 +744,7 @@ export function registerStageLifecycleRoutes(app: Express): void {
     "/api/admin/stage-checklist-templates/:id",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseInt(p(req.params.id), 10);

@@ -5,12 +5,14 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { jwtAuth, requireAuth } from "../auth-context";
+import { requirePermission } from "../permission-middleware";
 
 export function registerPerformanceRoutes(app: Express) {
 
 // ── Performance V1 ─────────────────────────────────────────
 
-app.get("/api/performance/v1", async (_req, res) => {
+app.get("/api/performance/v1", jwtAuth, requireAuth, requirePermission("performance", "view"), async (_req, res) => {
   try {
     const [stageDuration, projectCompletion, stageDistribution] = await Promise.all([
       // Average stage duration by stage
@@ -116,7 +118,7 @@ app.get("/api/performance/v1", async (_req, res) => {
 
 // ── Gate Reports ───────────────────────────────────────────
 
-app.get("/api/reports/gate-reports", async (_req, res) => {
+app.get("/api/reports/gate-reports", jwtAuth, requireAuth, requirePermission("performance", "view"), async (_req, res) => {
   try {
     const [blockedGates, exceptionAgeing] = await Promise.all([
       // Blocked gates with age and owner
@@ -163,7 +165,7 @@ app.get("/api/reports/gate-reports", async (_req, res) => {
 
 // ── Operational Reports ────────────────────────────────────
 
-app.get("/api/reports/operational", async (_req, res) => {
+app.get("/api/reports/operational", jwtAuth, requireAuth, requirePermission("performance", "view"), async (_req, res) => {
   try {
     const [commissioningQueue, handoverQueue, weeklyCompliance] = await Promise.all([
       // Commissioning queue
@@ -233,7 +235,7 @@ app.get("/api/reports/operational", async (_req, res) => {
 
 // ── Quality & Compliance Reports ───────────────────────────
 
-app.get("/api/reports/quality-compliance", async (_req, res) => {
+app.get("/api/reports/quality-compliance", jwtAuth, requireAuth, requirePermission("performance", "view"), async (_req, res) => {
   try {
     const [qualityBlockers, complianceBlockers] = await Promise.all([
       // Quality blockers by project and stage
