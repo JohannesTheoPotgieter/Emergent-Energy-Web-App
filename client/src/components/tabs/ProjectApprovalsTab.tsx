@@ -19,6 +19,8 @@ function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  const companyRole = localStorage.getItem("company_role");
+  if (companyRole) headers["x-company-role"] = companyRole;
   return fetch(url, { ...options, headers: { ...headers, ...options?.headers }, credentials: "include" });
 }
 
@@ -124,7 +126,10 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
       } else {
         throw new Error("Unknown approval type");
       }
-      if (!res.ok) throw new Error("Failed to approve");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || body.message || "Failed to approve");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -169,7 +174,10 @@ export function ProjectApprovalsTab({ projectName, projectInfoId }: { projectNam
       } else {
         throw new Error("Unknown approval type");
       }
-      if (!res.ok) throw new Error("Failed to reject");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || body.message || "Failed to reject");
+      }
       return res.json();
     },
     onSuccess: () => {

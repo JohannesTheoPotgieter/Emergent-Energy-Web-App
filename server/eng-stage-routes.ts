@@ -45,7 +45,8 @@ const QA_ROLE = "QUALITY_MANAGER";
 
 function getUser(req: Request): { id: number; name: string; role: string } {
   const u = (req as any).user;
-  return { id: u.id || u.userId, name: u.name, role: u.role };
+  const companyRole = req.headers["x-company-role"] as string | undefined;
+  return { id: u.id || u.userId, name: u.name, role: companyRole || u.companyRole || u.role };
 }
 
 function isCoo(role: string): boolean {

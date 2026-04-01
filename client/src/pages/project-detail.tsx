@@ -135,6 +135,8 @@ function engFetch(url: string, options?: RequestInit) {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  const companyRole = localStorage.getItem("company_role");
+  if (companyRole) headers["x-company-role"] = companyRole;
   return fetch(url, { ...options, headers: { ...headers, ...options?.headers }, credentials: "include" });
 }
 

@@ -13,6 +13,8 @@ export function engFetchRaw(url: string, options?: RequestInit): Promise<Respons
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = { ...(options?.headers as Record<string, string> || {}) };
   if (token) headers["Authorization"] = `Bearer ${token}`;
+  const companyRole = localStorage.getItem("company_role");
+  if (companyRole) headers["x-company-role"] = companyRole;
   if (options?.body && typeof options.body === "string") headers["Content-Type"] = "application/json";
   return fetch(url, { ...options, headers, credentials: "include" });
 }
