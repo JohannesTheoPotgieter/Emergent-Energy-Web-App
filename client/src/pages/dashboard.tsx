@@ -627,7 +627,6 @@ export default function DashboardPage() {
 
 
   return (
-    {/* Workbook-aligned Program Dashboard — Build graphs from imported execution data — Load current preset */}
     <PageShell className="p-0 space-y-6" data-testid="execution-graph-builder">
       {/* ── Error banner ── */}
       {isError && (
