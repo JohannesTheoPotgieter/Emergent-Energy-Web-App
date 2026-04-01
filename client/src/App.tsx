@@ -130,6 +130,9 @@ const PortfolioAnalyticsPage = lazy(() => import("@/pages/portfolio-analytics"))
 const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
 const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
 
+// Commissioning Control Tower
+const CommissioningDashboardPage = lazy(() => import("@/pages/commissioning-dashboard"));
+
 // Gates workspace (Prompt 2)
 const MilestoneTrackerPage = lazy(() => import("@/pages/milestone-tracker"));
 
@@ -142,9 +145,9 @@ const GatesHandoversPage = lazy(() => import("@/pages/gates/gates-handovers"));
 const GatesQueriesPage = lazy(() => import("@/pages/gates/gates-queries"));
 const GatesCommitmentsPage = lazy(() => import("@/pages/gates/gates-commitments"));
 
-const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/milestone-tracker", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
-const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/milestone-tracker", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
-const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/hse", "/construction", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers"];
+const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/milestone-tracker", "/commissioning-dashboard", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
+const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/deliverables", "/pm/on-the-go", "/pm/handover-review", "/projects", "/execution-board", "/execution-board/program", "/execution-board/construction", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/construction", "/hse", "/handover", "/procurement", "/milestone-tracker", "/commissioning-dashboard", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments"];
+const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/hse", "/construction", "/commissioning-dashboard", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers"];
 const HSE_ALLOWED_PATHS = ["/", "/hse", "/quality", "/quality/ncrs", "/projects", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/construction", "/handover", "/handover-control", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers", "/gates/client-updates", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/reports/center"];
 const SSEG_ALLOWED_PATHS = ["/", "/hse", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/projects", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/construction", "/handover", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers", "/gates/client-updates", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/reports/center"];
 
@@ -270,6 +273,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   GatesHandoversPage,
   GatesQueriesPage,
   GatesCommitmentsPage,
+  CommissioningDashboardPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
@@ -443,7 +447,9 @@ function ProtectedPages() {
       <Suspense fallback={<div className="space-y-6 p-6"><LoadingState variant="skeleton-card" cards={4} /><LoadingState variant="skeleton-table" rows={6} /></div>}>
       <div className="page-enter">
         <Switch>
-          <Route path="/">{() => <HomeRedirect />}</Route>
+          <Route path="/" component={HomePage} />
+          {/* Explicit selector route — canonical parameterized path is in PAGE_REGISTRY */}
+          <Route path="/commissioning-dashboard" component={CommissioningDashboardPage} />
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
