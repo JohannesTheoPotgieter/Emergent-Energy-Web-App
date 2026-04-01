@@ -52,8 +52,8 @@ export async function generateReportPdf(reportType: string, data: any, month: st
     doc.moveDown(1);
     doc.fontSize(18).text(monthLabel, { align: "center" });
     doc.moveDown(2);
-    doc.fontSize(11).text(`Generated: ${new Date().toLocaleDateString("en-ZA")}`, { align: "center" });
-    doc.fontSize(11).text(`Status: ${data.meta?.status || "Draft"}`, { align: "center" });
+    doc.fontSize(11).text(`Generated: ${new Date(data.meta?.generatedAt || Date.now()).toLocaleDateString("en-ZA")}`, { align: "center" });
+    doc.fontSize(11).text(`Period: ${data.meta?.periodType || "Monthly snapshot"} (${data.meta?.periodStart || `${month}-01`} to ${data.meta?.periodEnd || "month end"})`, { align: "center" });
     doc.moveDown(8);
     doc.fontSize(9).fillColor(WHITE).text("CONFIDENTIAL", 40, doc.page.height - 60, { align: "center", width: doc.page.width - 80 });
 
@@ -73,7 +73,8 @@ export async function generateReportPdf(reportType: string, data: any, month: st
     ] : [
       { label: "Total Eng Tasks", value: String(kpis.totalEngineeringTasks ?? 0) },
       { label: "Completed This Month", value: String(kpis.tasksCompletedThisMonth ?? 0) },
-      { label: "Completion Rate", value: formatPct(kpis.completionRate ?? 0) },
+      { label: "Cumulative Completion", value: formatPct(kpis.cumulativeCompletionRate ?? 0) },
+      { label: "Monthly Completion", value: formatPct(kpis.monthlyCompletionRate ?? 0) },
       { label: "Deliverables Approved", value: String(kpis.deliverablesApproved ?? 0) },
       { label: "Open Blockers", value: String(kpis.openBlockers ?? 0) },
     ];

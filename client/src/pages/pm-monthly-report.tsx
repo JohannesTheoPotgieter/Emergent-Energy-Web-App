@@ -219,6 +219,10 @@ export default function PmMonthlyReport() {
       daysSinceImport={reportData.meta?.daysSinceImport}
       stalenessThresholdDays={reportData.meta?.stalenessThresholdDays}
       lastImportAt={reportData.meta?.lastImportAt}
+      periodType={reportData.meta?.periodType}
+      periodStart={reportData.meta?.periodStart}
+      periodEnd={reportData.meta?.periodEnd}
+      snapshotBehavior={reportData.meta?.snapshotBehavior}
       onRegenerate={reportId ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/regenerate`), "Regenerate") : undefined}
       onReview={reportId && status === "draft" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/review`), "Review") : undefined}
       onPublish={reportId && status === "reviewed" ? () => safeAction(() => apiPost(`/api/reports/pm/monthly/${reportId}/publish`), "Publish") : undefined}

@@ -15,6 +15,10 @@ interface ReportShellProps {
   isStale?: boolean;
   daysSinceImport?: number;
   stalenessThresholdDays?: number;
+  periodType?: string;
+  periodStart?: string;
+  periodEnd?: string;
+  snapshotBehavior?: string;
   onRegenerate?: () => void;
   onReview?: () => void;
   onPublish?: () => void;
@@ -57,7 +61,9 @@ export default function ReportShell(props: ReportShellProps) {
       />
 
       <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-4">
+        <span>Context: {props.periodType || "Monthly snapshot"}{props.periodStart && props.periodEnd ? ` (${props.periodStart} → ${props.periodEnd})` : ""}</span>
         <span>Last import: {props.lastImportAt ? new Date(props.lastImportAt).toLocaleString("en-ZA") : "Not available"}</span>
+        {props.snapshotBehavior ? <span>{props.snapshotBehavior}</span> : null}
       </div>
 
       {props.isStale && (
