@@ -102,14 +102,31 @@ export async function generateEngineeringReportData(month: string) {
     return !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
   }).length;
 
+  const tasksPlannedToCompleteThisMonth = engWorkItems.filter((w: any) => {
+    const status = (w.status || "").toUpperCase();
+    if (CANCELLED_STATUSES.includes(status)) return false;
+    return isDateStrInMonth(w.endDate, monthStartStr, monthEndStr);
+  }).length;
+
+  const activeDeliverableIds = new Set(activeDeliverables.map((d: any) => d.id));
+  const deliverableVersionEvents = allDeliverableVersions.filter((v: any) =>
+    activeDeliverableIds.has(v.deliverableId) && isTimestampInMonth(v.createdAt, monthStart, monthEnd),
+  );
+  const submittedEvents = deliverableVersionEvents.filter((v: any) => String(v.status || "").toUpperCase() === "NEEDS APPROVAL").length;
+  const approvedEvents = deliverableVersionEvents.filter((v: any) => {
+    const status = String(v.status || "").toUpperCase();
+    return status === "QC APPROVED" || status === "COMPLETE";
+  }).length;
+  const rejectedEvents = deliverableVersionEvents.filter((v: any) => String(v.status || "").toUpperCase() === "PROVIDE FEEDBACK").length;
+
   const kpis = {
     totalEngineeringTasks: totalEngTasks,
     tasksCompletedThisMonth: completedThisMonth,
     cumulativeCompletionRate: totalEngTasks > 0 ? (totalCompleted / totalEngTasks) * 100 : 0,
-    monthlyCompletionRate: (completedThisMonth + activeTasks) > 0 ? (completedThisMonth / (completedThisMonth + activeTasks)) * 100 : 0,
-    deliverablesSubmitted: activeDeliverables.filter((d: any) => isTimestampInMonth(d.createdAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
-    deliverablesApproved: activeDeliverables.filter((d: any) => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && (d.status === "QC APPROVED" || d.status === "COMPLETE")).length,
-    deliverablesRejected: activeDeliverables.filter((d: any) => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "PROVIDE FEEDBACK").length,
+    monthlyCompletionRate: tasksPlannedToCompleteThisMonth > 0 ? (completedThisMonth / tasksPlannedToCompleteThisMonth) * 100 : 0,
+    deliverablesSubmitted: submittedEvents,
+    deliverablesApproved: approvedEvents,
+    deliverablesRejected: rejectedEvents,
     openBlockers: engWorkItems.filter((w: any) => {
       const status = (w.status || "").toUpperCase();
       return w.endDate && w.endDate < monthEndStr && !COMPLETED_STATUSES.includes(status) && !CANCELLED_STATUSES.includes(status);
@@ -182,10 +199,12 @@ export async function generateEngineeringReportData(month: string) {
   });
 
   const deliverableActivity = {
-    submittedThisMonth: activeDeliverables.filter((d: any) => isTimestampInMonth(d.createdAt, monthStart, monthEnd) && d.status === "NEEDS APPROVAL").length,
-    approvedThisMonth: activeDeliverables.filter((d: any) => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && (d.status === "QC APPROVED" || d.status === "COMPLETE")).length,
-    rejectedThisMonth: activeDeliverables.filter((d: any) => isTimestampInMonth(d.updatedAt, monthStart, monthEnd) && d.status === "PROVIDE FEEDBACK").length,
+    submittedThisMonth: submittedEvents,
+    approvedThisMonth: approvedEvents,
+    rejectedThisMonth: rejectedEvents,
     pendingReview: activeDeliverables.filter((d: any) => d.status === "NEEDS APPROVAL").length,
+    tasksPlannedToCompleteThisMonth,
+    activeTasks,
   };
 
   // ===== SECTION 4: Stage/Gate progress =====
