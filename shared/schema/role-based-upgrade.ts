@@ -502,7 +502,7 @@ export const LIFECYCLE_GATES = [
   { key: 'pd_to_pm_handover', label: 'PD to PM Handover', path: '/handover-control', module: 'DELIVERY' as CanonicalModule },
   { key: 'financial_review', label: 'Financial Review', path: '/governance/financial-reviews', module: 'FINANCE' as CanonicalModule },
   { key: 'weekly_client_update', label: 'Weekly Client Communication', path: '/gates/client-updates', module: 'DELIVERY' as CanonicalModule },
-  { key: 'commissioning', label: 'Commissioning', path: '/hse', module: 'COMPLIANCE' as CanonicalModule },
+  { key: 'commissioning', label: 'Commissioning', path: '/commissioning-dashboard', module: 'COMPLIANCE' as CanonicalModule },
   { key: 'om_handover', label: 'O&M Handover', path: '/handover', module: 'DELIVERY' as CanonicalModule },
   { key: 'client_handover', label: 'Client Handover', path: '/handover', module: 'DELIVERY' as CanonicalModule },
 ] as const;

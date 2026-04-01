@@ -446,6 +446,8 @@ function ProtectedPages() {
       <div className="page-enter">
         <Switch>
           <Route path="/" component={HomePage} />
+          {/* Explicit selector route — canonical parameterized path is in PAGE_REGISTRY */}
+          <Route path="/commissioning-dashboard" component={CommissioningDashboardPage} />
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;

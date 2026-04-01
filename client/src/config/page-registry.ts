@@ -169,8 +169,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "gatesCommitments", path: "/gates/commitments", label: "Client Commitments", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesCommitmentsPage" },
   // Milestone Tracker — standalone page for Construction Manager
   { id: "milestoneTracker", path: "/milestone-tracker", label: "Milestone Tracker", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
-  // Commissioning Control Tower — workbook-driven dashboard
-  { id: "commissioningDashboard", path: "/commissioning-dashboard", label: "Commissioning", iconKey: "FileSpreadsheet", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "commissioning", showInSidebar: true, routeComponentKey: "CommissioningDashboardPage", matchSubRoutes: true },
+  // Commissioning Control Tower — workbook-driven dashboard (project-scoped)
+  { id: "commissioningDashboard", path: "/commissioning-dashboard/:projectId", label: "Commissioning Dashboard", permissionEntity: "commissioning", showInSidebar: false, routeComponentKey: "CommissioningDashboardPage" },
 ];
 
 export const ROLE_LANDING_PAGE: Record<string, string> = PAGE_REGISTRY

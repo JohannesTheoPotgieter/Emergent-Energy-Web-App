@@ -9,41 +9,24 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useStageDetail } from "@/hooks/use-stage-lifecycle";
 import { useStageData } from "@/hooks/use-stage-data";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { FileText, ShieldAlert, CheckCircle2, XCircle, AlertTriangle } from "lucide-react";
+import { FileText, ShieldAlert, CheckCircle2, XCircle, AlertTriangle, ExternalLink } from "lucide-react";
 
 const STAGE_CODE = "S07_COMMISSIONING";
 
+// Gate controls — editable fields (operational, not in workbook)
 const FIELDS: FieldDef[] = [
   { key: "commissioning_plan_url", label: "Commissioning Plan URL", type: "text", placeholder: "Link to commissioning plan" },
-  { key: "commissioning_date", label: "Commissioning Date", type: "date", required: true },
-  { key: "test_results_uploaded", label: "Test Results Uploaded", type: "boolean" },
   { key: "snag_count_open", label: "Open Snags", type: "number" },
   { key: "snag_count_closed", label: "Closed Snags", type: "number" },
   { key: "ncr_count_open", label: "Open NCRs", type: "number" },
   { key: "ncr_count_closed", label: "Closed NCRs", type: "number" },
-  { key: "practical_completion_status", label: "Practical Completion Status", type: "select", options: [
-    { value: "not_started", label: "Not Started" },
-    { value: "in_progress", label: "In Progress" },
-    { value: "achieved", label: "Achieved" },
-  ]},
   { key: "practical_completion_date", label: "Practical Completion Date", type: "date" },
   { key: "techsitter_confirmed", label: "Techsitter Confirmed (EXPLICIT GATE)", type: "boolean", required: true },
   { key: "metering_confirmed", label: "Metering Confirmed (EXPLICIT GATE)", type: "boolean", required: true },
   { key: "monitoring_live", label: "Monitoring Live", type: "boolean" },
   { key: "internet_connectivity_confirmed", label: "Internet Connectivity Confirmed", type: "boolean" },
-  { key: "quality_review_status", label: "Quality Review Status", type: "select", options: [
-    { value: "not_started", label: "Not Started" },
-    { value: "in_review", label: "In Review" },
-    { value: "passed", label: "Passed" },
-    { value: "failed", label: "Failed" },
-  ]},
-  { key: "engineering_acceptance_status", label: "Engineering Acceptance Status", type: "select", options: [
-    { value: "not_started", label: "Not Started" },
-    { value: "in_review", label: "In Review" },
-    { value: "accepted", label: "Accepted" },
-    { value: "rejected", label: "Rejected" },
-  ]},
   { key: "hse_safe_to_energise", label: "HSE Safe to Energise", type: "boolean" },
   { key: "billing_readiness_status", label: "Billing Readiness Status", type: "select", options: [
     { value: "not_ready", label: "Not Ready" },
@@ -59,9 +42,23 @@ const FIELDS: FieldDef[] = [
   { key: "client_signoff_date", label: "Client Signoff Date", type: "date" },
 ];
 
+// Fields moved to read-only from commissioning workbook:
+// commissioning_date → Project Information sheet D17
+// test_results_uploaded → Testing Report section status
+// practical_completion_status → derived from overall commissioning
+// quality_review_status → QA List section status
+// engineering_acceptance_status → Inspection Report section status
+
 interface Stage7Props {
   projectId: number;
   isAdmin?: boolean;
+}
+
+function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem("auth_token");
+  const h: Record<string, string> = {};
+  if (token) h["Authorization"] = `Bearer ${token}`;
+  return h;
 }
 
 export function Stage7Commissioning({ projectId, isAdmin }: Stage7Props) {
@@ -69,6 +66,18 @@ export function Stage7Commissioning({ projectId, isAdmin }: Stage7Props) {
   const { data: stageDataResult } = useStageData(projectId, STAGE_CODE);
   const [exceptionDialogOpen, setExceptionDialogOpen] = useState(false);
   const [exceptionReqCode, setExceptionReqCode] = useState<string>();
+
+  // Workbook status from commissioning dashboard API (read-only)
+  const { data: wbDashboard } = useQuery<any>({
+    queryKey: ["commissioning-dashboard", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/commissioning-dashboard/${projectId}`, { headers: getAuthHeaders(), credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
 
   if (!stageDetail?.stage) return null;
 
@@ -110,10 +119,42 @@ export function Stage7Commissioning({ projectId, isAdmin }: Stage7Props) {
         }
         middle={
           <>
+            {/* Workbook Status — read-only, from commissioning dashboard */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center justify-between">
+                  Commissioning Workbook Status
+                  <a href={`/commissioning-dashboard/${projectId}`} className="text-xs font-normal text-blue-600 hover:underline flex items-center gap-1">
+                    <ExternalLink className="h-3 w-3" /> View full dashboard
+                  </a>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {wbDashboard?.sections?.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
+                    {(wbDashboard.sections as any[]).filter((s: any) => s.isRequired).map((s: any) => (
+                      <div key={s.sectionKey} className="border rounded-md p-2">
+                        <div className="text-muted-foreground">{s.sectionName}</div>
+                        <div className="font-medium mt-0.5 flex items-center gap-1">
+                          {s.isCompleteForGate ? <CheckCircle2 className="h-3 w-3 text-green-600" /> : <XCircle className="h-3 w-3 text-red-500" />}
+                          {s.rawStatus || s.displayStatus || "Not started"}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    No commissioning source configured.{" "}
+                    <a href={`/commissioning-dashboard/${projectId}`} className="text-blue-600 hover:underline">Configure source</a>
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
             <StageDataForm
               projectId={projectId}
               stageCode={STAGE_CODE}
-              title="Commissioning Data"
+              title="Gate Controls"
               fields={FIELDS}
               data={stageData}
             />
