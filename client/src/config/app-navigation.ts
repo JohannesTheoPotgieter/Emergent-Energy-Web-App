@@ -93,7 +93,6 @@ export const TOP_SECTIONS: TopSection[] = [
       "/milestone-tracker",
       "/weekly-reviews",
       "/pm-dashboard",
-      "/sseg",
     ]),
     secondary: [
       { label: "Execution Dashboard", path: "/execution-board" },
@@ -111,7 +110,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
       { label: "Handover & Closeout", path: "/handover" },
       { label: "Financial Reviews", path: "/governance/financial-reviews" },
-      { label: "SSEG", path: "/sseg" },
       { label: "Sites", path: "/sites" },
     ],
   },
