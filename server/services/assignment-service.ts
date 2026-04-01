@@ -10,7 +10,6 @@ import {
   counterpartyContacts,
   deliverables,
   entityAssignments,
-  mytoolTasks,
   procurementItems,
   projectEngApprovals,
   projectInfo,
@@ -466,7 +465,8 @@ async function getCanonicalAssignments(
 async function getLegacyAssignments(executor: Queryable, entityType: AssignmentEntityType, entityId: number): Promise<ResolvedAssignment[]> {
   switch (entityType) {
     case "personal_task": {
-      const [task] = await executor.select().from(mytoolTasks).where(eq(mytoolTasks.id, entityId)).limit(1);
+      // Canonical: personal tasks now live in work_items (workstream=PERSONAL)
+      const [task] = await executor.select().from(workItems).where(eq(workItems.id, entityId)).limit(1);
       if (!task?.ownerUserId) return [];
       const resolved = await resolveAssignableTarget("internal_user", task.ownerUserId);
       return resolved ? [{
@@ -829,7 +829,8 @@ async function canSelfManageAssignment(entityType: AssignmentEntityType, entityI
 
   switch (entityType) {
     case "personal_task": {
-      const [task] = await db.select({ ownerUserId: mytoolTasks.ownerUserId }).from(mytoolTasks).where(eq(mytoolTasks.id, entityId)).limit(1);
+      // Canonical: personal tasks now live in work_items
+      const [task] = await db.select({ ownerUserId: workItems.ownerUserId }).from(workItems).where(eq(workItems.id, entityId)).limit(1);
       return task?.ownerUserId === userId;
     }
     case "operational_task": {
@@ -911,10 +912,11 @@ async function syncLegacyAssignments(executor: Queryable, entityType: Assignment
 
   switch (entityType) {
     case "personal_task":
-      await executor.update(mytoolTasks).set({
+      // Canonical: personal tasks now live in work_items
+      await executor.update(workItems).set({
         ownerUserId: activePrimary?.assigneeType === "internal_user" ? activePrimary.assigneeId : null,
         updatedAt: new Date(),
-      }).where(eq(mytoolTasks.id, entityId));
+      }).where(eq(workItems.id, entityId));
       return;
     case "operational_task":
       await executor.update(workItems).set({

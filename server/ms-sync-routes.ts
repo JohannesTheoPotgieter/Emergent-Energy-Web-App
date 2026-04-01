@@ -4,7 +4,7 @@ import { db } from "./db";
 import { eq, and, or, desc, asc, sql, inArray, isNull, ne } from "drizzle-orm";
 import { fromWorkItem, toPersonalTaskShape } from "@shared/types/unified-task";
 import {
-  mytoolTasks, trItems, deliverables,
+  trItems, deliverables,
   projectEngApprovals, projectEngStages, engStageTemplates,
   qcItemInstance, qcChecklist, qcTemplateItem,
   projectInfo, users, normalizedPlanTasks, approvals,
