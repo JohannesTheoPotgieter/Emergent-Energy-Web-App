@@ -306,6 +306,26 @@ export default function SubcontractorDashboardPage() {
   const [linkNewName, setLinkNewName] = useState("");
   const [linkNewType, setLinkNewType] = useState("OTHER");
   const [showOverdue, setShowOverdue] = useState(false);
+
+  useEffect(() => {
+    const refresh = () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/detail"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/overdue"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-analysis/pattern-stats"] });
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === "procurement-analysis-last-run") refresh();
+    };
+    const onAnalysisComplete = () => refresh();
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("procurement-analysis-complete", onAnalysisComplete);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("procurement-analysis-complete", onAnalysisComplete);
+    };
+  }, [queryClient]);
+
   const handleStartRename = () => {
     setRenameValue(selectedCp || "");
     setRenameError("");
