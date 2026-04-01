@@ -245,7 +245,7 @@ export default function ClientsPage() {
         actions={(
           <>
             <Button asChild variant="outline" size="sm">
-              <Link href="/project-lifecycle">
+              <Link href="/lifecycle-board">
                 <Workflow className="h-4 w-4 mr-1.5" />
                 Project Lifecycle
               </Link>
