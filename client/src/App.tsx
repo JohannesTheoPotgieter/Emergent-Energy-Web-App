@@ -10,7 +10,8 @@ import AppLayout from "@/components/layout/AppLayout";
 import { useAuth } from "@/hooks/use-auth";
 import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
-import { ShieldAlert, ArrowLeft, Loader2 } from "lucide-react";
+import { ShieldAlert, ArrowLeft } from "lucide-react";
+import { LoadingState } from "@/components/ui/loading-state";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
@@ -439,7 +440,7 @@ function ProtectedPages() {
     <RoleGuard>
     <AppLayout>
       <ErrorBoundary>
-      <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>}>
+      <Suspense fallback={<div className="space-y-6 p-6"><LoadingState variant="skeleton-card" cards={4} /><LoadingState variant="skeleton-table" rows={6} /></div>}>
       <div className="page-enter">
         <Switch>
           <Route path="/">{() => <HomeRedirect />}</Route>

@@ -4,7 +4,6 @@ import {
   msObjects,
   projectLinks,
   projectInfo,
-  mytoolTasks,
   workItems,
   users,
   communicationFollowUps,
@@ -191,14 +190,18 @@ export async function createFollowUpTaskFromCommunication(input: {
     return { task, type: "operational" as const };
   }
 
-  const [task] = await db.insert(mytoolTasks).values({
+  // Canonical: personal tasks now write to work_items (workstream=PERSONAL)
+  const [task] = await db.insert(workItems).values({
     ownerUserId: input.userId,
     title: taskTitle,
-    notes: taskNotes || null,
-    status: "inbox",
-    priority: "normal",
+    description: taskNotes || null,
+    status: "TO DO",
+    priority: "Med",
     bucket: "company_ops",
-    dueAt: input.dueAt ? new Date(input.dueAt) : null,
+    endDate: input.dueAt || null,
+    workstream: 'PERSONAL' as any,
+    source: 'UI' as any,
+    createdBy: input.userId,
   }).returning();
 
   await db.insert(communicationFollowUps).values({
@@ -441,15 +444,19 @@ export async function convertToTask(
 
     return { task, type: "operational" };
   } else {
+    // Canonical: personal tasks now write to work_items (workstream=PERSONAL)
     const [task] = await db
-      .insert(mytoolTasks)
+      .insert(workItems)
       .values({
         ownerUserId: userId,
         title,
-        notes: description,
-        status: "inbox",
-        priority: "normal",
+        description,
+        status: "TO DO",
+        priority: "Med",
         bucket: "personal",
+        workstream: 'PERSONAL' as any,
+        source: 'UI' as any,
+        createdBy: userId,
       })
       .returning();
 

@@ -4,7 +4,6 @@ import { eq, desc, sql, inArray, isNull } from "drizzle-orm";
 import {
   meetingSummaries,
   meetingActionItems,
-  mytoolTasks,
   mytoolCompanyPriorities,
   workItems,
   projectInfo,
@@ -290,19 +289,23 @@ export function registerMeetingRoutes(app: Express) {
         task = opTask;
         convertedToType = "operational_task";
       } else {
+        // Canonical: personal tasks now write to work_items (workstream=PERSONAL)
+        const priorityMap: Record<string, string> = { critical: "Urgent", high: "High", low: "Low" };
         const [personalTask] = await db
-          .insert(mytoolTasks)
+          .insert(workItems)
           .values({
             ownerUserId,
             title: overrides.title || actionItem.text,
-            status: "inbox",
-            priority: overrides.priority || "normal",
-            plannedForDate: overrides.plannedForDate || null,
-            dueAt: actionItem.dueDate ? new Date(actionItem.dueDate) : null,
-            notes: `From meeting: ${meeting?.title || "Unknown"}\nOwner: ${actionItem.owner || "Unassigned"}${overrides.notes ? "\n" + overrides.notes : ""}`,
+            status: "TO DO",
+            priority: priorityMap[overrides.priority || ""] || "Med",
+            scheduledDate: overrides.plannedForDate || null,
+            endDate: actionItem.dueDate || null,
+            description: `From meeting: ${meeting?.title || "Unknown"}\nOwner: ${actionItem.owner || "Unassigned"}${overrides.notes ? "\n" + overrides.notes : ""}`,
             bucket: overrides.bucket || "company_ops",
-            projectName: null,
-            department: overrides.department || null,
+            taskCategory: overrides.department || null,
+            workstream: 'PERSONAL' as any,
+            source: 'UI' as any,
+            createdBy: userId,
           })
           .returning();
         task = personalTask;

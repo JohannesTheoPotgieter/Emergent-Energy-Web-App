@@ -21,7 +21,7 @@ import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { fileTypeFromBuffer } from "file-type";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests, projectEngApprovals, approvals } from "@shared/schema";
+import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolRecurrenceTemplates, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, workItemDependencies, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests, projectEngApprovals, approvals } from "@shared/schema";
 import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -158,17 +158,23 @@ function isCashflowConfirmedCheck(exp: any): boolean {
 async function enrichMytoolTasks(userId: number, tasks: any[]) {
   if (!tasks.length) return tasks;
   const ids = tasks.map((t) => t.id);
-  const deps = await db.select().from(mytoolTaskDependencies).where(or(inArray(mytoolTaskDependencies.predecessorTaskId, ids), inArray(mytoolTaskDependencies.successorTaskId, ids)));
+  // Canonical: read from work_item_dependencies (FKs to work_items.id)
+  const deps = await db.select().from(workItemDependencies).where(
+    and(
+      or(inArray(workItemDependencies.predecessorId, ids), inArray(workItemDependencies.successorId, ids)),
+      isNull(workItemDependencies.deletedAt),
+    )
+  );
   const taskById = new Map<number, any>(tasks.map((t) => [t.id, t]));
 
   for (const task of tasks) {
-    const blockedBy = deps.filter((d) => d.successorTaskId === task.id).map((d) => {
-      const predecessor = taskById.get(d.predecessorTaskId);
-      return { ...d, predecessorStatus: predecessor?.status ?? null, predecessorTitle: predecessor?.title ?? null };
+    const blockedBy = deps.filter((d) => d.successorId === task.id).map((d) => {
+      const predecessor = taskById.get(d.predecessorId);
+      return { ...d, predecessorTaskId: d.predecessorId, successorTaskId: d.successorId, predecessorStatus: predecessor?.status ?? null, predecessorTitle: predecessor?.title ?? null };
     });
-    const blocking = deps.filter((d) => d.predecessorTaskId === task.id).map((d) => {
-      const successor = taskById.get(d.successorTaskId);
-      return { ...d, successorStatus: successor?.status ?? null, successorTitle: successor?.title ?? null };
+    const blocking = deps.filter((d) => d.predecessorId === task.id).map((d) => {
+      const successor = taskById.get(d.successorId);
+      return { ...d, predecessorTaskId: d.predecessorId, successorTaskId: d.successorId, successorStatus: successor?.status ?? null, successorTitle: successor?.title ?? null };
     });
 
     const blockersIncomplete = blockedBy.filter((d) => shouldBlockTask([d.predecessorStatus]));
@@ -6235,10 +6241,19 @@ export async function registerRoutes(
       const displayName = (req.user as any).name || userName;
 
       const [myToolTasksResult, opTasksForUser, planTasksForUser, engTasksForUser, qcItemsForUser] = await Promise.all([
-        db.select().from(mytoolTasks).where(eq(mytoolTasks.ownerUserId, userId)),
+        // Canonical: personal tasks now read from work_items (workstream=PERSONAL)
+        db.select().from(workItems).where(
+          and(
+            eq(workItems.workstream, "PERSONAL"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt),
+          )
+        ),
+        // Operational tasks: exclude PERSONAL (fetched above), ENG (fetched below), and PM (fetched separately)
         db.select().from(workItems).where(
           and(
             isNull(workItems.deletedAt),
+            sql`${workItems.workstream} NOT IN ('PERSONAL', 'ENG', 'PM')`,
             or(
               eq(workItems.ownerUserId, userId),
               sql`EXISTS (SELECT 1 FROM work_item_assignments wia WHERE wia.work_item_id = ${workItems.id} AND wia.user_id = ${userId})`
@@ -6291,9 +6306,9 @@ export async function registerRoutes(
           title: t.title,
           status: t.status,
           priority: t.priority,
-          projectName: t.projectName,
-          plannedForDate: t.plannedForDate,
-          dueDate: t.dueAt ? t.dueAt.toISOString().split("T")[0] : null,
+          projectName: t.subProjectName || null,
+          plannedForDate: t.scheduledDate,
+          dueDate: t.endDate || null,
           startDate: t.startDate,
           scheduledDate: t.scheduledDate,
           scheduledStartTime: t.scheduledStartTime,
@@ -6388,19 +6403,25 @@ export async function registerRoutes(
       }
 
       if (taskType === "mytool") {
-        const [task] = await db.select().from(mytoolTasks).where(
-          and(eq(mytoolTasks.id, taskId), eq(mytoolTasks.ownerUserId, userId))
+        // Canonical: personal tasks now live in work_items (workstream=PERSONAL)
+        const [task] = await db.select().from(workItems).where(
+          and(
+            eq(workItems.id, taskId),
+            eq(workItems.workstream, "PERSONAL"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt),
+          )
         );
         if (!task) return res.status(404).json({ error: "Task not found or not owned by you" });
 
-        await db.update(mytoolTasks)
+        await db.update(workItems)
           .set({
             scheduledDate: scheduledDate || null,
             scheduledStartTime: scheduledStartTime || null,
             scheduledEndTime: scheduledEndTime || null,
             updatedAt: new Date(),
           })
-          .where(eq(mytoolTasks.id, taskId));
+          .where(eq(workItems.id, taskId));
       } else if (taskType === "operational") {
         const [task] = await db.select().from(workItems).where(and(eq(workItems.id, taskId), isNull(workItems.deletedAt)));
         if (!task) return res.status(404).json({ error: "Task not found" });
@@ -6587,14 +6608,7 @@ export async function registerRoutes(
     try {
       const userId = resolveMyToolUserId(req);
 
-      const useCanonical = await isWorkItemsEnabled();
-      if (useCanonical) {
-        const canonicalTasks = await getWorkItemsAsMytoolTasks(userId);
-        if (canonicalTasks.length > 0) {
-          return res.json(canonicalTasks);
-        }
-      }
-
+      // Canonical: always read from work_items via repository (no feature-flag gating)
       const { date } = req.query;
       let tasks;
       if (date && typeof date === 'string') {
@@ -6740,11 +6754,13 @@ export async function registerRoutes(
 
         if (!existingTask.recurrenceEndDate || nextDate <= existingTask.recurrenceEndDate) {
           const recurrenceParentId = existingTask.recurrenceParentId || existingTask.id;
-          const existingInstance = await db.select().from(mytoolTasks).where(and(
-            eq(mytoolTasks.ownerUserId, userId),
-            eq(mytoolTasks.recurrenceParentId, recurrenceParentId),
-            eq(mytoolTasks.plannedForDate, nextDate),
-            isNull(mytoolTasks.deletedAt),
+          // Canonical: check work_items for existing recurrence instances
+          const existingInstance = await db.select().from(workItems).where(and(
+            eq(workItems.workstream, "PERSONAL"),
+            eq(workItems.ownerUserId, userId),
+            eq(workItems.recurrenceParentId, recurrenceParentId),
+            eq(workItems.scheduledDate, nextDate),
+            isNull(workItems.deletedAt),
           )).limit(1);
 
           if (!existingInstance.length) {
@@ -6794,6 +6810,10 @@ export async function registerRoutes(
     }
   });
 
+  // Canonical: personal task dependencies now use work_item_dependencies (FKs to work_items.id)
+  const DEP_TYPE_TO_CANONICAL: Record<string, string> = { finish_to_start: "FS", start_to_start: "SS", finish_to_finish: "FF", start_to_finish: "SF" };
+  const DEP_TYPE_FROM_CANONICAL: Record<string, string> = { FS: "finish_to_start", SS: "start_to_start", FF: "finish_to_finish", SF: "start_to_finish" };
+
   app.get("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const taskId = Number(req.params.id);
@@ -6802,8 +6822,20 @@ export async function registerRoutes(
       if (task && task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
         return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
       }
-      const deps = await db.select().from(mytoolTaskDependencies).where(or(eq(mytoolTaskDependencies.predecessorTaskId, taskId), eq(mytoolTaskDependencies.successorTaskId, taskId)));
-      res.json(deps);
+      const deps = await db.select().from(workItemDependencies).where(
+        and(
+          or(eq(workItemDependencies.predecessorId, taskId), eq(workItemDependencies.successorId, taskId)),
+          isNull(workItemDependencies.deletedAt),
+        )
+      );
+      // Map response to legacy shape for backward compat
+      res.json(deps.map((d) => ({
+        id: d.id,
+        predecessorTaskId: d.predecessorId,
+        successorTaskId: d.successorId,
+        dependencyType: DEP_TYPE_FROM_CANONICAL[d.depType] || "finish_to_start",
+        createdAt: null,
+      })));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6815,6 +6847,7 @@ export async function registerRoutes(
       const successorTaskId = Number(req.params.id);
       const predecessorTaskId = Number(req.body.predecessorTaskId);
       const dependencyType = req.body.dependencyType || "finish_to_start";
+      const depType = DEP_TYPE_TO_CANONICAL[dependencyType] || "FS";
       // Verify user owns the successor task
       const task = await storage.getMytoolTask(successorTaskId);
       if (task && task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
@@ -6823,14 +6856,24 @@ export async function registerRoutes(
       const validationMessage = validateDependencyPair(predecessorTaskId, successorTaskId);
       if (validationMessage) return res.status(400).json({ error: validationMessage });
 
-      const predecessorLinks = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.successorTaskId, predecessorTaskId));
-      if (predecessorLinks.some((l) => l.predecessorTaskId === successorTaskId)) {
+      const predecessorLinks = await db.select().from(workItemDependencies).where(
+        and(eq(workItemDependencies.successorId, predecessorTaskId), isNull(workItemDependencies.deletedAt))
+      );
+      if (predecessorLinks.some((l) => l.predecessorId === successorTaskId)) {
         return res.status(400).json({ error: "Circular dependency is not allowed" });
       }
 
-      const [created] = await db.insert(mytoolTaskDependencies).values({ predecessorTaskId, successorTaskId, dependencyType }).onConflictDoNothing().returning();
+      const [created] = await db.insert(workItemDependencies).values({
+        predecessorId: predecessorTaskId,
+        successorId: successorTaskId,
+        depType: depType as any,
+      }).onConflictDoNothing().returning();
       await refreshDependentTaskStates(predecessorTaskId);
-      res.json(created || { predecessorTaskId, successorTaskId, dependencyType, duplicate: true });
+      // Map response to legacy shape for backward compat
+      const result = created
+        ? { id: created.id, predecessorTaskId: created.predecessorId, successorTaskId: created.successorId, dependencyType }
+        : { predecessorTaskId, successorTaskId, dependencyType, duplicate: true };
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6845,9 +6888,10 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
       }
       const dependencyId = Number(req.params.dependencyId);
-      const [dep] = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
-      await db.delete(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
-      if (dep) await refreshDependentTaskStates(dep.predecessorTaskId);
+      const [dep] = await db.select().from(workItemDependencies).where(eq(workItemDependencies.id, dependencyId));
+      // Soft-delete to match work_item_dependencies pattern
+      await db.update(workItemDependencies).set({ deletedAt: new Date(), deletedBy: userId }).where(eq(workItemDependencies.id, dependencyId));
+      if (dep) await refreshDependentTaskStates(dep.predecessorId);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -8160,14 +8204,16 @@ export async function registerRoutes(
   app.get("/api/mytool/unclassified-tasks", requireAuth, async (req, res) => {
     try {
       const userId = resolveMyToolUserId(req);
-      const { mytoolTasks: mytoolTasksTable } = await import("@shared/schema");
-      const tasks = await db.select().from(mytoolTasksTable)
+      // Canonical: personal tasks now in work_items (workstream=PERSONAL)
+      const tasks = await db.select().from(workItems)
         .where(
           and(
-            eq(mytoolTasksTable.ownerUserId, userId),
+            eq(workItems.workstream, "PERSONAL"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt),
             or(
-              isNull(mytoolTasksTable.bucket),
-              and(eq(mytoolTasksTable.bucket, 'project'), isNull(mytoolTasksTable.projectName))
+              isNull(workItems.bucket),
+              and(sql`${workItems.bucket} = 'project'`, isNull(workItems.projectId))
             )
           )
         );
