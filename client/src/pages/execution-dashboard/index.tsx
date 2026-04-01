@@ -9,7 +9,7 @@ import { usePermission } from "@/hooks/use-permissions";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import {
   Activity, AlertCircle, AlertTriangle, RefreshCw, Filter, RotateCcw,
-  LayoutDashboard, Layers, HardHat, DollarSign,
+  LayoutDashboard, Layers, DollarSign,
 } from "lucide-react";
 import {
   ExecutionDashboardContext,
@@ -18,21 +18,19 @@ import {
 } from "./use-execution-data";
 import OverviewPage from "./OverviewPage";
 import ProgramPage from "./ProgramPage";
-import ConstructionPage from "./ConstructionPage";
 import FinancePage from "./FinancePage";
 
-type DashboardView = "overview" | "program" | "construction" | "finance";
+type DashboardView = "overview" | "program" | "finance";
 
 const VIEW_CONFIG: { key: DashboardView; label: string; icon: React.ReactNode; path: string }[] = [
   { key: "overview", label: "Overview", icon: <LayoutDashboard className="w-4 h-4" />, path: "/execution-board" },
   { key: "program", label: "Programme", icon: <Layers className="w-4 h-4" />, path: "/execution-board/program" },
-  { key: "construction", label: "Construction", icon: <HardHat className="w-4 h-4" />, path: "/execution-board/construction" },
   { key: "finance", label: "Finance", icon: <DollarSign className="w-4 h-4" />, path: "/execution-board/finance" },
 ];
 
 function resolveView(pathname: string): DashboardView {
   if (pathname.startsWith("/execution-board/program")) return "program";
-  if (pathname.startsWith("/execution-board/construction")) return "construction";
+  if (pathname.startsWith("/execution-board/construction")) return "overview"; // retired — fallback to overview
   if (pathname.startsWith("/execution-board/finance")) return "finance";
   return "overview";
 }
@@ -40,7 +38,6 @@ function resolveView(pathname: string): DashboardView {
 const VIEW_COMPONENTS: Record<DashboardView, React.ComponentType> = {
   overview: OverviewPage,
   program: ProgramPage,
-  construction: ConstructionPage,
   finance: FinancePage,
 };
 
