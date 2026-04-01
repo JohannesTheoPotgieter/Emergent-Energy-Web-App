@@ -3,7 +3,7 @@ import { useGatesPipeline } from "@/hooks/use-gates";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
-import { Search, FolderOpen } from "lucide-react";
+import { Search, FolderOpen, AlertCircle, Filter } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -35,6 +35,7 @@ export default function GatesPipelinePage() {
   const { data, isLoading, error } = useGatesPipeline();
   const [search, setSearch] = useState("");
   const [, navigate] = useLocation();
+  const hasSearch = search.trim().length > 0;
 
   const filtered = useMemo(() => {
     if (!data?.projects) return [];
@@ -46,6 +47,31 @@ export default function GatesPipelinePage() {
       (p.pm || "").toLowerCase().includes(term)
     );
   }, [data?.projects, search]);
+
+  const emptyReason = useMemo(() => {
+    const total = data?.projects?.length || 0;
+    if (total > 0 && filtered.length === 0) {
+      return {
+        title: "No projects match current search",
+        details: "Your search text filtered out all Gate Tracker rows.",
+        nextAction: "Clear search or use fewer keywords.",
+      };
+    }
+    if (data?.diagnostics?.schemaFallback) {
+      return {
+        title: "Lifecycle gate data is unavailable",
+        details: data?.diagnostics?.schemaIssueMessage || "Gate stage columns are not available in this environment.",
+        nextAction: "Run lifecycle schema alignment/backfill and reload this page.",
+      };
+    }
+    return {
+      title: "No projects currently qualify for Gate Tracker",
+      details: "Only active, non-archived projects with lifecycle gate state are shown.",
+      nextAction: "Verify lifecycle setup on projects in Lifecycle Board and check stage/gate state.",
+    };
+  }, [data?.diagnostics, data?.projects?.length, filtered.length]);
+
+  const showEmptyState = filtered.length === 0;
 
   if (isLoading) return <PageSkeleton />;
   if (error) return <PageError message="Failed to load gates pipeline" />;
@@ -65,6 +91,12 @@ export default function GatesPipelinePage() {
         <span className="text-sm text-muted-foreground">
           {filtered.length} project{filtered.length !== 1 ? "s" : ""}
         </span>
+        {hasSearch ? (
+          <Badge variant="outline" className="text-xs">
+            <Filter className="h-3 w-3 mr-1" />
+            Search active
+          </Badge>
+        ) : null}
       </div>
 
       <div className="border rounded-lg overflow-auto">
@@ -78,18 +110,25 @@ export default function GatesPipelinePage() {
               <th className="text-right p-2 font-medium">Readiness</th>
               <th className="text-left p-2 font-medium">Waiting On</th>
               <th className="text-right p-2 font-medium">Days</th>
-              <th className="text-right p-2 font-medium">Exc.</th>
+              <th className="text-left p-2 font-medium">Exec</th>
               <th className="text-left p-2 font-medium">PM</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {showEmptyState ? (
               <tr>
                 <td colSpan={9} className="py-12 text-center">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                    <FolderOpen className="h-8 w-8 opacity-40" />
-                    <p className="text-sm font-medium">No projects found</p>
-                    <p className="text-xs">Projects will appear here once they have an active execution state.</p>
+                    {data?.diagnostics?.schemaFallback ? <AlertCircle className="h-8 w-8 opacity-60 text-amber-600" /> : <FolderOpen className="h-8 w-8 opacity-40" />}
+                    <p className="text-sm font-medium">{emptyReason.title}</p>
+                    <p className="text-xs max-w-2xl">{emptyReason.details}</p>
+                    <p className="text-xs">{emptyReason.nextAction}</p>
+                    <div className="mt-3 text-[11px] text-left rounded-md border bg-muted/30 p-3 max-w-2xl">
+                      <p><strong>Visibility rules:</strong> Active, non-archived projects with lifecycle gate state.</p>
+                      <p><strong>Search filter:</strong> {hasSearch ? `Active (“${search}”)` : "None"}.</p>
+                      <p><strong>Total source projects:</strong> {data?.diagnostics?.totalProjects ?? data?.projects?.length ?? 0}.</p>
+                      {typeof data?.diagnostics?.activeExecutionRows === "number" ? <p><strong>Active execution rows:</strong> {data?.diagnostics?.activeExecutionRows}.</p> : null}
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -102,18 +141,18 @@ export default function GatesPipelinePage() {
                 <td className="p-2 font-medium">{p.projectName}</td>
                 <td className="p-2 text-muted-foreground">{p.clientName || "-"}</td>
                 <td className="p-2">
-                  <span className="text-xs">{STAGE_LABELS[p.currentStageCode || ""] || p.currentStageCode || "-"}</span>
+                  <span className="text-xs">{STAGE_LABELS[p.currentStageCode || ""] || p.currentStageCode || "Not set"}</span>
                 </td>
                 <td className="p-2">
                   <Badge variant="outline" className={`text-[10px] ${gateStatusColor(p.gateStatus)}`}>
-                    {p.gateStatus || "N/A"}
+                    {p.gateStatus || "Unknown"}
                   </Badge>
                 </td>
                 <td className="p-2 text-right">{p.gateReadinessPct ?? 0}%</td>
-                <td className="p-2 text-muted-foreground">{p.waitingOnDepartment || "-"}</td>
+                <td className="p-2 text-muted-foreground">{p.waitingOnDepartment || "No blocker set"}</td>
                 <td className="p-2 text-right">{p.daysInStage}</td>
-                <td className="p-2 text-right">{p.openExceptionCount || "-"}</td>
-                <td className="p-2 text-muted-foreground">{p.pm || "-"}</td>
+                <td className="p-2 text-muted-foreground">{p.constructionManagerName || p.pd || "Unassigned"}</td>
+                <td className="p-2 text-muted-foreground">{p.pm || "Unassigned"}</td>
               </tr>
             ))}
           </tbody>
