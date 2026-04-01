@@ -37,7 +37,7 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}_${sanitizeFilename(file.originalname)}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 }, fileFilter: allowedFileFilter });
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024, files: 20 }, fileFilter: allowedFileFilter });
 
 const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 const ENGINEER_ROLES = ["ENGINEER", "COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];

@@ -495,11 +495,9 @@ export function registerPoRoutes(app: Express) {
         newPoStatus = "approved";
       }
 
-      const updateFields: string[] = [`status = '${newPoStatus}'`, `updated_at = NOW()`];
-
-      await db.execute(sql.raw(`
-        UPDATE purchase_orders SET ${updateFields.join(", ")} WHERE id = ${poIdNum}
-      `));
+      await db.execute(sql`
+        UPDATE purchase_orders SET status = ${newPoStatus}, updated_at = NOW() WHERE id = ${poIdNum}
+      `);
 
       logAuditFromReq(req, {
         entityType: "purchase_order",

@@ -300,13 +300,15 @@ function Sidebar({ selected, onSelect }: { selected: SelectedItem | null; onSele
   const chats = Array.isArray(chatsData) ? chatsData : (chatsData?.data || []);
   const ssoRequired = teamsData?.ssoRequired === true || chatsData?.ssoRequired === true;
 
+  const [teamsInitialized, setTeamsInitialized] = useState(false);
   useEffect(() => {
-    if (teams.length > 0 && Object.keys(expandedTeams).length === 0) {
+    if (teams.length > 0 && !teamsInitialized) {
       const initial: Record<string, boolean> = {};
       teams.forEach((t: any) => { initial[t.id] = true; });
       setExpandedTeams(initial);
+      setTeamsInitialized(true);
     }
-  }, [teams]);
+  }, [teams, teamsInitialized]);
 
   function getChatDisplayName(chat: any) {
     if (chat.topic) return chat.topic;

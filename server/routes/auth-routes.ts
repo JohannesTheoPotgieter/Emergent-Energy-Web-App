@@ -37,24 +37,21 @@ setInterval(() => {
 
 async function enforceSessionLimit(userId: number, currentSessionId: string, limit: number = MAX_SESSIONS_PER_USER): Promise<void> {
   try {
+    // Use SQL JSON extraction to filter sessions by userId at the DB level (avoids race conditions)
+    const userIdStr = String(userId);
     const result = await db.execute(
-      sql`SELECT sid, sess, expire FROM "session" WHERE expire > NOW() ORDER BY expire DESC`
+      sql`SELECT sid, expire FROM "session"
+          WHERE expire > NOW()
+            AND (sess::jsonb -> 'passport' ->> 'user') = ${userIdStr}
+          ORDER BY expire DESC`
     );
     const rows = ((result as Record<string, unknown>).rows || result) as Record<string, unknown>[];
-    const userSessions: { sid: string; expire: Date }[] = [];
-    for (const row of rows) {
-      const sess = typeof row.sess === "string" ? JSON.parse(row.sess) : row.sess;
-      const passportUserId = sess?.passport?.user;
-      if (Number(passportUserId) === userId) {
-        userSessions.push({ sid: row.sid as string, expire: row.expire as Date });
-      }
-    }
-    if (userSessions.length <= limit) return;
-    const toDelete = userSessions
+    if (rows.length <= limit) return;
+    const toDelete = rows
       .filter((s) => s.sid !== currentSessionId)
       .slice(limit - 1);
     if (toDelete.length > 0) {
-      const sids = toDelete.map((s) => s.sid);
+      const sids = toDelete.map((s) => s.sid as string);
       const sidParams = sids.map(s => sql`${s}`);
       await db.execute(sql`DELETE FROM "session" WHERE sid IN (${sql.join(sidParams, sql`, `)})`);
       console.log(`[SESSION] Cleaned ${toDelete.length} old session(s) for user ${userId}, keeping ${limit}`);
