@@ -714,6 +714,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/update-progress",
     requireAuth,
+    requirePermission("pm_on_the_go", "edit"),
     requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
@@ -776,6 +777,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/escalate",
     requireAuth,
+    requirePermission("pm_on_the_go", "edit"),
     requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
@@ -829,6 +831,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.get(
     "/api/pm-otg/projects/:projectId/compliance",
     requireAuth,
+    requirePermission("pm_on_the_go", "view"),
     requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
@@ -878,6 +881,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
   app.post(
     "/api/pm-otg/projects/:projectId/compliance/risk-confirm",
     requireAuth,
+    requirePermission("pm_on_the_go", "edit"),
     requireProjectManagerOrAdmin,
     requirePmAssignment,
     async (req: Request, res: Response) => {
