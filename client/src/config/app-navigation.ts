@@ -50,7 +50,7 @@ export const TOP_SECTIONS: TopSection[] = [
       "/lifecycle-board",
       "/gates", "/exceptions",
       "/project-lifecycle",
-    ]),
+    ]) && !matchesPathPrefix(pathname, "/gates/commitments"),
     secondary: [
       { label: "Overview", path: "/project-lifecycle" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
@@ -340,35 +340,45 @@ export type BreadcrumbItem = { label: string; path?: string };
 export function getBreadcrumbs(pathname: string, activeSection: TopSection): BreadcrumbItem[] {
   if (pathname === "/") return [];
 
+  // --- Priorities ---
+  if (pathname === "/priorities") return [
+    { label: "Company Priorities" },
+  ];
   const priorityDetailMatch = pathname.match(/^\/priorities\/(\d+)/);
   if (priorityDetailMatch) return [
-    { label: "Home", path: "/" },
     { label: "Priorities", path: "/priorities" },
     { label: `Priority #${priorityDetailMatch[1]}` },
   ];
 
-  if (pathname === "/priorities") return [
-    { label: "Home" },
-  ];
-
-  const projectMatch = pathname.match(/^\/project\/([^/]+)/);
+  // --- Project detail & sub-pages ---
+  const projectFinancialMatch = pathname.match(/^\/project\/([^/]+)\/financial-linking$/);
+  if (projectFinancialMatch) {
+    const name = decodeURIComponent(projectFinancialMatch[1]);
+    return [
+      { label: "Project Delivery", path: "/projects" },
+      { label: name, path: `/project/${projectFinancialMatch[1]}` },
+      { label: "Financial Linking" },
+    ];
+  }
+  const projectMatch = pathname.match(/^\/project\/([^/]+)$/);
   if (projectMatch) return [
-    { label: "Project Delivery", path: "/execution-board" },
+    { label: "Project Delivery", path: "/projects" },
     { label: decodeURIComponent(projectMatch[1]) },
   ];
 
-  const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)/);
+  // --- Portfolio detail ---
+  const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)$/);
   if (portfolioMatch) return [
     { label: "Company", path: "/project-lifecycle" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];
 
+  // --- PD Tickets ---
   if (pathname === "/pd/tickets/create") return [
     { label: "Project Development", path: "/pd" },
     { label: "PD Tickets", path: "/pd/tickets" },
     { label: "Create" },
   ];
-
   const ticketMatch = pathname.match(/^\/pd\/tickets\/([^/]+)/);
   if (ticketMatch) return [
     { label: "Project Development", path: "/pd" },
@@ -376,6 +386,80 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     { label: `Ticket ${decodeURIComponent(ticketMatch[1])}` },
   ];
 
+  // --- PD Handover ---
+  const pdHandoverMatch = pathname.match(/^\/pd\/handover\/([^/]+)$/);
+  if (pdHandoverMatch) return [
+    { label: "Project Development", path: "/pd" },
+    { label: "Handover Queue", path: "/handover-control" },
+    { label: decodeURIComponent(pdHandoverMatch[1]) },
+  ];
+
+  // --- Client detail & sub-pages ---
+  const clientProjectMatch = pathname.match(/^\/clients\/([^/]+)\/project\/([^/]+)$/);
+  if (clientProjectMatch) return [
+    { label: "Project Development", path: "/pd" },
+    { label: "Clients", path: "/clients" },
+    { label: decodeURIComponent(clientProjectMatch[1]), path: `/clients/${clientProjectMatch[1]}` },
+    { label: "Project Departments" },
+  ];
+  const clientMatch = pathname.match(/^\/clients\/([^/]+)$/);
+  if (clientMatch) return [
+    { label: "Project Development", path: "/pd" },
+    { label: "Clients", path: "/clients" },
+    { label: decodeURIComponent(clientMatch[1]) },
+  ];
+
+  // --- Quality NCR detail ---
+  const ncrMatch = pathname.match(/^\/quality\/ncr\/([^/]+)$/);
+  if (ncrMatch) return [
+    { label: "Quality", path: "/quality" },
+    { label: "Inspections / NCRs", path: "/quality/ncrs" },
+    { label: `NCR ${decodeURIComponent(ncrMatch[1])}` },
+  ];
+
+  // --- PM On-The-Go project ---
+  const pmOtgMatch = pathname.match(/^\/pm\/on-the-go\/project\/([^/]+)$/);
+  if (pmOtgMatch) return [
+    { label: "Project Delivery", path: "/execution-board" },
+    { label: "Mobile View", path: "/pm/on-the-go" },
+    { label: decodeURIComponent(pmOtgMatch[1]) },
+  ];
+
+  // --- Report sub-pages ---
+  if (pathname === "/reports/pm/monthly/history") return [
+    { label: "Reports", path: "/reports/center" },
+    { label: "PM Monthly", path: "/reports/pm/monthly" },
+    { label: "History" },
+  ];
+  if (pathname === "/reports/pm/monthly/compare") return [
+    { label: "Reports", path: "/reports/center" },
+    { label: "PM Monthly", path: "/reports/pm/monthly" },
+    { label: "Compare" },
+  ];
+  if (pathname === "/reports/engineering/monthly/history") return [
+    { label: "Reports", path: "/reports/center" },
+    { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
+    { label: "History" },
+  ];
+  if (pathname === "/reports/engineering/monthly/compare") return [
+    { label: "Reports", path: "/reports/center" },
+    { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
+    { label: "Compare" },
+  ];
+  const pmReportProjectMatch = pathname.match(/^\/reports\/pm\/monthly\/([^/]+)\/project\/([^/]+)$/);
+  if (pmReportProjectMatch) return [
+    { label: "Reports", path: "/reports/center" },
+    { label: "PM Monthly", path: "/reports/pm/monthly" },
+    { label: decodeURIComponent(pmReportProjectMatch[2]) },
+  ];
+  const engReportProjectMatch = pathname.match(/^\/reports\/engineering\/monthly\/([^/]+)\/project\/([^/]+)$/);
+  if (engReportProjectMatch) return [
+    { label: "Reports", path: "/reports/center" },
+    { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
+    { label: decodeURIComponent(engReportProjectMatch[2]) },
+  ];
+
+  // --- Gates workspace ---
   if (pathname.startsWith("/gates")) return [
     { label: "Company", path: "/project-lifecycle" },
     { label: "Gate Tracker", path: "/gates" },
@@ -384,12 +468,24 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     }] : []),
   ];
 
+  // --- Generic fallback ---
   const leaf = activeSection.secondary
     .filter((item) => linkIsActive(pathname, item.path))
     .sort((a, b) => b.path.length - a.path.length)[0];
   const items: BreadcrumbItem[] = [{ label: activeSection.label, path: activeSection.path }];
   if (leaf && leaf.label !== activeSection.label) {
-    items.push({ label: leaf.label });
+    if (pathname !== leaf.path) {
+      // Sub-page of a secondary item — make the secondary item a clickable middle crumb
+      items.push({ label: leaf.label, path: leaf.path });
+      const segment = pathname.split("/").pop() || "";
+      items.push({ label: decodeURIComponent(segment) });
+    } else {
+      items.push({ label: leaf.label });
+    }
+  } else if (!leaf && pathname !== activeSection.path) {
+    // No secondary match — use last path segment as label
+    const segment = pathname.split("/").pop() || "";
+    if (segment) items.push({ label: decodeURIComponent(segment) });
   }
   return items;
 }
