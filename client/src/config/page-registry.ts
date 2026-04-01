@@ -265,7 +265,7 @@ export function getAppSectionForPath(pathname: string): string | undefined {
     return "ENGINEERING";
   }
   // PD
-  if (pathname === "/pd" || pathname.startsWith("/pd/") || pathname === "/opportunities" || pathname === "/clients") {
+  if (pathname === "/pd" || pathname.startsWith("/pd/") || pathname === "/opportunities" || pathname === "/clients" || pathname.startsWith("/clients/")) {
     return "PROJECT_DEVELOPMENT";
   }
   // Execution Board lives under Project Delivery
