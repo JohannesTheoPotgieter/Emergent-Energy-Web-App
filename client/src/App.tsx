@@ -8,8 +8,8 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NetworkStatus } from "@/components/NetworkStatus";
 import AppLayout from "@/components/layout/AppLayout";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery } from "@tanstack/react-query";
-import { checkPermission, normalizeRoleForPermissions } from "@shared/schema";
+import { useAccessMatrix } from "@/hooks/use-access-matrix";
+import { normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -324,19 +324,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
     (window as any).__navMode = navMode;
   }
 
-  const { data: permissions } = useQuery<{ role?: string; entityPermissions?: Record<string, Record<string, boolean>> | null }>({
-    queryKey: ["auth-permissions", user?.role],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      if (effectiveRole) headers["x-company-role"] = effectiveRole;
-      const res = await fetch("/api/auth/permissions", { headers, credentials: "include" });
-      return res.json();
-    },
-    enabled: !!user?.role,
-    staleTime: 30_000,
-  });
+  const { canViewPath } = useAccessMatrix();
 
   if (effectiveRole === "PROJECT_MANAGER_SITE") {
     const allowed = PM_ALLOWED_PATHS.some(p =>
@@ -385,28 +373,8 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   const entity = getPermissionEntityForPath(location);
-  if (entity && effectiveRole) {
-    const ep = permissions?.entityPermissions;
-    let hasView = true;
-    if (ep && ep[entity]) {
-      hasView = ep[entity]["view"] === true;
-    } else {
-      hasView = checkPermission(effectiveRole, entity, "view");
-    }
-    if (!hasView) {
-      return <AccessDenied />;
-    }
-
-    if (process.env.NODE_ENV !== "production" && typeof window !== "undefined") {
-      (window as any).__permissionDebug = {
-        user: user ? { id: user.id, role: user.role } : null,
-        effectiveRole,
-        route: location,
-        checkedEntity: entity,
-        hasView,
-        entityPermissions: permissions?.entityPermissions ?? null,
-      };
-    }
+  if (entity && effectiveRole && !canViewPath(location)) {
+    return <AccessDenied />;
   }
 
   return <>{children}</>;
