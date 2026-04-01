@@ -111,7 +111,7 @@ describe("Multi-project (ad-hoc) tracker support", () => {
 
   describe("Schema has sub_project_name columns", () => {
     it("normalized_cost_lines has sub_project_name", () => {
-      const source = read("shared/schema.ts");
+      const source = read("shared/schema/finance.ts");
       const costSection = source.substring(
         source.indexOf('pgTable("normalized_cost_lines"'),
         source.indexOf("});", source.indexOf('pgTable("normalized_cost_lines"')) + 3
@@ -120,7 +120,7 @@ describe("Multi-project (ad-hoc) tracker support", () => {
     });
 
     it("normalized_revenue_lines has sub_project_name", () => {
-      const source = read("shared/schema.ts");
+      const source = read("shared/schema/finance.ts");
       const revSection = source.substring(
         source.indexOf('pgTable("normalized_revenue_lines"'),
         source.indexOf("});", source.indexOf('pgTable("normalized_revenue_lines"')) + 3
@@ -129,7 +129,7 @@ describe("Multi-project (ad-hoc) tracker support", () => {
     });
 
     it("work_items has sub_project_name", () => {
-      const source = read("shared/schema.ts");
+      const source = read("shared/schema/tasks.ts");
       const wiSection = source.substring(
         source.indexOf('pgTable("work_items"'),
         source.indexOf("});", source.indexOf('pgTable("work_items"')) + 3

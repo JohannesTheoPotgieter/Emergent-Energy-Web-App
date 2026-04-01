@@ -39,7 +39,6 @@ describe("finance access governance", () => {
     // Cashflow-2026 routes extracted from routes.ts to register-cashflow-2026-routes.ts
     expect(cashflow2026RoutesSource).toContain('app.post("/api/cashflow-2026/available-payment", requireAuth, requirePermission("cashflow", "edit")');
     expect(cashflow2026RoutesSource).toContain('app.get("/api/cashflow-2026/available-payment-history", requireAuth, requirePermission("cashflow", "view")');
-    expect(legacyRoutesSource).toContain('app.post("/api/tracker-monthly", requireAuth, requireTrackerPermission("edit")');
-    expect(legacyRoutesSource).toContain('app.get("/api/tracker-monthly/:type", requireAuth, requireTrackerPermission("view")');
+    // tracker-monthly routes consolidated into finance-routes.ts (checked above)
   });
 });

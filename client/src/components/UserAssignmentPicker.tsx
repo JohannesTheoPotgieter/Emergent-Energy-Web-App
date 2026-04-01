@@ -70,6 +70,8 @@ interface UserAssignmentPickerProps {
   showUnassignedLabel?: boolean;
   disabled?: boolean;
   disabledReason?: string;
+  /** When true, hides the "Remove assignment" option in single mode */
+  disableRemove?: boolean;
 }
 
 export default function UserAssignmentPicker({
@@ -85,6 +87,7 @@ export default function UserAssignmentPicker({
   showUnassignedLabel = true,
   disabled = false,
   disabledReason,
+  disableRemove = false,
 }: UserAssignmentPickerProps) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
@@ -102,7 +105,8 @@ export default function UserAssignmentPicker({
   const { data: assignables = [] } = useQuery<AssignableDirectoryEntry[]>({
     queryKey: ["/api/assignables", taskSource],
     queryFn: async () => fetchAssignables(taskSource),
-    staleTime: 60000,
+    staleTime: 30000,
+    refetchOnWindowFocus: true,
   });
 
   const safeTaskId = Number.isFinite(taskId) && taskId > 0 ? taskId : null;
@@ -118,7 +122,8 @@ export default function UserAssignmentPicker({
       return res.json();
     },
     enabled: !assignments && !!safeTaskId,
-    staleTime: 30000,
+    staleTime: 15000,
+    refetchOnWindowFocus: true,
   });
 
   const effectiveAssignments = assignments ?? fetchedAssignments ?? null;
@@ -358,7 +363,7 @@ export default function UserAssignmentPicker({
             </div>
           </div>
           <div className="max-h-56 overflow-y-auto p-1">
-            {hasAssignments && mode === "single" && (
+            {hasAssignments && mode === "single" && !disableRemove && (
               <button
                 className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-xs text-red-600 hover:bg-red-50 transition-colors mb-0.5"
                 onClick={() => reassignMutation.mutate({ assigneeType: null, assigneeId: null })}

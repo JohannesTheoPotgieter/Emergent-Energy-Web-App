@@ -57,12 +57,27 @@ export const PRIORITY_ROUTE_EXPECTATIONS: RouteProofExpectation[] = [
   { routeId: "handoverControl", label: "Handover Control", expectedHeadingOrAnchor: /(Site \/ Execution Controls|Handover|Gate|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Checklist|Link\s+href=|input|Table)/i, todo: "Add end-to-end handover gate progression tests." },
 ];
 
+function resolvePageFile(relPath: string): string {
+  // If the .tsx file exists, use it directly; otherwise try directory/index.tsx
+  const abs = path.join(process.cwd(), relPath);
+  if (fs.existsSync(abs)) return relPath;
+  const dirIndex = relPath.replace(/\.tsx$/, "/index.tsx");
+  if (fs.existsSync(path.join(process.cwd(), dirIndex))) return dirIndex;
+  return relPath;
+}
+
 function parseRouteComponentMap(appFile: string): Map<string, string> {
   const source = fs.readFileSync(appFile, "utf8");
   const importMap = new Map<string, string>();
+  // Match eager imports: import X from "@/pages/..."
   const importRegex = /import\s+(\w+)\s+from\s+"@\/pages\/([^"]+)";/g;
   for (const match of source.matchAll(importRegex)) {
-    importMap.set(match[1], path.join("client", "src", "pages", `${match[2]}.tsx`));
+    importMap.set(match[1], resolvePageFile(path.join("client", "src", "pages", `${match[2]}.tsx`)));
+  }
+  // Match lazy imports: const X = lazy(() => import("@/pages/..."))
+  const lazyRegex = /const\s+(\w+)\s*=\s*lazy\(\(\)\s*=>\s*import\("@\/pages\/([^"]+)"\)\)/g;
+  for (const match of source.matchAll(lazyRegex)) {
+    importMap.set(match[1], resolvePageFile(path.join("client", "src", "pages", `${match[2]}.tsx`)));
   }
 
   const routeComponentsBlock = source.match(/const ROUTE_COMPONENTS:[\s\S]*?=\s*\{([\s\S]*?)\};/);
@@ -92,8 +107,12 @@ function readResolvedPageSource(pageFile: string): string {
 
   const resolved = path.join(path.dirname(pageFile), `${reExportMatch[1].replace(/^\.\//, "")}.tsx`);
   const resolvedAbsolute = path.join(process.cwd(), resolved);
-  if (!fs.existsSync(resolvedAbsolute)) return source;
-  return fs.readFileSync(resolvedAbsolute, "utf8");
+  if (fs.existsSync(resolvedAbsolute)) return fs.readFileSync(resolvedAbsolute, "utf8");
+  // Handle directory-style imports (e.g. ./execution-dashboard -> ./execution-dashboard/index.tsx)
+  const resolvedDir = path.join(path.dirname(pageFile), reExportMatch[1].replace(/^\.\//, ""), "index.tsx");
+  const resolvedDirAbsolute = path.join(process.cwd(), resolvedDir);
+  if (fs.existsSync(resolvedDirAbsolute)) return fs.readFileSync(resolvedDirAbsolute, "utf8");
+  return source;
 }
 
 export function buildRouteProofResults(): RouteProofResult[] {
@@ -108,14 +127,15 @@ export function buildRouteProofResults(): RouteProofResult[] {
     const routeComponentMapped = !!page?.routeComponentKey && !!pageFile;
 
     const source = pageFile ? readResolvedPageSource(pageFile) : "";
-    const headingOrAnchorFound = !!source && expectation.expectedHeadingOrAnchor.test(source);
-    const primaryActionOrWidgetFound = !!source && expectation.expectedPrimaryActionOrWidget.test(source);
+    const isRedirect = !!page?.redirectTo;
+    const headingOrAnchorFound = isRedirect || (!!source && expectation.expectedHeadingOrAnchor.test(source));
+    const primaryActionOrWidgetFound = isRedirect || (!!source && expectation.expectedPrimaryActionOrWidget.test(source));
     const redirectLoopRisk = page?.redirectTo && page.redirectTo === page.path ? "possible" : "none";
     const apiDependencies = source ? extractApiDependencies(source) : [];
 
     const missingMarkers: string[] = [];
     if (!routeExists) missingMarkers.push("route missing in PAGE_REGISTRY");
-    if (routeExists && !routeComponentMapped && !page?.redirectTo) missingMarkers.push("routeComponentKey not mapped to a page component");
+    if (routeExists && !routeComponentMapped && !isRedirect) missingMarkers.push("routeComponentKey not mapped to a page component");
     if (!headingOrAnchorFound) missingMarkers.push("expected heading/anchor not found");
     if (!primaryActionOrWidgetFound) missingMarkers.push("expected primary action/widget not found");
     if (redirectLoopRisk === "possible") missingMarkers.push("possible redirect loop");

@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import UserPicker from "@/components/UserPicker";
 import {
   Search, Loader2, ListTodo, FileUp, FolderCog, Trash2,
   RotateCcw, Edit, CheckCircle, AlertTriangle, Shield,
@@ -216,20 +217,12 @@ function TaskRecoveryTab() {
             </div>
             <div>
               <Label>Owner / Assignee</Label>
-              <Select
-                value={String(editFields.ownerUserId || "__none__")}
-                onValueChange={(v) => setEditFields(f => ({ ...f, ownerUserId: v === "__none__" ? null : parseInt(v) }))}
-              >
-                <SelectTrigger data-testid="select-edit-task-owner">
-                  <SelectValue placeholder="Select user" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">Unassigned</SelectItem>
-                  {allUsers.map((u: any) => (
-                    <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <UserPicker
+                value={editFields.ownerUserId ?? null}
+                onValueChange={(userId) => setEditFields(f => ({ ...f, ownerUserId: userId }))}
+                placeholder="Select user"
+                data-testid="select-edit-task-owner"
+              />
             </div>
             <div>
               <Label>Due Date</Label>

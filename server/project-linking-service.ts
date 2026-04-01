@@ -331,7 +331,7 @@ export async function getProjectLinkedItems(
           id: task.id,
           title: task.title,
           projectId: task.projectId,
-          projectName: null,
+          projectName: checklist?.projectName ?? null,
           linkedQualityItemInstanceId: task.linkedQualityItemInstanceId,
         } : null,
         qualityContext: qualityItem ? {

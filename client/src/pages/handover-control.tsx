@@ -1,3 +1,4 @@
+// Site / Execution Controls — Execution enablement and handover controls
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";

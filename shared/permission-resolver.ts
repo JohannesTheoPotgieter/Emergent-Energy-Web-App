@@ -208,7 +208,7 @@ export function evaluateAuthorityForRole(params: {
   }
 
   if (action === "manage_settings") {
-    const canManageSettings = Boolean(roleRecord?.canManageRoles || roleRecord?.canManageUsers || role === "COO_ADMIN" || role === "CEO_ADMIN");
+    const canManageSettings = Boolean(roleRecord?.canManageRoles || roleRecord?.canManageUsers);
     return {
       allowed: canManageSettings,
       action,
