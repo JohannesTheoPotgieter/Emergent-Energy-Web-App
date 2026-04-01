@@ -2300,6 +2300,15 @@ export async function runStartupOrchestrator(options: {
     log(`Stage instance backfill error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:StageInstanceBackfill");
   }
 
+  // Gate evaluation backfill — one-time: evaluates stage gates for all existing
+  // projects so that gate_status and project_gate_evaluations are populated
+  try {
+    const { runGateEvaluationBackfill } = await import("./backfills/gate-evaluation-backfill");
+    await runGateEvaluationBackfill(log);
+  } catch (err: unknown) {
+    log(`Gate evaluation backfill error (non-fatal): ${(err instanceof Error ? err.message : String(err))}`, "Startup:GateEvaluationBackfill");
+  }
+
   await runStartupBackfills({
     startupBackfillEnabled,
     allowStartupMutations,
