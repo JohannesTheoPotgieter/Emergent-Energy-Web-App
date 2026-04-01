@@ -379,7 +379,7 @@ export async function writeDrilldownExcel(res: any, filename: string, payload: {
   for (const row of payload.rows) details.addRow(row);
 
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename=\"${filename}\"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
   await workbook.xlsx.write(res);
   res.end();
 }

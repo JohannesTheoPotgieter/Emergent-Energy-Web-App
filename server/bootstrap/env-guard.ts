@@ -1,3 +1,5 @@
+import crypto from "crypto";
+
 export function enforceRuntimeEnvironmentGuards(): { sessionSecret: string; isStrictRuntime: boolean } {
   const sessionSecret = process.env.SESSION_SECRET;
   const isStrictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
@@ -7,8 +9,8 @@ export function enforceRuntimeEnvironmentGuards(): { sessionSecret: string; isSt
   }
 
   if (!sessionSecret) {
-    const fallback = "dev-session-secret-not-for-production";
-    console.warn("[Session] SESSION_SECRET not set — using insecure dev fallback. Set SESSION_SECRET for production.");
+    const fallback = crypto.randomBytes(32).toString("hex");
+    console.warn("[Session] SESSION_SECRET not set — using random ephemeral secret. Sessions will not survive restarts. Set SESSION_SECRET for production.");
     return { sessionSecret: fallback, isStrictRuntime };
   }
 

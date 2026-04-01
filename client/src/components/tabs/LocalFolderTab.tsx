@@ -174,7 +174,9 @@ export function LocalFolderTab({ projectName }: { projectName: string }) {
             const file = await entry.getFile();
             item.size = file.size;
             item.lastModified = file.lastModified;
-          } catch {}
+          } catch (err) {
+            console.error("[LocalFolder] Error reading file metadata:", err);
+          }
         }
         items.push(item);
       }
@@ -210,7 +212,9 @@ export function LocalFolderTab({ projectName }: { projectName: string }) {
             setDirHandle(stored);
           }
         }
-      } catch {}
+      } catch (err) {
+        console.error("[LocalFolder] Error restoring saved folder handle:", err);
+      }
       setInitializing(false);
     })();
   }, [handleKey, readDirectory]);

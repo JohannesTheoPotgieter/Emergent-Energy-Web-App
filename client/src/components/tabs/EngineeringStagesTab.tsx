@@ -954,7 +954,9 @@ function getSavedFolderPaths(): string[] {
   try {
     const saved = localStorage.getItem(SP_FOLDER_KEY);
     if (saved) return JSON.parse(saved);
-  } catch {}
+  } catch (err) {
+    console.error("[EngineeringStages] Error loading saved folder paths:", err);
+  }
   return DEFAULT_SP_FOLDERS;
 }
 

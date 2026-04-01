@@ -22,6 +22,11 @@ const AUTH_ENDPOINTS = new Set([
   "/api/auth/microsoft/callback",
 ]);
 
+// General API rate limiting (less strict than auth)
+const API_WINDOW_MS = 60 * 1000; // 1 minute
+const API_MAX_REQUESTS = 200; // 200 requests per minute per IP
+const apiLimiterStore = new Map<string, RateLimitEntry>();
+
 const LARGE_JSON_ROUTES = new Set([
   "/api/project-plan/structure",
   "/api/planning-tasks/bulk",
@@ -110,6 +115,42 @@ function memoryRateLimit(req: Request, res: Response, next: NextFunction): void 
   current.count += 1;
   current.lastSeenAt = now;
   authLimiterStore.set(key, current);
+  next();
+}
+
+function generalApiRateLimit(req: Request, res: Response, next: NextFunction): void {
+  // Only rate-limit API endpoints, not static assets
+  if (!req.path.startsWith("/api/") || AUTH_ENDPOINTS.has(req.path)) {
+    next();
+    return;
+  }
+
+  const ip = typeof req.headers["x-forwarded-for"] === "string"
+    ? req.headers["x-forwarded-for"].split(",")[0].trim()
+    : req.ip;
+  const key = `api:${ip}`;
+  const now = Date.now();
+
+  if (apiLimiterStore.size > 10000) {
+    for (const [k, v] of apiLimiterStore.entries()) {
+      if (v.resetAt <= now) apiLimiterStore.delete(k);
+    }
+  }
+
+  const current = apiLimiterStore.get(key);
+  if (!current || current.resetAt <= now) {
+    apiLimiterStore.set(key, { count: 1, resetAt: now + API_WINDOW_MS, lastSeenAt: now });
+    next();
+    return;
+  }
+
+  if (current.count >= API_MAX_REQUESTS) {
+    res.status(429).json({ message: "Too many requests. Please slow down." });
+    return;
+  }
+
+  current.count += 1;
+  current.lastSeenAt = now;
   next();
 }
 
@@ -236,4 +277,5 @@ export function applySecurityAndParsingMiddleware(app: Express): void {
   });
 
   app.use(authRateLimit);
+  app.use(generalApiRateLimit);
 }

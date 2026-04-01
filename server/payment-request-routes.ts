@@ -51,12 +51,16 @@ export function registerPaymentRequestRoutes(app: Express) {
   app.get("/api/payment-requests", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
       const { projectId, status, cutoffDate } = req.query;
-      const conditions: string[] = ["1=1"];
-      if (projectId) conditions.push(`pr.project_id = ${parseInt(String(projectId))}`);
-      if (status) conditions.push(`pr.status = '${String(status).replace(/'/g, "''")}'`);
-      if (cutoffDate) conditions.push(`pr.cutoff_date = '${String(cutoffDate).replace(/'/g, "''")}'`);
+      const conditions: ReturnType<typeof sql>[] = [];
+      if (projectId) conditions.push(sql`pr.project_id = ${parseInt(String(projectId))}`);
+      if (status) conditions.push(sql`pr.status = ${String(status)}`);
+      if (cutoffDate) conditions.push(sql`pr.cutoff_date = ${String(cutoffDate)}`);
 
-      const rows = await db.execute(sql.raw(`
+      const whereClause = conditions.length > 0
+        ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
+        : sql``;
+
+      const rows = await db.execute(sql`
         SELECT pr.*,
                p.project_name, p.project_code,
                c.name_canonical as counterparty_name,
@@ -69,9 +73,9 @@ export function registerPaymentRequestRoutes(app: Express) {
         LEFT JOIN users u ON pr.submitted_by_user_id = u.id
         LEFT JOIN purchase_orders po ON pr.purchase_order_id = po.id
         LEFT JOIN invoice_captures ic ON pr.invoice_capture_id = ic.id
-        WHERE ${conditions.join(" AND ")}
+        ${whereClause}
         ORDER BY pr.created_at DESC
-      `));
+      `);
       res.json(rowsFromResult(rows));
     } catch (err: unknown) {
       console.error("[PaymentRequest] List error:", err instanceof Error ? err.message : String(err));
@@ -83,7 +87,7 @@ export function registerPaymentRequestRoutes(app: Express) {
 
   app.get("/api/payment-requests/board", jwtAuth, requireAuth, requirePermission("procurement", "view"), async (req: Request, res: Response) => {
     try {
-      const rows = await db.execute(sql.raw(`
+      const rows = await db.execute(sql`
         SELECT pr.*,
                p.project_name,
                c.name_canonical as counterparty_name,
@@ -98,7 +102,7 @@ export function registerPaymentRequestRoutes(app: Express) {
         LEFT JOIN purchase_orders po ON pr.purchase_order_id = po.id
         LEFT JOIN invoice_captures ic ON pr.invoice_capture_id = ic.id
         ORDER BY pr.created_at DESC
-      `));
+      `);
 
       const cutoff = getCutoffDateString();
       res.json({ requests: rowsFromResult(rows), currentCutoff: cutoff });
@@ -123,7 +127,7 @@ export function registerPaymentRequestRoutes(app: Express) {
 
       // Validate PO is approved if provided
       if (purchaseOrderId) {
-        const poResult = await db.execute(sql.raw(`SELECT status FROM purchase_orders WHERE id = ${parseInt(purchaseOrderId)}`));
+        const poResult = await db.execute(sql`SELECT status FROM purchase_orders WHERE id = ${parseInt(purchaseOrderId)}`);
         const po = rowsFromResult(poResult)[0];
         if (!po) return res.status(400).json({ error: "Purchase order not found" });
         if (po.status !== "approved") {
@@ -133,7 +137,7 @@ export function registerPaymentRequestRoutes(app: Express) {
 
       // Validate invoice is approved if provided
       if (invoiceCaptureId) {
-        const icResult = await db.execute(sql.raw(`SELECT status FROM invoice_captures WHERE id = ${parseInt(invoiceCaptureId)}`));
+        const icResult = await db.execute(sql`SELECT status FROM invoice_captures WHERE id = ${parseInt(invoiceCaptureId)}`);
         const ic = rowsFromResult(icResult)[0];
         if (!ic) return res.status(400).json({ error: "Invoice capture not found" });
         if (ic.status !== "approved" && ic.status !== "verified") {

@@ -1,9 +1,10 @@
 import { z } from 'zod';
+import { TASK_STATUSES } from '../schema/tasks';
 
 export const CreateTaskSchema = z.object({
   title: z.string().min(1),
   projectId: z.number().int().positive(),
-  status: z.string().min(1).optional(),
+  status: z.enum(TASK_STATUSES).optional(),
   assigneeId: z.number().int().positive().optional(),
 });
 

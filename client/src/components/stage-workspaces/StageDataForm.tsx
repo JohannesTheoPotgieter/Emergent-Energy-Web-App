@@ -51,7 +51,23 @@ export function StageDataForm({ projectId, stageCode, title, fields, data, onDat
     setDirty(true);
   }, [onDataChange]);
 
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+
   const handleSave = () => {
+    const errors: Record<string, string> = {};
+    for (const field of fields) {
+      if (field.required) {
+        const val = localData[field.key];
+        if (val === undefined || val === null || val === "") {
+          errors[field.key] = `${field.label} is required`;
+        }
+      }
+    }
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+    setValidationErrors({});
     saveMutation.mutate(localData, {
       onSuccess: () => setDirty(false),
     });
@@ -149,6 +165,9 @@ export function StageDataForm({ projectId, stageCode, title, fields, data, onDat
                   />
                   <span className="text-xs text-muted-foreground">{localData[field.key] ? "Yes" : "No"}</span>
                 </div>
+              )}
+              {validationErrors[field.key] && (
+                <p className="text-xs text-red-500 mt-1">{validationErrors[field.key]}</p>
               )}
             </div>
           ))}
