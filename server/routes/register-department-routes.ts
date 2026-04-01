@@ -8,7 +8,13 @@ export async function registerDepartmentRoutes(app: Express) {
 
   // Each dynamic import is wrapped individually so one module failing
   // doesn't prevent the remaining department routes from registering.
-  // NOTE: project-routes moved to platform routes (server/platform-routes.ts)
+
+  try {
+    const { registerProjectRoutes } = await import("../departments/project-routes");
+    registerProjectRoutes(app);
+  } catch (err) {
+    console.error("[Routes] Failed to register project-routes:", err);
+  }
 
   try {
     const { registerPriorityStrategicRoutes } = await import("../departments/priority-strategic-routes");
