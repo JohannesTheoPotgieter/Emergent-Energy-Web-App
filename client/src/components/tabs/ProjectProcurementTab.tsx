@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { POGenerator } from "@/components/POGenerator";
+import UserPicker from "@/components/UserPicker";
 import CaptureDeliverable from "@/components/CaptureDeliverable";
 import {
   Loader2,
@@ -163,18 +164,6 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
     },
   });
 
-  const { data: users = [] } = useQuery<any[]>({
-    queryKey: ["users-list"],
-    queryFn: async () => {
-      const res = await fetch("/api/users", {
-        headers: getAuthHeaders(),
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to load users");
-      return res.json();
-    },
-  });
-
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await fetch(`/api/procurement/${id}`, {
@@ -220,11 +209,6 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
   const supplierOptions = suppliers.map((s: any) => ({
     value: String(s.id),
     label: s.name_canonical || s.name || `Supplier ${s.id}`,
-  }));
-
-  const userOptions = users.map((u: any) => ({
-    value: String(u.id),
-    label: u.fullName || u.full_name || u.username || `User ${u.id}`,
   }));
 
   const categoryOptions = [
@@ -561,7 +545,6 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
                           onDelete={() => deleteMutation.mutate(item.id)}
                           projectId={projectId}
                           supplierOptions={supplierOptions}
-                          userOptions={userOptions}
                         />
                       );
                     })
@@ -576,7 +559,6 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
             onOpenChange={setCreateOpen}
             projectId={projectId}
             supplierOptions={supplierOptions}
-            userOptions={userOptions}
           />
         </div>
       )}
@@ -607,7 +589,6 @@ function ProcurementRow({
   onDelete,
   projectId,
   supplierOptions,
-  userOptions,
 }: {
   item: any;
   isExpanded: boolean;
@@ -615,7 +596,6 @@ function ProcurementRow({
   onDelete: () => void;
   projectId: number;
   supplierOptions: { value: string; label: string }[];
-  userOptions: { value: string; label: string }[];
 }) {
   return (
     <>
@@ -673,7 +653,6 @@ function ProcurementRow({
               item={item}
               projectId={projectId}
               supplierOptions={supplierOptions}
-              userOptions={userOptions}
             />
           </TableCell>
         </TableRow>
@@ -686,12 +665,10 @@ function ExpandedProcurementDetail({
   item,
   projectId,
   supplierOptions,
-  userOptions,
 }: {
   item: any;
   projectId: number;
   supplierOptions: { value: string; label: string }[];
-  userOptions: { value: string; label: string }[];
 }) {
   const queryClient = useQueryClient();
   const [actualCost, setActualCost] = useState(item.actual_cost?.toString() || "");
@@ -846,13 +823,11 @@ function CreateProcurementDialog({
   onOpenChange,
   projectId,
   supplierOptions,
-  userOptions,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   projectId: number;
   supplierOptions: { value: string; label: string }[];
-  userOptions: { value: string; label: string }[];
 }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({
@@ -1012,13 +987,11 @@ function CreateProcurementDialog({
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Owner</Label>
-              <SearchableSelect
-                options={userOptions}
-                value={form.ownerUserId}
-                onValueChange={(v) => setForm({ ...form, ownerUserId: v })}
+              <UserPicker
+                value={form.ownerUserId || null}
+                onValueChange={(userId) => setForm({ ...form, ownerUserId: userId ? String(userId) : "" })}
                 placeholder="Select owner"
-                searchPlaceholder="Search users..."
-                triggerClassName="h-8 text-xs w-full"
+                size="sm"
                 data-testid="select-create-owner"
               />
             </div>
