@@ -98,8 +98,8 @@ describe("mytool user-scoping", () => {
     });
 
     it("ADMIN can modify User B's task via oversight role", () => {
-      const userBTaskOwnerId = 20;
-      const adminId = 1;
+      const userBTaskOwnerId: number = Number("20");
+      const adminId: number = Number("1");
       const isOversight = MYTOOL_OVERSIGHT_ROLES.includes("COO_ADMIN");
       const allowed = userBTaskOwnerId === adminId || isOversight;
       expect(allowed).toBe(true);

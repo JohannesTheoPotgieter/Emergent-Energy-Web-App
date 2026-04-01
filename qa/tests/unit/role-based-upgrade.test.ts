@@ -296,7 +296,7 @@ describe("Legacy role and route preservation", () => {
   it("DEFAULT_ROLE_PERMISSIONS has entries for all 16 roles", () => {
     expect(DEFAULT_ROLE_PERMISSIONS).toHaveLength(16);
     for (const role of COMPANY_ROLES) {
-      const perm = DEFAULT_ROLE_PERMISSIONS.find(p => p.role === role);
+      const perm = (DEFAULT_ROLE_PERMISSIONS as Array<{ role: string }>).find((p) => p.role === role);
       expect(perm, `Missing permission entry for ${role}`).toBeDefined();
     }
   });
