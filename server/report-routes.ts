@@ -11,7 +11,6 @@ import { getProgrammeDrilldownRows, writeDrilldownExcel } from "./services/repor
 import { requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 
-const INACTIVE_STATUSES = ["Cancelled", "Archived", "Complete", "Closed", "Handover Complete", "Completed"];
 const ADVANCED_REPORT_TYPES = [
   {
     key: "portfolio_status",
@@ -92,7 +91,16 @@ interface KPIPayload {
     pdPmHandovers: number;
     commissionings: number;
     clientHandoversPlanned: number;
+    clientHandoversActual: number;
   };
+}
+
+function isPmExecutionWindowProject(p: any, monthEndStr: string): boolean {
+  const pdHandoverActual = (p?.pdHandoverActual || "").substring(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(pdHandoverActual)) return false;
+  const clientHandoverActual = (p?.clientHandoverActual || "").substring(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clientHandoverActual) && clientHandoverActual <= monthEndStr) return false;
+  return true;
 }
 
 async function calculateKPIs(month: string): Promise<KPIPayload> {
@@ -106,16 +114,13 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
     .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
   const allProjects = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
 
-  const activeProjects = allProjects.filter((p: any) => {
-    if (!p.isActive) return false;
-    const phase = (p.phase || "").trim();
-    return !INACTIVE_STATUSES.some(s => s.toLowerCase() === phase.toLowerCase());
-  });
+  const activeProjects = allProjects.filter((p: any) => isPmExecutionWindowProject(p, monthEndStr));
 
   const constructionStarts = new Set<number>();
   const pdPmHandovers = new Set<number>();
   const commissionings = new Set<number>();
   const clientHandoversPlanned = new Set<number>();
+  const clientHandoversActual = new Set<number>();
 
   for (const p of allProjects) {
     if (isDateStrInMonth(p.constructionStartActual, monthStartStr, monthEndStr)) {
@@ -129,6 +134,9 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
     }
     if (isDateStrInMonth(p.clientHandoverDate, monthStartStr, monthEndStr)) {
       clientHandoversPlanned.add(p.id);
+    }
+    if (isDateStrInMonth(p.clientHandoverActual, monthStartStr, monthEndStr)) {
+      clientHandoversActual.add(p.id);
     }
   }
 
@@ -144,6 +152,7 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
       pdPmHandovers: pdPmHandovers.size,
       commissionings: commissionings.size,
       clientHandoversPlanned: clientHandoversPlanned.size,
+      clientHandoversActual: clientHandoversActual.size,
     },
   };
 }
@@ -427,6 +436,7 @@ export function registerReportRoutes(app: Express) {
         ["PD -> PM Handovers", String(data.kpis.pdPmHandovers)],
         ["Commissionings", String(data.kpis.commissionings)],
         ["Client Handovers (Planned)", String(data.kpis.clientHandoversPlanned)],
+        ["Client Handovers (Actual)", String(data.kpis.clientHandoversActual)],
       ];
       rows.forEach(([label, value], i) => {
         const y = 55 + i * 16;
