@@ -348,6 +348,7 @@ export function registerRoleManagementRoutes(app: Express) {
         authorityModel: authorityModel || null,
         isSystem: false,
       }).returning();
+      invalidateEntityPermCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: "create", entityId: role, changesJson: { description: "New role created", role, label, sections } });
       logPermissionAudit(req, { eventType: "role_created", targetRole: role, changeDetail: { label, sections } });
       res.json(created);
@@ -382,6 +383,7 @@ export function registerRoleManagementRoutes(app: Express) {
         isSystem: false,
       }).returning();
 
+      invalidateEntityPermCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: "clone", entityId: newRole, changesJson: { description: "Role cloned", sourceRole: sourceRoleKey, newRole } });
       logPermissionAudit(req, { eventType: "role_cloned", targetRole: newRole, changeDetail: { sourceRole: sourceRoleKey, label } });
       res.json(created);
@@ -407,6 +409,7 @@ export function registerRoleManagementRoutes(app: Express) {
         .where(eq(rolePermissions.role, roleKey))
         .returning();
 
+      invalidateEntityPermCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: archived ? "archive" : "unarchive", entityId: roleKey, changesJson: { description: archived ? "Role archived" : "Role unarchived" } });
       res.json(updated);
     } catch (err: any) {
@@ -505,10 +508,13 @@ export function registerRoleManagementRoutes(app: Express) {
         if (usersWithRole.length > 0) {
           return res.status(409).json({ error: `Cannot delete role. ${usersWithRole.length} user(s) still assigned to this role.` });
         }
-      } catch {
+      } catch (err) {
+        console.error("[RoleManagement] Error checking role assignments before deletion:", err);
+        return res.status(500).json({ error: "Failed to verify role assignments before deletion" });
       }
 
       await db.delete(rolePermissions).where(eq(rolePermissions.role, roleKey));
+      invalidateEntityPermCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: "delete", entityId: roleKey, changesJson: { description: "Role deleted", role: roleKey, label: existing.label } });
       logPermissionAudit(req, { eventType: "role_deleted", targetRole: roleKey, changeDetail: { label: existing.label } });
       res.json({ success: true });

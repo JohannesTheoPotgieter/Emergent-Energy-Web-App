@@ -1356,7 +1356,7 @@ export function registerEngineeringRoutes(app: Express) {
       const filePath = path.join(approvalUploadsDir, deliverable.filename);
       if (!fs.existsSync(filePath)) return sendError(res, notFound("File"));
 
-      res.setHeader("Content-Disposition", `attachment; filename="${deliverable.originalName}"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(deliverable.originalName || 'file')}"`);
       res.sendFile(filePath);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);

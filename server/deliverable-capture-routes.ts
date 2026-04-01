@@ -23,7 +23,7 @@ const deliverableUpload = multer({
       cb(null, `${ts}_${sanitizeFilename(file.originalname)}`);
     },
   }),
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024, files: 10 },
   fileFilter: allowedMimeFilter,
 });
 
@@ -270,7 +270,7 @@ export function registerDeliverableCaptureRoutes(app: Express) {
 
       if (!fs.existsSync(row.file_path as string)) return res.status(404).json({ error: "File not found on disk" });
 
-      res.setHeader("Content-Disposition", `attachment; filename="${row.original_file_name || "file"}"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(String(row.original_file_name || 'file'))}"`);
       res.setHeader("Content-Type", (row.mime_type as string) || "application/octet-stream");
       fs.createReadStream(row.file_path as string).pipe(res);
     } catch (err: unknown) {

@@ -7,6 +7,8 @@ declare module 'express-serve-static-core' {
     email: string;
     name: string;
     role: string;
+    department?: string | null;
+    microsoft_id?: string | null;
   }
 
   interface ParamsDictionary {

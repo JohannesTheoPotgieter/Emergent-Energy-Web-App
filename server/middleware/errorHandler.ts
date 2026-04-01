@@ -8,7 +8,11 @@ export function errorHandler(err: Error, req: Request, res: Response, next: Next
   }
 
   if (err.name === 'ZodError') {
-    return res.status(400).json({ error: 'Validation error', details: err });
+    const zodErr = err as import('zod').ZodError;
+    return res.status(400).json({
+      error: 'Validation error',
+      details: zodErr.issues.map(i => ({ path: i.path.join('.'), message: i.message })),
+    });
   }
 
   if (err.name === 'UnauthorizedError') {

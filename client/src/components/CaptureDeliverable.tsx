@@ -452,7 +452,11 @@ export default function CaptureDeliverable({
                 )}
 
                 {!filteredCostLines.length && !filteredRevenueLines.length && !filteredWorkItems.length && (
-                  <p className="text-sm text-muted-foreground text-center py-6">No items found for this project.</p>
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    {itemSearch.trim()
+                      ? "No items match your search. Try a different keyword."
+                      : "No cost lines, revenue lines, or work items found for this project."}
+                  </p>
                 )}
               </div>
             )}

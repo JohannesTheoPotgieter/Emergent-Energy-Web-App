@@ -2,7 +2,11 @@ import jwt from "jsonwebtoken";
 
 const JWT_EXPIRES_IN = "12h";
 
+let cachedJwtSecret: string | null = null;
+
 function resolveJwtSecret(): string {
+  if (cachedJwtSecret) return cachedJwtSecret;
+
   const isStrictRuntime = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
   const jwtSecret = process.env.JWT_SECRET;
 
@@ -13,6 +17,7 @@ function resolveJwtSecret(): string {
     throw new Error("JWT_SECRET must be set in development. Configure local secret injection before starting the app.");
   }
 
+  cachedJwtSecret = jwtSecret;
   return jwtSecret;
 }
 

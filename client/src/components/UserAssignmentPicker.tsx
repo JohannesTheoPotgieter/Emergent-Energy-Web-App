@@ -112,9 +112,9 @@ export default function UserAssignmentPicker({
   const safeTaskId = Number.isFinite(taskId) && taskId > 0 ? taskId : null;
 
   const { data: fetchedAssignments } = useQuery<CanonicalAssignment[]>({
-    queryKey: ["/api/entity-assignments", taskSource, taskId],
+    queryKey: ["/api/entity-assignments", taskSource, safeTaskId],
     queryFn: async () => {
-      const res = await fetch(`/api/entity-assignments/${encodeURIComponent(taskSource)}/${taskId}`, {
+      const res = await fetch(`/api/entity-assignments/${encodeURIComponent(taskSource)}/${safeTaskId}`, {
         credentials: "include",
         headers: getAuthHeaders(),
       });
