@@ -294,6 +294,8 @@ export async function submitReview(reviewId: number, actorUserId: number) {
  *   signal that conditions are outstanding. A projectStageExceptions record is
  *   created with status APPROVED_WITH_CONDITIONS to track closeout.
  */
+
+
 const OUTCOME_TO_STAGE_STATUS: Record<ReviewOutcome, string> = {
   GO: "APPROVED",
   CONDITIONAL_GO: "EXCEPTION_APPROVED",
@@ -347,7 +349,7 @@ export async function decideReview(params: {
   const stageStatusChanged = previousStageStatus !== newStageStatus;
 
   // ── All state changes in one transaction ──
-  const updated = await db.transaction(async (tx) => {
+  const updated = await db.transaction(async (tx: any) => {
     let approvalId: number | null = null;
 
     // Create approval record for GO / CONDITIONAL_GO

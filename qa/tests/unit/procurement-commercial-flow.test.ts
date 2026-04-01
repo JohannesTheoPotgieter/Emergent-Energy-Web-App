@@ -4,6 +4,7 @@ import { insertProcurementItemSchema, procurementPaymentStatusEnum } from "@shar
 describe("procurement commercial flow schema", () => {
   it("supports unified commercial linkage fields", () => {
     const parsed = insertProcurementItemSchema.parse({
+
       projectId: 10,
       title: "Cable tray and install",
       category: "material",
@@ -17,9 +18,10 @@ describe("procurement commercial flow schema", () => {
       linkedInvoiceCaptureId: 99,
     });
 
-    expect(parsed.budgetLine).toBe("BOS-Electrical");
-    expect(parsed.linkedMilestone).toBe("M3-Cable-Pull");
-    expect(parsed.paymentStatus).toBe("pending_approval");
+    const typed = parsed as { budgetLine?: string; linkedMilestone?: string; paymentStatus?: string };
+    expect(typed.budgetLine).toBe("BOS-Electrical");
+    expect(typed.linkedMilestone).toBe("M3-Cable-Pull");
+    expect(typed.paymentStatus).toBe("pending_approval");
   });
 
   it("keeps paid state available for closeout", () => {
