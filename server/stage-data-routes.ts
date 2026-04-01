@@ -4,6 +4,7 @@
 
 import type { Express, Request, Response } from "express";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 import { db } from "./db";
 import { and, eq } from "drizzle-orm";
 import { projectStageData, projectCharters } from "@shared/schema";
@@ -31,6 +32,7 @@ export function registerStageDataRoutes(app: Express): void {
     "/api/projects/:projectId/stage-data/:stageCode",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -59,6 +61,7 @@ export function registerStageDataRoutes(app: Express): void {
     "/api/projects/:projectId/stage-data/:stageCode",
     jwtAuth,
     requireAuth,
+    requirePermission("stage_lifecycle", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -124,6 +127,7 @@ export function registerStageDataRoutes(app: Express): void {
     "/api/projects/:projectId/charter",
     jwtAuth,
     requireAuth,
+    requirePermission("project_charter", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -148,6 +152,7 @@ export function registerStageDataRoutes(app: Express): void {
     "/api/projects/:projectId/charter",
     jwtAuth,
     requireAuth,
+    requirePermission("project_charter", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -206,6 +211,7 @@ export function registerStageDataRoutes(app: Express): void {
     "/api/projects/:projectId/charter/status",
     jwtAuth,
     requireAuth,
+    requirePermission("project_charter", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);

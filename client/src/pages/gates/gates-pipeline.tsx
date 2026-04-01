@@ -3,7 +3,7 @@ import { useGatesPipeline } from "@/hooks/use-gates";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
-import { Search } from "lucide-react";
+import { Search, FolderOpen } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -83,7 +83,17 @@ export default function GatesPipelinePage() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((p) => (
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={9} className="py-12 text-center">
+                  <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                    <FolderOpen className="h-8 w-8 opacity-40" />
+                    <p className="text-sm font-medium">No projects found</p>
+                    <p className="text-xs">Projects will appear here once they have an active execution state.</p>
+                  </div>
+                </td>
+              </tr>
+            ) : filtered.map((p) => (
               <tr
                 key={p.projectId}
                 className="border-b hover:bg-muted/30 cursor-pointer"
@@ -99,7 +109,7 @@ export default function GatesPipelinePage() {
                     {p.gateStatus || "N/A"}
                   </Badge>
                 </td>
-                <td className="p-2 text-right">{p.gateReadinessPct}%</td>
+                <td className="p-2 text-right">{p.gateReadinessPct ?? 0}%</td>
                 <td className="p-2 text-muted-foreground">{p.waitingOnDepartment || "-"}</td>
                 <td className="p-2 text-right">{p.daysInStage}</td>
                 <td className="p-2 text-right">{p.openExceptionCount || "-"}</td>

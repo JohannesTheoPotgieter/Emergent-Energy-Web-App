@@ -7,12 +7,14 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { eq } from "drizzle-orm";
 import * as schema from "@shared/schema";
+import { jwtAuth, requireAuth } from "../auth-context";
+import { requirePermission } from "../permission-middleware";
 
 export function registerStageAdminRoutes(app: Express) {
 
 // ── Stage Definitions ──────────────────────────────────────
 
-app.get("/api/admin/stage-definitions", async (_req, res) => {
+app.get("/api/admin/stage-definitions", jwtAuth, requireAuth, requirePermission("stage_admin", "view"), async (_req, res) => {
   try {
     const definitions = await db.select().from(schema.stageDefinitions).orderBy(schema.stageDefinitions.stageSequence);
     res.json({ definitions });
@@ -22,7 +24,7 @@ app.get("/api/admin/stage-definitions", async (_req, res) => {
   }
 });
 
-app.put("/api/admin/stage-definitions/:id", async (req, res) => {
+app.put("/api/admin/stage-definitions/:id", jwtAuth, requireAuth, requirePermission("stage_admin", "edit"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const { stageName, description, defaultOwnerRole, defaultApproverRole, isActive } = req.body;
@@ -47,7 +49,7 @@ app.put("/api/admin/stage-definitions/:id", async (req, res) => {
 
 // ── Stage Checklist Templates ──────────────────────────────
 
-app.get("/api/admin/stage-checklist-templates", async (req, res) => {
+app.get("/api/admin/stage-checklist-templates", jwtAuth, requireAuth, requirePermission("stage_admin", "view"), async (req, res) => {
   try {
     const stageCode = req.query.stageCode as string | undefined;
     let query = db.select().from(schema.stageChecklistTemplates);
@@ -62,7 +64,7 @@ app.get("/api/admin/stage-checklist-templates", async (req, res) => {
   }
 });
 
-app.post("/api/admin/stage-checklist-templates", async (req, res) => {
+app.post("/api/admin/stage-checklist-templates", jwtAuth, requireAuth, requirePermission("stage_admin", "edit"), async (req, res) => {
   try {
     const { stageCode, department, itemName, itemCode, blocksGate, isRequired, sortOrder } = req.body;
     const result = await db.insert(schema.stageChecklistTemplates).values({
@@ -78,7 +80,7 @@ app.post("/api/admin/stage-checklist-templates", async (req, res) => {
   }
 });
 
-app.put("/api/admin/stage-checklist-templates/:id", async (req, res) => {
+app.put("/api/admin/stage-checklist-templates/:id", jwtAuth, requireAuth, requirePermission("stage_admin", "edit"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const { itemName, blocksGate, isRequired, sortOrder, isActive } = req.body;
@@ -101,7 +103,7 @@ app.put("/api/admin/stage-checklist-templates/:id", async (req, res) => {
   }
 });
 
-app.delete("/api/admin/stage-checklist-templates/:id", async (req, res) => {
+app.delete("/api/admin/stage-checklist-templates/:id", jwtAuth, requireAuth, requirePermission("stage_admin", "edit"), async (req, res) => {
   try {
     const id = Number(req.params.id);
     await db.update(schema.stageChecklistTemplates)
@@ -116,7 +118,7 @@ app.delete("/api/admin/stage-checklist-templates/:id", async (req, res) => {
 
 // ── Exception Thresholds (admin config) ────────────────────
 
-app.get("/api/admin/exception-thresholds", async (_req, res) => {
+app.get("/api/admin/exception-thresholds", jwtAuth, requireAuth, requirePermission("stage_admin", "view"), async (_req, res) => {
   try {
     // Return configured thresholds — stored as app config or defaults
     res.json({
@@ -135,7 +137,7 @@ app.get("/api/admin/exception-thresholds", async (_req, res) => {
 
 // ── Gate Configuration ─────────────────────────────────────
 
-app.get("/api/admin/gate-config", async (_req, res) => {
+app.get("/api/admin/gate-config", jwtAuth, requireAuth, requirePermission("stage_admin", "view"), async (_req, res) => {
   try {
     res.json({
       config: {

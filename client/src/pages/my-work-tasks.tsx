@@ -27,7 +27,7 @@ import {
   ClipboardList, ShieldCheck, FileCheck, BookOpen, CheckCircle2, Circle, Clock,
   AlertCircle, Wrench, Users, User, UserPlus, LayoutList, Columns3, Link2, GripVertical,
   Save, RotateCw, MoreHorizontal, ArrowRight, Hash, Tag, TrendingUp, Zap, ExternalLink,
-  Target, Activity,
+  Target, Activity, CornerDownRight,
 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
@@ -89,6 +89,7 @@ interface UnifiedTask {
   notes: string | null;
   subtaskCount?: number;
   parentTaskId?: number | null;
+  parentTaskTitle?: string | null;
   percentComplete?: number;
   assignees?: string[] | null;
   resolvedAssignees?: ResolvedUser[] | null;
@@ -355,6 +356,7 @@ export default function MyWorkTasksPage() {
         notes: t.notes || t.description || null,
         subtaskCount: t.subtaskCount || 0,
         parentTaskId: t.parentTaskId || t.parent_task_id || null,
+        parentTaskTitle: t.parentTaskTitle || t.parent_task_title || null,
         percentComplete: t.percentComplete || t.percent_complete || (typeof t.pctComplete === "number" ? Math.round(t.pctComplete * 100) : 0),
         assignees: t.assignees || (t.owner ? [t.owner] : null),
         resolvedAssignees: t.resolvedAssignees || (t.resolvedAssignee ? [t.resolvedAssignee] : null),
@@ -1270,6 +1272,12 @@ export default function MyWorkTasksPage() {
                               {colTasks.map(task => (
                                 <div key={task._key} onClick={() => handleOpenSource(task)} className="bg-background rounded border p-1.5 cursor-pointer hover:shadow-sm hover:border-primary/30 transition-all">
                                   <p className="text-[10px] font-medium leading-snug line-clamp-2">{task.title}</p>
+                                  {task.parentTaskTitle && (
+                                    <div className="flex items-center gap-0.5">
+                                      <CornerDownRight className="h-2 w-2 text-violet-400 shrink-0" />
+                                      <span className="text-[8px] text-violet-600/70 truncate">{task.parentTaskTitle}</span>
+                                    </div>
+                                  )}
                                   {task.dueAt && <span className="text-[8px] text-muted-foreground">{smartDueLabel(task.dueAt).label}</span>}
                                 </div>
                               ))}
@@ -1337,7 +1345,13 @@ export default function MyWorkTasksPage() {
                             {task.isRecurring && <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium border bg-indigo-50 border-indigo-200 text-indigo-700" title={`Repeats ${task.recurrenceFrequency || "regularly"}`}><RotateCw className="h-2.5 w-2.5" /></span>}
                             {task.ragStatus && <span className={`inline-flex items-center gap-0.5 text-[9px] font-medium ${task.ragStatus === "Red" ? "text-red-600" : task.ragStatus === "Amber" ? "text-amber-600" : "text-green-600"}`}><span className={`w-1.5 h-1.5 rounded-full ${task.ragStatus === "Red" ? "bg-red-500" : task.ragStatus === "Amber" ? "bg-amber-500" : "bg-green-500"}`} />{task.ragStatus}</span>}
                           </div>
-                          <p className="text-[12px] font-medium leading-snug line-clamp-2 mb-1.5">{task.title}</p>
+                          <p className="text-[12px] font-medium leading-snug line-clamp-2 mb-1">{task.title}</p>
+                          {task.parentTaskTitle && (
+                            <div className="flex items-center gap-1 mb-1.5">
+                              <CornerDownRight className="h-2.5 w-2.5 text-violet-400 shrink-0" />
+                              <span className="text-[9px] text-violet-600/70 truncate">{task.parentTaskTitle}</span>
+                            </div>
+                          )}
                           <div className="flex items-center justify-between gap-1">
                             {task.projectName && <span className="text-[10px] text-muted-foreground truncate max-w-[110px]">{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
                             {cardDue.label && <span className={`inline-flex items-center gap-0.5 px-1 py-px rounded border text-[9px] shrink-0 ${cardDueStyle}`}><Clock className="h-2 w-2" />{cardDue.label}</span>}
@@ -1609,6 +1623,12 @@ function CompactTaskRow({ task, isExpanded, onToggleExpand, onPrimaryAction, onO
             <span className={`text-[13px] leading-tight truncate ${isDone ? "line-through text-muted-foreground" : "text-foreground font-medium"}`} data-testid={`text-task-title-${task._key}`}>{task.title}</span>
             {task.subtaskCount && task.subtaskCount > 0 && <span className="text-[9px] text-muted-foreground bg-muted px-1 py-px rounded shrink-0">{task.subtaskCount} sub</span>}
           </div>
+          {task.parentTaskTitle && (
+            <div className="flex items-center gap-1 mt-0.5">
+              <CornerDownRight className="h-2.5 w-2.5 text-violet-400 shrink-0" />
+              <span className="text-[10px] text-violet-600/70 truncate max-w-[180px]">{task.parentTaskTitle}</span>
+            </div>
+          )}
           <div className="flex items-center gap-2 mt-0.5">
             {task.projectName && <span className="text-[10px] text-muted-foreground truncate max-w-[140px]" title={task.projectName} data-testid={`badge-project-${task._key}`}>{task.projectName.replace(/_Tracker.*$/i, "").replace(/_/g, " ")}</span>}
             <span className="text-[10px] text-muted-foreground/80" data-testid={`badge-type-${task._key}`}>{taskTypeLabel}</span>
@@ -1977,6 +1997,12 @@ function TaskDetailPanel({ task, open, onOpenChange, onInvalidate, allProjects, 
             {isOverdue && <Badge variant="destructive" className="text-[9px] px-1.5 py-0">Overdue</Badge>}
           </div>
           <h3 className="text-sm font-semibold leading-snug" data-testid="text-unified-task-title">{task.title}</h3>
+          {task.parentTaskTitle && (
+            <div className="flex items-center gap-1 mt-1">
+              <CornerDownRight className="h-3 w-3 text-violet-400 shrink-0" />
+              <span className="text-[11px] text-violet-600/80">Sub-task of <span className="font-medium">{task.parentTaskTitle}</span></span>
+            </div>
+          )}
           <div className="flex items-center flex-wrap gap-2 mt-2.5">
             {task.projectName && (
               <button className="flex items-center gap-1 text-[10px] text-muted-foreground bg-muted/50 rounded-md px-1.5 py-0.5 hover:bg-muted" data-testid="text-unified-project" onClick={() => openHref(task.projectHref || `/projects?search=${encodeURIComponent(task.projectName || "")}`)}>
