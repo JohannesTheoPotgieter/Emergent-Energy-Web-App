@@ -1561,7 +1561,7 @@ export default function FyeRevenueTrackingPage() {
       p.set("fye", String(fye));
       setLocation(`${window.location.pathname}?${p.toString()}`, { replace: true });
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <FinanceShell currentPage="fye-revenue-tracking"><div className="space-y-4">

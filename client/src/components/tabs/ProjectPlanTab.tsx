@@ -436,7 +436,6 @@ export function ProjectPlanTab({ projectName }: ProjectPlanTabProps) {
       setGanttStart(addDays(today, -30));
       setGanttEnd(addDays(today, 60));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectStartTime, projectEndTime, tasks.length]);
 
   const filteredTasks = useMemo(() => {

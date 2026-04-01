@@ -53,7 +53,7 @@ const DEFAULT_STAGE_DEFS = [
 async function ensureStageDefinitions() {
   const existing = await db.select().from(stageDefinitions).where(eq(stageDefinitions.isActive, true));
   if (existing.length >= 10) return;
-  const existingCodes = new Set(existing.map(e => e.stageCode));
+  const existingCodes = new Set(existing.map((e: any) => e.stageCode));
   const toSeed = DEFAULT_STAGE_DEFS.filter(d => !existingCodes.has(d.stageCode));
   if (toSeed.length > 0) {
     await db.insert(stageDefinitions).values(toSeed).onConflictDoNothing();
