@@ -152,6 +152,138 @@ function saWorkingDays(startDateStr: string | null, endDateStr: string | null): 
   return count;
 }
 
+function buildOverdueFinanceLedger(params: {
+  revenueLines: any[];
+  costLines: any[];
+  activeProjects: Array<{ id: number; projectName: string; pm?: string | null }>;
+  fyStart: string;
+  fyEnd: string;
+  today: string;
+}) {
+  const { revenueLines, costLines, activeProjects, fyStart, fyEnd, today } = params;
+  const hasText = (v: any) => typeof v === "string" && v.trim().length > 0;
+  const isBlack = (v: any) => {
+    const s = String(v || "").toLowerCase();
+    return s.includes("000000") || s.includes("black");
+  };
+
+  const activeProjectIds = new Set<number>(activeProjects.map((p) => p.id));
+  const activeProjectNames = new Set<string>(activeProjects.map((p) => normalizeName(p.projectName)));
+  const projectOwnerById = new Map<number, string>();
+  const projectOwnerByNorm = new Map<string, string>();
+  for (const p of activeProjects) {
+    const owner = p.pm || "Unassigned";
+    projectOwnerById.set(p.id, owner);
+    projectOwnerByNorm.set(normalizeName(p.projectName), owner);
+  }
+
+  const daysOverdue = (dueDate: string) => {
+    const due = parseIsoDateOnly(dueDate);
+    const asOf = parseIsoDateOnly(today);
+    if (!due || !asOf) return 0;
+    const delta = asOf.getTime() - due.getTime();
+    return Math.max(0, Math.floor(delta / 86400000));
+  };
+
+  const apItems: any[] = [];
+  const arItems: any[] = [];
+  let apMissingDueDate = 0;
+  let arMissingDueDate = 0;
+  const apSeen = new Set<string>();
+  const arSeen = new Set<string>();
+
+  for (const row of costLines) {
+    const rowProjectNorm = normalizeName(row.projectName || "");
+    const isActiveProject = (row.projectId && activeProjectIds.has(row.projectId)) || (!!row.projectName && activeProjectNames.has(rowProjectNorm));
+    if (!isActiveProject) continue;
+    if (!hasText(row.invoiceNumber)) continue; // actual AP invoices only
+    const amount = parseFloat(row.amountExVat || "0") || 0;
+    if (amount <= 0) continue;
+    const dueDate = hasText(row.approvedDate) ? String(row.approvedDate).slice(0, 10) : null;
+    const invoiceDate = hasText(row.invoiceDate) ? String(row.invoiceDate).slice(0, 10) : null;
+    const keyDate = dueDate || invoiceDate;
+    if (!isDateInRange(keyDate, fyStart, fyEnd)) continue;
+
+    const paid = (hasText(row.paidDate) && isBlack(row.paidDateFontColor)) || Boolean(row.paidDateConfirmed) || Boolean(row.cosRealised);
+    if (paid) continue;
+    if (!dueDate) {
+      apMissingDueDate += 1;
+      continue;
+    }
+    if (!(dueDate < today)) continue;
+
+    const dedupeKey = `${row.projectId || row.projectName}::${row.sourceRow || ""}::${row.invoiceNumber}`;
+    if (apSeen.has(dedupeKey)) continue;
+    apSeen.add(dedupeKey);
+
+    apItems.push({
+      id: dedupeKey,
+      projectId: row.projectId || null,
+      projectName: row.projectName || "Unknown project",
+      counterparty: row.supplier || "Unknown supplier",
+      invoiceNumber: row.invoiceNumber,
+      invoiceDate,
+      dueDate,
+      outstandingAmount: amount,
+      daysOverdue: daysOverdue(dueDate),
+      owner: row.projectId ? (projectOwnerById.get(row.projectId) || "Unassigned") : (projectOwnerByNorm.get(rowProjectNorm) || "Unassigned"),
+      status: "Open / Unpaid",
+      recordLink: row.projectName ? `/project/${encodeURIComponent(row.projectName)}?tab=expenditure` : null,
+    });
+  }
+
+  for (const row of revenueLines) {
+    const rowProjectNorm = normalizeName(row.projectName || "");
+    const isActiveProject = (row.projectId && activeProjectIds.has(row.projectId)) || (!!row.projectName && activeProjectNames.has(rowProjectNorm));
+    if (!isActiveProject) continue;
+    if (!hasText(row.invoiceNumber)) continue; // actual AR invoices only
+    const amount = parseFloat(row.amountExVat || "0") || 0;
+    if (amount <= 0) continue;
+    const dueDate = hasText(row.expectedPaymentDate) ? String(row.expectedPaymentDate).slice(0, 10) : null;
+    const invoiceDate = hasText(row.invoiceDate) ? String(row.invoiceDate).slice(0, 10) : null;
+    const keyDate = dueDate || invoiceDate;
+    if (!isDateInRange(keyDate, fyStart, fyEnd)) continue;
+
+    const received = (hasText(row.paidDate) && isBlack(row.paidDateFontColor)) || Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate);
+    if (received) continue;
+    if (!dueDate) {
+      arMissingDueDate += 1;
+      continue;
+    }
+    if (!(dueDate < today)) continue;
+
+    const dedupeKey = `${row.projectId || row.projectName}::${row.sourceRow || ""}::${row.invoiceNumber}`;
+    if (arSeen.has(dedupeKey)) continue;
+    arSeen.add(dedupeKey);
+
+    arItems.push({
+      id: dedupeKey,
+      projectId: row.projectId || null,
+      projectName: row.projectName || "Unknown project",
+      counterparty: row.client || "Unknown client",
+      invoiceNumber: row.invoiceNumber,
+      invoiceDate,
+      dueDate,
+      outstandingAmount: amount,
+      daysOverdue: daysOverdue(dueDate),
+      owner: row.projectId ? (projectOwnerById.get(row.projectId) || "Unassigned") : (projectOwnerByNorm.get(rowProjectNorm) || "Unassigned"),
+      status: "Open / Unreceived",
+      recordLink: row.projectName ? `/project/${encodeURIComponent(row.projectName)}?tab=revenue` : null,
+    });
+  }
+
+  apItems.sort((a, b) => b.daysOverdue - a.daysOverdue || b.outstandingAmount - a.outstandingAmount);
+  arItems.sort((a, b) => b.daysOverdue - a.daysOverdue || b.outstandingAmount - a.outstandingAmount);
+
+  const apTotal = apItems.reduce((sum, item) => sum + item.outstandingAmount, 0);
+  const arTotal = arItems.reduce((sum, item) => sum + item.outstandingAmount, 0);
+
+  return {
+    ap: { totalAmount: apTotal, count: apItems.length, missingDueDateCount: apMissingDueDate, items: apItems },
+    ar: { totalAmount: arTotal, count: arItems.length, missingDueDateCount: arMissingDueDate, items: arItems },
+  };
+}
+
 export function registerLifecycleRoutes(app: Express) {
   app.use("/api/lifecycle-board", jwtAuth);
 
@@ -766,6 +898,7 @@ export function registerLifecycleRoutes(app: Express) {
       const revenueLines = await db.select({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
+        client: normalizedRevenueLines.client,
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
@@ -780,6 +913,7 @@ export function registerLifecycleRoutes(app: Express) {
       const costLines = await db.select({
         projectId: normalizedCostLines.projectId,
         projectName: normalizedCostLines.projectName,
+        supplier: normalizedCostLines.supplier,
         amountExVat: normalizedCostLines.amountExVat,
         invoiceNumber: normalizedCostLines.invoiceNumber,
         paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
@@ -790,6 +924,15 @@ export function registerLifecycleRoutes(app: Express) {
         cosRealised: normalizedCostLines.cosRealised,
         sourceRow: normalizedCostLines.sourceRow,
       }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+
+      const overdueLedger = buildOverdueFinanceLedger({
+        revenueLines,
+        costLines,
+        activeProjects,
+        fyStart: fy.start,
+        fyEnd: fy.end,
+        today,
+      });
 
       // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
       // inBank and COS status overrides are applied directly to base rows.
@@ -1026,12 +1169,28 @@ export function registerLifecycleRoutes(app: Express) {
           openExpenditureFy: plannedExpenditure - paidExpenditure,
           grossProfitFy: plannedRevenue - plannedExpenditure,
           grossMarginPctFy: plannedRevenue > 0 ? Number((((plannedRevenue - plannedExpenditure) / plannedRevenue) * 100).toFixed(1)) : null,
-          overdueInflowFy: projectRows.reduce((s: number, p: any) => s + (p.overdueInflowFy || 0), 0),
-          overdueOutflowFy: projectRows.reduce((s: number, p: any) => s + (p.overdueOutflowFy || 0), 0),
+          overdueInflowFy: overdueLedger.ar.totalAmount,
+          overdueOutflowFy: overdueLedger.ap.totalAmount,
           openEngineeringBlockers: projectRows.reduce((s, p) => s + p.engineeringBlockerCount, 0),
           openQualityWarnings: projectRows.reduce((s, p) => s + p.openQualityWarningCount, 0),
           pendingApprovals: projectRows.reduce((s, p) => s + p.pendingApprovalCount, 0),
           staleImports: projectRows.filter((p) => p.importFreshness !== "Fresh").length,
+        },
+        overdueDefinitions: {
+          asOfDate: today,
+          financialYear: fy.label,
+          ap: {
+            dueDateField: "approvedDate",
+            settledLogic: "paidDateConfirmed OR cosRealised OR paidDate with black font",
+            missingDueDateCount: overdueLedger.ap.missingDueDateCount,
+            itemCount: overdueLedger.ap.count,
+          },
+          ar: {
+            dueDateField: "expectedPaymentDate",
+            settledLogic: "paidDateConfirmed OR inBankDate OR paidDate with black font",
+            missingDueDateCount: overdueLedger.ar.missingDueDateCount,
+            itemCount: overdueLedger.ar.count,
+          },
         },
         actionCenter: {
           queues: [
@@ -1072,136 +1231,70 @@ export function registerLifecycleRoutes(app: Express) {
       const today = new Date().toISOString().slice(0, 10);
       const direction = String(req.query.direction || "all"); // "inflow" | "outflow" | "all"
       const projectId = req.query.projectId ? parseInt(String(req.query.projectId)) : null;
+      const activeProjects = await db.select({
+        id: projectInfo.id,
+        projectName: projectInfo.projectName,
+        pm: projectInfo.pm,
+      }).from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
+        .where(eq(projectExecutionState.archivedStatus, "ACTIVE"));
 
-      const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
-      const isBlack = (v: any) => { const s = String(v || '').toLowerCase(); return s.includes('000000') || s.includes('black'); };
+      const revenueLines = await db.select({
+        projectId: normalizedRevenueLines.projectId,
+        projectName: normalizedRevenueLines.projectName,
+        client: normalizedRevenueLines.client,
+        amountExVat: normalizedRevenueLines.amountExVat,
+        invoiceNumber: normalizedRevenueLines.invoiceNumber,
+        invoiceDate: normalizedRevenueLines.invoiceDate,
+        expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+        paidDate: normalizedRevenueLines.paidDate,
+        paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
+        paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
+        inBankDate: normalizedRevenueLines.inBankDate,
+        sourceRow: normalizedRevenueLines.sourceRow,
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
-      const overdueInflow: any[] = [];
-      const overdueOutflow: any[] = [];
+      const costLines = await db.select({
+        projectId: normalizedCostLines.projectId,
+        projectName: normalizedCostLines.projectName,
+        supplier: normalizedCostLines.supplier,
+        amountExVat: normalizedCostLines.amountExVat,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        approvedDate: normalizedCostLines.approvedDate,
+        paidDate: normalizedCostLines.paidDate,
+        paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
+        paidDateFontColor: normalizedCostLines.paidDateFontColor,
+        cosRealised: normalizedCostLines.cosRealised,
+        sourceRow: normalizedCostLines.sourceRow,
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
-      if (direction === "all" || direction === "inflow") {
-        const revenueLines = await db.select({
-          id: normalizedRevenueLines.id,
-          projectId: normalizedRevenueLines.projectId,
-          projectName: normalizedRevenueLines.projectName,
-          description: normalizedRevenueLines.description,
-          milestoneName: normalizedRevenueLines.milestoneName,
-          amountExVat: normalizedRevenueLines.amountExVat,
-          invoiceNumber: normalizedRevenueLines.invoiceNumber,
-          invoiceDate: normalizedRevenueLines.invoiceDate,
-          expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
-          paidDate: normalizedRevenueLines.paidDate,
-          paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
-          paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
-          inBankDate: normalizedRevenueLines.inBankDate,
-          sourceRow: normalizedRevenueLines.sourceRow,
-          status: normalizedRevenueLines.status,
-        }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+      const overdue = buildOverdueFinanceLedger({
+        revenueLines,
+        costLines,
+        activeProjects,
+        fyStart: fy.start,
+        fyEnd: fy.end,
+        today,
+      });
 
-        for (const row of revenueLines) {
-          if (projectId && row.projectId !== projectId) continue;
-          const amount = parseFloat(row.amountExVat || "0") || 0;
-          if (amount <= 0) continue;
-          const dateKey = pickFirstPopulatedDate(row as any, ["expectedPaymentDate", "invoiceDate", "paidDate", "inBankDate"]);
-          if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
-
-          const baseReceived = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
-          const confirmedReceived = Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate);
-          const received = baseReceived || (hasText(row.invoiceNumber) && confirmedReceived);
-
-          if (!received && dateKey && dateKey < today) {
-            const daysOverdue = Math.floor((new Date(today).getTime() - new Date(dateKey).getTime()) / (1000 * 60 * 60 * 24));
-            overdueInflow.push({
-              id: row.id,
-              projectId: row.projectId,
-              projectName: row.projectName,
-              description: row.description || row.milestoneName || "Revenue line",
-              amount,
-              invoiceNumber: row.invoiceNumber || null,
-              dueDate: dateKey,
-              daysOverdue,
-              status: row.status,
-              type: "inflow" as const,
-            });
-          }
-        }
-      }
-
-      if (direction === "all" || direction === "outflow") {
-        const costLines = await db.select({
-          id: normalizedCostLines.id,
-          projectId: normalizedCostLines.projectId,
-          projectName: normalizedCostLines.projectName,
-          description: normalizedCostLines.description,
-          counterpartyName: normalizedCostLines.counterpartyName,
-          costCategory: normalizedCostLines.costCategory,
-          amountExVat: normalizedCostLines.amountExVat,
-          invoiceNumber: normalizedCostLines.invoiceNumber,
-          invoiceDate: normalizedCostLines.invoiceDate,
-          approvedDate: normalizedCostLines.approvedDate,
-          paidDate: normalizedCostLines.paidDate,
-          paidDateFontColor: normalizedCostLines.paidDateFontColor,
-          paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
-          cosRealised: normalizedCostLines.cosRealised,
-          poNumber: normalizedCostLines.poNumber,
-          invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
-          invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
-          sourceRow: normalizedCostLines.sourceRow,
-          status: normalizedCostLines.status,
-        }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
-
-        for (const row of costLines) {
-          if (projectId && row.projectId !== projectId) continue;
-          const amount = parseFloat(row.amountExVat || "0") || 0;
-          if (amount <= 0) continue;
-          const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
-          if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
-
-          const basePaid = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
-          const confirmedPaid = Boolean(row.paidDateConfirmed);
-          const isRealised = classifyCosStatus({
-            expenseInvoiceNumber: row.invoiceNumber,
-            expenseInvoicedDate: row.invoiceDate,
-            expensePoNumber: row.poNumber,
-            invoiceDateConfirmed: row.invoiceDateConfirmed,
-            invoiceDateFontColor: row.invoiceDateFontColor,
-          }) === 'COS Realised';
-          const paid = basePaid || (hasText(row.invoiceNumber) && confirmedPaid) || isRealised;
-
-          if (!paid && dateKey && dateKey < today) {
-            const daysOverdue = Math.floor((new Date(today).getTime() - new Date(dateKey).getTime()) / (1000 * 60 * 60 * 24));
-            overdueOutflow.push({
-              id: row.id,
-              projectId: row.projectId,
-              projectName: row.projectName,
-              description: row.description || row.counterpartyName || row.costCategory || "Cost line",
-              counterparty: row.counterpartyName || null,
-              amount,
-              invoiceNumber: row.invoiceNumber || null,
-              poNumber: row.poNumber || null,
-              dueDate: dateKey,
-              daysOverdue,
-              status: row.status,
-              type: "outflow" as const,
-            });
-          }
-        }
-      }
-
-      // Sort by days overdue descending (most overdue first)
-      overdueInflow.sort((a, b) => b.daysOverdue - a.daysOverdue);
-      overdueOutflow.sort((a, b) => b.daysOverdue - a.daysOverdue);
+      const arItems = projectId ? overdue.ar.items.filter((item: any) => item.projectId === projectId) : overdue.ar.items;
+      const apItems = projectId ? overdue.ap.items.filter((item: any) => item.projectId === projectId) : overdue.ap.items;
 
       res.json({
+        asOfDate: today,
+        financialYear: fy,
         inflow: {
-          items: overdueInflow,
-          totalAmount: overdueInflow.reduce((s, i) => s + i.amount, 0),
-          count: overdueInflow.length,
+          items: direction === "outflow" ? [] : arItems,
+          totalAmount: direction === "outflow" ? 0 : arItems.reduce((s: number, i: any) => s + i.outstandingAmount, 0),
+          count: direction === "outflow" ? 0 : arItems.length,
+          missingDueDateCount: overdue.ar.missingDueDateCount,
         },
         outflow: {
-          items: overdueOutflow,
-          totalAmount: overdueOutflow.reduce((s, i) => s + i.amount, 0),
-          count: overdueOutflow.length,
+          items: direction === "inflow" ? [] : apItems,
+          totalAmount: direction === "inflow" ? 0 : apItems.reduce((s: number, i: any) => s + i.outstandingAmount, 0),
+          count: direction === "inflow" ? 0 : apItems.length,
+          missingDueDateCount: overdue.ap.missingDueDateCount,
         },
       });
     } catch (err: any) {

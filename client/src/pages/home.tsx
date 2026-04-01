@@ -5,6 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Link, useSearch } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { type AttentionItem } from "@/components/dashboard/AttentionBadges";
@@ -49,6 +51,7 @@ import {
   AlertCircle,
   ChevronRight,
   ExternalLink,
+  Info,
 } from "lucide-react";
 
 // Lazy-load tab content from My Work pages
@@ -199,6 +202,7 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState<HomeTab>(urlTab || "actions");
   const [prioritiesExpanded, setPrioritiesExpanded] = useState(false);
   const [expandedAttention, setExpandedAttention] = useState<string | null>(null);
+  const [overdueDrill, setOverdueDrill] = useState<"ap" | "ar" | null>(null);
 
   const { data: dashData, isLoading: dashLoading, isError: dashIsError, error: dashError } = useQuery<any>({
     queryKey: ["/api/lifecycle-board/execution-dashboard"],
@@ -223,6 +227,15 @@ export default function HomePage() {
       const res = await apiRequest("GET", "/api/my-work/all-tasks");
       return res.json();
     },
+  });
+
+  const { data: overdueData, isLoading: overdueLoading } = useQuery<any>({
+    queryKey: ["/api/lifecycle-board/overdue-payments"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/lifecycle-board/overdue-payments");
+      return res.json();
+    },
+    enabled: overdueDrill !== null,
   });
 
   const lens = useLensContext();
@@ -254,6 +267,8 @@ export default function HomePage() {
 
   const kpis = dashData?.kpis || {};
   const isLoading = dashLoading;
+  const currentOverdue = overdueDrill === "ap" ? overdueData?.outflow : overdueDrill === "ar" ? overdueData?.inflow : null;
+  const overdueRows = currentOverdue?.items || [];
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -351,13 +366,28 @@ export default function HomePage() {
   const hiddenPriorities = companyPriorities?.slice(3) || [];
 
   /** Render a single KPI metric card */
-  function kpiCard(label: string, value: string | number, icon: React.ReactNode, opts?: { color?: string; scopeLabel?: string }) {
+  function kpiCard(label: string, value: string | number, icon: React.ReactNode, opts?: { color?: string; scopeLabel?: string; onClick?: () => void; helpText?: React.ReactNode }) {
+    const isClickable = Boolean(opts?.onClick);
     return (
-      <Card key={label} className="border-border/50">
+      <Card key={label} className={`border-border/50 ${isClickable ? "cursor-pointer hover:border-primary/40 transition-colors" : ""}`} onClick={opts?.onClick}>
         <CardContent className="p-3.5">
           <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
             {icon}
             <span className="text-[11px] uppercase tracking-wide">{label}</span>
+            {opts?.helpText && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild onClick={(event) => event.stopPropagation()}>
+                    <button className="inline-flex text-muted-foreground hover:text-foreground" aria-label={`How ${label} is calculated`}>
+                      <Info className="w-3.5 h-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-sm text-xs leading-snug">
+                    {opts.helpText}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
           {isLoading ? <Skeleton className="h-5 w-16" /> : (
             <p className={`text-base font-semibold font-mono ${opts?.color || "text-foreground"}`}>{value}</p>
@@ -603,8 +633,24 @@ export default function HomePage() {
                       {kpiCardDual("COS (FY)", money(kpis.plannedExpenditureFy), money(kpis.paidExpenditureFy), <DollarSign className="w-4 h-4" />)}
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-2">
-                      {kpiCard("AP Overdue (Outflows)", money(kpis.overdueOutflowFy), <AlertCircle className="w-4 h-4" />, { color: kpis.overdueOutflowFy > 0 ? "text-red-600" : undefined })}
-                      {kpiCard("AR Overdue (Inflows)", money(kpis.overdueInflowFy), <AlertCircle className="w-4 h-4" />, { color: kpis.overdueInflowFy > 0 ? "text-amber-600" : undefined })}
+                      {kpiCard("AP Overdue (Outflows)", money(kpis.overdueOutflowFy), <AlertCircle className="w-4 h-4" />, {
+                        color: kpis.overdueOutflowFy > 0 ? "text-red-600" : undefined,
+                        onClick: () => setOverdueDrill("ap"),
+                        helpText: (
+                          <span>
+                            Includes only AP invoices (with invoice number) still unpaid as of today. Overdue means Approved Date is before today and not settled (paidDateConfirmed, COS Realised, or black paid-date marker). Uses current financial year live data only; planned rows and settled rows are excluded.
+                          </span>
+                        ),
+                      })}
+                      {kpiCard("AR Overdue (Inflows)", money(kpis.overdueInflowFy), <AlertCircle className="w-4 h-4" />, {
+                        color: kpis.overdueInflowFy > 0 ? "text-amber-600" : undefined,
+                        onClick: () => setOverdueDrill("ar"),
+                        helpText: (
+                          <span>
+                            Includes only AR invoices (with invoice number) still unreceived as of today. Overdue means Expected Payment Date is before today and not settled (paidDateConfirmed, inBankDate, or black paid-date marker). Uses current financial year live data only; planned rows and settled rows are excluded.
+                          </span>
+                        ),
+                      })}
                     </div>
                   </div>
                 </div>
@@ -816,6 +862,75 @@ export default function HomePage() {
           <InboxPage />
         </Suspense>
       )}
+
+      <Dialog open={overdueDrill !== null} onOpenChange={(open) => !open && setOverdueDrill(null)}>
+        <DialogContent className="max-w-6xl">
+          <DialogHeader>
+            <DialogTitle>{overdueDrill === "ap" ? "AP Overdue (Outflows) details" : "AR Overdue (Inflows) details"}</DialogTitle>
+          </DialogHeader>
+          {overdueLoading ? (
+            <Skeleton className="h-52 w-full" />
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <p className="text-muted-foreground">
+                  Total outstanding: <span className="font-semibold text-foreground">{money(currentOverdue?.totalAmount || 0)}</span> · {currentOverdue?.count || 0} item(s)
+                </p>
+                <p className="text-muted-foreground">As of {overdueData?.asOfDate || "today"}</p>
+              </div>
+              {(currentOverdue?.missingDueDateCount || 0) > 0 && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  {currentOverdue?.missingDueDateCount} item(s) were excluded because due date is missing, so overdue cannot be calculated reliably.
+                </p>
+              )}
+              {overdueRows.length === 0 ? (
+                <div className="text-sm text-muted-foreground border rounded p-4">
+                  {(currentOverdue?.missingDueDateCount || 0) > 0
+                    ? "No overdue items found in usable records. Remaining records are missing due dates."
+                    : "No overdue items found — all items are settled or not yet due."}
+                </div>
+              ) : (
+                <div className="max-h-[60vh] overflow-auto border rounded">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted sticky top-0">
+                      <tr>
+                        <th className="text-left px-2 py-2">Project</th>
+                        <th className="text-left px-2 py-2">{overdueDrill === "ap" ? "Supplier" : "Client"}</th>
+                        <th className="text-left px-2 py-2">Invoice #</th>
+                        <th className="text-left px-2 py-2">Invoice Date</th>
+                        <th className="text-left px-2 py-2">Due Date</th>
+                        <th className="text-right px-2 py-2">Outstanding</th>
+                        <th className="text-right px-2 py-2">Days Overdue</th>
+                        <th className="text-left px-2 py-2">Owner / PM</th>
+                        <th className="text-left px-2 py-2">Status</th>
+                        <th className="text-left px-2 py-2">Link</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {overdueRows.map((row: any) => (
+                        <tr key={row.id} className="border-t">
+                          <td className="px-2 py-1.5">{row.projectName || "—"}</td>
+                          <td className="px-2 py-1.5">{row.counterparty || "—"}</td>
+                          <td className="px-2 py-1.5">{row.invoiceNumber || "—"}</td>
+                          <td className="px-2 py-1.5">{row.invoiceDate || "—"}</td>
+                          <td className="px-2 py-1.5">{row.dueDate || "—"}</td>
+                          <td className="px-2 py-1.5 text-right font-mono">{money(row.outstandingAmount || 0)}</td>
+                          <td className="px-2 py-1.5 text-right">{row.daysOverdue ?? 0}</td>
+                          <td className="px-2 py-1.5">{row.owner || "—"}</td>
+                          <td className="px-2 py-1.5">{row.status || "Open"}</td>
+                          <td className="px-2 py-1.5">
+                            {row.recordLink ? <Link href={row.recordLink}><span className="text-primary hover:underline cursor-pointer">Open</span></Link> : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }
