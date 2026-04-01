@@ -379,13 +379,13 @@ export default function ClientsPage() {
                             </Button>
                           </div>
                         ) : (
-                          <span
-                            className="font-medium"
+                          <Link
+                            href={`/clients/${client.id}`}
+                            className="font-medium text-primary hover:underline"
                             data-testid={`text-client-name-${client.id}`}
-                            onClick={() => startEdit(client)}
                           >
                             {client.name}
-                          </span>
+                          </Link>
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm" data-testid={`text-client-created-${client.id}`}>
@@ -471,6 +471,13 @@ export default function ClientsPage() {
                                 ))}
                               </div>
                             )}
+                            <div className="pt-2">
+                              <Link href={`/clients/${client.id}`}>
+                                <Button variant="outline" size="sm" className="text-xs gap-1.5">
+                                  View Client Details →
+                                </Button>
+                              </Link>
+                            </div>
                           </div>
                         </TableCell>
                       </TableRow>
