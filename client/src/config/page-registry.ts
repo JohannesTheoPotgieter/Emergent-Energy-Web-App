@@ -36,6 +36,7 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/admin/legacy-utilities", redirectTo: "/admin/control-center" },
   // Prompt 2 — old nav destinations that moved
   { path: "/exceptions", redirectTo: "/gates/exceptions" },
+  { path: "/project-lifecycle", redirectTo: "/lifecycle-board" },
   { path: "/command-center", redirectTo: "/my-work" },
 ];
 
