@@ -2,11 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Task } from "@/components/tasks/types";
 import { deriveEngineeringTaskMetrics, filterEngineeringTasks } from "@/hooks/useEngineeringTaskFilters";
 
-function task(overrides: Partial<Task> & { id: number; title: string }): Task {
+function task(overrides: Omit<Partial<Task>, "id" | "title"> & { id: number; title: string }): Task {
+  const { id, title, ...rest } = overrides;
   return {
-    id: overrides.id,
+    id,
     projectName: null,
-    title: overrides.title,
+    title,
     description: null,
     status: "TO DO",
     priority: "Medium",
@@ -54,7 +55,7 @@ function task(overrides: Partial<Task> & { id: number; title: string }): Task {
     hasMicrosoftContext: false,
     microsoftActionRequiredCount: 0,
     relatedMicrosoftItems: [],
-    ...overrides,
+    ...rest,
   };
 }
 
