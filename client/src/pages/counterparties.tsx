@@ -3,6 +3,7 @@ import { FinanceShell } from "@/components/layout/FinanceShell";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { usePermission } from "@/hooks/use-permissions";
+import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,9 +11,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertCircle, Loader2, Pencil, Save, Search, Users } from "lucide-react";
+import { AlertCircle, Loader2, Merge, Pencil, PlayCircle, Save, Search, Users } from "lucide-react";
 import {
   canEditCounterparties,
   COUNTERPARTIES_ROUTE,
@@ -89,6 +91,7 @@ const EMPTY_CONTACT_FORM: EditableContactFields = {
 export default function CounterpartiesPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { isAdmin } = useAuth();
   const { allowed: canView, loading: permissionLoading } = usePermission("subcontractors", "view");
   const { allowed: canEditPermission } = usePermission("subcontractors", "edit");
   const canEdit = canEditCounterparties(canEditPermission);
@@ -98,6 +101,10 @@ export default function CounterpartiesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [editing, setEditing] = useState(false);
+  const [selectedForMerge, setSelectedForMerge] = useState<Set<number>>(new Set());
+  const [mergeTargetId, setMergeTargetId] = useState<number | null>(null);
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<string>("");
   const [form, setForm] = useState<EditableCounterpartyFields>(EMPTY_FORM);
   const [contactForm, setContactForm] = useState<EditableContactFields>(EMPTY_CONTACT_FORM);
 
@@ -134,6 +141,23 @@ export default function CounterpartiesPage() {
     () => filterCounterparties(counterparties, search, typeFilter, statusFilter),
     [counterparties, search, typeFilter, statusFilter],
   );
+  const selectedMergeRows = useMemo(
+    () => counterparties.filter((cp) => selectedForMerge.has(cp.id)),
+    [counterparties, selectedForMerge],
+  );
+  const mergeTarget = useMemo(
+    () => counterparties.find((cp) => cp.id === mergeTargetId) || null,
+    [counterparties, mergeTargetId],
+  );
+  const mergePreview = useMemo(() => {
+    if (!mergeTarget) return null;
+    const sourceRows = selectedMergeRows.filter((cp) => cp.id !== mergeTarget.id);
+    const usageCount = sourceRows.reduce((acc, cp) => acc + (cp.usageCount || 0), mergeTarget.usageCount || 0);
+    const linkedProjectCount = sourceRows.reduce((acc, cp) => acc + (cp.linkedProjectCount || 0), mergeTarget.linkedProjectCount || 0);
+    const spend = sourceRows.reduce((acc, cp) => acc + Number(cp.totalSpendExVat || 0), Number(mergeTarget.totalSpendExVat || 0));
+    const open = sourceRows.reduce((acc, cp) => acc + Number(cp.openAmountExVat || 0), Number(mergeTarget.openAmountExVat || 0));
+    return { sourceRows, usageCount, linkedProjectCount, spend, open };
+  }, [mergeTarget, selectedMergeRows]);
 
   const patchMutation = useMutation({
     mutationFn: async (payload: EditableCounterpartyFields) => {
@@ -218,6 +242,67 @@ export default function CounterpartiesPage() {
     },
   });
 
+  const mergeMutation = useMutation({
+    mutationFn: async () => {
+      if (!mergeTarget) throw new Error("Select a merge target");
+      const sourceNames = selectedMergeRows.map((cp) => cp.nameCanonical);
+      if (sourceNames.length < 2) throw new Error("Select at least two counterparties");
+      const res = await fetch("/api/subcontractor-dashboard/merge", {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ sourceNames, targetName: mergeTarget.nameCanonical }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Failed to merge counterparties" }));
+        throw new Error(body.error || "Failed to merge counterparties");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setShowMergeDialog(false);
+      setSelectedForMerge(new Set());
+      setMergeTargetId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/counterparties/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/detail"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-patterns"] });
+      toast({ title: "Counterparties merged", description: "Linked procurement, spend, and pattern aliases were reconciled." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Merge failed", description: err?.message || "Could not merge counterparties", variant: "destructive" });
+    },
+  });
+
+  const runAnalysisMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/procurement-analysis/run", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: "Failed to run procurement analysis" }));
+        throw new Error(body.error || "Failed to run procurement analysis");
+      }
+      return res.json();
+    },
+    onSuccess: (result) => {
+      const message = result?.message || "Procurement analysis completed.";
+      setAnalysisResult(message);
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/summary"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/detail"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractor-dashboard/overdue"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/procurement-analysis/pattern-stats"] });
+      localStorage.setItem("procurement-analysis-last-run", String(Date.now()));
+      window.dispatchEvent(new CustomEvent("procurement-analysis-complete"));
+      toast({ title: "Procurement analysis finished", description: "Procurement Hub / Subcontractors has been refreshed with latest aggregates." });
+    },
+    onError: (err: any) => {
+      toast({ title: "Analysis failed", description: err?.message || "Could not run procurement analysis", variant: "destructive" });
+    },
+  });
+
   const openDetails = (cp: CounterpartySummary) => {
     setSelectedId(cp.id);
     setEditing(false);
@@ -281,20 +366,55 @@ export default function CounterpartiesPage() {
             Single source of truth for Procurement / Finance counterparties used across Smart Import and Procurement Hub.
           </p>
         </div>
-        <Button asChild variant="outline" size="sm" data-testid="btn-open-procurement-hub">
-          <a href="/subcontractor-dashboard">Open Procurement Hub</a>
-        </Button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {isAdmin && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => runAnalysisMutation.mutate()}
+                disabled={runAnalysisMutation.isPending}
+                data-testid="btn-run-procurement-analysis"
+              >
+                {runAnalysisMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" /> : <PlayCircle className="w-3.5 h-3.5 mr-1" />}
+                Run procurement analysis
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={selectedForMerge.size < 2}
+                onClick={() => {
+                  const first = Array.from(selectedForMerge)[0];
+                  setMergeTargetId(first || null);
+                  setShowMergeDialog(true);
+                }}
+                data-testid="btn-open-counterparty-merge"
+              >
+                <Merge className="w-3.5 h-3.5 mr-1" />
+                Merge selected ({selectedForMerge.size})
+              </Button>
+            </>
+          )}
+          <Button asChild variant="outline" size="sm" data-testid="btn-open-procurement-hub">
+            <a href="/subcontractor-dashboard">Open Procurement Hub</a>
+          </Button>
+        </div>
       </div>
+      {!!analysisResult && (
+        <Card className="border-emerald-200 bg-emerald-50/30">
+          <CardContent className="py-2.5 text-xs text-emerald-800">{analysisResult}</CardContent>
+        </Card>
+      )}
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Search & filter</CardTitle>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Search & filter</CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-0">
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
             <Input
-              className="pl-9"
+              className="pl-9 h-8 text-sm"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, type, or contact"
@@ -359,32 +479,50 @@ export default function CounterpartiesPage() {
         </Card>
       ) : (
         <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm" data-testid="counterparties-table">
+          <table className="w-full text-[13px]" data-testid="counterparties-table">
             <thead>
               <tr className="bg-muted border-b">
-                <th className="text-left p-3">Name</th>
-                <th className="text-left p-3">Type</th>
-                <th className="text-left p-3">Status</th>
-                <th className="text-left p-3">Usage</th>
-                <th className="text-left p-3">Projects</th>
-                <th className="text-left p-3">Spend</th>
-                <th className="text-left p-3">Open</th>
+                {isAdmin && <th className="text-left px-2 py-2 w-10" />}
+                <th className="text-left px-3 py-2 font-semibold text-[11px] uppercase tracking-wide text-muted-foreground">Name</th>
+                <th className="text-left px-2 py-2 font-semibold text-[11px] uppercase tracking-wide text-muted-foreground">Type</th>
+                <th className="text-left px-2 py-2 font-semibold text-[11px] uppercase tracking-wide text-muted-foreground">Status</th>
+                <th className="text-right px-2 py-2 font-semibold text-[11px] uppercase tracking-wide text-muted-foreground">Usage</th>
+                <th className="text-right px-2 py-2 font-semibold text-[11px] uppercase tracking-wide text-muted-foreground">Projects</th>
+                <th className="text-right px-2 py-2 font-semibold text-[11px] uppercase tracking-wide text-muted-foreground">Spend</th>
+                <th className="text-right px-3 py-2 font-semibold text-[11px] uppercase tracking-wide text-muted-foreground">Open</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((cp) => {
                 const status = deriveCounterpartyStatus(cp);
                 return (
-                  <tr key={cp.id} onClick={() => openDetails(cp)} className="border-b hover:bg-muted/70 cursor-pointer" data-testid={`counterparty-row-${cp.id}`}>
-                    <td className="p-3 font-medium">{cp.nameCanonical}</td>
-                    <td className="p-3">{cp.typeDefault}</td>
-                    <td className="p-3">
-                      <Badge variant={status === "active" ? "default" : "outline"}>{status}</Badge>
+                  <tr key={cp.id} onClick={() => openDetails(cp)} className="border-b hover:bg-muted/70 cursor-pointer h-10" data-testid={`counterparty-row-${cp.id}`}>
+                    {isAdmin && (
+                      <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedForMerge.has(cp.id)}
+                          onChange={(e) => {
+                            setSelectedForMerge((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(cp.id);
+                              else next.delete(cp.id);
+                              return next;
+                            });
+                          }}
+                          aria-label={`Select ${cp.nameCanonical}`}
+                        />
+                      </td>
+                    )}
+                    <td className="px-3 py-1.5 font-medium max-w-[240px] truncate" title={cp.nameCanonical}>{cp.nameCanonical}</td>
+                    <td className="px-2 py-1.5">{cp.typeDefault}</td>
+                    <td className="px-2 py-1.5">
+                      <Badge className="text-[10px] py-0 h-5" variant={status === "active" ? "default" : "outline"}>{status}</Badge>
                     </td>
-                    <td className="p-3">{(cp.usageCount || 0).toLocaleString()}</td>
-                    <td className="p-3">{(cp.linkedProjectCount || 0).toLocaleString()}</td>
-                    <td className="p-3">R {(cp.totalSpendExVat || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                    <td className="p-3">R {(cp.openAmountExVat || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{(cp.usageCount || 0).toLocaleString()}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{(cp.linkedProjectCount || 0).toLocaleString()}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">R {(cp.totalSpendExVat || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">R {(cp.openAmountExVat || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
                   </tr>
                 );
               })}
@@ -392,6 +530,48 @@ export default function CounterpartiesPage() {
           </table>
         </div>
       )}
+
+      <Dialog open={showMergeDialog} onOpenChange={setShowMergeDialog}>
+        <DialogContent data-testid="counterparty-merge-dialog">
+          <DialogHeader>
+            <DialogTitle>Merge counterparties (Admin only)</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p className="text-muted-foreground text-xs">
+              Preview impact before merging. This updates linked procurement references and preserves alias patterns for historical names.
+            </p>
+            <Field label="Surviving master counterparty">
+              <SearchableSelect
+                value={mergeTargetId ? String(mergeTargetId) : ""}
+                onValueChange={(v) => setMergeTargetId(Number(v))}
+                options={selectedMergeRows.map((cp) => ({ value: String(cp.id), label: cp.nameCanonical }))}
+              />
+            </Field>
+            {mergePreview && (
+              <Card>
+                <CardContent className="p-3 space-y-1.5 text-xs">
+                  <p><span className="font-semibold">Sources:</span> {mergePreview.sourceRows.map((cp) => cp.nameCanonical).join(", ") || "—"}</p>
+                  <p><span className="font-semibold">Projected usage:</span> {mergePreview.usageCount.toLocaleString()} lines</p>
+                  <p><span className="font-semibold">Projected linked projects:</span> {mergePreview.linkedProjectCount.toLocaleString()}</p>
+                  <p><span className="font-semibold">Projected spend/open:</span> R {mergePreview.spend.toLocaleString()} / R {mergePreview.open.toLocaleString()}</p>
+                </CardContent>
+              </Card>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setShowMergeDialog(false)}>Cancel</Button>
+              <Button
+                size="sm"
+                disabled={mergeMutation.isPending || !mergeTarget || selectedMergeRows.length < 2}
+                onClick={() => mergeMutation.mutate()}
+                data-testid="btn-confirm-counterparty-merge"
+              >
+                {mergeMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <Merge className="w-3 h-3 mr-1" />}
+                Confirm merge
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Sheet open={!!selected} onOpenChange={(open) => { if (!open) { setSelectedId(null); setEditing(false); } }}>
         <SheetContent className="w-full sm:max-w-xl overflow-y-auto" data-testid="counterparty-detail-drawer">
