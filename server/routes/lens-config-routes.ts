@@ -9,6 +9,7 @@
  */
 
 import type { Express, Request, Response } from "express";
+import { jwtAuth, requireAuth } from "../auth-context";
 import { db } from "../db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import {
@@ -32,7 +33,7 @@ export function registerLensConfigRoutes(app: Express) {
    * GET /api/lens/profile
    * Returns the active lens profile for the requesting user.
    */
-  app.get("/api/lens/profile", async (req: Request, res: Response) => {
+  app.get("/api/lens/profile", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const companyRole = req.headers["x-company-role"] as string | undefined;
       const userRole = (req as any).user?.role;
@@ -58,7 +59,7 @@ export function registerLensConfigRoutes(app: Express) {
    * GET /api/lens/profiles
    * Returns all available lens profiles (for COO lens switcher).
    */
-  app.get("/api/lens/profiles", async (_req: Request, res: Response) => {
+  app.get("/api/lens/profiles", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
     try {
       // Try DB first
       const dbProfiles = await db.select().from(roleLensProfiles);
@@ -78,7 +79,7 @@ export function registerLensConfigRoutes(app: Express) {
    * GET /api/lens/roles
    * Returns the lens role mapping and all available lens roles.
    */
-  app.get("/api/lens/roles", (_req: Request, res: Response) => {
+  app.get("/api/lens/roles", jwtAuth, requireAuth, (_req: Request, res: Response) => {
     res.json({
       lensRoles: LENS_ROLES,
       labels: LENS_ROLE_LABELS,
@@ -90,7 +91,7 @@ export function registerLensConfigRoutes(app: Express) {
    * POST /api/lens/simulate
    * Start a lens simulation session (COO only).
    */
-  app.post("/api/lens/simulate", async (req: Request, res: Response) => {
+  app.post("/api/lens/simulate", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       const userRole = (req as any).user?.role;
@@ -136,7 +137,7 @@ export function registerLensConfigRoutes(app: Express) {
    * POST /api/lens/simulate/stop
    * Stop the current lens simulation.
    */
-  app.post("/api/lens/simulate/stop", async (req: Request, res: Response) => {
+  app.post("/api/lens/simulate/stop", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       if (userId) {
@@ -158,7 +159,7 @@ export function registerLensConfigRoutes(app: Express) {
    * GET /api/lens/widgets/:lensRole
    * Returns homepage widget configurations for a lens role.
    */
-  app.get("/api/lens/widgets/:lensRole", async (req: Request, res: Response) => {
+  app.get("/api/lens/widgets/:lensRole", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const lensRole = String(req.params.lensRole);
       const widgets = await db.select()
@@ -180,7 +181,7 @@ export function registerLensConfigRoutes(app: Express) {
    * GET /api/contracts
    * Returns contracts, optionally filtered by projectId.
    */
-  app.get("/api/contracts", async (req: Request, res: Response) => {
+  app.get("/api/contracts", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = req.query.projectId ? Number(req.query.projectId) : undefined;
       let query = db.select().from(contracts).where(isNull(contracts.deletedAt));
@@ -202,7 +203,7 @@ export function registerLensConfigRoutes(app: Express) {
    * GET /api/sseg-applications
    * Returns SSEG applications, optionally filtered by projectId.
    */
-  app.get("/api/sseg-applications", async (req: Request, res: Response) => {
+  app.get("/api/sseg-applications", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const projectId = req.query.projectId ? Number(req.query.projectId) : undefined;
       if (projectId) {
@@ -223,7 +224,7 @@ export function registerLensConfigRoutes(app: Express) {
    * GET /api/admin/migration-report
    * Returns the last role-lens migration report from app_settings.
    */
-  app.get("/api/admin/migration-report", async (_req: Request, res: Response) => {
+  app.get("/api/admin/migration-report", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
     try {
       const result = await db.execute(
         sql`SELECT value, updated_at FROM app_settings WHERE key = 'role_lens_migration_report' LIMIT 1`
@@ -245,7 +246,7 @@ export function registerLensConfigRoutes(app: Express) {
    * GET /api/lens/homepage-snapshot/:lensRole
    * Returns pre-computed homepage snapshot data for a lens role.
    */
-  app.get("/api/lens/homepage-snapshot/:lensRole", async (req: Request, res: Response) => {
+  app.get("/api/lens/homepage-snapshot/:lensRole", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const { lensRole } = req.params;
       const userId = req.query.userId ? Number(req.query.userId) : undefined;
