@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,6 +6,7 @@ import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { Handshake, FileCheck, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
+import { useLocation } from "wouter";
 
 interface HandoverPackSummary {
   id: number;
@@ -27,6 +28,17 @@ interface SsegItemSummary {
   expectedDate: string | null;
 }
 
+interface SsegApplicationSummary {
+  id: number;
+  projectId: number;
+  status: string;
+  applicationRef?: string | null;
+  municipality?: string | null;
+  submittedDate?: string | null;
+  approvedDate?: string | null;
+  expiryDate?: string | null;
+}
+
 const PACK_TYPE_LABELS: Record<string, string> = {
   pd_to_pm: "PD to PM",
   practical_completion: "Practical Completion",
@@ -44,7 +56,13 @@ function statusBadge(s: string) {
 }
 
 export default function HandoverDashboardPage() {
-  const [tab, setTab] = useState<"packs" | "sseg">("packs");
+  const [, setLocation] = useLocation();
+  const initialTab = useMemo<"packs" | "sseg">(() => {
+    const query = typeof window === "undefined" ? "" : window.location.search;
+    const params = new URLSearchParams(query);
+    return params.get("tab") === "sseg" ? "sseg" : "packs";
+  }, []);
+  const [tab, setTab] = useState<"packs" | "sseg">(initialTab);
 
   const { data: packs = [], isLoading: packsLoading, isError, error, refetch } = useQuery<HandoverPackSummary[]>({
     queryKey: ["/api/handover/packs"],
@@ -62,10 +80,28 @@ export default function HandoverDashboardPage() {
       return res.json();
     },
   });
+  const { data: ssegApplications = [] } = useQuery<SsegApplicationSummary[]>({
+    queryKey: ["/api/sseg-applications"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/sseg-applications");
+      const body = await res.json();
+      if (Array.isArray(body)) return body;
+      if (Array.isArray(body?.applications)) return body.applications;
+      return [];
+    },
+  });
 
-  const activePacks = packs.filter(p => p.status !== "accepted");
-  const overdueSseg = ssegItems.filter(s => s.expectedDate && new Date(s.expectedDate) < new Date() && s.status !== "complete" && s.status !== "approved");
-  const pendingSseg = ssegItems.filter(s => s.status === "pending" || s.status === "submitted");
+  const safePacks = Array.isArray(packs) ? packs : [];
+  const safeSsegItems = Array.isArray(ssegItems) ? ssegItems : [];
+  const safeSsegApplications = Array.isArray(ssegApplications) ? ssegApplications : [];
+
+  const activePacks = safePacks.filter(p => p.status !== "accepted");
+  const overdueSseg = safeSsegItems.filter(s => s.expectedDate && new Date(s.expectedDate) < new Date() && s.status !== "complete" && s.status !== "approved");
+  const pendingSseg = safeSsegItems.filter(s => s.status === "pending" || s.status === "submitted");
+  const submittedApplications = safeSsegApplications.filter((a) => (a.status || "").toLowerCase() === "submitted");
+  const approvedApplications = safeSsegApplications.filter((a) => (a.status || "").toLowerCase() === "approved");
+  const pendingApplications = safeSsegApplications.filter((a) => ["pending", "in_progress"].includes((a.status || "").toLowerCase()));
+  const expiringApplications = safeSsegApplications.filter((a) => a.expiryDate && new Date(a.expiryDate) < new Date(Date.now() + 1000 * 60 * 60 * 24 * 30));
 
   if (packsLoading) return <PageSkeleton lines={5} />;
   if (isError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Handover Dashboard" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></PageShell>;
@@ -94,7 +130,7 @@ export default function HandoverDashboardPage() {
         </Card>
         <Card>
           <CardContent className="p-3">
-            <div className="text-2xl font-bold">{pendingSseg.length}</div>
+            <div className="text-2xl font-bold">{pendingSseg.length + pendingApplications.length}</div>
             <div className="text-xs text-muted-foreground">SSEG Pending</div>
           </CardContent>
         </Card>
@@ -113,7 +149,10 @@ export default function HandoverDashboardPage() {
         ]).map(t => (
           <button
             key={t.key}
-            onClick={() => setTab(t.key)}
+            onClick={() => {
+              setTab(t.key);
+              setLocation(`/handover?tab=${t.key}`);
+            }}
             className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
               tab === t.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
             }`}
@@ -171,7 +210,7 @@ export default function HandoverDashboardPage() {
       {tab === "sseg" && (
         <div className="space-y-2">
           {ssegLoading && <p className="text-sm text-muted-foreground">Loading SSEG items...</p>}
-          {!ssegLoading && ssegItems.length === 0 && (
+          {!ssegLoading && safeSsegItems.length === 0 && safeSsegApplications.length === 0 && (
             <Card className="border-amber-200"><CardContent className="py-8 text-center">
               <AlertTriangle className="h-8 w-8 text-amber-500 mx-auto mb-3" />
               <p className="text-sm font-semibold text-amber-800">No SSEG items tracked yet</p>
@@ -182,7 +221,31 @@ export default function HandoverDashboardPage() {
               </p>
             </CardContent></Card>
           )}
-          {ssegItems.map(item => {
+          {(safeSsegApplications.length > 0 || safeSsegItems.length > 0) && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+              <Card><CardContent className="p-3"><div className="text-xl font-bold">{safeSsegApplications.length}</div><div className="text-xs text-muted-foreground">Applications</div></CardContent></Card>
+              <Card><CardContent className="p-3"><div className="text-xl font-bold">{pendingApplications.length}</div><div className="text-xs text-muted-foreground">Readiness Pending</div></CardContent></Card>
+              <Card><CardContent className="p-3"><div className="text-xl font-bold">{submittedApplications.length}</div><div className="text-xs text-muted-foreground">Submitted</div></CardContent></Card>
+              <Card><CardContent className="p-3"><div className="text-xl font-bold text-green-600">{approvedApplications.length}</div><div className="text-xs text-muted-foreground">Approved</div></CardContent></Card>
+              <Card><CardContent className="p-3"><div className="text-xl font-bold text-amber-600">{expiringApplications.length}</div><div className="text-xs text-muted-foreground">Expiring &lt;30d</div></CardContent></Card>
+            </div>
+          )}
+
+          {safeSsegApplications.map(app => (
+            <Card key={`app-${app.id}`} className="hover:shadow-sm transition-shadow">
+              <CardContent className="p-3 flex items-center gap-3">
+                <CheckCircle2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-sm font-medium">Application {app.applicationRef || `#${app.id}`}</span>
+                {app.municipality && <span className="text-xs text-muted-foreground">{app.municipality}</span>}
+                <span className="flex-1" />
+                {app.submittedDate && <span className="text-xs text-muted-foreground">Submitted: {app.submittedDate}</span>}
+                {app.approvedDate && <span className="text-xs text-muted-foreground">Approved: {app.approvedDate}</span>}
+                <Badge className={`text-[10px] ${statusBadge(app.status)}`}>{app.status || "pending"}</Badge>
+              </CardContent>
+            </Card>
+          ))}
+
+          {safeSsegItems.map(item => {
             const isOverdue = item.expectedDate && new Date(item.expectedDate) < new Date() && item.status !== "complete" && item.status !== "approved";
             return (
               <Card key={item.id} className={`hover:shadow-sm transition-shadow ${isOverdue ? "border-red-200" : ""}`}>

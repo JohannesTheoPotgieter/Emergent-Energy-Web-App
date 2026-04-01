@@ -73,7 +73,10 @@ async function qFetch(url: string, options?: RequestInit) {
   if (token) headers["Authorization"] = `Bearer ${token}`;
   if (options?.body) headers["Content-Type"] = "application/json";
   const res = await fetch(url, { ...options, headers, credentials: "include" });
-  if (!res.ok) throw new Error("Failed to fetch");
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Failed to fetch (${res.status})${text ? `: ${text.slice(0, 160)}` : ""}`);
+  }
   return res.json();
 }
 
@@ -225,11 +228,12 @@ export default function QmDashboardPage() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const { data: checklists = [], isLoading: checklistsLoading, isError: checklistsError, refetch: refetchChecklists } = useQuery<Checklist[]>({
+  const { data: checklists = [], isLoading: checklistsLoading, isError: checklistsError, error: checklistsQueryError, refetch: refetchChecklists } = useQuery<Checklist[]>({
     queryKey: ["quality-checklists"],
     queryFn: () => qFetch("/api/quality/checklists"),
     refetchOnMount: "always",
     staleTime: 10_000,
+    retry: 1,
   });
 
   const { data: warnings = [], isLoading: warningsLoading, isError: warningsError, refetch: refetchWarnings } = useQuery<Warning[]>({
@@ -504,10 +508,16 @@ export default function QmDashboardPage() {
   ].reduce((a, b) => a + b, 0);
 
   if (checklistsLoading) return <PageSkeleton lines={5} />;
-  if (checklistsError) return <PageShell className="p-4 md:p-6"><PageError title="Unable to load Quality Management" message="Failed to fetch data" onRetry={() => refetchChecklists()} /></PageShell>;
 
   return (
     <PageShell className="p-4 md:p-6" data-testid="qm-dashboard-page">
+      {checklistsError && (
+        <PageError
+          title="Unable to load some quality data"
+          message={checklistsQueryError instanceof Error ? checklistsQueryError.message : "Checklist data is temporarily unavailable. Showing the rest of the dashboard."}
+          onRetry={() => refetchChecklists()}
+        />
+      )}
       <SectionHeader
         icon={<ShieldCheck className="h-5 w-5" />}
         title="Quality Management"

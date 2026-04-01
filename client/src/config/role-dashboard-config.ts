@@ -150,10 +150,9 @@ const QUALITY_CONFIG: RoleDashboardConfig = {
   attentionPriority: ["overdue_ncrs", "quality_gate_blocks", "overdue_snags", "inspection_failures"],
   quickActions: [
     { label: "Quality Dashboard", path: "/quality", iconKey: "ShieldCheck" },
-    { label: "NCR List", path: "/quality/ncrs", iconKey: "ListTodo" },
+    { label: "Commissioning", path: "/commissioning-dashboard", iconKey: "ClipboardCheck" },
     { label: "My Tasks", path: "/my-work/tasks", iconKey: "ListChecks" },
     { label: "Projects", path: "/projects", iconKey: "FileSpreadsheet" },
-    { label: "Inspections", path: "/quality/inspections", iconKey: "ClipboardCheck" },
     { label: "Approvals", path: "/pm/approvals", iconKey: "ClipboardList" },
   ],
   cockpitPath: "/quality",
