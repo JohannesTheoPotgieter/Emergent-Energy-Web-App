@@ -2229,7 +2229,6 @@ export default function ProjectsSummary() {
     .filter(g => g.colSpan > 0);
 
   return (
-    {/* Project List is the execution directory inside Project Management — see also <a href="/pm-dashboard">PM Dashboard</a> */}
     <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
       <SectionHeader
         icon={<BarChart3 className="h-5 w-5" />}
