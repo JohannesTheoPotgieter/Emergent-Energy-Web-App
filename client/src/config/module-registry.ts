@@ -71,7 +71,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     label: 'Delivery',
     iconKey: 'Milestone',
     description: 'Delivery management — gates, construction, handovers, weekly reviews',
-    pageIds: ['gatesPipeline', 'gatesBlocked', 'gatesReady', 'gatesExceptions', 'gatesClientUpdates', 'gatesHandovers', 'gatesQueries', 'gatesCommitments', 'constructionDashboard', 'handoverControl', 'handoverDashboard', 'weeklyReviews', 'taskManagement', 'exceptions', 'pmApprovals', 'pmDeliverables', 'pmHandoverReview', 'pmOnTheGo', 'pmOnTheGoProject', 'financialReviewQueue'],
+    pageIds: ['gatesPipeline', 'gatesBlocked', 'gatesReady', 'gatesExceptions', 'gatesClientUpdates', 'gatesHandovers', 'gatesQueries', 'gatesCommitments', 'constructionDashboard', 'handoverControl', 'handoverDashboard', 'weeklyReviews', 'taskManagement', 'standups', 'exceptions', 'pmApprovals', 'pmHandoverReview', 'pmOnTheGo', 'pmOnTheGoProject', 'financialReviewQueue'],
     primaryPath: '/gates',
   },
   {
