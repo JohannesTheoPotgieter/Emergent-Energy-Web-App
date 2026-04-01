@@ -898,7 +898,7 @@ export function registerLifecycleRoutes(app: Express) {
       const revenueLines = await db.select({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
-        client: normalizedRevenueLines.client,
+        client: normalizedRevenueLines.counterpartyName,
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
@@ -913,7 +913,7 @@ export function registerLifecycleRoutes(app: Express) {
       const costLines = await db.select({
         projectId: normalizedCostLines.projectId,
         projectName: normalizedCostLines.projectName,
-        supplier: normalizedCostLines.supplier,
+        supplier: normalizedCostLines.counterpartyName,
         amountExVat: normalizedCostLines.amountExVat,
         invoiceNumber: normalizedCostLines.invoiceNumber,
         paidDateConfirmed: normalizedCostLines.paidDateConfirmed,
@@ -1242,7 +1242,7 @@ export function registerLifecycleRoutes(app: Express) {
       const revenueLines = await db.select({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
-        client: normalizedRevenueLines.client,
+        client: normalizedRevenueLines.counterpartyName,
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         invoiceDate: normalizedRevenueLines.invoiceDate,
@@ -1257,7 +1257,7 @@ export function registerLifecycleRoutes(app: Express) {
       const costLines = await db.select({
         projectId: normalizedCostLines.projectId,
         projectName: normalizedCostLines.projectName,
-        supplier: normalizedCostLines.supplier,
+        supplier: normalizedCostLines.counterpartyName,
         amountExVat: normalizedCostLines.amountExVat,
         invoiceNumber: normalizedCostLines.invoiceNumber,
         invoiceDate: normalizedCostLines.invoiceDate,
