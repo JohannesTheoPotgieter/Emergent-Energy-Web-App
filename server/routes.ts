@@ -21,7 +21,7 @@ import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { fileTypeFromBuffer } from "file-type";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, workItemDependencies, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests, projectEngApprovals, approvals } from "@shared/schema";
+import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolRecurrenceTemplates, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, workItemDependencies, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests, projectEngApprovals, approvals } from "@shared/schema";
 import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -8204,14 +8204,16 @@ export async function registerRoutes(
   app.get("/api/mytool/unclassified-tasks", requireAuth, async (req, res) => {
     try {
       const userId = resolveMyToolUserId(req);
-      const { mytoolTasks: mytoolTasksTable } = await import("@shared/schema");
-      const tasks = await db.select().from(mytoolTasksTable)
+      // Canonical: personal tasks now in work_items (workstream=PERSONAL)
+      const tasks = await db.select().from(workItems)
         .where(
           and(
-            eq(mytoolTasksTable.ownerUserId, userId),
+            eq(workItems.workstream, "PERSONAL"),
+            eq(workItems.ownerUserId, userId),
+            isNull(workItems.deletedAt),
             or(
-              isNull(mytoolTasksTable.bucket),
-              and(eq(mytoolTasksTable.bucket, 'project'), isNull(mytoolTasksTable.projectName))
+              isNull(workItems.bucket),
+              and(sql`${workItems.bucket} = 'project'`, isNull(workItems.projectId))
             )
           )
         );

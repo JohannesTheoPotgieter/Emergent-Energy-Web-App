@@ -59,7 +59,7 @@ import {
   type MilestoneTaskLink, type InsertMilestoneTaskLink,
   keyDateMappings,
   type KeyDateMapping, type InsertKeyDateMapping,
-  mytoolTasks, mytoolTimeblocks, mytoolDailyReviews, mytoolCompanyPriorities, mytoolUserPreferences, mytoolSettings,
+  mytoolTimeblocks, mytoolDailyReviews, mytoolCompanyPriorities, mytoolUserPreferences, mytoolSettings,
   mytoolEmailLinks, mytoolDodTemplates,
   errorLogs, supportTickets,
   type MytoolTask, type InsertMytoolTask, type MytoolTimeblock, type InsertMytoolTimeblock,
