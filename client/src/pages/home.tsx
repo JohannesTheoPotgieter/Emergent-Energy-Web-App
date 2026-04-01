@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link, useSearch } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
-import { AttentionBadges, type AttentionItem } from "@/components/dashboard/AttentionBadges";
+import { type AttentionItem } from "@/components/dashboard/AttentionBadges";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { apiRequest } from "@/lib/queryClient";
 import { QueryErrorBanner } from "@/components/QueryErrorBanner";
@@ -47,6 +47,8 @@ import {
   Calendar,
   MessageSquare,
   AlertCircle,
+  ChevronRight,
+  ExternalLink,
 } from "lucide-react";
 
 // Lazy-load tab content from My Work pages
@@ -196,6 +198,7 @@ export default function HomePage() {
   const urlTab = new URLSearchParams(searchString).get("tab") as HomeTab | null;
   const [activeTab, setActiveTab] = useState<HomeTab>(urlTab || "actions");
   const [prioritiesExpanded, setPrioritiesExpanded] = useState(false);
+  const [expandedAttention, setExpandedAttention] = useState<string | null>(null);
 
   const { data: dashData, isLoading: dashLoading, isError: dashIsError, error: dashError } = useQuery<any>({
     queryKey: ["/api/lifecycle-board/execution-dashboard"],
@@ -296,6 +299,53 @@ export default function HomePage() {
     if (myPendingActions > 0) items.push({ label: "My Overdue Actions", value: myPendingActions, color: "text-rose-700 bg-rose-50 border-rose-200", href: "/my-work/tasks?overdue=1" });
     return items;
   }, [stats, kpis, myPendingActions]);
+
+  /** Build action rows for each attention category so users can act inline */
+  const attentionActionRows = useMemo((): Record<string, Array<{ project: string; issue: string; severity: string; owner: string; link: string }>> => {
+    const actionRows: any[] = dashData?.actionCenter?.rows || [];
+    const projects: any[] = dashData?.projects || [];
+    const myItems: any[] = myWorkData?.items || myWorkData?.tasks || [];
+
+    const map: Record<string, Array<{ project: string; issue: string; severity: string; owner: string; link: string }>> = {};
+
+    // Red RAG Projects — from project data
+    map["Red RAG Projects"] = projects
+      .filter((p: any) => p.rag === "Red")
+      .map((p: any) => ({ project: p.projectName, issue: `RAG: Red`, severity: "High", owner: p.pm || p.pd || "Unassigned", link: `/project/${encodeURIComponent(p.projectName)}` }));
+
+    // Behind Plan — from action center queue
+    map["Behind Plan"] = actionRows
+      .filter((r: any) => r.queue === "Projects Behind Plan")
+      .map((r: any) => ({ project: r.projectName, issue: r.issueTitle, severity: r.severity, owner: r.owner, link: r.link }));
+
+    // Eng. Blockers — from action center queue
+    map["Eng. Blockers"] = actionRows
+      .filter((r: any) => r.queue === "Engineering Bottlenecks")
+      .map((r: any) => ({ project: r.projectName, issue: r.issueTitle, severity: r.severity, owner: r.owner, link: r.link }));
+
+    // Quality Warnings — from action center queue
+    map["Quality Warnings"] = actionRows
+      .filter((r: any) => r.queue === "Quality Issues")
+      .map((r: any) => ({ project: r.projectName, issue: r.issueTitle, severity: r.severity, owner: r.owner, link: r.link }));
+
+    // Pending Approvals — from action center queue
+    map["Pending Approvals"] = actionRows
+      .filter((r: any) => r.queue === "Pending Approvals / Decisions")
+      .map((r: any) => ({ project: r.projectName, issue: r.issueTitle, severity: r.severity, owner: r.owner, link: r.link }));
+
+    // My Overdue Actions — from my work data
+    map["My Overdue Actions"] = myItems
+      .filter((t: any) => {
+        if (!t.dueDate) return false;
+        const isOverdue = new Date(t.dueDate) < new Date();
+        const isOpen = !["complete", "done", "closed", "cancelled"].includes(String(t.status || "").toLowerCase());
+        return isOverdue && isOpen;
+      })
+      .slice(0, 10)
+      .map((t: any) => ({ project: t.projectName || "—", issue: t.title || t.name || "Overdue task", severity: "High", owner: "You", link: "/my-work/tasks?overdue=1" }));
+
+    return map;
+  }, [dashData, myWorkData]);
 
   const visiblePriorities = companyPriorities?.slice(0, 3) || [];
   const hiddenPriorities = companyPriorities?.slice(3) || [];
@@ -444,9 +494,67 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* 3. Attention Badges */}
-      {!isLoading && (
-        <AttentionBadges items={attentionItems} threshold={0} />
+      {/* 3. Attention Badges — Expandable with inline action items */}
+      {!isLoading && attentionItems.filter((a) => a.value > 0).length > 0 && (
+        <div className="mb-6" data-testid="section-attention-needed">
+          <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+            <ListChecks className="w-3.5 h-3.5" />
+            Attention Needed
+          </h2>
+          <div className="flex flex-wrap gap-2">
+            {attentionItems.filter((a) => a.value > 0).map((a) => (
+              <button
+                key={a.label}
+                onClick={() => setExpandedAttention(expandedAttention === a.label ? null : a.label)}
+                className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium cursor-pointer transition-colors hover:opacity-80 ${a.color} ${expandedAttention === a.label ? "ring-2 ring-offset-1 ring-current" : ""}`}
+              >
+                <span className="font-mono font-bold text-base">{a.value}</span>
+                {a.label}
+                <ChevronDown className={`w-3.5 h-3.5 opacity-50 transition-transform ${expandedAttention === a.label ? "rotate-180" : ""}`} />
+              </button>
+            ))}
+          </div>
+
+          {/* Expanded action items panel */}
+          {expandedAttention && attentionActionRows[expandedAttention]?.length > 0 && (
+            <Card className="mt-3 border-border/50">
+              <CardContent className="p-0">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/30">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{expandedAttention}</span>
+                  <Link href={attentionItems.find((a) => a.label === expandedAttention)?.href || "#"}>
+                    <span className="text-xs text-primary hover:underline flex items-center gap-1 cursor-pointer">
+                      View all <ExternalLink className="w-3 h-3" />
+                    </span>
+                  </Link>
+                </div>
+                <div className="divide-y">
+                  {attentionActionRows[expandedAttention].slice(0, 8).map((row, i) => (
+                    <Link key={i} href={row.link}>
+                      <div className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 cursor-pointer transition-colors">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">{row.project}</p>
+                          <p className="text-xs text-muted-foreground truncate">{row.issue}</p>
+                        </div>
+                        <Badge variant="outline" className={`text-[10px] shrink-0 ${row.severity === "Critical" ? "border-red-300 text-red-700" : row.severity === "High" ? "border-amber-300 text-amber-700" : "border-gray-300 text-gray-600"}`}>
+                          {row.severity}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground shrink-0 max-w-[100px] truncate">{row.owner}</span>
+                        <ChevronRight className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+                      </div>
+                    </Link>
+                  ))}
+                  {attentionActionRows[expandedAttention].length > 8 && (
+                    <Link href={attentionItems.find((a) => a.label === expandedAttention)?.href || "#"}>
+                      <div className="px-4 py-2 text-xs text-center text-primary hover:underline cursor-pointer">
+                        +{attentionActionRows[expandedAttention].length - 8} more — view all
+                      </div>
+                    </Link>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       )}
 
       {/* 4. Tab Navigation — Home absorbs My Work */}
