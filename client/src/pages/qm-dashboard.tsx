@@ -246,6 +246,14 @@ export default function QmDashboardPage() {
     staleTime: 10_000,
   });
 
+  // Consolidated quality items for governance overview
+  const { data: allQualityItems = [] } = useQuery<any[]>({
+    queryKey: ["quality-all-items"],
+    queryFn: () => qFetch("/api/quality/all-items"),
+    refetchOnMount: "always",
+    staleTime: 30_000,
+  });
+
 
   const { data: allProjects = [] } = useQuery<Array<{ project_name: string }>>({
     queryKey: ["projects-summary-names"],
@@ -557,7 +565,7 @@ export default function QmDashboardPage() {
           <CardContent className="p-3">
             <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">At-risk projects</p>
             <p className="text-xl font-bold text-emerald-600 tabular-nums mt-1">{governanceSummary?.atRiskProjects ?? 0}</p>
-            <p className="text-xs text-muted-foreground mt-1">Projects carrying elevated quality governance risk.</p>
+            <p className="text-xs text-muted-foreground mt-1">Projects carrying elevated quality governance risk. {/* Link: ?qualityItemId=N */}</p>
           </CardContent>
         </Card>
       </div>

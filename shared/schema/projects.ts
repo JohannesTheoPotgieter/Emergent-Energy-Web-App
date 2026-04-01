@@ -1313,3 +1313,24 @@ export const projectFinancialReviews = pgTable("project_financial_reviews", {
 export const insertProjectFinancialReviewSchema = createInsertSchema(projectFinancialReviews).omit({ id: true, createdAt: true, updatedAt: true } as any);
 export type InsertProjectFinancialReview = z.infer<typeof insertProjectFinancialReviewSchema>;
 export type ProjectFinancialReview = typeof projectFinancialReviews.$inferSelect;
+
+// ===================== PROJECT EVENTS (Timeline) =====================
+
+export const projectEvents = pgTable("project_events", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull(),
+  eventType: text("event_type").notNull(),
+  eventTimestamp: timestamp("event_timestamp").notNull().defaultNow(),
+  actorUserId: integer("actor_user_id"),
+  actorRole: text("actor_role"),
+  sourceEntityType: text("source_entity_type").notNull(),
+  sourceEntityId: text("source_entity_id").notNull(),
+  summary: text("summary").notNull(),
+  details: jsonb("details").default({}),
+  visibility: jsonb("visibility").default({ scope: "project" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdempotencyUnique: unique("uq_project_events_idempotency").on(table.projectId, table.idempotencyKey),
+}));
+export type ProjectEvent = typeof projectEvents.$inferSelect;
