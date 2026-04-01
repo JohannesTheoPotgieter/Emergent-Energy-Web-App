@@ -15,10 +15,18 @@ export const mytoolPriorityStatusEnum = pgEnum('mytool_priority_status', ['activ
 
 export const mytoolRecurrenceFrequencyEnum = pgEnum('mytool_recurrence_frequency', ['daily', 'weekly', 'monthly']);
 export const mytoolTaskTypeEnum = pgEnum('mytool_task_type', ['task', 'milestone']);
+// @deprecated — mytool_task_dependencies table dropped (Phase 5B). Enum retained for migration compat only.
 export const mytoolDependencyTypeEnum = pgEnum('mytool_dependency_type', ['finish_to_start', 'start_to_start', 'finish_to_finish', 'start_to_finish']);
 
 export const mytoolTaskBucketEnum = pgEnum('mytool_task_bucket', ['project', 'company_ops', 'personal']);
 
+/**
+ * @deprecated LEGACY — personal tasks now live in work_items (workstream='PERSONAL').
+ * This schema definition is retained ONLY because mytool_recurrence_instances,
+ * mytool_timeblocks, and mytool_email_links still reference it via FK.
+ * The actual table has 0 active rows. Do NOT read from or write to this table.
+ * Remove this definition when the dependent FK references are remapped.
+ */
 export const mytoolTasks = pgTable("mytool_tasks", {
   id: serial("id").primaryKey(),
   ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
@@ -64,19 +72,9 @@ export const insertMytoolTaskSchema = createInsertSchema(mytoolTasks).omit({ id:
 export type InsertMytoolTask = z.infer<typeof insertMytoolTaskSchema>;
 export type MytoolTask = typeof mytoolTasks.$inferSelect;
 
-export const mytoolTaskDependencies = pgTable("mytool_task_dependencies", {
-  id: serial("id").primaryKey(),
-  predecessorTaskId: integer("predecessor_task_id").notNull().references(() => mytoolTasks.id, { onDelete: "cascade" }),
-  successorTaskId: integer("successor_task_id").notNull().references(() => mytoolTasks.id, { onDelete: "cascade" }),
-  dependencyType: mytoolDependencyTypeEnum("dependency_type").notNull().default("finish_to_start"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  uniqueDependency: unique("mytool_task_dependencies_unique_link").on(table.predecessorTaskId, table.successorTaskId),
-}));
-
-export const insertMytoolTaskDependencySchema = createInsertSchema(mytoolTaskDependencies).omit({ id: true, createdAt: true } as any);
-export type InsertMytoolTaskDependency = z.infer<typeof insertMytoolTaskDependencySchema>;
-export type MytoolTaskDependency = typeof mytoolTaskDependencies.$inferSelect;
+// ── mytool_task_dependencies: DROPPED (Phase 5B) ──
+// Table had 0 rows. Dependencies now use canonical work_item_dependencies.
+// Schema definition removed. Table dropped via migration 20260401_drop_mytool_task_dependencies.sql.
 
 export const mytoolRecurrenceTemplates = pgTable("mytool_recurrence_templates", {
   id: serial("id").primaryKey(),
