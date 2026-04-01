@@ -26,6 +26,7 @@ import { NavOrderCustomizer } from "@/components/layout/NavOrderCustomizer";
 import { useTheme } from "@/hooks/use-theme";
 import { useBreakpoint } from "@/hooks/use-breakpoint";
 import { trackNavClick, trackPageView } from "@/lib/nav-analytics";
+import { usePrefetchRoute } from "@/hooks/use-prefetch-route";
 
 type SearchResult = { id: string; title: string; subtitle?: string; type: string; url?: string | null };
 
@@ -57,6 +58,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const lens = useLensContext();
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const subNavRef = useRef<HTMLDivElement>(null);
+  const prefetch = usePrefetchRoute();
 
   // Close search dropdown on outside click
   useEffect(() => {
@@ -388,6 +390,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                     active ? "text-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
                   )}
                   onClick={() => trackNavClick(section.label)}
+                  {...prefetch(section.path)}
                 >
                   {section.label}
                   {active && <span className="absolute bottom-0 left-3 right-3 h-[2px] bg-primary rounded-full" />}
@@ -510,6 +513,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                         aria-selected={linkIsActive(location, item.path)}
                         tabIndex={linkIsActive(location, item.path) ? 0 : -1}
                         onClick={() => trackNavClick(activeSection.label, item.label)}
+                        {...prefetch(item.path)}
                       >
                         {item.label}
                       </Link>

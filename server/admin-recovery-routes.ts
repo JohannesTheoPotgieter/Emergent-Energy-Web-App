@@ -6,7 +6,7 @@ import { eq, and, sql, desc, ilike, isNull, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { logAuditFromReq } from "./audit-logger";
 import {
-  mytoolTasks, workItems,
+  workItems,
   smartImportRuns, importIssues, projectInfo, users,
 } from "@shared/schema";
 import { normalizeStatus } from "./lib/canonical-task-engine";
@@ -85,16 +85,14 @@ export function registerAdminRecoveryRoutes(app: Express) {
       }
 
       if (!params.taskType || params.taskType === "personal") {
-        let query = db.select().from(mytoolTasks);
-        const conditions: ReturnType<typeof eq>[] = [];
-        if (searchTerm) conditions.push(ilike(mytoolTasks.title, searchTerm));
-        if (params.status) conditions.push(eq(mytoolTasks.status, params.status));
-        if (params.projectName) conditions.push(eq(mytoolTasks.projectName, params.projectName));
-        if (params.assigneeUserId) conditions.push(eq(mytoolTasks.ownerUserId, parseInt(params.assigneeUserId)));
+        // Canonical: personal tasks now live in work_items (workstream=PERSONAL)
+        let query = db.select().from(workItems);
+        const conditions: ReturnType<typeof eq>[] = [eq(workItems.workstream, 'PERSONAL' as any)];
+        if (searchTerm) conditions.push(ilike(workItems.title, searchTerm));
+        if (params.status) conditions.push(eq(workItems.status, params.status));
+        if (params.assigneeUserId) conditions.push(eq(workItems.ownerUserId, parseInt(params.assigneeUserId)));
 
-        const rows = conditions.length > 0
-          ? await query.where(and(...conditions)).orderBy(desc(mytoolTasks.updatedAt)).limit(limit).offset(offset)
-          : await query.orderBy(desc(mytoolTasks.updatedAt)).limit(limit).offset(offset);
+        const rows = await query.where(and(...conditions)).orderBy(desc(workItems.updatedAt)).limit(limit).offset(offset);
 
         for (const r of rows) {
           results.push({ ...r, taskType: "personal", taskSource: "personal" });
@@ -227,14 +225,14 @@ export function registerAdminRecoveryRoutes(app: Express) {
           break;
         }
         case "personal": {
+          // Canonical: personal tasks now live in work_items (workstream=PERSONAL)
           const setObj: Record<string, unknown> = {};
           if (fields.status !== undefined) setObj.status = fields.status;
           if (fields.title !== undefined) setObj.title = fields.title;
-          if (fields.projectName !== undefined) setObj.projectName = fields.projectName;
           if (fields.ownerUserId !== undefined) setObj.ownerUserId = fields.ownerUserId;
           if (fields.priority !== undefined) setObj.priority = fields.priority;
           setObj.updatedAt = new Date();
-          await db.update(mytoolTasks).set(setObj).where(eq(mytoolTasks.id, taskId));
+          await db.update(workItems).set(setObj).where(eq(workItems.id, taskId));
           break;
         }
         case "engineering_task": {
@@ -354,15 +352,16 @@ export function registerAdminRecoveryRoutes(app: Express) {
       // Operational tasks now in work_items — duplicates the deleted eng tasks query above
       const deletedOpTasks: Record<string, unknown>[] = [];
 
+      // Canonical: soft-deleted personal tasks now in work_items (workstream=PERSONAL)
       const deletedMytoolTasks = await db.select({
-        id: mytoolTasks.id,
-        title: mytoolTasks.title,
-        status: mytoolTasks.status,
-        deletedAt: mytoolTasks.deletedAt,
-        ownerUserId: mytoolTasks.ownerUserId,
-      }).from(mytoolTasks)
-        .where(isNotNull(mytoolTasks.deletedAt))
-        .orderBy(desc(mytoolTasks.deletedAt))
+        id: workItems.id,
+        title: workItems.title,
+        status: workItems.status,
+        deletedAt: workItems.deletedAt,
+        ownerUserId: workItems.ownerUserId,
+      }).from(workItems)
+        .where(and(eq(workItems.workstream, 'PERSONAL' as any), isNotNull(workItems.deletedAt)))
+        .orderBy(desc(workItems.deletedAt))
         .limit(100);
 
       const items = [
@@ -416,7 +415,8 @@ export function registerAdminRecoveryRoutes(app: Express) {
           await db.update(workItems).set({ deletedAt: null }).where(eq(workItems.id, item.id));
           restored++;
         } else if (item.type === "mytool_task") {
-          await db.update(mytoolTasks).set({ deletedAt: null }).where(eq(mytoolTasks.id, item.id));
+          // Canonical: personal tasks now in work_items
+          await db.update(workItems).set({ deletedAt: null }).where(eq(workItems.id, item.id));
           restored++;
         }
       }
