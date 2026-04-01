@@ -120,6 +120,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "adminRecovery", path: "/admin/recovery", label: "Recovery Center", iconKey: "ShieldAlert", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminRecoveryPage" },
   { id: "stageAdmin", path: "/admin/stage-lifecycle", label: "Stage Lifecycle", iconKey: "Milestone", navGroup: "SYSTEM", permissionEntity: "stage_admin", showInSidebar: false, routeComponentKey: "StageAdminPage" },
   { id: "adminControlCenter", path: "/admin/control-center", label: "Control Center", iconKey: "Gauge", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "AdminControlCenterPage" },
+  { id: "clientProjectDepartments", path: "/clients/:clientId/project/:projectId", label: "Project Departments", permissionEntity: "pd_clients", routeComponentKey: "ClientProjectDepartmentsPage" },
+  { id: "clientDetail", path: "/clients/:clientId", label: "Client Detail", permissionEntity: "pd_clients", routeComponentKey: "ClientDetailPage" },
   { id: "clients", path: "/clients", label: "Clients", iconKey: "Users", navGroup: "PROJECTS", permissionEntity: "pd_clients", showInSidebar: true, routeComponentKey: "ClientsPage", aliases: ["/pd/clients"] },
   { id: "actionLaunchpad", path: "/actions/launchpad", label: "Quick Create", routeComponentKey: "ActionLaunchpadPage" },
   // Active version: pd-pm-handover-v2.tsx. v1 removed 2026-03-31.
