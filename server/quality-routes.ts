@@ -1540,22 +1540,33 @@ export function registerQualityRoutes(app: Express) {
       }
       const dedupedChecklists = [...checklistByProject.values()];
       const projectIds = uniqueNumberList(dedupedChecklists.map((checklist) => checklist.projectId));
-      const allProjectRows = projectIds.length > 0
-        ? await db.select().from(projectInfo)
-            .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-            .where(inArray(projectInfo.id, projectIds))
-        : [];
+      const allProjectRows = await db.select().from(projectInfo)
+        .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
       const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
+      const projectNameMap = new Map<string, ProjectInfoRow>();
+      for (const project of allProjects) {
+        if (project?.projectName) {
+          projectNameMap.set(normalizeProjectName(project.projectName), project);
+        }
+      }
 
-      const handoverRows: any[] = await fetchProjectHandoverRows(projectIds);
+      const linkedProjectIds = uniqueNumberList(
+        dedupedChecklists.map((checklist) => {
+          if (checklist.projectId) return checklist.projectId;
+          const linkedProject = projectNameMap.get(normalizeProjectName(checklist.projectName));
+          return linkedProject?.id ?? null;
+        }),
+      );
+      const handoverRows: any[] = await fetchProjectHandoverRows(linkedProjectIds);
       const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
 
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
       const warningsByProject: Record<string, number> = {};
       for (const w of allWarnings) {
         if (w.warningType === "task_complete_unapproved") continue;
-        warningsByProject[w.projectName] = (warningsByProject[w.projectName] || 0) + 1;
+        const key = normalizeProjectName(w.projectName);
+        warningsByProject[key] = (warningsByProject[key] || 0) + 1;
       }
 
       const allPlanLinks = await db.select().from(qcPlanLink);
@@ -1574,7 +1585,8 @@ export function registerQualityRoutes(app: Express) {
           if (!item || !item.isApplicable || item.approved) continue;
           const task = allPlanTasks.find((t: any) => t.id === link.planItemId);
           if (task && (task.actualPctComplete ?? 0) >= 1) {
-            warningsByProject[link.projectName] = (warningsByProject[link.projectName] || 0) + 1;
+            const key = normalizeProjectName(link.projectName);
+            warningsByProject[key] = (warningsByProject[key] || 0) + 1;
           }
         }
       } catch (err: unknown) {
@@ -1604,8 +1616,11 @@ export function registerQualityRoutes(app: Express) {
       const result = await Promise.all(dedupedChecklists.map(async (cl) => {
         const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, cl.templateId));
         const clItems = allItems.filter((i: any) => i.checklistId === cl.id);
-        const project = projectMap.get(cl.projectId);
-        const handover = handoverMap.get(cl.projectId);
+        const linkedProject = cl.projectId
+          ? projectMap.get(cl.projectId)
+          : projectNameMap.get(normalizeProjectName(cl.projectName));
+        const resolvedProjectName = linkedProject?.projectName || cl.projectName;
+        const handover = linkedProject?.id ? handoverMap.get(linkedProject.id) : undefined;
 
         const phaseData = phases.map((phase: any) => {
           const phaseGroups = groups.filter(g => g.templatePhaseId === phase.id);
@@ -1653,8 +1668,8 @@ export function registerQualityRoutes(app: Express) {
           item.evidenceCount > 0
         ));
 
-        const storedProjectWarnings = allWarnings.filter((warning: any) => warning.projectName === cl.projectName);
-        const syntheticWarningCount = Math.max(0, (warningsByProject[cl.projectName] || 0) - storedProjectWarnings.length);
+        const storedProjectWarnings = allWarnings.filter((warning: any) => normalizeProjectName(warning.projectName) === normalizeProjectName(resolvedProjectName));
+        const syntheticWarningCount = Math.max(0, (warningsByProject[normalizeProjectName(resolvedProjectName)] || 0) - storedProjectWarnings.length);
         const warningInputs = [
           ...storedProjectWarnings,
           ...Array.from({ length: syntheticWarningCount }, () => ({ severity: "High", status: "open" })),
@@ -1665,8 +1680,8 @@ export function registerQualityRoutes(app: Express) {
           qualityStatus: handover?.quality_status || null,
           handoverStatus: handover?.status || null,
           rejectionReason: handover?.rejection_reason || null,
-          executionEnabled: project?.executionEnabled ?? false,
-          executionGateStatus: project?.executionGateStatus ?? "NOT_ELIGIBLE",
+          executionEnabled: linkedProject?.executionEnabled ?? false,
+          executionGateStatus: linkedProject?.executionGateStatus ?? "NOT_ELIGIBLE",
         };
         const riskSummary = computeQualityRiskSummary({
           items: governanceItems,
@@ -1676,8 +1691,9 @@ export function registerQualityRoutes(app: Express) {
 
         return {
           id: cl.id,
-          projectId: cl.projectId,
-          projectName: cl.projectName,
+          projectId: linkedProject?.id ?? cl.projectId ?? null,
+          projectName: resolvedProjectName,
+          phase: linkedProject?.executionPhase || linkedProject?.phase || null,
           templateId: cl.templateId,
           status: cl.status,
           createdAt: cl.createdAt,
@@ -1685,7 +1701,7 @@ export function registerQualityRoutes(app: Express) {
           phases: phaseData,
           checklistItemCount: clItems.length,
           hasLoggedActivity,
-          warningCount: warningsByProject[cl.projectName] || 0,
+          warningCount: warningsByProject[normalizeProjectName(resolvedProjectName)] || 0,
           overdueCount: riskSummary.exposures.overdueCount,
           resubmissionCount: riskSummary.exposures.resubmissionCount,
           evidenceGapCount: riskSummary.exposures.evidenceGapCount,
