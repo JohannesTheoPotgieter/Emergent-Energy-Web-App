@@ -358,7 +358,7 @@ export default function CounterpartiesPage() {
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Counterparties" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
-    <FinanceShell currentPage="counterparties"><div className="space-y-6" data-testid="counterparties-page">
+    <FinanceShell><div className="space-y-6" data-testid="counterparties-page">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Counterparties</h2>

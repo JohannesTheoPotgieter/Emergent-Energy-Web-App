@@ -229,7 +229,7 @@ export default function GpTrackerPage() {
   }
 
   return (
-    <FinanceShell currentPage="gp-tracker"><div className="p-6 space-y-6 max-w-[1600px] mx-auto" data-testid="gp-tracker-page">
+    <FinanceShell><div className="p-6 space-y-6 max-w-[1600px] mx-auto" data-testid="gp-tracker-page">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">GP Tracker</h1>
