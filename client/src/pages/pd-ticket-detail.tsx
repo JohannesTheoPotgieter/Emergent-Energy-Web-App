@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { usePermission } from "@/hooks/use-permissions";
 import { useLocation, useRoute } from "wouter";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -52,6 +53,7 @@ export default function PdTicketDetailPage() {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
+  const { allowed: canCreateEngineeringTicket } = usePermission("pd_quality", "edit");
 
   const { data, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/pd/tickets", ticketId],
@@ -107,6 +109,17 @@ export default function PdTicketDetailPage() {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets", ticketId] });
       toast({ title: "Tasks spawned", description: `${result.spawned} tasks created` });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const createEngTaskMutation = useMutation({
+    mutationFn: (body: { title: string; description?: string; priority?: string; dueDate?: string; ownerUserId?: number | null }) =>
+      pdFetch(`/api/pd/tickets/${ticketId}/engineering-tasks`, { method: "POST", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pd/tickets", ticketId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/eng/tasks"] });
+      toast({ title: "Engineering ticket created" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -396,13 +409,16 @@ export default function PdTicketDetailPage() {
         </CardContent>
       </Card>
 
-      <SpawnedTasksCard
-        tasks={tasks}
-        ticket={t}
-        spawnMutation={spawnMutation}
-        navigate={navigate}
-        ticketId={ticketId!}
-      />
+          <SpawnedTasksCard
+            tasks={tasks}
+            ticket={t}
+            spawnMutation={spawnMutation}
+            createEngTaskMutation={createEngTaskMutation}
+            navigate={navigate}
+            ticketId={ticketId!}
+            canCreateEngineeringTicket={canCreateEngineeringTicket}
+            users={allUsers}
+          />
 
       {activity.length > 0 && (
         <Card>
@@ -439,17 +455,28 @@ export default function PdTicketDetailPage() {
   );
 }
 
-function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate, ticketId }: {
+function SpawnedTasksCard({ tasks, ticket, spawnMutation, createEngTaskMutation, navigate, ticketId, canCreateEngineeringTicket, users }: {
   tasks: any[];
   ticket: any;
   spawnMutation: any;
+  createEngTaskMutation: any;
   navigate: (path: string) => void;
   ticketId: string;
+  canCreateEngineeringTicket: boolean;
+  users: any[];
 }) {
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedTemplates, setSelectedTemplates] = useState<Set<string>>(new Set());
   const [customTasks, setCustomTasks] = useState<{ title: string; priority: string }[]>([]);
   const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const [newTask, setNewTask] = useState({
+    title: "",
+    description: "",
+    priority: "Medium",
+    dueDate: ticket?.dueDate || "",
+    ownerUserId: "",
+  });
 
   const { data: templateData } = useQuery<{ requestType: string; templates: { title: string; priority: string }[] }>({
     queryKey: ["/api/pd/tickets", ticketId, "task-templates"],
@@ -507,6 +534,30 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate, ticketId }: 
       }
     );
   };
+  const handleCreateEngineeringTicket = () => {
+    if (!newTask.title.trim()) return;
+    createEngTaskMutation.mutate(
+      {
+        title: newTask.title.trim(),
+        description: newTask.description.trim() || undefined,
+        priority: newTask.priority,
+        dueDate: newTask.dueDate || undefined,
+        ownerUserId: newTask.ownerUserId ? parseInt(newTask.ownerUserId) : null,
+      },
+      {
+        onSuccess: () => {
+          setCreateDialogOpen(false);
+          setNewTask({
+            title: "",
+            description: "",
+            priority: "Medium",
+            dueDate: ticket?.dueDate || "",
+            ownerUserId: "",
+          });
+        },
+      }
+    );
+  };
 
   const completed = tasks.filter((t: any) => t.status === "COMPLETE").length;
   const inProgress = tasks.filter((t: any) => t.status === "IN PROGRESS").length;
@@ -527,11 +578,19 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate, ticketId }: 
             Engineering Tasks
             <Badge variant="secondary" className="text-[10px]">{tasks.length}</Badge>
           </span>
-          {tasks.length === 0 && !ticket.tasksSpawnedAt && (
-            <Button size="sm" variant="outline" onClick={openSpawnDialog} data-testid="btn-spawn-tasks">
-              Spawn Tasks
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {canCreateEngineeringTicket && (
+              <Button size="sm" onClick={() => setCreateDialogOpen(true)} data-testid="btn-add-engineering-ticket">
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add Engineering Ticket
+              </Button>
+            )}
+            {canCreateEngineeringTicket && tasks.length === 0 && !ticket.tasksSpawnedAt && (
+              <Button size="sm" variant="outline" onClick={openSpawnDialog} data-testid="btn-spawn-tasks">
+                Spawn from Template
+              </Button>
+            )}
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -662,6 +721,85 @@ function SpawnedTasksCard({ tasks, ticket, spawnMutation, navigate, ticketId }: 
           </>
         )}
       </CardContent>
+
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add Engineering Ticket</DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              This ticket will be linked to project <strong>{ticket.projectSiteName}</strong> and appear in Engineering Tasks.
+            </p>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label>Title</Label>
+              <Input
+                value={newTask.title}
+                onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Enter engineering ticket title"
+                data-testid="input-new-engineering-ticket-title"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Description</Label>
+              <Textarea
+                value={newTask.description}
+                onChange={(e) => setNewTask(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Optional details"
+                rows={3}
+                data-testid="input-new-engineering-ticket-description"
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label>Priority</Label>
+                <select
+                  value={newTask.priority}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, priority: e.target.value }))}
+                  className="w-full border rounded-md px-2 py-2 text-sm bg-background"
+                >
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <Label>Due Date</Label>
+                <Input
+                  type="date"
+                  value={newTask.dueDate}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, dueDate: e.target.value }))}
+                  data-testid="input-new-engineering-ticket-due-date"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Assignee</Label>
+                <select
+                  value={newTask.ownerUserId}
+                  onChange={(e) => setNewTask(prev => ({ ...prev, ownerUserId: e.target.value }))}
+                  className="w-full border rounded-md px-2 py-2 text-sm bg-background"
+                >
+                  <option value="">Unassigned</option>
+                  {users.map((u: any) => (
+                    <option key={u.id} value={String(u.id)}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleCreateEngineeringTicket}
+              disabled={!newTask.title.trim() || createEngTaskMutation.isPending}
+              data-testid="btn-create-engineering-ticket"
+            >
+              {createEngTaskMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />}
+              Create Engineering Ticket
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={spawnDialogOpen} onOpenChange={setSpawnDialogOpen}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
