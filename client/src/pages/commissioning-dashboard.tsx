@@ -134,7 +134,49 @@ export default function CommissioningDashboardPage() {
 
   const projectOptions = useMemo(() => {
     if (!projectsSummary) return [];
-    return projectsSummary.map((p: any) => ({ value: String(p.id), label: p.projectName || `Project ${p.id}` }));
+
+    const seenIds = new Set<number>();
+    const malformed: Array<{ index: number; projectId: unknown; projectName: unknown }> = [];
+    const duplicateIds: number[] = [];
+
+    const options = projectsSummary
+      .map((p: any, index: number) => {
+        const canonicalId = Number(
+          p?.shared_summary?.project?.canonicalProjectId
+          ?? p?.project_info_id
+          ?? p?.id
+        );
+        const canonicalName =
+          p?.shared_summary?.project?.projectName
+          ?? p?.project_name
+          ?? p?.projectName
+          ?? p?.name
+          ?? null;
+
+        if (!Number.isFinite(canonicalId) || canonicalId <= 0 || typeof canonicalName !== "string" || !canonicalName.trim()) {
+          malformed.push({ index, projectId: p?.project_info_id ?? p?.id, projectName: p?.project_name ?? p?.projectName ?? p?.name });
+          return null;
+        }
+
+        if (seenIds.has(canonicalId)) {
+          duplicateIds.push(canonicalId);
+          return null;
+        }
+
+        seenIds.add(canonicalId);
+        return { value: String(canonicalId), label: canonicalName.trim() };
+      })
+      .filter((option): option is { value: string; label: string } => option !== null)
+      .sort((a, b) => a.label.localeCompare(b.label));
+
+    if (malformed.length > 0) {
+      console.warn("[commissioning-dashboard] Excluding malformed project records from selector", malformed);
+    }
+    if (duplicateIds.length > 0) {
+      console.warn("[commissioning-dashboard] Excluding duplicate project IDs from selector", duplicateIds);
+    }
+
+    return options;
   }, [projectsSummary]);
 
   const { data: dashboard, isLoading: dashboardLoading, error: dashboardError } = useQuery<CommissioningDashboardPayload>({

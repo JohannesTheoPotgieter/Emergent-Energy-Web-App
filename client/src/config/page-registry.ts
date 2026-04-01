@@ -38,6 +38,7 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/exceptions", redirectTo: "/gates/exceptions" },
   { path: "/project-lifecycle", redirectTo: "/lifecycle-board" },
   { path: "/command-center", redirectTo: "/my-work" },
+  { path: "/sseg", redirectTo: "/handover?tab=sseg" },
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
@@ -63,8 +64,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "sharepointIntake", path: "/admin/sharepoint-intake", label: "SharePoint Intake", iconKey: "Cloud", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "SharePointIntakePage" },
   { id: "quality", path: "/quality", label: "Quality", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage", roleLandingEligibility: ["QUALITY_MANAGER"] },
   { id: "qualityDashboardV2", path: "/quality/dashboard", label: "Quality Dashboard (Project)", type: "alias", permissionEntity: "quality", redirectTo: "/quality" },
-  { id: "qualityNcrList", path: "/quality/ncrs", label: "NCR List", iconKey: "ListTodo", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "NcrListPage" },
-  { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail", permissionEntity: "quality", showInSidebar: false, routeComponentKey: "NcrDetailPage" },
+  { id: "qualityNcrList", path: "/quality/ncrs", label: "NCR List (Legacy)", type: "alias", permissionEntity: "quality", showInSidebar: false, redirectTo: "/quality" },
+  { id: "qualityNcrDetail", path: "/quality/ncr/:id", label: "NCR Detail (Legacy)", type: "alias", permissionEntity: "quality", showInSidebar: false, redirectTo: "/quality" },
   { id: "engineering", path: "/engineering", label: "Engineering", iconKey: "Wrench", navGroup: "ENGINEERING", permissionEntity: "engineering", showInSidebar: true, routeComponentKey: "EngineeringDashboardPage", roleLandingEligibility: ["ENGINEERING_MANAGER", "ENGINEER"] },
   { id: "engineeringTasks", path: "/engineering/tasks", label: "Task Board", iconKey: "ListTodo", navGroup: "ENGINEERING", permissionEntity: "eng_tasks", showInSidebar: true, routeComponentKey: "EngineeringTasksPage" },
   { id: "engineeringStandup", path: "/engineering/standup", label: "Engineering Standup", iconKey: "Users", navGroup: "ENGINEERING", permissionEntity: "standups", showInSidebar: true, routeComponentKey: "EngineeringStandupPage" },
@@ -175,8 +176,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "gatesCommitments", path: "/gates/commitments", label: "Client Commitments", iconKey: "Handshake", navGroup: "GATES", permissionEntity: "lifecycle", showInSidebar: true, routeComponentKey: "GatesCommitmentsPage" },
   // Milestone Tracker — standalone page for Construction Manager
   { id: "milestoneTracker", path: "/milestone-tracker", label: "Milestone Tracker", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
-  // Commissioning Control Tower — workbook-driven dashboard (project-scoped)
-  { id: "sseg", path: "/sseg", label: "SSEG", iconKey: "Zap", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "SsegPage" },
   { id: "commissioningOverview", path: "/commissioning-dashboard", label: "Commissioning", iconKey: "Shield", navGroup: "QUALITY", permissionEntity: "commissioning", showInSidebar: true, routeComponentKey: "CommissioningDashboardPage" },
   { id: "commissioningDashboard", path: "/commissioning-dashboard/:projectId", label: "Commissioning Dashboard", permissionEntity: "commissioning", showInSidebar: false, routeComponentKey: "CommissioningDashboardPage" },
 ];
@@ -280,10 +279,6 @@ export function getAppSectionForPath(pathname: string): string | undefined {
   }
   // Execution Board lives under Project Delivery
   if (pathname === "/execution-board" || pathname.startsWith("/execution-board/")) {
-    return "PROJECT_DELIVERY";
-  }
-  // SSEG lives under Project Delivery
-  if (pathname === "/sseg" || pathname.startsWith("/sseg/")) {
     return "PROJECT_DELIVERY";
   }
   // PM Dashboard lives under Project Delivery
