@@ -12,6 +12,7 @@ export interface GateProjectCard {
   pm: string | null;
   pd: string | null;
   constructionManager: string | null;
+  constructionManagerName?: string | null;
   currentStageCode: string | null;
   gateStatus: string | null;
   gateReadinessPct: number;
@@ -29,6 +30,18 @@ export interface GateProjectCard {
 export interface GatesPipelinePayload {
   projects: GateProjectCard[];
   stageCounts: Record<string, number>;
+  diagnostics?: {
+    totalProjects?: number;
+    activeExecutionRows?: number;
+    nonArchivedExecutionRows?: number;
+    schemaFallback?: boolean;
+    schemaIssueCode?: string;
+    schemaIssueMessage?: string;
+    appliedFilters?: {
+      requireActiveExecution?: boolean;
+      requireActiveArchiveStatus?: boolean;
+    };
+  };
 }
 
 export function useGatesPipeline() {
