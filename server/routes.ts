@@ -21,7 +21,7 @@ import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { fileTypeFromBuffer } from "file-type";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests, projectEngApprovals, approvals } from "@shared/schema";
+import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, mytoolTasks, mytoolTaskDependencies, mytoolRecurrenceTemplates, mytoolRecurrenceInstances, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, workItemDependencies, clients, projectClientHistory, trItems, deliverables, uploadMetadata, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, entityAssignments, programExpense, financialEditRequests, projectEngApprovals, approvals } from "@shared/schema";
 import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -158,17 +158,23 @@ function isCashflowConfirmedCheck(exp: any): boolean {
 async function enrichMytoolTasks(userId: number, tasks: any[]) {
   if (!tasks.length) return tasks;
   const ids = tasks.map((t) => t.id);
-  const deps = await db.select().from(mytoolTaskDependencies).where(or(inArray(mytoolTaskDependencies.predecessorTaskId, ids), inArray(mytoolTaskDependencies.successorTaskId, ids)));
+  // Canonical: read from work_item_dependencies (FKs to work_items.id)
+  const deps = await db.select().from(workItemDependencies).where(
+    and(
+      or(inArray(workItemDependencies.predecessorId, ids), inArray(workItemDependencies.successorId, ids)),
+      isNull(workItemDependencies.deletedAt),
+    )
+  );
   const taskById = new Map<number, any>(tasks.map((t) => [t.id, t]));
 
   for (const task of tasks) {
-    const blockedBy = deps.filter((d) => d.successorTaskId === task.id).map((d) => {
-      const predecessor = taskById.get(d.predecessorTaskId);
-      return { ...d, predecessorStatus: predecessor?.status ?? null, predecessorTitle: predecessor?.title ?? null };
+    const blockedBy = deps.filter((d) => d.successorId === task.id).map((d) => {
+      const predecessor = taskById.get(d.predecessorId);
+      return { ...d, predecessorTaskId: d.predecessorId, successorTaskId: d.successorId, predecessorStatus: predecessor?.status ?? null, predecessorTitle: predecessor?.title ?? null };
     });
-    const blocking = deps.filter((d) => d.predecessorTaskId === task.id).map((d) => {
-      const successor = taskById.get(d.successorTaskId);
-      return { ...d, successorStatus: successor?.status ?? null, successorTitle: successor?.title ?? null };
+    const blocking = deps.filter((d) => d.predecessorId === task.id).map((d) => {
+      const successor = taskById.get(d.successorId);
+      return { ...d, predecessorTaskId: d.predecessorId, successorTaskId: d.successorId, successorStatus: successor?.status ?? null, successorTitle: successor?.title ?? null };
     });
 
     const blockersIncomplete = blockedBy.filter((d) => shouldBlockTask([d.predecessorStatus]));
@@ -6804,6 +6810,10 @@ export async function registerRoutes(
     }
   });
 
+  // Canonical: personal task dependencies now use work_item_dependencies (FKs to work_items.id)
+  const DEP_TYPE_TO_CANONICAL: Record<string, string> = { finish_to_start: "FS", start_to_start: "SS", finish_to_finish: "FF", start_to_finish: "SF" };
+  const DEP_TYPE_FROM_CANONICAL: Record<string, string> = { FS: "finish_to_start", SS: "start_to_start", FF: "finish_to_finish", SF: "start_to_finish" };
+
   app.get("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const taskId = Number(req.params.id);
@@ -6812,8 +6822,20 @@ export async function registerRoutes(
       if (task && task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
         return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
       }
-      const deps = await db.select().from(mytoolTaskDependencies).where(or(eq(mytoolTaskDependencies.predecessorTaskId, taskId), eq(mytoolTaskDependencies.successorTaskId, taskId)));
-      res.json(deps);
+      const deps = await db.select().from(workItemDependencies).where(
+        and(
+          or(eq(workItemDependencies.predecessorId, taskId), eq(workItemDependencies.successorId, taskId)),
+          isNull(workItemDependencies.deletedAt),
+        )
+      );
+      // Map response to legacy shape for backward compat
+      res.json(deps.map((d) => ({
+        id: d.id,
+        predecessorTaskId: d.predecessorId,
+        successorTaskId: d.successorId,
+        dependencyType: DEP_TYPE_FROM_CANONICAL[d.depType] || "finish_to_start",
+        createdAt: null,
+      })));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6825,6 +6847,7 @@ export async function registerRoutes(
       const successorTaskId = Number(req.params.id);
       const predecessorTaskId = Number(req.body.predecessorTaskId);
       const dependencyType = req.body.dependencyType || "finish_to_start";
+      const depType = DEP_TYPE_TO_CANONICAL[dependencyType] || "FS";
       // Verify user owns the successor task
       const task = await storage.getMytoolTask(successorTaskId);
       if (task && task.ownerUserId !== userId && !isMyToolOversightRole(req)) {
@@ -6833,14 +6856,24 @@ export async function registerRoutes(
       const validationMessage = validateDependencyPair(predecessorTaskId, successorTaskId);
       if (validationMessage) return res.status(400).json({ error: validationMessage });
 
-      const predecessorLinks = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.successorTaskId, predecessorTaskId));
-      if (predecessorLinks.some((l) => l.predecessorTaskId === successorTaskId)) {
+      const predecessorLinks = await db.select().from(workItemDependencies).where(
+        and(eq(workItemDependencies.successorId, predecessorTaskId), isNull(workItemDependencies.deletedAt))
+      );
+      if (predecessorLinks.some((l) => l.predecessorId === successorTaskId)) {
         return res.status(400).json({ error: "Circular dependency is not allowed" });
       }
 
-      const [created] = await db.insert(mytoolTaskDependencies).values({ predecessorTaskId, successorTaskId, dependencyType }).onConflictDoNothing().returning();
+      const [created] = await db.insert(workItemDependencies).values({
+        predecessorId: predecessorTaskId,
+        successorId: successorTaskId,
+        depType: depType as any,
+      }).onConflictDoNothing().returning();
       await refreshDependentTaskStates(predecessorTaskId);
-      res.json(created || { predecessorTaskId, successorTaskId, dependencyType, duplicate: true });
+      // Map response to legacy shape for backward compat
+      const result = created
+        ? { id: created.id, predecessorTaskId: created.predecessorId, successorTaskId: created.successorId, dependencyType }
+        : { predecessorTaskId, successorTaskId, dependencyType, duplicate: true };
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -6855,9 +6888,10 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
       }
       const dependencyId = Number(req.params.dependencyId);
-      const [dep] = await db.select().from(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
-      await db.delete(mytoolTaskDependencies).where(eq(mytoolTaskDependencies.id, dependencyId));
-      if (dep) await refreshDependentTaskStates(dep.predecessorTaskId);
+      const [dep] = await db.select().from(workItemDependencies).where(eq(workItemDependencies.id, dependencyId));
+      // Soft-delete to match work_item_dependencies pattern
+      await db.update(workItemDependencies).set({ deletedAt: new Date(), deletedBy: userId }).where(eq(workItemDependencies.id, dependencyId));
+      if (dep) await refreshDependentTaskStates(dep.predecessorId);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
