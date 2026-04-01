@@ -5,6 +5,7 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { jwtAuth, requireAuth } from "../auth-context";
 
 // Helper: execute a query, returning empty array if a referenced table/column doesn't exist
 async function safeQuery(query: ReturnType<typeof sql>) {
@@ -22,7 +23,7 @@ export function registerApprovalsRoutes(app: Express) {
 
 // ── Unified approvals queue ────────────────────────────────
 
-app.get("/api/approvals", async (req, res) => {
+app.get("/api/approvals", jwtAuth, requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id || 0;
     const typeFilter = req.query.type as string | undefined;
@@ -107,7 +108,7 @@ app.get("/api/approvals", async (req, res) => {
 
 // ── Approval count for badges ──────────────────────────────
 
-app.get("/api/approvals/count", async (req, res) => {
+app.get("/api/approvals/count", jwtAuth, requireAuth, async (req, res) => {
   try {
     const userId = (req as any).user?.id || 0;
 
@@ -157,7 +158,7 @@ app.get("/api/approvals/count", async (req, res) => {
 
 // ── Approval action ────────────────────────────────────────
 
-app.patch("/api/approvals/:type/:id/action", async (req, res) => {
+app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, async (req, res) => {
   try {
     const { type, id } = req.params;
     const { action, comment, delegateToUserId } = req.body;

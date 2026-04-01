@@ -5,12 +5,13 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { jwtAuth, requireAuth } from "../auth-context";
 
 export function registerGovernanceViewsRoutes(app: Express) {
 
 // ── Quality Governance ─────────────────────────────────────
 
-app.get("/api/governance/quality", async (req, res) => {
+app.get("/api/governance/quality", jwtAuth, requireAuth, async (req, res) => {
   try {
     // Cross-project quality data aggregation
     const [commissioningReviews, openSnags, qualityChecklist] = await Promise.all([
@@ -77,7 +78,7 @@ app.get("/api/governance/quality", async (req, res) => {
 
 // ── Quality action ─────────────────────────────────────────
 
-app.patch("/api/governance/quality/:id/action", async (req, res) => {
+app.patch("/api/governance/quality/:id/action", jwtAuth, requireAuth, async (req, res) => {
   try {
     const itemId = Number(req.params.id);
     const { action, assignToUserId, notes } = req.body;
@@ -112,7 +113,7 @@ app.patch("/api/governance/quality/:id/action", async (req, res) => {
 
 // ── Compliance Governance ──────────────────────────────────
 
-app.get("/api/governance/compliance", async (req, res) => {
+app.get("/api/governance/compliance", jwtAuth, requireAuth, async (req, res) => {
   try {
     const [ssegByProject, authoritySubmissions, rmaItems] = await Promise.all([
       // SSEG items by project
@@ -179,7 +180,7 @@ app.get("/api/governance/compliance", async (req, res) => {
 
 // ── Compliance action ──────────────────────────────────────
 
-app.patch("/api/governance/compliance/:id/action", async (req, res) => {
+app.patch("/api/governance/compliance/:id/action", jwtAuth, requireAuth, async (req, res) => {
   try {
     const itemId = Number(req.params.id);
     const { action, status } = req.body;
