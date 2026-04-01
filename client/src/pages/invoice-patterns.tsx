@@ -468,7 +468,7 @@ export default function InvoicePatternsPage() {
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Invoice Patterns" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
-    <FinanceShell currentPage="invoice-patterns"><div className="space-y-6" data-testid="invoice-patterns-page">
+    <FinanceShell><div className="space-y-6" data-testid="invoice-patterns-page">
       <div className="flex flex-col gap-2">
         <h2 className="text-2xl font-bold text-foreground" data-testid="text-page-title">Commercial Invoice Pattern Library</h2>
         <p className="text-muted-foreground text-sm">
