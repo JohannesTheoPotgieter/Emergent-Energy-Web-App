@@ -23,6 +23,11 @@ const TASK_QUERY_KEY_PREFIXES = [
   "operational-tasks",
   // Planning tasks
   "planning-tasks",
+  // Entity-specific assignment caches
+  "commissioning",
+  "procurement",
+  "raid",
+  "change-control",
 ] as const;
 
 /**

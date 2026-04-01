@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import UserPicker from "@/components/UserPicker";
 import {
   Dialog,
   DialogContent,
@@ -362,21 +363,6 @@ function ChecklistItem({
   const [notes, setNotes] = useState(item.evidence_notes || "");
   const isOverdue = item.due_date && new Date(item.due_date) < new Date() && item.status !== "closed" && item.status !== "approved";
 
-  const { data: users = [] } = useQuery<{ id: number; fullName: string }[]>({
-    queryKey: ["users-list"],
-    queryFn: async () => {
-      const res = await fetch("/api/users", { headers: getAuthHeaders(), credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: isExpanded,
-    staleTime: 60000,
-  });
-
-  const userOptions = useMemo(
-    () => users.map((u) => ({ value: String(u.id), label: u.fullName || `User ${u.id}` })),
-    [users]
-  );
 
   return (
     <Card className={`bg-white transition-all ${isExpanded ? "ring-1 ring-[#16A34A]/30 shadow-sm" : "hover:shadow-sm"}`} data-testid={`checklist-item-${item.id}`}>
@@ -453,13 +439,11 @@ function ChecklistItem({
 
             <div>
               <Label className="text-xs text-gray-500 mb-1">Reassign Owner</Label>
-              <SearchableSelect
-                options={userOptions}
-                value={item.owner_user_id ? String(item.owner_user_id) : ""}
-                onValueChange={(v) => { if (v) onReassign(Number(v)); }}
+              <UserPicker
+                value={item.owner_user_id}
+                onValueChange={(userId) => { if (userId) onReassign(userId); }}
                 placeholder="Select owner..."
-                searchPlaceholder="Search users..."
-                triggerClassName="h-8 text-xs w-full"
+                size="sm"
                 data-testid={`select-reassign-owner-${item.id}`}
               />
             </div>
@@ -532,22 +516,6 @@ function CreateItemDialog({
   const [ownerUserId, setOwnerUserId] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [sortOrder, setSortOrder] = useState("");
-
-  const { data: users = [] } = useQuery<{ id: number; fullName: string }[]>({
-    queryKey: ["users-list"],
-    queryFn: async () => {
-      const res = await fetch("/api/users", { headers: getAuthHeaders(), credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: open,
-    staleTime: 60000,
-  });
-
-  const userOptions = useMemo(
-    () => users.map((u) => ({ value: String(u.id), label: u.fullName || `User ${u.id}` })),
-    [users]
-  );
 
   const typeOptions = [
     { value: "commissioning", label: "Commissioning" },
@@ -642,13 +610,11 @@ function CreateItemDialog({
           <div>
             <Label className="text-xs text-gray-600">Owner</Label>
             <div className="mt-1">
-              <SearchableSelect
-                options={userOptions}
-                value={ownerUserId}
-                onValueChange={setOwnerUserId}
+              <UserPicker
+                value={ownerUserId || null}
+                onValueChange={(userId) => setOwnerUserId(userId ? String(userId) : "")}
                 placeholder="Select owner..."
-                searchPlaceholder="Search users..."
-                triggerClassName="h-8 text-xs w-full"
+                size="sm"
                 data-testid="select-create-owner"
               />
             </div>

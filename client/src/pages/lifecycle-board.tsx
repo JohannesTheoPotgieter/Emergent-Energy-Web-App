@@ -11,6 +11,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import UserPicker from "@/components/UserPicker";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { useLocation } from "wouter";
@@ -1527,42 +1528,25 @@ export default function LifecycleBoardPage() {
                   <div className="grid gap-3 grid-cols-2">
                     <div>
                       <Label className="text-xs">Project Developer (PD)</Label>
-                      <SearchableSelect
-                        value={editForm.pd || "__unassigned"}
-                        onValueChange={(val) => {
-                          if (val === "__unassigned") {
-                            setEditForm(f => ({ ...f, pd: "" }));
-                          } else {
-                            setEditForm(f => ({ ...f, pd: val }));
-                          }
+                      <UserPicker
+                        value={pdUsers.find(u => u.name === editForm.pd)?.id ?? null}
+                        onValueChange={(userId, userName) => {
+                          setEditForm(f => ({ ...f, pd: userName || "" }));
                         }}
                         disabled={!selectedProject.id || selectedProject.id <= 0}
                         placeholder="Unassigned"
-                        options={[
-                          { value: "__unassigned", label: "Unassigned" },
-                          ...pdUsers.map((u) => ({ value: u.name, label: u.name })),
-                        ]}
                         data-testid="select-edit-pd"
                       />
                     </div>
                     <div>
                       <Label className="text-xs">Project Manager (PM)</Label>
-                      <SearchableSelect
-                        value={editForm.pm || "__unassigned"}
-                        onValueChange={(val) => {
-                          if (val === "__unassigned") {
-                            setEditForm(f => ({ ...f, pm: "", pmUserId: null }));
-                          } else {
-                            const matched = pmUsers.find(u => u.name === val);
-                            setEditForm(f => ({ ...f, pm: val, pmUserId: matched?.id ?? null }));
-                          }
+                      <UserPicker
+                        value={editForm.pmUserId ?? null}
+                        onValueChange={(userId, userName) => {
+                          setEditForm(f => ({ ...f, pm: userName || "", pmUserId: userId }));
                         }}
                         disabled={!selectedProject.id || selectedProject.id <= 0}
                         placeholder="Unassigned"
-                        options={[
-                          { value: "__unassigned", label: "Unassigned" },
-                          ...pmUsers.map((u) => ({ value: u.name, label: u.name })),
-                        ]}
                         data-testid="select-edit-pm"
                       />
                     </div>
