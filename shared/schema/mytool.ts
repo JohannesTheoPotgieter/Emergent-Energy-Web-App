@@ -7,74 +7,31 @@ import { users } from "./users";
 import { projectInfo } from "./projects";
 import { workItems } from "./tasks";
 
+// ── Legacy personal-task enums — retained for Drizzle migration compatibility ──
+// These enums existed on the now-removed mytool_tasks and mytool_task_dependencies tables.
+// Kept so Drizzle does not attempt to recreate them during migration diffing.
 export const mytoolTaskStatusEnum = pgEnum('mytool_task_status', ['inbox', 'planned', 'in_progress', 'blocked', 'waiting', 'done', 'cancelled']);
 export const mytoolTaskPriorityEnum = pgEnum('mytool_task_priority', ['low', 'normal', 'high', 'critical']);
+export const mytoolRecurrenceFrequencyEnum = pgEnum('mytool_recurrence_frequency', ['daily', 'weekly', 'monthly']);
+export const mytoolTaskTypeEnum = pgEnum('mytool_task_type', ['task', 'milestone']);
+export const mytoolDependencyTypeEnum = pgEnum('mytool_dependency_type', ['finish_to_start', 'start_to_start', 'finish_to_finish', 'start_to_finish']);
+export const mytoolTaskBucketEnum = pgEnum('mytool_task_bucket', ['project', 'company_ops', 'personal']);
+
+// ── Active enums used by independent mytool entities ──
 export const mytoolPriorityHorizonEnum = pgEnum('mytool_priority_horizon', ['today', 'week', 'month', 'quarter']);
 export const mytoolPrioritySeverityEnum = pgEnum('mytool_priority_severity', ['normal', 'important', 'critical']);
 export const mytoolPriorityStatusEnum = pgEnum('mytool_priority_status', ['active', 'monitoring', 'closed', 'not_started', 'in_progress', 'complete']);
 
-export const mytoolRecurrenceFrequencyEnum = pgEnum('mytool_recurrence_frequency', ['daily', 'weekly', 'monthly']);
-export const mytoolTaskTypeEnum = pgEnum('mytool_task_type', ['task', 'milestone']);
-// @deprecated — mytool_task_dependencies table dropped (Phase 5B). Enum retained for migration compat only.
-export const mytoolDependencyTypeEnum = pgEnum('mytool_dependency_type', ['finish_to_start', 'start_to_start', 'finish_to_finish', 'start_to_finish']);
-
-export const mytoolTaskBucketEnum = pgEnum('mytool_task_bucket', ['project', 'company_ops', 'personal']);
-
-/**
- * @deprecated LEGACY — personal tasks now live in work_items (workstream='PERSONAL').
- * This schema definition is retained ONLY because mytool_recurrence_instances,
- * mytool_timeblocks, and mytool_email_links still reference it via FK.
- * The actual table has 0 active rows. Do NOT read from or write to this table.
- * Remove this definition when the dependent FK references are remapped.
- */
-export const mytoolTasks = pgTable("mytool_tasks", {
-  id: serial("id").primaryKey(),
-  ownerUserId: integer("owner_user_id").notNull().references(() => users.id),
-  title: text("title").notNull(),
-  status: mytoolTaskStatusEnum("status").notNull().default('inbox'),
-  priority: mytoolTaskPriorityEnum("priority").notNull().default('normal'),
-  plannedForDate: text("planned_for_date"),
-  dueAt: timestamp("due_at"),
-  startDate: text("start_date"),
-  notes: text("notes"),
-  bucket: mytoolTaskBucketEnum("bucket").default('personal'),
-  /** @deprecated Use projectId FK instead. Kept for backward compatibility. */
-  projectName: text("project_name"),
-  projectId: integer("project_id").references(() => projectInfo.id),
-  department: text("department"),
-  tag: text("tag"),
-  sourceEmailId: text("source_email_id"),
-  sourceEmailSubject: text("source_email_subject"),
-  blockedReason: text("blocked_reason"),
-  nextStep: text("next_step"),
-  definitionOfDone: text("definition_of_done"),
-  completionNote: text("completion_note"),
-  pinnedToday: boolean("pinned_today").notNull().default(false),
-  pinnedWeek: boolean("pinned_week").notNull().default(false),
-  sortOrder: integer("sort_order").notNull().default(0),
-  isRecurring: boolean("is_recurring").notNull().default(false),
-  recurrenceFrequency: mytoolRecurrenceFrequencyEnum("recurrence_frequency"),
-  recurrenceInterval: integer("recurrence_interval").default(1),
-  recurrenceDaysOfWeek: text("recurrence_days_of_week"),
-  recurrenceEndDate: text("recurrence_end_date"),
-  recurrenceParentId: integer("recurrence_parent_id"),
-  taskType: mytoolTaskTypeEnum("task_type").notNull().default('task'),
-  scheduledDate: text("scheduled_date"),
-  scheduledStartTime: text("scheduled_start_time"),
-  scheduledEndTime: text("scheduled_end_time"),
-  deletedAt: timestamp("deleted_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  completedAt: timestamp("completed_at"),
-});
-
-export const insertMytoolTaskSchema = createInsertSchema(mytoolTasks).omit({ id: true, deletedAt: true, createdAt: true, updatedAt: true, completedAt: true } as any);
-export type InsertMytoolTask = z.infer<typeof insertMytoolTaskSchema>;
-export type MytoolTask = typeof mytoolTasks.$inferSelect;
+// ── mytool_tasks: REMOVED (Phase 6) ──
+// Table had 0 active rows. All personal tasks live in work_items (workstream='PERSONAL').
+// Schema definition removed. Table archived via migration 20260401_remap_mytool_fks.sql.
+// All FK references from dependent tables (timeblocks, email_links) remapped to work_items.
 
 // ── mytool_task_dependencies: DROPPED (Phase 5B) ──
 // Table had 0 rows. Dependencies now use canonical work_item_dependencies.
-// Schema definition removed. Table dropped via migration 20260401_drop_mytool_task_dependencies.sql.
+
+// ── mytool_recurrence_instances: ARCHIVED (Phase 6) ──
+// Table had 0 orphan records. No server or frontend code references it.
 
 export const mytoolRecurrenceTemplates = pgTable("mytool_recurrence_templates", {
   id: serial("id").primaryKey(),
@@ -100,19 +57,9 @@ export const insertMytoolRecurrenceTemplateSchema = createInsertSchema(mytoolRec
 export type InsertMytoolRecurrenceTemplate = z.infer<typeof insertMytoolRecurrenceTemplateSchema>;
 export type MytoolRecurrenceTemplate = typeof mytoolRecurrenceTemplates.$inferSelect;
 
-export const mytoolRecurrenceInstances = pgTable("mytool_recurrence_instances", {
-  id: serial("id").primaryKey(),
-  templateId: integer("template_id").notNull().references(() => mytoolRecurrenceTemplates.id, { onDelete: "cascade" }),
-  taskId: integer("task_id").notNull().references(() => mytoolTasks.id, { onDelete: "cascade" }),
-  instanceDate: text("instance_date").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  uniqueTemplateDate: unique("mytool_recurrence_instances_unique_template_date").on(table.templateId, table.instanceDate),
-}));
-
-export const insertMytoolRecurrenceInstanceSchema = createInsertSchema(mytoolRecurrenceInstances).omit({ id: true, createdAt: true } as any);
-export type InsertMytoolRecurrenceInstance = z.infer<typeof insertMytoolRecurrenceInstanceSchema>;
-export type MytoolRecurrenceInstance = typeof mytoolRecurrenceInstances.$inferSelect;
+// ── mytool_recurrence_instances: ARCHIVED (Phase 6) ──
+// Table had 0 orphan records. No server or frontend code references it.
+// Schema definition removed. Table archived via migration 20260401_remap_mytool_fks.sql.
 
 export const mytoolTimeblocks = pgTable("mytool_timeblocks", {
   id: serial("id").primaryKey(),
@@ -121,7 +68,7 @@ export const mytoolTimeblocks = pgTable("mytool_timeblocks", {
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
   label: text("label").notNull(),
-  linkedTaskId: integer("linked_task_id").references(() => mytoolTasks.id),
+  linkedTaskId: integer("linked_task_id").references(() => workItems.id),
   outlookEventId: text("outlook_event_id"),
   outlookCalendarId: text("outlook_calendar_id"),
   idempotencyKey: text("idempotency_key"),
@@ -237,7 +184,7 @@ export const mytoolEmailLinks = pgTable("mytool_email_links", {
   snippet: text("snippet"),
   outlookMessageId: text("outlook_message_id"),
   webLink: text("web_link"),
-  linkedTaskId: integer("linked_task_id").references(() => mytoolTasks.id, { onDelete: "cascade" }),
+  linkedTaskId: integer("linked_task_id").references(() => workItems.id, { onDelete: "cascade" }),
   linkedOperationalTaskId: integer("linked_operational_task_id").references(() => workItems.id, { onDelete: "cascade" }),
   linkedPriorityId: integer("linked_priority_id").references(() => mytoolCompanyPriorities.id, { onDelete: "cascade" }),
   createdBy: integer("created_by").references(() => users.id),

@@ -44,21 +44,20 @@ describe("mytoolTaskDependencies schema removed", () => {
   });
 });
 
-describe("mytoolTasks schema retained but deprecated", () => {
+describe("mytoolTasks schema fully removed (Phase 6 FK remap completed)", () => {
   const schemaSrc = readFile("shared/schema/mytool.ts");
 
-  it("still exports mytoolTasks (needed by FK references from other tables)", () => {
-    expect(schemaSrc).toMatch(/export const mytoolTasks\s*=\s*pgTable/);
+  it("does NOT export mytoolTasks table definition", () => {
+    expect(schemaSrc).not.toMatch(/export const mytoolTasks\s*=\s*pgTable/);
   });
 
-  it("has @deprecated JSDoc marker", () => {
-    expect(schemaSrc).toContain("@deprecated");
-    expect(schemaSrc).toContain("personal tasks now live in work_items");
+  it("does NOT export MytoolTask or InsertMytoolTask types", () => {
+    expect(schemaSrc).not.toMatch(/export type MytoolTask/);
+    expect(schemaSrc).not.toMatch(/export type InsertMytoolTask/);
   });
 
-  it("still exports MytoolTask and InsertMytoolTask types", () => {
-    expect(schemaSrc).toMatch(/export type MytoolTask/);
-    expect(schemaSrc).toMatch(/export type InsertMytoolTask/);
+  it("contains comment indicating removal in Phase 6", () => {
+    expect(schemaSrc).toContain("REMOVED (Phase 6)");
   });
 });
 
@@ -67,7 +66,7 @@ describe("independent mytool entities are untouched", () => {
 
   const RETAINED_TABLES = [
     "mytoolRecurrenceTemplates",
-    "mytoolRecurrenceInstances",
+    // mytoolRecurrenceInstances archived in Phase 6 (zero runtime usage)
     "mytoolTimeblocks",
     "mytoolDailyReviews",
     "mytoolCompanyPriorities",
