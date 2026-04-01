@@ -20,7 +20,6 @@ const CLIENT_LEGACY_PAGES = [
   "client/src/pages/cos-control.tsx",
   "client/src/pages/engineering-inbox.tsx",
   "client/src/pages/engineering-sync.tsx",
-  "client/src/pages/home.tsx",
   "client/src/pages/ms-integration-settings.tsx",
   "client/src/pages/project-normalized-view.tsx",
   "client/src/pages/revenue.tsx",

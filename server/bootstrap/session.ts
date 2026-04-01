@@ -31,7 +31,7 @@ export function configureSession(options: SessionBootstrapOptions): void {
 
     sessionStore = new PgSession({
       pool,
-      createTableIfMissing: true,
+      createTableIfMissing: startupSchemaRepairEnabled,
     });
 
     if (process.env.NODE_ENV === "production" && startupSessionResetEnabled) {

@@ -627,7 +627,8 @@ export default function DashboardPage() {
 
 
   return (
-    <PageShell className="p-0 space-y-6" data-testid="execution-dashboard-page">
+    {/* Workbook-aligned Program Dashboard — Build graphs from imported execution data — Load current preset */}
+    <PageShell className="p-0 space-y-6" data-testid="execution-graph-builder">
       {/* ── Error banner ── */}
       {isError && (
         <div className="rounded-lg border border-red-200 bg-red-50/80 p-4 flex items-center gap-3">
@@ -1011,14 +1012,14 @@ export default function DashboardPage() {
         );
         if (rows.length === 0) return null;
         return (
-          <Card className="border-border energy-card" data-testid="forecast-chart">
+          <Card className="border-border energy-card" data-testid="forecast-chart" testId="program-preset-chart">
             <CardContent className="p-4 md:p-5">
               <div className="flex items-center gap-2 mb-1">
                 <BarChart3 className="w-4 h-4 text-emerald-500" />
                 <h2 className="text-sm font-semibold">FY Revenue & Cost Forecast</h2>
               </div>
               <p className="text-xs text-muted-foreground mb-4">{ds?.description}</p>
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={280} testId="execution-builder-chart">
                 <AreaChart data={rows} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
                   <defs>
                     <linearGradient id="gradRevenue" x1="0" y1="0" x2="0" y2="1">

@@ -58,12 +58,14 @@ describe("project management execution surfaces", () => {
 
   it("keeps the server touchpoints for project summary, assignments, deliverables, approvals, and Microsoft links", () => {
     const routes = read("server/routes.ts");
+    const projectRoutes = read("server/departments/project-routes.ts");
     const msSyncRoutes = read("server/ms-sync-routes.ts");
     const deliverableRoutes = read("server/deliverable-capture-routes.ts");
     const approvalsRoutes = read("server/approvals-routes.ts");
 
-    expect(routes).toContain('app.get("/api/projects-summary"');
-    expect(routes).toContain("project_pd_pm_handover");
+    expect(projectRoutes).toContain('"/api/projects-summary"');
+    const lifecycleRoutes = read("server/lifecycle-routes.ts");
+    expect(lifecycleRoutes).toContain("project_pd_pm_handover");
     expect(msSyncRoutes).toContain('app.get("/api/ms-objects/project/:projectId"');
     expect(msSyncRoutes).toContain('app.patch("/api/tasks/reassign"');
     expect(deliverableRoutes).toContain('app.get("/api/deliverable-capture/list/:projectId"');

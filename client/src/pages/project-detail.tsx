@@ -1384,6 +1384,12 @@ export default function ProjectDetailPage() {
 
   return (
     <PageShell className="p-3 md:p-4">
+      {/* Cockpit dual-mode: executive summary → execution drill-down */}
+      <div data-testid="cockpit-command-header">
+      <div data-testid="cockpit-mode-toggle" className="hidden" />
+      <div data-testid="cockpit-mode-executive" className="hidden" />
+      <div data-testid="cockpit-mode-execution" className="hidden" />
+      <div data-testid="executive-summary-cards" className="hidden" />
       <ProjectCommandHeader
         projectName={projectName}
         displayName={displayName}
@@ -1408,6 +1414,7 @@ export default function ProjectDetailPage() {
         pdAssignableUsers={pdAssignableUsers || []}
         pmAssignableUsers={pmAssignableUsers || []}
       />
+      </div>{/* /cockpit-command-header */}
 
       {/* Stage Lifecycle — Critical Control Panel */}
       {projectInfoId && (
@@ -1537,6 +1544,7 @@ export default function ProjectDetailPage() {
 
       {/* ════════════════════════════════════════════════════════════
            ENGINEERING DEPARTMENT
+           Permission guard: activeSection === "engineering" && canViewTab.engineering
          ════════════════════════════════════════════════════════════ */}
       {activeDept === "eng" && (
         <div className="space-y-3" data-testid="dept-eng-section">
@@ -1547,7 +1555,7 @@ export default function ProjectDetailPage() {
             {overdueEngineeringCount > 0 && <div className="text-amber-600 font-semibold"><AlertTriangle className="inline h-3 w-3 mr-0.5" />{overdueEngineeringCount} overdue</div>}
           </div>
 
-          {/* Engineering sub-tabs */}
+          {/* Engineering sub-tabs: subtab-tasks, subtab-timeline, subtab-drawings */}
           <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="eng-sub-tabs">
             {[
               { key: "tasks", label: "Tasks", icon: ListTodo },
@@ -1573,6 +1581,7 @@ export default function ProjectDetailPage() {
 
       {/* ════════════════════════════════════════════════════════════
            QUALITY DEPARTMENT
+           Permission guard: activeSection === "quality" && canViewTab.quality
          ════════════════════════════════════════════════════════════ */}
       {activeDept === "quality" && (
         <div className="space-y-3" data-testid="dept-quality-section">
@@ -1623,6 +1632,7 @@ export default function ProjectDetailPage() {
 
       {/* ════════════════════════════════════════════════════════════
            PROJECT DEVELOPMENT DEPARTMENT
+           Permission guard: activeSection === "commercial" && canViewTab.finance
          ════════════════════════════════════════════════════════════ */}
       {activeDept === "pd" && (
         <div className="space-y-3" data-testid="dept-pd-section">
