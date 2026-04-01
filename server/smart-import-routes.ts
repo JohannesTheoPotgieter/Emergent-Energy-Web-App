@@ -2095,17 +2095,20 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 ? (prevPaymentReceivedDate ?? null)
                 : (m.paidDate || null);
 
+              const paidDateIsBlack = m.paidDateConfirmed === true || m.paidDateFontColor === 'black';
+              const derivedInBank = m.paidDate ? (paidDateIsBlack ? 1 : 0) : 0;
+
               return {
                 projectName,
                 rowNumber: r.sourceRow,
                 milestoneNo: String(milestoneIdx),
                 milestoneName: name,
                 milestoneAmount: amount,
-                plannedPaymentDate: m.expectedPaymentDate || null,
+                plannedPaymentDate: m.paidDate || null,
                 milestoneInvoiceNumber: m.invoiceNumber || null,
                 invoiceRaisedDate: m.invoiceDate || null,
                 paymentReceivedDate,
-                inBank: prevInBank != null ? prevInBank : (m.inBankDate ? 1 : 0),
+                inBank: prevInBank != null ? prevInBank : derivedInBank,
                 subProjectName: m.subProjectName || null,
                 dataSource: "SMART_IMPORT",
                 projectId: projectId || null,
