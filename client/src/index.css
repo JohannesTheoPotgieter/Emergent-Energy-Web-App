@@ -819,7 +819,12 @@ thead th {
 }
 
 .page-enter {
-  animation: fade-in 0.2s ease-out both;
+  animation: page-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes page-slide-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .energy-section-heading {
@@ -860,4 +865,46 @@ thead th {
   height: 1px;
   background: linear-gradient(90deg, transparent, hsl(142 76% 36% / 0.15), transparent);
   margin: 8px 0;
+}
+
+/* Modern interactive card lift effect */
+.ee-card-interactive {
+  transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.ee-card-interactive:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.ee-card-interactive:active {
+  transform: translateY(0);
+}
+
+/* Tactile button press feedback */
+button:not(:disabled):active,
+[role="button"]:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* Smooth table row hover */
+tbody tr {
+  transition: background-color 0.1s ease;
+}
+
+/* Smooth focus ring transitions */
+*:focus-visible {
+  transition: box-shadow 0.15s ease;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .page-enter {
+    animation: none;
+  }
+  button:not(:disabled):active,
+  [role="button"]:not(:disabled):active {
+    transform: none;
+  }
+  .ee-card-interactive:hover {
+    transform: none;
+  }
 }
