@@ -31,7 +31,8 @@ export function usePermission(entity: PermissionEntity, action: PermissionAction
       return res.json();
     },
     enabled: !!user?.role,
-    staleTime: 60_000,
+    staleTime: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   if (authLoading || permsLoading) {
