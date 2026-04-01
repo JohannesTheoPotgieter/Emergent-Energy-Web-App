@@ -7,16 +7,17 @@ Emergent Energy is an internal operations platform for a South African commercia
 **Core purpose:** Give the COO, CFO, Project Managers, Engineers, and other roles a single trusted system to manage the full project lifecycle — from engineering intake and project development through construction, commissioning, finance tracking, and quality management.
 
 **Key functional modules:**
-- **Home** — Role-specific dashboard (COO gets operational oversight, CFO gets financials, PMs get active projects)
-- **My Work** — Personal execution cockpit (tasks, calendar, time blocks, MS Outlook integration)
-- **Project Management** — Execution board (Kanban), project summaries, PM dashboard, smart import, Excel tracker uploads, portfolio view, weekly reviews
-- **Project Finance** — Cashflow planning/forecasting, COS (Cost of Sales) tracker, procurement, invoice patterns, revenue tracking
-- **Project Development** — Engineering intake from SharePoint (Proposals Pipeline), CP gate management
-- **Engineering** — Task management, SharePoint sync (via MS Graph), engineering task templates by request type
-- **Governance / Change Control / Commissioning** — Approvals, change requests, commissioning checklists
-- **Quality Management (QM)** — Risk assessment checklists with conditional follow-up inputs, audit trails
-- **Information / Collaboration** — MS Teams, SharePoint document browsing, notifications
-- **Admin** — Roles, permissions, user management, system settings
+- **Home** — Role-specific dashboard (COO gets operational oversight, CFO gets financials, PMs get active projects), My Work cockpit (tasks, calendar, Outlook integration), Inbox
+- **Company** — Company overview, project lifecycle view, lifecycle board, gate tracker, blocked gates, exceptions
+- **Project Development** — PD dashboard, pipeline/opportunities, PD tickets, clients, handover queue, PD reports
+- **Project Delivery** — Execution dashboard, PM dashboard (PM-specific project view), portfolio dashboard, all projects, construction, procurement, PO approvals, payment requests, payment batches, milestone tracker, weekly reviews, standups, PM deliverables, PM approvals, PM on-the-go, handover & closeout, financial reviews, SSEG, sites
+- **HSE** — HSE dashboard
+- **Engineering** — Engineering dashboard, task board, standup
+- **Quality** — Quality dashboard, commissioning dashboard, inspections/NCRs
+- **Finance** — Cashflow, revenue, COS, GP/margin, FYE revenue, counterparties, subcontractors, invoice patterns
+- **Reports** — Report center, programme reports, PM monthly, engineering monthly, performance
+- **Priorities (EXCO)** — Strategic company priorities
+- **Admin** — Control center, users & roles, smart import, audit log, processes & SOPs, templates, recovery
 
 **Version:** 1.5.0 (Production Hardening Update)
 

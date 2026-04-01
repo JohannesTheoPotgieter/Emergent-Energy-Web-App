@@ -24,8 +24,6 @@ export interface PageRegistryEntry {
 export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   // Legacy: /dashboard → /execution-board → /gates. Collapsed to direct.
   { path: "/dashboard", redirectTo: "/gates" },
-  // Legacy: /pm-dashboard → /execution-board → /gates. Collapsed to direct.
-  { path: "/pm-dashboard", redirectTo: "/gates" },
   { path: "/revenue", redirectTo: "/revenue-tracker" },
   { path: "/my-tool", redirectTo: "/" },
   { path: "/my-tool/week", redirectTo: "/my-work/calendar" },
@@ -38,7 +36,6 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/admin/legacy-utilities", redirectTo: "/admin/control-center" },
   // Prompt 2 — old nav destinations that moved
   { path: "/exceptions", redirectTo: "/gates/exceptions" },
-  { path: "/execution-board", redirectTo: "/gates" },
   { path: "/command-center", redirectTo: "/my-work" },
 ];
 
@@ -99,7 +96,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "collabEmail", path: "/collaboration/email", label: "Collaboration Email", type: "alias", permissionEntity: "collaboration_hub", redirectTo: "/my-work/email" },
   { id: "collabTeams", path: "/collaboration/teams", label: "Collaboration Teams", type: "alias", permissionEntity: "teams_chat", redirectTo: "/my-work/teams" },
   { id: "dashboard", path: "/execution-dashboard", label: "Execution Dashboard", iconKey: "LayoutDashboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
-  { id: "pmDashboard", path: "/pm-dashboard", label: "Per Project Manager Dashboard", permissionEntity: "pm_dashboard", routeComponentKey: "PMDashboard" },
+  { id: "pmDashboard", path: "/pm-dashboard", label: "PM Dashboard", iconKey: "User", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_dashboard", showInSidebar: true, routeComponentKey: "PMDashboard" },
   { id: "pmOnTheGo", path: "/pm/on-the-go", label: "PM On-The-Go", iconKey: "Smartphone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "pm_on_the_go", showInSidebar: true, routeComponentKey: "PMOnTheGoHome" },
   { id: "pmOnTheGoProject", path: "/pm/on-the-go/project/:projectId", label: "On-The-Go Project", routeComponentKey: "PMOnTheGoProject" },
   { id: "myWork", path: "/my-work", label: "My Work", iconKey: "Home", navGroup: "MY_WORK", permissionEntity: "home", showInSidebar: true, routeComponentKey: "MyWorkHomePage", matchSubRoutes: true },
@@ -179,6 +176,8 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // Milestone Tracker — standalone page for Construction Manager
   { id: "milestoneTracker", path: "/milestone-tracker", label: "Milestone Tracker", iconKey: "Milestone", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "MilestoneTrackerPage" },
   // Commissioning Control Tower — workbook-driven dashboard (project-scoped)
+  { id: "sseg", path: "/sseg", label: "SSEG", iconKey: "Zap", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: true, routeComponentKey: "SsegPage" },
+  { id: "commissioningOverview", path: "/commissioning-dashboard", label: "Commissioning", iconKey: "Shield", navGroup: "QUALITY", permissionEntity: "commissioning", showInSidebar: true, routeComponentKey: "CommissioningDashboardPage" },
   { id: "commissioningDashboard", path: "/commissioning-dashboard/:projectId", label: "Commissioning Dashboard", permissionEntity: "commissioning", showInSidebar: false, routeComponentKey: "CommissioningDashboardPage" },
 ];
 
