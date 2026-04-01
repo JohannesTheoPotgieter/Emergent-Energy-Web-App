@@ -12,8 +12,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import {
-  DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
-  ArrowLeft, ExternalLink, User, CheckCircle, AlertCircle, Columns, CalendarDays,
+  DollarSign, CreditCard, TrendingUp, Activity,
+  ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
@@ -23,9 +23,7 @@ import {
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
-import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
-import { RevenueTrackerTab } from "@/components/tabs/RevenueTrackerTab";
-import { GpTrackerTab } from "@/components/tabs/GpTrackerTab";
+// Legacy finance tab imports removed — revenue/GP/COS now under PD department
 import { CashflowTab } from "@/components/tabs/CashflowTab";
 import { ProjectSubcontractorsTab } from "@/components/tabs/ProjectSubcontractorsTab";
 import TaskDetailDrawer from "@/components/TaskDetailDrawer";
@@ -803,50 +801,54 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   );
 }
 
-const OLD_TAB_TO_SECTION: Record<string, { section: string; subTab: string }> = {
-  "task-grid": { section: "delivery", subTab: "task-grid" },
-  "board": { section: "delivery", subTab: "board" },
-  "calendar": { section: "delivery", subTab: "calendar" },
-  "eng-tasks": { section: "engineering", subTab: "eng-tasks" },
-  "eng-stages": { section: "engineering", subTab: "eng-stages" },
-  "project-plan": { section: "delivery", subTab: "task-grid" },
-  "gantt": { section: "delivery", subTab: "task-grid" },
-  "key-dates": { section: "delivery", subTab: "task-grid" },
-  "revenue-tracking": { section: "commercial", subTab: "revenue-tracking" },
-  "expenditure": { section: "commercial", subTab: "expenditure" },
-  "monthly-realisation": { section: "commercial", subTab: "monthly-realisation" },
-  "revenue-tracker": { section: "commercial", subTab: "revenue-tracker" },
-  "gp-tracker": { section: "commercial", subTab: "gp-tracker" },
-  "cashflow": { section: "commercial", subTab: "cashflow" },
-  "subcontractors": { section: "commercial", subTab: "subcontractors" },
-  "raid": { section: "delivery", subTab: "raid" },
-  "change-control": { section: "commercial", subTab: "change-control" },
-  "procurement": { section: "commercial", subTab: "procurement" },
-  "commissioning": { section: "delivery", subTab: "commissioning" },
-  "quality": { section: "quality", subTab: "quality" },
-  "history": { section: "collaboration", subTab: "history" },
-  "overview": { section: "overview", subTab: "" },
-  "engineering": { section: "engineering", subTab: "eng-tasks" },
-  "money": { section: "commercial", subTab: "revenue-tracking" },
-  "revenue": { section: "commercial", subTab: "revenue-tracking" },
-  "plan": { section: "delivery", subTab: "task-grid" },
-  "chat": { section: "collaboration", subTab: "chat" },
-  "sharepoint": { section: "collaboration", subTab: "sharepoint" },
-  "local-files": { section: "collaboration", subTab: "local-files" },
-  "approvals": { section: "collaboration", subTab: "approvals" },
-  "collaboration": { section: "collaboration", subTab: "chat" },
-  "construction": { section: "construction", subTab: "" },
-  "handover": { section: "handover", subTab: "" },
-  "readiness-gate": { section: "delivery", subTab: "financial-review" },
+// Legacy tab → department mapping for backward compatibility
+const OLD_TAB_TO_DEPT: Record<string, { dept: string; subTab: string }> = {
+  // PM department
+  "task-grid": { dept: "pm", subTab: "plan" },
+  "board": { dept: "pm", subTab: "board" },
+  "calendar": { dept: "pm", subTab: "calendar" },
+  "project-plan": { dept: "pm", subTab: "plan" },
+  "gantt": { dept: "pm", subTab: "plan" },
+  "key-dates": { dept: "pm", subTab: "plan" },
+  "raid": { dept: "pm", subTab: "raid" },
+  "commissioning": { dept: "pm", subTab: "commissioning" },
+  "construction": { dept: "pm", subTab: "construction" },
+  "handover": { dept: "pm", subTab: "handover" },
+  "readiness-gate": { dept: "pm", subTab: "financial-review" },
+  "plan": { dept: "pm", subTab: "plan" },
+  "overview": { dept: "pm", subTab: "current-gate" },
+  "delivery": { dept: "pm", subTab: "current-gate" },
+  // Engineering department
+  "eng-tasks": { dept: "eng", subTab: "tasks" },
+  "eng-stages": { dept: "eng", subTab: "tasks" },
+  "engineering": { dept: "eng", subTab: "tasks" },
+  // Quality department
+  "quality": { dept: "quality", subTab: "checklist" },
+  "history": { dept: "quality", subTab: "history" },
+  "approvals": { dept: "quality", subTab: "approvals" },
+  // PD department
+  "revenue-tracking": { dept: "pd", subTab: "revenue" },
+  "expenditure": { dept: "pd", subTab: "cost-lines" },
+  "monthly-realisation": { dept: "pd", subTab: "revenue" },
+  "revenue-tracker": { dept: "pd", subTab: "revenue" },
+  "gp-tracker": { dept: "pd", subTab: "revenue" },
+  "cashflow": { dept: "pd", subTab: "cashflow" },
+  "subcontractors": { dept: "pd", subTab: "subcontractors" },
+  "change-control": { dept: "pd", subTab: "changes" },
+  "procurement": { dept: "pd", subTab: "procurement" },
+  "money": { dept: "pd", subTab: "revenue" },
+  "revenue": { dept: "pd", subTab: "revenue" },
+  "chat": { dept: "pd", subTab: "comms" },
+  "sharepoint": { dept: "pd", subTab: "documents" },
+  "local-files": { dept: "pd", subTab: "documents" },
+  "collaboration": { dept: "pd", subTab: "documents" },
 };
 
-const SECTION_DEFAULT_SUBTAB: Record<string, string> = {
-  lifecycle: "task-grid",    // Overview tab defaults to Plan sub-tab
-  delivery: "",              // Current Gate — no sub-tabs
-  commercial: "revenue-tracking",
-  engineering: "",           // Timeline — no sub-tabs
-  quality: "",               // History — no sub-tabs
-  collaboration: "local-files", // Files & Evidence defaults to Documents
+const DEPT_DEFAULT_SUBTAB: Record<string, string> = {
+  pm: "plan",
+  eng: "tasks",
+  quality: "checklist",
+  pd: "revenue",
 };
 
 
@@ -934,35 +936,48 @@ export default function ProjectDetailPage() {
   const highlightId = searchParams.get("highlightId") ? Number(searchParams.get("highlightId")) : null;
   const highlightType = searchParams.get("highlightType");
 
+  // Resolve initial department from URL: ?dept= takes priority, then legacy ?tab=
+  const urlDept = searchParams.get("dept");
+  const urlSub = searchParams.get("sub");
+
   const resolvedFromUrl = useMemo(() => {
+    if (urlDept) return { dept: urlDept, subTab: urlSub || DEPT_DEFAULT_SUBTAB[urlDept] || "" };
     if (!urlTab) return null;
-    const mapped = OLD_TAB_TO_SECTION[urlTab];
+    const mapped = OLD_TAB_TO_DEPT[urlTab];
     if (mapped) return mapped;
     return null;
-  }, [urlTab]);
+  }, [urlTab, urlDept, urlSub]);
 
-  const [activeSection, setActiveSection] = useState<string>(resolvedFromUrl?.section === "overview" ? "delivery" : resolvedFromUrl?.section || "delivery");
-  const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "task-grid");
+  const [activeDept, setActiveDept] = useState<string>(resolvedFromUrl?.dept || "pm");
+  const [activeSubTab, setActiveSubTab] = useState<string>(resolvedFromUrl?.subTab || "plan");
+  // Keep legacy aliases
+  const activeSection = activeDept === "pm" ? "delivery" : activeDept === "eng" ? "engineering" : activeDept === "pd" ? "commercial" : activeDept;
+
   useEffect(() => {
-    if (urlTab) {
-      const mapped = OLD_TAB_TO_SECTION[urlTab];
+    if (urlDept) {
+      setActiveDept(urlDept);
+      setActiveSubTab(urlSub || DEPT_DEFAULT_SUBTAB[urlDept] || "");
+    } else if (urlTab) {
+      const mapped = OLD_TAB_TO_DEPT[urlTab];
       if (mapped) {
-        const section = mapped.section === "overview" ? "delivery" : mapped.section;
-        setActiveSection(section);
-        if (mapped.subTab) setActiveSubTab(mapped.subTab);
-        else if (section === "delivery") setActiveSubTab("task-grid");
+        setActiveDept(mapped.dept);
+        setActiveSubTab(mapped.subTab);
       }
     }
-  }, [urlTab]);
+  }, [urlTab, urlDept, urlSub]);
 
+  const navigateToDept = (dept: string, subTab?: string) => {
+    if (dept === "eng" && !canViewTab.engineering) { setActiveDept("pm"); setActiveSubTab("plan"); return; }
+    if (dept === "quality" && !canViewTab.quality) { setActiveDept("pm"); setActiveSubTab("plan"); return; }
+    if (dept === "pd" && !canViewTab.finance) { setActiveDept("pm"); setActiveSubTab("plan"); return; }
+    setActiveDept(dept);
+    setActiveSubTab(subTab || DEPT_DEFAULT_SUBTAB[dept] || "");
+  };
+
+  // Legacy compatibility aliases
   const navigateToSection = (section: string, subTab?: string) => {
-    if (section === "overview") { section = "delivery"; }
-    if (section === "engineering" && !canViewTab.engineering) { setActiveSection("delivery"); setActiveSubTab("task-grid"); return; }
-    if (section === "quality" && !canViewTab.quality) { setActiveSection("delivery"); setActiveSubTab("task-grid"); return; }
-    if (section === "commercial" && !canViewTab.finance) { setActiveSection("delivery"); setActiveSubTab("task-grid"); return; }
-    if (section === "collaboration" && !canViewSubTab.collaboration) { setActiveSection("delivery"); setActiveSubTab("task-grid"); return; }
-    setActiveSection(section);
-    setActiveSubTab(subTab || SECTION_DEFAULT_SUBTAB[section] || "");
+    const deptMap: Record<string, string> = { delivery: "pm", lifecycle: "pm", commercial: "pd", engineering: "eng", quality: "quality", collaboration: "pd", overview: "pm" };
+    navigateToDept(deptMap[section] || section, subTab);
   };
 
   const openExecutionArea = (section: string, subTab?: string) => {
@@ -1079,7 +1094,7 @@ export default function ProjectDetailPage() {
       if (!res.ok) return null;
       return res.json();
     },
-    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview" || activeSection === "delivery"),
+    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "delivery"),
   });
 
   const { data: expenditureTrustData } = useQuery<any>({
@@ -1089,7 +1104,7 @@ export default function ProjectDetailPage() {
       if (!res.ok) return null;
       return res.json();
     },
-    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview" || activeSection === "delivery"),
+    enabled: !!projectName && canViewTab.finance && (activeSection === "commercial" || activeSection === "delivery"),
   });
 
   const { data: commercialMsObjects = [] } = useQuery<any[]>({
@@ -1099,7 +1114,7 @@ export default function ProjectDetailPage() {
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: !!projectInfoId && canViewTab.finance && (activeSection === "commercial" || activeSection === "overview" || activeSection === "delivery"),
+    enabled: !!projectInfoId && canViewTab.finance && (activeSection === "commercial" || activeSection === "delivery"),
   });
 
   const { data: cashflowData = [] } = useQuery({
@@ -1338,10 +1353,10 @@ export default function ProjectDetailPage() {
   // GC-010: Normalize engineering status casing for overdue count
   const overdueEngineeringCount = healthSummary?.alerts.overdueEngineeringTasks ?? (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && String(t.status).toUpperCase() !== "COMPLETE").length;
   const topAlerts = [
-    { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => openExecutionArea("delivery", "task-grid") },
-    { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => openExecutionArea("engineering", "eng-tasks") },
-    { label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => openExecutionArea("quality", "quality") },
-    { label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => openExecutionArea("commercial", "expenditure") },
+    { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => navigateToDept("pm", "plan") },
+    { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => navigateToDept("eng", "tasks") },
+    { label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => navigateToDept("quality", "checklist") },
+    { label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => navigateToDept("pd", "cost-lines") },
   ].filter((alert) => alert.count > 0);
   const collaborationSignals = {
     hasHistory: !!projectInfoId,
@@ -1378,28 +1393,27 @@ export default function ProjectDetailPage() {
         sizeKwp={sizeKwp}
         completion={completion}
         completionNum={completionNum}
-        contractValue={contractValue}
-        revenueRealisedPct={revenueRealisedPct}
-        cosRealisedPct={cosRealisedPct}
-        marginDelta={marginDelta}
-        scheduleRag={scheduleRag}
-        costRag={costRag}
-        qualityRag={qualityRag}
+        contractValue={0}
+        revenueRealisedPct={0}
+        cosRealisedPct={0}
+        marginDelta={0}
+        scheduleRag={overallRag as "green" | "amber" | "red"}
+        costRag={overallRag as "green" | "amber" | "red"}
+        qualityRag={overallRag as "green" | "amber" | "red"}
         ragStatus={ragStatus}
-        nextMilestone={nextMilestone}
+        nextMilestone={null}
         projectInfoId={projectInfoId ?? null}
         isAdmin={isAdmin}
         canSetRag={canSetRag}
         pdAssignableUsers={pdAssignableUsers || []}
         pmAssignableUsers={pmAssignableUsers || []}
-
       />
 
       {/* Stage Lifecycle — Critical Control Panel */}
       {projectInfoId && (
         <CriticalControlPanel
           projectId={projectInfoId}
-          onViewGate={() => navigateToSection("lifecycle")}
+          onViewGate={() => navigateToDept("pm", "current-gate")}
           isAdmin={isAdmin}
         />
       )}
@@ -1440,27 +1454,26 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 p-1 overflow-x-auto scrollbar-hide" data-testid="project-major-tabs">
+      {/* ── Department tabs ── */}
+      <div className="flex items-center gap-1.5 rounded-lg bg-muted/40 p-1 overflow-x-auto scrollbar-hide" data-testid="project-dept-tabs">
         {[
-          { key: "lifecycle", label: "Overview", icon: LayoutDashboard, visible: canViewTab.overview },
-          { key: "delivery", label: "Current Gate", icon: Milestone, visible: canViewTab.overview },
-          { key: "commercial", label: "Finance", icon: DollarSign, visible: canViewTab.finance },
-          { key: "engineering", label: "Timeline", icon: CalendarDays, visible: canViewTab.overview },
-          { key: "collaboration", label: "Files & Evidence", icon: FileText, visible: canViewSubTab.collaboration },
-          { key: "quality", label: "History", icon: ClipboardList, visible: canViewTab.quality || canViewTab.history },
+          { key: "pm", label: "Project Management", icon: Target, visible: canViewTab.overview },
+          { key: "eng", label: "Engineering", icon: Wrench, visible: canViewTab.engineering },
+          { key: "quality", label: "Quality", icon: ShieldCheck, visible: canViewTab.quality || canViewTab.history },
+          { key: "pd", label: "Project Development", icon: TrendingUp, visible: canViewTab.finance || canViewSubTab.collaboration },
         ].filter(t => t.visible).map((tab) => {
           const Icon = tab.icon;
-          const isActive = activeSection === tab.key;
+          const isActive = activeDept === tab.key;
           return (
             <button
               key={tab.key}
-              onClick={() => navigateToSection(tab.key)}
+              onClick={() => navigateToDept(tab.key)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 transition-all border hover:opacity-90 ${
                 isActive
                   ? "bg-primary text-primary-foreground border-primary shadow-sm"
                   : "bg-background text-muted-foreground border-border hover:text-foreground hover:bg-muted/50"
               }`}
-              data-testid={`major-tab-${tab.key}`}
+              data-testid={`dept-tab-${tab.key}`}
             >
               <Icon className="h-3.5 w-3.5" />
               {tab.label}
@@ -1469,169 +1482,192 @@ export default function ProjectDetailPage() {
         })}
       </div>
 
-      {/* Overview — gate readiness, status sentence, CriticalControlPanel + delivery overview */}
-      {activeSection === "lifecycle" && (
-        <div className="space-y-4" data-testid="overview-section">
-          {projectInfoId && (
-            <CriticalControlPanel projectId={projectInfoId} isAdmin={isAdmin} />
-          )}
-          {/* Delivery overview — Plan, Board, Calendar, RAID, Commissioning */}
-          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="delivery-sub-tabs">
+      {/* ════════════════════════════════════════════════════════════
+           PROJECT MANAGEMENT DEPARTMENT
+         ════════════════════════════════════════════════════════════ */}
+      {activeDept === "pm" && (
+        <div className="space-y-3" data-testid="dept-pm-section">
+          {/* PM KPI strip */}
+          <div className="flex items-center gap-4 flex-wrap rounded-md border bg-muted/30 px-3 py-2 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${scheduleRag === "green" ? "bg-emerald-500" : scheduleRag === "amber" ? "bg-amber-500" : "bg-red-500"}`} />
+              <span className="text-muted-foreground">Schedule</span>
+            </div>
+            <div><span className="text-muted-foreground">Tasks:</span> <span className="font-semibold">{completedPlanTasks.length}/{planTasks.length}</span></div>
+            {overduePlanTasks.length > 0 && <div className="text-amber-600 font-semibold"><AlertTriangle className="inline h-3 w-3 mr-0.5" />{overduePlanTasks.length} overdue</div>}
+            {stageData?.currentStage && <div><span className="text-muted-foreground">Gate:</span> <span className="font-semibold">{stageData.currentStage.label || stageData.currentStage.stageCode}</span></div>}
+          </div>
+
+          {/* PM sub-tabs */}
+          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="pm-sub-tabs">
             {[
-              { key: "task-grid", label: "Plan", icon: ListTodo },
+              { key: "plan", label: "Plan", icon: ListTodo },
               { key: "board", label: "Board", icon: Columns },
               { key: "calendar", label: "Calendar", icon: CalendarDays },
-              { key: "raid", label: "RAID", icon: AlertTriangle },
+              { key: "current-gate", label: "Current Gate", icon: Milestone },
+              { key: "construction", label: "Construction", icon: HardHat },
               { key: "commissioning", label: "Commissioning", icon: CheckCircle },
+              { key: "raid", label: "RAID", icon: AlertTriangle },
+              { key: "handover", label: "Handover", icon: Handshake },
+              { key: "financial-review", label: "Financial Review", icon: DollarSign },
             ].map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
               </Button>
             ))}
           </div>
-          {activeSubTab === "task-grid" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} projectId={projectInfoId} onTaskClick={handleTaskClick} />}
+
+          {activeSubTab === "plan" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} projectId={projectInfoId} onTaskClick={handleTaskClick} />}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
-          {activeSubTab === "commissioning" && projectInfoId && <ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} />}
-        </div>
-      )}
-
-      {/* Current Gate — the active stage workspace */}
-      {activeSection === "delivery" && projectInfoId && (
-        <div className="space-y-4" data-testid="current-gate-section">
-          {canInitiateFinancialReview && (
-            <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="delivery-sub-tabs">
-              <Button size="sm" variant={activeSubTab !== "financial-review" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("")} data-testid="subtab-current-gate">
-                <Milestone className="h-3 w-3 mr-1" /> Current Gate
-              </Button>
-              <Button size="sm" variant={activeSubTab === "financial-review" ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab("financial-review")} data-testid="subtab-financial-review">
-                <DollarSign className="h-3 w-3 mr-1" /> Financial Review
-              </Button>
-            </div>
-          )}
-          {activeSubTab !== "financial-review" && (
+          {activeSubTab === "current-gate" && projectInfoId && (
             <StageDetailPanel
               projectId={projectInfoId}
               stageCode={stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT"}
               isAdmin={isAdmin}
             />
           )}
-          {activeSubTab === "financial-review" && (
-            <FinancialReviewTab projectId={projectInfoId} projectName={projectName} />
-          )}
+          {activeSubTab === "construction" && projectInfoId && <ProjectConstructionTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "commissioning" && projectInfoId && <ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "handover" && projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "financial-review" && projectInfoId && <FinancialReviewTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
 
-      {activeSection === "commercial" && canViewTab.finance && (
-        <div className="space-y-2" data-testid="commercial-section">
-          {/* B5: Budget baseline vs actual strip */}
-          {projectInfoId && <BudgetBaselineStrip projectId={projectInfoId} actualRevenue={totalRevenueActual} />}
-          {urlTab && ["expenditure", "revenue-tracking", "monthly-realisation", "revenue-tracker", "gp-tracker"].includes(urlTab) && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="tracker-breadcrumb">
-              <button
-                type="button"
-                className="flex items-center gap-1 text-blue-600 hover:text-blue-800 hover:underline transition-colors"
-                onClick={() => {
-                  const trackerMap: Record<string, string> = {
-                    "expenditure": "/cos-tracker",
-                    "monthly-realisation": "/cos-tracker",
-                    "revenue-tracking": "/revenue-tracker",
-                    "revenue-tracker": "/revenue-tracker",
-                    "gp-tracker": "/gp-tracker",
-                  };
-                  setLocation(trackerMap[urlTab] || "/cos-tracker");
-                }}
-                aria-label="Navigate back to portfolio tracker"
-              >
-                <ArrowLeft className="h-3 w-3" />
-                <span>Back to {urlTab === "gp-tracker" ? "GP Tracker" : urlTab === "revenue-tracking" || urlTab === "revenue-tracker" ? "Revenue Tracker" : "COS Tracker"}</span>
-              </button>
-              <span className="text-muted-foreground/40">/</span>
-              <span className="font-medium text-foreground">{projectName}</span>
+      {/* ════════════════════════════════════════════════════════════
+           ENGINEERING DEPARTMENT
+         ════════════════════════════════════════════════════════════ */}
+      {activeDept === "eng" && (
+        <div className="space-y-3" data-testid="dept-eng-section">
+          {/* Engineering KPI strip */}
+          <div className="flex items-center gap-4 flex-wrap rounded-md border bg-muted/30 px-3 py-2 text-xs">
+            <div><span className="text-muted-foreground">Progress:</span> <span className="font-semibold">{Math.round(engStagePct)}%</span></div>
+            <div><span className="text-muted-foreground">Tasks:</span> <span className="font-semibold">{engCompletedTasks}/{engTotalTasks}</span></div>
+            {overdueEngineeringCount > 0 && <div className="text-amber-600 font-semibold"><AlertTriangle className="inline h-3 w-3 mr-0.5" />{overdueEngineeringCount} overdue</div>}
+          </div>
+
+          {/* Engineering sub-tabs */}
+          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="eng-sub-tabs">
+            {[
+              { key: "tasks", label: "Tasks", icon: ListTodo },
+              { key: "timeline", label: "Timeline", icon: CalendarDays },
+              { key: "drawings", label: "Drawings", icon: FileText },
+            ].map(st => (
+              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
+                <st.icon className="h-3 w-3 mr-1" /> {st.label}
+              </Button>
+            ))}
+          </div>
+
+          {activeSubTab === "tasks" && projectInfoId && <EngTasksTab projectInfoId={projectInfoId} isAdmin={isAdmin} projectName={projectName} />}
+          {activeSubTab === "timeline" && (
+            <div className="space-y-4">
+              {projectInfoId && <StageTimeline projectId={projectInfoId} />}
+              <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />
             </div>
           )}
-          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="commercial-sub-tabs">
+          {activeSubTab === "drawings" && projectInfoId && <DrawingRegisterTab projectId={projectInfoId} projectName={projectName} />}
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
+           QUALITY DEPARTMENT
+         ════════════════════════════════════════════════════════════ */}
+      {activeDept === "quality" && (
+        <div className="space-y-3" data-testid="dept-quality-section">
+          {/* Quality KPI strip */}
+          <div className="flex items-center gap-4 flex-wrap rounded-md border bg-muted/30 px-3 py-2 text-xs">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${qualityRag === "green" ? "bg-emerald-500" : qualityRag === "amber" ? "bg-amber-500" : "bg-red-500"}`} />
+              <span className="text-muted-foreground">Quality</span>
+            </div>
+            <div><span className="text-muted-foreground">Checklist:</span> <span className="font-semibold">{Math.round(qualityProgressPct)}%</span></div>
+            <div><span className="text-muted-foreground">Items:</span> <span className="font-semibold">{qualityApprovedItems}/{qualityTotalItems}</span></div>
+            {(qualityTotalItems - qualityApprovedItems) > 0 && <div className="text-amber-600 font-semibold"><AlertTriangle className="inline h-3 w-3 mr-0.5" />{qualityTotalItems - qualityApprovedItems} pending</div>}
+          </div>
+
+          {/* Quality sub-tabs */}
+          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="quality-sub-tabs">
             {[
-              { key: "revenue-tracking", label: "Revenue Milestones", icon: DollarSign, visible: canViewSubTab.revenue },
-              { key: "expenditure", label: "Cost Lines", icon: CreditCard, visible: canViewSubTab.expenditure },
+              { key: "checklist", label: "QC Checklist", icon: ClipboardList },
+              { key: "history", label: "History", icon: History },
+              { key: "approvals", label: "Approvals", icon: FileCheck },
+            ].map(st => (
+              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
+                <st.icon className="h-3 w-3 mr-1" /> {st.label}
+              </Button>
+            ))}
+          </div>
+
+          {activeSubTab === "checklist" && <QualityTab projectName={projectName} />}
+          {activeSubTab === "history" && (
+            <div className="space-y-2">
+              <WeeklyReviewWizard
+                projectName={projectName}
+                snapshotMetrics={{
+                  phase: phase || undefined,
+                  completion: projectInfo?.project_pct_complete ?? undefined,
+                  totalRevenue: totalPaidInflows,
+                  totalExpenses,
+                  margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
+                  overdueCount: overdueEngineeringCount,
+                }}
+              />
+              <ProjectHistoryTab projectName={projectName} />
+            </div>
+          )}
+          {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════
+           PROJECT DEVELOPMENT DEPARTMENT
+         ════════════════════════════════════════════════════════════ */}
+      {activeDept === "pd" && (
+        <div className="space-y-3" data-testid="dept-pd-section">
+          {/* PD KPI strip */}
+          <div className="flex items-center gap-4 flex-wrap rounded-md border bg-muted/30 px-3 py-2 text-xs">
+            <div><span className="text-muted-foreground">Contract:</span> <span className="font-semibold">{contractValue > 0 ? `R${contractValue.toLocaleString()}` : "—"}</span></div>
+            <div><span className="text-muted-foreground">Revenue:</span> <span className="font-semibold">{Math.round(revenueRealisedPct)}%</span></div>
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${costRag === "green" ? "bg-emerald-500" : costRag === "amber" ? "bg-amber-500" : "bg-red-500"}`} />
+              <span className="text-muted-foreground">Cost</span>
+            </div>
+            {budgetTotal > 0 && <div><span className="text-muted-foreground">Margin:</span> <span className={`font-semibold ${marginDelta >= 0 ? "text-emerald-600" : "text-red-600"}`}>{marginDelta >= 0 ? "+" : ""}{marginDelta.toFixed(1)}%</span></div>}
+          </div>
+
+          {/* PD sub-tabs */}
+          <div className="flex items-center gap-1.5 flex-wrap overflow-x-auto scrollbar-hide" data-testid="pd-sub-tabs">
+            {[
+              { key: "revenue", label: "Revenue", icon: DollarSign, visible: canViewSubTab.revenue },
+              { key: "cost-lines", label: "Cost Lines", icon: CreditCard, visible: canViewSubTab.expenditure },
               { key: "cashflow", label: "Cashflow", icon: Activity, visible: canViewSubTab.cashflow },
               { key: "procurement", label: "Procurement", icon: CreditCard, visible: true },
-              { key: "change-control", label: "Changes", icon: FileCheck, visible: true },
+              { key: "changes", label: "Changes", icon: FileCheck, visible: true },
               { key: "subcontractors", label: "Subs", icon: Users, visible: canViewSubTab.subcontractors },
+              { key: "documents", label: "Documents", icon: FolderOpen, visible: true },
+              { key: "comms", label: "Comms", icon: MessageSquare, visible: true },
             ].filter(st => st.visible).map(st => (
               <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
                 <st.icon className="h-3 w-3 mr-1" /> {st.label}
               </Button>
             ))}
-            {/* Cross-links to portfolio finance views */}
-            <div className="h-5 border-l border-border/50 mx-1" />
-            {canViewSubTab.cosTracker && (
-              <>
-                <Link href="/cos"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground whitespace-nowrap shrink-0 gap-1"><TrendingUp className="h-3 w-3" />COS Tracker<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
-                <Link href="/revenue-tracker"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground whitespace-nowrap shrink-0 gap-1"><TrendingUp className="h-3 w-3" />Revenue Tracker<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
-                <Link href="/gp-tracker"><Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground whitespace-nowrap shrink-0 gap-1"><BarChart3 className="h-3 w-3" />GP Tracker<ExternalLink className="h-2.5 w-2.5 opacity-50" /></Button></Link>
-              </>
-            )}
           </div>
-          {activeSubTab === "revenue-tracking" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
-          {activeSubTab === "expenditure" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
-          {/* Legacy sub-tab support: if user navigates via old URL, show the tab component */}
-          {activeSubTab === "monthly-realisation" && canViewSubTab.cosTracker && <MonthlyRealisationTab projectName={projectName} />}
-          {activeSubTab === "revenue-tracker" && canViewSubTab.cosTracker && <RevenueTrackerTab projectName={projectName} />}
-          {activeSubTab === "gp-tracker" && canViewSubTab.cosTracker && <GpTrackerTab projectName={projectName} />}
+
+          {/* Budget baseline strip */}
+          {projectInfoId && (activeSubTab === "revenue" || activeSubTab === "cost-lines") && (
+            <BudgetBaselineStrip projectId={projectInfoId} actualRevenue={totalRevenueActual} />
+          )}
+
+          {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
+          {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
           {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
           {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
-          {activeSubTab === "change-control" && projectInfoId && <ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "changes" && projectInfoId && <ProjectChangeControlTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} />}
-        </div>
-      )}
-
-      {/* Timeline — stage timeline + project timeline */}
-      {activeSection === "engineering" && (
-        <div className="space-y-4" data-testid="timeline-section">
-          {projectInfoId && (
-            <StageTimeline projectId={projectInfoId} />
-          )}
-          <ProjectTimelineTab projectName={projectName} projectInfoId={projectInfoId ?? null} />
-        </div>
-      )}
-
-      {/* Files & Evidence — documents, sharepoint, evidence organized by stage */}
-      {activeSection === "collaboration" && (
-        <div className="space-y-2" data-testid="files-section">
-          <div className="flex gap-1.5 flex-nowrap overflow-x-auto scrollbar-hide" data-testid="files-sub-tabs">
-            {[
-              { key: "local-files", label: "Documents", icon: FolderOpen, visible: true },
-              { key: "approvals", label: "Approvals", icon: FileCheck, visible: true },
-              { key: "chat", label: "Comms", icon: MessageSquare, visible: true },
-            ].filter(st => st.visible).map(st => (
-              <Button key={st.key} size="sm" variant={activeSubTab === st.key ? "default" : "ghost"} className="h-7 text-xs whitespace-nowrap shrink-0" onClick={() => setActiveSubTab(st.key)} data-testid={`subtab-${st.key}`}>
-                <st.icon className="h-3 w-3 mr-1" /> {st.label}
-              </Button>
-            ))}
-          </div>
-          {activeSubTab === "local-files" && <LocalFolderTab projectName={projectName} />}
-          {activeSubTab === "approvals" && <ProjectApprovalsTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
-          {activeSubTab === "chat" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
-        </div>
-      )}
-
-      {/* History — decision log, meeting log, actions, exceptions, audit */}
-      {activeSection === "quality" && (
-        <div className="space-y-2" data-testid="history-section">
-          <WeeklyReviewWizard
-            projectName={projectName}
-            snapshotMetrics={{
-              phase: phase || undefined,
-              completion: projectInfo?.project_pct_complete ?? undefined,
-              totalRevenue: totalPaidInflows,
-              totalExpenses,
-              margin: totalPaidInflows > 0 ? (totalPaidInflows - totalExpenses) / totalPaidInflows : 0,
-              overdueCount: overdueEngineeringCount,
-            }}
-          />
-          <ProjectHistoryTab projectName={projectName} />
+          {activeSubTab === "documents" && <LocalFolderTab projectName={projectName} />}
+          {activeSubTab === "comms" && <ProjectChatTab projectName={projectName} projectInfoId={projectInfoId ?? null} />}
         </div>
       )}
 

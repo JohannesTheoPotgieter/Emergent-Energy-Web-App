@@ -77,6 +77,8 @@ const ApprovalsPage = lazy(() => import("@/pages/admin-approvals"));
 const PMDeliverablesPage = lazy(() => import("@/pages/pm-deliverables"));
 const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
 const ClientsPage = lazy(() => import("@/pages/clients"));
+const ClientDetailPage = lazy(() => import("@/pages/client-detail"));
+const ClientProjectDepartmentsPage = lazy(() => import("@/pages/client-project-departments"));
 const ImportControlTowerPage = lazy(() => import("@/pages/import-control-tower"));
 const ProgrammeReportsPage = lazy(() => import("@/pages/programme-reports"));
 const KpiTraceabilityPage = lazy(() => import("@/pages/kpi-traceability"));
@@ -211,6 +213,8 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   StageAdminPage,
   AdminControlCenterPage,
   ClientsPage,
+  ClientDetailPage,
+  ClientProjectDepartmentsPage,
   ActionLaunchpadPage,
   PdPmHandoverPage,
   PmHandoverReviewPage,
@@ -343,7 +347,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 
   if (effectiveRole === "PROJECT_MANAGER_SITE") {
     const allowed = PM_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/pm/on-the-go" && location.startsWith("/pm/on-the-go"))
+      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/pm/on-the-go" && location.startsWith("/pm/on-the-go")) || (p === "/clients" && location.startsWith("/clients/"))
     );
     if (!allowed) {
       // Legacy: was /execution-board → /gates. Collapsed to direct.
@@ -352,8 +356,8 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (user?.role === "eng_program_manager") {
-    const allowed = EPM_ALLOWED_PATHS.some(p => 
-      p === location || (p === "/projects" && location.startsWith("/project/"))
+    const allowed = EPM_ALLOWED_PATHS.some(p =>
+      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/clients" && location.startsWith("/clients/"))
     );
     if (!allowed) {
       return <Redirect to="/" />;
@@ -362,7 +366,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 
   if (user?.role === "quality_manager") {
     const allowed = QM_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/"))
+      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/clients" && location.startsWith("/clients/"))
     );
     if (!allowed) {
       return <Redirect to="/" />;
@@ -371,7 +375,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 
   if (effectiveRole === "HSE_MANAGER") {
     const allowed = HSE_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/"))
+      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/clients" && location.startsWith("/clients/"))
     );
     if (!allowed) {
       return <Redirect to="/hse" />;
@@ -380,7 +384,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 
   if (effectiveRole === "SSEG_MANAGER") {
     const allowed = SSEG_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/"))
+      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/clients" && location.startsWith("/clients/"))
     );
     if (!allowed) {
       return <Redirect to="/hse" />;
