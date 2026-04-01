@@ -77,6 +77,8 @@ const ApprovalsPage = lazy(() => import("@/pages/admin-approvals"));
 const PMDeliverablesPage = lazy(() => import("@/pages/pm-deliverables"));
 const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
 const ClientsPage = lazy(() => import("@/pages/clients"));
+const ClientDetailPage = lazy(() => import("@/pages/client-detail"));
+const ClientProjectDepartmentsPage = lazy(() => import("@/pages/client-project-departments"));
 const ImportControlTowerPage = lazy(() => import("@/pages/import-control-tower"));
 const ProgrammeReportsPage = lazy(() => import("@/pages/programme-reports"));
 const KpiTraceabilityPage = lazy(() => import("@/pages/kpi-traceability"));
@@ -211,6 +213,8 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   StageAdminPage,
   AdminControlCenterPage,
   ClientsPage,
+  ClientDetailPage,
+  ClientProjectDepartmentsPage,
   ActionLaunchpadPage,
   PdPmHandoverPage,
   PmHandoverReviewPage,
