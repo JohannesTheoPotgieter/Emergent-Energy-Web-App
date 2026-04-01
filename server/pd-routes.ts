@@ -2,7 +2,7 @@
 // @ts-nocheck
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
-import { clients, pdTickets, workItems, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig } from "@shared/schema";
+import { clients, pdTickets, workItems, workItemAssignments, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig } from "@shared/schema";
 import { eq, ilike, sql, and, desc, asc, or, count, isNull, inArray } from "drizzle-orm";
 import { getFeatureFlag } from "./lib/feature-flags";
 import { requirePermission } from "./permission-middleware";
@@ -521,6 +521,74 @@ export function registerPdRoutes(app: Express) {
       const { selectedTasks, customTasks } = req.body || {};
       const spawned = await spawnTasksForTicket(ticket, user, selectedTasks, customTasks);
       res.json({ spawned: spawned.length, tasks: spawned });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/pd/tickets/:id/engineering-tasks", requireAuth, requirePermission('pd_quality', 'edit'), async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const role = user?.companyRole || user?.role || "";
+      if (!canCreatePdTicket(role)) {
+        return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
+
+      const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+      if (!ticket.projectId) return res.status(400).json({ error: "Ticket is not linked to a project" });
+
+      const title = String(req.body?.title || "").trim();
+      if (!title) return res.status(400).json({ error: "Task title is required" });
+
+      const priority = String(req.body?.priority || "Medium");
+      const normalizedPriority = ["High", "Medium", "Low"].includes(priority) ? priority : "Medium";
+
+      const [task] = await db.insert(workItems).values({
+        projectId: ticket.projectId,
+        workstream: "ENG",
+        source: "UI",
+        type: "task",
+        taskTypeTag: "PD",
+        title: title.startsWith("[PD]") ? title : `[PD] ${title}`,
+        description: req.body?.description?.trim()
+          ? req.body.description.trim()
+          : `Created from PD Ticket #${ticket.id} (${ticket.requestType}) for ${ticket.projectSiteName}`,
+        status: "TO DO",
+        priority: normalizedPriority,
+        endDate: req.body?.dueDate || ticket.dueDate || null,
+        pdTicketId: ticket.id,
+        ownerUserId: req.body?.ownerUserId || null,
+        createdBy: user?.id || null,
+      }).returning();
+
+      if (task?.ownerUserId) {
+        await db.insert(workItemAssignments).values({
+          workItemId: task.id,
+          userId: task.ownerUserId,
+          role: "OWNER",
+        }).onConflictDoNothing();
+      }
+
+      if (task) {
+        await db.insert(taskActivityLog).values({
+          workItemId: task.id,
+          actorId: user?.id || null,
+          actionType: "created",
+          newValue: `Task created from PD Ticket #${ticket.id}`,
+        });
+      }
+
+      if (!ticket.tasksSpawnedAt) {
+        await db.update(pdTickets)
+          .set({ tasksSpawnedAt: new Date(), status: ticket.status === "Draft" ? "In Progress" : ticket.status })
+          .where(eq(pdTickets.id, ticket.id));
+      }
+
+      res.status(201).json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
