@@ -76,7 +76,6 @@ const PM_CONFIG: RoleDashboardConfig = {
   quickActions: [
     { label: "My Tasks", path: "/my-work/tasks", iconKey: "ListChecks" },
     { label: "Approvals", path: "/pm/approvals", iconKey: "ClipboardCheck" },
-    { label: "Deliverables", path: "/pm/deliverables", iconKey: "Package" },
     { label: "Projects", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Weekly Reviews", path: "/weekly-reviews", iconKey: "CalendarCheck" },
     { label: "Gates Pipeline", path: "/gates", iconKey: "Milestone" },
