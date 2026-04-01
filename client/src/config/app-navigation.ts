@@ -143,7 +143,6 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Quality Dashboard", path: "/quality" },
       { label: "Commissioning", path: "/commissioning-dashboard" },
-      { label: "Inspections / NCRs", path: "/quality/ncrs" },
     ],
   },
   {
@@ -423,14 +422,6 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     { label: "Project Development", path: "/pd" },
     { label: "Clients", path: "/clients" },
     { label: decodeURIComponent(clientMatch[1]) },
-  ];
-
-  // --- Quality NCR detail ---
-  const ncrMatch = pathname.match(/^\/quality\/ncr\/([^/]+)$/);
-  if (ncrMatch) return [
-    { label: "Quality", path: "/quality" },
-    { label: "Inspections / NCRs", path: "/quality/ncrs" },
-    { label: `NCR ${decodeURIComponent(ncrMatch[1])}` },
   ];
 
   // --- PM On-The-Go project ---
