@@ -132,6 +132,22 @@ function uniqueNumberList(values: Array<number | null | undefined>): number[] {
   return Array.from(result);
 }
 
+async function fetchProjectHandoverRows(projectIds: number[]): Promise<any[]> {
+  if (projectIds.length === 0) return [];
+  try {
+    const result = await db.execute(sql.raw(
+      `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id IN (${projectIds.join(",")})`,
+    ));
+    return Array.isArray(result) ? result : result.rows || [];
+  } catch (err: unknown) {
+    console.warn("[Quality] handover summary query failed; continuing without handover context", {
+      projectCount: projectIds.length,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return [];
+  }
+}
+
 function normalizeHandoverRow(row: any) {
   if (!row) return null;
   const deliverables =
@@ -1532,11 +1548,7 @@ export function registerQualityRoutes(app: Express) {
       const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
 
-      const handoverRows: any[] = projectIds.length > 0
-        ? await db.execute(sql.raw(
-            `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id IN (${projectIds.join(",")})`,
-          )).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
-        : [];
+      const handoverRows: any[] = await fetchProjectHandoverRows(projectIds);
       const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
 
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
@@ -1549,20 +1561,26 @@ export function registerQualityRoutes(app: Express) {
       const allPlanLinks = await db.select().from(qcPlanLink);
       const allItems = await db.select().from(qcItemInstance);
 
-      const projectsWithLinks = [...new Set(allPlanLinks.map((l: any) => l.projectName))];
-      const allWiTasksQ = await getAllPMWorkItemsAsProjectPlan();
-      const allPlanTasks = projectsWithLinks.length
-        ? allWiTasksQ.filter((t: any) => projectsWithLinks.includes(t.projectName))
-        : [];
+      try {
+        const projectsWithLinks = [...new Set(allPlanLinks.map((l: any) => l.projectName))];
+        const allWiTasksQ = await getAllPMWorkItemsAsProjectPlan();
+        const allPlanTasks = projectsWithLinks.length
+          ? allWiTasksQ.filter((t: any) => projectsWithLinks.includes(t.projectName))
+          : [];
 
-      for (const link of allPlanLinks) {
-        if (!link.itemInstanceId) continue;
-        const item = allItems.find((i: any) => i.id === link.itemInstanceId);
-        if (!item || !item.isApplicable || item.approved) continue;
-        const task = allPlanTasks.find((t: any) => t.id === link.planItemId);
-        if (task && (task.actualPctComplete ?? 0) >= 1) {
-          warningsByProject[link.projectName] = (warningsByProject[link.projectName] || 0) + 1;
+        for (const link of allPlanLinks) {
+          if (!link.itemInstanceId) continue;
+          const item = allItems.find((i: any) => i.id === link.itemInstanceId);
+          if (!item || !item.isApplicable || item.approved) continue;
+          const task = allPlanTasks.find((t: any) => t.id === link.planItemId);
+          if (task && (task.actualPctComplete ?? 0) >= 1) {
+            warningsByProject[link.projectName] = (warningsByProject[link.projectName] || 0) + 1;
+          }
         }
+      } catch (err: unknown) {
+        console.warn("[Quality] checklist warning synthesis failed; base checklist response will continue", {
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
 
       const templateItemIds = uniqueNumberList(allItems.map((i: any) => i.templateItemId));
@@ -1680,7 +1698,7 @@ export function registerQualityRoutes(app: Express) {
 
       res.json(result);
     } catch (err: unknown) {
-      console.error("[Quality] Error:", err);
+      console.error("[Quality] checklists endpoint failed:", err);
       res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1701,11 +1719,7 @@ export function registerQualityRoutes(app: Express) {
       const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
 
-      const handoverRows: any[] = projectIds.length > 0
-        ? await db.execute(sql.raw(
-            `SELECT project_id, status, engineering_status, quality_status, rejection_reason FROM project_pd_pm_handover WHERE project_id IN (${projectIds.join(",")})`,
-          )).then((result: any) => (Array.isArray(result) ? result : result.rows || []))
-        : [];
+      const handoverRows: any[] = await fetchProjectHandoverRows(projectIds);
       const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
 
       const templateItemIds = uniqueNumberList(allItems.map((item: any) => item.templateItemId));
