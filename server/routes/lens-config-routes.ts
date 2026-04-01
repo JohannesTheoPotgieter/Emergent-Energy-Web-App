@@ -210,10 +210,10 @@ export function registerLensConfigRoutes(app: Express) {
         const results = await db.select().from(ssegApplications).where(
           and(eq(ssegApplications.projectId, projectId), isNull(ssegApplications.deletedAt))
         );
-        return res.json({ applications: results });
+        return res.json(results);
       }
       const results = await db.select().from(ssegApplications).where(isNull(ssegApplications.deletedAt));
-      return res.json({ applications: results });
+      return res.json(results);
     } catch (err) {
       console.error("[SSEG] Error:", err);
       return res.status(500).json({ error: "Failed to fetch SSEG applications" });

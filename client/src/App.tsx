@@ -92,7 +92,6 @@ const PmHandoverReviewPage = lazy(() => import("@/pages/pm-handover-review"));
 const FinancialReviewQueuePage = lazy(() => import("@/pages/financial-review-queue"));
 const HandoverControlPage = lazy(() => import("@/pages/handover-control"));
 const FyeRevenueTrackingPage = lazy(() => import("@/pages/fye-revenue-tracking"));
-const StandupsPage = lazy(() => import("@/pages/standups"));
 const ExceptionsPage = lazy(() => import("@/pages/exceptions"));
 const PhaseTemplatesPage = lazy(() => import("@/pages/phase-templates"));
 const ProjectCreatePage = lazy(() => import("@/pages/project-create"));
@@ -111,8 +110,6 @@ const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-month
 const ReportCenterPage = lazy(() => import("@/pages/reports/report-center"));
 const PerformancePage = lazy(() => import("@/pages/reports/performance"));
 const EngineeringStandupPage = lazy(() => import("@/pages/engineering/standup"));
-const NcrListPage = lazy(() => import("@/pages/quality/ncr-list"));
-const NcrDetailPage = lazy(() => import("@/pages/quality/ncr-detail"));
 const ConstructionDashboardPage = lazy(() => import("@/pages/construction-dashboard"));
 const POApprovalBoardPage = lazy(() => import("@/pages/po-approval-board"));
 const PaymentRequestBoardPage = lazy(() => import("@/pages/payment-request-board"));
@@ -125,8 +122,6 @@ const OpportunitiesPage = lazy(() => import("@/pages/opportunities"));
 const AdminPipedrivePage = lazy(() => import("@/pages/admin-pipedrive"));
 const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
 const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
-
-const SsegPage = lazy(() => import("@/pages/sseg"));
 
 // Commissioning Control Tower
 const CommissioningDashboardPage = lazy(() => import("@/pages/commissioning-dashboard"));
@@ -146,7 +141,7 @@ const GatesCommitmentsPage = lazy(() => import("@/pages/gates/gates-commitments"
 const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/hse", "/handover", "/procurement", "/milestone-tracker", "/commissioning-dashboard", "/sseg", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments", "/company-overview"];
 const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/on-the-go", "/pm/handover-review", "/pm-dashboard", "/projects", "/execution-board", "/execution-board/program", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/quality/ncrs", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/hse", "/handover", "/procurement", "/milestone-tracker", "/commissioning-dashboard", "/sseg", "/payment-batch-manager", "/po-approval-board", "/payment-request-board", "/governance/financial-reviews", "/sites", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments", "/company-overview", "/priorities"];
 const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/hse", "/commissioning-dashboard", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers"];
-const HSE_ALLOWED_PATHS = ["/", "/hse", "/quality", "/quality/ncrs", "/projects", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/handover", "/handover-control", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers", "/gates/client-updates", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/reports/center"];
+const HSE_ALLOWED_PATHS = ["/", "/hse", "/quality", "/quality/ncrs", "/projects", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/handover", "/handover-control", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers", "/gates/client-updates", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/reports/center"];
 const SSEG_ALLOWED_PATHS = ["/", "/hse", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/quality/ncrs", "/projects", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/handover", "/sseg", "/commissioning-dashboard", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers", "/gates/client-updates", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/reports/center"];
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
@@ -224,7 +219,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   FinancialReviewQueuePage,
   HandoverControlPage,
   FyeRevenueTrackingPage,
-  StandupsPage,
   ExceptionsPage,
   PhaseTemplatesPage,
   ProjectCreatePage,
@@ -243,8 +237,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   ReportCenterPage,
   PerformancePage,
   EngineeringStandupPage,
-  NcrListPage,
-  NcrDetailPage,
   ConstructionDashboardPage,
   POApprovalBoardPage,
   PaymentRequestBoardPage,
@@ -268,7 +260,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   GatesQueriesPage,
   GatesCommitmentsPage,
   CommissioningDashboardPage,
-  SsegPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {

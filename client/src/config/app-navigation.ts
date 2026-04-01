@@ -85,7 +85,7 @@ export const TOP_SECTIONS: TopSection[] = [
       "/portfolios",
       "/projects", "/project", "/project-create",
       "/procurement",
-      "/standups", "/handover",
+      "/handover",
       "/pm", "/sites",
       "/governance/financial-reviews",
       "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
@@ -93,7 +93,6 @@ export const TOP_SECTIONS: TopSection[] = [
       "/milestone-tracker",
       "/weekly-reviews",
       "/pm-dashboard",
-      "/sseg",
     ]),
     secondary: [
       { label: "Execution Dashboard", path: "/execution-board" },
@@ -110,7 +109,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
       { label: "Handover & Closeout", path: "/handover" },
       { label: "Financial Reviews", path: "/governance/financial-reviews" },
-      { label: "SSEG", path: "/sseg" },
       { label: "Sites", path: "/sites" },
     ],
   },
@@ -142,7 +140,6 @@ export const TOP_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Quality Dashboard", path: "/quality" },
       { label: "Commissioning", path: "/commissioning-dashboard" },
-      { label: "Inspections / NCRs", path: "/quality/ncrs" },
     ],
   },
   {
@@ -422,14 +419,6 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     { label: "Project Development", path: "/pd" },
     { label: "Clients", path: "/clients" },
     { label: decodeURIComponent(clientMatch[1]) },
-  ];
-
-  // --- Quality NCR detail ---
-  const ncrMatch = pathname.match(/^\/quality\/ncr\/([^/]+)$/);
-  if (ncrMatch) return [
-    { label: "Quality", path: "/quality" },
-    { label: "Inspections / NCRs", path: "/quality/ncrs" },
-    { label: `NCR ${decodeURIComponent(ncrMatch[1])}` },
   ];
 
   // --- PM On-The-Go project ---

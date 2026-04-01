@@ -117,7 +117,7 @@ export const NAV_SECTIONS = [
   { key: "PROJECT_DELIVERY", label: "Project Delivery", description: "Execution Dashboard, PM Dashboard, Portfolio, All Projects, Procurement, PO Approvals, Payment Requests, Payment Batches, Milestones, Weekly Reviews, Standups, PM Approvals, PM On-The-Go, Handover & Closeout, Financial Reviews, SSEG, Sites" },
   { key: "HSE", label: "HSE", description: "HSE Dashboard" },
   { key: "ENGINEERING", label: "Engineering", description: "Engineering Dashboard, Task Board, Standup" },
-  { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Commissioning, Inspections / NCRs" },
+  { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Commissioning" },
   { key: "FINANCE", label: "Finance", description: "Cashflow, Revenue, COS, GP / Margin, FYE Revenue, Counterparties, Subcontractors, Invoice Patterns" },
   { key: "REPORTS", label: "Reports", description: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance" },
   { key: "EXCO", label: "Priorities", description: "Company Priorities — strategic goals & progress tracking" },
@@ -243,7 +243,6 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   pd_handover_queue: "Handover Queue — PD-to-PM handover queue",
   pd_reports: "PD Reports — project development reporting",
   eng_standup: "Engineering Standup — daily standup management",
-  quality_ncrs: "Inspections / NCRs — quality inspections & non-conformances",
   report_center: "Report Center — centralized report hub",
   programme_reports: "Programme Reports — programme-level reporting",
   pm_monthly: "PM Monthly — project manager monthly reports",
@@ -281,7 +280,7 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   quality: {
     label: "Quality",
-    entities: ["quality", "quality_ncrs", "commissioning"],
+    entities: ["quality", "commissioning"],
   },
   finance: {
     label: "Finance",
