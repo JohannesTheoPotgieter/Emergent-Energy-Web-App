@@ -80,7 +80,7 @@ export type SetEntityAssignmentInput = {
   assignmentRole?: AssignmentRole;
   assigneeType: AssigneeType | null;
   assigneeId: number | null;
-  mode?: "replace" | "append" | "clear";
+  mode?: "replace" | "append" | "clear" | "remove";
   metadata?: Record<string, unknown> | null;
 };
 
@@ -119,7 +119,7 @@ const ENTITY_PERMISSION_BY_TYPE: Record<AssignmentEntityType, string> = {
 };
 
 const MULTI_ASSIGNMENT_TYPES = new Set<AssignmentEntityType>(["operational_task", "tr_item", "work_item"]);
-const EXTERNAL_ASSIGNMENT_TYPES = new Set<AssignmentEntityType>(["operational_task", "tr_item", "quality_item", "deliverable"]);
+const EXTERNAL_ASSIGNMENT_TYPES = new Set<AssignmentEntityType>(["operational_task", "tr_item", "quality_item", "deliverable", "work_item"]);
 
 function toInt(value: unknown): number | null {
   const parsed = Number(value);
@@ -1075,7 +1075,24 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
     const before = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId);
     console.log("[Assignment] Before state:", before.length, "active assignments");
 
-    if (mode !== "append" || !target) {
+    if (mode === "remove") {
+      // Remove only the specific assignee, leave others intact
+      if (input.assigneeType && assigneeId) {
+        await tx.update(entityAssignments).set({
+          active: false,
+          clearedAt: new Date(),
+          clearedByUserId: user.id,
+          updatedAt: new Date(),
+        }).where(and(
+          eq(entityAssignments.entityType, input.entityType),
+          eq(entityAssignments.entityId, entityId),
+          eq(entityAssignments.assignmentRole, assignmentRole),
+          eq(entityAssignments.assigneeType, input.assigneeType),
+          eq(entityAssignments.assigneeId, assigneeId),
+          eq(entityAssignments.active, true),
+        ));
+      }
+    } else if (mode !== "append" || !target) {
       await tx.update(entityAssignments).set({
         active: false,
         clearedAt: new Date(),
@@ -1089,7 +1106,7 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
       ));
     }
 
-    if (target && assigneeId) {
+    if (mode !== "remove" && target && assigneeId) {
       const alreadyActive = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId, assignmentRole);
       const duplicate = alreadyActive.find((assignment) =>
         assignment.assigneeType === input.assigneeType &&

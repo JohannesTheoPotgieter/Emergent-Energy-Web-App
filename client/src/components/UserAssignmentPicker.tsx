@@ -129,7 +129,7 @@ export default function UserAssignmentPicker({
   const effectiveAssignments = assignments ?? fetchedAssignments ?? null;
 
   const reassignMutation = useMutation({
-    mutationFn: async (payload: { assigneeType: AssigneeType | null; assigneeId: number | null }) => {
+    mutationFn: async (payload: { assigneeType: AssigneeType | null; assigneeId: number | null; action?: "assign" | "remove" }) => {
       if (!safeTaskId) {
         throw new Error(`Invalid task ID: ${taskId}`);
       }
@@ -137,7 +137,7 @@ export default function UserAssignmentPicker({
       if (numericAssigneeId != null && (!Number.isFinite(numericAssigneeId) || numericAssigneeId <= 0)) {
         throw new Error(`Invalid assignee ID: ${payload.assigneeId}`);
       }
-      const requestBody = { taskId: safeTaskId, taskSource, assigneeType: payload.assigneeType, assigneeId: numericAssigneeId };
+      const requestBody = { taskId: safeTaskId, taskSource, assigneeType: payload.assigneeType, assigneeId: numericAssigneeId, ...(payload.action ? { action: payload.action } : {}) };
       const res = await fetch("/api/tasks/reassign", {
         method: "PATCH",
         credentials: "include",
@@ -379,11 +379,15 @@ export default function UserAssignmentPicker({
               return (
                 <button
                   key={entry.assigneeId}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs transition-colors ${isAssigned ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'hover:bg-muted/60 text-foreground'}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs transition-colors ${isAssigned ? (mode === "multi" ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200') : 'hover:bg-muted/60 text-foreground'}`}
                   onClick={() => {
-                    if (!isAssigned) reassignMutation.mutate({ assigneeType: "internal_user", assigneeId: entry.assigneeId });
+                    if (isAssigned && mode === "multi") {
+                      reassignMutation.mutate({ assigneeType: "internal_user", assigneeId: entry.assigneeId, action: "remove" });
+                    } else if (!isAssigned) {
+                      reassignMutation.mutate({ assigneeType: "internal_user", assigneeId: entry.assigneeId });
+                    }
                   }}
-                  disabled={isAssigned}
+                  disabled={isAssigned && mode === "single"}
                   data-testid={`btn-select-user-${entry.assigneeId}`}
                 >
                   <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-white text-[10px] font-bold shadow-sm ${getAvatarColor(entry.displayLabel)}`}>
@@ -393,7 +397,8 @@ export default function UserAssignmentPicker({
                     <div className="truncate font-medium">{entry.displayLabel}</div>
                     {entry.secondaryLabel && <div className="text-[10px] text-muted-foreground truncate">{entry.secondaryLabel}</div>}
                   </div>
-                  {isAssigned && <Check className="h-4 w-4 text-blue-600" />}
+                  {isAssigned && mode === "multi" && <X className="h-4 w-4 text-blue-600 group-hover:text-red-600" />}
+                  {isAssigned && mode !== "multi" && <Check className="h-4 w-4 text-blue-600" />}
                 </button>
               );
             })}
@@ -403,11 +408,15 @@ export default function UserAssignmentPicker({
               return (
                 <button
                   key={`${entry.assigneeType}-${entry.assigneeId}`}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs transition-colors ${isAssigned ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'hover:bg-muted/60 text-foreground'}`}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-xs transition-colors ${isAssigned ? (mode === "multi" ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-red-50 hover:text-red-600 hover:border-red-200' : 'bg-blue-50 text-blue-700 border border-blue-200') : 'hover:bg-muted/60 text-foreground'}`}
                   onClick={() => {
-                    if (!isAssigned) reassignMutation.mutate({ assigneeType: entry.assigneeType, assigneeId: entry.assigneeId });
+                    if (isAssigned && mode === "multi") {
+                      reassignMutation.mutate({ assigneeType: entry.assigneeType, assigneeId: entry.assigneeId, action: "remove" });
+                    } else if (!isAssigned) {
+                      reassignMutation.mutate({ assigneeType: entry.assigneeType, assigneeId: entry.assigneeId });
+                    }
                   }}
-                  disabled={isAssigned}
+                  disabled={isAssigned && mode === "single"}
                   data-testid={`btn-select-${entry.assigneeType}-${entry.assigneeId}`}
                 >
                   <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-amber-100 text-amber-700 shadow-sm">
@@ -421,7 +430,8 @@ export default function UserAssignmentPicker({
                       </div>
                     )}
                   </div>
-                  {isAssigned && <Check className="h-4 w-4 text-blue-600" />}
+                  {isAssigned && mode === "multi" && <X className="h-4 w-4 text-blue-600" />}
+                  {isAssigned && mode !== "multi" && <Check className="h-4 w-4 text-blue-600" />}
                 </button>
               );
             })}

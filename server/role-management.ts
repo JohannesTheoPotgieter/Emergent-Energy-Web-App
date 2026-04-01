@@ -20,7 +20,7 @@ import {
   type PermissionEntity,
 } from "@shared/schema";
 import { evaluateAuthorityForRole, evaluatePermissionForRole } from "@shared/permission-resolver";
-import { getEffectiveUser, jwtAuth, requireAuth } from "./auth-context";
+import { getEffectiveUser, jwtAuth, requireAuth, setRevokedUserTokenVersionFloor } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { invalidateEntityPermCache, invalidateUserOverrideCache } from "./permission-middleware";
 import bcrypt from "bcryptjs";
@@ -548,6 +548,9 @@ export function registerRoleManagementRoutes(app: Express) {
         .where(eq(users.id, userId))
         .returning();
       if (!updated) return res.status(404).json({ error: "User not found" });
+
+      // Invalidate existing tokens so user picks up the new role on next request
+      setRevokedUserTokenVersionFloor(userId, Date.now());
 
       logAuditFromReq(req, { entityType: "user", action: "role_change", entityId: String(userId), changesJson: { description: "User role changed", userName: updated.name, previousRole: userBefore?.role, newRole: role } });
       logPermissionAudit(req, { eventType: "user_role_changed", targetUserId: userId, targetRole: role, changeDetail: { userName: updated.name, previousRole: userBefore?.role, newRole: role } });

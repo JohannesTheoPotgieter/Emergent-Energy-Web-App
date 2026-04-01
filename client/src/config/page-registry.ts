@@ -155,6 +155,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "paymentRequestBoard", path: "/payment-request-board", label: "Payment Requests", iconKey: "CreditCard", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "PaymentRequestBoardPage" },
   { id: "paymentBatchManager", path: "/payment-batch-manager", label: "Payment Batches", iconKey: "Wallet", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "PaymentBatchManagerPage" },
   { id: "hseDashboard", path: "/hse", label: "Health, Safety & Environment", iconKey: "ShieldAlert", navGroup: "HSE", permissionEntity: "hse", showInSidebar: true, routeComponentKey: "HseDashboardPage", roleLandingEligibility: ["HSE_MANAGER", "SSEG_MANAGER"] },
+  { id: "hseCompliance", path: "/hse/compliance", label: "Compliance / SSEG", type: "alias", redirectTo: "/hse?tab=compliance", navGroup: "HSE", permissionEntity: "hse_compliance", showInSidebar: false },
   { id: "handoverDashboard", path: "/handover", label: "Handover & Closeout", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverDashboardPage" },
   // PD-PM Handover V2 extensions
   { id: "lessonsLearnt", path: "/admin/lessons", label: "Lessons Learnt", iconKey: "BookOpen", navGroup: "SYSTEM", permissionEntity: "handover", showInSidebar: false, routeComponentKey: "LessonsLearntPage" },

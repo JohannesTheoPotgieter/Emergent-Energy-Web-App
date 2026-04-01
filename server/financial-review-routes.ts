@@ -1,5 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 import {
   createFinancialReview,
   decideReview,
@@ -31,6 +32,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "create"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseInt(req.params.projectId as string, 10);
@@ -54,6 +56,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseInt(req.params.projectId as string, 10);
@@ -73,6 +76,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review/:reviewId",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "view"),
     async (req: Request, res: Response) => {
       try {
         const reviewId = parseInt(req.params.reviewId as string, 10);
@@ -93,6 +97,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review-history",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseInt(req.params.projectId as string, 10);
@@ -112,6 +117,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review/:reviewId",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
         const reviewId = parseInt(req.params.reviewId as string, 10);
@@ -143,6 +149,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review/:reviewId/refresh-snapshot",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
         const reviewId = parseInt(req.params.reviewId as string, 10);
@@ -162,6 +169,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review/:reviewId/submit",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "edit"),
     async (req: Request, res: Response) => {
       try {
         const reviewId = parseInt(req.params.reviewId as string, 10);
@@ -182,6 +190,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/projects/:projectId/financial-review/:reviewId/approve",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "approve"),
     async (req: Request, res: Response) => {
       try {
         const reviewId = parseInt(req.params.reviewId as string, 10);
@@ -213,6 +222,7 @@ export function registerFinancialReviewRoutes(app: Express): void {
     "/api/financial-reviews/pending",
     jwtAuth,
     requireAuth,
+    requirePermission("pd_finance", "view"),
     async (_req: Request, res: Response) => {
       try {
         const items = await getPendingReviews();
