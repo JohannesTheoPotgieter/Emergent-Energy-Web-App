@@ -18,8 +18,8 @@ export async function runIntegrityGuard(
   // ── 1:1 coverage: project_execution_state ──────────────────────────
   try {
     const res = await db.execute(sql.raw(`
-      INSERT INTO project_execution_state (project_id)
-      SELECT pi.id FROM project_info pi
+      INSERT INTO project_execution_state (project_id, phase)
+      SELECT pi.id, pi.phase FROM project_info pi
       LEFT JOIN project_execution_state pes ON pi.id = pes.project_id
       WHERE pes.id IS NULL
       ON CONFLICT (project_id) DO NOTHING
@@ -31,6 +31,25 @@ export async function runIntegrityGuard(
     }
   } catch (err: unknown) {
     log(`project_execution_state backfill error: ${(err instanceof Error ? err.message : String(err))}`, SRC);
+  }
+
+  // ── Ensure currentStageCode is populated for projects missing it ───
+  try {
+    const res = await db.execute(sql.raw(`
+      UPDATE project_execution_state
+      SET current_stage_code = 'S01_FIRST_ASSESSMENT',
+          gate_status = COALESCE(gate_status, 'IN_PROGRESS'),
+          updated_at = NOW()
+      WHERE current_stage_code IS NULL
+        AND is_active = true
+      RETURNING project_id
+    `));
+    const count = (res as any).rows?.length ?? 0;
+    if (count > 0) {
+      log(`Set default current_stage_code for ${count} projects`, SRC);
+    }
+  } catch (err: unknown) {
+    log(`currentStageCode backfill error: ${(err instanceof Error ? err.message : String(err))}`, SRC);
   }
 
   // ── 1:1 coverage: project_settings ─────────────────────────────────
