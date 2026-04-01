@@ -10,6 +10,7 @@ export const commissioningSources = pgTable("commissioning_sources", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id),
   sourceType: text("source_type").notNull().default("sharepoint"),
+  sourceFormat: text("source_format").notNull().default("commissioning_workbook"),
   driveId: text("drive_id"),
   itemId: text("item_id"),
   filePath: text("file_path"),
@@ -27,46 +28,60 @@ export const insertCommissioningSourceSchema = createInsertSchema(commissioningS
 export type InsertCommissioningSource = z.infer<typeof insertCommissioningSourceSchema>;
 export type CommissioningSource = typeof commissioningSources.$inferSelect;
 
-// ===================== COMMISSIONING SNAPSHOT =====================
+// ===================== DISPLAY STATUS =====================
 
-/** Parsed section from a commissioning workbook */
+export type CommissioningDisplayStatus =
+  | "complete"
+  | "in_progress"
+  | "awaiting_external"
+  | "not_started"
+  | "not_applicable"
+  | "blocked"
+  | "unknown";
+
+// ===================== COMMISSIONING SECTION =====================
+
 export interface CommissioningSection {
   sectionKey: string;
   sectionName: string;
-  items: CommissioningSectionItem[];
   rawStatus?: string;
-  displayStatus?: "complete" | "in_progress" | "not_started" | "blocked" | "unknown";
+  displayStatus: CommissioningDisplayStatus;
+  isCompleteForGate: boolean;
+  isRequired: boolean;
   approvedBy?: string;
   approvalDate?: string;
-  commentSummary?: string;
-  sourceLink?: string;
   blockerNote?: string;
 }
 
-export interface CommissioningSectionItem {
-  description: string;
-  status?: string;
-  approvedBy?: string;
-  date?: string;
-  comments?: string;
+// ===================== O&M HANDOVER CHECKLIST ITEM =====================
+
+export interface OmHandoverChecklistItem {
+  documentName: string;
+  status: string;
+  comments: string;
 }
 
-/** Dashboard payload shape returned by the API */
+// ===================== DASHBOARD PAYLOAD =====================
+
 export interface CommissioningDashboardPayload {
   projectId: number;
   projectName: string;
   source: CommissioningSource | null;
   snapshot: CommissioningSnapshot | null;
+  projectInfo: {
+    workbookProjectName?: string;
+    siteAddress?: string;
+    commissioningDate?: string;
+  };
   sections: CommissioningSection[];
-  overallStatus: "complete" | "in_progress" | "not_started" | "blocked" | "unknown";
+  overallStatus: CommissioningDisplayStatus;
   completionPercent: number;
   blockers: string[];
   ssegStatus: {
     application?: string;
-    pti?: string;
-    commissioningApproval?: string;
-    nersaRegistration?: string;
+    approval?: string;
   };
+  omHandoverChecklist: OmHandoverChecklistItem[];
   syncState: {
     lastRefreshed: string | null;
     parseStatus: string | null;
@@ -74,6 +89,8 @@ export interface CommissioningDashboardPayload {
     isStale: boolean;
   };
 }
+
+// ===================== COMMISSIONING SNAPSHOT =====================
 
 export const commissioningSnapshots = pgTable("commissioning_snapshots", {
   id: serial("id").primaryKey(),
