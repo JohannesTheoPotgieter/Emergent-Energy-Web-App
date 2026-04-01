@@ -7,7 +7,7 @@ import { db } from "../db";
 import { requirePermission } from "../permission-middleware";
 import { eq, and, or, sql, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { projectInfo, priorityLinks, priorityProjects, mytoolCompanyPriorities } from "@shared/schema";
+import { projectInfo, priorityLinks, priorityProjects, mytoolCompanyPriorities, workItems } from "@shared/schema";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
@@ -1205,12 +1205,16 @@ router.get("/api/mytool/triage-inbox", requireAuth, requireAdmin, async (req, re
 
 router.get("/api/mytool/unclassified-tasks", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { mytoolTasks: mytoolTasksTable } = await import("@shared/schema");
-    const tasks = await db.select().from(mytoolTasksTable)
+    // Canonical: personal tasks now in work_items (workstream=PERSONAL)
+    const tasks = await db.select().from(workItems)
       .where(
-        or(
-          isNull(mytoolTasksTable.bucket),
-          and(eq(mytoolTasksTable.bucket, 'project'), isNull(mytoolTasksTable.projectName))
+        and(
+          eq(workItems.workstream, "PERSONAL" as any),
+          isNull(workItems.deletedAt),
+          or(
+            isNull(workItems.bucket),
+            and(sql`${workItems.bucket} = 'project'`, isNull(workItems.projectId))
+          )
         )
       );
     res.json(tasks);

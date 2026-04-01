@@ -2047,7 +2047,7 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM derived_project_kpis WHERE project_name = ${pN}`);
         await safeDel(sql`DELETE FROM merge_audit_log WHERE project_name = ${pN}`);
 
-        await safeDel(sql`UPDATE mytool_tasks SET project_name = NULL WHERE project_name = ${pN}`);
+        // mytool_tasks cleanup removed — table has 0 active rows, personal tasks now in work_items
         await safeDel(sql`UPDATE priority_links SET project_name = NULL WHERE project_name = ${pN}`);
         await safeDel(sql`UPDATE audit_events SET project_name = ${pName + ' [DELETED]'} WHERE project_name = ${pN}`);
 
