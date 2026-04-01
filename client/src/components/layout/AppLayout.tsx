@@ -10,7 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor } from "lucide-react";
+import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Home, MoreHorizontal } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { buildVisibleTopSections, getAllowedSectionKeysForLens, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
@@ -400,28 +401,100 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="border-t border-border/40 bg-muted/20">
             <div className="px-4 lg:px-6 mx-auto w-full max-w-[1440px]">
               {breadcrumbs.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 py-1.5 text-xs text-muted-foreground">
-                  <Link href="/" className="hover:text-foreground transition-colors">Home</Link>
-                  {breadcrumbs.map((crumb, idx) => (
-                    <span key={crumb.label + idx} className="flex items-center gap-1.5">
-                      <ChevronRight className="h-3 w-3 text-muted-foreground/50" />
-                      {crumb.path ? (
-                        <Link href={crumb.path} className="hover:text-foreground transition-colors">{crumb.label}</Link>
-                      ) : (
-                        <span className="text-foreground font-medium">{crumb.label}</span>
-                      )}
-                    </span>
-                  ))}
-                </div>
+                <nav aria-label="breadcrumb" className="py-1.5">
+                  <ol className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <li className="inline-flex items-center">
+                      <Link href="/" className="hover:text-foreground transition-colors inline-flex items-center" aria-label="Home">
+                        <Home className="h-3.5 w-3.5" />
+                      </Link>
+                    </li>
+                    {breadcrumbs.length <= 3 ? (
+                      breadcrumbs.map((crumb, idx) => {
+                        const isLast = idx === breadcrumbs.length - 1;
+                        return (
+                          <li key={crumb.label + idx} className="inline-flex items-center gap-1.5">
+                            <ChevronRight className="h-3 w-3 text-muted-foreground/50" aria-hidden="true" />
+                            {isLast ? (
+                              <span className="text-foreground font-medium max-w-[200px] truncate" title={crumb.label} aria-current="page">{crumb.label}</span>
+                            ) : crumb.path ? (
+                              <Link href={crumb.path} className="hover:text-foreground transition-colors">{crumb.label}</Link>
+                            ) : (
+                              <span>{crumb.label}</span>
+                            )}
+                          </li>
+                        );
+                      })
+                    ) : (
+                      <>
+                        {/* First crumb */}
+                        <li className="inline-flex items-center gap-1.5">
+                          <ChevronRight className="h-3 w-3 text-muted-foreground/50" aria-hidden="true" />
+                          {breadcrumbs[0].path ? (
+                            <Link href={breadcrumbs[0].path} className="hover:text-foreground transition-colors">{breadcrumbs[0].label}</Link>
+                          ) : (
+                            <span>{breadcrumbs[0].label}</span>
+                          )}
+                        </li>
+                        {/* Collapsed middle items */}
+                        <li className="inline-flex items-center gap-1.5">
+                          <ChevronRight className="h-3 w-3 text-muted-foreground/50" aria-hidden="true" />
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button className="flex h-5 w-5 items-center justify-center rounded hover:bg-muted transition-colors" aria-label="Show collapsed breadcrumbs">
+                                <MoreHorizontal className="h-3.5 w-3.5" />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-1.5" align="start">
+                              <div className="flex flex-col gap-0.5">
+                                {breadcrumbs.slice(1, -1).map((crumb, idx) => (
+                                  crumb.path ? (
+                                    <Link key={idx} href={crumb.path} className="text-xs px-2 py-1 rounded hover:bg-muted transition-colors">{crumb.label}</Link>
+                                  ) : (
+                                    <span key={idx} className="text-xs px-2 py-1 text-muted-foreground">{crumb.label}</span>
+                                  )
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                        </li>
+                        {/* Last crumb */}
+                        <li className="inline-flex items-center gap-1.5">
+                          <ChevronRight className="h-3 w-3 text-muted-foreground/50" aria-hidden="true" />
+                          <span className="text-foreground font-medium max-w-[200px] truncate" title={breadcrumbs[breadcrumbs.length - 1].label} aria-current="page">
+                            {breadcrumbs[breadcrumbs.length - 1].label}
+                          </span>
+                        </li>
+                      </>
+                    )}
+                  </ol>
+                </nav>
               )}
               {activeSection.secondary.length > 0 && (
-                <div ref={subNavRef} className="flex gap-1.5 overflow-x-auto no-scrollbar pb-2 pt-0.5">
+                <div
+                  ref={subNavRef}
+                  className={cn("flex gap-1.5 overflow-x-auto no-scrollbar pb-2", breadcrumbs.length > 0 ? "pt-0" : "pt-0.5")}
+                  role="tablist"
+                  aria-label={`${activeSection.label} navigation`}
+                  onKeyDown={(e) => {
+                    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+                    const container = e.currentTarget;
+                    const links = Array.from(container.querySelectorAll<HTMLElement>("a:not([aria-disabled])"));
+                    const currentIdx = links.findIndex((el) => el === document.activeElement);
+                    if (currentIdx === -1) return;
+                    e.preventDefault();
+                    const nextIdx = e.key === "ArrowRight"
+                      ? (currentIdx + 1) % links.length
+                      : (currentIdx - 1 + links.length) % links.length;
+                    links[nextIdx]?.focus();
+                  }}
+                >
                   {activeSection.secondary.map((item) => (
                     item.disabled ? (
                       <span
                         key={item.path}
                         className="ee-subnav-pill cursor-not-allowed whitespace-nowrap opacity-55"
                         aria-disabled="true"
+                        role="tab"
                       >
                         {item.label}
                       </span>
@@ -433,6 +506,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                           "ee-subnav-pill whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                           linkIsActive(location, item.path) ? "ee-subnav-pill-active" : "",
                         )}
+                        role="tab"
+                        aria-selected={linkIsActive(location, item.path)}
+                        tabIndex={linkIsActive(location, item.path) ? 0 : -1}
                         onClick={() => trackNavClick(activeSection.label, item.label)}
                       >
                         {item.label}
