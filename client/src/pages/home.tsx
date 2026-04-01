@@ -46,6 +46,7 @@ import {
   Inbox,
   Calendar,
   MessageSquare,
+  AlertCircle,
 } from "lucide-react";
 
 // Lazy-load tab content from My Work pages
@@ -317,6 +318,32 @@ export default function HomePage() {
     );
   }
 
+  /** Render a KPI card with planned vs actual values */
+  function kpiCardDual(label: string, planned: string | number, actual: string | number, icon: React.ReactNode, opts?: { color?: string }) {
+    return (
+      <Card key={label} className="border-border/50">
+        <CardContent className="p-3.5">
+          <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5">
+            {icon}
+            <span className="text-[11px] uppercase tracking-wide">{label}</span>
+          </div>
+          {isLoading ? <Skeleton className="h-10 w-20" /> : (
+            <div className="space-y-0.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground uppercase">Planned</span>
+                <span className="text-sm font-semibold font-mono text-foreground">{planned}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-muted-foreground uppercase">Actual</span>
+                <span className={`text-sm font-semibold font-mono ${opts?.color || "text-foreground"}`}>{actual}</span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
   /** Render the workspace card with task counts and action links */
   function workspaceCard(links: Array<{ href: string; label: string; icon: React.ReactNode; variant?: "default" | "outline" }>) {
     return (
@@ -463,9 +490,13 @@ export default function HomePage() {
                   <div>
                     <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Financial Snapshot</h2>
                     <div className="grid grid-cols-3 gap-2">
-                      {kpiCard("Inflow (FY)", money(kpis.receivedInflowFy), <DollarSign className="w-4 h-4" />)}
-                      {kpiCard("Gross Margin", kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", <TrendingUp className="w-4 h-4" />)}
-                      {kpiCard("Gross Profit", money(kpis.grossProfitFy), <DollarSign className="w-4 h-4" />)}
+                      {kpiCardDual("Inflows (FY)", money(kpis.plannedRevenueFy), money(kpis.receivedInflowFy), <DollarSign className="w-4 h-4" />)}
+                      {kpiCardDual("Gross Profit (FY)", money(kpis.grossProfitFy), money(kpis.receivedInflowFy - kpis.paidExpenditureFy), <TrendingUp className="w-4 h-4" />)}
+                      {kpiCardDual("COS (FY)", money(kpis.plannedExpenditureFy), money(kpis.paidExpenditureFy), <DollarSign className="w-4 h-4" />)}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {kpiCard("AP Overdue (Outflows)", money(kpis.overdueOutflowFy), <AlertCircle className="w-4 h-4" />, { color: kpis.overdueOutflowFy > 0 ? "text-red-600" : undefined })}
+                      {kpiCard("AR Overdue (Inflows)", money(kpis.overdueInflowFy), <AlertCircle className="w-4 h-4" />, { color: kpis.overdueInflowFy > 0 ? "text-amber-600" : undefined })}
                     </div>
                   </div>
                 </div>
