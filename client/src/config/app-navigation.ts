@@ -44,7 +44,7 @@ export const TOP_SECTIONS: TopSection[] = [
   {
     label: "Company",
     key: "PORTFOLIO",
-    path: "/project-lifecycle",
+    path: "/lifecycle-board",
     match: (pathname) => startsWithAny(pathname, [
       "/company-overview",
       "/lifecycle-board",
@@ -53,7 +53,6 @@ export const TOP_SECTIONS: TopSection[] = [
     ]) && !matchesPathPrefix(pathname, "/gates/commitments"),
     secondary: [
       { label: "Company Overview", path: "/company-overview" },
-      { label: "Overview", path: "/project-lifecycle" },
       { label: "Lifecycle Board", path: "/lifecycle-board" },
       { label: "Gate Tracker", path: "/gates" },
       { label: "Blocked Gates", path: "/gates/blocked" },
@@ -386,7 +385,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   // --- Portfolio detail ---
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)$/);
   if (portfolioMatch) return [
-    { label: "Company", path: "/project-lifecycle" },
+    { label: "Company", path: "/lifecycle-board" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];
 
@@ -478,7 +477,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
 
   // --- Gates workspace ---
   if (pathname.startsWith("/gates")) return [
-    { label: "Company", path: "/project-lifecycle" },
+    { label: "Company", path: "/lifecycle-board" },
     { label: "Gate Tracker", path: "/gates" },
     ...(pathname !== "/gates" ? [{
       label: activeSection.secondary.filter((item) => linkIsActive(pathname, item.path)).sort((a, b) => b.path.length - a.path.length)[0]?.label || pathname.split("/").pop() || "",

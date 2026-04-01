@@ -142,7 +142,7 @@ describe("breadcrumb generation", () => {
   it("maps portfolio detail with Company parent", () => {
     const crumbs = getBreadcrumbs("/portfolios/solar-portfolio", findSection("Company"));
     expect(crumbs).toEqual([
-      { label: "Company", path: "/project-lifecycle" },
+      { label: "Company", path: "/lifecycle-board" },
       { label: "solar-portfolio" },
     ]);
   });
@@ -241,7 +241,7 @@ describe("breadcrumb generation", () => {
   it("maps gates sub-pages under Company section", () => {
     const crumbs = getBreadcrumbs("/gates/blocked", findSection("Company"));
     expect(crumbs).toEqual([
-      { label: "Company", path: "/project-lifecycle" },
+      { label: "Company", path: "/lifecycle-board" },
       { label: "Gate Tracker", path: "/gates" },
       { label: "Blocked Gates" },
     ]);
