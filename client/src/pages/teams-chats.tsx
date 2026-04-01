@@ -70,7 +70,7 @@ function MessageBubble({ msg, isCurrentUser }: { msg: any; isCurrentUser: boolea
         {msg.attachments && msg.attachments.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {msg.attachments.map((a: any, i: number) => (
-              <span key={i} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-xs text-slate-600 border border-slate-200">
+              <span key={a.name || i} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 text-xs text-slate-600 border border-slate-200">
                 <Paperclip className="h-3 w-3" />
                 {a.name}
               </span>

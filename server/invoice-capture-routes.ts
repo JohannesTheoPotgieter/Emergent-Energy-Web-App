@@ -42,7 +42,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
       const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
-      const rows = await db.execute(sql.raw(`
+      const rows = await db.execute(sql`
         SELECT ic.*, u.name as captured_by_name, c.name_canonical as supplier_name, p.project_name
         FROM invoice_captures ic
         LEFT JOIN users u ON ic.captured_by_user_id = u.id
@@ -50,7 +50,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
         LEFT JOIN project_info p ON ic.project_id = p.id
         WHERE ic.project_id = ${projectId} AND ic.deleted_at IS NULL
         ORDER BY ic.created_at DESC
-      `));
+      `);
       const items = rowsFromResult(rows);
       res.json(items);
     } catch (err: unknown) {
@@ -68,7 +68,7 @@ export function registerInvoiceCaptureRoutes(app: Express): void {
 
       // Validate linked PO exists and is approved
       if (linkedPoId) {
-        const poCheck = await db.execute(sql.raw(`SELECT id, status FROM purchase_orders WHERE id = ${parseInt(linkedPoId)}`));
+        const poCheck = await db.execute(sql`SELECT id, status FROM purchase_orders WHERE id = ${parseInt(linkedPoId)}`);
         const poRows = rowsFromResult(poCheck);
         if (poRows.length === 0) {
           return res.status(400).json({ error: "Linked purchase order not found" });

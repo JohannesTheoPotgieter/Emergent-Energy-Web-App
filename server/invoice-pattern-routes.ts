@@ -116,7 +116,8 @@ async function buildCounterpartyAssignmentIndex() {
           eq(entityAssignments.active, true),
         )),
     ]);
-  } catch {
+  } catch (err) {
+    console.error("[InvoicePatterns] Error loading counterparty usage:", err);
     return new Map();
   }
 
