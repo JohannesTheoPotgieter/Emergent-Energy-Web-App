@@ -31,7 +31,7 @@ export const TOP_SECTIONS: TopSection[] = [
     label: "Home",
     key: "HOME",
     path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox", "/priorities"]),
+    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox"]),
     secondary: [
       { label: "My Dashboard", path: "/" },
       { label: "My Tasks", path: "/my-work/tasks" },
@@ -173,6 +173,15 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
+    label: "Priorities",
+    key: "EXCO",
+    path: "/priorities",
+    match: (pathname) => startsWithAny(pathname, ["/priorities"]),
+    secondary: [
+      { label: "All Priorities", path: "/priorities" },
+    ],
+  },
+  {
     label: "Admin",
     key: "ADMIN",
     path: "/admin/control-center",
@@ -198,11 +207,11 @@ export const TOP_SECTIONS: TopSection[] = [
  * Each role sees only the sections listed here.
  */
 export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
-  COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "ADMIN"],
-  CEO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "ADMIN"],
-  CCO:                    ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS"],
+  COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "EXCO", "ADMIN"],
+  CEO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "EXCO", "ADMIN"],
+  CCO:                    ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS", "EXCO"],
   KEY_ACCOUNTS_MANAGER:   ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE"],
-  PROGRAM_MANAGER:        ["HOME", "PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS"],
+  PROGRAM_MANAGER:        ["HOME", "PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS", "EXCO"],
   PROJECT_MANAGER_SITE:   ["HOME", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS"],
   CONSTRUCTION_MANAGER:   ["HOME", "PROJECT_DELIVERY", "FINANCE", "QUALITY", "HSE", "REPORTS"],
   ENGINEER:               ["HOME", "ENGINEERING", "QUALITY"],
@@ -210,7 +219,7 @@ export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
   QUALITY_MANAGER:        ["HOME", "QUALITY", "PROJECT_DELIVERY", "REPORTS"],
   HSE_MANAGER:            ["HOME", "HSE", "PROJECT_DELIVERY", "REPORTS"],
   SSEG_MANAGER:           ["HOME", "HSE", "QUALITY", "ENGINEERING"],
-  CFO:                    ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS"],
+  CFO:                    ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS", "EXCO"],
   PROGRAM_FINANCE_MANAGER:["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS"],
   ACCOUNTANT:             ["HOME", "FINANCE"],
   PROJECT_DEVELOPER:      ["HOME", "PROJECT_DEVELOPMENT", "FINANCE"],
@@ -464,7 +473,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     { label: "Company", path: "/project-lifecycle" },
     { label: "Gate Tracker", path: "/gates" },
     ...(pathname !== "/gates" ? [{
-      label: activeSection.secondary.find((item) => linkIsActive(pathname, item.path))?.label || pathname.split("/").pop() || "",
+      label: activeSection.secondary.filter((item) => linkIsActive(pathname, item.path)).sort((a, b) => b.path.length - a.path.length)[0]?.label || pathname.split("/").pop() || "",
     }] : []),
   ];
 

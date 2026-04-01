@@ -26,7 +26,7 @@ describe("redirect chain elimination", () => {
   it("PM role fallback redirects to /gates (not /execution-board)", () => {
     expect(appSource).toContain('return <Redirect to="/gates" />');
     // The old intermediate hop should not be the PM fallback destination
-    const pmBlock = appSource.split("PROJECT_MANAGER_SITE")[1]?.substring(0, 300) || "";
+    const pmBlock = appSource.split("PROJECT_MANAGER_SITE")[1]?.substring(0, 500) || "";
     expect(pmBlock).toContain("/gates");
     expect(pmBlock).not.toContain('to="/execution-board"');
   });

@@ -2340,9 +2340,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               const expensePaymentDate = preserveManualRow
                 ? (previous?.expensePaymentDate || null)
                 : (m.paidDate || null);
-              const paymentDateConfirmed = preserveManualRow
-                ? Boolean(previous?.paymentDateConfirmed)
-                : m.paidDateFontColor === "black";
               const paymentDateFontColor = preserveManualRow
                 ? (previous?.paymentDateFontColor || null)
                 : (m.paidDateFontColor || null);
@@ -2366,7 +2363,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
                 invoiceDateConfirmed: m.invoiceDateFontColor === "black",
                 expensePaymentDate,
                 paymentDateFontColor,
-                paymentDateConfirmed,
+                paymentDateConfirmed: m.paidDateFontColor === "black",
                 subProjectName: m.subProjectName || null,
                 dataSource: "SMART_IMPORT",
                 projectId: projectId || null,
