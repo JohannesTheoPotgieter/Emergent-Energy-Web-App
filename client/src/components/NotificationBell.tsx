@@ -71,7 +71,7 @@ export function NotificationBell() {
     if (!n.isRead) markRead(n.id);
     setOpen(false);
     if (n.eventType?.startsWith("standup.")) {
-      setLocation("/standups");
+      setLocation("/engineering/standup");
     } else if (n.linkedTaskId) {
       setLocation(`/engineering/tasks?taskId=${n.linkedTaskId}`);
     } else if (n.linkedDeliverableId) {
