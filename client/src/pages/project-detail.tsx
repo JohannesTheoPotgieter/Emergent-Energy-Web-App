@@ -41,7 +41,7 @@ import { ProjectTimelineTab } from "@/components/tabs/ProjectTimelineTab";
 import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
-import { ProjectCommissioningTab } from "@/components/tabs/ProjectCommissioningTab";
+// Old ProjectCommissioningTab retired — replaced by /commissioning-dashboard page
 import { ProjectConstructionTab } from "@/components/tabs/ProjectConstructionTab";
 import FinancialReviewTab from "@/components/tabs/FinancialReviewTab";
 import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
@@ -1525,7 +1525,14 @@ export default function ProjectDetailPage() {
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "construction" && projectInfoId && <ProjectConstructionTab projectId={projectInfoId} projectName={projectName} />}
-          {activeSubTab === "commissioning" && projectInfoId && <ProjectCommissioningTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "commissioning" && projectInfoId && (
+            <div className="rounded-lg border bg-muted/30 p-6 text-center space-y-3">
+              <p className="text-sm text-muted-foreground">Commissioning is now managed via the Commissioning Control Tower.</p>
+              <a href={`/commissioning-dashboard/${projectInfoId}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                Open Commissioning Dashboard
+              </a>
+            </div>
+          )}
           {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "handover" && projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "financial-review" && projectInfoId && <FinancialReviewTab projectId={projectInfoId} projectName={projectName} />}
