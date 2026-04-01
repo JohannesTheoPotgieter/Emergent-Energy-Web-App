@@ -41,7 +41,9 @@ describe("admin roles module state", () => {
   });
 
   it("contains visible system roles in defaults", () => {
-    const systemRoles = DEFAULT_ROLE_PERMISSIONS.filter((r) => r.isSystem).map((r) => r.role);
+    const systemRoles = (DEFAULT_ROLE_PERMISSIONS as Array<{ role: string; isSystem?: boolean }> )
+      .filter((r) => Boolean(r.isSystem))
+      .map((r) => r.role);
     expect(systemRoles).toContain("COO_ADMIN");
     expect(systemRoles).toContain("CEO_ADMIN");
     expect(systemRoles.length).toBeGreaterThan(2);
