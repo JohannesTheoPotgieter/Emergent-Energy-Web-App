@@ -38,7 +38,7 @@ const NAV_SECTIONS = [
   { key: "PROJECT_DELIVERY", label: "Project Delivery", description: "Execution Dashboard, Portfolio, All Projects, Procurement, PO Approvals, Payment Requests, Milestones, Weekly Reviews, Handover & Closeout, Financial Reviews, Sites" },
   { key: "HSE", label: "HSE", description: "HSE Dashboard, Compliance / SSEG" },
   { key: "ENGINEERING", label: "Engineering", description: "Engineering Dashboard, Task Board, Standup" },
-  { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Inspections / NCRs" },
+  { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Commissioning" },
   { key: "FINANCE", label: "Finance", description: "Cashflow, Revenue, COS, GP / Margin, FYE Revenue, Counterparties, Subcontractors, Invoice Patterns" },
   { key: "REPORTS", label: "Reports", description: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance" },
   { key: "ADMIN", label: "Admin", description: "Control Center, Users & Roles, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery" },

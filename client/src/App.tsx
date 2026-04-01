@@ -111,8 +111,6 @@ const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-month
 const ReportCenterPage = lazy(() => import("@/pages/reports/report-center"));
 const PerformancePage = lazy(() => import("@/pages/reports/performance"));
 const EngineeringStandupPage = lazy(() => import("@/pages/engineering/standup"));
-const NcrListPage = lazy(() => import("@/pages/quality/ncr-list"));
-const NcrDetailPage = lazy(() => import("@/pages/quality/ncr-detail"));
 const ConstructionDashboardPage = lazy(() => import("@/pages/construction-dashboard"));
 const POApprovalBoardPage = lazy(() => import("@/pages/po-approval-board"));
 const PaymentRequestBoardPage = lazy(() => import("@/pages/payment-request-board"));
@@ -125,8 +123,6 @@ const OpportunitiesPage = lazy(() => import("@/pages/opportunities"));
 const AdminPipedrivePage = lazy(() => import("@/pages/admin-pipedrive"));
 const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
 const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
-
-const SsegPage = lazy(() => import("@/pages/sseg"));
 
 // Commissioning Control Tower
 const CommissioningDashboardPage = lazy(() => import("@/pages/commissioning-dashboard"));
@@ -243,8 +239,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   ReportCenterPage,
   PerformancePage,
   EngineeringStandupPage,
-  NcrListPage,
-  NcrDetailPage,
   ConstructionDashboardPage,
   POApprovalBoardPage,
   PaymentRequestBoardPage,
@@ -268,7 +262,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   GatesQueriesPage,
   GatesCommitmentsPage,
   CommissioningDashboardPage,
-  SsegPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
