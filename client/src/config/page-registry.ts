@@ -148,7 +148,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "opportunities", path: "/opportunities", label: "Opportunities", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "OpportunitiesPage" },
   // New module pages (Phase C)
   { id: "constructionDashboard", path: "/construction", label: "Construction", iconKey: "HardHat", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
-  { id: "procurementDashboard", path: "/procurement", label: "Procurement", iconKey: "Package", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "ProcurementDashboardPage" },
+  { id: "procurementDashboard", path: "/procurement", label: "Procurement", type: "alias", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, redirectTo: "/execution-board" },
   // EPC Workflow Phase 1
   { id: "poApprovalBoard", path: "/po-approval-board", label: "PO Approvals", iconKey: "FileText", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "POApprovalBoardPage" },
   { id: "paymentRequestBoard", path: "/payment-request-board", label: "Payment Requests", iconKey: "CreditCard", navGroup: "FINANCE", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "PaymentRequestBoardPage" },
