@@ -1027,7 +1027,7 @@ export function registerMsSyncRoutes(app: Express) {
       for (const t of deliverablesMapped.map((t: any) => ({ ...t, _source: "deliverables" }))) dedupPush(allTasks, t);
       for (const t of engineeringTasksMapped) dedupPush(allTasks, t);
       for (const t of planTasksMapped) {
-        const globalKey = `engineering_task-${t.id}`;
+        const globalKey = `engineering_task-${(t as any).id}`;
         if (!seenTaskIds.has(globalKey)) dedupPush(allTasks, t);
       }
       for (const t of qualityTasksMapped) dedupPush(allTasks, t);
