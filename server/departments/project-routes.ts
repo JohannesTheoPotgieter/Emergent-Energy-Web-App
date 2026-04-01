@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised } from "../lib/calculations/financeUtils";
+import { buildCanonicalResolver } from "../services/project-summary-helpers";
 
 const router = Router();
 
@@ -704,35 +705,65 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
 
     const today = new Date().toISOString().split("T")[0];
 
+    const projectInfoNames = new Set<string>(allProjectInfo.map((info: any) => info.projectName).filter(Boolean));
+    const resolveCanonicalProjectName = buildCanonicalResolver(projectInfoNames);
+
+    const toCanonicalProjectName = (name: string | null | undefined): string => {
+      if (!name) return "";
+      return resolveCanonicalProjectName(name);
+    };
+
     const expensesByProject = new Map<string, typeof allExpenses>();
     for (const expense of allExpenses) {
-      if (!expensesByProject.has(expense.projectName)) expensesByProject.set(expense.projectName, [] as any);
-      (expensesByProject.get(expense.projectName)! as any).push(expense);
+      const canonicalName = toCanonicalProjectName(expense.projectName);
+      if (!canonicalName) continue;
+      if (!expensesByProject.has(canonicalName)) expensesByProject.set(canonicalName, [] as any);
+      (expensesByProject.get(canonicalName)! as any).push(expense);
     }
 
     const inflowsByProject = new Map<string, typeof allInflows>();
     for (const inflow of allInflows) {
-      if (!inflowsByProject.has(inflow.projectName)) inflowsByProject.set(inflow.projectName, [] as any);
-      (inflowsByProject.get(inflow.projectName)! as any).push(inflow);
+      const canonicalName = toCanonicalProjectName(inflow.projectName);
+      if (!canonicalName) continue;
+      if (!inflowsByProject.has(canonicalName)) inflowsByProject.set(canonicalName, [] as any);
+      (inflowsByProject.get(canonicalName)! as any).push(inflow);
     }
 
     const plansByProject = new Map<string, typeof allPlans>();
     for (const plan of allPlans) {
-      if (!plansByProject.has(plan.projectName)) plansByProject.set(plan.projectName, [] as any);
-      (plansByProject.get(plan.projectName)! as any).push(plan);
+      const canonicalName = toCanonicalProjectName(plan.projectName);
+      if (!canonicalName) continue;
+      if (!plansByProject.has(canonicalName)) plansByProject.set(canonicalName, [] as any);
+      (plansByProject.get(canonicalName)! as any).push(plan);
     }
 
-    const editableMap = new Map(allEditableFields.map(f => [f.projectName, f]));
+    const editableMap = new Map(
+      allEditableFields
+        .map((f) => [toCanonicalProjectName(f.projectName), f] as const)
+        .filter(([name]) => !!name),
+    );
 
     const allProjectNames = new Set<string>();
-    for (const info of allProjectInfo) allProjectNames.add(info.projectName);
-    for (const expense of allExpenses) allProjectNames.add(expense.projectName);
-    for (const inflow of allInflows) allProjectNames.add(inflow.projectName);
-    for (const plan of allPlans) allProjectNames.add(plan.projectName);
+    for (const info of allProjectInfo) {
+      const name = toCanonicalProjectName(info.projectName);
+      if (name) allProjectNames.add(name);
+    }
+    for (const expense of allExpenses) {
+      const name = toCanonicalProjectName(expense.projectName);
+      if (name) allProjectNames.add(name);
+    }
+    for (const inflow of allInflows) {
+      const name = toCanonicalProjectName(inflow.projectName);
+      if (name) allProjectNames.add(name);
+    }
+    for (const plan of allPlans) {
+      const name = toCanonicalProjectName(plan.projectName);
+      if (name) allProjectNames.add(name);
+    }
 
     const taskCountsByProject = new Map<string, Record<string, number>>();
     for (const task of allOpTasks) {
-      const rawName = task.projectName;
+      const rawName = toCanonicalProjectName(task.projectName);
       if (!rawName) continue;
       const trackerName = rawName.replace(/ /g, "_") + (rawName.endsWith("_Tracker") ? "" : "_Tracker");
       const key = allProjectNames.has(trackerName) ? trackerName : rawName;
