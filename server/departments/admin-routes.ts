@@ -125,14 +125,14 @@ router.post("/api/financial-close/upload", requireAuth, requireAdmin, docUpload.
 
 router.get("/api/financial-close/files/:filename", requireAuth, (req, res) => {
   const filename = req.params.filename as string;
-  if (filename.includes('..') || filename.includes('/')) {
+  const resolvedPath = path.resolve(docUploadDir, path.basename(filename));
+  if (!resolvedPath.startsWith(path.resolve(docUploadDir))) {
     return res.status(400).json({ error: "Invalid filename" });
   }
-  const filePath = path.join(docUploadDir, filename);
-  if (!fs.existsSync(filePath)) {
+  if (!fs.existsSync(resolvedPath)) {
     return res.status(404).json({ error: "File not found" });
   }
-  res.sendFile(filePath);
+  res.sendFile(resolvedPath);
 });
 
 // ==================== FILE UPLOAD ROUTE ====================

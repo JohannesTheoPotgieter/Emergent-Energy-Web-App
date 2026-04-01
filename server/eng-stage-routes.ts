@@ -757,7 +757,7 @@ export function registerEngStageRoutes(app: Express) {
       const filePath = path.join(UPLOADS_DIR, deliverable.storageRef);
       if (!fs.existsSync(filePath)) return res.status(404).json({ error: "File not found on disk" });
 
-      res.setHeader("Content-Disposition", `attachment; filename="${deliverable.fileName}"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(deliverable.fileName || 'file')}"`);
       res.setHeader("Content-Type", deliverable.mimeType || "application/octet-stream");
       fs.createReadStream(filePath).pipe(res);
     } catch (err: any) {

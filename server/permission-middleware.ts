@@ -50,7 +50,8 @@ async function loadEntityPermissions() {
     entityPermCache = cache;
     roleRecordCache = roleCache;
     cacheLoadedAt = now;
-  } catch {
+  } catch (err) {
+    console.error("[Permissions] Error loading entity permissions:", err);
     // Fall back to defaults on DB error
   }
 }
@@ -86,7 +87,8 @@ async function loadUserOverrides(userId: number): Promise<Record<string, boolean
     userOverrideCache[userId] = overrides;
     userOverrideCacheLoadedAt = now;
     return overrides;
-  } catch {
+  } catch (err) {
+    console.error("[Permissions] Error loading user overrides:", err);
     return {};
   }
 }

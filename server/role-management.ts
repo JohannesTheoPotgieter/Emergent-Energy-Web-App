@@ -505,7 +505,9 @@ export function registerRoleManagementRoutes(app: Express) {
         if (usersWithRole.length > 0) {
           return res.status(409).json({ error: `Cannot delete role. ${usersWithRole.length} user(s) still assigned to this role.` });
         }
-      } catch {
+      } catch (err) {
+        console.error("[RoleManagement] Error checking role assignments before deletion:", err);
+        return res.status(500).json({ error: "Failed to verify role assignments before deletion" });
       }
 
       await db.delete(rolePermissions).where(eq(rolePermissions.role, roleKey));

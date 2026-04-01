@@ -569,7 +569,9 @@ function loadVisibleColumns(): string[] {
         return merged;
       }
     }
-  } catch {}
+  } catch (err) {
+    console.error("[UnifiedPlan] Error loading visible columns from storage:", err);
+  }
   return DEFAULT_VISIBLE_COLUMNS;
 }
 
@@ -581,7 +583,9 @@ function loadSavedViews(): SavedView[] {
   try {
     const stored = localStorage.getItem(STORAGE_KEY_VIEWS);
     if (stored) return JSON.parse(stored);
-  } catch {}
+  } catch (err) {
+    console.error("[UnifiedPlan] Error loading saved views from storage:", err);
+  }
   return [];
 }
 

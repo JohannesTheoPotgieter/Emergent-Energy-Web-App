@@ -318,7 +318,7 @@ export default function LoginPage() {
           <div className="overflow-y-auto flex-1 px-5 py-4 space-y-3">
             {releaseNotes.length > 0 ? (
               releaseNotes.map((item, i) => (
-                <div key={i} className="flex gap-3" data-testid={`version-item-${i}`}>
+                <div key={item.title || i} className="flex gap-3" data-testid={`version-item-${i}`}>
                   <div className="flex-shrink-0 w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center mt-0.5">
                     <Zap className="w-3.5 h-3.5 text-emerald-600" />
                   </div>

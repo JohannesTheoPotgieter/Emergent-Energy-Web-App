@@ -134,36 +134,34 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
         return sendError(res, unauthorized(info?.message || "Invalid username or password"));
       }
 
-      req.logIn(user, (loginError) => {
+      req.logIn(user, async (loginError) => {
         if (loginError) {
           logApiError("POST /api/auth/login session", loginError);
           return sendError(res, new ApiError(500, "SESSION_ERROR", "Failed to establish session", { dbMode }));
         }
 
-        void (async () => {
-          try {
-            await enforceSessionLimit(user.id, req.sessionID, 3);
-            const tokenVersion = await getTokenVersionForUser(user.id);
-            const token = generateToken({
-              userId: user.id,
-              email: user.email,
-              name: user.name,
-              role: user.role,
-              tokenVersion,
-            });
-            clearRevokedSessionId(req.sessionID);
-            clearRevokedUserTokenVersionFloor(user.id);
+        try {
+          await enforceSessionLimit(user.id, req.sessionID, 3);
+          const tokenVersion = await getTokenVersionForUser(user.id);
+          const token = generateToken({
+            userId: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            tokenVersion,
+          });
+          clearRevokedSessionId(req.sessionID);
+          clearRevokedUserTokenVersionFloor(user.id);
 
-            res.json({
-              message: "Login successful",
-              user: { id: user.id, email: user.email, name: user.name, role: user.role },
-              token,
-            });
-          } catch (tokenError) {
-            logApiError("POST /api/auth/login token", tokenError);
-            sendError(res, new ApiError(500, "TOKEN_ERROR", "Failed to create auth token", { dbMode }));
-          }
-        })();
+          res.json({
+            message: "Login successful",
+            user: { id: user.id, email: user.email, name: user.name, role: user.role },
+            token,
+          });
+        } catch (tokenError) {
+          logApiError("POST /api/auth/login token", tokenError);
+          sendError(res, new ApiError(500, "TOKEN_ERROR", "Failed to create auth token", { dbMode }));
+        }
       });
     })(req, res, next);
   });
@@ -242,7 +240,10 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
           role: adminUser.role || "",
           tokenVersion,
         });
-        res.send(`<!DOCTYPE html><html><body><script>localStorage.setItem('auth_token','${token}');window.location.href='/dashboard';</script></body></html>`);
+        // Use authorization code pattern instead of injecting token directly into HTML (prevents XSS)
+        const authCode = crypto.randomBytes(32).toString("hex");
+        authCodes.set(authCode, { token, user: { id: adminUser.id, email: adminUser.email, name: adminUser.name, role: adminUser.role }, expiresAt: Date.now() + 60_000 });
+        res.redirect(`/auth/ms-callback?code=${encodeURIComponent(authCode)}`);
       } catch (e) {
         res.status(500).send("Dev login failed");
       }
@@ -310,30 +311,28 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
       const dbUser = matchedUser[0];
       const sessionUser = { id: dbUser.id, email: dbUser.email, name: dbUser.name, role: dbUser.role };
 
-      req.logIn(sessionUser, (loginError) => {
+      req.logIn(sessionUser, async (loginError) => {
         if (loginError) {
           return res.redirect("/auth/login?error=ms_session_failed");
         }
 
-        void (async () => {
-          try {
-            await enforceSessionLimit(dbUser.id, req.sessionID, 3);
-            const tokenVersion = await getTokenVersionForUser(dbUser.id);
-            const token = generateToken({
-              userId: dbUser.id,
-              email: dbUser.email,
-              name: dbUser.name,
-              role: dbUser.role,
-              tokenVersion,
-            });
-            const authCode = crypto.randomBytes(32).toString("hex");
-            authCodes.set(authCode, { token, user: sessionUser, expiresAt: Date.now() + 60_000 });
-            res.redirect(`/auth/ms-callback?code=${encodeURIComponent(authCode)}`);
-          } catch (tokenError) {
-            logApiError("GET /api/auth/microsoft/callback token", tokenError);
-            res.redirect("/auth/login?error=ms_auth_failed");
-          }
-        })();
+        try {
+          await enforceSessionLimit(dbUser.id, req.sessionID, 3);
+          const tokenVersion = await getTokenVersionForUser(dbUser.id);
+          const token = generateToken({
+            userId: dbUser.id,
+            email: dbUser.email,
+            name: dbUser.name,
+            role: dbUser.role,
+            tokenVersion,
+          });
+          const authCode = crypto.randomBytes(32).toString("hex");
+          authCodes.set(authCode, { token, user: sessionUser, expiresAt: Date.now() + 60_000 });
+          res.redirect(`/auth/ms-callback?code=${encodeURIComponent(authCode)}`);
+        } catch (tokenError) {
+          logApiError("GET /api/auth/microsoft/callback token", tokenError);
+          res.redirect("/auth/login?error=ms_auth_failed");
+        }
       });
     } catch (error) {
       logApiError("GET /api/auth/microsoft/callback", error);

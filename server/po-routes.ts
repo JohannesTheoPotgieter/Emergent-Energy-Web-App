@@ -597,7 +597,7 @@ export function registerPoRoutes(app: Express) {
       if (!row?.pdf_data) return res.status(404).json({ error: "PO not found" });
 
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${row.po_ref}.pdf"`);
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(String(row.po_ref || 'PO'))}.pdf"`);
       res.send(row.pdf_data);
     } catch (err: unknown) {
       const errMessage = err instanceof Error ? err.message : String(err);
