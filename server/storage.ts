@@ -62,7 +62,7 @@ import {
   mytoolTimeblocks, mytoolDailyReviews, mytoolCompanyPriorities, mytoolUserPreferences, mytoolSettings,
   mytoolEmailLinks, mytoolDodTemplates,
   errorLogs, supportTickets,
-  type MytoolTask, type InsertMytoolTask, type MytoolTimeblock, type InsertMytoolTimeblock,
+  type MytoolTimeblock, type InsertMytoolTimeblock,
   type MytoolDailyReview, type InsertMytoolDailyReview, type MytoolCompanyPriority, type InsertMytoolCompanyPriority,
   type MytoolUserPreferences, type InsertMytoolUserPreferences,
   type MytoolEmailLink, type InsertMytoolEmailLink,
