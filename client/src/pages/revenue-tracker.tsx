@@ -564,7 +564,7 @@ export default function RevenueTrackerPage() {
   ];
 
   return (
-    <FinanceShell currentPage="revenue-tracker"><div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
+    <FinanceShell><div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/50">
       <div className="bg-white border-b border-border/80 px-3 sm:px-6 py-4 sm:py-6 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 max-w-[1800px] mx-auto">
           <div>
