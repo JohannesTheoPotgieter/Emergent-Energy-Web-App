@@ -51,7 +51,6 @@ import {
 type WorkspaceSection = "overview" | "stage-gates" | "latest-updates" | "client-overview";
 
 const SECTION_LINKS: Array<{ key: string; label: string; path: string }> = [
-  { key: "overview", label: "Overview", path: "/project-lifecycle" },
   { key: "lifecycle", label: "Lifecycle", path: "/lifecycle-board" },
   { key: "project-list", label: "Project List", path: "/projects" },
   { key: "stage-gates", label: "Stage Gates", path: "/project-lifecycle/stage-gates" },
@@ -144,7 +143,6 @@ function WorkspaceSubnav({ activeSection }: { activeSection: WorkspaceSection })
     <div className="flex flex-wrap gap-2" data-testid="project-lifecycle-subnav">
       {SECTION_LINKS.map((item) => {
         const isActive =
-          (item.key === "overview" && activeSection === "overview") ||
           (item.key === "stage-gates" && activeSection === "stage-gates") ||
           (item.key === "latest-updates" && activeSection === "latest-updates") ||
           (item.key === "client-overview" && activeSection === "client-overview");
