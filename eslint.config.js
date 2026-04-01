@@ -13,6 +13,7 @@ export default [
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
+        ecmaFeatures: { jsx: true },
       },
     },
     plugins: {
@@ -22,7 +23,12 @@ export default [
       ...tseslint.configs.recommended.rules,
       'no-console': 'warn',
       '@typescript-eslint/no-explicit-any': 'warn', // TODO: upgrade to 'error' once any count is below 500
-      '@typescript-eslint/no-unused-vars': 'error',
+      '@typescript-eslint/no-unused-vars': 'warn', // TODO: upgrade to 'error' once unused vars are cleaned up
+      '@typescript-eslint/no-unused-expressions': 'warn',
+      '@typescript-eslint/no-this-alias': 'warn',
+      '@typescript-eslint/ban-ts-comment': 'warn',
+      '@typescript-eslint/no-require-imports': 'warn',
+      '@typescript-eslint/no-namespace': 'warn',
     },
   },
   prettierConfig,

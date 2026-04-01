@@ -163,6 +163,7 @@ export default function EngineeringStagesTab({ projectId, projectName, isAdmin, 
   }
 
   return (
+    <>
     <div className="flex gap-4 h-[calc(100vh-300px)] min-h-[500px]" data-testid="eng-stages-panel">
       <div className="w-72 shrink-0 space-y-2 overflow-y-auto pr-2">
         {/* CP Signed Status */}
@@ -329,6 +330,7 @@ export default function EngineeringStagesTab({ projectId, projectName, isAdmin, 
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
 
@@ -1219,6 +1221,7 @@ function DeliverablesSection({ stageId, projectId, templates, uploaded }: {
         </DialogContent>
       </Dialog>
     </div>
+    </ErrorBoundary>
   );
 }
 
@@ -1261,6 +1264,7 @@ function ApprovalRow({ approval, projectId, stageId, userRole, isCoo }: {
     approval.status === "rejected" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700";
 
   return (
+    <ErrorBoundary>
     <Card data-testid={`approval-${approval.id}`}>
       <CardContent className="p-3">
         <div className="flex items-center justify-between mb-2">
