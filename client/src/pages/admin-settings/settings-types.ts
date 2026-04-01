@@ -111,15 +111,16 @@ export const DEPARTMENTS = [
 ];
 
 export const NAV_SECTIONS = [
-  { key: "HOME", label: "Home", description: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Priorities, Inbox" },
-  { key: "PORTFOLIO", label: "Company", description: "Lifecycle Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions" },
+  { key: "HOME", label: "Home", description: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Inbox" },
+  { key: "PORTFOLIO", label: "Company", description: "Company Overview, Lifecycle Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions" },
   { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD Dashboard, Pipeline / Opportunities, PD Tickets, Clients, Handover Queue, PD Reports" },
-  { key: "PROJECT_DELIVERY", label: "Project Delivery", description: "Execution Dashboard, Portfolio, All Projects, Construction, Procurement, PO Approvals, Payment Requests, Milestones, Weekly Reviews, Handover & Closeout, Financial Reviews, Sites" },
-  { key: "HSE", label: "HSE", description: "HSE Dashboard, Compliance / SSEG" },
+  { key: "PROJECT_DELIVERY", label: "Project Delivery", description: "Execution Dashboard, PM Dashboard, Portfolio, All Projects, Construction, Procurement, PO Approvals, Payment Requests, Payment Batches, Milestones, Weekly Reviews, Standups, PM Deliverables, PM Approvals, PM On-The-Go, Handover & Closeout, Financial Reviews, SSEG, Sites" },
+  { key: "HSE", label: "HSE", description: "HSE Dashboard" },
   { key: "ENGINEERING", label: "Engineering", description: "Engineering Dashboard, Task Board, Standup" },
-  { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Inspections / NCRs" },
+  { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Commissioning, Inspections / NCRs" },
   { key: "FINANCE", label: "Finance", description: "Cashflow, Revenue, COS, GP / Margin, FYE Revenue, Counterparties, Subcontractors, Invoice Patterns" },
   { key: "REPORTS", label: "Reports", description: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance" },
+  { key: "EXCO", label: "Priorities", description: "Company Priorities — strategic goals & progress tracking" },
   { key: "ADMIN", label: "Admin", description: "Control Center, Users & Roles, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery" },
 ];
 
@@ -183,7 +184,7 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
   data_import: "Data Import tools",
   data_export: "Data Export tools",
   database_migration: "Database Migration tools",
-  task_management: "Task Management — create, edit, assign, delete tasks",
+  sseg: "SSEG — small-scale embedded generation application tracker",
   handover: "PD-PM Handover — submit, approve, reject, reopen handovers",
   standups: "Standups — manage standup schedules and entries",
   reports: "Reports — view project plan, cost, quality, resource reports",
@@ -268,11 +269,11 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   project_delivery: {
     label: "Project Delivery",
-    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "handover_acceptance", "commissioning", "task_management", "standups", "phase_templates", "project_access_mgmt", "project_creation", "work_items", "milestone_tracker", "construction", "po_approvals", "payment_requests", "financial_reviews", "sites", "handover_closeout"],
+    entities: ["projects", "execution_board", "deliverables", "pm_dashboard", "pm_on_the_go", "approvals", "weekly_reviews", "weekly_review_wizard", "portfolios", "portfolio_detail", "tr_register", "handover_acceptance", "standups", "phase_templates", "project_access_mgmt", "project_creation", "work_items", "milestone_tracker", "construction", "po_approvals", "payment_requests", "financial_reviews", "sites", "handover_closeout", "sseg", "hse_sseg"],
   },
   hse: {
     label: "HSE",
-    entities: ["hse_dashboard", "hse_compliance", "hse_sseg", "hse_incidents"],
+    entities: ["hse_dashboard", "hse_compliance", "hse_incidents"],
   },
   engineering: {
     label: "Engineering",
@@ -280,7 +281,7 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
   },
   quality: {
     label: "Quality",
-    entities: ["quality", "quality_ncrs"],
+    entities: ["quality", "quality_ncrs", "commissioning"],
   },
   finance: {
     label: "Finance",
@@ -310,6 +311,7 @@ export const NAV_SECTION_TO_PERM_CATEGORY: Record<string, string> = {
   QUALITY: "quality",
   FINANCE: "finance",
   REPORTS: "reports",
+  EXCO: "home",
   ADMIN: "admin",
 };
 

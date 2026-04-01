@@ -353,11 +353,11 @@ export function RoleNavAccess({ role, draft, onUpdateDraft, canManageRoles }: Ro
             </button>
             <button
               type="button"
-              onClick={() => onUpdateDraft({ sections: ["HOME", "HSE", "QUALITY", "ENGINEERING"] })}
+              onClick={() => onUpdateDraft({ sections: ["HOME", "PROJECT_DELIVERY", "HSE", "QUALITY", "ENGINEERING"] })}
               className="text-[10px] px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-medium"
               data-testid="preset-hse"
             >
-              HSE / SSEG (HSE + Quality + Engineering)
+              HSE / SSEG (Delivery + HSE + Quality + Engineering)
             </button>
           </div>
         </div>

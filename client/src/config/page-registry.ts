@@ -220,7 +220,7 @@ export function getPermissionEntityForPath(pathname: string): PermissionEntity |
  */
 const NAV_GROUP_TO_SECTION: Record<string, string> = {
   MY_WORK: "HOME",
-  EXCO: "HOME",
+  EXCO: "EXCO",
   PROJECTS: "PROJECT_DELIVERY",
   PROJECT_DEVELOPMENT: "PROJECT_DEVELOPMENT",
   PROJECT_MANAGEMENT: "PROJECT_DELIVERY",
@@ -281,6 +281,26 @@ export function getAppSectionForPath(pathname: string): string | undefined {
   // Execution Board lives under Project Delivery
   if (pathname === "/execution-board" || pathname.startsWith("/execution-board/")) {
     return "PROJECT_DELIVERY";
+  }
+  // SSEG lives under Project Delivery
+  if (pathname === "/sseg" || pathname.startsWith("/sseg/")) {
+    return "PROJECT_DELIVERY";
+  }
+  // PM Dashboard lives under Project Delivery
+  if (pathname === "/pm-dashboard" || pathname.startsWith("/pm-dashboard/")) {
+    return "PROJECT_DELIVERY";
+  }
+  // Commissioning lives under Quality
+  if (pathname === "/commissioning-dashboard" || pathname.startsWith("/commissioning-dashboard/")) {
+    return "QUALITY";
+  }
+  // Company Overview lives under Portfolio
+  if (pathname === "/company-overview") {
+    return "PORTFOLIO";
+  }
+  // Priorities lives under EXCO
+  if (pathname === "/priorities" || pathname.startsWith("/priorities/")) {
+    return "EXCO";
   }
   // Portfolio paths (lifecycle)
   if (pathname === "/project-lifecycle" || pathname.startsWith("/project-lifecycle/")) {
