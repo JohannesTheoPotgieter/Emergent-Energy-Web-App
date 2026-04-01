@@ -517,6 +517,10 @@ export default function LifecycleBoardPage() {
     } finally { setRagSaving(false); }
   };
 
+  const openProjectHome = (project: ProjectInfo) => {
+    navigate(`/project/${encodeURIComponent(cleanProjectName(project.projectName))}`);
+  };
+
   const openProjectDialog = (p: ProjectInfo) => {
     setSelectedProject(p);
     const matchedPm = p.pm ? pmUsers.find(u => u.name === p.pm) : null;
@@ -973,18 +977,19 @@ export default function LifecycleBoardPage() {
   const lifecycleWalkthroughSteps = useMemo(() => [
     { title: "Phase columns", description: "Projects are organized by lifecycle phase. Each column shows projects in that stage." },
     { title: "Drag to move", description: "Drag any project card to another column to change its phase. Changes save automatically." },
-    { title: "Click for details", description: "Click a project card to see its summary, edit details, link records, or manage gate status." },
+    { title: "Open project home", description: "Click a project card to jump straight into the project home workspace." },
+    { title: "Manage lifecycle metadata", description: "Use the Manage action on a card when you need lifecycle edit, link, merge, or gate tools." },
   ], []);
 
   if (loading) return <PageSkeleton lines={5} />;
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load Lifecycle Board" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   return (
-    <div className="space-y-4" data-testid="lifecycle-board-page">
-      <div className="flex items-start justify-between flex-wrap gap-2">
+    <div className="space-y-3 md:space-y-3" data-testid="lifecycle-board-page">
+      <div className="flex items-start justify-between flex-wrap gap-1.5">
         <div>
-          <h1 className="text-2xl font-bold" data-testid="text-lifecycle-title">Lifecycle</h1>
-          <p className="text-muted-foreground text-sm">
+          <h1 className="text-xl md:text-2xl font-bold leading-tight" data-testid="text-lifecycle-title">Lifecycle</h1>
+          <p className="text-muted-foreground text-xs md:text-sm leading-snug">
             Existing lifecycle board for stage movement, history, and gate visibility
             <span className="ml-2 text-xs">
               ({trackerCount} with tracker{preTrackerCount > 0 ? `, ${preTrackerCount} pre-tracker` : ""})
@@ -997,7 +1002,7 @@ export default function LifecycleBoardPage() {
       <MicroWalkthrough screenId="lifecycle-board" steps={lifecycleWalkthroughSteps} />
       <ActionBar nextAction={lifecycleNextAction} blockers={lifecycleBlockers} />
 
-      <div className="flex items-center gap-4 flex-wrap">
+      <div className="flex items-center gap-2.5 flex-wrap">
         <div className="relative flex-1 min-w-[200px] max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
@@ -1040,11 +1045,18 @@ export default function LifecycleBoardPage() {
         </div>
       </div>
 
-      <div className="pb-4 overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
+      <div className="overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 pb-2">
         {(() => {
           const visibleGroups = hideEmptyLanes ? PHASE_GROUPS.filter(g => (grouped[g.key] || []).length > 0) : PHASE_GROUPS;
           return (
-        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${visibleGroups.length}, minmax(200px, 1fr))`, minWidth: `${visibleGroups.length * 200}px` }}>
+        <div
+          className="grid gap-1.5 items-start"
+          style={{
+            gridTemplateColumns: `repeat(${visibleGroups.length}, minmax(200px, 1fr))`,
+            minWidth: `${visibleGroups.length * 200}px`,
+            minHeight: "calc(100vh - 190px)",
+          }}
+        >
           {visibleGroups.map((group) => {
             const items = grouped[group.key] || [];
             const isOver = dragOverColumn === group.key;
@@ -1063,7 +1075,7 @@ export default function LifecycleBoardPage() {
                     {items.length}
                   </Badge>
                 </div>
-                <div className="p-1.5 space-y-1.5 flex-1 max-h-[calc(100vh-240px)] overflow-y-auto">
+                <div className="p-1.5 space-y-1.5 flex-1 max-h-[calc(100vh-230px)] overflow-y-auto">
                   {items.length === 0 && (
                     <p className="text-[10px] text-muted-foreground text-center py-3">
                       {isOver ? "Drop here" : "No projects"}
@@ -1083,7 +1095,7 @@ export default function LifecycleBoardPage() {
                         draggable={!isGone}
                         onDragStart={(e) => !isGone && handleDragStart(e, p)}
                         onDragEnd={handleDragEnd}
-                        onClick={() => openProjectDialog(p)}
+                        onClick={() => openProjectHome(p)}
                         data-testid={`card-project-${p.id}`}
                       >
                         <CardContent className="p-2.5 space-y-1.5">
@@ -1099,10 +1111,34 @@ export default function LifecycleBoardPage() {
                             </button>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-start justify-between gap-1">
-                                <span className="font-semibold text-[11px] leading-snug break-words" data-testid={`text-project-name-${p.id}`}>
+                                <button
+                                  type="button"
+                                  className="font-semibold text-[11px] leading-snug break-words text-left hover:underline"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openProjectHome(p);
+                                  }}
+                                  data-testid={`text-project-name-${p.id}`}
+                                  title="Open Project Home"
+                                >
                                   {cleanProjectName(p.projectName)}
-                                </span>
-                                {trackerBadge(p.hasTracker)}
+                                </button>
+                                <div className="flex items-center gap-1">
+                                  {trackerBadge(p.hasTracker)}
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-5 px-1.5 text-[9px]"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openProjectDialog(p);
+                                    }}
+                                    data-testid={`button-manage-project-${p.id}`}
+                                  >
+                                    Manage
+                                  </Button>
+                                </div>
                               </div>
                             </div>
                           </div>
@@ -1413,7 +1449,7 @@ export default function LifecycleBoardPage() {
                             className="w-full text-xs justify-start mb-1"
                             onClick={() => {
                               setProjectDialogOpen(false);
-                              navigate(`/project/${encodeURIComponent(cleanProjectName(p.projectName))}`);
+                              openProjectHome(p);
                             }}
                             data-testid="link-project-home"
                           >
