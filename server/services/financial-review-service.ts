@@ -347,7 +347,7 @@ export async function decideReview(params: {
   const stageStatusChanged = previousStageStatus !== newStageStatus;
 
   // ── All state changes in one transaction ──
-  const updated = await db.transaction(async (tx: any) => {
+  const updated = await db.transaction(async (tx) => {
     let approvalId: number | null = null;
 
     // Create approval record for GO / CONDITIONAL_GO

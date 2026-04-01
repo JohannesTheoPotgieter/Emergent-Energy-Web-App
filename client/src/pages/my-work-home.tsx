@@ -320,6 +320,7 @@ export default function MyWorkHomePage() {
     }
     return msActionItems;
   }, [allTaskData?.microsoftItems, msActionItems]);
+  // Personal Microsoft Tools — filtered through route visibility
   const personalMicrosoftTools = useMemo(() => {
     return [
       { label: "Email", path: "/my-work/email", icon: Mail },
@@ -1357,6 +1358,7 @@ export default function MyWorkHomePage() {
                     Teams {teamsStatus?.connected ? "Connected" : "Not Connected"}
                   </Badge>
                 </div>
+                <p className="text-xs text-muted-foreground font-medium">Personal Microsoft Tools</p>
                 <div className="grid grid-cols-3 gap-2">
                   {personalMicrosoftTools.map(({ label, path, icon: ToolIcon }) => (
                     <Link key={path} href={path}>

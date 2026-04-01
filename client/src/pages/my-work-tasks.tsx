@@ -967,6 +967,7 @@ export default function MyWorkTasksPage() {
   }
 
   return (
+    {/* My Work is the single personal action workspace — tasks, approvals, and Microsoft follow-ups in one place */}
     <PageShell className="max-w-6xl p-4 md:p-6" data-testid="my-work-tasks-page">
 
       <div className="shrink-0 mb-3" data-testid="tasks-header">

@@ -7,7 +7,7 @@ function read(relPath: string) {
 }
 
 describe("Phase 2: sub_project_name on program_expense and program_inflows", () => {
-  const schema = read("shared/schema.ts");
+  const schema = read("shared/schema/finance.ts");
 
   it("program_expense has sub_project_name column", () => {
     const peBlock = schema.substring(

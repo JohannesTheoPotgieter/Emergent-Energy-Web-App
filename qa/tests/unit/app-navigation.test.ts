@@ -64,7 +64,7 @@ describe("app navigation visibility", () => {
     expect(labels).toContain("Sites");
   });
 
-  it("has ten top-level sections", () => {
+  it("has eleven top-level sections", () => {
     const sections = buildVisibleTopSections({ canViewPath: () => true });
     expect(sections.map((s) => s.label)).toEqual([
       "Home",
@@ -76,6 +76,7 @@ describe("app navigation visibility", () => {
       "Quality",
       "Finance",
       "Reports",
+      "Priorities",
       "Admin",
     ]);
   });

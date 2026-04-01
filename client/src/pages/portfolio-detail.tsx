@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
+import UserPicker from "@/components/UserPicker";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -327,15 +328,6 @@ export default function PortfolioDetailPage() {
   const [planView, setPlanView] = useState<"table" | "gantt">("gantt");
   const [editData, setEditData] = useState<any>({});
   const [rolloutData, setRolloutData] = useState({ name: "", notes: "", phases: [{ phaseName: "", startDate: "", endDate: "" }] });
-
-  const { data: allUsers = [] } = useQuery<{ id: number; name: string }[]>({
-    queryKey: ["eng-team-members"],
-    queryFn: async () => {
-      const res = await fetch("/api/eng/team-members", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
 
   const { data: portfolio, isLoading, isError, error, refetch } = useQuery<any>({
     queryKey: ["/api/portfolios", portfolioId],
@@ -1157,15 +1149,11 @@ export default function PortfolioDetailPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Owner</label>
-              <SearchableSelect
-                value={editData.ownerUserId || ""}
-                onValueChange={v => setEditData((d: any) => ({ ...d, ownerUserId: v }))}
+              <UserPicker
+                value={editData.ownerUserId || null}
+                onValueChange={(userId) => setEditData((d: any) => ({ ...d, ownerUserId: userId ? String(userId) : "none" }))}
                 placeholder="Select owner..."
                 data-testid="select-edit-owner"
-                options={[
-                  { value: "none", label: "No owner" },
-                  ...allUsers.map((u: any) => ({ value: String(u.id), label: u.name })),
-                ]}
               />
             </div>
             <div>
