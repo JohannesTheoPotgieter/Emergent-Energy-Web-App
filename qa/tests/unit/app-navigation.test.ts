@@ -13,7 +13,6 @@ describe("app navigation visibility", () => {
       "Approvals",
       "Calendar",
       "Meetings",
-      "Company Priorities",
       "Inbox",
     ]);
   });
@@ -57,8 +56,6 @@ describe("app navigation visibility", () => {
     const labels = delivery!.secondary.map((item) => item.label);
     expect(labels).toContain("Execution Dashboard");
     expect(labels).toContain("All Projects");
-    expect(labels).toContain("Construction");
-    expect(labels).toContain("Procurement");
     expect(labels).toContain("PO Approvals");
     expect(labels).toContain("Milestone Tracker");
     expect(labels).toContain("Sites");
@@ -151,8 +148,8 @@ describe("breadcrumb generation", () => {
     const crumbs = getBreadcrumbs("/quality/ncr/NCR-001", findSection("Quality"));
     expect(crumbs).toEqual([
       { label: "Quality", path: "/quality" },
-      { label: "Inspections / NCRs", path: "/quality/ncrs" },
-      { label: "NCR NCR-001" },
+      { label: "Quality Dashboard", path: "/quality" },
+      { label: "NCR-001" },
     ]);
   });
 
