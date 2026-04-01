@@ -13,6 +13,13 @@ import { getPmDrilldownRows, writeDrilldownExcel } from "../services/report-dril
 
 const REPORT_TYPE = "pm";
 
+async function getSnapshotById(id: number) {
+  const [snapshot] = await db.select().from(monthlyReportSnapshots)
+    .where(and(eq(monthlyReportSnapshots.id, id), eq(monthlyReportSnapshots.reportType, REPORT_TYPE)))
+    .limit(1);
+  return snapshot;
+}
+
 async function getOrCreateSnapshot(month: string) {
   const [existing] = await db.select().from(monthlyReportSnapshots)
     .where(and(eq(monthlyReportSnapshots.reportType, REPORT_TYPE), eq(monthlyReportSnapshots.reportMonth, month)))
@@ -124,7 +131,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "User ID required" });
 
-      const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
+      const snapshot = await getSnapshotById(id);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status !== "draft") return res.status(409).json({ error: "Report must be in draft status to review" });
 
@@ -149,7 +156,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "User ID required" });
 
-      const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
+      const snapshot = await getSnapshotById(id);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status !== "reviewed") return res.status(409).json({ error: "Report must be in reviewed status to publish" });
       if (snapshot.reviewedBy === userId) return res.status(403).json({ error: "Publisher must be different from reviewer (segregation of duties)" });
@@ -172,7 +179,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
   app.post("/api/reports/pm/monthly/:id/revert", requireAuth, requirePermission("reports", "publish" as any), async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
-      const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
+      const snapshot = await getSnapshotById(id);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status === "published") return res.status(409).json({ error: "Published reports cannot be reverted" });
       if (snapshot.status !== "reviewed") return res.status(409).json({ error: "Only reviewed reports can be reverted to draft" });
@@ -195,7 +202,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
   app.post("/api/reports/pm/monthly/:id/regenerate", requireAuth, requirePermission("reports", "edit"), async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
-      const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
+      const snapshot = await getSnapshotById(id);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
       if (snapshot.status !== "draft") return res.status(409).json({ error: "Only draft reports can be regenerated" });
 
@@ -206,7 +213,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
         updatedAt: new Date(),
       }).where(eq(monthlyReportSnapshots.id, id));
 
-      const [updated] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
+      const [updated] = await db.select().from(monthlyReportSnapshots).where(and(eq(monthlyReportSnapshots.id, id), eq(monthlyReportSnapshots.reportType, REPORT_TYPE))).limit(1);
       res.json({
         id: updated.id,
         reportMonth: updated.reportMonth,
@@ -225,7 +232,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
   app.get("/api/reports/pm/monthly/:id/export/pdf", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
-      const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
+      const snapshot = await getSnapshotById(id);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
 
       const { generateReportPdf } = await import("../services/monthly-report-pdf-service");
@@ -243,7 +250,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
   app.get("/api/reports/pm/monthly/:id/export/excel", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
       const id = parseInt(req.params.id as string);
-      const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
+      const snapshot = await getSnapshotById(id);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
 
       const { generateReportExcel } = await import("../services/monthly-report-excel-service");
@@ -295,7 +302,7 @@ export function registerPmMonthlyReportRoutes(app: Express) {
       const id = parseInt(req.params.id as string);
       const projectId = parseInt(req.params.projectId as string);
 
-      const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, id)).limit(1);
+      const snapshot = await getSnapshotById(id);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
 
       const data = snapshot.data as any;
@@ -324,7 +331,9 @@ export function registerPmMonthlyReportRoutes(app: Express) {
   app.get("/api/reports/pm/monthly/:reportId/drilldown", requireAuth, requirePermission("reports", "view"), async (req, res) => {
     try {
       const reportId = parseInt(req.params.reportId as string);
-      const [snapshot] = await db.select().from(monthlyReportSnapshots).where(eq(monthlyReportSnapshots.id, reportId)).limit(1);
+      const [snapshot] = await db.select().from(monthlyReportSnapshots)
+        .where(and(eq(monthlyReportSnapshots.id, reportId), eq(monthlyReportSnapshots.reportType, REPORT_TYPE)))
+        .limit(1);
       if (!snapshot) return res.status(404).json({ error: "Report not found" });
 
       const filters = {
