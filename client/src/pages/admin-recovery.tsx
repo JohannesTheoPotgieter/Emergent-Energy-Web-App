@@ -24,7 +24,7 @@ function authFetch(url: string, options?: RequestInit) {
   if (token) headers["Authorization"] = `Bearer ${token}`;
   if (options?.body && typeof options.body === "string") headers["Content-Type"] = "application/json";
     const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
-  if (csrf) { if (!headers) { headers = {}; } headers["X-CSRF-Token"] = csrf; }
+  if (csrf) headers["X-CSRF-Token"] = csrf;
   return fetch(url, { ...options, headers, credentials: "include" });
 }
 
