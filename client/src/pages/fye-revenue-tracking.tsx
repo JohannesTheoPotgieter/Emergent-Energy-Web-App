@@ -1564,7 +1564,7 @@ export default function FyeRevenueTrackingPage() {
   }, []);
 
   return (
-    <FinanceShell currentPage="fye-revenue-tracking"><div className="space-y-4">
+    <FinanceShell><div className="space-y-4">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

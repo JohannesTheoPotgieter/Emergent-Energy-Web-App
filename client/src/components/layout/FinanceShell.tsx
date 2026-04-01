@@ -1,18 +1,6 @@
 import { DollarSign } from "lucide-react";
 
-export type FinancePageId =
-  | "cashflow"
-  | "cos"
-  | "revenue-tracker"
-  | "gp-tracker"
-  | "fye-revenue-tracking"
-  | "counterparties"
-  | "invoice-patterns"
-  | "procurement"
-  | "subcontractor-dashboard";
-
 interface FinanceShellProps {
-  currentPage: FinancePageId;
   children: React.ReactNode;
 }
 
