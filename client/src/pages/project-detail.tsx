@@ -12,8 +12,8 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
 import {
-  DollarSign, CreditCard, TrendingUp, BarChart3, Activity,
-  ArrowLeft, ExternalLink, User, CheckCircle, AlertCircle, Columns, CalendarDays,
+  DollarSign, CreditCard, TrendingUp, Activity,
+  ArrowLeft, User, CheckCircle, AlertCircle, Columns, CalendarDays,
   ListTodo, ShieldCheck, Clock, History, ArrowRight, Loader2,
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
@@ -23,9 +23,7 @@ import {
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
 import { ExpenditureEditableTab } from "@/components/tabs/ExpenditureEditableTab";
-import { MonthlyRealisationTab } from "@/components/tabs/MonthlyRealisationTab";
-import { RevenueTrackerTab } from "@/components/tabs/RevenueTrackerTab";
-import { GpTrackerTab } from "@/components/tabs/GpTrackerTab";
+// Legacy finance tab imports removed — revenue/GP/COS now under PD department
 import { CashflowTab } from "@/components/tabs/CashflowTab";
 import { ProjectSubcontractorsTab } from "@/components/tabs/ProjectSubcontractorsTab";
 import TaskDetailDrawer from "@/components/TaskDetailDrawer";
@@ -1355,10 +1353,10 @@ export default function ProjectDetailPage() {
   // GC-010: Normalize engineering status casing for overdue count
   const overdueEngineeringCount = healthSummary?.alerts.overdueEngineeringTasks ?? (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && String(t.status).toUpperCase() !== "COMPLETE").length;
   const topAlerts = [
-    { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => openExecutionArea("delivery", "task-grid") },
-    { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => openExecutionArea("engineering", "eng-tasks") },
-    { label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => openExecutionArea("quality", "quality") },
-    { label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => openExecutionArea("commercial", "expenditure") },
+    { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => navigateToDept("pm", "plan") },
+    { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => navigateToDept("eng", "tasks") },
+    { label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => navigateToDept("quality", "checklist") },
+    { label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => navigateToDept("pd", "cost-lines") },
   ].filter((alert) => alert.count > 0);
   const collaborationSignals = {
     hasHistory: !!projectInfoId,
