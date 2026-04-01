@@ -251,6 +251,10 @@ export async function generateEngineeringReportData(month: string) {
     meta: {
       month,
       monthLabel: getMonthLabel(month),
+      periodType: "Monthly snapshot",
+      periodStart: monthStartStr,
+      periodEnd: monthEndStr,
+      snapshotBehavior: "Values are fixed to the stored monthly report snapshot until regeneration.",
       generatedAt: new Date().toISOString(),
       activeProjectCount: activeProjects.length,
     },
