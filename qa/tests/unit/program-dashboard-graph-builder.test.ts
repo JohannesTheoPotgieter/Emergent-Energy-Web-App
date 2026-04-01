@@ -8,7 +8,7 @@ function read(relPath: string) {
 
 describe("program dashboard graph builder", () => {
   it("keeps workbook-aligned chart datasets in the program dashboard API", () => {
-    const source = read("server/routes.ts");
+    const source = read("server/routes/dashboard-routes.ts");
 
     expect(source).toContain('id: "monthlyForecast"');
     expect(source).toContain('id: "weeklyCashflow"');

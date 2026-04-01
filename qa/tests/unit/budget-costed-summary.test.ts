@@ -81,7 +81,7 @@ describe("Budget data import and costed summary capture", () => {
 
   describe("project_revenue_summary schema has actual columns", () => {
     it("schema defines actual revenue/expenditure/profit/margin columns", () => {
-      const source = read("shared/schema.ts");
+      const source = read("shared/schema/projects.ts");
       const prsBlock = source.substring(
         source.indexOf('pgTable("project_revenue_summary"'),
         source.indexOf("});", source.indexOf('pgTable("project_revenue_summary"')) + 3
@@ -95,7 +95,7 @@ describe("Budget data import and costed summary capture", () => {
 
   describe("Budget fields stored in normalized_cost_lines", () => {
     it("schema has budget columns on normalized_cost_lines", () => {
-      const source = read("shared/schema.ts");
+      const source = read("shared/schema/finance.ts");
       const clBlock = source.substring(
         source.indexOf('pgTable("normalized_cost_lines"'),
         source.indexOf("});", source.indexOf('pgTable("normalized_cost_lines"')) + 3

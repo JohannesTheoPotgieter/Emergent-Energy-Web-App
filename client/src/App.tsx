@@ -52,7 +52,8 @@ const SubcontractorDashboardPage = lazy(() => import("@/pages/subcontractor-dash
 const CounterpartiesPage = lazy(() => import("@/pages/counterparties"));
 const SystemActivityLogPage = lazy(() => import("@/pages/system-activity-log"));
 const WeeklyReviewsPage = lazy(() => import("@/pages/weekly-reviews"));
-const AdminRolesPage = lazy(() => import("@/pages/admin-settings"));
+const AdminRolesPage = lazy(() => import("@/pages/admin-roles"));
+const AdminSettingsPage = lazy(() => import("@/pages/admin-settings"));
 const LeaderboardPage = lazy(() => import("@/pages/leaderboard"));
 const FeedbackPage = lazy(() => import("@/pages/feedback"));
 const EeInfoPage = lazy(() => import("@/pages/ee-info"));
@@ -184,6 +185,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   SystemActivityLogPage,
   WeeklyReviewsPage,
   AdminRolesPage,
+  AdminSettingsPage,
   LeaderboardPage,
   FeedbackPage,
   EeInfoPage,
@@ -272,7 +274,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
   const effectiveRole = normalizeRoleForPermissions(userRole || companyRole);
-  return ROLE_LANDING_PAGE[effectiveRole] || "/gates";
+  return ROLE_LANDING_PAGE[effectiveRole] || "/dashboard";
 }
 
 function HomeRedirect() {
@@ -441,7 +443,7 @@ function ProtectedPages() {
       <Suspense fallback={<div className="space-y-6 p-6"><LoadingState variant="skeleton-card" cards={4} /><LoadingState variant="skeleton-table" rows={6} /></div>}>
       <div className="page-enter">
         <Switch>
-          <Route path="/" component={HomePage} />
+          <Route path="/">{() => <HomeRedirect />}</Route>
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
               return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;

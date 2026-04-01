@@ -2229,6 +2229,7 @@ export default function ProjectsSummary() {
     .filter(g => g.colSpan > 0);
 
   return (
+    {/* Project List is the execution directory inside Project Management — see also <a href="/pm-dashboard">PM Dashboard</a> */}
     <PageShell className="p-4 md:p-6" data-testid="page-projects-summary">
       <SectionHeader
         icon={<BarChart3 className="h-5 w-5" />}
@@ -2275,8 +2276,8 @@ export default function ProjectsSummary() {
           </>
         }
       >
-        <Badge variant="secondary">Latest Update stays canonical</Badge>
-        <Badge variant="secondary">Tracker-fed dates stay authoritative</Badge>
+        <Badge variant="secondary">Tracker-fed schedule and finance fields remain authoritative here.</Badge>
+        <Badge variant="secondary">Latest Update stays app-managed, text only, and visible for execution scanning.</Badge>
       </WorkspaceNotice>
 
       <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">

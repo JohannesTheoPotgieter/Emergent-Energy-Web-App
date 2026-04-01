@@ -25,7 +25,7 @@ export const COO_OPERATIONAL_ACCESS_MATRIX: DomainAccessSpec[] = [
     domain: "projects",
     entities: ["projects", "lifecycle", "execution_board", "portfolios"],
     requiredActions: FULL_OPERATIONAL_ACTIONS,
-    discoverablePaths: ["/projects", "/lifecycle-board", "/dashboard", "/portfolios"],
+    discoverablePaths: ["/projects", "/lifecycle-board", "/execution-board", "/portfolios"],
   },
   {
     domain: "project_development",
@@ -49,7 +49,7 @@ export const COO_OPERATIONAL_ACCESS_MATRIX: DomainAccessSpec[] = [
     domain: "project_management",
     entities: ["pm_dashboard", "weekly_review_wizard", "pm_on_the_go", "tr_register"],
     requiredActions: FULL_OPERATIONAL_ACTIONS,
-    discoverablePaths: ["/pm-dashboard", "/weekly-reviews", "/pm/on-the-go"],
+    discoverablePaths: ["/weekly-reviews", "/pm/on-the-go"],
   },
   {
     domain: "procurement",
@@ -73,7 +73,7 @@ export const COO_OPERATIONAL_ACCESS_MATRIX: DomainAccessSpec[] = [
     domain: "admin_config",
     entities: ["admin", "admin_roles", "phase_templates", "financial_integration"],
     requiredActions: FULL_OPERATIONAL_ACTIONS,
-    discoverablePaths: ["/admin", "/admin/control-center", "/admin/roles", "/admin/settings"],
+    discoverablePaths: ["/admin/control-center", "/admin/roles"],
   },
 ];
 
