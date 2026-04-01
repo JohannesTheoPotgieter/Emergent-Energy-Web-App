@@ -8,7 +8,6 @@ import { registerAdminSupportRoutes } from "./register-admin-routes";
 import { registerIntegrationRoutes } from "./register-integration-routes";
 import { registerInfoRoutes } from "./register-info-routes";
 import { registerSupportRoutes } from "./register-support-routes";
-import { registerCashflow2026Routes } from "./register-cashflow-2026-routes";
 import { registerExtractedRoutes } from "./route-registry";
 
 export async function registerAllRoutes(options: {
@@ -25,7 +24,6 @@ export async function registerAllRoutes(options: {
   await registerSupportRoutes(app);
   await registerDepartmentRoutes(app);
   await registerAdminSupportRoutes(app);
-  registerCashflow2026Routes(app);
   await registerExtractedRoutes(app);
   await registerRoutes(httpServer, app);
 
