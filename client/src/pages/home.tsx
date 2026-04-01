@@ -707,7 +707,6 @@ export default function HomePage() {
                   {workspaceCard([
                     { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
                     ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
-                    { href: "/pm/deliverables", label: "Deliverables", icon: <Package className="w-4 h-4 mr-2" /> },
                   ])}
                 </div>
                 <div className="lg:col-span-3 space-y-5">

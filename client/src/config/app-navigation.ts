@@ -104,7 +104,7 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "Payment Batches", path: "/payment-batch-manager" },
       { label: "Milestone Tracker", path: "/milestone-tracker" },
       { label: "Weekly Reviews", path: "/weekly-reviews" },
-      { label: "PM Deliverables", path: "/pm/deliverables" },
+      { label: "Standups", path: "/standups" },
       { label: "PM Approvals", path: "/pm/approvals" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
       { label: "Handover & Closeout", path: "/handover" },
