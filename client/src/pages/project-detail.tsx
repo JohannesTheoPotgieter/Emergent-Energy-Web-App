@@ -19,7 +19,7 @@ import {
   Wrench, PlusCircle, Circle, Calendar, PauseCircle, AlertTriangle,
   ChevronDown, ChevronUp, Eye, Play, Zap, Target, Users, Trash2, Plus,
   MessageSquare, FolderOpen, FileCheck, Search, X,
-  HardHat, Handshake, MapPin, LayoutDashboard, FileText, ClipboardList,
+  Handshake, MapPin, LayoutDashboard, FileText, ClipboardList,
 } from "lucide-react";
 import { EnergyLoader } from "@/components/ui/energy-loader";
 import { RevenueTrackingTab } from "@/components/tabs/RevenueTrackingTab";
@@ -42,7 +42,7 @@ import { ProjectRaidTab } from "@/components/tabs/ProjectRaidTab";
 import { ProjectChangeControlTab } from "@/components/tabs/ProjectChangeControlTab";
 import { ProjectProcurementTab } from "@/components/tabs/ProjectProcurementTab";
 // Old ProjectCommissioningTab retired — replaced by /commissioning-dashboard page
-import { ProjectConstructionTab } from "@/components/tabs/ProjectConstructionTab";
+// ProjectConstructionTab removed — Construction tab retired from sub-nav
 import FinancialReviewTab from "@/components/tabs/FinancialReviewTab";
 import { ProjectHandoverTab } from "@/components/tabs/ProjectHandoverTab";
 import { BudgetBaselineStrip } from "@/components/tabs/BudgetBaselineStrip";
@@ -815,7 +815,7 @@ const OLD_TAB_TO_DEPT: Record<string, { dept: string; subTab: string }> = {
   "key-dates": { dept: "pm", subTab: "plan" },
   "raid": { dept: "pm", subTab: "raid" },
   "commissioning": { dept: "pm", subTab: "commissioning" },
-  "construction": { dept: "pm", subTab: "construction" },
+  "construction": { dept: "pm", subTab: "plan" },
   "handover": { dept: "pm", subTab: "handover" },
   "readiness-gate": { dept: "pm", subTab: "financial-review" },
   "plan": { dept: "pm", subTab: "plan" },
@@ -1518,7 +1518,6 @@ export default function ProjectDetailPage() {
               { key: "plan", label: "Plan", icon: ListTodo },
               { key: "board", label: "Board", icon: Columns },
               { key: "calendar", label: "Calendar", icon: CalendarDays },
-              { key: "construction", label: "Construction", icon: HardHat },
               { key: "commissioning", label: "Commissioning", icon: CheckCircle },
               { key: "raid", label: "RAID", icon: AlertTriangle },
               { key: "handover", label: "Handover", icon: Handshake },
@@ -1533,7 +1532,6 @@ export default function ProjectDetailPage() {
           {activeSubTab === "plan" && canViewTab.overview && <UnifiedPlanTab projectName={projectName} projectId={projectInfoId} onTaskClick={handleTaskClick} />}
           {activeSubTab === "board" && canViewTab.overview && <BoardView projectName={projectName} onTaskClick={handleTaskClick} />}
           {activeSubTab === "calendar" && canViewTab.overview && <CalendarView projectName={projectName} onTaskClick={handleTaskClick} />}
-          {activeSubTab === "construction" && projectInfoId && <ProjectConstructionTab projectId={projectInfoId} projectName={projectName} />}
           {activeSubTab === "commissioning" && projectInfoId && (
             <div className="rounded-lg border bg-muted/30 p-6 text-center space-y-3">
               <p className="text-sm text-muted-foreground">Commissioning is now managed via the Commissioning Control Tower.</p>

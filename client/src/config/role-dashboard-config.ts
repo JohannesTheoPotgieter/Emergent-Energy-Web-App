@@ -170,7 +170,6 @@ const CONSTRUCTION_CONFIG: RoleDashboardConfig = {
   ],
   attentionPriority: ["material_delays", "inspection_failures", "critical_snags", "safety_incidents"],
   quickActions: [
-    { label: "Construction", path: "/construction", iconKey: "Briefcase" },
     { label: "Execution Board", path: "/execution-board", iconKey: "LayoutDashboard" },
     { label: "Project List", path: "/projects", iconKey: "FileSpreadsheet" },
     { label: "Quality", path: "/quality", iconKey: "ShieldCheck" },
