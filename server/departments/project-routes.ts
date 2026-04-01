@@ -774,16 +774,25 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
     }
 
     const projectInfoMap = new Map<string, any>(allProjectInfo.map((info: any) => [info.projectName, info]));
+    const projectInfoByCanonical = new Map<string, any>(
+      allProjectInfo
+        .map((info: any) => [toCanonicalProjectName(info.projectName), info] as const)
+        .filter(([name]) => !!name),
+    );
 
     const projectsSummary = Array.from(allProjectNames).map(projectName => {
-      const info = projectInfoMap.get(projectName);
+      const info = projectInfoMap.get(projectName) || projectInfoByCanonical.get(toCanonicalProjectName(projectName));
       const projectExpenses = expensesByProject.get(projectName) || [];
       const projectInflows = inflowsByProject.get(projectName) || [];
       const projectPlans = plansByProject.get(projectName) || [];
       const editable = editableMap.get(projectName);
       const handover = info?.id ? handoverMap.get(info.id) : null;
 
-      const projectWorkItems = workItemsByProject.get(projectName) || [];
+      const projectWorkItems =
+        workItemsByProject.get(projectName) ||
+        workItemsByProject.get(projectName.replace(/_/g, " ")) ||
+        workItemsByProject.get(projectName.replace(/ /g, "_")) ||
+        [];
 
       function findMaxEndDateWI(items: any[], patterns: string[]): string | null {
         let maxDate: string | null = null;
