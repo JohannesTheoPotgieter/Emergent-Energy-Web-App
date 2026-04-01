@@ -13,6 +13,7 @@ import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
 import { softDeleteCanonicalWorkItemByLegacyTaskId } from "../canonical-boundaries";
+import { runCascadesAfterUpdate, validateParentCompletion } from "../services/task-cascade-service";
 
 // SA working days helpers (duplicated from routes.ts for self-containment)
 function formatDateKey(y: number, m: number, d: number): string {
@@ -910,6 +911,14 @@ export function registerPlanningTasksRoutes(app: Express) {
           wiUpdateFields.percentComplete = 1.0;
         }
 
+        // Validate parent completion: can't mark complete if children are still open
+        if (updates.status && ["complete", "Done", "Complete", "COMPLETE"].includes(updates.status)) {
+          const blockMsg = await validateParentCompletion(wi.id);
+          if (blockMsg) {
+            return res.status(400).json({ error: blockMsg });
+          }
+        }
+
         if (Object.keys(wiUpdateFields).length > 0) {
           await db.update(workItems).set(wiUpdateFields).where(eq(workItems.id, wi.id));
         }
@@ -939,6 +948,17 @@ export function registerPlanningTasksRoutes(app: Express) {
           projectName,
           changesJson: { taskName, ...updates },
         });
+
+        // Run cascades (dates rollup to parent, status propagation)
+        try {
+          await runCascadesAfterUpdate(wi.id, {
+            status: updates.status,
+            startDate: updates.startDate,
+            dueDate: updates.dueDate || updates.endDate,
+          });
+        } catch (cascadeErr: any) {
+          console.warn("[planning-tasks] Non-fatal cascade error:", cascadeErr.message);
+        }
 
         await notifyWorkItemWatchers({
           workItemId: wi.id,

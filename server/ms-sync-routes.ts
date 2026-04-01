@@ -664,6 +664,8 @@ export function registerMsSyncRoutes(app: Express) {
                      wi.legacy_id as import_run_id,
                      wi.external_ref,
                      wi.wbs_code as parent_task_no,
+                     wi.parent_id as parent_task_id,
+                     pw.title as parent_task_title,
                      wi.workstream,
                      wi.source,
                      (SELECT wia.role::text FROM work_item_assignments wia
@@ -671,6 +673,7 @@ export function registerMsSyncRoutes(app: Express) {
                       LIMIT 1) as assignment_role
               FROM work_items wi
               LEFT JOIN project_info pi ON wi.project_id = pi.id
+              LEFT JOIN work_items pw ON pw.id = wi.parent_id
               WHERE wi.deleted_at IS NULL
                 AND wi.workstream IS DISTINCT FROM 'PERSONAL'
                 AND wi.workstream IS DISTINCT FROM 'ENG'
@@ -687,6 +690,7 @@ export function registerMsSyncRoutes(app: Express) {
           status: workItems.status,
           projectId: workItems.projectId,
           projectName: projectInfo.projectName,
+          parentId: workItems.parentId,
           ownerUserId: workItems.ownerUserId,
           workstream: workItems.workstream,
           source: workItems.source,
@@ -747,6 +751,12 @@ export function registerMsSyncRoutes(app: Express) {
       const planTaskIds = new Set((planTasks as any[]).map((t: any) => t.id));
       const engTaskIds = new Set((engTasks as any[]).map((t: any) => t.id));
       const opTasks = allWorkItemsForUser.filter((t: any) => t.workstream !== "PERSONAL" && !planTaskIds.has(t.id) && !engTaskIds.has(t.id));
+
+      // Build parent title lookup for all work items (operational + plan + eng)
+      const parentTitleMap = new Map<number, string>();
+      for (const t of allWorkItemsForUser) {
+        parentTitleMap.set(t.id, t.title);
+      }
 
       const subtaskParentIds = opTasks.filter((t: any) => t.parentId === null || t.parentId === undefined).map((t: any) => t.id);
       let subtaskCounts: Record<number, number> = {};
@@ -831,6 +841,7 @@ export function registerMsSyncRoutes(app: Express) {
           ...t,
           status: normalizeTaskStatus(t.status),
           subtaskCount: subtaskCounts[t.id] || 0,
+          parentTaskTitle: t.parentId ? (parentTitleMap.get(t.parentId) || null) : null,
           resolvedAssignees: [] as ResolvedUser[],
           resolvedOwner: resolveUserId(t.ownerUserId),
           trackingRole,
@@ -945,6 +956,8 @@ export function registerMsSyncRoutes(app: Express) {
           startDate: t.start_date,
           endDate: t.end_date,
           pctComplete: t.pct_complete,
+          parentTaskId: t.parent_task_id || null,
+          parentTaskTitle: t.parent_task_title || null,
           assigneeUserId: t.assignee_user_id,
           resolvedAssignee: resolveUserId(t.assignee_user_id) || resolveTextNameToUser(t.owner),
           scheduledDate: t.scheduled_date || null,
@@ -967,6 +980,8 @@ export function registerMsSyncRoutes(app: Express) {
         status: normalizeTaskStatus(t.status),
         projectId: t.projectId ?? null,
         projectName: t.projectName,
+        parentTaskId: t.parentId || null,
+        parentTaskTitle: t.parentId ? (parentTitleMap.get(t.parentId) || null) : null,
         lifecyclePhase: t.lifecyclePhaseTag,
         assigneeUserId: t.ownerUserId ?? t.assigneeUserId,
         assigneeName: t.assigneeName,
