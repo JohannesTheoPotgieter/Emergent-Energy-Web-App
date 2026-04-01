@@ -933,6 +933,24 @@ export function registerLifecycleRoutes(app: Express) {
         fyEnd: fy.end,
         today,
       });
+      const overdueByProjectId = new Map<number, { ap: number; ar: number }>();
+      const overdueByNorm = new Map<string, { ap: number; ar: number }>();
+      const addOverdue = (projectId: number | null, projectName: string | null | undefined, kind: "ap" | "ar", amount: number) => {
+        if (!amount) return;
+        if (projectId) {
+          const current = overdueByProjectId.get(projectId) || { ap: 0, ar: 0 };
+          current[kind] += amount;
+          overdueByProjectId.set(projectId, current);
+          return;
+        }
+        const norm = normalizeName(projectName || "");
+        if (!norm) return;
+        const current = overdueByNorm.get(norm) || { ap: 0, ar: 0 };
+        current[kind] += amount;
+        overdueByNorm.set(norm, current);
+      };
+      for (const item of overdueLedger.ap.items) addOverdue(item.projectId || null, item.projectName, "ap", item.outstandingAmount || 0);
+      for (const item of overdueLedger.ar.items) addOverdue(item.projectId || null, item.projectName, "ar", item.outstandingAmount || 0);
 
       // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
       // inBank and COS status overrides are applied directly to base rows.
@@ -1047,6 +1065,7 @@ export function registerLifecycleRoutes(app: Express) {
         const norm = normalizeName(project.projectName);
         const plan = planByNorm.get(norm) || { weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0, fyItems: 0 };
         const fin = finByProjectId.get(project.id) || finByNorm.get(norm) || emptyFin();
+        const projectOverdue = overdueByProjectId.get(project.id) || overdueByNorm.get(norm) || { ap: 0, ar: 0 };
         const hasCanonicalData = planByNorm.has(norm) || finByProjectId.has(project.id) || finByNorm.has(norm);
         const hasCurrentFyItem = plan.fyItems > 0 || fin.fyRevenueItems > 0 || fin.fyCostItems > 0;
         if (!hasCanonicalData || !hasCurrentFyItem) continue;
@@ -1130,8 +1149,8 @@ export function registerLifecycleRoutes(app: Express) {
           openExpenditureFy,
           grossProfitFy,
           grossMarginPctFy,
-          overdueInflowFy: fin.inflowRisk,
-          overdueOutflowFy: fin.outflowRisk,
+          overdueInflowFy: projectOverdue.ar,
+          overdueOutflowFy: projectOverdue.ap,
           engineeringStatus,
           qualityStatus,
           importFreshness,
