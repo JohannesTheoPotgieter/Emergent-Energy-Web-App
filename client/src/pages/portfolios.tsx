@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
+import UserPicker from "@/components/UserPicker";
 import { useToast } from "@/hooks/use-toast";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
@@ -552,15 +553,6 @@ export default function PortfoliosPage() {
     },
   });
 
-  const { data: allUsers = [] } = useQuery<{ id: number; name: string }[]>({
-    queryKey: ["eng-team-members"],
-    queryFn: async () => {
-      const res = await fetch("/api/eng/team-members", { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-  });
-
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const payload: any = { ...data };
@@ -753,15 +745,11 @@ export default function PortfoliosPage() {
             </div>
             <div>
               <label className="text-sm font-medium">Owner</label>
-              <SearchableSelect
-                value={formData.ownerUserId}
-                onValueChange={v => setFormData(f => ({ ...f, ownerUserId: v }))}
+              <UserPicker
+                value={formData.ownerUserId || null}
+                onValueChange={(userId) => setFormData(f => ({ ...f, ownerUserId: userId ? String(userId) : "none" }))}
                 placeholder="Select owner..."
                 data-testid="select-portfolio-owner"
-                options={[
-                  { value: "none", label: "No owner" },
-                  ...allUsers.map(u => ({ value: String(u.id), label: u.name })),
-                ]}
               />
             </div>
             <div>
