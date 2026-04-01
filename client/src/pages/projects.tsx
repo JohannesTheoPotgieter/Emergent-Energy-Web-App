@@ -88,6 +88,8 @@ interface ProjectSummary {
   epc_contract_na_reason: string | null;
   financial_close_achieved: boolean;
   phase: string | null;
+  executionPhase?: string | null;
+  execution_phase?: string | null;
   pd_handover_date: string | null;
   construction_start_date: string | null;
   duration: number | null;
@@ -1442,7 +1444,11 @@ export default function ProjectsSummary() {
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const res = await fetch("/api/projects-summary", { credentials: "include", headers });
       if (!res.ok) throw new Error("Failed to fetch project list");
-      return res.json();
+      const rows = await res.json();
+      return (rows || []).map((row: any) => ({
+        ...row,
+        phase: row?.phase ?? row?.executionPhase ?? row?.execution_phase ?? null,
+      }));
     },
     refetchOnMount: "always",
     staleTime: 10_000,
