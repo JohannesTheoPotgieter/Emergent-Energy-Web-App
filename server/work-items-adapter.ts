@@ -17,8 +17,8 @@ export { fromWorkItem, toOperationalTaskShape, toEngineeringTaskShape } from "@s
  * This is the canonical query path — reads from work_items + extension JOINs.
  */
 export async function getUnifiedTasksForProject(projectId: number): Promise<UnifiedTask[]> {
-  const tasks = await queryWorkItems({ projectId });
-  const ids = tasks.map(t => t.id);
+  const tasks: any[] = await queryWorkItems({ projectId });
+  const ids = tasks.map((t: any) => t.id);
   const assignments = await getAssignmentsByWorkItemIds(ids);
   for (const t of tasks) {
     t.assigneeUserIds = assignments.get(t.id) || null;
@@ -68,7 +68,7 @@ export async function getAllWorkItemsForPlanTab(projectName: string): Promise<an
     )
     .orderBy(asc(workItems.id));
 
-  const ids = items.map(wi => wi.id);
+  const ids = items.map((wi: any) => wi.id);
   const assignmentsByItem = new Map<number, string[]>();
   if (ids.length > 0) {
     const assignmentRows = await getAssignmentsByWorkItemIds(ids);
@@ -107,7 +107,7 @@ function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, 
     const parentTaskNo = wi.parentId ? (parentIdToWbs.get(wi.parentId) || null) : null;
     const indentLevel = wi.wbsCode ? (wi.wbsCode.split('.').length - 1) : 0;
     const resolvedNames = resolvedAssignees?.get(wi.id) || null;
-    const effectiveAssignees = resolvedNames || wi.assignees || null;
+    const effectiveAssignees = resolvedNames || (wi as any).assignees || null;
 
     return {
       id: wi.legacyId ?? wi.id,
@@ -126,7 +126,7 @@ function mapWorkItemsToNormalizedFormat(items: WorkItem[], projectName: string, 
       owner: effectiveAssignees && effectiveAssignees.length > 0 ? effectiveAssignees[0] : null,
       assignees: effectiveAssignees,
       assigneeUserId: wi.ownerUserId,
-      assigneeUserIds: wi.assigneeUserIds || null,
+      assigneeUserIds: (wi as any).assigneeUserIds || null,
       status: wi.status,
       pctComplete: wi.percentComplete != null ? wi.percentComplete : null,
       expectedPctComplete: null,

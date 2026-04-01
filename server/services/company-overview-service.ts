@@ -71,28 +71,7 @@ export async function getCompanyOverviewData() {
   const refreshedAt = new Date().toISOString();
 
   // ── Parallel data fetches ──────────────────────────────────────────
-  const [
-    allProjects,
-    allExecState,
-    allOpportunities,
-    revenueRows,
-    costRows,
-    allWorkItems,
-    incidents,
-    correctiveActionRows,
-    priorities,
-    stageRequirements,
-    stageInstances,
-    qcItems,
-    qcWarnings,
-    snagRows,
-    handoverPackRows,
-    engStages,
-    engTasks,
-    engDeliverables,
-    clientUpdateRows,
-    allUsers,
-  ] = await Promise.all([
+  const results = await Promise.all([
     db.select().from(projectInfo).where(isNull(projectInfo.deletedAt)),
     db.select().from(projectExecutionState).where(isNull(projectExecutionState.deletedAt)),
     db.select().from(opportunities).where(isNull(opportunities.deletedAt)),
@@ -118,6 +97,26 @@ export async function getCompanyOverviewData() {
     db.select().from(clientUpdates),
     db.select().from(users),
   ]);
+  const allProjects: any[] = results[0];
+  const allExecState: any[] = results[1];
+  const allOpportunities: any[] = results[2];
+  const revenueRows: any[] = results[3];
+  const costRows: any[] = results[4];
+  const allWorkItems: any[] = results[5];
+  const incidents: any[] = results[6];
+  const correctiveActionRows: any[] = results[7];
+  const priorities: any[] = results[8];
+  const stageRequirements: any[] = results[9];
+  const stageInstances: any[] = results[10];
+  const qcItems: any[] = results[11];
+  const qcWarnings: any[] = results[12];
+  const snagRows: any[] = results[13];
+  const handoverPackRows: any[] = results[14];
+  const engStages: any[] = results[15];
+  const engTasks: any[] = results[16];
+  const engDeliverables: any[] = results[17];
+  const clientUpdateRows: any[] = results[18];
+  const allUsers: any[] = results[19];
 
   // ── Build lookup maps ──────────────────────────────────────────────
   const execByProjectId = new Map(allExecState.map((e) => [e.projectId, e]));
