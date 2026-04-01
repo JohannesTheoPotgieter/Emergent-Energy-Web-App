@@ -39,6 +39,7 @@ async function getProjectsWithStageData(filter?: {
       pes.execution_phase,
       pes.archived_status,
       pes.construction_manager_user_id,
+      cm_user.name AS construction_manager_name,
       COALESCE(
         EXTRACT(DAY FROM NOW() - psi.started_at)::int,
         0
@@ -46,6 +47,7 @@ async function getProjectsWithStageData(filter?: {
       COALESCE(exc.open_exception_count, 0)::int AS open_exception_count
     FROM project_info pi
     LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
+    LEFT JOIN users cm_user ON cm_user.id = pes.construction_manager_user_id
     LEFT JOIN project_stage_instances psi
       ON psi.project_id = pi.id
       AND psi.stage_code = pes.current_stage_code
@@ -79,6 +81,7 @@ async function getProjectsWithStageData(filter?: {
     pm: r.pm,
     pd: r.pd,
     constructionManager: r.construction_manager_user_id,
+    constructionManagerName: r.construction_manager_name ?? null,
     currentStageCode: r.current_stage_code,
     gateStatus: r.gate_status,
     gateReadinessPct: r.gate_readiness_pct ?? 0,
@@ -109,10 +112,94 @@ app.get("/api/gates/pipeline", jwtAuth, requireAuth, async (_req, res) => {
       stageCounts[code] = (stageCounts[code] || 0) + 1;
     }
 
-    res.json({ projects, stageCounts });
+    const diagnosticsResult = await db.execute(sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM project_info) AS total_projects,
+        (SELECT COUNT(*)::int FROM project_execution_state pes WHERE COALESCE(pes.is_active, true) = true) AS active_execution_rows,
+        (SELECT COUNT(*)::int FROM project_execution_state pes WHERE COALESCE(pes.archived_status, 'ACTIVE') = 'ACTIVE') AS non_archived_execution_rows
+    `);
+    const diagnosticsRow = ((diagnosticsResult as any).rows ?? [])[0] ?? {};
+
+    res.json({
+      projects,
+      stageCounts,
+      diagnostics: {
+        totalProjects: Number(diagnosticsRow.total_projects || 0),
+        activeExecutionRows: Number(diagnosticsRow.active_execution_rows || 0),
+        nonArchivedExecutionRows: Number(diagnosticsRow.non_archived_execution_rows || 0),
+        appliedFilters: {
+          requireActiveExecution: true,
+          requireActiveArchiveStatus: true,
+        },
+      },
+    });
   } catch (err: any) {
     if (err.code === "42P01" || err.code === "42703") {
-      return res.json({ projects: [], stageCounts: {} });
+      try {
+        // Fallback for partially-migrated environments:
+        // keep Gate Tracker useful rather than silently empty.
+        const fallback = await db.execute(sql`
+          SELECT
+            pi.id AS project_id,
+            pi.project_name,
+            pi.client_name,
+            pi.pm,
+            pi.pd
+          FROM project_info pi
+          ORDER BY pi.project_name ASC
+        `);
+        const fallbackProjects = ((fallback as any).rows ?? []).map((r: any) => ({
+          projectId: r.project_id,
+          projectName: r.project_name,
+          clientName: r.client_name,
+          pm: r.pm,
+          pd: r.pd,
+          constructionManager: null,
+          constructionManagerName: null,
+          currentStageCode: null,
+          gateStatus: null,
+          gateReadinessPct: 0,
+          waitingOnDepartment: null,
+          waitingOnUserId: null,
+          nextRequiredAction: null,
+          daysInStage: 0,
+          openExceptionCount: 0,
+          ragStatus: null,
+          contractValue: null,
+          executionPhase: null,
+          archivedStatus: "ACTIVE",
+        }));
+
+        return res.json({
+          projects: fallbackProjects,
+          stageCounts: {},
+          diagnostics: {
+            schemaFallback: true,
+            schemaIssueCode: err.code,
+            schemaIssueMessage: "Lifecycle gate columns are unavailable in this environment; showing base project list.",
+            totalProjects: fallbackProjects.length,
+            appliedFilters: {
+              requireActiveExecution: false,
+              requireActiveArchiveStatus: false,
+            },
+          },
+        });
+      } catch {
+        return res.json({
+          projects: [],
+          stageCounts: {},
+          diagnostics: {
+            schemaFallback: true,
+            schemaIssueCode: err.code,
+            schemaIssueMessage: "Could not load lifecycle or fallback project data.",
+            totalProjects: 0,
+            appliedFilters: {
+              requireActiveExecution: false,
+              requireActiveArchiveStatus: false,
+            },
+          },
+        });
+      }
     }
     console.error("Gates pipeline error:", err);
     res.status(500).json({ error: err.message });
