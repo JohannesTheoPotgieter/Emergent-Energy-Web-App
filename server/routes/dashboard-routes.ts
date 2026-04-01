@@ -217,7 +217,7 @@ export function registerDashboardRoutes(app: Express) {
           plannedExpenditureFy: 0, paidExpenditureFy: 0, openExpenditureFy: 0, grossMarginPctFy: null,
           engineeringStatus: 'On Track', qualityStatus: 'On Track', importFreshness: 'Critical', importAgeDays: null,
           criticalActionCount: 0,
-          _taskWeight: 0, _taskActual: 0, _taskExpected: 0,
+          _taskWeight: 0, _taskActual: 0, _taskExpected: 0, _expCount: 0,
           _engOpen: 0, _qualityOpen: 0, _approvalsPending: 0,
           _inflowRisk: 0, _outflowRisk: 0,
         });
@@ -239,6 +239,8 @@ export function registerDashboardRoutes(app: Express) {
         if (!prev || s > prev) latestImportByProject.set(proj.id, s);
       }
 
+      // Group plan tasks by project for leaf-task identification
+      const planTasksByProjectId = new Map<number, any[]>();
       for (const t of planRows) {
         const proj = t.projectId ? projectById.get(Number(t.projectId)) : projectByName.get(String(t.projectName || '').toLowerCase());
         if (!proj) continue;
@@ -246,17 +248,66 @@ export function registerDashboardRoutes(app: Express) {
         const wiStart = (t.actualStart || t.startDate || '').slice(0,10);
         const wiEnd = (t.actualEnd || t.endDate || '').slice(0,10);
         if (wiStart && wiEnd && wiStart <= fyEnd && wiEnd >= fyStart) row.__hasFyItem = true;
-        const w = Math.max(1, toNum(t.durationDays));
-        const actual = toNum(t.actualPctComplete) * 100;
-        let expected = t.expectedPctComplete == null ? null : toNum(t.expectedPctComplete) * 100;
-        if (expected == null) {
-          const s = wiStart;
-          const e = wiEnd;
-          if (s && e && s < e) {
-            expected = today <= s ? 0 : today >= e ? 100 : Math.max(0, Math.min(100, ((new Date(today).getTime()-new Date(s).getTime())/(new Date(e).getTime()-new Date(s).getTime()))*100));
-          } else expected = 0;
+        if (!planTasksByProjectId.has(proj.id)) planTasksByProjectId.set(proj.id, []);
+        planTasksByProjectId.get(proj.id)!.push(t);
+      }
+
+      // Compute leaf-task simple-average progress per project (matching UnifiedPlanTab)
+      const todayMs = new Date(today).getTime();
+      for (const [projId, tasks] of planTasksByProjectId) {
+        const row = rowsByProject.get(projId);
+        if (!row) continue;
+
+        // Filter out section headers / summary rows
+        const SECTION_HEADERS = ['no.', 'no', '#'];
+        const filtered = tasks.filter((t: any) => {
+          const tn = (t.taskNo || '').toString().toLowerCase().trim();
+          return !SECTION_HEADERS.includes(tn);
+        });
+
+        // Identify parent rows via parentRowNumber and indent level
+        const parentRows = new Set<number>();
+        for (const t of filtered) {
+          if (t.parentRowNumber) parentRows.add(t.parentRowNumber);
         }
-        row._taskWeight += w; row._taskActual += actual * w; row._taskExpected += expected * w;
+        for (let i = 0; i < filtered.length - 1; i++) {
+          const currIndent = filtered[i].indentLevel ?? 0;
+          const nextIndent = filtered[i + 1].indentLevel ?? 0;
+          if (nextIndent > currIndent && filtered[i].rowNumber) {
+            parentRows.add(filtered[i].rowNumber);
+          }
+        }
+        const leafTasks = filtered.filter((t: any) => !t.rowNumber || !parentRows.has(t.rowNumber));
+        const items = leafTasks.length > 0 ? leafTasks : filtered;
+
+        let actualSum = 0;
+        let expSum = 0;
+        let expCount = 0;
+        for (const t of items) {
+          actualSum += toNum(t.actualPctComplete) * 100;
+          if (t.expectedPctComplete != null) {
+            expSum += toNum(t.expectedPctComplete) * 100;
+            expCount++;
+          } else {
+            const s = (t.actualStart || t.startDate || '').slice(0,10);
+            const e = (t.actualEnd || t.endDate || '').slice(0,10);
+            if (s && e && /^\d{4}-\d{2}-\d{2}/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(e)) {
+              const sMs = new Date(s).getTime();
+              const eMs = new Date(e).getTime();
+              let exp: number;
+              if (todayMs >= eMs) exp = 100;
+              else if (todayMs <= sMs) exp = 0;
+              else { const total = Math.max(1, (eMs - sMs) / 86400000); exp = Math.min(((todayMs - sMs) / 86400000) / total, 1.0) * 100; }
+              expSum += exp;
+              expCount++;
+            }
+          }
+        }
+        // Store as simple counts for final averaging
+        row._taskActual = actualSum;
+        row._taskExpected = expSum;
+        row._taskWeight = items.length;
+        row._expCount = expCount;
       }
 
       for (const r of revenueRows) {
@@ -335,7 +386,7 @@ export function registerDashboardRoutes(app: Express) {
 
       projects.forEach((row: any) => {
         row.actualProgressPct = row._taskWeight > 0 ? row._taskActual / row._taskWeight : 0;
-        row.expectedProgressPct = row._taskWeight > 0 ? row._taskExpected / row._taskWeight : 0;
+        row.expectedProgressPct = (row._expCount || row._taskWeight) > 0 ? row._taskExpected / (row._expCount || row._taskWeight) : 0;
         row.scheduleVariancePct = row.actualProgressPct - row.expectedProgressPct;
         // Compute RAG from progress delta when manual ragStatus is absent (matching projects-summary)
         if (row.rag === 'UNKNOWN') {
@@ -898,7 +949,7 @@ export function registerDashboardRoutes(app: Express) {
           qualityIssues: qual,
           pendingApprovalsDecisions: pending,
         },
-        projects: projects.map(({ _taskWeight, _taskActual, _taskExpected, _engOpen, _qualityOpen, _approvalsPending, _inflowRisk, _outflowRisk, __hasFyItem, ...rest }: any) => rest),
+        projects: projects.map(({ _taskWeight, _taskActual, _taskExpected, _expCount, _engOpen, _qualityOpen, _approvalsPending, _inflowRisk, _outflowRisk, __hasFyItem, ...rest }: any) => rest),
         charts: chartDatasets,
         options: {
           portfolios: Array.from(new Set(projects.map((p: any) => p.portfolio).filter(Boolean))).sort(),

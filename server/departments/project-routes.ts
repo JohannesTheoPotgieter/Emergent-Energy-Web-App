@@ -845,92 +845,93 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       let projectPctComplete: number | null = null;
       let expectedPctComplete: number | null = null;
 
+      // Use the same leaf-task simple-average approach as the planning-tasks
+      // route (UnifiedPlanTab) so the delta shown in the project list matches
+      // the delta badge on the project detail page.
+      const todayDate = today;
+      const calcExpectedPct = (startStr: string | null, endStr: string | null): number | null => {
+        if (!startStr || !endStr || !/^\d{4}-\d{2}-\d{2}/.test(startStr) || !/^\d{4}-\d{2}-\d{2}/.test(endStr)) return null;
+        if (todayDate >= endStr) return 1.0;
+        if (todayDate <= startStr) return 0.0;
+        const startMs = new Date(startStr).getTime();
+        const endMs = new Date(endStr).getTime();
+        const totalDays = Math.max(1, (endMs - startMs) / 86400000);
+        const elapsed = (new Date(todayDate).getTime() - startMs) / 86400000;
+        return Math.min(elapsed / totalDays, 1.0);
+      };
+
       if (projectWorkItems.length > 0) {
-        let totalWeight = 0;
-        let weightedSum = 0;
-        let totalExpWeight = 0;
-        let weightedExpSum = 0;
-        const todayDate = today;
-        for (const wi of projectWorkItems) {
-          if (wi.type === 'milestone') continue;
-          const dur = wi.duration && Number(wi.duration) > 0 ? Number(wi.duration) : 1;
-          weightedSum += (wi.percent_complete !== null && wi.percent_complete !== undefined ? Number(wi.percent_complete) : 0) * dur;
-          totalWeight += dur;
-          totalExpWeight += dur;
+        // Build parent-child map from WBS codes to identify leaf tasks
+        const wbsSet = new Set(projectWorkItems.filter((wi: any) => wi.type !== 'milestone').map((wi: any) => wi.wbs_code).filter(Boolean));
+        const parentWbs = new Set<string>();
+        for (const wbs of wbsSet) {
+          const parts = String(wbs).split('.');
+          if (parts.length > 1) {
+            parentWbs.add(parts.slice(0, -1).join('.'));
+          }
+        }
+        const leafItems = projectWorkItems.filter((wi: any) => {
+          if (wi.type === 'milestone') return false;
+          return !wi.wbs_code || !parentWbs.has(String(wi.wbs_code));
+        });
+
+        const items = leafItems.length > 0 ? leafItems : projectWorkItems.filter((wi: any) => wi.type !== 'milestone');
+        let actualSum = 0;
+        let expSum = 0;
+        let expCount = 0;
+        for (const wi of items) {
+          actualSum += wi.percent_complete !== null && wi.percent_complete !== undefined ? Number(wi.percent_complete) : 0;
           const tStart = wi.start_date ? String(wi.start_date).substring(0, 10) : null;
           const tEnd = wi.end_date ? String(wi.end_date).substring(0, 10) : null;
-          if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
-            continue;
-          }
-          let exp = 0;
-          if (todayDate >= tEnd) {
-            exp = 1.0;
-          } else if (todayDate <= tStart) {
-            exp = 0.0;
-          } else {
-            const totalWd = saWorkingDays(tStart, tEnd);
-            const elapsedWd = saWorkingDays(tStart, todayDate);
-            if (totalWd && totalWd > 0 && elapsedWd !== null) {
-              exp = Math.min(elapsedWd / totalWd, 1.0);
-            }
-          }
-          weightedExpSum += exp * dur;
+          const exp = calcExpectedPct(tStart, tEnd);
+          if (exp !== null) { expSum += exp; expCount++; }
         }
-        projectPctComplete = totalWeight > 0 ? weightedSum / totalWeight : null;
-        expectedPctComplete = totalExpWeight > 0 ? weightedExpSum / totalExpWeight : null;
+        projectPctComplete = items.length > 0 ? actualSum / items.length : null;
+        expectedPctComplete = expCount > 0 ? expSum / expCount : null;
       } else {
-        const summaryRow = projectPlans.find(p => {
+        // Build parent-child map from rowNumber/indentLevel to identify leaf tasks
+        const SECTION_HEADERS = ['no.', 'no', '#'];
+        const filteredPlans = projectPlans.filter(p => {
           const tn = (p.taskNo || '').toString().toLowerCase().trim();
-          return tn === 'no.' || tn === 'no' || tn === '#';
+          if (SECTION_HEADERS.includes(tn)) return false;
+          if (p.rowNumber && milestoneKeys.has(`${projectName}::${p.rowNumber}`)) return false;
+          return true;
         });
-        if (summaryRow) {
-          projectPctComplete = summaryRow.actualPctComplete ?? null;
-          expectedPctComplete = summaryRow.expectedPctComplete ?? null;
+
+        // Identify parent rows: any row whose rowNumber is referenced as another row's parentRowNumber
+        const parentRows = new Set<number>();
+        for (const p of filteredPlans) {
+          if ((p as any).parentRowNumber) parentRows.add((p as any).parentRowNumber);
         }
-        if (projectPctComplete === null) {
-          let totalWeight = 0;
-          let weightedSum = 0;
-          for (const p of projectPlans) {
-            if (p.rowNumber && milestoneKeys.has(`${projectName}::${p.rowNumber}`)) continue;
-            const dur = p.durationDays && p.durationDays > 0 ? p.durationDays : 1;
-            weightedSum += (p.actualPctComplete ?? 0) * dur;
-            totalWeight += dur;
+        // Also detect parents via indent level: if a task is followed by a more-indented task
+        for (let i = 0; i < filteredPlans.length - 1; i++) {
+          const currIndent = (filteredPlans[i] as any).indentLevel ?? 0;
+          const nextIndent = (filteredPlans[i + 1] as any).indentLevel ?? 0;
+          if (nextIndent > currIndent && filteredPlans[i].rowNumber) {
+            parentRows.add(filteredPlans[i].rowNumber!);
           }
-          projectPctComplete = totalWeight > 0 ? weightedSum / totalWeight : null;
         }
-        if (expectedPctComplete === null) {
-          const todayDate = today;
-          let totalExpWeight = 0;
-          let weightedExpSum = 0;
-          for (const task of projectPlans) {
-            if (task.rowNumber && milestoneKeys.has(`${projectName}::${task.rowNumber}`)) continue;
-            const dur = task.durationDays && task.durationDays > 0 ? task.durationDays : 1;
-            totalExpWeight += dur;
-            if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
-              weightedExpSum += task.expectedPctComplete * dur;
-              continue;
-            }
-            const tStart = task.actualStart?.substring(0, 10);
-            const tEnd = task.actualEnd?.substring(0, 10);
-            if (!tStart || !tEnd || !/^\d{4}-\d{2}-\d{2}/.test(tStart) || !/^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
-              continue;
-            }
-            let exp = 0;
-            if (todayDate >= tEnd) {
-              exp = 1.0;
-            } else if (todayDate <= tStart) {
-              exp = 0.0;
-            } else {
-              const totalWd = saWorkingDays(tStart, tEnd);
-              const elapsedWd = saWorkingDays(tStart, todayDate);
-              if (totalWd && totalWd > 0 && elapsedWd !== null) {
-                exp = Math.min(elapsedWd / totalWd, 1.0);
-              }
-            }
-            weightedExpSum += exp * dur;
+
+        const leafPlans = filteredPlans.filter(p => !p.rowNumber || !parentRows.has(p.rowNumber));
+        const items = leafPlans.length > 0 ? leafPlans : filteredPlans;
+
+        let actualSum = 0;
+        let expSum = 0;
+        let expCount = 0;
+        for (const task of items) {
+          actualSum += task.actualPctComplete ?? 0;
+          if (task.expectedPctComplete !== null && task.expectedPctComplete !== undefined) {
+            expSum += task.expectedPctComplete;
+            expCount++;
+          } else {
+            const tStart = task.actualStart?.substring(0, 10) ?? null;
+            const tEnd = task.actualEnd?.substring(0, 10) ?? null;
+            const exp = calcExpectedPct(tStart, tEnd);
+            if (exp !== null) { expSum += exp; expCount++; }
           }
-          expectedPctComplete = totalExpWeight > 0 ? weightedExpSum / totalExpWeight : null;
         }
+        projectPctComplete = items.length > 0 ? actualSum / items.length : null;
+        expectedPctComplete = expCount > 0 ? expSum / expCount : null;
       }
       const deltaVsExpected = (projectPctComplete !== null && expectedPctComplete !== null)
         ? projectPctComplete - expectedPctComplete : null;

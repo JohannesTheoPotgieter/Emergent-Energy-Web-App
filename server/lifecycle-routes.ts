@@ -449,7 +449,8 @@ export function registerLifecycleRoutes(app: Express) {
 
       const milestoneKeys = new Set<string>();
 
-      const planByNorm = new Map<string, { total: number; weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number }>();
+      // Group plan tasks by project for leaf-task identification (matching UnifiedPlanTab)
+      const lcPlanTasksByNorm = new Map<string, any[]>();
       for (const p of allPlanTasks) {
         const name = p.projectName;
         if (!name) continue;
@@ -458,34 +459,59 @@ export function registerLifecycleRoutes(app: Express) {
         if (isSummary) continue;
         if (p.rowNumber && milestoneKeys.has(`${name}::${p.rowNumber}`)) continue;
         const norm = normalizeName(name);
-        if (!planByNorm.has(norm)) planByNorm.set(norm, { total: 0, weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0 });
-        const entry = planByNorm.get(norm)!;
-        entry.total++;
-        const dur = p.durationDays && p.durationDays > 0 ? Number(p.durationDays) : 1;
-        entry.weightedPct += Number(p.actualPctComplete ?? 0) * dur;
-        entry.totalWeight += dur;
-        entry.totalExpWeight += dur;
-        if (p.expectedPctComplete !== null && p.expectedPctComplete !== undefined) {
-          entry.weightedExpPct += Number(p.expectedPctComplete) * dur;
-        } else {
-          const tStart = (p as any).actualStart?.substring(0, 10);
-          const tEnd = (p as any).actualEnd?.substring(0, 10);
-          if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
-            let exp = 0;
-            if (todayDate >= tEnd) {
-              exp = 1.0;
-            } else if (todayDate <= tStart) {
-              exp = 0.0;
-            } else {
-              const totalWd = saWorkingDays(tStart, tEnd);
-              const elapsedWd = saWorkingDays(tStart, todayDate);
-              if (totalWd && totalWd > 0 && elapsedWd !== null) {
-                exp = Math.min(elapsedWd / totalWd, 1.0);
-              }
-            }
-            entry.weightedExpPct += exp * dur;
+        if (!lcPlanTasksByNorm.has(norm)) lcPlanTasksByNorm.set(norm, []);
+        lcPlanTasksByNorm.get(norm)!.push(p);
+      }
+
+      const lcTodayMs = new Date(todayDate).getTime();
+      const planByNorm = new Map<string, { total: number; weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number }>();
+      for (const [norm, tasks] of lcPlanTasksByNorm) {
+        // Identify parent rows via parentRowNumber and indent level
+        const parentRows = new Set<number>();
+        for (const t of tasks) {
+          if ((t as any).parentRowNumber) parentRows.add((t as any).parentRowNumber);
+        }
+        for (let i = 0; i < tasks.length - 1; i++) {
+          const currIndent = (tasks[i] as any).indentLevel ?? 0;
+          const nextIndent = (tasks[i + 1] as any).indentLevel ?? 0;
+          if (nextIndent > currIndent && tasks[i].rowNumber) {
+            parentRows.add(tasks[i].rowNumber!);
           }
         }
+        const leafTasks = tasks.filter((t: any) => !t.rowNumber || !parentRows.has(t.rowNumber));
+        const items = leafTasks.length > 0 ? leafTasks : tasks;
+
+        let actualSum = 0;
+        let expSum = 0;
+        let expCount = 0;
+        for (const p of items) {
+          actualSum += Number(p.actualPctComplete ?? 0);
+          if (p.expectedPctComplete !== null && p.expectedPctComplete !== undefined) {
+            expSum += Number(p.expectedPctComplete);
+            expCount++;
+          } else {
+            const tStart = (p as any).actualStart?.substring(0, 10);
+            const tEnd = (p as any).actualEnd?.substring(0, 10);
+            if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+              const sMs = new Date(tStart).getTime();
+              const eMs = new Date(tEnd).getTime();
+              let exp: number;
+              if (lcTodayMs >= eMs) exp = 1.0;
+              else if (lcTodayMs <= sMs) exp = 0.0;
+              else { const total = Math.max(1, (eMs - sMs) / 86400000); exp = Math.min(((lcTodayMs - sMs) / 86400000) / total, 1.0); }
+              expSum += exp;
+              expCount++;
+            }
+          }
+        }
+
+        planByNorm.set(norm, {
+          total: items.length,
+          weightedPct: actualSum,
+          totalWeight: items.length,
+          weightedExpPct: expSum,
+          totalExpWeight: expCount,
+        });
       }
 
       const lastEngByProjectId = new Map<number, { name: string; at: string }>();
@@ -656,36 +682,14 @@ export function registerLifecycleRoutes(app: Express) {
       const isBlack = (v: any) => { const s = String(v || '').toLowerCase(); return s.includes('000000') || s.includes('black'); };
 
       const rawPlanTasks = await getAllPMWorkItemsAsProjectPlan();
-      const planByNorm = new Map<string, { weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number; fyItems: number }>();
+      // Group plan tasks by project for leaf-task identification
+      const planTasksByNorm = new Map<string, any[]>();
+      const planFyItemsByNorm = new Map<string, number>();
       for (const wi of rawPlanTasks as any[]) {
         if (!wi.projectName) continue;
         const norm = normalizeName(wi.projectName);
-        if (!planByNorm.has(norm)) planByNorm.set(norm, { weightedPct: 0, totalWeight: 0, weightedExpPct: 0, totalExpWeight: 0, fyItems: 0 });
-        const entry = planByNorm.get(norm)!;
-        const duration = Number(wi.durationDays || 1);
-        const weight = Number.isFinite(duration) && duration > 0 ? duration : 1;
-
-        // Actual % — use value if available, else 0
-        const actualPct = wi.actualPctComplete !== null && wi.actualPctComplete !== undefined
-          ? Number(wi.actualPctComplete) : 0;
-        entry.weightedPct += actualPct * weight;
-        entry.totalWeight += weight;
-
-        // Expected % — use value if available, else calculate from task dates (matching program-dashboard)
-        let expectedPct: number;
-        if (wi.expectedPctComplete !== null && wi.expectedPctComplete !== undefined) {
-          expectedPct = Number(wi.expectedPctComplete);
-        } else {
-          const wiStart = (wi.actualStart || wi.startDate || '').slice(0, 10);
-          const wiEnd = (wi.actualEnd || wi.endDate || '').slice(0, 10);
-          if (wiStart && wiEnd && wiStart < wiEnd) {
-            expectedPct = today <= wiStart ? 0 : today >= wiEnd ? 1 : Math.max(0, Math.min(1, (new Date(today).getTime() - new Date(wiStart).getTime()) / (new Date(wiEnd).getTime() - new Date(wiStart).getTime())));
-          } else {
-            expectedPct = 0;
-          }
-        }
-        entry.weightedExpPct += expectedPct * weight;
-        entry.totalExpWeight += weight;
+        if (!planTasksByNorm.has(norm)) planTasksByNorm.set(norm, []);
+        planTasksByNorm.get(norm)!.push(wi);
 
         const planMembershipDate = pickFirstPopulatedDate(wi, [
           "plannedStart",
@@ -696,8 +700,67 @@ export function registerLifecycleRoutes(app: Express) {
           "actualEnd",
         ]);
         if (isDateInRange(planMembershipDate, fy.start, fy.end)) {
-          entry.fyItems += 1;
+          planFyItemsByNorm.set(norm, (planFyItemsByNorm.get(norm) || 0) + 1);
         }
+      }
+
+      // Compute leaf-task simple-average progress per project (matching UnifiedPlanTab)
+      const todayMs = new Date(today).getTime();
+      const planByNorm = new Map<string, { weightedPct: number; totalWeight: number; weightedExpPct: number; totalExpWeight: number; fyItems: number }>();
+      for (const [norm, tasks] of planTasksByNorm) {
+        // Filter out section headers
+        const SECTION_HEADERS = ['no.', 'no', '#'];
+        const filtered = tasks.filter((t: any) => {
+          const tn = (t.taskNo || '').toString().toLowerCase().trim();
+          return !SECTION_HEADERS.includes(tn);
+        });
+
+        // Identify parent rows via parentRowNumber and indent level
+        const parentRows = new Set<number>();
+        for (const t of filtered) {
+          if (t.parentRowNumber) parentRows.add(t.parentRowNumber);
+        }
+        for (let i = 0; i < filtered.length - 1; i++) {
+          const currIndent = (filtered[i] as any).indentLevel ?? 0;
+          const nextIndent = (filtered[i + 1] as any).indentLevel ?? 0;
+          if (nextIndent > currIndent && filtered[i].rowNumber) {
+            parentRows.add(filtered[i].rowNumber);
+          }
+        }
+        const leafTasks = filtered.filter((t: any) => !t.rowNumber || !parentRows.has(t.rowNumber));
+        const items = leafTasks.length > 0 ? leafTasks : filtered;
+
+        let actualSum = 0;
+        let expSum = 0;
+        let expCount = 0;
+        for (const t of items) {
+          actualSum += t.actualPctComplete !== null && t.actualPctComplete !== undefined ? Number(t.actualPctComplete) : 0;
+          if (t.expectedPctComplete != null) {
+            expSum += Number(t.expectedPctComplete);
+            expCount++;
+          } else {
+            const s = (t.actualStart || t.startDate || '').slice(0, 10);
+            const e = (t.actualEnd || t.endDate || '').slice(0, 10);
+            if (s && e && /^\d{4}-\d{2}-\d{2}/.test(s) && /^\d{4}-\d{2}-\d{2}/.test(e)) {
+              const sMs = new Date(s).getTime();
+              const eMs = new Date(e).getTime();
+              let exp: number;
+              if (todayMs >= eMs) exp = 1;
+              else if (todayMs <= sMs) exp = 0;
+              else { const total = Math.max(1, (eMs - sMs) / 86400000); exp = Math.min(((todayMs - sMs) / 86400000) / total, 1.0); }
+              expSum += exp;
+              expCount++;
+            }
+          }
+        }
+
+        planByNorm.set(norm, {
+          weightedPct: actualSum,
+          totalWeight: items.length,
+          weightedExpPct: expSum,
+          totalExpWeight: expCount,
+          fyItems: planFyItemsByNorm.get(norm) || 0,
+        });
       }
 
       const revenueLines = await db.select({
