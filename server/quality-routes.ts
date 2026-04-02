@@ -1863,7 +1863,7 @@ export function registerQualityRoutes(app: Express) {
         }
       }
       const dedupedChecklists = [...checklistByProject.values()];
-      const projectIds = uniqueNumberList(
+      const dedupedProjectIds = uniqueNumberList(
         dedupedChecklists.map((checklist: any) => {
           if (checklist.projectId) return checklist.projectId;
           const linkedProject = projectNameMap.get(normalizeProjectName(checklist.projectName));
@@ -1871,7 +1871,7 @@ export function registerQualityRoutes(app: Express) {
         }),
       );
 
-      const handoverRows: any[] = await fetchProjectHandoverRows(projectIds);
+      const handoverRows: any[] = await fetchProjectHandoverRows(dedupedProjectIds);
       const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
 
       const templateItemIds = uniqueNumberList(allItems.map((item: any) => item.templateItemId));
