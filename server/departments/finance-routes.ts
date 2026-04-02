@@ -42,6 +42,7 @@ import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
 import { createNotification } from "../services/notification-service";
 import {
   getExpenseEffectiveDateAndSource,
+  getCosEffectiveDateAndSource,
   getOutflowAmountBreakdown,
 } from "../lib/expense-row-selector";
 
@@ -1523,13 +1524,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const dateSource = (exp.expenseInvoicedDate
-        || (exp as any).approvedDate
-        || (exp as any).forecastPaymentDate
-        || (exp as any).computedForecastPaymentDate
-        || exp.expensePaymentDate
-        || (exp as any).startDate
-        || null) as string | null;
+      const { date: dateSource } = getCosEffectiveDateAndSource(exp);
       if (!dateSource) continue;
       const dateMatch = String(dateSource).match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
@@ -1667,13 +1662,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const dateSource = (exp.expenseInvoicedDate
-        || (exp as any).approvedDate
-        || (exp as any).forecastPaymentDate
-        || (exp as any).computedForecastPaymentDate
-        || exp.expensePaymentDate
-        || (exp as any).startDate
-        || null) as string | null;
+      const { date: dateSource } = getCosEffectiveDateAndSource(exp);
       if (!dateSource) continue;
       const dateMatch = String(dateSource).match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
@@ -1712,14 +1701,9 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       if (exp.rowType !== 'item') continue;
       const budgetAmt = exp.budgetTotal ? parseFloat(exp.budgetTotal as string) : 0;
       if (isNaN(budgetAmt) || budgetAmt === 0) continue;
-      const startDate = (exp.expenseInvoicedDate
-        || (exp as any).forecastPaymentDate
-        || (exp as any).computedForecastPaymentDate
-        || exp.expensePaymentDate
-        || (exp as any).startDate
-        || null) as string | null;
-      if (!startDate) continue;
-      const dateMatch = String(startDate).match(/^(\d{4})-(\d{2})/);
+      const { date: budgetDate } = getCosEffectiveDateAndSource(exp);
+      if (!budgetDate) continue;
+      const dateMatch = String(budgetDate).match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
       budgetByMonth.set(monthKey, (budgetByMonth.get(monthKey) || 0) + budgetAmt);
@@ -1826,12 +1810,9 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
 
       const invDate = exp.expenseInvoicedDate as string | null;
       const payDate = exp.expensePaymentDate as string | null;
-      const forecastDate = exp.forecastPaymentDate as string | null;
 
-      const approvedDate = (exp as any).approvedDate as string | null;
-
+      const { date: dateForMonth } = getCosEffectiveDateAndSource(exp);
       let itemMonthKey: string | null = null;
-      const dateForMonth = invDate || approvedDate || forecastDate || payDate || null;
       if (dateForMonth) {
         const dm = String(dateForMonth).match(/^(\d{4})-(\d{2})/);
         if (dm) itemMonthKey = `${dm[1]}-${dm[2]}`;
@@ -2092,9 +2073,9 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
+      if (!cosDate) continue;
+      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
@@ -2237,9 +2218,9 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
       if (exp.rowType !== 'item') continue;
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
+      if (!cosDate) continue;
+      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
       const pName = (exp.projectName || "").replace(/_Tracker$/i, "");
@@ -2388,9 +2369,9 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
+      if (!cosDate) continue;
+      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
@@ -2530,7 +2511,8 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
       const amount = parseExpenseAmount(exp);
       if (amount === 0) continue;
 
-      const itemMonthKey = extractMonthKey(exp.expenseInvoicedDate as string | null);
+      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
+      const itemMonthKey = extractMonthKey(cosDate);
       if (itemMonthKey !== monthKey) continue;
 
       const pName = normalizeProjectName(exp.projectName);
@@ -2542,7 +2524,7 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
       const revenueAmount = allocateRevenue(amount, totalCOSProject, totalRevProject, isNoRevLinked);
       const gpAmount = revenueAmount - amount;
 
-      const cosRealised = isCosRealised(exp) && itemMonthKey <= curMK;
+      const cosRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= curMK : false);
       const gpState = cosRealised ? 'Realised' : 'Unrealised';
 
       if (stateFilter && stateFilter.toLowerCase() !== gpState.toLowerCase()) continue;
@@ -2628,9 +2610,9 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
+      if (!cosDate) continue;
+      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
 
@@ -2775,9 +2757,9 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
+      if (!cosDate) continue;
+      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const itemMonthKey = `${dateMatch[1]}-${dateMatch[2]}`;
       if (itemMonthKey !== monthKey) continue;

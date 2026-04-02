@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised } from "../lib/calculations/financeUtils";
+import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { buildCanonicalResolver } from "../services/project-summary-helpers";
 import { getProjectHeaderKpis, recomputeHeaderKpiProjectionForActiveProjects } from "../services/project-header-kpi-service";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
@@ -1212,9 +1213,9 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
-      const invDate = exp.expenseInvoicedDate as string | null;
-      if (!invDate) continue;
-      const dateMatch = invDate.match(/^(\d{4})-(\d{2})/);
+      const { date: cosDate } = getCosEffectiveDateAndSource(exp);
+      if (!cosDate) continue;
+      const dateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
       if (!dateMatch) continue;
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
       cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);

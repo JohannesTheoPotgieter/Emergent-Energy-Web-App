@@ -117,6 +117,22 @@ export function getExpenseEffectiveDateAndSource(expense: ExpenseLikeRow): { dat
   return { date: null, source: null };
 }
 
+/**
+ * COS/Revenue/GP month bucketing date resolution.
+ * Determines which month an expense belongs to for cost-of-sales tracking.
+ * Priority: admin override → invoice date → approved → forecast → payment.
+ * Different from getExpenseEffectiveDateAndSource which is payment-date-first (cashflow).
+ */
+export function getCosEffectiveDateAndSource(expense: ExpenseLikeRow): { date: string | null; source: string | null } {
+  if (expense.adminDateOverride) return { date: expense.adminDateOverride, source: "adminDateOverride" };
+  if (expense.expenseInvoicedDate) return { date: expense.expenseInvoicedDate, source: "expenseInvoicedDate" };
+  if (expense.approvedDate) return { date: expense.approvedDate, source: "approvedDate" };
+  if (expense.forecastPaymentDate) return { date: expense.forecastPaymentDate, source: "forecastPaymentDate" };
+  if (expense.computedForecastPaymentDate) return { date: expense.computedForecastPaymentDate, source: "computedForecastPaymentDate" };
+  if (expense.expensePaymentDate) return { date: expense.expensePaymentDate, source: "expensePaymentDate" };
+  return { date: null, source: null };
+}
+
 export function getOutflowAmountBreakdown(expense: ExpenseLikeRow): {
   amount: number;
   type: "actual" | "forecast";
