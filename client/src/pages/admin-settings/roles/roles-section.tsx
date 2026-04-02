@@ -11,7 +11,6 @@ import { resolveSelectedRole, resolveAdminRolesViewState, canManageRoleActions }
 import { RoleListPanel } from "./role-list-panel";
 import { RoleDetailPanel } from "./role-detail-panel";
 import { CreateRoleDialog, CloneRoleDialog, ArchiveRoleDialog, DeleteRoleDialog } from "./create-role-dialog";
-import { RoleComparisonDialog } from "./role-comparison-dialog";
 
 export function RolesSection() {
   const { toast } = useToast();
@@ -28,7 +27,6 @@ export function RolesSection() {
   const [showClone, setShowClone] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
-  const [showCompare, setShowCompare] = useState(false);
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -114,13 +112,12 @@ export function RolesSection() {
     <>
       <div className="flex gap-4" style={{ minHeight: "calc(100vh - 16rem)" }}>
         {/* Left Panel - Role List */}
-        <div className="w-[260px] shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden">
+        <div className="w-[220px] shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden">
           <RoleListPanel
             roles={roles}
             selectedRole={selectedRole}
             onSelectRole={setSelectedRole}
             onCreateRole={() => setShowCreate(true)}
-            onCompareRoles={() => setShowCompare(true)}
             canManageRoles={canManage}
           />
         </div>
@@ -185,7 +182,6 @@ export function RolesSection() {
         onConfirm={() => deleteMutation.mutate()}
         roleLabel={selected?.label || ""} userCount={selected?.userCount || 0} isPending={deleteMutation.isPending}
       />
-      <RoleComparisonDialog open={showCompare} onOpenChange={setShowCompare} roles={roles} />
     </>
   );
 }
