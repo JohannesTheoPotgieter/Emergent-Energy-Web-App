@@ -125,7 +125,6 @@ const ENTITY_DESCRIPTIONS: Record<string, string> = {
   handover: "PD-PM Handover — submit, approve, reject, reopen handovers",
   standups: "Standups — manage standup schedules and entries",
   reports: "Reports — view project plan, cost, quality, resource reports",
-  counterparties: "Counterparties — manage external counterparty records",
   commissioning: "Commissioning — manage commissioning items and evidence",
   ms_integration: "Microsoft 365 integration setup",
   ms_sync: "MS Graph Sync — calendar, email, Teams",
