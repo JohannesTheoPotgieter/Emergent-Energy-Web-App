@@ -585,6 +585,7 @@ export function registerQualityRoutes(app: Express) {
             .where(sql`LOWER(TRIM(${qcChecklist.projectName})) = ${normalizedProjectName}`);
       let checklist = matchingChecklists
         .sort((left: any, right: any) => right.id - left.id)[0];
+      let wasCreated = false;
 
       if (!checklist) {
         const [activeTemplate] = await db.select().from(qcTemplate).where(eq(qcTemplate.isActive, true));
@@ -597,6 +598,7 @@ export function registerQualityRoutes(app: Express) {
           templateId: activeTemplate.id,
           status: "active",
         }).returning();
+        wasCreated = true;
 
         const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, activeTemplate.id));
         const phaseIds = phases.map((p: any) => p.id);
@@ -634,6 +636,7 @@ export function registerQualityRoutes(app: Express) {
       const riskQuestions = phaseIds.length ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.templatePhaseId, phaseIds)) : [];
 
       res.json({
+        created: wasCreated,
         checklist,
         phases,
         groups,
@@ -1602,18 +1605,6 @@ export function registerQualityRoutes(app: Express) {
   app.get("/api/quality/checklists", requireAuth, requirePermission("quality", "view"), async (req, res) => {
     try {
       const allChecklists = await db.select().from(qcChecklist);
-      const checklistByProject = new Map<string, QcChecklistRow>();
-      for (const checklist of allChecklists) {
-        const key = checklist.projectId
-          ? `id:${checklist.projectId}`
-          : `name:${normalizeProjectName(checklist.projectName)}`;
-        const existing = checklistByProject.get(key);
-        if (!existing || checklist.id > existing.id) {
-          checklistByProject.set(key, checklist);
-        }
-      }
-      const dedupedChecklists = [...checklistByProject.values()];
-      const projectIds = uniqueNumberList(dedupedChecklists.map((checklist) => checklist.projectId));
       const allProjectRows = await db.select().from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
       const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
@@ -1624,6 +1615,22 @@ export function registerQualityRoutes(app: Express) {
           projectNameMap.set(normalizeProjectName(project.projectName), project);
         }
       }
+      const checklistByProject = new Map<string, QcChecklistRow>();
+      for (const checklist of allChecklists) {
+        const linkedProject = checklist.projectId
+          ? projectMap.get(checklist.projectId)
+          : projectNameMap.get(normalizeProjectName(checklist.projectName));
+        const canonicalProjectId = linkedProject?.id ?? checklist.projectId ?? null;
+        const canonicalProjectName = linkedProject?.projectName || checklist.projectName;
+        const key = canonicalProjectId
+          ? `id:${canonicalProjectId}`
+          : `name:${normalizeProjectName(canonicalProjectName)}`;
+        const existing = checklistByProject.get(key);
+        if (!existing || checklist.id > existing.id) {
+          checklistByProject.set(key, checklist);
+        }
+      }
+      const dedupedChecklists = [...checklistByProject.values()];
 
       const linkedProjectIds = uniqueNumberList(
         dedupedChecklists.map((checklist) => {
@@ -1829,10 +1836,40 @@ export function registerQualityRoutes(app: Express) {
       const allProjectRows = projectIds.length > 0
         ? await db.select().from(projectInfo)
             .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-            .where(inArray(projectInfo.id, projectIds))
+            .where(inArray(projectInfo.id, checklistProjectIds))
         : [];
       const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
+      const projectNameMap = new Map<string, ProjectInfoRow>();
+      for (const project of allProjects) {
+        if (project?.projectName) {
+          projectNameMap.set(normalizeProjectName(project.projectName), project);
+        }
+      }
+
+      const checklistByProject = new Map<string, QcChecklistRow>();
+      for (const checklist of allChecklists) {
+        const linkedProject = checklist.projectId
+          ? projectMap.get(checklist.projectId)
+          : projectNameMap.get(normalizeProjectName(checklist.projectName));
+        const canonicalProjectId = linkedProject?.id ?? checklist.projectId ?? null;
+        const canonicalProjectName = linkedProject?.projectName || checklist.projectName;
+        const key = canonicalProjectId
+          ? `id:${canonicalProjectId}`
+          : `name:${normalizeProjectName(canonicalProjectName)}`;
+        const existing = checklistByProject.get(key);
+        if (!existing || checklist.id > existing.id) {
+          checklistByProject.set(key, checklist);
+        }
+      }
+      const dedupedChecklists = [...checklistByProject.values()];
+      const projectIds = uniqueNumberList(
+        dedupedChecklists.map((checklist: any) => {
+          if (checklist.projectId) return checklist.projectId;
+          const linkedProject = projectNameMap.get(normalizeProjectName(checklist.projectName));
+          return linkedProject?.id ?? null;
+        }),
+      );
 
       const handoverRows: any[] = await fetchProjectHandoverRows(projectIds);
       const handoverMap = new Map(handoverRows.map((row: any) => [Number(row.project_id), row]));
@@ -1859,7 +1896,7 @@ export function registerQualityRoutes(app: Express) {
         if (w.severity === "High") projectWarningCounts[w.projectName].high++;
       }
 
-      const projectSummaries = allChecklists.map((checklist: any) => {
+      const projectSummaries = dedupedChecklists.map((checklist: any) => {
         const projectItems = allItems.filter((item: any) => item.checklistId === checklist.id);
         const project = projectMap.get(checklist.projectId);
         const handover = handoverMap.get(checklist.projectId);
@@ -1902,7 +1939,7 @@ export function registerQualityRoutes(app: Express) {
         });
 
         return {
-          projectName: checklist.projectName,
+          projectName: resolvedProjectName,
           warningCount: warningInputs.length,
           ...riskSummary,
         };
@@ -1924,12 +1961,17 @@ export function registerQualityRoutes(app: Express) {
         .sort((left: any, right: any) => right.riskScore - left.riskScore);
 
       const postmortems = await db.select().from(qcPostmortem);
-      const checklistProjects = allChecklists.map((c: any) => c.projectName);
+      const checklistProjects = dedupedChecklists.map((c: any) => {
+        const linkedProject = c.projectId
+          ? projectMap.get(c.projectId)
+          : projectNameMap.get(normalizeProjectName(c.projectName));
+        return linkedProject?.projectName || c.projectName;
+      });
       const postmortemProjects = postmortems.filter((p: any) => p.completedAt).map((p: any) => p.projectName);
       const outstandingPostmortems = checklistProjects.filter((p: any) => !postmortemProjects.includes(p));
 
       res.json({
-        totalChecklists: allChecklists.length,
+        totalChecklists: dedupedChecklists.length,
         pendingApprovals: pendingApprovals.length,
         openWarnings: allWarnings.filter((w: any) => w.status === "open").length,
         totalWarnings: allWarnings.length,
