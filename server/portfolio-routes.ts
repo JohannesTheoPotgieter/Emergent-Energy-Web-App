@@ -22,6 +22,16 @@ import { jwtAuth, requireAuth } from "./auth-context";
 
 const MANAGE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
 const COO_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
+const parityLogCooldownByKey = new Map<string, number>();
+
+function shouldEmitParityLogSample(key: string, sampleRate = 0.2, minIntervalMs = 5 * 60 * 1000): boolean {
+  const now = Date.now();
+  const last = parityLogCooldownByKey.get(key) ?? 0;
+  if (now - last < minIntervalMs) return false;
+  if (Math.random() > sampleRate) return false;
+  parityLogCooldownByKey.set(key, now);
+  return true;
+}
 
 function requireManageRole(req: Request, res: Response, next: NextFunction) {
   const role = ((req as any).user as any)?.role || "";
@@ -163,7 +173,18 @@ export function registerPortfolioRoutes(app: Express) {
           console.warn("[promoted-read][portfolio-assignments] mismatch detected", assignmentComparison);
         }
         if (projectComparison.status !== "ready") {
-          console.warn("[promoted-read][projects] mismatch detected for portfolio summary", projectComparison);
+          const diagnosticsEnabled = Boolean(await getFeatureFlags(["promoted_phase1a_project_read_parity_diagnostics"]).then((f) => f.promoted_phase1a_project_read_parity_diagnostics));
+          if (diagnosticsEnabled && shouldEmitParityLogSample("portfolio_project_reads")) {
+            console.warn("[promoted-read][projects] sampled mismatch summary for portfolio view", {
+              status: projectComparison.status,
+              mismatchCategories: projectComparison.mismatchCategories,
+              legacyCount: projectComparison.legacyCount,
+              promotedCount: projectComparison.promotedCount,
+              missingInPromotedCount: projectComparison.missingInPromotedCount,
+              extraInPromotedCount: projectComparison.extraInPromotedCount,
+              fieldMismatchCount: projectComparison.fieldMismatchCount,
+            });
+          }
         }
         res.setHeader("X-Promoted-Portfolios-Read", flags.promoted_core_portfolios_read ? "enabled" : "disabled");
         res.setHeader("X-Promoted-Portfolio-Assignments-Read", flags.promoted_core_portfolio_assignments_read ? "enabled" : "disabled");

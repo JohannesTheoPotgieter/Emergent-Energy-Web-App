@@ -155,6 +155,16 @@ function isCashflowConfirmedCheck(exp: any): boolean {
   return payDateConfirmed;
 }
 
+const parityLogCooldownByKey = new Map<string, number>();
+function shouldEmitParityLogSample(key: string, sampleRate = 0.2, minIntervalMs = 5 * 60 * 1000): boolean {
+  const now = Date.now();
+  const last = parityLogCooldownByKey.get(key) ?? 0;
+  if (now - last < minIntervalMs) return false;
+  if (Math.random() > sampleRate) return false;
+  parityLogCooldownByKey.set(key, now);
+  return true;
+}
+
 async function enrichMytoolTasks(userId: number, tasks: any[]) {
   if (!tasks.length) return tasks;
   const ids = tasks.map((t) => t.id);
@@ -3236,8 +3246,17 @@ export async function registerRoutes(
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareCoreProjectsReadiness();
-        if (comparison.status !== "ready") {
-          console.warn("[promoted-read][projects] mismatch detected", comparison);
+        const diagFlag = await getFeatureFlag("promoted_phase1a_project_read_parity_diagnostics");
+        if (diagFlag && comparison.status !== "ready" && shouldEmitParityLogSample("project_reads")) {
+          console.warn("[promoted-read][projects] sampled mismatch summary", {
+            status: comparison.status,
+            mismatchCategories: comparison.mismatchCategories,
+            legacyCount: comparison.legacyCount,
+            promotedCount: comparison.promotedCount,
+            missingInPromotedCount: comparison.missingInPromotedCount,
+            extraInPromotedCount: comparison.extraInPromotedCount,
+            fieldMismatchCount: comparison.fieldMismatchCount,
+          });
         }
         res.setHeader("X-Promoted-Projects-Read", usePromotedRead ? "enabled" : "disabled");
         res.setHeader("X-Promoted-Projects-Comparison-Status", comparison.status);
@@ -3270,8 +3289,17 @@ export async function registerRoutes(
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareProjectDetailMasterReadiness();
-        if (comparison.status !== "ready") {
-          console.warn("[promoted-read][project-detail-master] mismatch detected", comparison);
+        const diagFlag = await getFeatureFlag("promoted_phase1a_project_read_parity_diagnostics");
+        if (diagFlag && comparison.status !== "ready" && shouldEmitParityLogSample("project_detail_reads")) {
+          console.warn("[promoted-read][project-detail-master] sampled mismatch summary", {
+            status: comparison.status,
+            mismatchCategories: comparison.mismatchCategories,
+            legacyCount: comparison.legacyCount,
+            promotedCount: comparison.promotedCount,
+            missingInPromotedCount: comparison.missingInPromotedCount,
+            extraInPromotedCount: comparison.extraInPromotedCount,
+            fieldMismatchCount: comparison.fieldMismatchCount,
+          });
         }
         res.setHeader("X-Promoted-Project-Detail-Read", usePromotedRead ? "enabled" : "disabled");
         res.setHeader("X-Promoted-Project-Detail-Comparison-Status", comparison.status);
