@@ -126,7 +126,13 @@ export async function initializeProjectStages(projectId: number): Promise<Projec
  * Populate requirements from templates for a specific stage.
  * Skips items that already exist (idempotent).
  */
-export async function hydrateStageChecklist(projectId: number, stageCode: string): Promise<ProjectStageRequirement[]> {
+export interface HydrateStageChecklistResult {
+  templatesFound: number;
+  createdCount: number;
+  requirements: ProjectStageRequirement[];
+}
+
+export async function hydrateStageChecklist(projectId: number, stageCode: string): Promise<HydrateStageChecklistResult> {
   const [instance] = await db
     .select()
     .from(projectStageInstances)
@@ -136,7 +142,7 @@ export async function hydrateStageChecklist(projectId: number, stageCode: string
     ));
 
   if (!instance) {
-    throw new Error(`Stage instance not found for project ${projectId}, stage ${stageCode}`);
+    throw new Error(`Cannot hydrate checklist: stage instance does not exist for project ${projectId}, stage ${stageCode}.`);
   }
 
   const templates = await db
@@ -171,15 +177,24 @@ export async function hydrateStageChecklist(projectId: number, stageCode: string
     }
   }
 
-  if (toCreate.length > 0) {
+  const templatesFound = templates.length;
+  const createdCount = toCreate.length;
+
+  if (createdCount > 0) {
     await db.insert(projectStageRequirements).values(toCreate);
   }
 
-  return db
+  const requirements = await db
     .select()
     .from(projectStageRequirements)
     .where(eq(projectStageRequirements.stageInstanceId, instance.id))
     .orderBy(projectStageRequirements.department, projectStageRequirements.itemCode);
+
+  return {
+    templatesFound,
+    createdCount,
+    requirements,
+  };
 }
 
 // ── Stage Transition ────────────────────────────────────────
