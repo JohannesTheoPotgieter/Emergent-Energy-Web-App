@@ -18,8 +18,8 @@ export async function runIntegrityGuard(
   // ── 1:1 coverage: project_execution_state ──────────────────────────
   try {
     const res = await db.execute(sql.raw(`
-      INSERT INTO project_execution_state (project_id, phase)
-      SELECT pi.id, pi.phase FROM project_info pi
+      INSERT INTO project_execution_state (project_id)
+      SELECT pi.id FROM project_info pi
       LEFT JOIN project_execution_state pes ON pi.id = pes.project_id
       WHERE pes.id IS NULL
       ON CONFLICT (project_id) DO NOTHING
