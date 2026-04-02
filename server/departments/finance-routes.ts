@@ -854,6 +854,13 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       cursor.setUTCDate(cursor.getUTCDate() + 7);
     }
 
+    // Diagnostic: count expense sources to help debug doubled outflows
+    const normalizedCount = allExpenses.filter((e: any) => e._isNormalized).length;
+    const legacyCount = allExpenses.filter((e: any) => !e._isNormalized).length;
+    const itemCount = allExpenses.filter((e: any) => e.rowType === 'item').length;
+    const totalOutflowsYtd = weeks.reduce((s: number, w: any) => s + (w.projectOutflows || 0), 0);
+    console.log(`[Cashflow2026] Expenses: ${allExpenses.length} total (${normalizedCount} normalized, ${legacyCount} legacy), ${itemCount} items. Outflows YTD: ${totalOutflowsYtd.toFixed(0)}`);
+
     res.json(weeks);
   } catch (error) {
     console.error("Cashflow 2026 error:", error);
