@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, Plus, X, Search, DollarSign, ListTodo, MessageSquare, FolderOpen, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, Plus, X, Search, DollarSign, ListTodo, MessageSquare, FolderOpen, CheckCircle2, GitBranch } from "lucide-react";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -37,6 +37,15 @@ const RAG_BADGE: Record<string, string> = {
   orange: "bg-amber-100 text-amber-700",
   red: "bg-red-100 text-red-700",
 };
+
+const DEPARTMENT_OPTIONS = [
+  { value: "ADMIN", label: "Admin" },
+  { value: "LEADERSHIP", label: "Leadership" },
+  { value: "ENGINEERING", label: "Engineering" },
+  { value: "PROJECT_DEVELOPMENT", label: "Project Development" },
+  { value: "PROJECT_MANAGEMENT", label: "Project Management" },
+  { value: "FINANCE", label: "Finance" },
+];
 
 function formatCurrency(value: number): string {
   if (Math.abs(value) >= 1_000_000) return `R ${(value / 1_000_000).toFixed(1)}M`;
@@ -144,6 +153,108 @@ function ProjectLinker({ priorityId, existingProjectIds, onDone }: { priorityId:
   );
 }
 
+function BreakDownDialog({ priorityId, open, onOpenChange }: { priorityId: number; open: boolean; onOpenChange: (v: boolean) => void }) {
+  const queryClient = useQueryClient();
+  const [rows, setRows] = useState([{ title: "", department_key: "", assigned_user_id: "" }]);
+
+  const breakDownMutation = useMutation({
+    mutationFn: async () => {
+      const children = rows
+        .filter(r => r.title.trim())
+        .map(r => ({
+          title: r.title.trim(),
+          department_key: r.department_key || undefined,
+          assigned_user_id: r.assigned_user_id ? parseInt(r.assigned_user_id) : undefined,
+        }));
+      const res = await fetch(`/api/priorities/${priorityId}/break-down`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ children }),
+      });
+      if (!res.ok) throw new Error("Failed to break down priority");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}/children`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+      onOpenChange(false);
+      setRows([{ title: "", department_key: "", assigned_user_id: "" }]);
+    },
+  });
+
+  const updateRow = (idx: number, field: string, value: string) => {
+    setRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  };
+
+  const addRow = () => setRows(prev => [...prev, { title: "", department_key: "", assigned_user_id: "" }]);
+  const removeRow = (idx: number) => setRows(prev => prev.filter((_, i) => i !== idx));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Break Down Priority</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">Create child priorities below this one.</p>
+          {rows.map((row, idx) => (
+            <div key={idx} className="grid grid-cols-12 gap-2 items-end border rounded p-2">
+              <div className="col-span-5">
+                <Label className="text-xs">Title *</Label>
+                <Input
+                  value={row.title}
+                  onChange={e => updateRow(idx, "title", e.target.value)}
+                  placeholder="Child priority title"
+                />
+              </div>
+              <div className="col-span-4">
+                <Label className="text-xs">Department</Label>
+                <Select value={row.department_key} onValueChange={v => updateRow(idx, "department_key", v)}>
+                  <SelectTrigger><SelectValue placeholder="Select dept" /></SelectTrigger>
+                  <SelectContent>
+                    {DEPARTMENT_OPTIONS.map(d => (
+                      <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="col-span-2">
+                <Label className="text-xs">User ID</Label>
+                <Input
+                  type="number"
+                  value={row.assigned_user_id}
+                  onChange={e => updateRow(idx, "assigned_user_id", e.target.value)}
+                  placeholder="Optional"
+                />
+              </div>
+              <div className="col-span-1 flex justify-end">
+                {rows.length > 1 && (
+                  <button onClick={() => removeRow(idx)} className="text-muted-foreground hover:text-red-600 mt-1">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          <Button variant="outline" size="sm" onClick={addRow}>
+            <Plus className="w-3 h-3 mr-1" /> Add another
+          </Button>
+        </div>
+        <div className="flex justify-end gap-2 mt-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            onClick={() => breakDownMutation.mutate()}
+            disabled={breakDownMutation.isPending || !rows.some(r => r.title.trim())}
+          >
+            {breakDownMutation.isPending ? "Creating..." : "Create sub-priorities"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function PriorityDetailPage() {
   const [, params] = useRoute("/priorities/:id");
   const priorityId = params?.id ? parseInt(params.id) : 0;
@@ -151,6 +262,7 @@ export default function PriorityDetailPage() {
   const queryClient = useQueryClient();
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [breakDownDialogOpen, setBreakDownDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState({
     title: "",
     description: "",
@@ -202,6 +314,32 @@ export default function PriorityDetailPage() {
       return res.json();
     },
     enabled: priorityId > 0 && !!priority?.hasProjects,
+  });
+
+  const { data: children = [] } = useQuery<any[]>({
+    queryKey: [`/api/priorities/${priorityId}/children`],
+    queryFn: async () => {
+      const res = await fetch(`/api/priorities/${priorityId}/children`, { headers: { Authorization: `Bearer ${token()}` } });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: priorityId > 0,
+  });
+
+  const escalateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/priorities/${priorityId}/escalate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token()}` },
+        body: JSON.stringify({ reason: "manual" }),
+      });
+      if (!res.ok) throw new Error("Failed to escalate");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: [`/api/priorities/${priorityId}`] });
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+    },
   });
 
   const unlinkMutation = useMutation({
@@ -335,6 +473,58 @@ export default function PriorityDetailPage() {
           <span>Progress: {priority.effectiveProgress}%</span>
         </div>
 
+        {/* Cascade info */}
+        <div className="flex items-center gap-3 mt-2 flex-wrap">
+          {priority.parentTitle && priority.parentId && (
+            <span className="text-xs text-muted-foreground">
+              Part of:{" "}
+              <Link href={`/priorities/${priority.parentId}`}>
+                <span className="text-primary hover:underline cursor-pointer font-medium">{priority.parentTitle}</span>
+              </Link>
+            </span>
+          )}
+          {priority.scope && priority.scope !== "company" && (
+            <Badge variant="secondary" className="text-[10px] bg-blue-100 text-blue-700 capitalize">
+              {priority.scope === "department" ? "Department" : "Role"}
+            </Badge>
+          )}
+          {priority.escalated && (
+            <Badge variant="secondary" className="text-[10px] bg-red-100 text-red-700 flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" /> Escalated{priority.escalationReason ? `: ${priority.escalationReason}` : ""}
+            </Badge>
+          )}
+          {priority.childCount > 0 && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <GitBranch className="w-3 h-3" /> {priority.childCount} sub-priorit{priority.childCount === 1 ? "y" : "ies"}
+            </span>
+          )}
+          {isAdmin && (
+            <div className="flex items-center gap-2 ml-auto">
+              {(priority.scope === "role" || priority.scope === "department") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7"
+                  onClick={() => { if (confirm("Escalate this priority?")) escalateMutation.mutate(); }}
+                  disabled={escalateMutation.isPending}
+                >
+                  {escalateMutation.isPending ? "Escalating..." : "Escalate"}
+                </Button>
+              )}
+              {(priority.scope === "company" || priority.scope === "department") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7"
+                  onClick={() => setBreakDownDialogOpen(true)}
+                >
+                  <GitBranch className="w-3 h-3 mr-1" /> Break Down
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Progress bar */}
         <div className="mt-3 max-w-md">
           <div className="h-2 bg-muted rounded-full overflow-hidden">
@@ -391,12 +581,14 @@ export default function PriorityDetailPage() {
             <>
               <TabsTrigger value="projects"><FolderOpen className="w-3.5 h-3.5 mr-1" />Projects</TabsTrigger>
               <TabsTrigger value="financials"><DollarSign className="w-3.5 h-3.5 mr-1" />Financials</TabsTrigger>
+              <TabsTrigger value="chain"><GitBranch className="w-3.5 h-3.5 mr-1" />Chain</TabsTrigger>
               <TabsTrigger value="tasks"><ListTodo className="w-3.5 h-3.5 mr-1" />Tasks & Approvals</TabsTrigger>
               <TabsTrigger value="updates"><MessageSquare className="w-3.5 h-3.5 mr-1" />Updates</TabsTrigger>
             </>
           ) : (
             <>
               <TabsTrigger value="details">Details</TabsTrigger>
+              <TabsTrigger value="chain"><GitBranch className="w-3.5 h-3.5 mr-1" />Chain</TabsTrigger>
               <TabsTrigger value="updates"><MessageSquare className="w-3.5 h-3.5 mr-1" />Updates</TabsTrigger>
             </>
           )}
@@ -571,6 +763,97 @@ export default function PriorityDetailPage() {
           )}
         </TabsContent>
 
+        {/* Chain tab */}
+        <TabsContent value="chain" className="mt-4">
+          <div className="space-y-4">
+            {/* Parent */}
+            {priority.parentTitle && priority.parentId && (
+              <div className="flex items-start gap-3">
+                <div className="flex flex-col items-center">
+                  <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                    <GitBranch className="w-4 h-4 text-muted-foreground" />
+                  </div>
+                  <div className="w-0.5 h-8 bg-border mt-1" />
+                </div>
+                <div className="pt-1">
+                  <p className="text-xs text-muted-foreground mb-0.5">Parent priority</p>
+                  <Link href={`/priorities/${priority.parentId}`}>
+                    <span className="text-sm font-medium text-primary hover:underline cursor-pointer">{priority.parentTitle}</span>
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Current priority */}
+            <div className="flex items-start gap-3">
+              <div className="flex flex-col items-center">
+                <div className="w-8 h-8 rounded-full bg-primary/10 border-2 border-primary flex items-center justify-center">
+                  <span className={`w-3 h-3 rounded-full ${HEALTH_DOT[priority.effectiveHealth] || HEALTH_DOT.healthy}`} />
+                </div>
+                {children.length > 0 && <div className="w-0.5 h-8 bg-border mt-1" />}
+              </div>
+              <div className="pt-1">
+                <p className="text-xs text-muted-foreground mb-0.5">This priority</p>
+                <p className="text-sm font-semibold text-foreground">{priority.title}</p>
+                <p className="text-xs text-muted-foreground">{priority.effectiveProgress}% complete</p>
+              </div>
+            </div>
+
+            {/* Children grouped by department */}
+            {children.length > 0 && (
+              <div className="pl-11 space-y-3">
+                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Sub-priorities ({children.length})</p>
+                {(() => {
+                  const grouped: Record<string, any[]> = {};
+                  children.forEach((c: any) => {
+                    const key = c.departmentKey || "other";
+                    if (!grouped[key]) grouped[key] = [];
+                    grouped[key].push(c);
+                  });
+                  return Object.entries(grouped).map(([dept, deptChildren]) => (
+                    <div key={dept} className="space-y-1">
+                      {Object.keys(grouped).length > 1 && (
+                        <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
+                          {DEPARTMENT_OPTIONS.find(d => d.value === dept)?.label || dept}
+                        </p>
+                      )}
+                      {deptChildren.map((child: any) => {
+                        const childDays = daysRemaining(child.dueDate);
+                        return (
+                          <div key={child.id} className="flex items-center gap-3 px-3 py-2 rounded border hover:bg-muted/50 text-sm">
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${HEALTH_DOT[child.effectiveHealth] || HEALTH_DOT.healthy}`} />
+                            <div className="flex-1 min-w-0">
+                              <Link href={`/priorities/${child.id}`}>
+                                <span className="font-medium text-primary hover:underline cursor-pointer truncate block">{child.title}</span>
+                              </Link>
+                              {child.childCount > 0 && (
+                                <span className="text-xs text-muted-foreground">{child.childCount} sub-item{child.childCount !== 1 ? "s" : ""}</span>
+                              )}
+                            </div>
+                            {child.owner?.name && (
+                              <span className="text-xs text-muted-foreground shrink-0">{child.owner.name}</span>
+                            )}
+                            <span className="text-xs text-muted-foreground shrink-0">{child.effectiveProgress ?? 0}%</span>
+                            {child.dueDate && (
+                              <span className={`text-xs shrink-0 ${childDays != null && childDays <= 7 ? "text-red-600" : childDays != null && childDays <= 14 ? "text-amber-600" : "text-muted-foreground"}`}>
+                                {childDays != null && childDays < 0 ? `${Math.abs(childDays)}d overdue` : childDays != null ? `${childDays}d` : child.dueDate}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ));
+                })()}
+              </div>
+            )}
+
+            {children.length === 0 && !priority.parentId && (
+              <p className="text-sm text-muted-foreground py-4 text-center">This priority has no parent or child priorities.</p>
+            )}
+          </div>
+        </TabsContent>
+
         {/* Updates tab */}
         <TabsContent value="updates" className="mt-4">
           {updates.length === 0 ? (
@@ -690,6 +973,13 @@ export default function PriorityDetailPage() {
             </div>
           </DialogContent>
         </Dialog>
+      )}
+      {isAdmin && (
+        <BreakDownDialog
+          priorityId={priorityId}
+          open={breakDownDialogOpen}
+          onOpenChange={setBreakDownDialogOpen}
+        />
       )}
     </PageShell>
   );

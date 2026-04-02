@@ -1449,6 +1449,27 @@ async function runAdditiveSchemaAlignments() {
       AND LOWER(TRIM(mcp.assigned_to)) = LOWER(TRIM(u.name));
   `);
 
+  // ── Cascading priorities: scope enum + new columns ──
+  await safeExec("priority scope enum", `
+    DO $$ BEGIN
+      CREATE TYPE mytool_priority_scope AS ENUM ('company', 'department', 'role');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
+  await safeExec("priority cascading columns", `
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS scope mytool_priority_scope NOT NULL DEFAULT 'company';
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES mytool_company_priorities(id) ON DELETE SET NULL;
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS department_key TEXT;
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS assigned_user_id INTEGER REFERENCES users(id);
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS escalated BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
+    ALTER TABLE mytool_company_priorities ADD COLUMN IF NOT EXISTS escalation_reason TEXT;
+    CREATE INDEX IF NOT EXISTS idx_priorities_scope ON mytool_company_priorities(scope);
+    CREATE INDEX IF NOT EXISTS idx_priorities_parent_id ON mytool_company_priorities(parent_id);
+    CREATE INDEX IF NOT EXISTS idx_priorities_department_key ON mytool_company_priorities(department_key);
+    CREATE INDEX IF NOT EXISTS idx_priorities_assigned_user_id ON mytool_company_priorities(assigned_user_id);
+  `);
+
   // Stage Lifecycle: Core gate-driven workflow tables
   await safeExec("stage_definitions table", `
     CREATE TABLE IF NOT EXISTS stage_definitions (

@@ -21,6 +21,7 @@ export const mytoolTaskBucketEnum = pgEnum('mytool_task_bucket', ['project', 'co
 export const mytoolPriorityHorizonEnum = pgEnum('mytool_priority_horizon', ['today', 'week', 'month', 'quarter']);
 export const mytoolPrioritySeverityEnum = pgEnum('mytool_priority_severity', ['normal', 'important', 'critical']);
 export const mytoolPriorityStatusEnum = pgEnum('mytool_priority_status', ['active', 'monitoring', 'closed', 'not_started', 'in_progress', 'complete']);
+export const mytoolPriorityScopeEnum = pgEnum('mytool_priority_scope', ['company', 'department', 'role']);
 
 // ── mytool_tasks: REMOVED (Phase 6) ──
 // Table had 0 active rows. All personal tasks live in work_items (workstream='PERSONAL').
@@ -123,6 +124,14 @@ export const mytoolCompanyPriorities = pgTable("mytool_company_priorities", {
   sortOrder: integer("sort_order").notNull().default(0),
   manualHealth: text("manual_health"),
   manualProgress: integer("manual_progress"),
+  // Cascading priority columns
+  scope: mytoolPriorityScopeEnum("scope").notNull().default('company'),
+  parentId: integer("parent_id"),
+  departmentKey: text("department_key"),
+  assignedUserId: integer("assigned_user_id").references(() => users.id),
+  escalated: boolean("escalated").notNull().default(false),
+  escalatedAt: timestamp("escalated_at"),
+  escalationReason: text("escalation_reason"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
