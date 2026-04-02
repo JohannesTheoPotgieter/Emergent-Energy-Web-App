@@ -880,6 +880,7 @@ export class DatabaseStorage implements IStorage {
       "site_establishment_actual",
       "financial_review_status",
       "financial_review_id",
+      "waiting_on_department",
     ];
 
     if (mode === "sqlite") {
