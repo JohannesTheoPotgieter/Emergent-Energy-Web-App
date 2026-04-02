@@ -120,7 +120,7 @@ export const NAV_SECTIONS = [
   { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Commissioning" },
   { key: "FINANCE", label: "Finance", description: "Cashflow, Revenue, COS, GP / Margin, FYE Revenue, Counterparties, Subcontractors, Invoice Patterns" },
   { key: "REPORTS", label: "Reports", description: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance" },
-  { key: "EXCO", label: "Priorities", description: "Company Priorities — strategic goals & progress tracking" },
+  { key: "PRIORITIES", label: "Priorities", description: "Company Priorities — strategic goals & progress tracking" },
   { key: "ADMIN", label: "Admin", description: "Control Center, Users & Roles, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery" },
 ];
 
@@ -256,7 +256,7 @@ export const ENTITY_DESCRIPTIONS: Record<string, string> = {
 export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string[] }> = {
   home: {
     label: "Home",
-    entities: ["home", "my_work", "my_tool", "company_priorities", "meetings", "teams_chat", "collaboration_hub"],
+    entities: ["home", "my_work", "my_tool", "meetings", "teams_chat", "collaboration_hub"],
   },
   portfolio: {
     label: "Company",
@@ -290,6 +290,10 @@ export const ENTITY_CATEGORIES: Record<string, { label: string; entities: string
     label: "Reports",
     entities: ["reports", "report_center", "programme_reports", "pm_monthly", "eng_monthly", "performance", "leaderboard", "department_scores"],
   },
+  priorities: {
+    label: "Priorities",
+    entities: ["company_priorities"],
+  },
   admin: {
     label: "Admin",
     entities: ["admin", "admin_control_center", "admin_roles", "smart_import", "data_import", "data_export", "database_migration", "ms_integration", "ms_sync", "activity_log", "audit_trail", "ee_info", "ee_info_lifecycle", "ee_info_departments", "ee_info_processes", "ee_info_templates", "admin_processes", "admin_templates", "admin_recovery", "training", "knowledge_game", "feedback"],
@@ -310,7 +314,7 @@ export const NAV_SECTION_TO_PERM_CATEGORY: Record<string, string> = {
   QUALITY: "quality",
   FINANCE: "finance",
   REPORTS: "reports",
-  EXCO: "home",
+  PRIORITIES: "priorities",
   ADMIN: "admin",
 };
 
