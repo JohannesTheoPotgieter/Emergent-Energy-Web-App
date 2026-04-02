@@ -8,7 +8,6 @@ import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { logAuditFromReq } from "./audit-logger";
-import { classifyCosStatus } from "./lib/calculations/stateClassifier";
 import { requirePermission } from "./permission-middleware";
 import { actorFromReq, createProjectEvent } from "./services/project-event-service";
 import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle-stage-gate-service";
@@ -169,10 +168,6 @@ function buildOverdueFinanceLedger(params: {
 }) {
   const { revenueLines, costLines, activeProjects, fyStart, fyEnd, today } = params;
   const hasText = (v: any) => typeof v === "string" && v.trim().length > 0;
-  const isBlack = (v: any) => {
-    const s = String(v || "").toLowerCase();
-    return s.includes("000000") || s.includes("black");
-  };
 
   const activeProjectIds = new Set<number>(activeProjects.map((p) => p.id));
   const activeProjectNames = new Set<string>(activeProjects.map((p) => normalizeName(p.projectName)));
@@ -198,6 +193,8 @@ function buildOverdueFinanceLedger(params: {
   let arMissingDueDate = 0;
   const apSeen = new Set<string>();
   const arSeen = new Set<string>();
+  const COS_REALISED_OVERRIDES_OD = new Set(["COS REALISED", "REALISED"]);
+  const COS_NOT_REALISED_OVERRIDES_OD = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
 
   for (const row of costLines) {
     const rowProjectNorm = normalizeName(row.projectName || "");
@@ -211,8 +208,17 @@ function buildOverdueFinanceLedger(params: {
     const keyDate = dueDate || invoiceDate;
     if (!isDateInRange(keyDate, fyStart, fyEnd)) continue;
 
-    const paid = (hasText(row.paidDate) && isBlack(row.paidDateFontColor)) || Boolean(row.paidDateConfirmed) || Boolean(row.cosRealised);
-    if (paid) continue;
+    // Canonical COS settled logic (matching project-header-kpi-service isCosRealisedLine)
+    const cosOverrideOd = String(row.cosStatusOverride ?? "").trim().toUpperCase();
+    let settled: boolean;
+    if (COS_REALISED_OVERRIDES_OD.has(cosOverrideOd)) {
+      settled = true;
+    } else if (COS_NOT_REALISED_OVERRIDES_OD.has(cosOverrideOd)) {
+      settled = false;
+    } else {
+      settled = row.cosRealised === true;
+    }
+    if (settled) continue;
     if (!dueDate) {
       apMissingDueDate += 1;
       continue;
@@ -828,7 +834,6 @@ export function registerLifecycleRoutes(app: Express) {
 
       // Helpers matching program-dashboard logic
       const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
-      const isBlack = (v: any) => { const s = String(v || '').toLowerCase(); return s.includes('000000') || s.includes('black'); };
 
       const rawPlanTasks = await getAllPMWorkItemsAsProjectPlan();
       // Group plan tasks by project for leaf-task identification
@@ -945,6 +950,7 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
         invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
         sourceRow: normalizedCostLines.sourceRow,
+        cosStatusOverride: normalizedCostLines.cosStatusOverride,
       })).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       const overdueLedger = buildOverdueFinanceLedger({
@@ -974,11 +980,6 @@ export function registerLifecycleRoutes(app: Express) {
       for (const item of overdueLedger.ap.items) addOverdue(item.projectId || null, item.projectName, "ap", item.outstandingAmount || 0);
       for (const item of overdueLedger.ar.items) addOverdue(item.projectId || null, item.projectName, "ar", item.outstandingAmount || 0);
 
-      // DEPRECATED: Override data is now baked into base table rows (Prompt 4 — override collapse).
-      // inBank and COS status overrides are applied directly to base rows.
-      // Keep empty structures for backward-compatible code paths below.
-      const inBankOverrideSet = new Set<string>();
-      const cosOverrideByKey = new Map<string, string>();
 
       const finByProjectId = new Map<number, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number; inflowRisk: number; outflowRisk: number }>();
       const finByNorm = new Map<string, { plannedRevenue: number; receivedInflow: number; plannedExpenditure: number; paidExpenditure: number; fyRevenueItems: number; fyCostItems: number; inflowRisk: number; outflowRisk: number }>();
@@ -988,11 +989,10 @@ export function registerLifecycleRoutes(app: Express) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
         const dateKey = pickFirstPopulatedDate(row as any, ["expectedPaymentDate", "invoiceDate", "paidDate", "inBankDate"]);
         if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
-        // Unified "received" logic: font-color black + paid date, OR paidDateConfirmed, OR inBankDate, OR manual override
-        const baseReceived = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
-        const confirmedReceived = Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate);
-        const overrideInBank = inBankOverrideSet.has(`${row.projectName}::${row.sourceRow}`);
-        const received = baseReceived || (hasText(row.invoiceNumber) && confirmedReceived) || overrideInBank;
+        // Canonical "received" logic (matching project-header-kpi-service isRevenueRealised):
+        // status ∈ [PAID, IN_BANK, REALISED] OR paidDate exists OR inBankDate exists
+        const revenueStatus = String(row.status ?? "").trim().toUpperCase();
+        const received = ["PAID", "IN_BANK", "REALISED"].includes(revenueStatus) || !!row.paidDate || !!row.inBankDate;
 
         const addTo = (entry: ReturnType<typeof emptyFin>) => {
           entry.plannedRevenue += amount;
@@ -1010,22 +1010,23 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
+      const COS_REALISED_OVERRIDES = new Set(["COS REALISED", "REALISED"]);
+      const COS_NOT_REALISED_OVERRIDES = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
       for (const row of costLines) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
         const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
         if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
-        // Unified "paid" logic: font-color + paid date, OR paidDateConfirmed, OR cosRealised, OR COS override
-        const basePaid = hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor);
-        const confirmedPaid = Boolean(row.paidDateConfirmed);
-        const cosOverrideStatus = cosOverrideByKey.get(`${row.projectName}::${row.sourceRow}`);
-        const isRealised = cosOverrideStatus === 'COS Realised' || (!cosOverrideStatus && classifyCosStatus({
-          expenseInvoiceNumber: row.invoiceNumber,
-          expenseInvoicedDate: row.invoiceDate,
-          expensePoNumber: row.poNumber,
-          invoiceDateConfirmed: row.invoiceDateConfirmed,
-          invoiceDateFontColor: row.invoiceDateFontColor,
-        }) === 'COS Realised');
-        const paid = basePaid || (hasText(row.invoiceNumber) && confirmedPaid) || isRealised;
+        // Canonical "paid/realised" logic (matching project-header-kpi-service isCosRealisedLine):
+        // cosStatusOverride takes priority, then fallback to cosRealised boolean
+        const cosOverride = String(row.cosStatusOverride ?? "").trim().toUpperCase();
+        let paid: boolean;
+        if (COS_REALISED_OVERRIDES.has(cosOverride)) {
+          paid = true;
+        } else if (COS_NOT_REALISED_OVERRIDES.has(cosOverride)) {
+          paid = false;
+        } else {
+          paid = row.cosRealised === true;
+        }
 
         const addTo = (entry: ReturnType<typeof emptyFin>) => {
           entry.plannedExpenditure += amount;
