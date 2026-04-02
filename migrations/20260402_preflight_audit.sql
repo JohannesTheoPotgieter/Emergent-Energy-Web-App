@@ -230,17 +230,21 @@ WHERE NOT EXISTS (
 );
 
 -- ----------------------------------------------------------------------------
--- PF-8: Duplicate Latest/Current Project Execution State Per Project
--- PASS condition: 0 projects with multiple active rows
+-- PF-8: Ambiguous Current-State Rows After Deterministic Ranking
+-- PASS condition: 0 projects with ambiguous ranking (tied on all ORDER BY keys)
 -- Severity: HARD STOP
--- Detects projects that have more than one non-deleted project_execution_state
--- row. The backfill uses ROW_NUMBER() to pick the latest, but duplicates should
--- be flagged so the data team can verify correctness.
+-- Multiple historical rows per project_id are acceptable — the backfill uses
+-- ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY updated_at DESC,
+-- created_at DESC, id DESC) = 1 to pick the single latest.
+-- This check detects the ONLY failure mode: rows tied on ALL tiebreaker columns,
+-- meaning the ranking is non-deterministic and the "current" row is ambiguous.
+-- It also reports (INFO) the count of projects with multiple rows for visibility.
 -- ----------------------------------------------------------------------------
 
-SELECT 'PF-8: Duplicate project_execution_state rows per project' AS check_name,
-       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-       COUNT(*) AS violation_count
+-- PF-8a: Projects with multiple active rows (INFO — not blocking, just visibility)
+SELECT 'PF-8a: Projects with multiple project_execution_state rows (INFO)' AS check_name,
+       'INFO' AS result,
+       COUNT(*) AS projects_with_multiple_rows
 FROM (
   SELECT pes.project_id, COUNT(*) AS row_count
   FROM public.project_execution_state pes
@@ -249,32 +253,78 @@ FROM (
   HAVING COUNT(*) > 1
 ) dup_projects;
 
+-- PF-8b: Projects where the deterministic ranking produces a tie (HARD STOP)
+-- If two rows share identical updated_at, created_at, AND id, the ROW_NUMBER()
+-- is non-deterministic. In practice id is a PK so ties are impossible, but we
+-- verify this explicitly.
+SELECT 'PF-8b: Ambiguous current-state rows (tied ranking keys)' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS violation_count
+FROM (
+  SELECT pes.project_id
+  FROM public.project_execution_state pes
+  WHERE pes.deleted_at IS NULL
+  GROUP BY pes.project_id
+  HAVING COUNT(*) > 1
+    AND COUNT(DISTINCT (pes.updated_at, pes.created_at, pes.id)) < COUNT(*)
+) ambiguous_projects;
+
 -- ----------------------------------------------------------------------------
--- PF-9: Opening Balance Rows That Would Be Included in Movement Totals
+-- PF-9: Opening Balance Detection and Classification Audit
 -- PASS condition: All sub-queries return 0 or documented exceptions
--- Severity: HARD STOP
--- Detects finance rows that look like opening balances but would be treated as
--- normal transactions if not explicitly flagged.
+-- Severity: SOFT STOP (PF-9a, PF-9b) — requires manual review before proceeding
+--           HARD STOP (PF-9c, PF-9d) — multiple OB per project is always wrong
+-- Opening-balance classification is heuristic (text-pattern matching on row_type
+-- and milestone_name). This is acceptable as a first pass, but detected rows
+-- MUST be reviewed by the data team before the backfill is run.
+-- The backfill will flag these rows as is_opening_balance = true and exclude
+-- them from fiscal_period_id derivation (period movement totals).
+-- Any row NOT matched by these patterns will be treated as a normal transaction.
+-- Ambiguous rows that are actually opening balances but don't match these
+-- patterns will be silently miscounted as movement — review the full report.
 -- ----------------------------------------------------------------------------
 
--- PF-9a: Cost lines with opening balance row_type
-SELECT 'PF-9a: Cost lines with opening balance row_type' AS check_name,
-       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'WARN' END AS result,
+-- PF-9a: Cost lines with opening balance row_type (SOFT STOP — review required)
+-- Classification is heuristic. Operator must verify the listed rows before
+-- allowing the backfill to flag them as is_opening_balance = true.
+SELECT 'PF-9a: Cost lines classified as opening balance (REVIEW REQUIRED)' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'REVIEW' END AS result,
+       'SOFT_STOP' AS severity,
        COUNT(*) AS opening_balance_count
 FROM public.program_expense pe
 WHERE LOWER(COALESCE(pe.row_type, '')) IN ('opening_balance', 'opening balance', 'balance_forward', 'brought_forward', 'ob');
 
--- PF-9b: Revenue lines with opening balance milestone names
-SELECT 'PF-9b: Revenue lines with opening balance milestone names' AS check_name,
-       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'WARN' END AS result,
+-- PF-9a detail: Full listing of all rows classified as opening balance for review
+SELECT 'PF-9a-detail' AS check_name,
+       pe.id, pe.project_name, pe.row_type, pe.expense_category,
+       pe.expense_line_item, pe.expense_actual_total,
+       pe.expense_invoiced_date
+FROM public.program_expense pe
+WHERE LOWER(COALESCE(pe.row_type, '')) IN ('opening_balance', 'opening balance', 'balance_forward', 'brought_forward', 'ob')
+ORDER BY pe.project_name, pe.id;
+
+-- PF-9b: Revenue lines with opening balance milestone names (SOFT STOP — review required)
+-- Classification is heuristic. Operator must verify the listed rows before
+-- allowing the backfill to flag them as is_opening_balance = true.
+SELECT 'PF-9b: Revenue lines classified as opening balance (REVIEW REQUIRED)' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'REVIEW' END AS result,
+       'SOFT_STOP' AS severity,
        COUNT(*) AS opening_balance_count
 FROM public.program_inflows pi
 WHERE LOWER(COALESCE(pi.milestone_name, '')) IN ('opening balance', 'balance forward', 'brought forward', 'ob');
 
--- PF-9c: Projects with more than one opening balance cost line
--- (only one opening balance per project should exist)
+-- PF-9b detail: Full listing of all revenue rows classified as opening balance
+SELECT 'PF-9b-detail' AS check_name,
+       pi.id, pi.project_name, pi.milestone_name, pi.milestone_amount,
+       pi.invoice_raised_date
+FROM public.program_inflows pi
+WHERE LOWER(COALESCE(pi.milestone_name, '')) IN ('opening balance', 'balance forward', 'brought forward', 'ob')
+ORDER BY pi.project_name, pi.id;
+
+-- PF-9c: Projects with more than one opening balance cost line (HARD STOP)
 SELECT 'PF-9c: Projects with multiple opening balance cost lines' AS check_name,
        CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       'HARD_STOP' AS severity,
        COUNT(*) AS violation_count
 FROM (
   SELECT pe.project_name, COUNT(*) AS ob_count
@@ -283,6 +333,19 @@ FROM (
   GROUP BY pe.project_name
   HAVING COUNT(*) > 1
 ) multi_ob_projects;
+
+-- PF-9d: Projects with more than one opening balance revenue line (HARD STOP)
+SELECT 'PF-9d: Projects with multiple opening balance revenue lines' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       'HARD_STOP' AS severity,
+       COUNT(*) AS violation_count
+FROM (
+  SELECT pi.project_name, COUNT(*) AS ob_count
+  FROM public.program_inflows pi
+  WHERE LOWER(COALESCE(pi.milestone_name, '')) IN ('opening balance', 'balance forward', 'brought forward', 'ob')
+  GROUP BY pi.project_name
+  HAVING COUNT(*) > 1
+) multi_ob_rev_projects;
 
 -- ----------------------------------------------------------------------------
 -- PF-10: Join Multiplication Detection on Finance Lines
@@ -331,17 +394,18 @@ FROM (
 ) dup_project_names;
 
 -- ----------------------------------------------------------------------------
--- PF-11: Aggregate Inflation Detection
--- PASS condition: Legacy and promoted per-project totals match within tolerance
+-- PF-11: Aggregate Inflation Detection (Row Count + Amount, Per-Project + Portfolio)
+-- PASS condition: Legacy and promoted totals match within tolerance at all levels
 -- Severity: HARD STOP
--- Detects if joins or duplicates have inflated project-level finance totals
--- in the promoted schema compared to legacy source.
+-- Detects if joins, duplicates, or opening balance misclassification have inflated
+-- row counts or financial totals in the promoted schema vs legacy source.
+-- Checks both per-project granularity and portfolio-level aggregates.
 -- ----------------------------------------------------------------------------
 
--- PF-11a: Per-project cost total comparison (promoted vs legacy)
-SELECT 'PF-11a: Per-project cost total inflation check' AS check_name,
+-- PF-11a: Per-project cost AMOUNT inflation (promoted vs legacy)
+SELECT 'PF-11a: Per-project cost amount inflation' AS check_name,
        CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-       COUNT(*) AS projects_with_inflated_totals
+       COUNT(*) AS projects_with_inflated_amounts
 FROM (
   SELECT
     cp.id AS project_id,
@@ -352,7 +416,7 @@ FROM (
         FROM public.program_expense pe
         WHERE pe.project_name = cp.project_name
       ), 0)
-    ) AS delta
+    ) AS amount_delta
   FROM core.projects cp
   LEFT JOIN finance.cost_lines cl ON cl.project_id = cp.id
   GROUP BY cp.id, cp.project_name
@@ -366,10 +430,32 @@ FROM (
   ) > 0.50
 ) inflated_projects;
 
--- PF-11b: Per-project revenue total comparison (promoted vs legacy)
-SELECT 'PF-11b: Per-project revenue total inflation check' AS check_name,
+-- PF-11b: Per-project cost ROW COUNT inflation (promoted vs legacy)
+SELECT 'PF-11b: Per-project cost row count inflation' AS check_name,
        CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
-       COUNT(*) AS projects_with_inflated_totals
+       COUNT(*) AS projects_with_inflated_row_counts
+FROM (
+  SELECT cp.id AS project_id,
+         COUNT(cl.id) AS promoted_rows,
+         COALESCE((
+           SELECT COUNT(*)
+           FROM public.program_expense pe
+           WHERE pe.project_name = cp.project_name
+         ), 0) AS legacy_rows
+  FROM core.projects cp
+  LEFT JOIN finance.cost_lines cl ON cl.project_id = cp.id
+    AND cl.source_table = 'public.program_expense'
+  GROUP BY cp.id, cp.project_name
+  HAVING COUNT(cl.id) > COALESCE((
+    SELECT COUNT(*) FROM public.program_expense pe2
+    WHERE pe2.project_name = cp.project_name
+  ), 0)
+) inflated_row_counts;
+
+-- PF-11c: Per-project revenue AMOUNT inflation (promoted vs legacy)
+SELECT 'PF-11c: Per-project revenue amount inflation' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS projects_with_inflated_amounts
 FROM (
   SELECT
     cp.id AS project_id,
@@ -380,7 +466,7 @@ FROM (
         FROM public.program_inflows pi
         WHERE pi.project_name = cp.project_name
       ), 0)
-    ) AS delta
+    ) AS amount_delta
   FROM core.projects cp
   LEFT JOIN finance.revenue_lines rl ON rl.project_id = cp.id
   GROUP BY cp.id, cp.project_name
@@ -394,9 +480,74 @@ FROM (
   ) > 0.50
 ) inflated_projects;
 
+-- PF-11d: Per-project revenue ROW COUNT inflation (promoted vs legacy)
+SELECT 'PF-11d: Per-project revenue row count inflation' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS projects_with_inflated_row_counts
+FROM (
+  SELECT cp.id AS project_id,
+         COUNT(rl.id) AS promoted_rows,
+         COALESCE((
+           SELECT COUNT(*)
+           FROM public.program_inflows pi
+           WHERE pi.project_name = cp.project_name
+         ), 0) AS legacy_rows
+  FROM core.projects cp
+  LEFT JOIN finance.revenue_lines rl ON rl.project_id = cp.id
+    AND rl.source_table = 'public.program_inflows'
+  GROUP BY cp.id, cp.project_name
+  HAVING COUNT(rl.id) > COALESCE((
+    SELECT COUNT(*) FROM public.program_inflows pi2
+    WHERE pi2.project_name = cp.project_name
+  ), 0)
+) inflated_row_counts;
+
+-- PF-11e: Portfolio-level aggregate cost inflation (promoted vs legacy)
+SELECT 'PF-11e: Portfolio-level cost aggregate inflation' AS check_name,
+       CASE WHEN ABS(promoted_total - legacy_total) <= 0.50 THEN 'PASS' ELSE 'FAIL' END AS result,
+       legacy_total, promoted_total,
+       promoted_total - legacy_total AS delta,
+       legacy_row_count, promoted_row_count,
+       promoted_row_count - legacy_row_count AS row_count_delta
+FROM (
+  SELECT
+    COALESCE(SUM(NULLIF(pe.expense_actual_total, '')::NUMERIC(15,2)), 0) AS legacy_total,
+    COUNT(pe.id) AS legacy_row_count
+  FROM public.program_expense pe
+) legacy_costs,
+(
+  SELECT
+    COALESCE(SUM(cl.amount_ex_vat), 0) AS promoted_total,
+    COUNT(cl.id) AS promoted_row_count
+  FROM finance.cost_lines cl
+  WHERE cl.source_table = 'public.program_expense'
+) promoted_costs;
+
+-- PF-11f: Portfolio-level aggregate revenue inflation (promoted vs legacy)
+SELECT 'PF-11f: Portfolio-level revenue aggregate inflation' AS check_name,
+       CASE WHEN ABS(promoted_total - legacy_total) <= 0.50 THEN 'PASS' ELSE 'FAIL' END AS result,
+       legacy_total, promoted_total,
+       promoted_total - legacy_total AS delta,
+       legacy_row_count, promoted_row_count,
+       promoted_row_count - legacy_row_count AS row_count_delta
+FROM (
+  SELECT
+    COALESCE(SUM(NULLIF(pi.milestone_amount, '')::NUMERIC(15,2)), 0) AS legacy_total,
+    COUNT(pi.id) AS legacy_row_count
+  FROM public.program_inflows pi
+) legacy_rev,
+(
+  SELECT
+    COALESCE(SUM(rl.amount_ex_vat), 0) AS promoted_total,
+    COUNT(rl.id) AS promoted_row_count
+  FROM finance.revenue_lines rl
+  WHERE rl.source_table = 'public.program_inflows'
+) promoted_rev;
+
 -- ============================================================================
--- SUMMARY: Review all results above. ALL HARD STOP checks must show PASS.
--- SOFT STOP checks (PF-3) may show WARN if exceptions are documented.
--- INFO checks (PF-6) require review but are not blocking.
--- WARN checks (PF-9a, PF-9b) flag opening balances for classification.
+-- SUMMARY: Review all results above.
+-- HARD STOP checks: PF-1, PF-2, PF-4, PF-5, PF-7, PF-8b, PF-9c, PF-9d,
+--   PF-10, PF-11 — ALL must show PASS.
+-- SOFT STOP checks: PF-3, PF-9a, PF-9b — require manual review and sign-off.
+-- INFO checks: PF-6, PF-8a — require review but are not blocking.
 -- ============================================================================

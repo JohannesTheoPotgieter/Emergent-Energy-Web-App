@@ -635,18 +635,31 @@ describe("Phase 1B Preflight Audit Script Tests", () => {
     expect(sql).toContain("legacy_deliverable_file_id");
   });
 
-  it("PF-8 checks duplicate project_execution_state per project", () => {
-    expect(sql).toContain("PF-8");
-    expect(sql).toContain("project_execution_state");
-    expect(sql).toContain("HAVING COUNT(*) > 1");
+  it("PF-8a reports multiple project_execution_state rows as INFO", () => {
+    expect(sql).toContain("PF-8a");
+    expect(sql).toContain("'INFO' AS result");
   });
 
-  it("PF-9 checks opening balance rows in finance data", () => {
-    expect(sql).toContain("PF-9a");
-    expect(sql).toContain("PF-9b");
+  it("PF-8b checks ambiguous ranking (tied keys) as HARD STOP", () => {
+    expect(sql).toContain("PF-8b");
+    expect(sql).toContain("Ambiguous current-state rows");
+    expect(sql).toContain("THEN 'PASS' ELSE 'FAIL'");
+  });
+
+  it("PF-9a/PF-9b are SOFT STOP requiring review", () => {
+    expect(sql).toContain("'SOFT_STOP' AS severity");
+    expect(sql).toContain("REVIEW REQUIRED");
+  });
+
+  it("PF-9 includes detail reports listing every classified OB row", () => {
+    expect(sql).toContain("PF-9a-detail");
+    expect(sql).toContain("PF-9b-detail");
+  });
+
+  it("PF-9c/PF-9d are HARD STOP for multiple OBs per project", () => {
     expect(sql).toContain("PF-9c");
-    expect(sql).toContain("opening_balance");
-    expect(sql).toContain("balance_forward");
+    expect(sql).toContain("PF-9d");
+    expect(sql).toContain("'HARD_STOP' AS severity");
   });
 
   it("PF-10 checks join multiplication on finance lines", () => {
@@ -657,15 +670,24 @@ describe("Phase 1B Preflight Audit Script Tests", () => {
     expect(sql).toContain("legacy_program_inflow_id");
   });
 
-  it("PF-11 checks aggregate inflation per project", () => {
+  it("PF-11 covers row-count AND amount inflation", () => {
     expect(sql).toContain("PF-11a");
     expect(sql).toContain("PF-11b");
-    expect(sql).toContain("inflation");
+    expect(sql).toContain("PF-11c");
+    expect(sql).toContain("PF-11d");
+    expect(sql).toContain("amount inflation");
+    expect(sql).toContain("row count inflation");
   });
 
-  it("outputs PASS/FAIL for each check", () => {
+  it("PF-11 covers portfolio-level aggregates", () => {
+    expect(sql).toContain("PF-11e");
+    expect(sql).toContain("PF-11f");
+    expect(sql).toContain("Portfolio-level");
+  });
+
+  it("outputs PASS/FAIL for each HARD STOP check", () => {
     const passFailCount = (sql.match(/THEN 'PASS' ELSE 'FAIL'/g) || []).length;
-    expect(passFailCount).toBeGreaterThanOrEqual(11);
+    expect(passFailCount).toBeGreaterThanOrEqual(14);
   });
 });
 
@@ -860,6 +882,20 @@ describe("Phase 1B Deduplication & Opening Balance Integrity", () => {
       expect(sql).toContain("cl.legacy_row_type IS NULL");
     });
 
+    it("produces audit report of all classified opening balance rows", () => {
+      expect(sql).toContain("OPENING_BALANCE_AUDIT_COST_LINES");
+      expect(sql).toContain("OPENING_BALANCE_AUDIT_REVENUE_LINES");
+      expect(sql).toContain("is_opening_balance = true");
+    });
+
+    it("audit report appears BEFORE fiscal period derivation steps", () => {
+      const auditPos = sql.indexOf("OPENING_BALANCE_AUDIT");
+      const step3Pos = sql.indexOf("Step 3:");
+      expect(auditPos).toBeGreaterThan(-1);
+      expect(step3Pos).toBeGreaterThan(-1);
+      expect(auditPos).toBeLessThan(step3Pos);
+    });
+
     it("opening balance exclusion guard is on fiscal_period_id derivation for cost_lines", () => {
       // Extract the UPDATE ... SET fiscal_period_id block for cost_lines
       const costFpDerivation = sql.match(
@@ -921,16 +957,24 @@ describe("Phase 1B Deduplication & Opening Balance Integrity", () => {
   describe("Preflight duplicate and inflation detection", () => {
     const sql = readMigration("20260402_preflight_audit.sql");
 
-    it("PF-8 detects duplicate project_execution_state rows per project", () => {
-      expect(sql).toContain("PF-8");
-      expect(sql).toContain("GROUP BY pes.project_id");
-      expect(sql).toContain("HAVING COUNT(*) > 1");
+    it("PF-8a reports history as INFO, PF-8b checks ambiguity as HARD STOP", () => {
+      expect(sql).toContain("PF-8a");
+      expect(sql).toContain("PF-8b");
+      expect(sql).toContain("Ambiguous current-state rows");
     });
 
-    it("PF-9c detects projects with multiple opening balance rows", () => {
+    it("PF-9a/PF-9b are SOFT STOP with detail reports for review", () => {
+      expect(sql).toContain("PF-9a");
+      expect(sql).toContain("PF-9b");
+      expect(sql).toContain("PF-9a-detail");
+      expect(sql).toContain("PF-9b-detail");
+      expect(sql).toContain("SOFT_STOP");
+    });
+
+    it("PF-9c/PF-9d detect multiple OBs per project as HARD STOP", () => {
       expect(sql).toContain("PF-9c");
-      expect(sql).toContain("multiple opening balance cost lines");
-      expect(sql).toContain("GROUP BY pe.project_name");
+      expect(sql).toContain("PF-9d");
+      expect(sql).toContain("HARD_STOP");
     });
 
     it("PF-10 detects duplicate legacy IDs in promoted finance lines", () => {
@@ -946,10 +990,16 @@ describe("Phase 1B Deduplication & Opening Balance Integrity", () => {
       expect(sql).toContain("GROUP BY project_name");
     });
 
-    it("PF-11 compares per-project totals to detect aggregate inflation", () => {
+    it("PF-11 covers row-count AND amount at per-project AND portfolio levels", () => {
       expect(sql).toContain("PF-11a");
       expect(sql).toContain("PF-11b");
-      expect(sql).toContain("> 0.50");
+      expect(sql).toContain("PF-11c");
+      expect(sql).toContain("PF-11d");
+      expect(sql).toContain("PF-11e");
+      expect(sql).toContain("PF-11f");
+      expect(sql).toContain("row count inflation");
+      expect(sql).toContain("amount inflation");
+      expect(sql).toContain("Portfolio-level");
     });
   });
 
@@ -984,6 +1034,76 @@ describe("Phase 1B Deduplication & Opening Balance Integrity", () => {
     it("all finance backfill INSERT operations use ON CONFLICT DO NOTHING", () => {
       const sql = readMigration("20260402_backfill_01_fiscal_periods.sql");
       expect(sql).toContain("ON CONFLICT (legacy_fiscal_period_id) DO NOTHING");
+    });
+  });
+
+  // -- Spec and implementation prompt document the rules --
+  describe("Cross-cutting rules documented in spec and implementation prompt", () => {
+    it("spec documents Rule 1 (one current row per project)", () => {
+      const spec = fs.readFileSync(
+        path.join(process.cwd(), "docs/phase-1b-additive-schema-spec.md"), "utf8"
+      );
+      expect(spec).toContain("Rule 1: One Current Row Per Project");
+      expect(spec).toContain("ROW_NUMBER()");
+      expect(spec).toContain("DISTINCT is NOT an acceptable substitute");
+    });
+
+    it("spec documents Rule 2 (opening balance separation)", () => {
+      const spec = fs.readFileSync(
+        path.join(process.cwd(), "docs/phase-1b-additive-schema-spec.md"), "utf8"
+      );
+      expect(spec).toContain("Rule 2: Opening Balance Separation");
+      expect(spec).toContain("Opening balance");
+      expect(spec).toContain("Period movement");
+      expect(spec).toContain("Closing balance");
+    });
+
+    it("spec documents Rule 3 (inflation prevention)", () => {
+      const spec = fs.readFileSync(
+        path.join(process.cwd(), "docs/phase-1b-additive-schema-spec.md"), "utf8"
+      );
+      expect(spec).toContain("Rule 3: Inflation Prevention");
+      expect(spec).toContain("Row-count inflation");
+      expect(spec).toContain("Amount inflation");
+      expect(spec).toContain("Per-project");
+      expect(spec).toContain("Portfolio/aggregate");
+    });
+
+    it("implementation prompt documents all three cross-cutting rules", () => {
+      const prompt = fs.readFileSync(
+        path.join(process.cwd(), "docs/phase-1b-implementation-prompt.md"), "utf8"
+      );
+      expect(prompt).toContain("Rule 1: One Current Row Per Project");
+      expect(prompt).toContain("Rule 2: Opening Balance Separation");
+      expect(prompt).toContain("Rule 3: Inflation Prevention");
+    });
+
+    it("implementation prompt documents ROW_NUMBER() requirement for backfill 04", () => {
+      const prompt = fs.readFileSync(
+        path.join(process.cwd(), "docs/phase-1b-implementation-prompt.md"), "utf8"
+      );
+      expect(prompt).toContain("ROW_NUMBER() OVER (PARTITION BY project_id");
+      expect(prompt).toContain("Do NOT use DISTINCT");
+    });
+
+    it("implementation prompt documents opening balance audit report in backfill 07", () => {
+      const prompt = fs.readFileSync(
+        path.join(process.cwd(), "docs/phase-1b-implementation-prompt.md"), "utf8"
+      );
+      expect(prompt).toContain("AUDIT REPORT");
+      expect(prompt).toContain("EXCLUDE opening balance rows");
+    });
+
+    it("spec documents updated preflight severity table", () => {
+      const spec = fs.readFileSync(
+        path.join(process.cwd(), "docs/phase-1b-additive-schema-spec.md"), "utf8"
+      );
+      expect(spec).toContain("PF-8a");
+      expect(spec).toContain("PF-8b");
+      expect(spec).toContain("PF-9a");
+      expect(spec).toContain("PF-9d");
+      expect(spec).toContain("PF-11f");
+      expect(spec).toContain("SOFT STOP");
     });
   });
 });
