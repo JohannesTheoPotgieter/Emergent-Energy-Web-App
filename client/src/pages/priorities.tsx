@@ -11,10 +11,10 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw, ArrowUp, Users, User } from "lucide-react";
+import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw, ArrowUp, CheckCircle2, Users, User } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { isPriorityAdminRole, isDepartmentHeadRole } from "@/config/priorities";
+import { isPriorityAdminRole, isDepartmentHeadRole, SCOPE_LABELS } from "@/config/priorities";
 import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
 
 // ── Types ──────────────────────────────────────────────────────
@@ -115,10 +115,13 @@ async function fetchPriorities(params: string): Promise<Priority[]> {
 
 // ── Priority Card ──────────────────────────────────────────────
 
-export function PriorityCard({ priority, showEscalate, onEscalate }: {
+export function PriorityCard({ priority, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions }: {
   priority: Priority;
   showEscalate?: boolean;
   onEscalate?: () => void;
+  showMarkComplete?: boolean;
+  onMarkComplete?: () => void;
+  showDeptActions?: boolean;
 }) {
   const days = daysRemaining(priority.dueDate);
   const healthColor = HEALTH_COLORS[priority.effectiveHealth] || HEALTH_COLORS.healthy;
@@ -221,12 +224,38 @@ export function PriorityCard({ priority, showEscalate, onEscalate }: {
           </div>
         </div>
 
-        {/* Escalate button */}
-        {showEscalate && priority.scope !== "company" && !priority.escalated && (
-          <div className="mt-2 pt-2 border-t">
-            <Button variant="outline" size="sm" className="text-xs h-7" onClick={onEscalate}>
-              <ArrowUp className="w-3 h-3 mr-1" /> Escalate
-            </Button>
+        {/* Action buttons */}
+        {(showMarkComplete || (showEscalate && priority.scope !== "company" && !priority.escalated) || showDeptActions) && (
+          <div className="mt-2 pt-2 border-t flex items-center gap-2 flex-wrap">
+            {showMarkComplete && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-7"
+                onClick={onMarkComplete}
+                disabled={priority.status === "completed"}
+              >
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                {priority.status === "completed" ? "Completed" : "Mark Complete"}
+              </Button>
+            )}
+            {showDeptActions && (
+              <Button variant="outline" size="sm" className="text-xs h-7">
+                <Users className="w-3 h-3 mr-1" />
+                Assign Priority
+              </Button>
+            )}
+            {showEscalate && priority.scope !== "company" && !priority.escalated && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-7 text-orange-700 border-orange-200 hover:bg-orange-50"
+                onClick={onEscalate}
+              >
+                <ArrowUp className="w-3 h-3 mr-1" />
+                {showDeptActions ? "Escalate to Company" : "Escalate"}
+              </Button>
+            )}
           </div>
         )}
       </CardContent>
@@ -402,7 +431,7 @@ function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartm
 
 // ── Priority List Section ──────────────────────────────────────
 
-function PriorityListSection({ priorities, isLoading, isError, error, refetch, showEscalate, onEscalate, emptyMessage, emptyAction }: {
+function PriorityListSection({ priorities, isLoading, isError, error, refetch, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions, emptyMessage, emptyAction }: {
   priorities: Priority[];
   isLoading: boolean;
   isError: boolean;
@@ -410,6 +439,9 @@ function PriorityListSection({ priorities, isLoading, isError, error, refetch, s
   refetch: () => void;
   showEscalate?: boolean;
   onEscalate?: (id: number) => void;
+  showMarkComplete?: boolean;
+  onMarkComplete?: (id: number) => void;
+  showDeptActions?: boolean;
   emptyMessage: string;
   emptyAction?: React.ReactNode;
 }) {
@@ -450,7 +482,15 @@ function PriorityListSection({ priorities, isLoading, isError, error, refetch, s
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {escalated.map(p => (
-              <PriorityCard key={p.id} priority={p} showEscalate={showEscalate} onEscalate={() => onEscalate?.(p.id)} />
+              <PriorityCard
+                key={p.id}
+                priority={p}
+                showEscalate={showEscalate}
+                onEscalate={() => onEscalate?.(p.id)}
+                showMarkComplete={showMarkComplete}
+                onMarkComplete={() => onMarkComplete?.(p.id)}
+                showDeptActions={showDeptActions}
+              />
             ))}
           </div>
         </div>
@@ -465,7 +505,15 @@ function PriorityListSection({ priorities, isLoading, isError, error, refetch, s
       ) : normal.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {normal.map(p => (
-            <PriorityCard key={p.id} priority={p} showEscalate={showEscalate} onEscalate={() => onEscalate?.(p.id)} />
+            <PriorityCard
+              key={p.id}
+              priority={p}
+              showEscalate={showEscalate}
+              onEscalate={() => onEscalate?.(p.id)}
+              showMarkComplete={showMarkComplete}
+              onMarkComplete={() => onMarkComplete?.(p.id)}
+              showDeptActions={showDeptActions}
+            />
           ))}
         </div>
       ) : null}
@@ -519,6 +567,16 @@ export default function PrioritiesPage() {
   const escalateMutation = useMutation({
     mutationFn: async (priorityId: number) => {
       return apiRequest("POST", `/api/priorities/${priorityId}/escalate`, { reason: "manual" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+    },
+  });
+
+  // ── Mark complete mutation ──
+  const markCompleteMutation = useMutation({
+    mutationFn: async (priorityId: number) => {
+      return apiRequest("PATCH", `/api/priorities/${priorityId}`, { status: "completed" });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
