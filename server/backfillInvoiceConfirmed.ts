@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import * as fs from "fs";
 import * as path from "path";
 import pg from "pg";
+import { getPostgresPool } from "./db";
 
 function getColumnIndex(colMap: Record<string, number>, names: string[]): number {
   for (const name of names) {
@@ -63,7 +64,8 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
     return { updated: 0, skipped: 0, errors: ["DATABASE_URL not set"] };
   }
 
-  const pool = new pg.Pool({ connectionString: connStr });
+  const sharedPool = getPostgresPool();
+  const pool = sharedPool ?? new pg.Pool({ connectionString: connStr });
 
   const files = fs.readdirSync(uploadDir).filter(f => f.endsWith(".xlsx") || f.endsWith(".xlsm"));
 
@@ -191,7 +193,9 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
     }
   }
 
-  await pool.end();
+  if (!sharedPool) {
+    await pool.end();
+  }
   return { updated: totalUpdated, skipped: totalSkipped, errors };
 }
 
