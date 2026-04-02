@@ -260,12 +260,13 @@ export function registerStageLifecycleRoutes(app: Express): void {
         const projectId = parseProjectId(req, res);
         if (!projectId) return;
         const stageCode = p(req.params.stageCode);
-        const requirements = await hydrateStageChecklist(projectId, stageCode);
-        res.status(201).json({ requirements });
+        const hydrateResult = await hydrateStageChecklist(projectId, stageCode);
+        res.status(201).json(hydrateResult);
       } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error("[stage-lifecycle] hydrate error:", msg);
-        res.status(500).json({ error: msg });
+        const isNotFound = msg.toLowerCase().includes("does not exist") || msg.toLowerCase().includes("not found");
+        res.status(isNotFound ? 404 : 500).json({ error: msg });
       }
     },
   );
