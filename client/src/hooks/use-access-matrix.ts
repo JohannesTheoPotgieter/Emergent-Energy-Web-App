@@ -78,6 +78,7 @@ export function useAccessMatrix() {
           entityPermissions: permissions?.entityPermissions,
           userOverrides: permissions?.userOverrides,
         },
+        failOpenForUnknown: false,
       });
       if (!result.allowed && import.meta.env.DEV && knownNavPaths.has(path.split("?")[0])) {
         console.warn(`[AccessMatrix] Blocked path "${path}" due to ${result.reason}.`);
