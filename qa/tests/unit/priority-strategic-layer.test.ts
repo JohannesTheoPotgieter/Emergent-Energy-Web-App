@@ -43,10 +43,13 @@ describe("priority navigation", () => {
     expect(prioritiesSection!.path).toBe("/priorities");
   });
 
-  it("includes All Priorities as secondary nav item", () => {
+  it("includes cascading priority tabs as secondary nav items", () => {
     const sections = buildVisibleTopSections({ canViewPath: () => true });
     const prioritiesSection = sections.find((s) => s.label === "Priorities");
-    expect(prioritiesSection!.secondary.map((s) => s.label)).toContain("All Priorities");
+    const labels = prioritiesSection!.secondary.map((s) => s.label);
+    expect(labels).toContain("My Priorities");
+    expect(labels).toContain("Department");
+    expect(labels).toContain("Company");
   });
 
   it("does not expose legacy Manage link in nav", () => {

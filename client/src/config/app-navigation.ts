@@ -184,11 +184,13 @@ export const TOP_SECTIONS: TopSection[] = [
   },
   {
     label: "Priorities",
-    key: "EXCO",
+    key: "PRIORITIES",
     path: "/priorities",
     match: (pathname) => startsWithAny(pathname, ["/priorities"]),
     secondary: [
-      { label: "All Priorities", path: "/priorities" },
+      { label: "My Priorities", path: "/priorities?tab=mine" },
+      { label: "Department", path: "/priorities?tab=department" },
+      { label: "Company", path: "/priorities?tab=company" },
     ],
   },
   {
@@ -217,22 +219,22 @@ export const TOP_SECTIONS: TopSection[] = [
  * Each role sees only the sections listed here.
  */
 export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
-  COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "EXCO", "ADMIN"],
-  CEO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "EXCO", "ADMIN"],
-  CCO:                    ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS", "EXCO"],
-  KEY_ACCOUNTS_MANAGER:   ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE"],
-  PROGRAM_MANAGER:        ["HOME", "PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS", "EXCO"],
-  PROJECT_MANAGER_SITE:   ["HOME", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS"],
-  CONSTRUCTION_MANAGER:   ["HOME", "PROJECT_DELIVERY", "FINANCE", "QUALITY", "HSE", "REPORTS"],
-  ENGINEER:               ["HOME", "ENGINEERING", "QUALITY"],
-  ENGINEERING_MANAGER:    ["HOME", "ENGINEERING", "QUALITY", "PROJECT_DELIVERY", "REPORTS"],
-  QUALITY_MANAGER:        ["HOME", "QUALITY", "PROJECT_DELIVERY", "REPORTS"],
-  HSE_MANAGER:            ["HOME", "HSE", "PROJECT_DELIVERY", "REPORTS"],
-  SSEG_MANAGER:           ["HOME", "PROJECT_DELIVERY", "HSE", "QUALITY", "ENGINEERING"],
-  CFO:                    ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS", "EXCO"],
-  PROGRAM_FINANCE_MANAGER:["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS"],
-  ACCOUNTANT:             ["HOME", "FINANCE"],
-  PROJECT_DEVELOPER:      ["HOME", "PROJECT_DEVELOPMENT", "FINANCE"],
+  COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "PRIORITIES", "ADMIN"],
+  CEO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "PRIORITIES", "ADMIN"],
+  CCO:                    ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS", "PRIORITIES"],
+  KEY_ACCOUNTS_MANAGER:   ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "PRIORITIES"],
+  PROGRAM_MANAGER:        ["HOME", "PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS", "PRIORITIES"],
+  PROJECT_MANAGER_SITE:   ["HOME", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS", "PRIORITIES"],
+  CONSTRUCTION_MANAGER:   ["HOME", "PROJECT_DELIVERY", "FINANCE", "QUALITY", "HSE", "REPORTS", "PRIORITIES"],
+  ENGINEER:               ["HOME", "ENGINEERING", "QUALITY", "PRIORITIES"],
+  ENGINEERING_MANAGER:    ["HOME", "ENGINEERING", "QUALITY", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
+  QUALITY_MANAGER:        ["HOME", "QUALITY", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
+  HSE_MANAGER:            ["HOME", "HSE", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
+  SSEG_MANAGER:           ["HOME", "PROJECT_DELIVERY", "HSE", "QUALITY", "ENGINEERING", "PRIORITIES"],
+  CFO:                    ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
+  PROGRAM_FINANCE_MANAGER:["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
+  ACCOUNTANT:             ["HOME", "FINANCE", "PRIORITIES"],
+  PROJECT_DEVELOPER:      ["HOME", "PROJECT_DEVELOPMENT", "FINANCE", "PRIORITIES"],
 };
 
 /**
@@ -251,6 +253,7 @@ const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, string[]> = {
   COMPLIANCE:  ["QUALITY", "HSE"],
   DOCUMENTS:   [],
   REPORTS:     ["REPORTS"],
+  PRIORITIES:  ["PRIORITIES"],
   ADMIN:       ["ADMIN"],
 };
 
@@ -361,7 +364,7 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
 
   // --- Priorities ---
   if (pathname === "/priorities") return [
-    { label: "Company Priorities" },
+    { label: "Priorities" },
   ];
   const priorityDetailMatch = pathname.match(/^\/priorities\/(\d+)/);
   if (priorityDetailMatch) return [
