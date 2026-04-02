@@ -116,31 +116,22 @@ export function RoleAuthorityConfig({ role, draft, onUpdateDraft, canManageRoles
   const isExpanded = (key: string) => search ? true : expandedCategories.has(key);
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-2">
+    <div className="pt-3">
+      <div className="flex items-center gap-2 mb-3">
         <div className="relative flex-1">
           <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input className="pl-8 h-7 text-xs bg-gray-50 border-gray-200" placeholder="Filter entities..." value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
       </div>
 
-      {/* Scope Legend */}
-      <div className="flex flex-wrap gap-1.5 mb-2">
-        {AUTHORITY_SCOPES.map((scope) => {
-          const Icon = scope.icon;
-          return (
-            <div key={scope.value} className={`flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-medium ${scope.color}`}>
-              <Icon className="h-2.5 w-2.5" />
-              {scope.label}
-            </div>
-          );
-        })}
-        <div className="flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-medium bg-gray-50 text-gray-400 border-gray-200">
-          — No scope
-        </div>
+      {/* Scope Legend — compact inline */}
+      <div className="flex flex-wrap items-center gap-1.5 mb-2 text-[9px]">
+        <span className="text-muted-foreground">Scopes:</span>
+        {AUTHORITY_SCOPES.map((scope) => (
+          <span key={scope.value} className={`rounded border px-1 py-0 font-medium ${scope.color}`}>{scope.short} = {scope.label}</span>
+        ))}
+        <span className="text-muted-foreground ml-1">Click cells to cycle</span>
       </div>
-
-      <p className="text-[9px] text-muted-foreground mb-2 px-1">Click cells to cycle through scopes: — → Own → Department → Assigned Projects → All Projects → Company Admin → —</p>
 
       <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[60vh] overflow-y-auto">
         <TooltipProvider delayDuration={150}>
