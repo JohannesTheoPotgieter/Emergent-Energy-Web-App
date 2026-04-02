@@ -1277,6 +1277,8 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
+    mappedFields.updatedAt = new Date();
+
     const result = await this.dbInstance
       .update(normalizedCostLines)
       .set(mappedFields)

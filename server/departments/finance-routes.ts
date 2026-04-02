@@ -1924,13 +1924,23 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
   }
 });
 
-async function updateExpenseFieldsDualTable(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<any> {
+async function updateExpenseFieldsDualTable(
+  id: number,
+  fields: Record<string, any>,
+  expectedUpdatedAt?: string,
+  editorUserId?: number | null,
+): Promise<any> {
   const isNormalized = id >= 900000;
   if (isNormalized) {
     return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
   }
   const { programExpense: peTable } = await import("@shared/schema");
-  const result = await db.update(peTable).set(fields).where(eq(peTable.id, id)).returning();
+  const legacyFields = {
+    ...fields,
+    lastEditedAt: new Date(),
+    ...(editorUserId ? { lastEditedBy: editorUserId } : {}),
+  };
+  const result = await db.update(peTable).set(legacyFields).where(eq(peTable.id, id)).returning();
   return result[0] || null;
 }
 
@@ -1956,7 +1966,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
 
     const updated = await updateExpenseFieldsDualTable(id, {
       invoiceDateConfirmed: realised,
-    }, expectedUpdatedAt);
+    }, expectedUpdatedAt, req.user?.id ?? null);
 
     if (!updated) {
       return res.status(500).json({ error: "Failed to update expense fields" });
@@ -2013,7 +2023,7 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
       overrideFields.invoiceDateConfirmed = invoiceDateConfirmedOverride;
     }
 
-    const updated = await updateExpenseFieldsDualTable(id, overrideFields, expectedUpdatedAt);
+    const updated = await updateExpenseFieldsDualTable(id, overrideFields, expectedUpdatedAt, req.user?.id ?? null);
     if (!updated) {
       return res.status(500).json({ error: "Failed to update expense fields" });
     }
@@ -2036,7 +2046,7 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
     if (isNaN(id)) return res.status(400).json({ error: "Invalid cost line id" });
     const { noRevenueLinked, expectedUpdatedAt } = req.body as { noRevenueLinked: boolean; expectedUpdatedAt?: string };
     if (typeof noRevenueLinked !== 'boolean') return res.status(400).json({ error: "noRevenueLinked (boolean) required" });
-    await updateExpenseFieldsDualTable(id, { noRevenueLinked }, expectedUpdatedAt);
+    await updateExpenseFieldsDualTable(id, { noRevenueLinked }, expectedUpdatedAt, req.user?.id ?? null);
     res.json({ success: true, id, noRevenueLinked });
   } catch (error: any) {
     if (error.status === 409) return res.status(409).json({ error: error.message });
