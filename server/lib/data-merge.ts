@@ -77,6 +77,7 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   return {
     id: cost.id + 900000,
     projectName: resolvedName,
+    projectId: (cost as any).projectId ?? null,
     rowNumber: (cost as any).sourceRow || cost.id,
     rowType: "item",
     expenseCategory: cost.costCategory || "General",
@@ -93,6 +94,7 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     budgetCosTotal: (cost as any).budgetCos ?? null,
     actualCosTotal: cost.amountExVat,
     approvedDate: cost.approvedDate ?? null,
+    status: (cost as any).status ?? null,
     forecastPaymentDate: (cost as any).forecastPaymentDate ?? null,
     computedForecastPaymentDate: null,
     computedState,
@@ -108,6 +110,11 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     adminDateOverrideReason: (cost as any).adminDateOverrideReason ?? null,
     adminDateOverrideBy: (cost as any).adminDateOverrideBy ?? null,
     adminDateOverrideAt: (cost as any).adminDateOverrideAt ?? null,
+    source: (cost as any).source ?? null,
+    updatedAt: (cost as any).updatedAt ?? null,
+    lastEditedAt: (cost as any).lastEditedAt ?? null,
+    createdAt: (cost as any).createdAt ?? null,
+    effectiveFrom: (cost as any).effectiveFrom ?? null,
     _isNormalized: true,
     _sourceRow: (cost as any).sourceRow || cost.id,
     _cosRealisedFlag: (cost as any).cosRealised ?? false,
@@ -150,4 +157,3 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
     _isNormalized: true,
   };
 }
-

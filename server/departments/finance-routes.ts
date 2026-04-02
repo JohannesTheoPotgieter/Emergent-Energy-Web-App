@@ -40,6 +40,10 @@ import { recordOverride } from "../lib/audit/diff-engine";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
 import { createNotification } from "../services/notification-service";
+import {
+  getExpenseEffectiveDateAndSource,
+  getOutflowAmountBreakdown,
+} from "../lib/expense-row-selector";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
 
@@ -738,6 +742,7 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
 router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "view"), async (req, res) => {
   try {
     const projectFilterRaw = req.query.project ? String(req.query.project) : null;
+    const includeDebug = String(req.query.debug || "").toLowerCase() === "1" || String(req.query.debug || "").toLowerCase() === "true";
     const projectFilters: Set<string> | null = projectFilterRaw
       ? new Set(projectFilterRaw.split(",").map(s => s.trim()).filter(Boolean))
       : null;
@@ -771,9 +776,43 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       tempDate.setUTCDate(tempDate.getUTCDate() + 7);
     }
 
+    const itemExpenses = allExpenses.filter((e: any) => e.rowType === "item");
     const weeks: any[] = [];
+    const diagnostics = {
+      selectedExpenseRows: itemExpenses.length,
+      normalizedRows: itemExpenses.filter((e: any) => !!e._isNormalized).length,
+      legacyRows: itemExpenses.filter((e: any) => !e._isNormalized).length,
+      positiveRows: 0,
+      negativeRows: 0,
+      dateSource: {
+        adminDateOverride: 0,
+        expensePaymentDate: 0,
+        computedForecastPaymentDate: 0,
+        forecastPaymentDate: 0,
+        expenseInvoicedDate: 0,
+        none: 0,
+      },
+      amountSource: {
+        expenseActualTotal: 0,
+        budgetTotal: 0,
+      },
+      actualOutflowsYtd: 0,
+      forecastOutflowsYtd: 0,
+      negativeOffsetsApplied: 0,
+    };
     const cursor = new Date(fyStart);
     let runningBalance = 0;
+
+    for (const expense of itemExpenses) {
+      if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
+      const dateInfo = getExpenseEffectiveDateAndSource(expense);
+      if (dateInfo.source && diagnostics.dateSource[dateInfo.source] != null) diagnostics.dateSource[dateInfo.source] += 1;
+      else diagnostics.dateSource.none += 1;
+      const amountBreakdown = getOutflowAmountBreakdown(expense);
+      diagnostics.amountSource[amountBreakdown.amountSource] += 1;
+      if (amountBreakdown.amount > 0) diagnostics.positiveRows += 1;
+      else if (amountBreakdown.amount < 0) diagnostics.negativeRows += 1;
+    }
 
     while (cursor <= fyEnd) {
       const weekStart = cursor.toISOString().split('T')[0];
@@ -792,22 +831,30 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
       }
 
       let projectOutflowsSum = 0;
+      let actualOutflowsSum = 0;
+      let forecastOutflowsSum = 0;
       let pastDueUnpaidSum = 0;
       const todayStr = new Date().toISOString().split('T')[0];
-      for (const expense of allExpenses) {
+      for (const expense of itemExpenses) {
         // Bottom-up: only aggregate leaf-node (item) rows, matching project-detail level logic
-        if (expense.rowType !== 'item') continue;
         if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
+
         // Use effective payment date: admin override first, then actual payment date, then computed forecast, then forecast, then invoice date
-        const d = (expense as any).adminDateOverride || expense.expensePaymentDate || (expense as any).computedForecastPaymentDate || (expense as any).forecastPaymentDate || (expense as any).expenseInvoicedDate || null;
+        const dateInfo = getExpenseEffectiveDateAndSource(expense);
+        const d = dateInfo.date;
         if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
-        // Use actual total with budget fallback, matching project-detail level logic
-        const amt = parseFloat(expense.expenseActualTotal || (expense as any).budgetTotal || '0') || 0;
-        if (d >= weekStart && d < weekEnd && amt > 0) {
+
+        const amountBreakdown = getOutflowAmountBreakdown(expense);
+        const amt = amountBreakdown.amount;
+
+        if (d >= weekStart && d < weekEnd) {
           projectOutflowsSum += amt;
+          if (amountBreakdown.type === "actual") actualOutflowsSum += amt;
+          else forecastOutflowsSum += amt;
+          if (amt < 0) diagnostics.negativeOffsetsApplied += Math.abs(amt);
           // Flag past-due unpaid: payment date in past, but not confirmed out of bank
           const payDateConfirmed = expense.expensePaymentDate && isDateConfirmed((expense as any).paymentDateConfirmed, (expense as any).paymentDateFontColor);
-          if (d < todayStr && !payDateConfirmed) {
+          if (amt > 0 && d < todayStr && !payDateConfirmed) {
             pastDueUnpaidSum += amt;
           }
         }
@@ -838,6 +885,8 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
         weekEnd,
         projectInflows: projectInflowsSum,
         projectOutflows: projectOutflowsSum,
+        actualOutflows: actualOutflowsSum,
+        forecastOutflows: forecastOutflowsSum,
         pastDueUnpaid: pastDueUnpaidSum,
         openingBalance,
         computedOpening,
@@ -859,7 +908,24 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     const legacyCount = allExpenses.filter((e: any) => !e._isNormalized).length;
     const itemCount = allExpenses.filter((e: any) => e.rowType === 'item').length;
     const totalOutflowsYtd = weeks.reduce((s: number, w: any) => s + (w.projectOutflows || 0), 0);
-    console.log(`[Cashflow2026] Expenses: ${allExpenses.length} total (${normalizedCount} normalized, ${legacyCount} legacy), ${itemCount} items. Outflows YTD: ${totalOutflowsYtd.toFixed(0)}`);
+    const actualOutflowsYtd = weeks.reduce((s: number, w: any) => s + (w.actualOutflows || 0), 0);
+    const forecastOutflowsYtd = weeks.reduce((s: number, w: any) => s + (w.forecastOutflows || 0), 0);
+    diagnostics.actualOutflowsYtd = actualOutflowsYtd;
+    diagnostics.forecastOutflowsYtd = forecastOutflowsYtd;
+    console.log(`[Cashflow2026] Expenses: ${allExpenses.length} total (${normalizedCount} normalized, ${legacyCount} legacy), ${itemCount} items. Outflows YTD: ${totalOutflowsYtd.toFixed(0)} (actual ${actualOutflowsYtd.toFixed(0)}, forecast ${forecastOutflowsYtd.toFixed(0)})`);
+
+    if (includeDebug) {
+      return res.json({
+        weeks,
+        debug: {
+          ...diagnostics,
+          selectedExpenseRows: diagnostics.selectedExpenseRows,
+          duplicateRowsRemoved: null,
+          legacyRowsIncluded: legacyCount,
+          legacyRowsExcluded: null,
+        },
+      });
+    }
 
     res.json(weeks);
   } catch (error) {
@@ -899,13 +965,15 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         // Bottom-up: only leaf-node (item) rows, matching project-detail level logic
         if (e.rowType !== 'item') return false;
         if (projectFilters && !projectFilters.has(e.projectName || "")) return false;
-        const pd = (e as any).adminDateOverride || e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+        const pd = getExpenseEffectiveDateAndSource(e).date;
         if (!pd || !/^\d{4}-\d{2}-\d{2}$/.test(pd)) return false;
         return pd >= weekStart && pd < weekEnd;
       })
       .map(e => {
+        const dateInfo = getExpenseEffectiveDateAndSource(e);
         const originalDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         const effectiveDate = (e as any).adminDateOverride || originalDate;
+        const amountBreakdown = getOutflowAmountBreakdown(e);
         // adaptCostToExpense adds 900000 to normalizedCostLines IDs; reverse that offset
         const realId = e.id >= 900000 ? e.id - 900000 : e.id;
         return {
@@ -920,7 +988,10 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           adminDateOverride: (e as any).adminDateOverride || null,
           adminDateOverrideReason: (e as any).adminDateOverrideReason || null,
           adminDateOverrideAt: (e as any).adminDateOverrideAt || null,
-          expenseActualTotal: parseFloat(e.expenseActualTotal || (e as any).budgetTotal || '0') || 0,
+          outflowType: amountBreakdown.type,
+          amountSource: amountBreakdown.amountSource,
+          dateSource: dateInfo.source,
+          expenseActualTotal: amountBreakdown.amount,
         };
       });
 

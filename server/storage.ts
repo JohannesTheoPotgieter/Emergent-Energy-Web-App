@@ -5,6 +5,7 @@ import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib
 import { UsersRepository } from "./repositories/users-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
+import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, uploadMetadata, refreshLogs,
@@ -1083,84 +1084,44 @@ export class DatabaseStorage implements IStorage {
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
 
-    // Deduplicate costLines: when re-imports create new rows without closing old ones
-    // (e.g. due to name-variant mismatch in softCloseByProjectName), multiple active
-    // rows exist for the same (projectId, sourceRow). Keep only the latest (highest id).
-    const costLineDedup = new Map<string, typeof costLines[0]>();
-    for (const c of costLines) {
-      const key = c.projectId && (c as any).sourceRow
-        ? `pid:${c.projectId}::${(c as any).sourceRow}`
-        : `id:${c.id}`;
-      const existing = costLineDedup.get(key);
-      if (!existing || c.id > existing.id) {
-        costLineDedup.set(key, c);
-      }
-    }
-    const dedupedCostLines = Array.from(costLineDedup.values());
-    if (dedupedCostLines.length < costLines.length) {
-      console.log(`[getAllProgramExpenses] Deduped normalizedCostLines: ${costLines.length} → ${dedupedCostLines.length} (removed ${costLines.length - dedupedCostLines.length} duplicate active rows)`);
-    }
+    const adaptedNormalized = costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+    const legacyAdapted = peRows.map(pe => ({
+      ...pe,
+      projectName: resolve(pe.projectName),
+      _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
+      _cosOverrideBy: (pe as any).cosStatusOverrideBy ?? null,
+      _cosOverrideAt: (pe as any).cosStatusOverrideAt ?? null,
+      _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
+      _isNormalized: false,
+    }));
 
-    const adapted = dedupedCostLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
-
-    const projectsWithCostLines = new Set(costLines.map(c => resolve(c.projectName)));
-    const projectIdsWithCostLines = new Set(costLines.map(c => c.projectId).filter(Boolean));
-
-    if (peRows.length > 0) {
-      const budgetByKey = new Map<string, any>();
-      for (const pe of peRows) {
-        if (pe.rowNumber != null) {
-          budgetByKey.set(`${pe.projectName}::${pe.rowNumber}`, pe);
-        }
-      }
-
-      for (const item of adapted) {
-        const pe = budgetByKey.get(`${item.projectName}::${item.rowNumber}`);
-        if (pe) {
-          if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
-          if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
-          if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
-          if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
-          if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
-          if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
-          if (pe.adminDateOverride != null) item.adminDateOverride = pe.adminDateOverride;
-          if (pe.adminDateOverrideReason != null) item.adminDateOverrideReason = pe.adminDateOverrideReason;
-          if (pe.adminDateOverrideBy != null) item.adminDateOverrideBy = pe.adminDateOverrideBy;
-          if (pe.adminDateOverrideAt != null) item.adminDateOverrideAt = pe.adminDateOverrideAt;
-        }
-      }
-
-      // Exclude PE rows whose project already has normalizedCostLines (by name OR projectId)
-      const legacyOnly = peRows.filter(pe => {
-        if (pe.projectId && projectIdsWithCostLines.has(pe.projectId)) return false;
-        if (projectsWithCostLines.has(pe.projectName)) return false;
-        if (projectsWithCostLines.has(resolve(pe.projectName))) return false;
-        return true;
-      });
-      if (legacyOnly.length > 0) {
-        adapted.push(...legacyOnly.map(pe => ({
-          ...pe,
-          _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
-          _cosOverrideBy: (pe as any).cosStatusOverrideBy ?? null,
-          _cosOverrideAt: (pe as any).cosStatusOverrideAt ?? null,
-          _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
-        })));
-      }
+    // Preserve budget/date override overlays from legacy table where present.
+    const legacySelection = selectWinningExpenseRows(legacyAdapted);
+    const legacyByKey = new Map<string, any>(
+      legacySelection.winners.map((pe: any) => [getExpenseBusinessKey(pe), pe]),
+    );
+    for (const item of adaptedNormalized) {
+      const pe = legacyByKey.get(getExpenseBusinessKey(item));
+      if (!pe) continue;
+      if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
+      if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
+      if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
+      if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
+      if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+      if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
+      if (pe.adminDateOverride != null) item.adminDateOverride = pe.adminDateOverride;
+      if (pe.adminDateOverrideReason != null) item.adminDateOverrideReason = pe.adminDateOverrideReason;
+      if (pe.adminDateOverrideBy != null) item.adminDateOverrideBy = pe.adminDateOverrideBy;
+      if (pe.adminDateOverrideAt != null) item.adminDateOverrideAt = pe.adminDateOverrideAt;
     }
 
-    // Final dedup: if a (projectName, rowNumber) pair appears more than once
-    // (e.g. from both normalizedCostLines and programExpense), keep only the
-    // first occurrence (the adapted/normalized version).
-    const seen = new Set<string>();
-    const deduped: any[] = [];
-    for (const item of adapted) {
-      const key = `${item.projectName}::${item.rowNumber ?? item._sourceRow ?? item.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      deduped.push(item);
-    }
-
-    return deduped;
+    // One deterministic winner per business line across normalized + legacy rows.
+    const selected = selectWinningExpenseRows([...adaptedNormalized, ...legacyAdapted]);
+    console.log(
+      `[getAllProgramExpenses] Selected winners: ${selected.diagnostics.totalInput} → ${selected.diagnostics.winners}` +
+      ` (removed ${selected.diagnostics.duplicatesRemoved} duplicates, normalized winners ${selected.diagnostics.normalizedWinners}, legacy winners ${selected.diagnostics.legacyWinners})`,
+    );
+    return selected.winners;
   }
 
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
@@ -1170,16 +1131,6 @@ export class DatabaseStorage implements IStorage {
 
     const peRows = await this.dbInstance.select().from(programExpense)
       .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
-
-    if (costLines.length === 0 && peRows.length > 0) {
-      return peRows.map(pe => ({
-        ...pe,
-        _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
-        _cosOverrideBy: (pe as any).cosStatusOverrideBy ?? null,
-        _cosOverrideAt: (pe as any).cosStatusOverrideAt ?? null,
-        _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
-      })) as any[];
-    }
 
     const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
 
@@ -1218,15 +1169,21 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    if (peRows.length === 0) return adapted;
-
-    const budgetByRow = new Map<number, any>();
-    for (const pe of peRows) {
-      if (pe.rowNumber != null) budgetByRow.set(pe.rowNumber, pe);
-    }
+    const legacyAdapted = peRows.map(pe => ({
+      ...pe,
+      _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
+      _cosOverrideBy: (pe as any).cosStatusOverrideBy ?? null,
+      _cosOverrideAt: (pe as any).cosStatusOverrideAt ?? null,
+      _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
+      _isNormalized: false,
+    }));
+    const legacySelection = selectWinningExpenseRows(legacyAdapted);
+    const budgetByKey = new Map<string, any>(
+      legacySelection.winners.map((pe: any) => [getExpenseBusinessKey(pe), pe]),
+    );
 
     for (const item of adapted) {
-      const pe = budgetByRow.get(item.rowNumber);
+      const pe = budgetByKey.get(getExpenseBusinessKey(item));
       if (pe) {
         if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
         if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
@@ -1236,7 +1193,9 @@ export class DatabaseStorage implements IStorage {
         if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
       }
     }
-    return adapted;
+
+    const selected = selectWinningExpenseRows([...adapted, ...legacyAdapted]);
+    return selected.winners;
   }
 
   async createManyProgramExpenses(expenseList: InsertProgramExpense[]): Promise<ProgramExpense[]> {
