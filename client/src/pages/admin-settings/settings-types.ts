@@ -121,7 +121,7 @@ export const NAV_SECTIONS = [
   { key: "FINANCE", label: "Finance", description: "Cashflow, Revenue, COS, GP / Margin, FYE Revenue, Counterparties, Subcontractors, Invoice Patterns" },
   { key: "REPORTS", label: "Reports", description: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance" },
   { key: "PRIORITIES", label: "Priorities", description: "Company Priorities — strategic goals & progress tracking" },
-  { key: "ADMIN", label: "Admin", description: "Control Center, Users & Roles, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery" },
+  { key: "ADMIN", label: "Admin", description: "Control Center, Roles & Permissions, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery" },
 ];
 
 export const ENTITY_DESCRIPTIONS: Record<string, string> = {

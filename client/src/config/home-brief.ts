@@ -46,7 +46,7 @@ const roleQuickActions: Record<string, QuickAction[]> = {
   ],
   admin: [
     { label: "Admin Control Center", description: "Monitor system governance and health.", path: "/admin/control-center" },
-    { label: "Users & Roles", description: "Manage access and permissions.", path: "/admin/roles" },
+    { label: "Roles & Permissions", description: "Manage access and permissions.", path: "/admin/roles" },
     { label: "Company Priorities", description: "Manage company-wide priorities.", path: "/company-priorities" },
   ],
 };
