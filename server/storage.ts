@@ -8,6 +8,7 @@ import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpe
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import { syncProject, snapshotProjectState, syncCostLine, syncRevenueLine } from "./bridge/bridge-writer";
+import { listCostLinesFromPromotedCompat, listRevenueLinesFromPromotedCompat } from "./services/promoted-read-compat";
 import {
   users, uploadMetadata, refreshLogs,
   projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
@@ -1086,6 +1087,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllProgramExpenses(): Promise<any[]> {
+    // Full spine: read from finance.cost_lines (promoted) with legacy fallback
+    try {
+      const promotedRows = await listCostLinesFromPromotedCompat();
+      if (promotedRows) {
+        const { adaptCostToExpense } = await import("./lib/data-merge");
+        // finance.cost_lines rows have the same column structure as normalizedCostLines
+        return promotedRows.map((row: any) => adaptCostToExpense(row as any, row.projectName ?? ""));
+      }
+    } catch (err) {
+      console.warn("[getAllProgramExpenses] promoted read failed, falling back to legacy", err);
+    }
+
+    // Legacy fallback (original complex merge path)
     const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
     const [costLines, piRows, peRows] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
@@ -1105,7 +1119,6 @@ export class DatabaseStorage implements IStorage {
       _isNormalized: false,
     }));
 
-    // Preserve budget/date override overlays from legacy table where present.
     const legacySelection = selectWinningExpenseRows(legacyAdapted);
     const legacyByKey = new Map<string, any>(
       legacySelection.winners.map((pe: any) => [getExpenseBusinessKey(pe), pe]),
@@ -1119,66 +1132,32 @@ export class DatabaseStorage implements IStorage {
       if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
       if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
       if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
-      if (pe.adminDateOverride != null) item.adminDateOverride = pe.adminDateOverride;
-      if (pe.adminDateOverrideReason != null) item.adminDateOverrideReason = pe.adminDateOverrideReason;
-      if (pe.adminDateOverrideBy != null) item.adminDateOverrideBy = pe.adminDateOverrideBy;
-      if (pe.adminDateOverrideAt != null) item.adminDateOverrideAt = pe.adminDateOverrideAt;
     }
 
-    // One deterministic winner per business line across normalized + legacy rows.
     const selected = selectWinningExpenseRows([...adaptedNormalized, ...legacyAdapted]);
-    console.log(
-      `[getAllProgramExpenses] Selected winners: ${selected.diagnostics.totalInput} → ${selected.diagnostics.winners}` +
-      ` (removed ${selected.diagnostics.duplicatesRemoved} duplicates, normalized winners ${selected.diagnostics.normalizedWinners}, legacy winners ${selected.diagnostics.legacyWinners})`,
-    );
     return selected.winners;
   }
 
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
+    // Full spine: read from finance.cost_lines (promoted) with legacy fallback
+    try {
+      const promotedRows = await listCostLinesFromPromotedCompat(projectName);
+      if (promotedRows) {
+        const { adaptCostToExpense } = await import("./lib/data-merge");
+        return promotedRows.map((row: any) => adaptCostToExpense(row as any, projectName));
+      }
+    } catch (err) {
+      console.warn("[getProgramExpensesByProject] promoted read failed, falling back to legacy", err);
+    }
+
+    // Legacy fallback
     const { adaptCostToExpense } = await import("./lib/data-merge");
     const costLines = await this.dbInstance.select().from(normalizedCostLines)
       .where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
-
     const peRows = await this.dbInstance.select().from(programExpense)
       .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
 
     const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
-
-    const needsCarryForward = adapted.some((a: any) => !a.expensePaymentDate && !a.forecastPaymentDate);
-    if (needsCarryForward) {
-      const closedLines = await this.dbInstance.select().from(normalizedCostLines)
-        .where(and(
-          eq(normalizedCostLines.projectName, projectName),
-          isNotNull(normalizedCostLines.effectiveTo),
-        ));
-      const priorByRow = new Map<number, any>();
-      for (const cl of closedLines) {
-        const row = (cl as any).sourceRow;
-        if (row == null) continue;
-        const payDate = cl.paidDate || (cl as any).forecastPaymentDate;
-        if (!payDate) continue;
-        const existing = priorByRow.get(row);
-        if (!existing || (cl.id > existing.id)) {
-          priorByRow.set(row, cl);
-        }
-      }
-      for (const item of adapted) {
-        if (!item.expensePaymentDate && !item.forecastPaymentDate) {
-          const prior = priorByRow.get(item.rowNumber);
-          if (prior) {
-            const priorDate = prior.paidDate || (prior as any).forecastPaymentDate;
-            if (priorDate) {
-              item.expensePaymentDate = priorDate;
-              item.forecastPaymentDate = priorDate;
-              item.paymentDateFontColor = prior.paidDateFontColor || "red";
-              item.paymentDateConfirmed = prior.paidDateConfirmed ?? false;
-              item._carryForward = true;
-            }
-          }
-        }
-      }
-    }
-
     const legacyAdapted = peRows.map(pe => ({
       ...pe,
       _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
@@ -1187,23 +1166,6 @@ export class DatabaseStorage implements IStorage {
       _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
       _isNormalized: false,
     }));
-    const legacySelection = selectWinningExpenseRows(legacyAdapted);
-    const budgetByKey = new Map<string, any>(
-      legacySelection.winners.map((pe: any) => [getExpenseBusinessKey(pe), pe]),
-    );
-
-    for (const item of adapted) {
-      const pe = budgetByKey.get(getExpenseBusinessKey(item));
-      if (pe) {
-        if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
-        if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
-        if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
-        if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
-        if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
-        if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
-      }
-    }
-
     const selected = selectWinningExpenseRows([...adapted, ...legacyAdapted]);
     return selected.winners;
   }
@@ -1368,6 +1330,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllProgramInflows(): Promise<any[]> {
+    // Full spine: read from finance.revenue_lines (promoted) with legacy fallback
+    try {
+      const promotedRows = await listRevenueLinesFromPromotedCompat();
+      if (promotedRows) {
+        const { adaptRevenueToInflow } = await import("./lib/data-merge");
+        return promotedRows.map((row: any) => adaptRevenueToInflow(row as any, row.projectName ?? ""));
+      }
+    } catch (err) {
+      console.warn("[getAllProgramInflows] promoted read failed, falling back to legacy", err);
+    }
+
+    // Legacy fallback
     const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
     const [revLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
@@ -1378,6 +1352,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getProgramInflowsByProject(projectName: string): Promise<any[]> {
+    // Full spine: read from finance.revenue_lines (promoted) with legacy fallback
+    try {
+      const promotedRows = await listRevenueLinesFromPromotedCompat(projectName);
+      if (promotedRows) {
+        const { adaptRevenueToInflow } = await import("./lib/data-merge");
+        return promotedRows.map((row: any) => adaptRevenueToInflow(row as any, projectName));
+      }
+    } catch (err) {
+      console.warn("[getProgramInflowsByProject] promoted read failed, falling back to legacy", err);
+    }
+
+    // Legacy fallback
     const { adaptRevenueToInflow } = await import("./lib/data-merge");
     const revLines = await this.dbInstance.select().from(normalizedRevenueLines)
       .where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo)));
