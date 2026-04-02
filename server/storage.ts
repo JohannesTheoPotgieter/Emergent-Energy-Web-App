@@ -1081,7 +1081,26 @@ export class DatabaseStorage implements IStorage {
       this.dbInstance.select().from(programExpense).where(isNull(programExpense.effectiveTo)),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    const adapted = costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+
+    // Deduplicate costLines: when re-imports create new rows without closing old ones
+    // (e.g. due to name-variant mismatch in softCloseByProjectName), multiple active
+    // rows exist for the same (projectId, sourceRow). Keep only the latest (highest id).
+    const costLineDedup = new Map<string, typeof costLines[0]>();
+    for (const c of costLines) {
+      const key = c.projectId && (c as any).sourceRow
+        ? `pid:${c.projectId}::${(c as any).sourceRow}`
+        : `id:${c.id}`;
+      const existing = costLineDedup.get(key);
+      if (!existing || c.id > existing.id) {
+        costLineDedup.set(key, c);
+      }
+    }
+    const dedupedCostLines = Array.from(costLineDedup.values());
+    if (dedupedCostLines.length < costLines.length) {
+      console.log(`[getAllProgramExpenses] Deduped normalizedCostLines: ${costLines.length} → ${dedupedCostLines.length} (removed ${costLines.length - dedupedCostLines.length} duplicate active rows)`);
+    }
+
+    const adapted = dedupedCostLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
 
     const projectsWithCostLines = new Set(costLines.map(c => resolve(c.projectName)));
     const projectIdsWithCostLines = new Set(costLines.map(c => c.projectId).filter(Boolean));

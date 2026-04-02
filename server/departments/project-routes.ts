@@ -1029,7 +1029,18 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
           (editable?.fundingType === 'link' || editable?.fundingType === 'na') &&
           (editable?.epcContractType === 'link' || editable?.epcContractType === 'na')
         ),
-        phase: info?.executionPhase || info?.phase || (info?.id ? phaseByProjectId.get(info.id) : null) || null,
+        phase: (() => {
+          const explicit = info?.executionPhase || info?.phase || (info?.id ? phaseByProjectId.get(info.id) : null) || null;
+          if (explicit) return explicit;
+          // Derive phase from key project dates when no explicit phase is stored
+          if (clientHandoverDate && clientHandoverDate <= today) return "Commercial Close Out";
+          if (omHandoverDate && omHandoverDate <= today) return "Handover";
+          if (commissioningDate && commissioningDate <= today) return "QA";
+          if (constructionStartDate && constructionStartDate <= today) return "Construction";
+          if (constructionStartDate && constructionStartDate > today) return "Planning";
+          if (pdHandoverDate && pdHandoverDate <= today) return "Financial Close";
+          return null;
+        })(),
         pd_handover_date: pdHandoverDate,
         construction_start_date: constructionStartDate,
         duration,
