@@ -118,7 +118,6 @@ export function RolesSection() {
             selectedRole={selectedRole}
             onSelectRole={setSelectedRole}
             onCreateRole={() => setShowCreate(true)}
-            onCompareRoles={() => {}}
             canManageRoles={canManage}
           />
         </div>
