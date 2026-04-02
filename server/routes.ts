@@ -3246,7 +3246,7 @@ export async function registerRoutes(
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareCoreProjectsReadiness();
-        const diagFlag = await getFeatureFlag("promoted_phase1a_project_read_parity_diagnostics");
+        const diagFlag = await getFeatureFlag("migration_bridge_project_read_v1");
         if (diagFlag && comparison.status !== "ready" && shouldEmitParityLogSample("project_reads")) {
           console.warn("[promoted-read][projects] sampled mismatch summary", {
             status: comparison.status,
@@ -3289,7 +3289,7 @@ export async function registerRoutes(
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareProjectDetailMasterReadiness();
-        const diagFlag = await getFeatureFlag("promoted_phase1a_project_read_parity_diagnostics");
+        const diagFlag = await getFeatureFlag("migration_bridge_project_read_v1");
         if (diagFlag && comparison.status !== "ready" && shouldEmitParityLogSample("project_detail_reads")) {
           console.warn("[promoted-read][project-detail-master] sampled mismatch summary", {
             status: comparison.status,

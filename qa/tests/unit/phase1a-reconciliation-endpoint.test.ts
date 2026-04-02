@@ -8,7 +8,7 @@ describe("Phase 1A reconciliation endpoint wiring", () => {
     const content = fs.readFileSync(file, "utf8");
 
     expect(content).toContain("/api/admin/reconciliation/phase-1a");
-    expect(content).toContain("promoted_phase1a_reconciliation_endpoints");
+    expect(content).toContain("migration_bridge_project_read_v1");
     expect(content).toContain("buildPhase1AReconciliationReport");
   });
 });
