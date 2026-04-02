@@ -191,6 +191,52 @@ function migrateSections(sections: string[]): string[] {
   return [...migrated];
 }
 
+type AuthPermissionsPayloadInput = {
+  perm: {
+    role: string;
+    label: string;
+    sections: string[];
+    canManageUsers: boolean;
+    canManageRoles: boolean;
+    canEditData: boolean;
+    entityPermissions?: Record<string, Record<string, boolean>> | null;
+    authorityModel?: Record<string, unknown> | null;
+  };
+  userOverrides: Record<string, boolean>;
+};
+
+export function buildAuthPermissionsPayload({ perm, userOverrides }: AuthPermissionsPayloadInput) {
+  return {
+    role: perm.role,
+    label: perm.label,
+    sections: perm.sections,
+    canManageUsers: perm.canManageUsers,
+    canManageRoles: perm.canManageRoles,
+    canEditData: perm.canEditData,
+    entityPermissions: perm.entityPermissions || null,
+    authorityModel: perm.authorityModel || null,
+    userOverrides: Object.keys(userOverrides).length > 0 ? userOverrides : null,
+    authoritySummary: ENTITY_PERMISSION_DEFAULTS.map((rule) => ({
+      entity: rule.entity,
+      actions: AUTHORITY_ACTIONS.map((action) => {
+        const evaluation = evaluateAuthorityForRole({
+          role: perm.role,
+          entity: rule.entity as PermissionEntity,
+          action: action as AuthorityAction,
+          roleRecord: perm as any,
+        });
+        return {
+          action,
+          allowed: evaluation.allowed,
+          scope: evaluation.scope,
+          reason: evaluation.reason,
+          source: evaluation.source,
+        };
+      }),
+    })),
+  };
+}
+
 export async function seedRolePermissions() {
   try {
     const existing = await db.select().from(rolePermissions);
@@ -742,35 +788,7 @@ export function registerRoleManagementRoutes(app: Express) {
         }
       }
 
-      res.json({
-        role: perm.role,
-        label: perm.label,
-        sections: perm.sections,
-        canManageUsers: perm.canManageUsers,
-        canManageRoles: perm.canManageRoles,
-        canEditData: perm.canEditData,
-        entityPermissions: perm.entityPermissions || null,
-        authorityModel: perm.authorityModel || null,
-        userOverrides: Object.keys(userOverrides).length > 0 ? userOverrides : null,
-        authoritySummary: ENTITY_PERMISSION_DEFAULTS.map((rule) => ({
-          entity: rule.entity,
-          actions: AUTHORITY_ACTIONS.map((action) => {
-            const evaluation = evaluateAuthorityForRole({
-              role: perm.role,
-              entity: rule.entity as PermissionEntity,
-              action: action as AuthorityAction,
-              roleRecord: perm as any,
-            });
-            return {
-              action,
-              allowed: evaluation.allowed,
-              scope: evaluation.scope,
-              reason: evaluation.reason,
-              source: evaluation.source,
-            };
-          }),
-        })),
-      });
+      res.json(buildAuthPermissionsPayload({ perm, userOverrides }));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
