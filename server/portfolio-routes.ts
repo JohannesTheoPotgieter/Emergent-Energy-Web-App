@@ -173,7 +173,7 @@ export function registerPortfolioRoutes(app: Express) {
           console.warn("[promoted-read][portfolio-assignments] mismatch detected", assignmentComparison);
         }
         if (projectComparison.status !== "ready") {
-          const diagnosticsEnabled = Boolean(await getFeatureFlags(["promoted_phase1a_project_read_parity_diagnostics"]).then((f) => f.promoted_phase1a_project_read_parity_diagnostics));
+          const diagnosticsEnabled = Boolean(await getFeatureFlags(["migration_bridge_project_read_v1"]).then((f) => f.migration_bridge_project_read_v1));
           if (diagnosticsEnabled && shouldEmitParityLogSample("portfolio_project_reads")) {
             console.warn("[promoted-read][projects] sampled mismatch summary for portfolio view", {
               status: projectComparison.status,

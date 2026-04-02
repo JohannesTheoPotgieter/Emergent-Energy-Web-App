@@ -276,3 +276,24 @@ Use this exact prompt in the implementation turn:
 > - Reconciliation output clearly indicates pass/fail vs thresholds.
 > - No regressions in auth, import, approvals, lifecycle, finance, and reporting baseline tests.
 
+
+---
+
+## K. Phase 1A implementation notes (2026-04-02 update)
+
+### Controlled exception: `server/routes.ts`
+- **Exception scope:** `server/routes.ts` includes minimal diagnostics-only reads for project parity instrumentation.
+- **Why exception is allowed:** project list/detail routes remain legacy-authoritative while exposing additive reconciliation metadata behind Section F bridge flags.
+- **Safety controls:** no schema changes, no write-authority changes, no scheduler/background jobs, and immediate rollback via feature-flag disable.
+
+### Instrumentation coverage status by requested Phase 1A domain
+
+| Domain | Status | Implementation level |
+|---|---|---|
+| Project identity bridge (G1) | **Fully instrumented** | Manual-run reconciliation endpoint computes threshold pass/fail (mismatch-rate + critical mismatch rules). |
+| Lifecycle/stage parity (G3) | **Admin reconciliation summary** | Summary-level parity metrics and threshold evaluation only; no bridge writes. |
+| Approvals bridge (G2) | **Admin reconciliation summary** | Summary-level queue/status threshold evaluation only; no bridge writes. |
+| Finance parity (G4) | **Admin reconciliation summary** | Summary-level count/relative-delta threshold evaluation only; no bridge writes. |
+| Deliverable/evidence parity (G5) | **Admin reconciliation summary** | Summary-level required/evidence completeness threshold evaluation only; no bridge writes. |
+| Party/contact parity (G6) | **Admin reconciliation summary** | Summary-level resolution/match threshold evaluation only; no bridge writes. |
+
