@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AdminPageShell, AdminQueryState } from "@/components/admin/admin-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/access-control";
 import { TOP_SECTIONS, buildVisibleTopSections, parseDisabledSubPages } from "@/config/app-navigation";
+import { evaluatePathAccess } from "@/config/runtime-access";
 import {
   canManageRoleActions,
   resolveAdminRolesViewState,
@@ -311,6 +312,7 @@ export default function AdminRolesPage() {
 
 function RolesControlCenter() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [roles, setRoles] = useState<RoleRow[]>([]);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [selectedRole, setSelectedRole] = useState<string>("");
@@ -379,10 +381,17 @@ function RolesControlCenter() {
   );
   const disabledSubPages = useMemo(() => parseDisabledSubPages(roleSections), [roleSections]);
   const navPreviewSections = useMemo(() => buildVisibleTopSections({
-    canViewPath: () => true,
+    canViewPath: (path) => evaluatePathAccess({
+      role: effectiveRole.role || "",
+      path,
+      snapshot: {
+        sections: roleSections,
+        entityPermissions: currentEp,
+      },
+    }).allowed,
     allowedSectionKeys: Array.from(enabledSectionKeys),
     disabledSubPages,
-  }), [disabledSubPages, enabledSectionKeys]);
+  }), [currentEp, disabledSubPages, effectiveRole.role, enabledSectionKeys, roleSections]);
 
   const applySectionsUpdate = useCallback((updater: (current: string[]) => string[]) => {
     const baseSections = Array.isArray(effectiveRole.sections) ? effectiveRole.sections : [];
@@ -439,7 +448,14 @@ function RolesControlCenter() {
       const res = await fetch(`/api/roles/${selected.role}`, { method: "PUT", headers: authHeaders(), credentials: "include", body: JSON.stringify(draft) });
       if (!res.ok) throw new Error("Save failed");
     },
-    onSuccess: () => { setDraft({}); load(); toast({ title: "Role saved successfully" }); },
+    onSuccess: async () => {
+      setDraft({});
+      await queryClient.invalidateQueries({ queryKey: ["auth-permissions-matrix"] });
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/permissions"] });
+      await load();
+      window.dispatchEvent(new CustomEvent("permissions-updated"));
+      toast({ title: "Role saved successfully" });
+    },
     onError: () => toast({ title: "Save failed", variant: "destructive" }),
   });
   const save = () => saveRoleMutation.mutate();
@@ -936,7 +952,6 @@ function RolesControlCenter() {
                         </div>
                       </div>
                     )}
-
                   </div>
                 </CardContent>
               </Card>
