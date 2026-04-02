@@ -974,22 +974,52 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
 
   try {
     const [legacyRows, promotedRows] = await Promise.all([
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.project_execution_state`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM core.projects WHERE execution_gate_status IS NOT NULL`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT project_id, phase, execution_gate_status, rag_status FROM public.project_execution_state WHERE deleted_at IS NULL`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT legacy_project_info_id, phase, execution_gate_status, rag_status FROM core.projects`).then((r: any) => r.rows ?? r),
     ]);
-    const legacyCount = Number(legacyRows[0]?.cnt ?? 0);
-    const promotedCount = Number(promotedRows[0]?.cnt ?? 0);
+    const legacyCount = legacyRows.length;
+    const promotedCount = promotedRows.length;
+    const promotedByProjectId = new Map<number, any>(promotedRows.map((row: any) => [Number(row.legacy_project_info_id), row]));
+
+    let phaseStageMismatchCount = 0;
+    let ragMismatchCount = 0;
+    let missingInPromotedCount = 0;
+    const mismatchCategories: string[] = [];
+
+    for (const legacyRow of legacyRows) {
+      const projectId = Number(legacyRow.project_id);
+      const promoted = promotedByProjectId.get(projectId);
+      if (!promoted) {
+        missingInPromotedCount++;
+        continue;
+      }
+      const phaseMismatch = (legacyRow.phase ?? "") !== (promoted.phase ?? "");
+      const gateMismatch = (legacyRow.execution_gate_status ?? "") !== (promoted.execution_gate_status ?? "");
+      if (phaseMismatch || gateMismatch) phaseStageMismatchCount++;
+      if ((legacyRow.rag_status ?? "") !== (promoted.rag_status ?? "")) ragMismatchCount++;
+    }
+
+    if (missingInPromotedCount > 0) mismatchCategories.push("missing_lifecycle_rows_in_promoted");
+    if (phaseStageMismatchCount > 0) mismatchCategories.push("phase_gate_field_mismatch");
+    if (ragMismatchCount > 0) mismatchCategories.push("rag_status_field_mismatch");
+
+    const totalComparable = legacyCount - missingInPromotedCount;
+    const ragMismatchRate = totalComparable === 0 ? 0 : (ragMismatchCount / totalComparable) * 100;
+
     checks.push({
       domain: "lifecycle_gates",
-      status: legacyCount === promotedCount ? "ready" : (promotedCount === 0 ? "blocked" : "partial"),
+      status: phaseStageMismatchCount === 0 && missingInPromotedCount === 0 && ragMismatchRate <= 0.2 ? "ready" : (missingInPromotedCount > 0 || promotedCount === 0 ? "blocked" : "partial"),
       legacyCount,
       promotedCount,
       deltaCount: legacyCount - promotedCount,
-      mismatchCategories: legacyCount === promotedCount ? [] : ["execution_gate_count_delta"],
-      notes: ["Lifecycle/gates check compares legacy project_execution_state with promoted core.projects execution gate columns."],
+      mismatchCategories,
+      notes: [
+        "Lifecycle/gates check performs field-level comparison of phase, execution_gate_status, and rag_status between project_execution_state and core.projects.",
+        "PROVISIONAL: current_stage_code and gate_status fields have no promoted counterpart in core.projects; parity for those fields deferred to Phase 2 schema extension.",
+      ],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([
-        { metric: "phase_stage_gate_mismatch_count", comparator: "eq", threshold: 0, actual: Math.abs(legacyCount - promotedCount), passed: legacyCount === promotedCount },
-        { metric: "rag_status_mismatch_rate_percent", comparator: "lte", threshold: 0.2, actual: legacyCount === 0 ? 0 : (Math.abs(legacyCount - promotedCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.abs(legacyCount - promotedCount) / legacyCount) * 100) <= 0.2 },
+        { metric: "phase_stage_gate_mismatch_count", comparator: "eq", threshold: 0, actual: phaseStageMismatchCount + missingInPromotedCount, passed: phaseStageMismatchCount === 0 && missingInPromotedCount === 0 },
+        { metric: "rag_status_mismatch_rate_percent", comparator: "lte", threshold: 0.2, actual: ragMismatchRate, passed: ragMismatchRate <= 0.2 },
       ]),
     });
   } catch (error: any) {
@@ -1006,23 +1036,46 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
   }
 
   try {
-    const [legacyRows, promotedRows] = await Promise.all([
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.approvals WHERE COALESCE(deleted_at, NULL) IS NULL`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM documentation.document_approvals`).then((r: any) => r.rows ?? r),
+    const [legacyStatusRows, promotedStatusRows] = await Promise.all([
+      db.execute(sql`SELECT LOWER(COALESCE(status, 'unknown')) AS status, COUNT(*)::INTEGER AS cnt FROM public.approvals WHERE deleted_at IS NULL GROUP BY LOWER(COALESCE(status, 'unknown'))`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT LOWER(COALESCE(status, 'unknown')) AS status, COUNT(*)::INTEGER AS cnt FROM documentation.document_approvals GROUP BY LOWER(COALESCE(status, 'unknown'))`).then((r: any) => r.rows ?? r),
     ]);
-    const legacyCount = Number(legacyRows[0]?.cnt ?? 0);
-    const promotedCount = Number(promotedRows[0]?.cnt ?? 0);
+    const legacyDist: Record<string, number> = {};
+    const promotedDist: Record<string, number> = {};
+    let legacyCount = 0;
+    let promotedCount = 0;
+    for (const row of legacyStatusRows) { legacyDist[row.status] = Number(row.cnt); legacyCount += Number(row.cnt); }
+    for (const row of promotedStatusRows) { promotedDist[row.status] = Number(row.cnt); promotedCount += Number(row.cnt); }
+
+    const allStatuses = new Set([...Object.keys(legacyDist), ...Object.keys(promotedDist)]);
+    let statusDistributionDeltaSum = 0;
+    const mismatchCategories: string[] = [];
+    for (const status of allStatuses) {
+      const legacyPct = legacyCount === 0 ? 0 : ((legacyDist[status] ?? 0) / legacyCount) * 100;
+      const promotedPct = promotedCount === 0 ? 0 : ((promotedDist[status] ?? 0) / promotedCount) * 100;
+      statusDistributionDeltaSum += Math.abs(legacyPct - promotedPct);
+    }
+    const statusDistDelta = statusDistributionDeltaSum / 2;
+    const queueDelta = Math.abs(legacyCount - promotedCount);
+
+    if (queueDelta > 0) mismatchCategories.push("approval_count_delta");
+    if (statusDistDelta > 0.1) mismatchCategories.push("approval_status_distribution_delta");
+
     checks.push({
       domain: "approvals",
-      status: legacyCount === promotedCount ? "ready" : "partial",
+      status: queueDelta === 0 && statusDistDelta <= 0.1 ? "ready" : "partial",
       legacyCount,
       promotedCount,
       deltaCount: legacyCount - promotedCount,
-      mismatchCategories: legacyCount === promotedCount ? [] : ["approval_count_delta"],
-      notes: ["Approvals diagnostics remain summary-only and do not emit approval payload details."],
+      mismatchCategories,
+      notes: [
+        "Approvals reconciliation compares queue counts and status distributions between public.approvals and documentation.document_approvals.",
+        "PROVISIONAL: stale_items_over_15m requires replication-lag timestamp tracking not available in Phase 1A; hardcoded pass with actual=0.",
+        "PROVISIONAL: per-type (gate/exception/handover/general) distribution requires a type column in document_approvals not present in Phase 1A schema.",
+      ],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([
-        { metric: "queue_count_delta", comparator: "eq", threshold: 0, actual: Math.abs(legacyCount - promotedCount), passed: legacyCount === promotedCount },
-        { metric: "status_distribution_delta_percent", comparator: "lte", threshold: 0.1, actual: legacyCount === 0 ? 0 : (Math.abs(legacyCount - promotedCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.abs(legacyCount - promotedCount) / legacyCount) * 100) <= 0.1 },
+        { metric: "queue_count_delta", comparator: "eq", threshold: 0, actual: queueDelta, passed: queueDelta === 0 },
+        { metric: "status_distribution_delta_percent", comparator: "lte", threshold: 0.1, actual: statusDistDelta, passed: statusDistDelta <= 0.1 },
         { metric: "stale_items_over_15m", comparator: "lte", threshold: 10, actual: 0, passed: true },
       ]),
     });
@@ -1040,26 +1093,69 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
   }
 
   try {
-    const [legacyRevenueRows, legacyCostRows, promotedRevenueRows, promotedCostRows] = await Promise.all([
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.program_inflows`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.program_expense`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM finance.revenue_lines`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM finance.cost_lines`).then((r: any) => r.rows ?? r),
+    const [revenueAmountRows, costAmountRows, unmappedRevenueRows, unmappedCostRows] = await Promise.all([
+      db.execute(sql`
+        SELECT
+          COALESCE(SUM(COALESCE(li.milestone_amount, 0)), 0)::NUMERIC AS legacy_sum,
+          COALESCE(SUM(COALESCE(rl.amount_ex_vat, 0)), 0)::NUMERIC AS promoted_sum,
+          COUNT(li.id)::INTEGER AS legacy_count,
+          COUNT(rl.id)::INTEGER AS promoted_count
+        FROM public.program_inflows li
+        LEFT JOIN finance.revenue_lines rl ON rl.legacy_program_inflow_id = li.id
+      `).then((r: any) => r.rows ?? r),
+      db.execute(sql`
+        SELECT
+          COALESCE(SUM(COALESCE(le.budget_total, 0)), 0)::NUMERIC AS legacy_sum,
+          COALESCE(SUM(COALESCE(cl.amount_ex_vat, 0)), 0)::NUMERIC AS promoted_sum,
+          COUNT(le.id)::INTEGER AS legacy_count,
+          COUNT(cl.id)::INTEGER AS promoted_count
+        FROM public.program_expense le
+        LEFT JOIN finance.cost_lines cl ON cl.legacy_program_expense_id = le.id
+      `).then((r: any) => r.rows ?? r),
+      db.execute(sql`
+        SELECT COUNT(*)::INTEGER AS cnt FROM public.program_inflows li
+        WHERE NOT EXISTS (SELECT 1 FROM finance.revenue_lines rl WHERE rl.legacy_program_inflow_id = li.id)
+      `).then((r: any) => r.rows ?? r),
+      db.execute(sql`
+        SELECT COUNT(*)::INTEGER AS cnt FROM public.program_expense le
+        WHERE NOT EXISTS (SELECT 1 FROM finance.cost_lines cl WHERE cl.legacy_program_expense_id = le.id)
+      `).then((r: any) => r.rows ?? r),
     ]);
-    const legacyCount = Number(legacyRevenueRows[0]?.cnt ?? 0) + Number(legacyCostRows[0]?.cnt ?? 0);
-    const promotedCount = Number(promotedRevenueRows[0]?.cnt ?? 0) + Number(promotedCostRows[0]?.cnt ?? 0);
+
+    const revLegacySum = Number(revenueAmountRows[0]?.legacy_sum ?? 0);
+    const revPromotedSum = Number(revenueAmountRows[0]?.promoted_sum ?? 0);
+    const costLegacySum = Number(costAmountRows[0]?.legacy_sum ?? 0);
+    const costPromotedSum = Number(costAmountRows[0]?.promoted_sum ?? 0);
+    const legacyCount = Number(revenueAmountRows[0]?.legacy_count ?? 0) + Number(costAmountRows[0]?.legacy_count ?? 0);
+    const promotedCount = Number(revenueAmountRows[0]?.promoted_count ?? 0) + Number(costAmountRows[0]?.promoted_count ?? 0);
+    const unresolvedMappings = Number(unmappedRevenueRows[0]?.cnt ?? 0) + Number(unmappedCostRows[0]?.cnt ?? 0);
+
+    const totalLegacyAmount = revLegacySum + costLegacySum;
+    const totalPromotedAmount = revPromotedSum + costPromotedSum;
+    const absoluteDelta = Math.abs(totalLegacyAmount - totalPromotedAmount);
+    const portfolioRelativeDelta = totalLegacyAmount === 0 ? 0 : (absoluteDelta / Math.abs(totalLegacyAmount)) * 100;
+
+    const mismatchCategories: string[] = [];
+    if (absoluteDelta > 0.5) mismatchCategories.push("finance_amount_delta");
+    if (portfolioRelativeDelta > 0.05) mismatchCategories.push("finance_relative_delta");
+    if (unresolvedMappings > 0) mismatchCategories.push("unresolved_legacy_mappings");
+
     checks.push({
       domain: "finance",
-      status: legacyCount === promotedCount ? "ready" : "partial",
+      status: absoluteDelta <= 0.5 && portfolioRelativeDelta <= 0.05 && unresolvedMappings === 0 ? "ready" : "partial",
       legacyCount,
       promotedCount,
       deltaCount: legacyCount - promotedCount,
-      mismatchCategories: legacyCount === promotedCount ? [] : ["finance_line_count_delta"],
-      notes: ["Finance diagnostics summarize line-count parity only (program_* vs finance.*)."],
+      mismatchCategories,
+      notes: [
+        `Finance reconciliation joins legacy rows to promoted via legacy_program_inflow_id / legacy_program_expense_id and compares aggregated amounts (legacy total: ${totalLegacyAmount.toFixed(2)}, promoted total: ${totalPromotedAmount.toFixed(2)}).`,
+        `Unmapped legacy rows (no promoted counterpart): ${unresolvedMappings}.`,
+        "PROVISIONAL: per-project-month breakdown requires fiscal-month derivation from date fields not standardized in Phase 1A; using portfolio-level aggregate as stand-in.",
+      ],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([
-        { metric: "absolute_delta_per_project_month", comparator: "lte", threshold: 0.5, actual: Math.abs(legacyCount - promotedCount), passed: Math.abs(legacyCount - promotedCount) <= 0.5 },
-        { metric: "portfolio_relative_delta_percent", comparator: "lte", threshold: 0.05, actual: legacyCount === 0 ? 0 : (Math.abs(legacyCount - promotedCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.abs(legacyCount - promotedCount) / legacyCount) * 100) <= 0.05 },
-        { metric: "unresolved_project_mappings", comparator: "eq", threshold: 0, actual: 0, passed: true },
+        { metric: "absolute_delta_per_project_month", comparator: "lte", threshold: 0.5, actual: absoluteDelta, passed: absoluteDelta <= 0.5 },
+        { metric: "portfolio_relative_delta_percent", comparator: "lte", threshold: 0.05, actual: portfolioRelativeDelta, passed: portfolioRelativeDelta <= 0.05 },
+        { metric: "unresolved_project_mappings", comparator: "eq", threshold: 0, actual: unresolvedMappings, passed: unresolvedMappings === 0 },
       ]),
     });
   } catch (error: any) {
@@ -1076,24 +1172,41 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
   }
 
   try {
-    const [legacyRows, promotedRows] = await Promise.all([
+    const [legacyRows, mappedRows, unmappedRows] = await Promise.all([
       db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.deliverables`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM documentation.documents`).then((r: any) => r.rows ?? r),
+      db.execute(sql`
+        SELECT COUNT(*)::INTEGER AS cnt FROM public.deliverables d
+        INNER JOIN documentation.documents doc ON doc.legacy_deliverable_id = d.id
+      `).then((r: any) => r.rows ?? r),
+      db.execute(sql`
+        SELECT COUNT(*)::INTEGER AS cnt FROM public.deliverables d
+        WHERE NOT EXISTS (SELECT 1 FROM documentation.documents doc WHERE doc.legacy_deliverable_id = d.id)
+      `).then((r: any) => r.rows ?? r),
     ]);
     const legacyCount = Number(legacyRows[0]?.cnt ?? 0);
-    const promotedCount = Number(promotedRows[0]?.cnt ?? 0);
+    const mappedCount = Number(mappedRows[0]?.cnt ?? 0);
+    const missingCount = Number(unmappedRows[0]?.cnt ?? 0);
+    const completenessPercent = legacyCount === 0 ? 100 : (mappedCount / legacyCount) * 100;
+
+    const mismatchCategories: string[] = [];
+    if (missingCount > 0) mismatchCategories.push("deliverables_missing_in_promoted");
+    if (completenessPercent < 99.5) mismatchCategories.push("evidence_link_completeness_below_threshold");
+
     checks.push({
       domain: "deliverables",
-      status: legacyCount === promotedCount ? "ready" : "partial",
+      status: missingCount === 0 && completenessPercent >= 99.5 ? "ready" : "partial",
       legacyCount,
-      promotedCount,
-      deltaCount: legacyCount - promotedCount,
-      mismatchCategories: legacyCount === promotedCount ? [] : ["deliverable_document_count_delta"],
-      notes: ["Deliverables diagnostics summarize parity between public.deliverables and documentation.documents."],
+      promotedCount: mappedCount,
+      deltaCount: missingCount,
+      mismatchCategories,
+      notes: [
+        `Deliverables reconciliation joins public.deliverables to documentation.documents via legacy_deliverable_id. Mapped: ${mappedCount}, unmapped: ${missingCount}.`,
+        "PROVISIONAL: evidence_link_completeness uses migration mapping ratio as proxy; true per-deliverable evidence file/link parity requires deliverable_files join not available in Phase 1A promoted schema.",
+      ],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([
-        { metric: "required_deliverables_delta", comparator: "eq", threshold: 0, actual: Math.abs(legacyCount - promotedCount), passed: legacyCount === promotedCount },
-        { metric: "evidence_link_completeness_percent", comparator: "gte", threshold: 99.5, actual: legacyCount === 0 ? 100 : (promotedCount / legacyCount) * 100, passed: legacyCount === 0 ? true : ((promotedCount / legacyCount) * 100) >= 99.5 },
-        { metric: "missing_required_delta", comparator: "eq", threshold: 0, actual: Math.abs(legacyCount - promotedCount), passed: legacyCount === promotedCount },
+        { metric: "required_deliverables_delta", comparator: "eq", threshold: 0, actual: missingCount, passed: missingCount === 0 },
+        { metric: "evidence_link_completeness_percent", comparator: "gte", threshold: 99.5, actual: completenessPercent, passed: completenessPercent >= 99.5 },
+        { metric: "missing_required_delta", comparator: "eq", threshold: 0, actual: missingCount, passed: missingCount === 0 },
       ]),
     });
   } catch (error: any) {
@@ -1110,29 +1223,66 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
   }
 
   try {
-    const [legacyCounterpartyRows, legacyClientContactRows, promotedFinanceCounterpartyRows, promotedClientRows] = await Promise.all([
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.counterparties`).then((r: any) => r.rows ?? r),
+    const [clientMatchRows, clientUnmappedRows, counterpartyRows, counterpartyResolvedRows] = await Promise.all([
       db.execute(sql`
-        SELECT COUNT(*)::INTEGER AS cnt
-        FROM public.clients
-        WHERE COALESCE(primary_contact_name, primary_contact_email, primary_contact_phone, secondary_contact_name, secondary_contact_email, secondary_contact_phone) IS NOT NULL
+        SELECT
+          COUNT(lc.id)::INTEGER AS legacy_count,
+          COUNT(cc.id)::INTEGER AS matched_count,
+          SUM(CASE WHEN cc.id IS NOT NULL AND LOWER(TRIM(lc.name)) = LOWER(TRIM(cc.name)) THEN 1 ELSE 0 END)::INTEGER AS name_match_count
+        FROM public.clients lc
+        LEFT JOIN core.clients cc ON cc.legacy_id = lc.id
       `).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(DISTINCT COALESCE(counterparty_name, ''))::INTEGER AS cnt FROM finance.cost_lines`).then((r: any) => r.rows ?? r),
-      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM core.clients`).then((r: any) => r.rows ?? r),
+      db.execute(sql`
+        SELECT COUNT(*)::INTEGER AS cnt FROM public.clients lc
+        WHERE NOT EXISTS (SELECT 1 FROM core.clients cc WHERE cc.legacy_id = lc.id)
+      `).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.counterparties WHERE is_active = true`).then((r: any) => r.rows ?? r),
+      db.execute(sql`
+        SELECT COUNT(DISTINCT cp.id)::INTEGER AS cnt
+        FROM public.counterparties cp
+        WHERE cp.is_active = true
+          AND EXISTS (
+            SELECT 1 FROM finance.cost_lines cl
+            WHERE LOWER(TRIM(cl.counterparty_name)) = LOWER(TRIM(cp.name_canonical))
+          )
+      `).then((r: any) => r.rows ?? r),
     ]);
-    const legacyCount = Number(legacyCounterpartyRows[0]?.cnt ?? 0) + Number(legacyClientContactRows[0]?.cnt ?? 0);
-    const promotedCount = Number(promotedFinanceCounterpartyRows[0]?.cnt ?? 0) + Number(promotedClientRows[0]?.cnt ?? 0);
+
+    const clientLegacyCount = Number(clientMatchRows[0]?.legacy_count ?? 0);
+    const clientMatchedCount = Number(clientMatchRows[0]?.matched_count ?? 0);
+    const clientNameMatchCount = Number(clientMatchRows[0]?.name_match_count ?? 0);
+    const clientUnmappedCount = Number(clientUnmappedRows[0]?.cnt ?? 0);
+    const activeCounterparties = Number(counterpartyRows[0]?.cnt ?? 0);
+    const resolvedCounterparties = Number(counterpartyResolvedRows[0]?.cnt ?? 0);
+
+    const legacyCount = clientLegacyCount + activeCounterparties;
+    const promotedCount = clientMatchedCount + resolvedCounterparties;
+
+    const clientResolutionPct = clientLegacyCount === 0 ? 100 : (clientMatchedCount / clientLegacyCount) * 100;
+    const counterpartyResolutionPct = activeCounterparties === 0 ? 100 : (resolvedCounterparties / activeCounterparties) * 100;
+    const overallResolutionPct = legacyCount === 0 ? 100 : (promotedCount / legacyCount) * 100;
+    const contactRetrievalPct = clientLegacyCount === 0 ? 100 : (clientNameMatchCount / clientLegacyCount) * 100;
+
+    const mismatchCategories: string[] = [];
+    if (clientUnmappedCount > 0) mismatchCategories.push("clients_missing_legacy_id_mapping");
+    if (clientNameMatchCount < clientMatchedCount) mismatchCategories.push("client_name_field_mismatch");
+    if (resolvedCounterparties < activeCounterparties) mismatchCategories.push("counterparty_name_unresolved_in_promoted");
+
     checks.push({
       domain: "party_contacts",
-      status: legacyCount === promotedCount ? "ready" : "partial",
+      status: overallResolutionPct === 100 && contactRetrievalPct >= 99.9 ? "ready" : "partial",
       legacyCount,
       promotedCount,
       deltaCount: legacyCount - promotedCount,
-      mismatchCategories: legacyCount === promotedCount ? [] : ["party_contact_count_delta"],
-      notes: ["Party/contact diagnostics summarize counterparties and contact-bearing client rows without payload detail logging."],
+      mismatchCategories,
+      notes: [
+        `Client resolution: ${clientMatchedCount}/${clientLegacyCount} mapped via legacy_id, ${clientNameMatchCount} name-verified. Counterparty resolution: ${resolvedCounterparties}/${activeCounterparties} active counterparties found in finance.cost_lines by canonical name.`,
+        "PROVISIONAL: contact_retrieval_match uses client name match as proxy; true contact field parity (phone, email) requires contact fields in core.clients not present in Phase 1A schema.",
+        "PROVISIONAL: counterparty resolution checks name presence in finance.cost_lines; a dedicated party abstraction table is deferred to Phase 2.",
+      ],
       thresholdEvaluation: evaluatePhase1AThresholdOutcome([
-        { metric: "active_assignment_resolution_success_percent", comparator: "eq", threshold: 100, actual: legacyCount === 0 ? 100 : (Math.min(promotedCount, legacyCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.min(promotedCount, legacyCount) / legacyCount) * 100) === 100 },
-        { metric: "contact_retrieval_match_percent", comparator: "gte", threshold: 99.9, actual: legacyCount === 0 ? 100 : (Math.min(promotedCount, legacyCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.min(promotedCount, legacyCount) / legacyCount) * 100) >= 99.9 },
+        { metric: "active_assignment_resolution_success_percent", comparator: "eq", threshold: 100, actual: overallResolutionPct, passed: overallResolutionPct === 100 },
+        { metric: "contact_retrieval_match_percent", comparator: "gte", threshold: 99.9, actual: contactRetrievalPct, passed: contactRetrievalPct >= 99.9 },
       ]),
     });
   } catch (error: any) {
