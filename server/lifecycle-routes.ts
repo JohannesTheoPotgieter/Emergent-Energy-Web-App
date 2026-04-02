@@ -909,6 +909,7 @@ export function registerLifecycleRoutes(app: Express) {
       const revenueLines = await db.select({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
+        client: normalizedRevenueLines.counterpartyName,
 
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
@@ -916,6 +917,7 @@ export function registerLifecycleRoutes(app: Express) {
         paidDate: normalizedRevenueLines.paidDate,
         paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
         inBankDate: normalizedRevenueLines.inBankDate,
+        status: normalizedRevenueLines.status,
         invoiceDate: normalizedRevenueLines.invoiceDate,
         expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
         sourceRow: normalizedRevenueLines.sourceRow,
@@ -1272,6 +1274,7 @@ export function registerLifecycleRoutes(app: Express) {
       const revenueLines = await db.select({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
+        client: normalizedRevenueLines.counterpartyName,
 
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
