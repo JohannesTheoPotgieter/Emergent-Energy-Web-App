@@ -57,6 +57,18 @@ describe("roles-permissions spine", () => {
     expect(missing).toEqual([]);
   });
 
+  it("fails closed when a protected route has no permission entity mapping", () => {
+    const result = evaluatePathAccess({
+      role: PFM_ROLE,
+      path: "/unknown/protected-surface",
+      snapshot: { sections: ["HOME", "PROJECT_DELIVERY", "FINANCE"] },
+      failOpenForUnknown: false,
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toBe("unknown_route_deny");
+  });
+
   it("maps every top navigation item to runtime section + entity", () => {
     const unmapped = TOP_SECTIONS.flatMap((section) =>
       section.secondary
@@ -69,6 +81,28 @@ describe("roles-permissions spine", () => {
     );
 
     expect(unmapped).toEqual([]);
+  });
+
+  it("keeps section mapping aligned for delivery and portfolio runtime routes", () => {
+    const sectionExpectations: Array<{ path: string; section: string }> = [
+      { path: "/po-approval-board", section: "PROJECT_DELIVERY" },
+      { path: "/payment-request-board", section: "PROJECT_DELIVERY" },
+      { path: "/payment-batch-manager", section: "PROJECT_DELIVERY" },
+      { path: "/milestone-tracker", section: "PROJECT_DELIVERY" },
+      { path: "/weekly-reviews", section: "PROJECT_DELIVERY" },
+      { path: "/portfolios", section: "PROJECT_DELIVERY" },
+      { path: "/portfolios/alpha", section: "PROJECT_DELIVERY" },
+      { path: "/project/alpha", section: "PROJECT_DELIVERY" },
+      { path: "/project/alpha/financial-linking", section: "PROJECT_DELIVERY" },
+      { path: "/pd/tickets/create", section: "PROJECT_DEVELOPMENT" },
+      { path: "/pd/tickets/123", section: "PROJECT_DEVELOPMENT" },
+    ];
+
+    sectionExpectations.forEach(({ path, section }) => {
+      expect(getAppSectionForPath(path)).toBe(section);
+      expect(getPermissionEntityForPath(path)).toBeTruthy();
+      expect(getRouteAccessPolicyForPath(path)).toBe("protected");
+    });
   });
 
   it("keeps effective access preview aligned with runtime path evaluator", () => {

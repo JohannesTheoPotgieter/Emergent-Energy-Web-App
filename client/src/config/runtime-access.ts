@@ -62,7 +62,7 @@ export function evaluatePathAccess(options: {
   snapshot: PermissionSnapshot;
   failOpenForUnknown?: boolean;
 }): { allowed: boolean; reason: string; section?: string; entity?: PermissionEntity } {
-  const { role, path, snapshot, failOpenForUnknown = true } = options;
+  const { role, path, snapshot, failOpenForUnknown = false } = options;
   if (path === "/") return { allowed: true, reason: "home" };
 
   const policy = getRouteAccessPolicyForPath(path);
