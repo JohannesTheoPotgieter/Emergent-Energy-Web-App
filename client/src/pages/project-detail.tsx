@@ -1219,21 +1219,6 @@ export default function ProjectDetailPage() {
   // Revenue milestones (from revenue-tab endpoint — provides milestone-level detail not in V2)
   const revTabMilestones: any[] = revenueTrustData?.milestones || [];
 
-  const nextMilestone = useMemo<NextMilestoneSummary | null>(() => {
-    const milestones = revTabMilestones;
-    const unpaid = milestones
-      .filter((m: any) => m.status !== 'inBank' && m.date)
-      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    if (unpaid.length > 0) {
-      const m = unpaid[0];
-      return { name: m.milestoneName || "Revenue Milestone", date: m.date, allPaid: false };
-    }
-    if (milestones.length > 0) {
-      return { name: "All Paid", date: null, allPaid: true };
-    }
-    return null;
-  }, [revTabMilestones]);
-
   if (!projectName) {
     return (
       <div className="space-y-6">
@@ -1292,7 +1277,7 @@ export default function ProjectDetailPage() {
   const ragStatus = v2Detail?.executionState?.ragStatus ?? projectInfo?.rag_status ?? null;
   const chipDestinations = useMemo(() => buildProjectSummaryChipDestinations(projectName), [projectName]);
 
-  // ─── KPI computation: V2 detail → healthSummary → client-side fallback ───
+  // ─── KPI computation: V2 detail → healthSummary ───
   const v2ContractValue = v2Detail?.financeSummary?.contractValue;
   const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
   const contractValue = v2ContractValue ?? healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? totalRevenueActual ?? 0;
@@ -1359,6 +1344,7 @@ export default function ProjectDetailPage() {
   const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
   const cosRealisedPct = healthSummary?.cos.realisedPct ?? (cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0);
   const marginDelta = revenueRealisedPct - cosRealisedPct;
+  const hasCanonicalHeaderKpis = Boolean(headerKpis);
 
   const overallRag: "green" | "amber" | "red" = (healthSummary?.overall.rag as any) ?? computeOverallRag(scheduleRag, costRag, qualityRag);
   const commercialPendingCount = Math.max(revTabMilestones.filter((m: any) => m.status !== 'inBank').length, 0);
@@ -1438,15 +1424,15 @@ export default function ProjectDetailPage() {
         sizeKwp={sizeKwp}
         completion={completion}
         completionNum={completionNum}
-        contractValue={headerKpis?.contractValue ?? contractValue}
-        revenueRealisedPct={headerKpis?.inflowsRealisedPct ?? revenueRealisedPct}
-        cosRealisedPct={headerKpis?.cosRealisedPct ?? cosRealisedPct}
-        marginDelta={headerKpis?.marginDeltaPct ?? marginDelta}
-        scheduleRag={overallRag as "green" | "amber" | "red"}
-        costRag={overallRag as "green" | "amber" | "red"}
-        qualityRag={overallRag as "green" | "amber" | "red"}
+        contractValue={headerKpis?.contractValue ?? 0}
+        revenueRealisedPct={headerKpis?.inflowsRealisedPct ?? 0}
+        cosRealisedPct={headerKpis?.cosRealisedPct ?? 0}
+        marginDelta={headerKpis?.marginDeltaPct ?? 0}
+        scheduleRag={scheduleRag as "green" | "amber" | "red"}
+        costRag={costRag as "green" | "amber" | "red"}
+        qualityRag={qualityRag as "green" | "amber" | "red"}
         ragStatus={ragStatus}
-        nextMilestone={headerKpis?.nextMilestone ?? nextMilestone}
+        nextMilestone={headerKpis?.nextMilestone ?? null}
         projectInfoId={projectInfoId ?? null}
         isAdmin={isAdmin}
         canSetRag={canSetRag}
@@ -1454,6 +1440,11 @@ export default function ProjectDetailPage() {
         pmAssignableUsers={pmAssignableUsers || []}
       />
       </div>{/* /cockpit-command-header */}
+      {!hasCanonicalHeaderKpis && (
+        <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="project-header-kpi-stale">
+          Canonical header KPI data is currently unavailable. Values are withheld until server KPIs refresh.
+        </div>
+      )}
 
       {/* Stage Lifecycle — Critical Control Panel */}
       {projectInfoId && (
