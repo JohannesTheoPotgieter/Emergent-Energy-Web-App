@@ -1,14 +1,63 @@
 # Phase 1B Implementation Prompt
 
-> **Scope:** Migrations, preflight audit scripts, backfill scripts, validation tests.  
-> **Explicitly excluded:** Bridge writes, route cutovers, auth changes.  
+> **Scope:** Migrations, preflight audit script, backfill scripts, validation tests, state history tables.  
+> **Explicitly excluded:** Bridge writes, route cutovers, auth changes, ORM schema changes, UI changes.  
 > **Reference spec:** `docs/phase-1b-additive-schema-spec.md`
 
 ---
 
 ## What to build
 
-Seven SQL migration files, one preflight audit script, seven backfill scripts, and validation tests. Nothing else.
+Exactly:
+- **8 forward migration files** (7 blocker-resolution migrations + 1 state history tables migration)
+- **8 rollback migration files** (one per forward migration)
+- **1 preflight audit script** (11 check families, 22 sub-checks total)
+- **8 backfill scripts** (7 data backfills + 1 state history snapshot backfill)
+- **1 validation test file**
+
+Nothing else.
+
+### Complete file inventory
+
+**Forward migrations:**
+1. `20260402_lifecycle_parity_columns.sql`
+2. `20260402_approval_type_support.sql`
+3. `20260402_client_contact_fields.sql`
+4. `20260402_party_abstraction.sql`
+5. `20260402_finance_period_derivation.sql`
+6. `20260402_evidence_link_parity.sql`
+7. `20260402_stale_item_tracking.sql`
+8. `20260402_state_history_tables.sql`
+
+**Rollback migrations:**
+1. `20260402_lifecycle_parity_columns_rollback.sql`
+2. `20260402_approval_type_support_rollback.sql`
+3. `20260402_client_contact_fields_rollback.sql`
+4. `20260402_party_abstraction_rollback.sql`
+5. `20260402_finance_period_derivation_rollback.sql`
+6. `20260402_evidence_link_parity_rollback.sql`
+7. `20260402_stale_item_tracking_rollback.sql`
+8. `20260402_state_history_tables_rollback.sql`
+
+**Preflight audit:**
+- `20260402_preflight_audit.sql`
+
+**Backfill scripts (execution order):**
+1. `20260402_backfill_01_fiscal_periods.sql`
+2. `20260402_backfill_02_client_contacts.sql`
+3. `20260402_backfill_03_parties.sql`
+4. `20260402_backfill_04_lifecycle_columns.sql`
+5. `20260402_backfill_05_approval_lineage.sql`
+6. `20260402_backfill_06_evidence_sharepoint.sql`
+7. `20260402_backfill_07_finance_typed_dates.sql`
+8. `20260402_backfill_08_state_history.sql`
+
+**Validation tests:**
+- `qa/tests/unit/phase1b-schema-validation.test.ts`
+
+### Scope classification
+
+Migrations 1–7 and backfills 1–7 resolve the 7 Phase 1A provisional metrics (original Phase 1B scope). Migration 8 and backfill 08 are an **approved Phase 1B extension** that adds state history tables for full audit trail preservation. The state history tables are additive-only, create no dependencies for migrations 1–7, and can be rolled back independently.
 
 ---
 

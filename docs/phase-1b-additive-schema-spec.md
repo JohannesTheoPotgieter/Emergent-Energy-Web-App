@@ -1043,36 +1043,37 @@ WHERE NOT EXISTS (
 
 All migrations are independent and can run in any order, but the recommended sequence is:
 
-| Order | Migration | New objects | Risk |
-|---|---|---|---|
-| 1 | `20260402_lifecycle_parity_columns.sql` | 6 columns on `core.projects` | Minimal |
-| 2 | `20260402_approval_type_support.sql` | 11 columns on `documentation.document_approvals` | Minimal |
-| 3 | `20260402_client_contact_fields.sql` | 6 columns on `core.clients` | Minimal |
-| 4 | `20260402_party_abstraction.sql` | 1 new table `core.parties` + 2 indexes | Minimal |
-| 5 | `20260402_finance_period_derivation.sql` | 8 columns on 2 tables + 1 new table `finance.fiscal_periods` + 3 indexes | Low |
-| 6 | `20260402_evidence_link_parity.sql` | 5 columns on `document_versions` + 1 partial index | Low |
-| 7 | `20260402_stale_item_tracking.sql` | 6 columns across tables + 1 new table `internal.sync_watermarks` + 1 index | Minimal |
+| Order | Migration | New objects | Risk | Scope |
+|---|---|---|---|---|
+| 1 | `20260402_lifecycle_parity_columns.sql` | 6 columns on `core.projects` | Minimal | Original |
+| 2 | `20260402_approval_type_support.sql` | 11 columns on `documentation.document_approvals` | Minimal | Original |
+| 3 | `20260402_client_contact_fields.sql` | 6 columns on `core.clients` | Minimal | Original |
+| 4 | `20260402_party_abstraction.sql` | 1 new table `core.parties` + 2 indexes | Minimal | Original |
+| 5 | `20260402_finance_period_derivation.sql` | 12 columns on 2 tables + 1 new table `finance.fiscal_periods` + 3 indexes | Low | Original |
+| 6 | `20260402_evidence_link_parity.sql` | 5 columns on `document_versions` + 1 partial index | Low | Original |
+| 7 | `20260402_stale_item_tracking.sql` | 6 columns across tables + 1 new table `internal.sync_watermarks` + 1 index | Minimal | Original |
+| 8 | `20260402_state_history_tables.sql` | 4 new tables + 5 indexes | Minimal | Extension |
 
-**Total new objects:** 41 columns, 7 new tables, 13 indexes.  
+**Scope note:** Migrations 1–7 resolve Phase 1A provisional metrics (original Phase 1B scope). Migration 8 is an approved Phase 1B extension for full audit trail preservation. It is additive-only and can be rolled back independently.
+
+**Total new objects:** 46 columns, 7 new tables, 13 indexes.  
 **Total legacy objects modified:** 0.  
 **Total existing promoted columns modified:** 0.
 
-| Order | Migration | New objects | Risk |
-|---|---|---|---|
-| 8 | `20260402_state_history_tables.sql` | 4 new tables (`core.project_state_history`, `documentation.approval_state_history`, `finance.cost_line_history`, `finance.revenue_line_history`) + 5 indexes | Minimal |
-
 ### Backfill Execution Order
 
-Backfills must run after all migrations. Order matters for FK resolution:
+Backfills must run after all 8 migrations. Order matters for FK resolution:
 
-1. `finance.fiscal_periods` backfill (no FK deps)
-2. `core.clients` contact fields backfill (no FK deps)
-3. `core.parties` backfill (no FK deps)
-4. `core.projects` lifecycle columns backfill (no FK deps)
-5. `documentation.document_approvals` backfill (depends on `core.projects` existing)
-6. `documentation.document_versions` SharePoint field enrichment (depends on `document_versions` rows existing from foundation backfill)
-7. `finance.cost_lines` / `finance.revenue_lines` typed dates + fiscal period derivation (depends on `finance.fiscal_periods`)
-8. State history tables (depends on all prior backfills — snapshots current state of all entities)
+| Order | Backfill file | Depends on |
+|---|---|---|
+| 1 | `20260402_backfill_01_fiscal_periods.sql` | No FK deps |
+| 2 | `20260402_backfill_02_client_contacts.sql` | No FK deps |
+| 3 | `20260402_backfill_03_parties.sql` | No FK deps |
+| 4 | `20260402_backfill_04_lifecycle_columns.sql` | No FK deps |
+| 5 | `20260402_backfill_05_approval_lineage.sql` | `core.projects` existing (backfill 04) |
+| 6 | `20260402_backfill_06_evidence_sharepoint.sql` | `document_versions` rows from foundation |
+| 7 | `20260402_backfill_07_finance_typed_dates.sql` | `finance.fiscal_periods` (backfill 01) |
+| 8 | `20260402_backfill_08_state_history.sql` | ALL prior backfills (snapshots current state) |
 
 ### Provisional-to-Resolved Mapping
 
@@ -1171,8 +1172,8 @@ At both levels:
 
 Before enabling ANY bridge write behavior, ALL of the following must be true:
 
-1. All 7 migrations applied successfully
-2. All 7 backfills completed with zero errors
+1. All 8 migrations applied successfully
+2. All 8 backfills completed with zero errors
 3. All HARD STOP preflight checks pass; all SOFT STOP checks reviewed and signed off
 4. Phase 1A reconciliation endpoint (`/api/admin/reconciliation/phase-1a?compare=1`) returns `outcome: "pass"` for all 6 domains with NO provisional notes
 5. `internal.sync_watermarks` table populated with baseline readings
