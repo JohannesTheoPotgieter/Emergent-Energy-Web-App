@@ -12,6 +12,8 @@ import path from "path";
 import { sanitizeFilename, allowedFileFilter } from "../lib/upload-security";
 import { parseTrackerFile, applyFontColors } from "../excelParser";
 import { getStartupFlags } from "../startup-flags";
+import { getFeatureFlags } from "../lib/feature-flags";
+import { buildPhase1AReconciliationReport } from "../services/promoted-read-compat";
 
 const router = Router();
 
@@ -890,6 +892,57 @@ router.get("/api/admin/migration-verify", requireAuth, requireAdmin, async (_req
     res.json(report);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/api/admin/reconciliation/phase-1a", requireAuth, requireAdmin, async (req: Request, res: Response) => {
+  try {
+    const compareMode = req.query.compare === "1" || req.query.compare === "true";
+    const flags = await getFeatureFlags([
+      "promoted_phase1a_reconciliation_endpoints",
+      "promoted_phase1a_project_read_parity_diagnostics",
+      "promoted_phase1a_lifecycle_gates_read_diagnostics",
+      "promoted_phase1a_approvals_read_diagnostics",
+      "promoted_phase1a_finance_read_diagnostics",
+      "promoted_phase1a_deliverables_read_diagnostics",
+      "promoted_phase1a_party_contact_read_diagnostics",
+    ]);
+    if (!flags.promoted_phase1a_reconciliation_endpoints && !compareMode) {
+      return res.status(403).json({
+        error: "feature_flag_disabled",
+        message: "Phase 1A reconciliation endpoint is disabled. Enable promoted_phase1a_reconciliation_endpoints or use compare mode.",
+      });
+    }
+
+    const report = await buildPhase1AReconciliationReport();
+    const requestedDomains = report.checks.filter((check) => {
+      if (check.domain === "project_reads") return flags.promoted_phase1a_project_read_parity_diagnostics || compareMode;
+      if (check.domain === "lifecycle_gates") return flags.promoted_phase1a_lifecycle_gates_read_diagnostics || compareMode;
+      if (check.domain === "approvals") return flags.promoted_phase1a_approvals_read_diagnostics || compareMode;
+      if (check.domain === "finance") return flags.promoted_phase1a_finance_read_diagnostics || compareMode;
+      if (check.domain === "deliverables") return flags.promoted_phase1a_deliverables_read_diagnostics || compareMode;
+      if (check.domain === "party_contacts") return flags.promoted_phase1a_party_contact_read_diagnostics || compareMode;
+      return false;
+    });
+
+    res.json({
+      generatedAt: report.generatedAt,
+      diagnosticsMode: {
+        compareMode,
+        flags,
+      },
+      checks: requestedDomains.map((check) => ({
+        domain: check.domain,
+        status: check.status,
+        legacyCount: check.legacyCount,
+        promotedCount: check.promotedCount,
+        deltaCount: check.deltaCount,
+        mismatchCategories: check.mismatchCategories,
+        notes: check.notes,
+      })),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message || "Failed to generate Phase 1A reconciliation report" });
   }
 });
 
