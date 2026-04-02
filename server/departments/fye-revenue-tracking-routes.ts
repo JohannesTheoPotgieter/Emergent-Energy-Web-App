@@ -69,6 +69,7 @@ import {
 import { eq, and, sql, desc, isNull, gte } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { extractMonthKey, normalizeProjectName, isCosRealised, currentMonthKey } from "../lib/calculations/financeUtils";
+import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 
 const router = Router();
 
@@ -191,7 +192,7 @@ function buildCosRatioRevenue(
     if (exp.rowType !== "item" && exp.rowType != null) continue;
     const amount = safeNum(exp.expenseActualTotal);
     if (amount === 0) continue;
-    const mk = extractMonthKey(exp.expenseInvoicedDate);
+    const mk = extractMonthKey(getCosEffectiveDateAndSource(exp).date);
     if (!mk || !monthKeys.includes(mk)) continue;
 
     const pName = normalizeProjectName(exp.projectName);
@@ -219,7 +220,7 @@ function buildCosByMonth(
     if (exp.rowType !== "item" && exp.rowType != null) continue;
     const amount = safeNum(exp.expenseActualTotal);
     if (amount === 0) continue;
-    const mk = extractMonthKey(exp.expenseInvoicedDate);
+    const mk = extractMonthKey(getCosEffectiveDateAndSource(exp).date);
     if (!mk || !monthKeys.includes(mk)) continue;
     cosByMonth[mk] = (cosByMonth[mk] || 0) + amount;
   }
@@ -777,7 +778,7 @@ router.get(
         const amt = safeNum(exp.expenseActualTotal);
         if (amt === 0) continue;
         if (!exp.expenseInvoicedDate) continue;
-        const mk = extractMonthKey(exp.expenseInvoicedDate);
+        const mk = extractMonthKey(getCosEffectiveDateAndSource(exp).date);
         if (!mk || mk < fyeStart || mk > effectiveEnd) continue;
         // Only future months are excluded; realised check handles confirmation
         if (mk > curMk) continue;
@@ -1375,7 +1376,7 @@ async function collectSnapshotData(fye: number) {
     const e = expensesByProject.get(pName)!;
     const amt = safeNum(exp.expenseActualTotal);
     e.budget += amt;
-    if (exp.expenseInvoicedDate) { const mk = extractMonthKey(exp.expenseInvoicedDate); if (mk && mk >= fyeStart && mk <= fyeEnd) e.actual += amt; }
+    if (exp.expenseInvoicedDate) { const mk = extractMonthKey(getCosEffectiveDateAndSource(exp).date); if (mk && mk >= fyeStart && mk <= fyeEnd) e.actual += amt; }
   }
 
   const projectRows = activeProjects.map((p: any) => {

@@ -14,6 +14,7 @@ import { aggregateCOS, aggregateCOSByProject } from "../lib/calculations/cosAggr
 import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from "../lib/calculations/cashflow";
 import { runDataQualityChecks } from "../lib/calculations/dataQuality";
 import { computeMonthlyBuckets } from "../lib/calculations/scenarioResolver";
+import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
@@ -779,12 +780,12 @@ export function registerCosControlRoutes(app: Express) {
         const actualAmt = parseFloat(e.expenseActualTotal || '0');
         const budgetAmt = parseFloat(e.budgetTotal || '0');
 
-        const dateStr = e.expenseInvoicedDate || e.expensePaymentDate;
-        if (!dateStr && actualAmt === 0 && budgetAmt === 0) continue;
+        const { date: cosDate } = getCosEffectiveDateAndSource(e);
+        if (!cosDate && actualAmt === 0 && budgetAmt === 0) continue;
 
         let monthKey = '';
-        if (dateStr) {
-          const dateMatch = (dateStr as string).match(/^(\d{4})-(\d{2})/);
+        if (cosDate) {
+          const dateMatch = String(cosDate).match(/^(\d{4})-(\d{2})/);
           if (dateMatch) {
             monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
           }
