@@ -12,6 +12,7 @@ import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClas
 import { isCosRealised } from "../lib/calculations/financeUtils";
 import { buildCanonicalResolver } from "../services/project-summary-helpers";
 import { getProjectHeaderKpis, recomputeHeaderKpiProjectionForActiveProjects } from "../services/project-header-kpi-service";
+import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 
 const router = Router();
 
@@ -1346,11 +1347,17 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       for (const inflow of projectInflows) {
         if (inflow.milestoneAmount) {
           const amt = parseFloat(inflow.milestoneAmount) || 0;
-          const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
-          const paymentNotReceived = !inflow.paymentReceivedDate || inflow.paymentReceivedDate.trim() === '';
           const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;
-          const dateInPast = dateToCheck && /^\d{4}-\d{2}-\d{2}/.test(dateToCheck) && dateToCheck < today;
-          if (hasInvoiceNum && paymentNotReceived && dateInPast && amt > 0) {
+          const arState = evaluateRevenueArStatus({
+            status: inflow.lineStatus || inflow.status || inflow.computedState || null,
+            manualInBank: inflow.inBank,
+            paymentReceivedDate: inflow.paymentReceivedDate,
+            dueDate: dateToCheck,
+            invoiceNumber: inflow.milestoneInvoiceNumber,
+            amount: amt,
+            today,
+          });
+          if (arState.isOverdue) {
             revenueOutstanding += amt;
             projRevOutstanding += amt;
           }
@@ -1641,11 +1648,17 @@ router.get("/api/dashboard/high-priority", requireAuth, async (req, res) => {
     for (const inflow of allInflows) {
       if (inflow.milestoneAmount) {
         const amt = parseFloat(inflow.milestoneAmount) || 0;
-        const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
-        const paymentNotReceived = !inflow.paymentReceivedDate || inflow.paymentReceivedDate.trim() === '';
         const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;
-        const dateInPast = dateToCheck && /^\d{4}-\d{2}-\d{2}/.test(dateToCheck) && dateToCheck < today;
-        if (amt > 0 && hasInvoiceNum && paymentNotReceived && dateInPast) {
+        const arState = evaluateRevenueArStatus({
+          status: inflow.lineStatus || inflow.status || inflow.computedState || null,
+          manualInBank: inflow.inBank,
+          paymentReceivedDate: inflow.paymentReceivedDate,
+          dueDate: dateToCheck,
+          invoiceNumber: inflow.milestoneInvoiceNumber,
+          amount: amt,
+          today,
+        });
+        if (arState.isOverdue) {
           revenueOutstanding.push({
             id: inflow.id,
             projectName: inflow.projectName,
