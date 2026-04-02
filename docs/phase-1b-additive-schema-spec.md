@@ -1053,9 +1053,13 @@ All migrations are independent and can run in any order, but the recommended seq
 | 6 | `20260402_evidence_link_parity.sql` | 5 columns on `document_versions` + 1 partial index | Low |
 | 7 | `20260402_stale_item_tracking.sql` | 6 columns across tables + 1 new table `internal.sync_watermarks` + 1 index | Minimal |
 
-**Total new objects:** 37 columns, 3 new tables, 7 indexes.  
+**Total new objects:** 41 columns, 7 new tables, 13 indexes.  
 **Total legacy objects modified:** 0.  
 **Total existing promoted columns modified:** 0.
+
+| Order | Migration | New objects | Risk |
+|---|---|---|---|
+| 8 | `20260402_state_history_tables.sql` | 4 new tables (`core.project_state_history`, `documentation.approval_state_history`, `finance.cost_line_history`, `finance.revenue_line_history`) + 5 indexes | Minimal |
 
 ### Backfill Execution Order
 
@@ -1068,6 +1072,7 @@ Backfills must run after all migrations. Order matters for FK resolution:
 5. `documentation.document_approvals` backfill (depends on `core.projects` existing)
 6. `documentation.document_versions` SharePoint field enrichment (depends on `document_versions` rows existing from foundation backfill)
 7. `finance.cost_lines` / `finance.revenue_lines` typed dates + fiscal period derivation (depends on `finance.fiscal_periods`)
+8. State history tables (depends on all prior backfills — snapshots current state of all entities)
 
 ### Provisional-to-Resolved Mapping
 
@@ -1107,6 +1112,7 @@ ROW_NUMBER() OVER (
 - **Does NOT apply to:** Transaction/event records (approvals, cost_lines, revenue_lines) — these are individual records, not snapshots.
 - **Does NOT apply to:** Tables where the FK join key is already UNIQUE (e.g., `core.projects.legacy_project_info_id` is UNIQUE, so joins through it are inherently 1:1).
 - **DISTINCT is NOT an acceptable substitute.** DISTINCT hides row multiplication silently. Use explicit ROW_NUMBER() ranking.
+- **Full history is preserved.** All rows from legacy sources are stored in history tables (`core.project_state_history`, `documentation.approval_state_history`, `finance.cost_line_history`, `finance.revenue_line_history`). The latest row per entity is marked `is_current = true`. Reconciliation and summaries use only `is_current = true` rows. Full history is available for audit.
 - **Preflight check PF-8b** detects ambiguous rankings (rows tied on all tiebreaker columns). PF-8a reports (INFO) the count of projects with multiple historical rows for visibility.
 
 #### Rule 2: Opening Balance Separation
