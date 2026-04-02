@@ -15,6 +15,36 @@ let db: any;
 let dbMode: 'sqlite' | 'postgres';
 let dbConfig: typeof config;
 let isInitialized = false;
+let postgresPool: pg.Pool | null = null;
+
+declare global {
+  // Prevent duplicate pool creation under dev hot-reload in the same Node.js process.
+  // eslint-disable-next-line no-var
+  var __emergentPostgresPool: pg.Pool | undefined;
+}
+
+function getOrCreatePostgresPool(connectionString: string): pg.Pool {
+  if (!globalThis.__emergentPostgresPool) {
+    const pool = new pg.Pool({
+      connectionString,
+      connectionTimeoutMillis: 10000,
+      query_timeout: 30000,
+      idleTimeoutMillis: 30000,
+      max: 10,
+      allowExitOnIdle: false,
+      keepAlive: true,
+      keepAliveInitialDelayMillis: 10000,
+    });
+
+    pool.on("error", (err) => {
+      console.error("[DB] Pool background error (non-fatal):", err instanceof Error ? err.message : String(err));
+    });
+
+    globalThis.__emergentPostgresPool = pool;
+  }
+
+  return globalThis.__emergentPostgresPool;
+}
 
 function attachSqliteExecuteCompat(dbInstance: any) {
   if (!dbInstance || typeof dbInstance.execute === "function") {
@@ -83,20 +113,8 @@ async function initializeDatabase(): Promise<void> {
       
       if (isConnectable) {
         // Use Postgres
-        const pool = new pg.Pool({
-          connectionString: config.connectionString,
-          connectionTimeoutMillis: 10000,
-          query_timeout: 30000,
-          idleTimeoutMillis: 10000,
-          max: 10,
-          allowExitOnIdle: false,
-          keepAlive: true,
-          keepAliveInitialDelayMillis: 10000,
-        });
-        // Robust pool error handling for Replit - prevent unhandled errors from crashing
-        pool.on('error', (err) => {
-          console.error('[DB] Pool background error (non-fatal):', (err instanceof Error ? err.message : String(err)));
-        });
+        const pool = getOrCreatePostgresPool(config.connectionString);
+        postgresPool = pool;
         db = drizzle(pool, { schema });
         dbMode = 'postgres';
         dbConfig = config;
@@ -195,21 +213,29 @@ async function initializeDatabase(): Promise<void> {
 
 function testPostgresConnection(connectionString: string, timeoutMs: number = 10000): Promise<boolean> {
   return new Promise((resolve) => {
-    const pool = new pg.Pool({ 
+    const client = new pg.Client({
       connectionString, 
       connectionTimeoutMillis: timeoutMs,
-      max: 1,
     });
     
     const timeout = setTimeout(() => {
-      pool.end().catch(() => {});
+      client.end().catch(() => {});
       resolve(false);
     }, timeoutMs);
     
-    pool.query('SELECT 1', (err) => {
-      clearTimeout(timeout);
-      pool.end().catch(() => {});
-      resolve(!err);
+    client.connect((connectErr) => {
+      if (connectErr) {
+        clearTimeout(timeout);
+        client.end().catch(() => {});
+        resolve(false);
+        return;
+      }
+
+      client.query('SELECT 1', (err) => {
+        clearTimeout(timeout);
+        client.end().catch(() => {});
+        resolve(!err);
+      });
     });
   });
 }
@@ -1229,4 +1255,8 @@ function getDbMode(): 'sqlite' | 'postgres' {
   return dbMode;
 }
 
-export { db, dbMode, dbConfig, initializeDatabase, getDbMode };
+function getPostgresPool(): pg.Pool | null {
+  return postgresPool;
+}
+
+export { db, dbMode, dbConfig, initializeDatabase, getDbMode, getPostgresPool };
