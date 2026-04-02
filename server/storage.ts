@@ -7,6 +7,7 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
+import { syncProject, snapshotProjectState, syncCostLine, syncRevenueLine } from "./bridge/bridge-writer";
 import {
   users, uploadMetadata, refreshLogs,
   projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
@@ -816,6 +817,9 @@ export class DatabaseStorage implements IStorage {
       .returning();
     if (updated) {
       await syncProjectSplitTables(id, fields, this.dbInstance);
+      // Phase 2 bridge write: mirror to core.projects (best-effort)
+      syncProject(updated as any).catch(() => {});
+      snapshotProjectState(id, fields, "bridge_write").catch(() => {});
     }
     return updated;
   }
@@ -1025,11 +1029,17 @@ export class DatabaseStorage implements IStorage {
         .where(eq(projectInfo.projectName, info.projectName))
         .returning();
       await syncProjectSplitTables(updated.id, updateFields, this.dbInstance);
+      // Phase 2 bridge write
+      syncProject(updated as any).catch(() => {});
+      snapshotProjectState(updated.id, updateFields, "bridge_write").catch(() => {});
       return updated;
     }
     const insertFields = { ...info, executionEnabled: false, updatedAt: new Date() };
     const [created] = await this.dbInstance.insert(projectInfo).values(insertFields).returning();
     await syncProjectSplitTablesAfterInsert(created.id, insertFields as any, this.dbInstance);
+    // Phase 2 bridge write
+    syncProject(created as any).catch(() => {});
+    snapshotProjectState(created.id, insertFields as any, "bridge_write").catch(() => {});
     return created;
   }
 
@@ -1217,6 +1227,15 @@ export class DatabaseStorage implements IStorage {
       sourceRow: e.rowNumber || null,
     }));
     const results = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
+    // Phase 2 bridge write: mirror bulk cost lines
+    for (const r of results) {
+      syncCostLine({
+        id: r.id, projectName: r.projectName, counterpartyName: r.counterpartyName,
+        description: r.description, amountExVat: r.amountExVat, invoiceNumber: r.invoiceNumber,
+        invoiceDate: r.invoiceDate, approvedDate: r.approvedDate, paidDate: r.paidDate,
+        status: r.costLineStatus, importRunId: r.importRunId,
+      }).catch(() => {});
+    }
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return results.map(r => adaptCostToExpense(r, r.projectName)) as any;
   }
@@ -1285,6 +1304,20 @@ export class DatabaseStorage implements IStorage {
       .where(eq(normalizedCostLines.id, canonicalId))
       .returning();
     if (!result[0]) return undefined;
+    // Phase 2 bridge write: mirror to finance.cost_lines
+    syncCostLine({
+      id: result[0].id,
+      projectName: result[0].projectName,
+      counterpartyName: result[0].counterpartyName,
+      description: result[0].description,
+      amountExVat: result[0].amountExVat,
+      invoiceNumber: result[0].invoiceNumber,
+      invoiceDate: result[0].invoiceDate,
+      approvedDate: result[0].approvedDate,
+      paidDate: result[0].paidDate,
+      status: result[0].costLineStatus,
+      importRunId: result[0].importRunId,
+    }).catch(() => {});
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return adaptCostToExpense(result[0], result[0].projectName) as any;
   }
@@ -1317,6 +1350,19 @@ export class DatabaseStorage implements IStorage {
       .where(eq(normalizedRevenueLines.id, canonicalId))
       .returning();
     if (!result[0]) return undefined;
+    // Phase 2 bridge write: mirror to finance.revenue_lines
+    syncRevenueLine({
+      id: result[0].id,
+      projectName: result[0].projectName,
+      milestoneName: result[0].milestoneName,
+      amountExVat: result[0].amountExVat,
+      invoiceNumber: result[0].invoiceNumber,
+      invoiceDate: result[0].invoiceDate,
+      expectedPaymentDate: result[0].expectedPaymentDate,
+      paidDate: result[0].paidDate,
+      status: result[0].revenueLineStatus,
+      importRunId: result[0].importRunId,
+    }).catch(() => {});
     const { adaptRevenueToInflow } = await import("./lib/data-merge");
     return adaptRevenueToInflow(result[0], result[0].projectName);
   }
@@ -1353,6 +1399,15 @@ export class DatabaseStorage implements IStorage {
       importRunId: 0,
     }));
     const results = await this.dbInstance.insert(normalizedRevenueLines).values(mapped).returning();
+    // Phase 2 bridge write: mirror bulk revenue lines
+    for (const r of results) {
+      syncRevenueLine({
+        id: r.id, projectName: r.projectName, milestoneName: r.milestoneName,
+        amountExVat: r.amountExVat, invoiceNumber: r.invoiceNumber,
+        invoiceDate: r.invoiceDate, expectedPaymentDate: r.expectedPaymentDate,
+        paidDate: r.paidDate, status: r.revenueLineStatus, importRunId: r.importRunId,
+      }).catch(() => {});
+    }
     const { adaptRevenueToInflow } = await import("./lib/data-merge");
     return results.map(r => adaptRevenueToInflow(r, r.projectName)) as any;
   }
