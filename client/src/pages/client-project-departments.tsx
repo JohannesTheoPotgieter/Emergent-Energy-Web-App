@@ -284,7 +284,7 @@ export default function ClientProjectDepartmentsPage() {
             icon={<Wrench className="h-5 w-5 text-blue-600" />}
             title="Engineering"
             color="border-t-blue-500"
-            ragStatus={healthSummary?.quality?.rag}
+            ragStatus={healthSummary?.schedule?.rag}
             metrics={[
               { label: "Progress", value: `${Math.round(engProgress)}%` },
               { label: "Tasks", value: `${engCompleted} / ${engTotal}` },
@@ -297,7 +297,7 @@ export default function ClientProjectDepartmentsPage() {
             icon={<TrendingUp className="h-5 w-5 text-emerald-600" />}
             title="Project Development"
             color="border-t-emerald-500"
-            ragStatus={healthSummary?.cost?.rag}
+            ragStatus={healthSummary?.overall?.rag}
             metrics={[
               { label: "Contract", value: contractValue > 0 ? `R ${(contractValue / 1000000).toFixed(1)}M` : "—" },
               { label: "Revenue Realised", value: `${Math.round(revenueRealisedPct)}%` },
