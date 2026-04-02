@@ -196,7 +196,7 @@ export const TOP_SECTIONS: TopSection[] = [
     ]),
     secondary: [
       { label: "Control Center", path: "/admin/control-center" },
-      { label: "Users & Roles", path: "/admin/roles" },
+      { label: "Roles & Permissions", path: "/admin/roles" },
       { label: "Smart Import", path: "/admin/smart-import" },
       { label: "Audit Log", path: "/admin/activity-log" },
       { label: "Processes & SOPs", path: "/ee-info" },
