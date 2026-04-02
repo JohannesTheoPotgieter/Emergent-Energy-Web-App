@@ -108,12 +108,16 @@ Add to `finance.cost_lines`:
 - `approved_date_typed DATE`
 - `paid_date_typed DATE`
 - `fiscal_period_id INTEGER`
+- `is_opening_balance BOOLEAN NOT NULL DEFAULT false`
+- `legacy_row_type TEXT`
 
 Add to `finance.revenue_lines`:
 - `invoice_date_typed DATE`
 - `expected_payment_date_typed DATE`
 - `paid_date_typed DATE`
 - `fiscal_period_id INTEGER`
+- `is_opening_balance BOOLEAN NOT NULL DEFAULT false`
+- `legacy_row_type TEXT`
 
 Create `finance.fiscal_periods`:
 ```
@@ -190,7 +194,7 @@ Create file: `migrations/20260402_preflight_audit.sql`
 
 This is NOT a migration. It is a read-only diagnostic script that outputs PASS/FAIL for each check. It must be run manually before any migration.
 
-Implement all 7 preflight checks from the spec's "Mandatory Preflight Audit Pack" section:
+Implement all 11 preflight checks from the spec's "Mandatory Preflight Audit Pack" and "Cross-Cutting Rules" sections:
 1. Duplicate approval lineage candidates
 2. Orphan FK mappings (4 sub-queries)
 3. Unparseable finance dates (2 sub-queries)
@@ -198,8 +202,12 @@ Implement all 7 preflight checks from the spec's "Mandatory Preflight Audit Pack
 5. Unresolved project FK mappings (2 sub-queries)
 6. Existing promoted rows that collide with backfill assumptions (4 sub-queries)
 7. Orphan legacy files (evidence parity)
+8. Ambiguous current-state rows after deterministic ranking (INFO for history, HARD STOP for tied rankings)
+9. Opening balance detection and classification audit (SOFT STOP for detected OBs, HARD STOP for multiple OBs per project) — must include detail reports listing every classified row
+10. Join multiplication detection on finance lines (duplicate legacy IDs, ambiguous project names)
+11. Aggregate inflation detection — row count AND amount, at BOTH per-project AND portfolio/aggregate levels
 
-Format: Each check should be a standalone `SELECT` that can be run independently. Add a comment header with the check name, pass condition, and severity level.
+Format: Each check should be a standalone `SELECT` that can be run independently. Add a comment header with the check name, pass condition, and severity level. Opening balance detail reports (PF-9a-detail, PF-9b-detail) must list every row classified as opening balance for manual review.
 
 ---
 
@@ -220,6 +228,7 @@ Insert counterparties and clients into `core.parties`. Two separate `INSERT ... 
 
 ### `20260402_backfill_04_lifecycle_columns.sql`
 Update `core.projects` lifecycle fields from `public.project_execution_state` via `legacy_project_info_id = project_id` join. Filter `deleted_at IS NULL`.
+**CRITICAL:** Use `ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC) = 1` to select only the single latest row per project. Do NOT use DISTINCT. Multiple historical rows per project are acceptable in the source; only one must be applied to the promoted table.
 
 ### `20260402_backfill_05_approval_lineage.sql`
 Insert into `documentation.document_approvals` from `public.approvals`. Join keys:
@@ -233,12 +242,15 @@ Join key: `dv_promoted.legacy_deliverable_file_id = df.id` (NOT `df.version_id`)
 Guard: `WHERE dv_promoted.site_id IS NULL`.
 
 ### `20260402_backfill_07_finance_typed_dates.sql`
-Four steps in order:
+Six steps in order:
+0a. Classify opening balance rows on `cost_lines` from `program_expense.row_type` pattern matching. Flag `is_opening_balance = true`. Backfill `legacy_row_type` for all rows.
+0b. Classify opening balance rows on `revenue_lines` from `program_inflows.milestone_name` pattern matching.
+0c. **AUDIT REPORT** — Output (SELECT, read-only) all rows classified as `is_opening_balance = true` for manual review. Operator MUST review before proceeding.
 1. Parse TEXT dates to typed DATE on `finance.cost_lines` (regex guard for `^\d{4}-\d{2}-\d{2}`)
 2. Parse TEXT dates to typed DATE on `finance.revenue_lines`
-3. Derive `fiscal_period_id` on `cost_lines` from `finance.fiscal_periods` date range
-4. Derive `fiscal_period_id` on `revenue_lines` from `finance.fiscal_periods` date range
-Guard all with `WHERE ... IS NULL` for idempotency.
+3. Derive `fiscal_period_id` on `cost_lines` from `finance.fiscal_periods` date range. **EXCLUDE opening balance rows** (`AND is_opening_balance = false`).
+4. Derive `fiscal_period_id` on `revenue_lines` from `finance.fiscal_periods` date range. **EXCLUDE opening balance rows** (`AND is_opening_balance = false`).
+Guard all UPDATE steps with `WHERE ... IS NULL` for idempotency. Opening balance rows retain `fiscal_period_id = NULL` — they are structurally excluded from period movement totals.
 
 ---
 
@@ -271,6 +283,42 @@ Use the project's existing test patterns (vitest, `db.execute(sql\`...\`)` for r
 **Group 4: Reconciliation integration tests**
 - After all backfills, run `buildPhase1AReconciliationReport()` and assert all 6 domains return `outcome: "pass"`
 - Assert no PROVISIONAL notes remain in the `notes` arrays (except stale-lag which should say "no bridge writes active")
+
+---
+
+## Cross-Cutting Rules (Non-Negotiable)
+
+These rules apply to ALL migrations, backfills, reconciliation queries, and any future code that touches promoted schema data.
+
+### Rule 1: One Current Row Per Project
+
+Where the target concept is a current-state record (not an event log or transaction), only one row per project is allowed. Use:
+
+```sql
+ROW_NUMBER() OVER (
+  PARTITION BY project_id
+  ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+) = 1
+```
+
+- Applies to: `project_execution_state` (lifecycle backfill), any future current-state source.
+- Does NOT apply to: Transaction records (approvals, cost_lines, revenue_lines).
+- DISTINCT is NOT an acceptable substitute. It hides row multiplication silently.
+
+### Rule 2: Opening Balance Separation
+
+Opening balances must never be mixed into normal transactional movement totals.
+
+- Classification is heuristic (text-pattern matching). Every classified row must appear in the audit report.
+- `is_opening_balance = true` rows are excluded from `fiscal_period_id` derivation.
+- Reconciliation must separate: opening balance, period movement, closing balance.
+- Ambiguous rows default to transaction. The audit report exists to catch misclassification.
+
+### Rule 3: Inflation Prevention
+
+All aggregate checks must cover:
+- Row-count inflation AND amount inflation
+- Per-project level AND portfolio/aggregate level
 
 ---
 

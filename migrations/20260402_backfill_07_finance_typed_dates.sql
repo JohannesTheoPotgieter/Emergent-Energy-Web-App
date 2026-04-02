@@ -41,6 +41,26 @@ WHERE rl.legacy_program_inflow_id = pi.id
   AND LOWER(COALESCE(pi.milestone_name, '')) IN ('opening balance', 'balance forward', 'brought forward', 'ob')
   AND rl.is_opening_balance = false;
 
+-- Step 0c: AUDIT REPORT — Output all rows classified as opening balance.
+-- This is a SELECT (read-only). It produces a reviewable report of every row
+-- that the heuristic classified as is_opening_balance = true.
+-- Operator MUST review this output before proceeding to Steps 1-4.
+-- Any row incorrectly classified should be manually corrected before continuing.
+-- Rows NOT listed here are treated as normal transactions.
+SELECT 'OPENING_BALANCE_AUDIT_COST_LINES' AS report_type,
+       cl.id, cl.project_id, cl.project_name_snapshot, cl.legacy_row_type,
+       cl.amount_ex_vat, cl.invoice_date, cl.description, cl.counterparty_name
+FROM finance.cost_lines cl
+WHERE cl.is_opening_balance = true
+ORDER BY cl.project_id, cl.id;
+
+SELECT 'OPENING_BALANCE_AUDIT_REVENUE_LINES' AS report_type,
+       rl.id, rl.project_id, rl.project_name_snapshot,
+       rl.amount_ex_vat, rl.invoice_date, rl.milestone_name
+FROM finance.revenue_lines rl
+WHERE rl.is_opening_balance = true
+ORDER BY rl.project_id, rl.id;
+
 -- Step 1: Parse TEXT dates into typed DATE columns (cost lines)
 UPDATE finance.cost_lines
 SET
