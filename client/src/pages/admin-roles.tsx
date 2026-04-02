@@ -388,6 +388,7 @@ function RolesControlCenter() {
         sections: roleSections,
         entityPermissions: currentEp,
       },
+      failOpenForUnknown: false,
     }).allowed,
     allowedSectionKeys: Array.from(enabledSectionKeys),
     disabledSubPages,
