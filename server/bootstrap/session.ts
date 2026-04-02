@@ -1,9 +1,8 @@
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import MemoryStore from "memorystore";
-import pg from "pg";
 import type { Express } from "express";
-import { dbMode, dbConfig } from "../db";
+import { dbMode, dbConfig, getPostgresPool } from "../db";
 type LoggerFn = (message: string, source?: string) => void;
 
 export type SessionBootstrapOptions = {
@@ -21,7 +20,10 @@ export function configureSession(options: SessionBootstrapOptions): void {
 
   if (dbMode === "postgres" && dbConfig.connectionString) {
     const PgSession = connectPgSimple(session);
-    const pool = new pg.Pool({ connectionString: dbConfig.connectionString });
+    const pool = getPostgresPool();
+    if (!pool) {
+      throw new Error("[Session] PostgreSQL mode is active but the shared DB pool is not initialized.");
+    }
 
     if (startupSchemaRepairEnabled) {
       log("Session schema auto-create enabled (startup schema repair is on)");
