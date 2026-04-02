@@ -95,6 +95,8 @@ import {
   listProjectInfoFromPromotedCoreCompat,
   listClientsFromPromotedCoreCompat,
   listProjectDetailFromPromotedCoreCompat,
+  listCostLinesFromPromotedCompat,
+  listRevenueLinesFromPromotedCompat,
   buildWorkItemSummaryDiagnostics,
   compareProjectDetailMasterReadiness,
   compareImportsGovernanceReadiness,
@@ -3238,12 +3240,11 @@ export async function registerRoutes(
 
   app.get("/api/project-info", requireAuth, async (req, res) => {
     try {
-      const usePromotedRead = await getFeatureFlag("promoted_core_projects_read");
+      // Full spine: always read from promoted schema (with legacy fallback)
       const compareMode = req.query.compare === "1" || req.query.compare === "true";
+      const usePromotedRead = true;
 
-      const info = usePromotedRead
-        ? await listProjectInfoFromPromotedCoreCompat()
-        : await storage.getAllProjectInfo();
+      const info = await listProjectInfoFromPromotedCoreCompat();
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareCoreProjectsReadiness();
@@ -3271,22 +3272,11 @@ export async function registerRoutes(
 
   app.get("/api/project-detail-master", requireAuth, async (req, res) => {
     try {
-      const usePromotedRead = await getFeatureFlag("promoted_core_project_detail_read");
+      // Full spine: always read from promoted schema
+      const usePromotedRead = true;
       const compareMode = req.query.compare === "1" || req.query.compare === "true";
 
-      const detailRows = usePromotedRead
-        ? await listProjectDetailFromPromotedCoreCompat()
-        : (await storage.getAllProjectInfo()).map((row: any) => ({
-            id: row.id,
-            projectName: row.projectName,
-            phase: row.phase ?? null,
-            ragStatus: row.ragStatus ?? null,
-            ragComment: row.ragComment ?? null,
-            clientId: row.clientId ?? null,
-            clientName: null,
-            portfolioMembership: [],
-            teamMembers: [],
-          }));
+      const detailRows = await listProjectDetailFromPromotedCoreCompat();
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareProjectDetailMasterReadiness();
@@ -3553,12 +3543,11 @@ export async function registerRoutes(
 
   app.get("/api/clients", requireAuth, async (req, res) => {
     try {
-      const usePromotedRead = await getFeatureFlag("promoted_core_clients_read");
+      // Full spine: always read from promoted schema (with legacy fallback)
+      const usePromotedRead = true;
       const compareMode = req.query.compare === "1" || req.query.compare === "true";
 
-      const allClients = usePromotedRead
-        ? await listClientsFromPromotedCoreCompat()
-        : await db.select().from(clients).orderBy(asc(clients.name));
+      const allClients = await listClientsFromPromotedCoreCompat();
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareCoreClientsReadiness();

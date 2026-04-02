@@ -48,70 +48,50 @@ async function logBridgeError(domain: string, entityId: number | string, error: 
 // Project bridge: project_info → core.projects
 // ---------------------------------------------------------------------------
 
-export async function syncProject(projectInfo: {
-  id: number;
-  projectName?: string | null;
-  clientId?: number | null;
-  phase?: string | null;
-  ragStatus?: string | null;
-  ragComment?: string | null;
-  executionGateStatus?: string | null;
-  executionGateReason?: string | null;
-  archivedStatus?: string | null;
-  pmUserId?: number | null;
-  pdUserId?: number | null;
-  currentStageCode?: string | null;
-  gateStatus?: string | null;
-  gateReadinessPct?: number | string | null;
-  phaseUpdatedAt?: string | Date | null;
-  signedStatus?: string | null;
-  executionPhase?: string | null;
-}): Promise<BridgeResult> {
+export async function syncProject(p: Record<string, any> & { id: number }): Promise<BridgeResult> {
   try {
+    // Full-spine sync: pass through all columns the app writes.
+    // Uses a generic UPDATE SET approach to avoid maintaining a huge INSERT.
     await db.execute(sql`
-      INSERT INTO core.projects (
-        id, legacy_project_info_id, project_name, client_id,
-        phase, rag_status, rag_comment,
-        execution_gate_status, execution_gate_reason,
-        archived_status, pm_user_id, pd_user_id,
-        current_stage_code, gate_status, gate_readiness_pct,
-        phase_updated_at, signed_status, execution_phase,
-        last_synced_at, updated_at, source_table
-      ) VALUES (
-        ${projectInfo.id}, ${projectInfo.id},
-        ${projectInfo.projectName ?? null}, ${projectInfo.clientId ?? null},
-        ${projectInfo.phase ?? null}, ${projectInfo.ragStatus ?? null}, ${projectInfo.ragComment ?? null},
-        ${projectInfo.executionGateStatus ?? null}, ${projectInfo.executionGateReason ?? null},
-        ${projectInfo.archivedStatus ?? null}, ${projectInfo.pmUserId ?? null}, ${projectInfo.pdUserId ?? null},
-        ${projectInfo.currentStageCode ?? null}, ${projectInfo.gateStatus ?? null},
-        ${projectInfo.gateReadinessPct != null ? Number(projectInfo.gateReadinessPct) : null},
-        ${projectInfo.phaseUpdatedAt ? new Date(String(projectInfo.phaseUpdatedAt)) : null},
-        ${projectInfo.signedStatus ?? null}, ${projectInfo.executionPhase ?? null},
-        NOW(), NOW(), 'public.project_info'
-      )
-      ON CONFLICT (id) DO UPDATE SET
-        project_name = EXCLUDED.project_name,
-        client_id = EXCLUDED.client_id,
-        phase = EXCLUDED.phase,
-        rag_status = EXCLUDED.rag_status,
-        rag_comment = EXCLUDED.rag_comment,
-        execution_gate_status = EXCLUDED.execution_gate_status,
-        execution_gate_reason = EXCLUDED.execution_gate_reason,
-        archived_status = EXCLUDED.archived_status,
-        pm_user_id = EXCLUDED.pm_user_id,
-        pd_user_id = EXCLUDED.pd_user_id,
-        current_stage_code = EXCLUDED.current_stage_code,
-        gate_status = EXCLUDED.gate_status,
-        gate_readiness_pct = EXCLUDED.gate_readiness_pct,
-        phase_updated_at = EXCLUDED.phase_updated_at,
-        signed_status = EXCLUDED.signed_status,
-        execution_phase = EXCLUDED.execution_phase,
+      UPDATE core.projects SET
+        project_name = COALESCE(${p.projectName ?? null}, project_name),
+        client_id = ${p.clientId ?? null},
+        phase = ${p.phase ?? null},
+        rag_status = ${p.ragStatus ?? null},
+        rag_comment = ${p.ragComment ?? null},
+        execution_gate_status = ${p.executionGateStatus ?? null},
+        execution_gate_reason = ${p.executionGateReason ?? null},
+        archived_status = ${p.archivedStatus ?? null},
+        pm_user_id = ${p.pmUserId ?? null},
+        pd_user_id = ${p.pdUserId ?? null},
+        current_stage_code = ${p.currentStageCode ?? null},
+        gate_status = ${p.gateStatus ?? null},
+        signed_status = ${p.signedStatus ?? null},
+        execution_phase = ${p.executionPhase ?? null},
+        size_kwp = COALESCE(${p.sizeKwp ?? null}, size_kwp),
+        contract_value = COALESCE(${p.contractValue ?? null}, contract_value),
+        is_active = COALESCE(${p.isActive ?? null}, is_active),
+        execution_enabled = COALESCE(${p.executionEnabled ?? null}, execution_enabled),
+        signed_date = COALESCE(${p.signedDate ?? null}, signed_date),
+        signed_document_link = COALESCE(${p.signedDocumentLink ?? null}, signed_document_link),
+        excel_tracker_link = COALESCE(${p.excelTrackerLink ?? null}, excel_tracker_link),
+        cp_signed = COALESCE(${p.cpSigned ?? null}, cp_signed),
+        cp_signed_date = COALESCE(${p.cpSignedDate ?? null}, cp_signed_date),
+        cp_signed_by_user_id = COALESCE(${p.cpSignedByUserId ?? null}, cp_signed_by_user_id),
+        cp_evidence_type = COALESCE(${p.cpEvidenceType ?? null}, cp_evidence_type),
+        cp_evidence_ref = COALESCE(${p.cpEvidenceRef ?? null}, cp_evidence_ref),
+        pm_task_pack_created = COALESCE(${p.pmTaskPackCreated ?? null}, pm_task_pack_created),
+        eng_post_cp_task_pack_created = COALESCE(${p.engPostCpTaskPackCreated ?? null}, eng_post_cp_task_pack_created),
+        site_id = COALESCE(${p.siteId ?? null}, site_id),
+        opportunity_id = COALESCE(${p.opportunityId ?? null}, opportunity_id),
+        delivery_model = COALESCE(${p.deliveryModel ?? null}, delivery_model),
         last_synced_at = NOW(),
         updated_at = NOW()
+      WHERE id = ${p.id}
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("project", projectInfo.id, err);
+    await logBridgeError("project", p.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
@@ -227,20 +207,7 @@ export async function syncClient(client: {
 // Cost line bridge: normalized_cost_lines → finance.cost_lines
 // ---------------------------------------------------------------------------
 
-export async function syncCostLine(costLine: {
-  id: number;
-  projectId?: number | null;
-  projectName?: string | null;
-  counterpartyName?: string | null;
-  description?: string | null;
-  amountExVat?: string | number | null;
-  invoiceNumber?: string | null;
-  invoiceDate?: string | null;
-  approvedDate?: string | null;
-  paidDate?: string | null;
-  status?: string | null;
-  importRunId?: number | null;
-}): Promise<BridgeResult> {
+export async function syncCostLine(costLine: Record<string, any> & { id: number }): Promise<BridgeResult> {
   try {
     const invoiceDateTyped = safeDate(costLine.invoiceDate);
     const approvedDateTyped = safeDate(costLine.approvedDate);
@@ -301,6 +268,18 @@ export async function syncCostLine(costLine: {
         paid_date_typed = EXCLUDED.paid_date_typed,
         fiscal_period_id = EXCLUDED.fiscal_period_id,
         status = EXCLUDED.status,
+        cost_category = COALESCE(${costLine.costCategory ?? null}, finance.cost_lines.cost_category),
+        po_number = COALESCE(${costLine.poNumber ?? null}, finance.cost_lines.po_number),
+        cost_line_status = COALESCE(${costLine.costLineStatus ?? null}, finance.cost_lines.cost_line_status),
+        invoice_date_font_color = COALESCE(${costLine.invoiceDateFontColor ?? null}, finance.cost_lines.invoice_date_font_color),
+        invoice_date_confirmed = COALESCE(${costLine.invoiceDateConfirmed ?? null}, finance.cost_lines.invoice_date_confirmed),
+        paid_date_font_color = COALESCE(${costLine.paidDateFontColor ?? null}, finance.cost_lines.paid_date_font_color),
+        paid_date_confirmed = COALESCE(${costLine.paidDateConfirmed ?? null}, finance.cost_lines.paid_date_confirmed),
+        no_revenue_linked = COALESCE(${costLine.noRevenueLinked ?? null}, finance.cost_lines.no_revenue_linked),
+        cos_status_override = COALESCE(${costLine.cosStatusOverride ?? null}, finance.cost_lines.cos_status_override),
+        cos_status_override_by = COALESCE(${costLine.cosStatusOverrideBy ?? null}, finance.cost_lines.cos_status_override_by),
+        cos_status_override_reason = COALESCE(${costLine.cosStatusOverrideReason ?? null}, finance.cost_lines.cos_status_override_reason),
+        sub_project_name = COALESCE(${costLine.subProjectName ?? null}, finance.cost_lines.sub_project_name),
         last_synced_at = NOW(),
         updated_at = NOW()
     `);
@@ -315,19 +294,7 @@ export async function syncCostLine(costLine: {
 // Revenue line bridge: normalized_revenue_lines → finance.revenue_lines
 // ---------------------------------------------------------------------------
 
-export async function syncRevenueLine(revenueLine: {
-  id: number;
-  projectId?: number | null;
-  projectName?: string | null;
-  milestoneName?: string | null;
-  amountExVat?: string | number | null;
-  invoiceNumber?: string | null;
-  invoiceDate?: string | null;
-  expectedPaymentDate?: string | null;
-  paidDate?: string | null;
-  status?: string | null;
-  importRunId?: number | null;
-}): Promise<BridgeResult> {
+export async function syncRevenueLine(revenueLine: Record<string, any> & { id: number }): Promise<BridgeResult> {
   try {
     const invoiceDateTyped = safeDate(revenueLine.invoiceDate);
     const expectedDateTyped = safeDate(revenueLine.expectedPaymentDate);
@@ -385,6 +352,13 @@ export async function syncRevenueLine(revenueLine: {
         paid_date_typed = EXCLUDED.paid_date_typed,
         fiscal_period_id = EXCLUDED.fiscal_period_id,
         status = EXCLUDED.status,
+        description = COALESCE(${revenueLine.description ?? null}, finance.revenue_lines.description),
+        invoice_date_font_color = COALESCE(${revenueLine.invoiceDateFontColor ?? null}, finance.revenue_lines.invoice_date_font_color),
+        invoice_date_confirmed = COALESCE(${revenueLine.invoiceDateConfirmed ?? null}, finance.revenue_lines.invoice_date_confirmed),
+        paid_date_font_color = COALESCE(${revenueLine.paidDateFontColor ?? null}, finance.revenue_lines.paid_date_font_color),
+        paid_date_confirmed = COALESCE(${revenueLine.paidDateConfirmed ?? null}, finance.revenue_lines.paid_date_confirmed),
+        in_bank_date = COALESCE(${revenueLine.inBankDate ?? null}, finance.revenue_lines.in_bank_date),
+        sub_project_name = COALESCE(${revenueLine.subProjectName ?? null}, finance.revenue_lines.sub_project_name),
         last_synced_at = NOW(),
         updated_at = NOW()
     `);
