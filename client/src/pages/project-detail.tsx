@@ -382,14 +382,6 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
-  if (!projectInfoId) {
-    return <div className="text-center py-12 text-muted-foreground text-sm">Project info not available</div>;
-  }
-
-  if (isLoading) {
-    return <div className="flex justify-center py-12"><EnergyLoader size="md" label="Loading project..." /></div>;
-  }
-
   const allTasks = engData?.tasks || [];
   const openTasks = allTasks.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
   const completedTasks = allTasks.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
@@ -398,29 +390,34 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
     return due && due < new Date().toISOString().split("T")[0] && t.status !== "COMPLETE" && t.status !== "Complete";
   });
 
-  // Apply status filter and search
-  const tasks = useMemo(() => {
-    let filtered = allTasks;
-    if (statusFilter === "open") {
-      filtered = filtered.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
-    } else if (statusFilter === "completed") {
-      filtered = filtered.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
-    } else if (statusFilter === "overdue") {
-      const today = new Date().toISOString().split("T")[0];
-      filtered = filtered.filter((t: any) => {
-        const due = t.dueDate || t.endDate;
-        return due && due < today && t.status !== "COMPLETE" && t.status !== "Complete";
-      });
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter((t: any) =>
-        (t.title || "").toLowerCase().includes(q) ||
-        (t.description || "").toLowerCase().includes(q)
-      );
-    }
-    return filtered;
-  }, [allTasks, statusFilter, searchQuery]);
+  // Keep this as a plain derived value so early-return paths never affect hook order.
+  let tasks = allTasks;
+  if (statusFilter === "open") {
+    tasks = tasks.filter((t: any) => t.status !== "COMPLETE" && t.status !== "Complete");
+  } else if (statusFilter === "completed") {
+    tasks = tasks.filter((t: any) => t.status === "COMPLETE" || t.status === "Complete");
+  } else if (statusFilter === "overdue") {
+    const today = new Date().toISOString().split("T")[0];
+    tasks = tasks.filter((t: any) => {
+      const due = t.dueDate || t.endDate;
+      return due && due < today && t.status !== "COMPLETE" && t.status !== "Complete";
+    });
+  }
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase();
+    tasks = tasks.filter((t: any) =>
+      (t.title || "").toLowerCase().includes(q) ||
+      (t.description || "").toLowerCase().includes(q)
+    );
+  }
+
+  if (!projectInfoId) {
+    return <div className="text-center py-12 text-muted-foreground text-sm">Project info not available</div>;
+  }
+
+  if (isLoading) {
+    return <div className="flex justify-center py-12"><EnergyLoader size="md" label="Loading project..." /></div>;
+  }
 
   const phaseGroups = new Map<string, any[]>();
   for (const t of tasks) {
