@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,7 @@ import {
 interface ProjectProcurementTabProps {
   projectId: number;
   projectName: string;
+  initialFilter?: string;
 }
 
 const CATEGORIES = ["material", "equipment", "service", "subcontract", "other"] as const;
@@ -128,13 +129,18 @@ const SUB_TABS: { key: ProcurementSubTab; label: string; icon: React.ElementType
   { key: "traceability", label: "Traceability", icon: Link2 },
 ];
 
-export function ProjectProcurementTab({ projectId, projectName }: ProjectProcurementTabProps) {
+export function ProjectProcurementTab({ projectId, projectName, initialFilter }: ProjectProcurementTabProps) {
   const queryClient = useQueryClient();
   const [activeSubTab, setActiveSubTab] = useState<ProcurementSubTab>("overview");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(initialFilter === "overdue_open");
+
+  useEffect(() => {
+    setOverdueOnly(initialFilter === "overdue_open");
+  }, [initialFilter]);
 
   const { data: items = [], isLoading, error } = useQuery<any[]>({
     queryKey: ["procurement", projectId, statusFilter, categoryFilter],
@@ -176,15 +182,22 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["procurement", projectId] }),
   });
 
-  const totalExpected = items.reduce((s: number, i: any) => s + (parseFloat(i.expected_cost) || 0), 0);
-  const totalActual = items.reduce((s: number, i: any) => s + (parseFloat(i.actual_cost) || 0), 0);
-  const totalCommitted = items.reduce((s: number, i: any) => {
+  const displayItems = useMemo(() => {
+    if (!overdueOnly) return items;
+    const today = new Date().toISOString().split("T")[0];
+    const closedStatuses = ["received", "invoiced", "closed"];
+    return items.filter((i: any) => i.required_date && i.required_date < today && !closedStatuses.includes(i.status));
+  }, [items, overdueOnly]);
+
+  const totalExpected = displayItems.reduce((s: number, i: any) => s + (parseFloat(i.expected_cost) || 0), 0);
+  const totalActual = displayItems.reduce((s: number, i: any) => s + (parseFloat(i.actual_cost) || 0), 0);
+  const totalCommitted = displayItems.reduce((s: number, i: any) => {
     const committedStatuses = ["approved", "ordered", "partially_received", "received", "invoiced", "closed"];
     return s + (committedStatuses.includes(i.status) ? (parseFloat(i.expected_cost) || 0) : 0);
   }, 0);
 
   const statusCounts: Record<string, number> = {};
-  items.forEach((i: any) => {
+  displayItems.forEach((i: any) => {
     statusCounts[i.status] = (statusCounts[i.status] || 0) + 1;
   });
 
@@ -221,18 +234,18 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
     ...STATUSES.map((s) => ({ value: s, label: s.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()) })),
   ];
 
-  const overdueItems = items.filter((i: any) => {
+  const overdueItems = displayItems.filter((i: any) => {
     if (!i.required_date) return false;
     const completedStatuses = ["received", "invoiced", "closed"];
     if (completedStatuses.includes(i.status)) return false;
     return new Date(i.required_date) < new Date();
   });
 
-  const orderedNotReceived = items.filter((i: any) =>
+  const orderedNotReceived = displayItems.filter((i: any) =>
     i.status === "ordered" || i.status === "partially_received"
   );
 
-  const receivedNotInvoiced = items.filter((i: any) =>
+  const receivedNotInvoiced = displayItems.filter((i: any) =>
     i.status === "received"
   );
 
@@ -261,6 +274,11 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
           );
         })}
       </div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant={overdueOnly ? "default" : "outline"} className="h-7 text-xs" onClick={() => setOverdueOnly((v) => !v)}>
+          {overdueOnly ? "Overdue only" : "Show overdue only"}
+        </Button>
+      </div>
 
       {activeSubTab === "overview" && (
         <div className="space-y-4" data-testid="procurement-overview">
@@ -271,7 +289,7 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
                   <Package className="w-4 h-4 text-[#16A34A]" />
                   <span className="text-[10px] font-medium text-muted-foreground uppercase">Total Items</span>
                 </div>
-                <p className="text-xl font-bold text-foreground" data-testid="overview-total-items">{items.length}</p>
+                <p className="text-xl font-bold text-foreground" data-testid="overview-total-items">{displayItems.length}</p>
               </CardContent>
             </Card>
             <Card className="bg-white">
@@ -331,7 +349,7 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
                 <div className="space-y-2" data-testid="overview-status-breakdown">
                   {STATUSES.map((s) => {
                     const count = statusCounts[s] || 0;
-                    const pct = items.length > 0 ? (count / items.length) * 100 : 0;
+                    const pct = displayItems.length > 0 ? (count / displayItems.length) * 100 : 0;
                     return (
                       <div key={s} className="flex items-center gap-2">
                         <Badge variant="outline" className={`text-[9px] w-28 justify-center ${STATUS_COLORS[s]}`}>
@@ -372,10 +390,10 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
                       {formatRand(totalExpected - totalActual)}
                     </span>
                   </div>
-                  {items.length > 0 && (
+                  {displayItems.length > 0 && (
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Avg per item</span>
-                      <span className="text-sm font-mono text-muted-foreground">{formatRand(totalExpected / items.length)}</span>
+                      <span className="text-sm font-mono text-muted-foreground">{formatRand(totalExpected / displayItems.length)}</span>
                     </div>
                   )}
                 </div>
@@ -442,7 +460,7 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
                   <Package className="w-4 h-4 text-[#16A34A]" />
                   <span className="text-[10px] font-medium text-muted-foreground uppercase">Total Items</span>
                 </div>
-                <p className="text-xl font-bold text-foreground" data-testid="kpi-total-items">{items.length}</p>
+                <p className="text-xl font-bold text-foreground" data-testid="kpi-total-items">{displayItems.length}</p>
               </CardContent>
             </Card>
             <Card className="bg-white">
@@ -527,14 +545,14 @@ export function ProjectProcurementTab({ projectId, projectName }: ProjectProcure
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.length === 0 ? (
+                  {displayItems.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={8} className="text-center py-8 text-sm text-muted-foreground" data-testid="empty-procurement">
                         No procurement items found. Click "New Item" to create one.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    items.map((item: any) => {
+                    displayItems.map((item: any) => {
                       const isExpanded = expandedId === item.id;
                       return (
                         <ProcurementRow
