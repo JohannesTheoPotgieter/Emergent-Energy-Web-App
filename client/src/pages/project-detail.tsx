@@ -1184,6 +1184,23 @@ export default function ProjectDetailPage() {
     staleTime: 30_000,
   });
 
+  const { data: headerKpis } = useQuery<{
+    contractValue: number;
+    inflowsRealisedPct: number;
+    cosRealisedPct: number;
+    marginDeltaPct: number;
+    nextMilestone: NextMilestoneSummary | null;
+  }>({
+    queryKey: ["project-header-kpis", projectInfoId],
+    queryFn: async () => {
+      const res = await engFetch(`/api/projects/${projectInfoId}/header-kpis`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!projectInfoId,
+    staleTime: 30_000,
+  });
+
   // Revenue milestones (from revenue-tab endpoint — provides milestone-level detail not in V2)
   const revTabMilestones: any[] = revenueTrustData?.milestones || [];
 
@@ -1405,15 +1422,15 @@ export default function ProjectDetailPage() {
         sizeKwp={sizeKwp}
         completion={completion}
         completionNum={completionNum}
-        contractValue={0}
-        revenueRealisedPct={0}
-        cosRealisedPct={0}
-        marginDelta={0}
+        contractValue={headerKpis?.contractValue ?? contractValue}
+        revenueRealisedPct={headerKpis?.inflowsRealisedPct ?? revenueRealisedPct}
+        cosRealisedPct={headerKpis?.cosRealisedPct ?? cosRealisedPct}
+        marginDelta={headerKpis?.marginDeltaPct ?? marginDelta}
         scheduleRag={overallRag as "green" | "amber" | "red"}
         costRag={overallRag as "green" | "amber" | "red"}
         qualityRag={overallRag as "green" | "amber" | "red"}
         ragStatus={ragStatus}
-        nextMilestone={null}
+        nextMilestone={headerKpis?.nextMilestone ?? nextMilestone}
         projectInfoId={projectInfoId ?? null}
         isAdmin={isAdmin}
         canSetRag={canSetRag}
