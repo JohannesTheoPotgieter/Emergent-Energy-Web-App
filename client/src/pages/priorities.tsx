@@ -624,18 +624,18 @@ export default function PrioritiesPage() {
           <TabsList>
             <TabsTrigger value="mine" className="text-xs">
               <User className="w-3.5 h-3.5 mr-1" />
-              My Priorities
+              {SCOPE_LABELS.role}
             </TabsTrigger>
             {isDeptHead && (
               <TabsTrigger value="department" className="text-xs">
                 <Users className="w-3.5 h-3.5 mr-1" />
-                Department
+                {SCOPE_LABELS.department}
               </TabsTrigger>
             )}
             {isAdmin && (
               <TabsTrigger value="company" className="text-xs">
                 <Flag className="w-3.5 h-3.5 mr-1" />
-                Company
+                {SCOPE_LABELS.company}
               </TabsTrigger>
             )}
           </TabsList>
@@ -682,6 +682,8 @@ export default function PrioritiesPage() {
             refetch={myQuery.refetch}
             showEscalate
             onEscalate={(id) => escalateMutation.mutate(id)}
+            showMarkComplete
+            onMarkComplete={(id) => markCompleteMutation.mutate(id)}
             emptyMessage="No priorities assigned to you"
             emptyAction={
               <p className="text-xs text-muted-foreground mt-1">
@@ -702,6 +704,7 @@ export default function PrioritiesPage() {
               refetch={deptQuery.refetch}
               showEscalate
               onEscalate={(id) => escalateMutation.mutate(id)}
+              showDeptActions
               emptyMessage={`No priorities for ${DEPARTMENT_OPTIONS.find(d => d.value === userDepartment)?.label || "your department"}`}
               emptyAction={
                 <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
