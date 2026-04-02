@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { PageShell } from "@/components/layout/page-shell";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,10 +10,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw, Settings } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Flag, Plus, AlertTriangle, AlertCircle, Clock, RefreshCw, ArrowUp, CheckCircle2, Users, User } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { isPriorityAdminRole } from "@/config/priorities";
+import { isPriorityAdminRole, isDepartmentHeadRole, SCOPE_LABELS } from "@/config/priorities";
+import { ROLE_DEPARTMENT_MAP } from "@shared/schema/users";
+
+// ── Types ──────────────────────────────────────────────────────
 
 interface Priority {
   id: number;
@@ -31,6 +35,7 @@ interface Priority {
   targetOutcome: string | null;
   owner: { id: number; name: string } | null;
   accountableExec: { id: number; name: string } | null;
+  assignedUser: { id: number; name: string } | null;
   effectiveHealth: string;
   effectiveProgress: number;
   projectCount: number;
@@ -41,9 +46,20 @@ interface Priority {
   blockerCount: number;
   openTaskCount: number;
   hasProjects: boolean;
+  scope: string;
+  parentId: number | null;
+  departmentKey: string | null;
+  assignedUserId: number | null;
+  escalated: boolean;
+  escalatedAt: string | null;
+  escalationReason: string | null;
+  childCount: number;
+  parentTitle: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+// ── Constants ──────────────────────────────────────────────────
 
 const HEALTH_COLORS: Record<string, string> = {
   critical: "border-l-red-500",
@@ -63,6 +79,15 @@ const SEVERITY_BADGE: Record<string, { label: string; className: string }> = {
   normal: { label: "Normal", className: "bg-gray-100 text-gray-600 hover:bg-gray-100" },
 };
 
+const DEPARTMENT_OPTIONS = [
+  { value: "ADMIN", label: "Admin" },
+  { value: "LEADERSHIP", label: "Leadership" },
+  { value: "ENGINEERING", label: "Engineering" },
+  { value: "PROJECT_DEVELOPMENT", label: "Project Development" },
+  { value: "PROJECT_MANAGEMENT", label: "Project Management" },
+  { value: "FINANCE", label: "Finance" },
+];
+
 function daysRemaining(dateStr: string | null): number | null {
   if (!dateStr) return null;
   const due = new Date(dateStr);
@@ -70,7 +95,34 @@ function daysRemaining(dateStr: string | null): number | null {
   return Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-export function PriorityCard({ priority }: { priority: Priority }) {
+// ── Fetch helper ───────────────────────────────────────────────
+
+async function fetchPriorities(params: string): Promise<Priority[]> {
+  const token = localStorage.getItem("auth_token");
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const res = await fetch(`/api/priorities?${params}`, { credentials: "include", headers });
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error(`Server returned ${res.status} with non-JSON response.`);
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || body.error || `Failed to load priorities (${res.status})`);
+  }
+  return res.json();
+}
+
+// ── Priority Card ──────────────────────────────────────────────
+
+export function PriorityCard({ priority, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions }: {
+  priority: Priority;
+  showEscalate?: boolean;
+  onEscalate?: () => void;
+  showMarkComplete?: boolean;
+  onMarkComplete?: () => void;
+  showDeptActions?: boolean;
+}) {
   const days = daysRemaining(priority.dueDate);
   const healthColor = HEALTH_COLORS[priority.effectiveHealth] || HEALTH_COLORS.healthy;
   const dotColor = HEALTH_DOT_COLORS[priority.effectiveHealth] || HEALTH_DOT_COLORS.healthy;
@@ -79,6 +131,16 @@ export function PriorityCard({ priority }: { priority: Priority }) {
   return (
     <Card className={`border-l-4 ${healthColor} hover:shadow-md transition-shadow`}>
       <CardContent className="p-4">
+        {/* Escalation badge */}
+        {priority.escalated && (
+          <div className="flex items-center gap-1 mb-2">
+            <Badge variant="destructive" className="text-[10px]">
+              <AlertTriangle className="w-3 h-3 mr-0.5" />
+              Escalated{priority.escalationReason ? ` — ${priority.escalationReason}` : ""}
+            </Badge>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center gap-2 mb-2">
           <span className={`w-2.5 h-2.5 rounded-full ${dotColor} shrink-0`} />
@@ -93,9 +155,10 @@ export function PriorityCard({ priority }: { priority: Priority }) {
         </div>
 
         {/* Meta */}
-        <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2">
-          {priority.owner && <span>{priority.owner.name}</span>}
-          {!priority.owner && priority.assignedTo && <span>{priority.assignedTo}</span>}
+        <div className="flex items-center gap-3 text-xs text-muted-foreground mb-2 flex-wrap">
+          {priority.assignedUser && <span><User className="w-3 h-3 inline mr-0.5" />{priority.assignedUser.name}</span>}
+          {!priority.assignedUser && priority.owner && <span>{priority.owner.name}</span>}
+          {!priority.assignedUser && !priority.owner && priority.assignedTo && <span>{priority.assignedTo}</span>}
           {priority.dueDate && (
             <span className={days != null && days <= 7 ? "text-red-600 font-medium" : days != null && days <= 14 ? "text-amber-600 font-medium" : ""}>
               <Clock className="w-3 h-3 inline mr-0.5" />
@@ -129,27 +192,78 @@ export function PriorityCard({ priority }: { priority: Priority }) {
         </div>
 
         {/* Footer */}
-        <div className="text-xs text-muted-foreground">
-          {priority.department && (
-            <span className="mr-2">{priority.department}</span>
-          )}
-          {priority.hasProjects ? (
-            <span>
-              {priority.projectCount} project{priority.projectCount !== 1 ? "s" : ""}
-              {priority.atRiskProjectCount > 0 ? (
-                <span className="text-red-600 ml-1">· {priority.atRiskProjectCount} at risk</span>
-              ) : (
-                <span className="text-emerald-600 ml-1">· All healthy</span>
-              )}
-            </span>
-          ) : (
-            <span className="italic">Standalone priority</span>
-          )}
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <div>
+            {priority.parentTitle && (
+              <Link href={`/priorities/${priority.parentId}`}>
+                <span className="text-primary hover:underline cursor-pointer">Part of: {priority.parentTitle}</span>
+              </Link>
+            )}
+            {!priority.parentTitle && priority.departmentKey && (
+              <span>{DEPARTMENT_OPTIONS.find(d => d.value === priority.departmentKey)?.label || priority.departmentKey}</span>
+            )}
+            {!priority.parentTitle && !priority.departmentKey && priority.department && (
+              <span>{priority.department}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            {priority.childCount > 0 && (
+              <span>{priority.childCount} sub-priorit{priority.childCount === 1 ? "y" : "ies"}</span>
+            )}
+            {priority.hasProjects && (
+              <span>
+                {priority.projectCount} project{priority.projectCount !== 1 ? "s" : ""}
+                {priority.atRiskProjectCount > 0 && (
+                  <span className="text-red-600 ml-1">· {priority.atRiskProjectCount} at risk</span>
+                )}
+              </span>
+            )}
+            {!priority.hasProjects && priority.childCount === 0 && (
+              <span className="italic">Standalone</span>
+            )}
+          </div>
         </div>
+
+        {/* Action buttons */}
+        {(showMarkComplete || (showEscalate && priority.scope !== "company" && !priority.escalated) || showDeptActions) && (
+          <div className="mt-2 pt-2 border-t flex items-center gap-2 flex-wrap">
+            {showMarkComplete && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-7"
+                onClick={onMarkComplete}
+                disabled={priority.status === "completed"}
+              >
+                <CheckCircle2 className="w-3 h-3 mr-1" />
+                {priority.status === "completed" ? "Completed" : "Mark Complete"}
+              </Button>
+            )}
+            {showDeptActions && (
+              <Button variant="outline" size="sm" className="text-xs h-7">
+                <Users className="w-3 h-3 mr-1" />
+                Assign Priority
+              </Button>
+            )}
+            {showEscalate && priority.scope !== "company" && !priority.escalated && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs h-7 text-orange-700 border-orange-200 hover:bg-orange-50"
+                onClick={onEscalate}
+              >
+                <ArrowUp className="w-3 h-3 mr-1" />
+                {showDeptActions ? "Escalate to Company" : "Escalate"}
+              </Button>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
 }
+
+// ── Create Priority Dialog ─────────────────────────────────────
 
 const emptyForm = {
   title: "",
@@ -160,11 +274,37 @@ const emptyForm = {
   target_outcome: "",
   manual_health: "",
   manual_progress: "",
+  scope: "company" as string,
+  department_key: "",
+  assigned_user_id: "" as string,
+  parent_id: "" as string,
 };
 
-function CreatePriorityDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const [form, setForm] = useState(emptyForm);
+function CreatePriorityDialog({ open, onOpenChange, defaultScope, defaultDepartment }: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  defaultScope?: string;
+  defaultDepartment?: string;
+}) {
+  const [form, setForm] = useState({ ...emptyForm, scope: defaultScope || "company", department_key: defaultDepartment || "" });
   const queryClient = useQueryClient();
+
+  // Fetch users for assignment
+  const { data: allUsers = [] } = useQuery<{ id: number; name: string; role: string }[]>({
+    queryKey: ["/api/users-list-for-priority"],
+    queryFn: async () => {
+      const token = localStorage.getItem("auth_token");
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+      // Try the users endpoint
+      const res = await fetch("/api/users", { credentials: "include", headers });
+      if (!res.ok) return [];
+      const data = await res.json();
+      const rows = Array.isArray(data) ? data : data.users || data.data || [];
+      return rows.map((u: any) => ({ id: u.id, name: u.name, role: u.role }));
+    },
+    enabled: open,
+  });
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -177,12 +317,15 @@ function CreatePriorityDialog({ open, onOpenChange }: { open: boolean; onOpenCha
         target_outcome: form.target_outcome || null,
         manual_health: form.manual_health || null,
         manual_progress: form.manual_progress ? parseInt(form.manual_progress) : null,
+        scope: form.scope,
+        department_key: form.department_key || null,
+        assigned_user_id: form.assigned_user_id ? parseInt(form.assigned_user_id) : null,
+        parent_id: form.parent_id ? parseInt(form.parent_id) : null,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/mytool/company-priorities"] });
-      setForm(emptyForm);
+      setForm({ ...emptyForm, scope: defaultScope || "company", department_key: defaultDepartment || "" });
       onOpenChange(false);
     },
   });
@@ -204,8 +347,15 @@ function CreatePriorityDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="department" className="text-xs">Department</Label>
-              <Input id="department" value={form.department} onChange={e => setForm({ ...form, department: e.target.value })} placeholder="e.g. Engineering" />
+              <Label className="text-xs">Scope</Label>
+              <Select value={form.scope} onValueChange={v => setForm({ ...form, scope: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="company">Company</SelectItem>
+                  <SelectItem value="department">Department</SelectItem>
+                  <SelectItem value="role">Role / Individual</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <Label htmlFor="severity" className="text-xs">Severity</Label>
@@ -219,6 +369,32 @@ function CreatePriorityDialog({ open, onOpenChange }: { open: boolean; onOpenCha
               </Select>
             </div>
           </div>
+          {(form.scope === "department" || form.scope === "role") && (
+            <div>
+              <Label className="text-xs">Department</Label>
+              <Select value={form.department_key} onValueChange={v => setForm({ ...form, department_key: v })}>
+                <SelectTrigger><SelectValue placeholder="Select department" /></SelectTrigger>
+                <SelectContent>
+                  {DEPARTMENT_OPTIONS.map(d => (
+                    <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {form.scope === "role" && (
+            <div>
+              <Label className="text-xs">Assign to</Label>
+              <Select value={form.assigned_user_id} onValueChange={v => setForm({ ...form, assigned_user_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Select person" /></SelectTrigger>
+                <SelectContent>
+                  {allUsers.map(u => (
+                    <SelectItem key={u.id} value={String(u.id)}>{u.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label htmlFor="due_date" className="text-xs">Due Date</Label>
@@ -253,47 +429,174 @@ function CreatePriorityDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   );
 }
 
+// ── Priority List Section ──────────────────────────────────────
+
+function PriorityListSection({ priorities, isLoading, isError, error, refetch, showEscalate, onEscalate, showMarkComplete, onMarkComplete, showDeptActions, emptyMessage, emptyAction }: {
+  priorities: Priority[];
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => void;
+  showEscalate?: boolean;
+  onEscalate?: (id: number) => void;
+  showMarkComplete?: boolean;
+  onMarkComplete?: (id: number) => void;
+  showDeptActions?: boolean;
+  emptyMessage: string;
+  emptyAction?: React.ReactNode;
+}) {
+  if (isLoading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="h-32 bg-muted animate-pulse rounded-lg" />
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-500" />
+        <p className="text-sm font-medium text-red-600 mb-1">Failed to load priorities</p>
+        <p className="text-xs text-muted-foreground mb-3">{error?.message || "Unknown error"}</p>
+        <Button variant="outline" size="sm" onClick={refetch}>
+          <RefreshCw className="w-3 h-3 mr-1" /> Retry
+        </Button>
+      </div>
+    );
+  }
+
+  // Split: escalated items first
+  const escalated = priorities.filter(p => p.escalated);
+  const normal = priorities.filter(p => !p.escalated);
+
+  return (
+    <div>
+      {escalated.length > 0 && (
+        <div className="mb-4">
+          <h3 className="text-xs font-semibold text-red-600 uppercase flex items-center gap-1 mb-2">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            Escalations ({escalated.length})
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {escalated.map(p => (
+              <PriorityCard
+                key={p.id}
+                priority={p}
+                showEscalate={showEscalate}
+                onEscalate={() => onEscalate?.(p.id)}
+                showMarkComplete={showMarkComplete}
+                onMarkComplete={() => onMarkComplete?.(p.id)}
+                showDeptActions={showDeptActions}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {normal.length === 0 && escalated.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <Flag className="w-8 h-8 mx-auto mb-2 opacity-50" />
+          <p className="text-sm font-medium text-foreground mb-1">{emptyMessage}</p>
+          {emptyAction}
+        </div>
+      ) : normal.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {normal.map(p => (
+            <PriorityCard
+              key={p.id}
+              priority={p}
+              showEscalate={showEscalate}
+              onEscalate={() => onEscalate?.(p.id)}
+              showMarkComplete={showMarkComplete}
+              onMarkComplete={() => onMarkComplete?.(p.id)}
+              showDeptActions={showDeptActions}
+            />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────
+
 export default function PrioritiesPage() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const searchString = useSearch();
+  const params = new URLSearchParams(searchString);
+
+  const isAdmin = isPriorityAdminRole(user?.role);
+  const isDeptHead = isDepartmentHeadRole(user?.role);
+  const userDepartment = user?.role ? ROLE_DEPARTMENT_MAP[user.role] : undefined;
+
+  // Determine default tab based on role
+  const tabParam = params.get("tab");
+  const defaultTab = tabParam || (isAdmin ? "company" : "mine");
+  const [activeTab, setActiveTab] = useState(defaultTab);
+
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [levelFilter, setLevelFilter] = useState("all");
   const [healthFilter, setHealthFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
-  const { data: priorities = [], isLoading, isError, error, refetch } = useQuery<Priority[]>({
-    queryKey: ["/api/priorities"],
-    queryFn: async () => {
-      const token = localStorage.getItem("auth_token");
-      const headers: Record<string, string> = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch("/api/priorities", { credentials: "include", headers });
-      const contentType = res.headers.get("content-type") || "";
-      if (!contentType.includes("application/json")) {
-        throw new Error(`Server returned ${res.status} with non-JSON response. The priorities API route may not be registered.`);
-      }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.message || body.error || `Failed to load priorities (${res.status})`);
-      }
-      return res.json();
+  // ── My Priorities ──
+  const myQuery = useQuery<Priority[]>({
+    queryKey: ["/api/priorities", "mine"],
+    queryFn: () => fetchPriorities("scope=role&assigned_user_id=me"),
+    enabled: activeTab === "mine",
+  });
+
+  // ── Department Priorities ──
+  const deptQuery = useQuery<Priority[]>({
+    queryKey: ["/api/priorities", "department", userDepartment],
+    queryFn: () => fetchPriorities(`scope=department${userDepartment ? `&department=${userDepartment}` : ""}`),
+    enabled: activeTab === "department" && isDeptHead,
+  });
+
+  // ── Company Priorities ──
+  const companyQuery = useQuery<Priority[]>({
+    queryKey: ["/api/priorities", "company"],
+    queryFn: () => fetchPriorities("scope=company"),
+    enabled: activeTab === "company",
+  });
+
+  // ── Escalate mutation ──
+  const escalateMutation = useMutation({
+    mutationFn: async (priorityId: number) => {
+      return apiRequest("POST", `/api/priorities/${priorityId}/escalate`, { reason: "manual" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
     },
   });
 
-  const categories = useMemo(() => {
-    const cats = new Set(priorities.map(p => p.department).filter(Boolean));
-    return Array.from(cats) as string[];
-  }, [priorities]);
+  // ── Mark complete mutation ──
+  const markCompleteMutation = useMutation({
+    mutationFn: async (priorityId: number) => {
+      return apiRequest("PATCH", `/api/priorities/${priorityId}`, { status: "completed" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/priorities"] });
+    },
+  });
 
-  const filtered = useMemo(() => {
-    return priorities.filter(p => {
+  // Apply filters to active data
+  const applyFilters = (data: Priority[]) => {
+    return data.filter(p => {
       if (levelFilter !== "all" && p.severity !== levelFilter) return false;
       if (healthFilter !== "all" && p.effectiveHealth !== healthFilter) return false;
-      if (categoryFilter !== "all" && p.department !== categoryFilter) return false;
       return true;
     });
-  }, [priorities, levelFilter, healthFilter, categoryFilter]);
+  };
 
-  const isAdmin = isPriorityAdminRole(user?.role);
+  const filteredMine = useMemo(() => applyFilters(myQuery.data || []), [myQuery.data, levelFilter, healthFilter]);
+  const filteredDept = useMemo(() => applyFilters(deptQuery.data || []), [deptQuery.data, levelFilter, healthFilter]);
+  const filteredCompany = useMemo(() => applyFilters(companyQuery.data || []), [companyQuery.data, levelFilter, healthFilter]);
+
+  const activeData = activeTab === "mine" ? filteredMine : activeTab === "department" ? filteredDept : filteredCompany;
 
   return (
     <PageShell>
@@ -301,117 +604,143 @@ export default function PrioritiesPage() {
         <div>
           <h1 className="text-xl font-semibold text-foreground flex items-center gap-2">
             <Flag className="w-5 h-5" />
-            Company Priorities
+            Priorities
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Strategic focus areas — {filtered.length} active priorit{filtered.length === 1 ? "y" : "ies"}
+            {activeData.length} active priorit{activeData.length === 1 ? "y" : "ies"}
           </p>
         </div>
-        {isAdmin && (
+        {(isAdmin || isDeptHead) && (
+          <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+            <Plus className="w-4 h-4 mr-1" />
+            Add Priority
+          </Button>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <div className="flex items-center justify-between mb-4">
+          <TabsList>
+            <TabsTrigger value="mine" className="text-xs">
+              <User className="w-3.5 h-3.5 mr-1" />
+              {SCOPE_LABELS.role}
+            </TabsTrigger>
+            {isDeptHead && (
+              <TabsTrigger value="department" className="text-xs">
+                <Users className="w-3.5 h-3.5 mr-1" />
+                {SCOPE_LABELS.department}
+              </TabsTrigger>
+            )}
+            {isAdmin && (
+              <TabsTrigger value="company" className="text-xs">
+                <Flag className="w-3.5 h-3.5 mr-1" />
+                {SCOPE_LABELS.company}
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          {/* Filters */}
           <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
-              <Plus className="w-4 h-4 mr-1" />
-              Add Priority
-            </Button>
+            <Select value={levelFilter} onValueChange={setLevelFilter}>
+              <SelectTrigger className="w-[120px] h-8 text-xs">
+                <SelectValue placeholder="Level" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All levels</SelectItem>
+                <SelectItem value="critical">Critical</SelectItem>
+                <SelectItem value="important">High</SelectItem>
+                <SelectItem value="normal">Normal</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={healthFilter} onValueChange={setHealthFilter}>
+              <SelectTrigger className="w-[120px] h-8 text-xs">
+                <SelectValue placeholder="Health" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All health</SelectItem>
+                <SelectItem value="critical">Critical</SelectItem>
+                <SelectItem value="at_risk">At risk</SelectItem>
+                <SelectItem value="healthy">Healthy</SelectItem>
+              </SelectContent>
+            </Select>
+            {(levelFilter !== "all" || healthFilter !== "all") && (
+              <Button variant="ghost" size="sm" className="text-xs h-8" onClick={() => { setLevelFilter("all"); setHealthFilter("all"); }}>
+                Clear
+              </Button>
+            )}
           </div>
-        )}
-      </div>
-
-      {/* Filters */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <Select value={levelFilter} onValueChange={setLevelFilter}>
-          <SelectTrigger className="w-[140px] h-8 text-xs">
-            <SelectValue placeholder="Priority level" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All levels</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="important">High</SelectItem>
-            <SelectItem value="normal">Normal</SelectItem>
-          </SelectContent>
-        </Select>
-
-        <Select value={healthFilter} onValueChange={setHealthFilter}>
-          <SelectTrigger className="w-[140px] h-8 text-xs">
-            <SelectValue placeholder="Health" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All health</SelectItem>
-            <SelectItem value="critical">Critical</SelectItem>
-            <SelectItem value="at_risk">At risk</SelectItem>
-            <SelectItem value="healthy">Healthy</SelectItem>
-          </SelectContent>
-        </Select>
-
-        {categories.length > 0 && (
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-[160px] h-8 text-xs">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All categories</SelectItem>
-              {categories.map(cat => (
-                <SelectItem key={cat} value={cat}>{cat}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {(levelFilter !== "all" || healthFilter !== "all" || categoryFilter !== "all") && (
-          <Button variant="ghost" size="sm" className="text-xs h-8" onClick={() => { setLevelFilter("all"); setHealthFilter("all"); setCategoryFilter("all"); }}>
-            Clear filters
-          </Button>
-        )}
-      </div>
-
-      {/* Priority cards */}
-      {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-32 bg-muted animate-pulse rounded-lg" />
-          ))}
         </div>
-      ) : isError ? (
-        <div className="text-center py-12">
-          <AlertCircle className="w-8 h-8 mx-auto mb-2 text-red-500" />
-          <p className="text-sm font-medium text-red-600 mb-1">Failed to load priorities</p>
-          <p className="text-xs text-muted-foreground mb-3">{error?.message || "Unknown error"}</p>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="w-3 h-3 mr-1" /> Retry
-          </Button>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Flag className="w-8 h-8 mx-auto mb-2 opacity-50" />
-          {priorities.length === 0 ? (
-            <>
-              <p className="text-sm font-medium text-foreground mb-1">No priorities yet</p>
-              <p className="text-xs mb-3">Create your first priority to start tracking what matters most.</p>
-              {isAdmin && (
-                <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
+
+        {/* My Priorities Tab */}
+        <TabsContent value="mine">
+          <PriorityListSection
+            priorities={filteredMine}
+            isLoading={myQuery.isLoading}
+            isError={myQuery.isError}
+            error={myQuery.error as Error}
+            refetch={myQuery.refetch}
+            showEscalate
+            onEscalate={(id) => escalateMutation.mutate(id)}
+            showMarkComplete
+            onMarkComplete={(id) => markCompleteMutation.mutate(id)}
+            emptyMessage="No priorities assigned to you"
+            emptyAction={
+              <p className="text-xs text-muted-foreground mt-1">
+                Priorities will appear here when assigned by your department head or when you create them.
+              </p>
+            }
+          />
+        </TabsContent>
+
+        {/* Department Tab */}
+        {isDeptHead && (
+          <TabsContent value="department">
+            <PriorityListSection
+              priorities={filteredDept}
+              isLoading={deptQuery.isLoading}
+              isError={deptQuery.isError}
+              error={deptQuery.error as Error}
+              refetch={deptQuery.refetch}
+              showEscalate
+              onEscalate={(id) => escalateMutation.mutate(id)}
+              showDeptActions
+              emptyMessage={`No priorities for ${DEPARTMENT_OPTIONS.find(d => d.value === userDepartment)?.label || "your department"}`}
+              emptyAction={
+                <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-1" /> Create Department Priority
+                </Button>
+              }
+            />
+          </TabsContent>
+        )}
+
+        {/* Company Tab */}
+        {isAdmin && (
+          <TabsContent value="company">
+            <PriorityListSection
+              priorities={filteredCompany}
+              isLoading={companyQuery.isLoading}
+              isError={companyQuery.isError}
+              error={companyQuery.error as Error}
+              refetch={companyQuery.refetch}
+              emptyMessage="No company priorities yet"
+              emptyAction={
+                <Button size="sm" className="mt-3" onClick={() => setCreateDialogOpen(true)}>
                   <Plus className="w-4 h-4 mr-1" /> Create Priority
                 </Button>
-              )}
-            </>
-          ) : (
-            <>
-              <p className="text-sm mb-1">No priorities match your filters</p>
-              <p className="text-xs mb-3">Try adjusting your criteria or clear all filters.</p>
-              <Button variant="ghost" size="sm" className="text-xs" onClick={() => { setLevelFilter("all"); setHealthFilter("all"); setCategoryFilter("all"); }}>
-                Clear all filters
-              </Button>
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map(p => (
-            <PriorityCard key={p.id} priority={p} />
-          ))}
-        </div>
-      )}
+              }
+            />
+          </TabsContent>
+        )}
+      </Tabs>
 
-      {isAdmin && <CreatePriorityDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />}
+      <CreatePriorityDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        defaultScope={activeTab === "mine" ? "role" : activeTab === "department" ? "department" : "company"}
+        defaultDepartment={userDepartment}
+      />
     </PageShell>
   );
 }

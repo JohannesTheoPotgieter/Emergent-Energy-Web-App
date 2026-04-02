@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import { Router, type Request, type Response } from "express";
 import { requireAuth, requirePriorityAdmin } from "./shared-middleware";
 import { getEffectiveUser } from "../auth-context";
@@ -14,14 +12,14 @@ import {
   workItems,
   approvals,
 } from "@shared/schema";
-import { eq, and, sql, desc, asc, inArray, isNull, or } from "drizzle-orm";
+import { eq, and, sql, desc, asc, inArray, isNull, ne } from "drizzle-orm";
 import { PRIORITY_HEALTH_VALUES, type PriorityHealth } from "@shared/kpi-definitions";
+import { PRIORITY_SCOPES, ESCALATION_REASONS, type PriorityScope } from "@shared/config/priorities";
 
 const router = Router();
 
 // ==================== HELPERS ====================
 
-const ADMIN_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER"];
 const COO_ONLY_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
 function requireCooOnly(req: Request, res: Response, next: any) {
@@ -49,11 +47,20 @@ interface PriorityWithMetrics {
   ownerUserId: number | null;
   priorityRank: number | null;
   horizon: string;
+  // Cascade fields
+  scope: PriorityScope;
+  parentId: number | null;
+  departmentKey: string | null;
+  assignedUserId: number | null;
+  escalated: boolean;
+  escalatedAt: Date | null;
+  escalationReason: string | null;
   createdAt: Date;
   updatedAt: Date;
   // Derived
   owner: { id: number; name: string } | null;
   accountableExec: { id: number; name: string } | null;
+  assignedUser: { id: number; name: string } | null;
   effectiveHealth: PriorityHealth;
   effectiveProgress: number;
   projectCount: number;
@@ -64,6 +71,8 @@ interface PriorityWithMetrics {
   blockerCount: number;
   openTaskCount: number;
   hasProjects: boolean;
+  childCount: number;
+  parentTitle: string | null;
 }
 
 interface DerivedMetricsRow {
@@ -118,6 +127,8 @@ async function enrichPriority(
   priority: any,
   metrics: DerivedMetricsRow | null,
   userMap?: Map<number, { id: number; name: string }>,
+  parentMap?: Map<number, string>,
+  childCountMap?: Map<number, number>,
 ): Promise<PriorityWithMetrics> {
   // Handle both camelCase (drizzle ORM) and snake_case (raw SQL) column names
   const p = {
@@ -139,6 +150,14 @@ async function enrichPriority(
     ownerUserId: priority.ownerUserId ?? priority.owner_user_id,
     priorityRank: priority.priorityRank ?? priority.priority_rank,
     horizon: priority.horizon,
+    // Cascade fields
+    scope: (priority.scope ?? 'company') as PriorityScope,
+    parentId: priority.parentId ?? priority.parent_id ?? null,
+    departmentKey: priority.departmentKey ?? priority.department_key ?? null,
+    assignedUserId: priority.assignedUserId ?? priority.assigned_user_id ?? null,
+    escalated: priority.escalated ?? false,
+    escalatedAt: priority.escalatedAt ?? priority.escalated_at ?? null,
+    escalationReason: priority.escalationReason ?? priority.escalation_reason ?? null,
     createdAt: priority.createdAt ?? priority.created_at,
     updatedAt: priority.updatedAt ?? priority.updated_at,
   };
@@ -148,7 +167,7 @@ async function enrichPriority(
 
   const effectiveHealth: PriorityHealth = hasProjects
     ? (metrics?.derived_health || "healthy")
-    : (p.manualHealth || "healthy");
+    : ((p.manualHealth as PriorityHealth) || "healthy");
 
   const effectiveProgress = hasProjects
     ? Math.round(Number(metrics?.avg_progress || 0))
@@ -156,11 +175,13 @@ async function enrichPriority(
 
   const owner = p.ownerUserId ? (userMap?.get(p.ownerUserId) || await getUserById(p.ownerUserId)) : null;
   const accountableExec = p.accountableExecId ? (userMap?.get(p.accountableExecId) || await getUserById(p.accountableExecId)) : null;
+  const assignedUser = p.assignedUserId ? (userMap?.get(p.assignedUserId) || await getUserById(p.assignedUserId)) : null;
 
   return {
     ...p,
     owner,
     accountableExec,
+    assignedUser,
     effectiveHealth,
     effectiveProgress,
     projectCount,
@@ -171,13 +192,26 @@ async function enrichPriority(
     blockerCount: Number(metrics?.blocker_count || 0),
     openTaskCount: Number(metrics?.open_task_count || 0),
     hasProjects,
+    childCount: childCountMap?.get(p.id) ?? 0,
+    parentTitle: p.parentId ? (parentMap?.get(p.parentId) ?? null) : null,
   };
 }
 
 // ==================== GET /api/priorities ====================
+// Supports query params: ?scope=company|department|role
+//                        &department=ENGINEERING
+//                        &assigned_user_id=123
+//                        &parent_id=45
+//                        &include_cancelled=true
+//                        &escalated_only=true
 router.get("/api/priorities", requireAuth, async (req: Request, res: Response) => {
   try {
     const includeCancelled = req.query.include_cancelled === "true";
+    const scopeFilter = req.query.scope as string | undefined;
+    const departmentFilter = req.query.department as string | undefined;
+    const assignedUserIdFilter = req.query.assigned_user_id as string | undefined;
+    const parentIdFilter = req.query.parent_id as string | undefined;
+    const escalatedOnly = req.query.escalated_only === "true";
 
     // Fetch all priorities
     let allPriorities: any[];
@@ -185,48 +219,110 @@ router.get("/api/priorities", requireAuth, async (req: Request, res: Response) =
       allPriorities = await db.select().from(mytoolCompanyPriorities);
     } catch (dbErr: any) {
       console.error("[Priorities] DB query failed:", dbErr.message);
-      // Fallback: try raw SQL in case drizzle schema mismatch
       try {
         const raw: any = await db.execute(sql`SELECT * FROM mytool_company_priorities ORDER BY id`);
         allPriorities = raw.rows || raw || [];
       } catch (rawErr: any) {
         console.error("[Priorities] Raw SQL fallback also failed:", rawErr.message);
-        return res.status(500).json({ error: "Database query failed", detail: dbErr.message });
+        return res.status(500).json({ error: "Database query failed", detail: (dbErr as Error).message });
       }
     }
-    console.log(`[Priorities] Fetched ${allPriorities.length} total priorities from DB`);
 
     // Filter out cancelled unless requested
     if (!includeCancelled) {
-      const beforeCount = allPriorities.length;
-      allPriorities = allPriorities.filter(p => p.status !== "closed");
-      if (beforeCount !== allPriorities.length) {
-        console.log(`[Priorities] Filtered out ${beforeCount - allPriorities.length} closed priorities, ${allPriorities.length} remaining`);
+      allPriorities = allPriorities.filter((p: any) => p.status !== "closed");
+    }
+
+    // Apply scope filter (defaults to 'company' for backward compatibility)
+    if (scopeFilter && PRIORITY_SCOPES.includes(scopeFilter as PriorityScope)) {
+      allPriorities = allPriorities.filter((p: any) => (p.scope ?? 'company') === scopeFilter);
+    } else if (!scopeFilter) {
+      // Default: show company scope (backward compatible)
+      allPriorities = allPriorities.filter((p: any) => (p.scope ?? 'company') === 'company');
+    }
+
+    // Apply department filter
+    if (departmentFilter) {
+      allPriorities = allPriorities.filter((p: any) =>
+        (p.departmentKey ?? p.department_key) === departmentFilter
+      );
+    }
+
+    // Apply assigned user filter — 'me' resolves to the current user
+    if (assignedUserIdFilter) {
+      const targetUserId = assignedUserIdFilter === "me"
+        ? getEffectiveUser(req)?.id
+        : parseInt(assignedUserIdFilter);
+      if (targetUserId) {
+        allPriorities = allPriorities.filter((p: any) =>
+          (p.assignedUserId ?? p.assigned_user_id) === targetUserId
+          || (p.ownerUserId ?? p.owner_user_id) === targetUserId
+        );
       }
+    }
+
+    // Apply parent filter
+    if (parentIdFilter) {
+      const parentId = parseInt(parentIdFilter);
+      allPriorities = allPriorities.filter((p: any) => (p.parentId ?? p.parent_id) === parentId);
+    }
+
+    // Apply escalation filter
+    if (escalatedOnly) {
+      allPriorities = allPriorities.filter((p: any) => p.escalated === true);
     }
 
     // Get all derived metrics
     const allMetrics = await getAllPriorityDerivedMetrics();
     const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
 
-    // Company priorities are strategic goals visible to all authenticated users.
-    // Write operations are still gated by role via requirePriorityAdmin middleware.
-
-    // Prefetch referenced users to avoid N+1 lookups in large lists.
+    // Prefetch referenced users to avoid N+1 lookups
     const userIds = Array.from(new Set(
-      allPriorities.flatMap((p: any) => [p.ownerUserId ?? p.owner_user_id, p.accountableExecId ?? p.accountable_exec_id]).filter(Boolean),
+      allPriorities.flatMap((p: any) => [
+        p.ownerUserId ?? p.owner_user_id,
+        p.accountableExecId ?? p.accountable_exec_id,
+        p.assignedUserId ?? p.assigned_user_id,
+      ].filter(Boolean)),
     )) as number[];
     const userMap = await getUsersByIds(userIds);
 
+    // Build child count map (how many children does each priority have)
+    const childCountResult: any = await db.execute(sql`
+      SELECT parent_id, COUNT(*)::int AS child_count
+      FROM mytool_company_priorities
+      WHERE parent_id IS NOT NULL AND status != 'closed'
+      GROUP BY parent_id
+    `);
+    const childCountMap = new Map<number, number>();
+    for (const row of (childCountResult.rows || childCountResult || [])) {
+      childCountMap.set(row.parent_id, row.child_count);
+    }
+
+    // Build parent title map
+    const parentIds = [...new Set(allPriorities.map((p: any) => p.parentId ?? p.parent_id).filter(Boolean))] as number[];
+    const parentMap = new Map<number, string>();
+    if (parentIds.length > 0) {
+      const parents = await db
+        .select({ id: mytoolCompanyPriorities.id, title: mytoolCompanyPriorities.title })
+        .from(mytoolCompanyPriorities)
+        .where(inArray(mytoolCompanyPriorities.id, parentIds));
+      for (const p of parents) {
+        parentMap.set(p.id, p.title);
+      }
+    }
+
     // Enrich with metrics
     const enriched = await Promise.all(
-      allPriorities.map(p => enrichPriority(p, metricsMap.get(p.id), userMap))
+      allPriorities.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap, parentMap, childCountMap))
     );
 
-    // Sort: severity DESC (critical > important > normal), health DESC (critical > at_risk > healthy), dueDate ASC, sortOrder ASC
+    // Sort: escalated first, then severity DESC, health DESC, dueDate ASC, sortOrder ASC
     const severityOrder: Record<string, number> = { critical: 0, important: 1, normal: 2 };
     const healthOrder: Record<string, number> = { critical: 0, at_risk: 1, healthy: 2 };
     enriched.sort((a, b) => {
+      // Escalated items float to top
+      if (a.escalated !== b.escalated) return a.escalated ? -1 : 1;
+
       const sevA = severityOrder[a.severity] ?? 2;
       const sevB = severityOrder[b.severity] ?? 2;
       if (sevA !== sevB) return sevA - sevB;
@@ -246,7 +342,7 @@ router.get("/api/priorities", requireAuth, async (req: Request, res: Response) =
     res.json(enriched);
   } catch (err: any) {
     console.error("[Priorities] List error:", err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
@@ -320,9 +416,16 @@ router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Re
       target_start_date, due_date, target_outcome, sort_order,
       manual_health, manual_progress, project_ids, owner_role, assigned_to,
       horizon, next_action, definition_of_done, support,
+      // Cascade fields
+      scope, parent_id, department_key, assigned_user_id,
     } = req.body;
 
     if (!title) return res.status(400).json({ error: "title is required" });
+
+    // Validate scope
+    if (scope && !PRIORITY_SCOPES.includes(scope)) {
+      return res.status(400).json({ error: "scope must be one of: company, department, role" });
+    }
 
     // Validate severity
     const validSeverities = ["critical", "important", "normal"];
@@ -350,6 +453,18 @@ router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Re
     if (accountable_exec_id) {
       const execUser = await getUserById(accountable_exec_id);
       if (!execUser) return res.status(400).json({ error: "accountable_exec_id not found" });
+    }
+
+    // Validate assigned_user_id exists
+    if (assigned_user_id) {
+      const assignee = await getUserById(assigned_user_id);
+      if (!assignee) return res.status(400).json({ error: "assigned_user_id not found" });
+    }
+
+    // Validate parent_id exists
+    if (parent_id) {
+      const [parent] = await db.select({ id: mytoolCompanyPriorities.id }).from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, parent_id));
+      if (!parent) return res.status(400).json({ error: "parent_id not found" });
     }
 
     // Validate project_ids exist
@@ -380,6 +495,11 @@ router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Re
       nextAction: next_action || null,
       definitionOfDone: definition_of_done || null,
       support: support || null,
+      // Cascade fields
+      scope: scope || "company",
+      parentId: parent_id || null,
+      departmentKey: department_key || null,
+      assignedUserId: assigned_user_id || null,
       createdAt: now,
       updatedAt: now,
     }).returning();
@@ -419,6 +539,8 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
       target_start_date, due_date, target_outcome, sort_order,
       manual_health, manual_progress, project_ids, owner_role, assigned_to,
       status, horizon, next_action, definition_of_done, support, priority_rank,
+      // Cascade fields
+      scope, parent_id, department_key, assigned_user_id,
     } = req.body;
 
     // Validate severity
@@ -429,6 +551,11 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
     // Validate manual_health
     if (manual_health !== undefined && manual_health !== null && !(PRIORITY_HEALTH_VALUES as readonly string[]).includes(manual_health)) {
       return res.status(400).json({ error: "manual_health must be one of: healthy, at_risk, critical" });
+    }
+
+    // Validate scope
+    if (scope !== undefined && !PRIORITY_SCOPES.includes(scope)) {
+      return res.status(400).json({ error: "scope must be one of: company, department, role" });
     }
 
     // Build update object
@@ -453,6 +580,11 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
     if (definition_of_done !== undefined) updates.definitionOfDone = definition_of_done;
     if (support !== undefined) updates.support = support;
     if (priority_rank !== undefined) updates.priorityRank = priority_rank;
+    // Cascade fields
+    if (scope !== undefined) updates.scope = scope;
+    if (parent_id !== undefined) updates.parentId = parent_id;
+    if (department_key !== undefined) updates.departmentKey = department_key;
+    if (assigned_user_id !== undefined) updates.assignedUserId = assigned_user_id;
 
     const [updated] = await db.update(mytoolCompanyPriorities)
       .set(updates)
@@ -806,6 +938,179 @@ router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res:
   } catch (err: any) {
     console.error("[Priorities] Updates error:", err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== POST /api/priorities/:id/escalate ====================
+router.post("/api/priorities/:id/escalate", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const user = getEffectiveUser(req)!;
+    const priorityId = parseInt(req.params.id);
+    const { reason } = req.body;
+
+    if (reason && !ESCALATION_REASONS.includes(reason)) {
+      return res.status(400).json({ error: "reason must be one of: overdue, critical, blocked, manual" });
+    }
+
+    const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+    if (!priority) return res.status(404).json({ error: "Priority not found" });
+
+    const currentScope = priority.scope ?? "company";
+    const escalationReason = reason || "manual";
+    const now = new Date();
+
+    if (currentScope === "company") {
+      return res.status(400).json({ error: "Company-level priorities cannot be escalated further" });
+    }
+
+    // Determine the next scope up
+    const nextScope: PriorityScope = currentScope === "role" ? "department" : "company";
+
+    // Mark current priority as escalated
+    await db.update(mytoolCompanyPriorities)
+      .set({ escalated: true, escalatedAt: now, escalationReason, updatedAt: now })
+      .where(eq(mytoolCompanyPriorities.id, priorityId));
+
+    // Create the parent priority at the next level up (if no parent exists)
+    if (!priority.parentId) {
+      const [parent] = await db.insert(mytoolCompanyPriorities).values({
+        title: priority.title,
+        description: priority.description,
+        severity: priority.severity,
+        department: priority.department,
+        dueDate: priority.dueDate,
+        ownerUserId: priority.ownerUserId,
+        ownerRole: priority.ownerRole,
+        assignedTo: priority.assignedTo,
+        horizon: priority.horizon || "quarter",
+        manualHealth: priority.manualHealth,
+        manualProgress: priority.manualProgress,
+        scope: nextScope,
+        departmentKey: nextScope === "department" ? priority.departmentKey : null,
+        escalated: true,
+        escalatedAt: now,
+        escalationReason,
+        createdAt: now,
+        updatedAt: now,
+      }).returning();
+
+      // Link child to new parent
+      await db.update(mytoolCompanyPriorities)
+        .set({ parentId: parent.id, updatedAt: now })
+        .where(eq(mytoolCompanyPriorities.id, priorityId));
+
+      const metrics = await getPriorityDerivedMetrics(parent.id);
+      const enriched = await enrichPriority(parent, metrics);
+      return res.status(201).json(enriched);
+    }
+
+    // Parent already exists — just mark escalation
+    const [updated] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
+    const metrics = await getPriorityDerivedMetrics(priorityId);
+    const enriched = await enrichPriority(updated, metrics);
+    res.json(enriched);
+  } catch (err: any) {
+    console.error("[Priorities] Escalate error:", err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ==================== GET /api/priorities/:id/children ====================
+router.get("/api/priorities/:id/children", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const priorityId = parseInt(req.params.id);
+
+    const children = await db.select().from(mytoolCompanyPriorities)
+      .where(and(
+        eq(mytoolCompanyPriorities.parentId, priorityId),
+        ne(mytoolCompanyPriorities.status, "closed"),
+      ));
+
+    if (children.length === 0) return res.json([]);
+
+    const allMetrics = await getAllPriorityDerivedMetrics();
+    const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
+
+    const userIds = Array.from(new Set(
+      children.flatMap((p: any) => [p.ownerUserId, p.accountableExecId, p.assignedUserId].filter(Boolean)),
+    )) as number[];
+    const userMap = await getUsersByIds(userIds);
+
+    // Get grandchild counts
+    const childIds = children.map(c => c.id);
+    const grandChildResult: any = await db.execute(sql`
+      SELECT parent_id, COUNT(*)::int AS child_count
+      FROM mytool_company_priorities
+      WHERE parent_id = ANY(${childIds}) AND status != 'closed'
+      GROUP BY parent_id
+    `);
+    const grandChildCountMap = new Map<number, number>();
+    for (const row of (grandChildResult.rows || grandChildResult || [])) {
+      grandChildCountMap.set(row.parent_id, row.child_count);
+    }
+
+    const enriched = await Promise.all(
+      children.map((p: any) => enrichPriority(p, metricsMap.get(p.id), userMap, new Map(), grandChildCountMap))
+    );
+
+    // Group by department for display
+    enriched.sort((a, b) => {
+      const deptA = a.departmentKey || "";
+      const deptB = b.departmentKey || "";
+      if (deptA !== deptB) return deptA.localeCompare(deptB);
+      return (a.sortOrder || 0) - (b.sortOrder || 0);
+    });
+
+    res.json(enriched);
+  } catch (err: any) {
+    console.error("[Priorities] Children error:", err);
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+// ==================== POST /api/priorities/:id/break-down ====================
+// Creates child priorities from a parent — used by COO to push down to departments
+router.post("/api/priorities/:id/break-down", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = getEffectiveUser(req)!;
+    const parentId = parseInt(req.params.id);
+    const { children } = req.body;
+
+    if (!children || !Array.isArray(children) || children.length === 0) {
+      return res.status(400).json({ error: "children array is required" });
+    }
+
+    const [parent] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, parentId));
+    if (!parent) return res.status(404).json({ error: "Parent priority not found" });
+
+    const currentScope = parent.scope ?? "company";
+    const childScope: PriorityScope = currentScope === "company" ? "department" : "role";
+
+    const now = new Date();
+    const created = [];
+    for (const child of children) {
+      const [row] = await db.insert(mytoolCompanyPriorities).values({
+        title: child.title,
+        description: child.description || null,
+        severity: child.severity || parent.severity,
+        department: child.department || parent.department,
+        dueDate: child.due_date || parent.dueDate,
+        horizon: parent.horizon || "quarter",
+        scope: childScope,
+        parentId: parentId,
+        departmentKey: child.department_key || null,
+        assignedUserId: child.assigned_user_id || null,
+        ownerUserId: child.owner_user_id || null,
+        createdAt: now,
+        updatedAt: now,
+      }).returning();
+      created.push(row);
+    }
+
+    res.status(201).json(created);
+  } catch (err: any) {
+    console.error("[Priorities] Break-down error:", err);
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
