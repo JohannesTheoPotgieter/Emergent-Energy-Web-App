@@ -22,6 +22,19 @@ const router = Router();
 
 const COO_ONLY_ROLES = ["COO_ADMIN", "CEO_ADMIN"];
 
+function getRouteParamAsString(param: string | string[] | undefined): string | null {
+  if (typeof param === "string") return param;
+  if (Array.isArray(param) && param.length > 0) return param[0] ?? null;
+  return null;
+}
+
+function parseIdParam(param: string | string[] | undefined): number | null {
+  const value = getRouteParamAsString(param);
+  if (!value) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
 function requireCooOnly(req: Request, res: Response, next: any) {
   const role = getEffectiveUser(req)?.role;
   if (role && COO_ONLY_ROLES.includes(role)) return next();
@@ -119,7 +132,7 @@ async function getUserById(userId: number): Promise<{ id: number; name: string }
 
 async function getUsersByIds(userIds: number[]): Promise<Map<number, { id: number; name: string }>> {
   if (userIds.length === 0) return new Map();
-  const rows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
+  const rows: Array<{ id: number; name: string }> = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
   return new Map(rows.map((u) => [u.id, u]));
 }
 
@@ -349,7 +362,8 @@ router.get("/api/priorities", requireAuth, async (req: Request, res: Response) =
 // ==================== GET /api/priorities/:id ====================
 router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Response) => {
   try {
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
     const [priority] = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     if (!priority) return res.status(404).json({ error: "Priority not found" });
 
@@ -381,7 +395,7 @@ router.get("/api/priorities/:id", requireAuth, async (req: Request, res: Respons
       .where(eq(priorityProjects.priorityId, priorityId));
 
     // Get PM user objects for linked projects
-    const projectsWithPm = await Promise.all(linkedProjects.map(async (p) => {
+    const projectsWithPm = await Promise.all(linkedProjects.map(async (p: typeof linkedProjects[number]) => {
       const pm = p.pmUserId ? await getUserById(p.pmUserId) : null;
       return {
         id: p.id,
@@ -529,7 +543,8 @@ router.post("/api/priorities", requireAuth, requirePriorityAdmin, async (req: Re
 router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
   try {
     const user = getEffectiveUser(req)!;
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
 
     const existing = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     if (existing.length === 0) return res.status(404).json({ error: "Priority not found" });
@@ -595,11 +610,11 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
     if (project_ids !== undefined) {
       const currentLinks = await db.select().from(priorityProjects)
         .where(eq(priorityProjects.priorityId, priorityId));
-      const currentProjectIds = new Set(currentLinks.map(l => l.projectId));
+      const currentProjectIds = new Set(currentLinks.map((l: typeof currentLinks[number]) => l.projectId));
       const newProjectIds = new Set(project_ids as number[]);
 
       // Delete removed links
-      const toDelete = currentLinks.filter(l => !newProjectIds.has(l.projectId));
+      const toDelete = currentLinks.filter((l: typeof currentLinks[number]) => !newProjectIds.has(l.projectId));
       for (const link of toDelete) {
         await db.delete(priorityProjects).where(eq(priorityProjects.id, link.id));
       }
@@ -630,7 +645,8 @@ router.put("/api/priorities/:id", requireAuth, requirePriorityAdmin, async (req:
 // ==================== DELETE /api/priorities/:id ====================
 router.delete("/api/priorities/:id", requireAuth, requireCooOnly, async (req: Request, res: Response) => {
   try {
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
     const existing = await db.select().from(mytoolCompanyPriorities).where(eq(mytoolCompanyPriorities.id, priorityId));
     if (existing.length === 0) return res.status(404).json({ error: "Priority not found" });
 
@@ -650,7 +666,8 @@ router.delete("/api/priorities/:id", requireAuth, requireCooOnly, async (req: Re
 router.post("/api/priorities/:id/projects", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
   try {
     const user = getEffectiveUser(req)!;
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
     const { project_ids } = req.body;
 
     if (!project_ids || !Array.isArray(project_ids) || project_ids.length === 0) {
@@ -705,8 +722,9 @@ router.post("/api/priorities/:id/projects", requireAuth, requirePriorityAdmin, a
 // ==================== DELETE /api/priorities/:id/projects/:projectId ====================
 router.delete("/api/priorities/:id/projects/:projectId", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
   try {
-    const priorityId = parseInt(req.params.id);
-    const projectId = parseInt(req.params.projectId);
+    const priorityId = parseIdParam(req.params.id);
+    const projectId = parseIdParam(req.params.projectId);
+    if (priorityId === null || projectId === null) return res.status(400).json({ error: "Invalid id parameter" });
 
     await db.delete(priorityProjects).where(
       and(
@@ -725,7 +743,8 @@ router.delete("/api/priorities/:id/projects/:projectId", requireAuth, requirePri
 // ==================== GET /api/projects/:id/priorities ====================
 router.get("/api/projects/:id/priorities", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectId = parseInt(req.params.id);
+    const projectId = parseIdParam(req.params.id);
+    if (projectId === null) return res.status(400).json({ error: "Invalid project id" });
 
     const priorities = await db
       .select({
@@ -743,7 +762,7 @@ router.get("/api/projects/:id/priorities", requireAuth, async (req: Request, res
     const allMetrics = await getAllPriorityDerivedMetrics();
     const metricsMap = new Map(allMetrics.map((m: any) => [m.priority_id, m]));
 
-    const result = priorities.map(p => {
+    const result = priorities.map((p: typeof priorities[number]) => {
       const metrics = metricsMap.get(p.id);
       const projectCount = Number(metrics?.project_count || 0);
       const effectiveHealth = projectCount > 0
@@ -768,7 +787,8 @@ router.get("/api/projects/:id/priorities", requireAuth, async (req: Request, res
 // ==================== GET /api/priorities/:id/tasks ====================
 router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: Response) => {
   try {
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
 
     // Get linked project IDs
     const links = await db.select({ projectId: priorityProjects.projectId })
@@ -777,13 +797,13 @@ router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: R
 
     if (links.length === 0) return res.json([]);
 
-    const projectIds = links.map(l => l.projectId);
+    const projectIds = links.map((l: typeof links[number]) => l.projectId);
 
     // Get project names for context
     const projects = await db.select({ id: projectInfo.id, name: projectInfo.projectName })
       .from(projectInfo)
       .where(inArray(projectInfo.id, projectIds));
-    const projectNameMap = new Map(projects.map(p => [p.id, p.name]));
+    const projectNameMap = new Map(projects.map((p: typeof projects[number]) => [p.id, p.name]));
 
     // Get tasks from linked projects
     const tasks = await db
@@ -805,7 +825,7 @@ router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: R
       ))
       .orderBy(asc(workItems.endDate));
 
-    const result = tasks.map(t => ({
+    const result = tasks.map((t: typeof tasks[number]) => ({
       id: t.id,
       title: t.title,
       status: t.status,
@@ -821,7 +841,7 @@ router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: R
 
     // Sort: blocked first, then overdue, then by due date
     const now = new Date().toISOString().slice(0, 10);
-    result.sort((a, b) => {
+    result.sort((a: typeof result[number], b: typeof result[number]) => {
       const aBlocked = a.status?.toLowerCase().includes("block") ? 0 : 1;
       const bBlocked = b.status?.toLowerCase().includes("block") ? 0 : 1;
       if (aBlocked !== bBlocked) return aBlocked - bBlocked;
@@ -846,7 +866,8 @@ router.get("/api/priorities/:id/tasks", requireAuth, async (req: Request, res: R
 // ==================== GET /api/priorities/:id/approvals ====================
 router.get("/api/priorities/:id/approvals", requireAuth, async (req: Request, res: Response) => {
   try {
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
 
     const links = await db.select({ projectId: priorityProjects.projectId })
       .from(priorityProjects)
@@ -854,13 +875,13 @@ router.get("/api/priorities/:id/approvals", requireAuth, async (req: Request, re
 
     if (links.length === 0) return res.json([]);
 
-    const projectIds = links.map(l => l.projectId);
+    const projectIds = links.map((l: typeof links[number]) => l.projectId);
 
     // Get project names
     const projects = await db.select({ id: projectInfo.id, name: projectInfo.projectName })
       .from(projectInfo)
       .where(inArray(projectInfo.id, projectIds));
-    const projectNameMap = new Map(projects.map(p => [p.id, p.name]));
+    const projectNameMap = new Map(projects.map((p: typeof projects[number]) => [p.id, p.name]));
 
     const pendingApprovals = await db
       .select()
@@ -871,7 +892,7 @@ router.get("/api/priorities/:id/approvals", requireAuth, async (req: Request, re
       ))
       .orderBy(asc(approvals.dueDate));
 
-    const result = pendingApprovals.map(a => ({
+    const result = pendingApprovals.map((a: typeof pendingApprovals[number]) => ({
       id: a.id,
       title: a.title,
       type: a.type,
@@ -894,7 +915,8 @@ router.get("/api/priorities/:id/approvals", requireAuth, async (req: Request, re
 // ==================== GET /api/priorities/:id/updates ====================
 router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res: Response) => {
   try {
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
 
     const links = await db.select({ projectId: priorityProjects.projectId })
       .from(priorityProjects)
@@ -902,7 +924,7 @@ router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res:
 
     if (links.length === 0) return res.json([]);
 
-    const projectIds = links.map(l => l.projectId);
+    const projectIds = links.map((l: typeof links[number]) => l.projectId);
 
     // Get latest updates from project_execution_state and project_info
     const projectsWithUpdates = await db
@@ -923,8 +945,8 @@ router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res:
       .orderBy(desc(projectExecutionState.updatedAt));
 
     const updates = projectsWithUpdates
-      .filter(p => p.ragComment || p.phaseNotes)
-      .map(p => ({
+      .filter((p: typeof projectsWithUpdates[number]) => p.ragComment || p.phaseNotes)
+      .map((p: typeof projectsWithUpdates[number]) => ({
         projectId: p.id,
         projectName: p.name,
         phase: p.phase,
@@ -945,7 +967,8 @@ router.get("/api/priorities/:id/updates", requireAuth, async (req: Request, res:
 router.post("/api/priorities/:id/escalate", requireAuth, async (req: Request, res: Response) => {
   try {
     const user = getEffectiveUser(req)!;
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
     const { reason } = req.body;
 
     if (reason && !ESCALATION_REASONS.includes(reason)) {
@@ -1018,7 +1041,8 @@ router.post("/api/priorities/:id/escalate", requireAuth, async (req: Request, re
 // ==================== GET /api/priorities/:id/children ====================
 router.get("/api/priorities/:id/children", requireAuth, async (req: Request, res: Response) => {
   try {
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseIdParam(req.params.id);
+    if (priorityId === null) return res.status(400).json({ error: "Invalid priority id" });
 
     const children = await db.select().from(mytoolCompanyPriorities)
       .where(and(
@@ -1037,7 +1061,7 @@ router.get("/api/priorities/:id/children", requireAuth, async (req: Request, res
     const userMap = await getUsersByIds(userIds);
 
     // Get grandchild counts
-    const childIds = children.map(c => c.id);
+    const childIds = children.map((c: typeof children[number]) => c.id);
     const grandChildResult: any = await db.execute(sql`
       SELECT parent_id, COUNT(*)::int AS child_count
       FROM mytool_company_priorities
@@ -1073,7 +1097,8 @@ router.get("/api/priorities/:id/children", requireAuth, async (req: Request, res
 router.post("/api/priorities/:id/break-down", requireAuth, requirePriorityAdmin, async (req: Request, res: Response) => {
   try {
     const user = getEffectiveUser(req)!;
-    const parentId = parseInt(req.params.id);
+    const parentId = parseIdParam(req.params.id);
+    if (parentId === null) return res.status(400).json({ error: "Invalid parent id" });
     const { children } = req.body;
 
     if (!children || !Array.isArray(children) || children.length === 0) {
