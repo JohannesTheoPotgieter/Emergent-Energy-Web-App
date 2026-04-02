@@ -46,6 +46,7 @@ type ProjectInfoRow = any;
 type QcChecklistRow = typeof qcChecklist.$inferSelect;
 type QcItemInstanceRow = typeof qcItemInstance.$inferSelect;
 type QcTemplateItemRow = typeof qcTemplateItem.$inferSelect;
+type QcTemplateRiskQuestionRow = typeof qcTemplateRiskQuestion.$inferSelect;
 type QcTemplateGroupRow = typeof qcTemplateGroup.$inferSelect;
 type QcTemplatePhaseRow = typeof qcTemplatePhase.$inferSelect;
 type QcItemEvidenceRow = typeof qcItemEvidence.$inferSelect;
@@ -226,6 +227,12 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
   const evidence: QcItemEvidenceRow[] = itemInstances.length > 0
     ? await db.select().from(qcItemEvidence).where(inArray(qcItemEvidence.itemInstanceId, itemInstances.map((item) => item.id)))
     : [];
+  const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
+  const templateRiskQuestionIds = uniqueNumberList(riskAnswers.map((answer: any) => answer.templateRiskQuestionId));
+  const riskQuestions: QcTemplateRiskQuestionRow[] = templateRiskQuestionIds.length > 0
+    ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, templateRiskQuestionIds))
+    : [];
+  const riskQuestionMap = new Map<number, QcTemplateRiskQuestionRow>(riskQuestions.map((question) => [question.id, question]));
   const evidenceCountMap = new Map<number, number>();
   for (const item of evidence) {
     evidenceCountMap.set(item.itemInstanceId, (evidenceCountMap.get(item.itemInstanceId) || 0) + 1);
@@ -325,6 +332,18 @@ async function loadProjectQualityGovernanceContext(projectName: string, userId: 
 
   const riskSummary = computeQualityRiskSummary({
     items: governanceItems,
+    riskAnswers: riskAnswers.map((answer: any) => {
+      const question = riskQuestionMap.get(answer.templateRiskQuestionId);
+      return {
+        responseType: question?.responseType ?? "yesno",
+        triggersWarning: question?.triggersWarning ?? false,
+        triggerCondition: question?.triggerCondition ?? null,
+        triggerSeverity: question?.triggerSeverity ?? null,
+        answerYesno: answer.answerYesno,
+        answerText: answer.answerText,
+        answerNumber: answer.answerNumber,
+      };
+    }),
     warnings,
     handover: handoverSummaryInput,
     linkedMicrosoftCount: relevantMicrosoftItems.length,
@@ -1041,10 +1060,30 @@ export function registerQualityRoutes(app: Express) {
 
   app.post("/api/quality/project/:projectName/risk-answer", requireAuth, requirePermission("quality", "edit"), async (req, res) => {
     try {
-      const { riskAnswerId, answerYesno, answerText, answerNumber } = req.body;
+      const {
+        riskAnswerId,
+        answerYesno,
+        answerText,
+        answerNumber,
+        answerValue,
+        notes,
+      } = req.body;
+
+      const normalizedAnswerYesno =
+        answerYesno !== undefined
+          ? answerYesno
+          : answerValue === "yes"
+            ? true
+            : answerValue === "no"
+              ? false
+              : answerValue === "unanswered" || answerValue == null
+                ? null
+                : undefined;
+      const normalizedAnswerText = answerText !== undefined ? answerText : notes;
+
       const updates: any = { lastUpdatedBy: getUser(req).id, lastUpdatedAt: new Date() };
-      if (answerYesno !== undefined) updates.answerYesno = answerYesno;
-      if (answerText !== undefined) updates.answerText = answerText;
+      if (normalizedAnswerYesno !== undefined) updates.answerYesno = normalizedAnswerYesno;
+      if (normalizedAnswerText !== undefined) updates.answerText = normalizedAnswerText;
       if (answerNumber !== undefined) updates.answerNumber = answerNumber;
 
       const [updated] = await db.update(qcRiskAnswer).set(updates).where(eq(qcRiskAnswer.id, riskAnswerId)).returning();
@@ -1052,7 +1091,18 @@ export function registerQualityRoutes(app: Express) {
       recalculateWarnings(pName).catch((err) => console.error("[Quality] Warning recalculation failed:", err?.message || err));
 
 
-      logAuditFromReq(req, { entityType: "qc_risk_answer", entityId: String(riskAnswerId), action: "update", projectName: pName, changesJson: { description: "Risk answer updated", answerYesno, answerText } });
+      logAuditFromReq(req, {
+        entityType: "qc_risk_answer",
+        entityId: String(riskAnswerId),
+        action: "update",
+        projectName: pName,
+        changesJson: {
+          description: "Risk answer updated",
+          answerYesno: normalizedAnswerYesno,
+          answerText: normalizedAnswerText,
+          answerNumber,
+        },
+      });
       res.json(updated);
     } catch (err: unknown) {
       console.error("[Quality] Error:", err);
@@ -1235,6 +1285,8 @@ export function registerQualityRoutes(app: Express) {
             resubmissionCount: 0,
             evidenceGapCount: 0,
             pendingReviewCount: 0,
+            unansweredRiskCount: 0,
+            triggeredRiskCount: 0,
             blockedHandover: false,
             riskLevel: "low",
             riskScore: 0,
@@ -1243,6 +1295,12 @@ export function registerQualityRoutes(app: Express) {
       }
 
       const itemInstances = await db.select().from(qcItemInstance).where(eq(qcItemInstance.checklistId, checklist.id));
+      const riskAnswers = await db.select().from(qcRiskAnswer).where(eq(qcRiskAnswer.checklistId, checklist.id));
+      const riskQuestionIds = uniqueNumberList(riskAnswers.map((answer: any) => answer.templateRiskQuestionId));
+      const riskQuestions: QcTemplateRiskQuestionRow[] = riskQuestionIds.length > 0
+        ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskQuestionIds))
+        : [];
+      const riskQuestionMap = new Map<number, QcTemplateRiskQuestionRow>(riskQuestions.map((question) => [question.id, question]));
       const templateItemIds = uniqueNumberList(itemInstances.map((item: any) => item.templateItemId));
       const templateItems: QcTemplateItemRow[] = templateItemIds.length > 0
         ? await db.select().from(qcTemplateItem).where(inArray(qcTemplateItem.id, templateItemIds))
@@ -1301,6 +1359,18 @@ export function registerQualityRoutes(app: Express) {
           isEvidenceRequired: templateItemMap.get(item.templateItemId)?.isEvidenceRequired ?? false,
           evidenceCount: evidenceCountMap.get(item.id) || 0,
         })),
+        riskAnswers: riskAnswers.map((answer: any) => {
+          const question = riskQuestionMap.get(answer.templateRiskQuestionId);
+          return {
+            responseType: question?.responseType ?? "yesno",
+            triggersWarning: question?.triggersWarning ?? false,
+            triggerCondition: question?.triggerCondition ?? null,
+            triggerSeverity: question?.triggerSeverity ?? null,
+            answerYesno: answer.answerYesno,
+            answerText: answer.answerText,
+            answerNumber: answer.answerNumber,
+          };
+        }),
         warnings,
         handover: {
           engineeringStatus: handover?.engineering_status || null,
@@ -1326,6 +1396,8 @@ export function registerQualityRoutes(app: Express) {
           resubmissionCount: riskSummary.exposures.resubmissionCount,
           evidenceGapCount: riskSummary.exposures.evidenceGapCount,
           pendingReviewCount: riskSummary.exposures.pendingReviewCount,
+          unansweredRiskCount: riskSummary.exposures.unansweredRiskCount,
+          triggeredRiskCount: riskSummary.exposures.triggeredRiskCount,
           blockedHandover: riskSummary.exposures.blockedHandover,
           riskLevel: riskSummary.level,
           riskScore: riskSummary.score,
@@ -1362,6 +1434,8 @@ export function registerQualityRoutes(app: Express) {
           resubmissionNeeded: context.riskSummary.exposures.resubmissionCount,
           evidenceRequired: context.riskSummary.exposures.evidenceGapCount,
           pendingReview: context.riskSummary.exposures.pendingReviewCount,
+          unansweredRisk: context.riskSummary.exposures.unansweredRiskCount,
+          triggeredRisk: context.riskSummary.exposures.triggeredRiskCount,
           openWarnings: context.riskSummary.exposures.openWarningCount,
           blockedHandover: context.riskSummary.exposures.blockedHandover,
           linkedMicrosoftItems: context.riskSummary.exposures.linkedMicrosoftCount,
@@ -1571,6 +1645,12 @@ export function registerQualityRoutes(app: Express) {
 
       const allPlanLinks = await db.select().from(qcPlanLink);
       const allItems = await db.select().from(qcItemInstance);
+      const allRiskAnswers = await db.select().from(qcRiskAnswer);
+      const riskQuestionIds = uniqueNumberList(allRiskAnswers.map((answer: any) => answer.templateRiskQuestionId));
+      const riskQuestions: QcTemplateRiskQuestionRow[] = riskQuestionIds.length > 0
+        ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskQuestionIds))
+        : [];
+      const riskQuestionMap = new Map<number, QcTemplateRiskQuestionRow>(riskQuestions.map((question) => [question.id, question]));
 
       try {
         const projectsWithLinks = [...new Set(allPlanLinks.map((l: any) => l.projectName))];
@@ -1616,6 +1696,7 @@ export function registerQualityRoutes(app: Express) {
       const result = await Promise.all(dedupedChecklists.map(async (cl) => {
         const phases = await db.select().from(qcTemplatePhase).where(eq(qcTemplatePhase.templateId, cl.templateId));
         const clItems = allItems.filter((i: any) => i.checklistId === cl.id);
+        const clRiskAnswers = allRiskAnswers.filter((answer: any) => answer.checklistId === cl.id);
         const linkedProject = cl.projectId
           ? projectMap.get(cl.projectId)
           : projectNameMap.get(normalizeProjectName(cl.projectName));
@@ -1685,6 +1766,18 @@ export function registerQualityRoutes(app: Express) {
         };
         const riskSummary = computeQualityRiskSummary({
           items: governanceItems,
+          riskAnswers: clRiskAnswers.map((answer: any) => {
+            const question = riskQuestionMap.get(answer.templateRiskQuestionId);
+            return {
+              responseType: question?.responseType ?? "yesno",
+              triggersWarning: question?.triggersWarning ?? false,
+              triggerCondition: question?.triggerCondition ?? null,
+              triggerSeverity: question?.triggerSeverity ?? null,
+              answerYesno: answer.answerYesno,
+              answerText: answer.answerText,
+              answerNumber: answer.answerNumber,
+            };
+          }),
           warnings: warningInputs,
           handover: handoverInput,
         });
@@ -1726,6 +1819,12 @@ export function registerQualityRoutes(app: Express) {
       const allChecklists = await db.select().from(qcChecklist);
       const allWarnings = await db.select().from(qcWarning).where(sql`${qcWarning.status} != 'resolved'`);
       const allItems = await db.select().from(qcItemInstance);
+      const allRiskAnswers = await db.select().from(qcRiskAnswer);
+      const riskQuestionIds = uniqueNumberList(allRiskAnswers.map((answer: any) => answer.templateRiskQuestionId));
+      const riskQuestions: QcTemplateRiskQuestionRow[] = riskQuestionIds.length > 0
+        ? await db.select().from(qcTemplateRiskQuestion).where(inArray(qcTemplateRiskQuestion.id, riskQuestionIds))
+        : [];
+      const riskQuestionMap = new Map<number, QcTemplateRiskQuestionRow>(riskQuestions.map((question) => [question.id, question]));
       const projectIds = uniqueNumberList(allChecklists.map((checklist: any) => checklist.projectId));
       const allProjectRows = projectIds.length > 0
         ? await db.select().from(projectInfo)
@@ -1765,6 +1864,7 @@ export function registerQualityRoutes(app: Express) {
         const project = projectMap.get(checklist.projectId);
         const handover = handoverMap.get(checklist.projectId);
         const warningInputs = allWarnings.filter((warning: any) => warning.projectName === checklist.projectName);
+        const projectRiskAnswers = allRiskAnswers.filter((answer: any) => answer.checklistId === checklist.id);
 
         const riskSummary = computeQualityRiskSummary({
           items: projectItems.map((item: any) => ({
@@ -1777,6 +1877,18 @@ export function registerQualityRoutes(app: Express) {
             isEvidenceRequired: templateItemMap.get(item.templateItemId)?.isEvidenceRequired ?? false,
             evidenceCount: evidenceCountMap.get(item.id) || 0,
           })),
+          riskAnswers: projectRiskAnswers.map((answer: any) => {
+            const question = riskQuestionMap.get(answer.templateRiskQuestionId);
+            return {
+              responseType: question?.responseType ?? "yesno",
+              triggersWarning: question?.triggersWarning ?? false,
+              triggerCondition: question?.triggerCondition ?? null,
+              triggerSeverity: question?.triggerSeverity ?? null,
+              answerYesno: answer.answerYesno,
+              answerText: answer.answerText,
+              answerNumber: answer.answerNumber,
+            };
+          }),
           warnings: warningInputs,
           handover: {
             engineeringStatus: handover?.engineering_status || null,

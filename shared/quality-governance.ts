@@ -25,6 +25,16 @@ export interface QualityHandoverLike {
   executionGateStatus?: string | null;
 }
 
+export interface QualityRiskAnswerLike {
+  responseType?: string | null;
+  triggersWarning?: boolean | null;
+  triggerCondition?: string | null;
+  triggerSeverity?: string | null;
+  answerYesno?: boolean | null;
+  answerText?: string | null;
+  answerNumber?: number | null;
+}
+
 export type QualityApprovalState =
   | "approved"
   | "pending_review"
@@ -56,6 +66,9 @@ export interface QualityRiskSummary {
     blockedHandover: boolean;
     handoverReasonCount: number;
     linkedMicrosoftCount: number;
+    unansweredRiskCount: number;
+    triggeredRiskCount: number;
+    highTriggeredRiskCount: number;
   };
 }
 
@@ -188,6 +201,7 @@ export function isHandoverQualityBlocked(handover?: QualityHandoverLike | null):
 
 export function computeQualityRiskSummary(params: {
   items: QualityGovernanceItemLike[];
+  riskAnswers?: QualityRiskAnswerLike[] | null;
   warnings?: QualityWarningLike[] | null;
   handover?: QualityHandoverLike | null;
   linkedMicrosoftCount?: number;
@@ -195,6 +209,7 @@ export function computeQualityRiskSummary(params: {
 }): QualityRiskSummary {
   const now = params.now ?? new Date();
   const evaluations = params.items.map((item) => evaluateQualityGovernanceItem(item, now));
+  const riskAnswers = params.riskAnswers ?? [];
   const warnings = (params.warnings ?? []).filter((warning) => String(warning.status ?? "").toLowerCase() !== "resolved");
   const handoverReasons = getQualityHandoverReasons(params.handover);
   const blockedHandover = isHandoverQualityBlocked(params.handover);
@@ -206,6 +221,23 @@ export function computeQualityRiskSummary(params: {
   const pendingReviewCount = evaluations.filter((item) => item.approvalState === "pending_review").length;
   const highWarningCount = warnings.filter((warning) => String(warning.severity ?? "").toLowerCase() === "high").length;
   const openWarningCount = warnings.length;
+  const unansweredRiskCount = riskAnswers.filter((answer) => {
+    const responseType = String(answer.responseType ?? "yesno").toLowerCase();
+    if (responseType === "number") return answer.answerNumber == null;
+    if (responseType === "text") return !String(answer.answerText ?? "").trim();
+    return answer.answerYesno == null;
+  }).length;
+  const triggeredRiskAnswers = riskAnswers.filter((answer) => {
+    if (!answer.triggersWarning) return false;
+    const triggerCondition = String(answer.triggerCondition ?? "").toLowerCase();
+    if (triggerCondition === "yes") return answer.answerYesno === true;
+    if (triggerCondition === "no") return answer.answerYesno === false;
+    return false;
+  });
+  const triggeredRiskCount = triggeredRiskAnswers.length;
+  const highTriggeredRiskCount = triggeredRiskAnswers.filter(
+    (answer) => String(answer.triggerSeverity ?? "").toLowerCase() === "high",
+  ).length;
 
   const score =
     overdueCount * 2 +
@@ -214,6 +246,9 @@ export function computeQualityRiskSummary(params: {
     pendingReviewCount +
     openWarningCount +
     highWarningCount * 2 +
+    unansweredRiskCount +
+    triggeredRiskCount * 2 +
+    highTriggeredRiskCount * 2 +
     (blockedHandover ? 4 : 0) +
     Math.min(linkedMicrosoftCount, 2);
 
@@ -232,6 +267,8 @@ export function computeQualityRiskSummary(params: {
     resubmissionCount > 0 ? `${resubmissionCount} resubmission` : null,
     evidenceGapCount > 0 ? `${evidenceGapCount} evidence gap` : null,
     highWarningCount > 0 ? `${highWarningCount} high warning` : null,
+    triggeredRiskCount > 0 ? `${triggeredRiskCount} risk trigger` : null,
+    unansweredRiskCount > 0 ? `${unansweredRiskCount} unanswered risk question` : null,
     linkedMicrosoftCount > 0 ? `${linkedMicrosoftCount} linked Microsoft item` : null,
   ]);
 
@@ -249,6 +286,9 @@ export function computeQualityRiskSummary(params: {
       blockedHandover,
       handoverReasonCount: handoverReasons.length,
       linkedMicrosoftCount,
+      unansweredRiskCount,
+      triggeredRiskCount,
+      highTriggeredRiskCount,
     },
   };
 }

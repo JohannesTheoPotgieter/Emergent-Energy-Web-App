@@ -48,6 +48,18 @@ function getRiskSeverityColor(severity: string) {
   }
 }
 
+function parseRiskYesNo(value: string | null | undefined): boolean | null {
+  if (value === "yes") return true;
+  if (value === "no") return false;
+  return null;
+}
+
+function formatRiskYesNo(value: boolean | null | undefined): string {
+  if (value === true) return "yes";
+  if (value === false) return "no";
+  return "unanswered";
+}
+
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; dot: string; btnClass: string; icon: string }> = {
   not_started: { label: "Not Started", color: "text-muted-foreground", bg: "bg-muted border-border", dot: "bg-slate-400", btnClass: "border-border text-muted-foreground hover:bg-muted", icon: "O" },
   review: { label: "In Review", color: "text-amber-600", bg: "bg-amber-50 border-amber-200", dot: "bg-amber-500", btnClass: "border-amber-300 text-amber-600 hover:bg-amber-100", icon: "R" },
@@ -88,6 +100,8 @@ interface QualityWorkspaceData {
     resubmissionNeeded: number;
     evidenceRequired: number;
     pendingReview: number;
+    unansweredRisk: number;
+    triggeredRisk: number;
     openWarnings: number;
     blockedHandover: boolean;
     linkedMicrosoftItems: number;
@@ -561,6 +575,8 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
     resubmissionNeeded: 0,
     evidenceRequired: 0,
     pendingReview: 0,
+    unansweredRisk: 0,
+    triggeredRisk: 0,
     openWarnings: activeWarnings.length,
     blockedHandover: false,
     linkedMicrosoftItems: 0,
@@ -688,7 +704,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
             <div className="rounded-lg border border-red-100 bg-red-50/50 px-3 py-3">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Overdue</p>
               <p className="text-lg font-bold text-red-600 mt-1">{governanceCounts.overdue}</p>
@@ -708,6 +724,11 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Pending review</p>
               <p className="text-lg font-bold text-violet-600 mt-1">{governanceCounts.pendingReview}</p>
               <p className="text-[11px] text-muted-foreground mt-1">Items in approval flow</p>
+            </div>
+            <div className="rounded-lg border border-orange-100 bg-orange-50/50 px-3 py-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Risk answers</p>
+              <p className="text-lg font-bold text-orange-600 mt-1">{governanceCounts.unansweredRisk} open / {governanceCounts.triggeredRisk} triggered</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Questions now included in risk score</p>
             </div>
             <div className="rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-3">
               <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Linked Microsoft</p>
@@ -1565,34 +1586,72 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
                           </div>
                           {canEdit && answer && (
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 ml-6">
-                              <SearchableSelect
-                                value={answer.answerValue || "unanswered"}
-                                onValueChange={(val) => updateRiskMutation.mutate({ riskAnswerId: answer.id, updates: { answerValue: val === "unanswered" ? null : val } })}
-                                placeholder="Select answer..."
-                                triggerClassName="h-8 text-xs"
-                                data-testid={`select-risk-answer-${rq.id}`}
-                                options={[
-                                  { value: "unanswered", label: "Unanswered" },
-                                  { value: "yes", label: "Yes" },
-                                  { value: "no", label: "No" },
-                                  { value: "partial", label: "Partial" },
-                                  { value: "na", label: "N/A" },
-                                ]}
-                              />
-                              <Textarea
-                                className="text-xs"
-                                placeholder="Notes..."
-                                rows={2}
-                                value={answer.notes || ""}
-                                onChange={(e) => updateRiskMutation.mutate({ riskAnswerId: answer.id, updates: { notes: e.target.value } })}
-                                data-testid={`input-risk-notes-${rq.id}`}
-                              />
+                              {rq.responseType === "yesno" ? (
+                                <SearchableSelect
+                                  value={formatRiskYesNo(answer.answerYesno)}
+                                  onValueChange={(val) =>
+                                    updateRiskMutation.mutate({
+                                      riskAnswerId: answer.id,
+                                      updates: { answerYesno: parseRiskYesNo(val === "unanswered" ? null : val) },
+                                    })
+                                  }
+                                  placeholder="Select answer..."
+                                  triggerClassName="h-8 text-xs"
+                                  data-testid={`select-risk-answer-${rq.id}`}
+                                  options={[
+                                    { value: "unanswered", label: "Unanswered" },
+                                    { value: "yes", label: "Yes" },
+                                    { value: "no", label: "No" },
+                                  ]}
+                                />
+                              ) : rq.responseType === "number" ? (
+                                <Input
+                                  type="number"
+                                  step="any"
+                                  className="h-8 text-xs"
+                                  placeholder="Enter number..."
+                                  value={answer.answerNumber ?? ""}
+                                  onChange={(e) =>
+                                    updateRiskMutation.mutate({
+                                      riskAnswerId: answer.id,
+                                      updates: {
+                                        answerNumber: e.target.value === "" ? null : Number(e.target.value),
+                                      },
+                                    })
+                                  }
+                                  data-testid={`input-risk-number-${rq.id}`}
+                                />
+                              ) : (
+                                <Textarea
+                                  className="text-xs"
+                                  placeholder="Enter response..."
+                                  rows={2}
+                                  value={answer.answerText || ""}
+                                  onChange={(e) =>
+                                    updateRiskMutation.mutate({
+                                      riskAnswerId: answer.id,
+                                      updates: { answerText: e.target.value },
+                                    })
+                                  }
+                                  data-testid={`input-risk-text-${rq.id}`}
+                                />
+                              )}
                             </div>
                           )}
                           {!canEdit && answer && (
                             <div className="text-xs space-y-1 ml-6">
-                              <p><span className="font-medium">Answer:</span> {answer.answerValue || "Unanswered"}</p>
-                              {answer.notes && <p><span className="font-medium">Notes:</span> {answer.notes}</p>}
+                              <p>
+                                <span className="font-medium">Answer:</span>{" "}
+                                {rq.responseType === "yesno"
+                                  ? formatRiskYesNo(answer.answerYesno) === "unanswered"
+                                    ? "Unanswered"
+                                    : formatRiskYesNo(answer.answerYesno) === "yes"
+                                      ? "Yes"
+                                      : "No"
+                                  : rq.responseType === "number"
+                                    ? (answer.answerNumber ?? "Unanswered")
+                                    : (answer.answerText || "Unanswered")}
+                              </p>
                             </div>
                           )}
                         </div>
