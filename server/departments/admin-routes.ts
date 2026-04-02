@@ -14,6 +14,7 @@ import { parseTrackerFile, applyFontColors } from "../excelParser";
 import { getStartupFlags } from "../startup-flags";
 import { getFeatureFlags } from "../lib/feature-flags";
 import { buildPhase1AReconciliationReport } from "../services/promoted-read-compat";
+import { isPhase1ADomainEnabled, isPhase1AEndpointEnabled } from "../services/phase1a-reconciliation-policy";
 
 const router = Router();
 
@@ -899,31 +900,22 @@ router.get("/api/admin/reconciliation/phase-1a", requireAuth, requireAdmin, asyn
   try {
     const compareMode = req.query.compare === "1" || req.query.compare === "true";
     const flags = await getFeatureFlags([
-      "promoted_phase1a_reconciliation_endpoints",
-      "promoted_phase1a_project_read_parity_diagnostics",
-      "promoted_phase1a_lifecycle_gates_read_diagnostics",
-      "promoted_phase1a_approvals_read_diagnostics",
-      "promoted_phase1a_finance_read_diagnostics",
-      "promoted_phase1a_deliverables_read_diagnostics",
-      "promoted_phase1a_party_contact_read_diagnostics",
+      "migration_bridge_project_read_v1",
+      "migration_bridge_lifecycle_read_v1",
+      "migration_bridge_approvals_dual_read_v1",
+      "migration_bridge_finance_read_v1",
+      "migration_bridge_deliverables_read_v1",
+      "migration_bridge_party_read_v1",
     ]);
-    if (!flags.promoted_phase1a_reconciliation_endpoints && !compareMode) {
+    if (!isPhase1AEndpointEnabled(compareMode, flags)) {
       return res.status(403).json({
         error: "feature_flag_disabled",
-        message: "Phase 1A reconciliation endpoint is disabled. Enable promoted_phase1a_reconciliation_endpoints or use compare mode.",
+        message: "Phase 1A reconciliation endpoint is disabled. Enable migration_bridge_project_read_v1 or use compare mode.",
       });
     }
 
     const report = await buildPhase1AReconciliationReport();
-    const requestedDomains = report.checks.filter((check) => {
-      if (check.domain === "project_reads") return flags.promoted_phase1a_project_read_parity_diagnostics || compareMode;
-      if (check.domain === "lifecycle_gates") return flags.promoted_phase1a_lifecycle_gates_read_diagnostics || compareMode;
-      if (check.domain === "approvals") return flags.promoted_phase1a_approvals_read_diagnostics || compareMode;
-      if (check.domain === "finance") return flags.promoted_phase1a_finance_read_diagnostics || compareMode;
-      if (check.domain === "deliverables") return flags.promoted_phase1a_deliverables_read_diagnostics || compareMode;
-      if (check.domain === "party_contacts") return flags.promoted_phase1a_party_contact_read_diagnostics || compareMode;
-      return false;
-    });
+    const requestedDomains = report.checks.filter((check) => isPhase1ADomainEnabled(check.domain, compareMode, flags));
 
     res.json({
       generatedAt: report.generatedAt,
@@ -939,6 +931,7 @@ router.get("/api/admin/reconciliation/phase-1a", requireAuth, requireAdmin, asyn
         deltaCount: check.deltaCount,
         mismatchCategories: check.mismatchCategories,
         notes: check.notes,
+        thresholdEvaluation: check.thresholdEvaluation,
       })),
     });
   } catch (err: any) {

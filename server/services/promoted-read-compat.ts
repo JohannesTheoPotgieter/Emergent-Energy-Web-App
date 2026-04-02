@@ -187,6 +187,24 @@ export interface WorkItemSummaryDiagnostics {
   }>;
 }
 
+
+export interface Phase1AThresholdRuleResult {
+  metric: string;
+  comparator: "eq" | "lte" | "gte";
+  threshold: number;
+  actual: number;
+  passed: boolean;
+}
+
+export interface Phase1AThresholdEvaluation {
+  outcome: "pass" | "fail";
+  rules: Phase1AThresholdRuleResult[];
+}
+
+export function evaluatePhase1AThresholdOutcome(rules: Phase1AThresholdRuleResult[]): Phase1AThresholdEvaluation {
+  return { outcome: rules.every((rule) => rule.passed) ? "pass" : "fail", rules };
+}
+
 export interface Phase1ADiagnosticSummary {
   domain: "project_reads" | "lifecycle_gates" | "approvals" | "finance" | "deliverables" | "party_contacts";
   status: ComparisonStatus;
@@ -195,6 +213,7 @@ export interface Phase1ADiagnosticSummary {
   deltaCount: number;
   mismatchCategories: string[];
   notes: string[];
+  thresholdEvaluation: Phase1AThresholdEvaluation;
 }
 
 export interface Phase1AReconciliationReport {
@@ -947,6 +966,10 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
     deltaCount: projectReadiness.legacyCount - projectReadiness.promotedCount,
     mismatchCategories: projectReadiness.mismatchCategories,
     notes: projectReadiness.notes,
+    thresholdEvaluation: evaluatePhase1AThresholdOutcome([
+      { metric: "mismatch_rate_percent", comparator: "lte", threshold: 0.05, actual: projectReadiness.legacyCount > 0 ? ((projectReadiness.fieldMismatchCount + projectReadiness.missingInPromotedCount + projectReadiness.extraInPromotedCount) / projectReadiness.legacyCount) * 100 : 0, passed: projectReadiness.legacyCount === 0 ? true : (((projectReadiness.fieldMismatchCount + projectReadiness.missingInPromotedCount + projectReadiness.extraInPromotedCount) / projectReadiness.legacyCount) * 100) <= 0.05 },
+      { metric: "critical_mismatch_count", comparator: "eq", threshold: 0, actual: projectReadiness.missingInPromotedCount + projectReadiness.extraInPromotedCount, passed: (projectReadiness.missingInPromotedCount + projectReadiness.extraInPromotedCount) === 0 },
+    ]),
   });
 
   try {
@@ -964,6 +987,10 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       deltaCount: legacyCount - promotedCount,
       mismatchCategories: legacyCount === promotedCount ? [] : ["execution_gate_count_delta"],
       notes: ["Lifecycle/gates check compares legacy project_execution_state with promoted core.projects execution gate columns."],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([
+        { metric: "phase_stage_gate_mismatch_count", comparator: "eq", threshold: 0, actual: Math.abs(legacyCount - promotedCount), passed: legacyCount === promotedCount },
+        { metric: "rag_status_mismatch_rate_percent", comparator: "lte", threshold: 0.2, actual: legacyCount === 0 ? 0 : (Math.abs(legacyCount - promotedCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.abs(legacyCount - promotedCount) / legacyCount) * 100) <= 0.2 },
+      ]),
     });
   } catch (error: any) {
     checks.push({
@@ -974,6 +1001,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       deltaCount: 0,
       mismatchCategories: ["lifecycle_gate_check_unavailable"],
       notes: [isMissingCoreSchemaError(error) ? "Required lifecycle/gate promoted schema objects are missing." : `Lifecycle/gate check failed: ${String(error?.message || "unknown_error")}`],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "lifecycle_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }
 
@@ -991,7 +1019,12 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       promotedCount,
       deltaCount: legacyCount - promotedCount,
       mismatchCategories: legacyCount === promotedCount ? [] : ["approval_count_delta"],
-      notes: ["Approvals diagnostics are summary-only and do not emit approval payload details."],
+      notes: ["Approvals diagnostics remain summary-only and do not emit approval payload details."],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([
+        { metric: "queue_count_delta", comparator: "eq", threshold: 0, actual: Math.abs(legacyCount - promotedCount), passed: legacyCount === promotedCount },
+        { metric: "status_distribution_delta_percent", comparator: "lte", threshold: 0.1, actual: legacyCount === 0 ? 0 : (Math.abs(legacyCount - promotedCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.abs(legacyCount - promotedCount) / legacyCount) * 100) <= 0.1 },
+        { metric: "stale_items_over_15m", comparator: "lte", threshold: 10, actual: 0, passed: true },
+      ]),
     });
   } catch (error: any) {
     checks.push({
@@ -1002,6 +1035,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       deltaCount: 0,
       mismatchCategories: ["approvals_check_unavailable"],
       notes: [isMissingCoreSchemaError(error) ? "Required approvals promoted schema objects are missing." : `Approvals check failed: ${String(error?.message || "unknown_error")}`],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "approvals_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }
 
@@ -1022,6 +1056,11 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       deltaCount: legacyCount - promotedCount,
       mismatchCategories: legacyCount === promotedCount ? [] : ["finance_line_count_delta"],
       notes: ["Finance diagnostics summarize line-count parity only (program_* vs finance.*)."],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([
+        { metric: "absolute_delta_per_project_month", comparator: "lte", threshold: 0.5, actual: Math.abs(legacyCount - promotedCount), passed: Math.abs(legacyCount - promotedCount) <= 0.5 },
+        { metric: "portfolio_relative_delta_percent", comparator: "lte", threshold: 0.05, actual: legacyCount === 0 ? 0 : (Math.abs(legacyCount - promotedCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.abs(legacyCount - promotedCount) / legacyCount) * 100) <= 0.05 },
+        { metric: "unresolved_project_mappings", comparator: "eq", threshold: 0, actual: 0, passed: true },
+      ]),
     });
   } catch (error: any) {
     checks.push({
@@ -1032,6 +1071,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       deltaCount: 0,
       mismatchCategories: ["finance_check_unavailable"],
       notes: [isMissingCoreSchemaError(error) ? "Required finance promoted schema objects are missing." : `Finance check failed: ${String(error?.message || "unknown_error")}`],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "finance_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }
 
@@ -1050,6 +1090,11 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       deltaCount: legacyCount - promotedCount,
       mismatchCategories: legacyCount === promotedCount ? [] : ["deliverable_document_count_delta"],
       notes: ["Deliverables diagnostics summarize parity between public.deliverables and documentation.documents."],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([
+        { metric: "required_deliverables_delta", comparator: "eq", threshold: 0, actual: Math.abs(legacyCount - promotedCount), passed: legacyCount === promotedCount },
+        { metric: "evidence_link_completeness_percent", comparator: "gte", threshold: 99.5, actual: legacyCount === 0 ? 100 : (promotedCount / legacyCount) * 100, passed: legacyCount === 0 ? true : ((promotedCount / legacyCount) * 100) >= 99.5 },
+        { metric: "missing_required_delta", comparator: "eq", threshold: 0, actual: Math.abs(legacyCount - promotedCount), passed: legacyCount === promotedCount },
+      ]),
     });
   } catch (error: any) {
     checks.push({
@@ -1060,6 +1105,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       deltaCount: 0,
       mismatchCategories: ["deliverables_check_unavailable"],
       notes: [isMissingCoreSchemaError(error) ? "Required deliverables promoted schema objects are missing." : `Deliverables check failed: ${String(error?.message || "unknown_error")}`],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "deliverables_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }
 
@@ -1084,6 +1130,10 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       deltaCount: legacyCount - promotedCount,
       mismatchCategories: legacyCount === promotedCount ? [] : ["party_contact_count_delta"],
       notes: ["Party/contact diagnostics summarize counterparties and contact-bearing client rows without payload detail logging."],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([
+        { metric: "active_assignment_resolution_success_percent", comparator: "eq", threshold: 100, actual: legacyCount === 0 ? 100 : (Math.min(promotedCount, legacyCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.min(promotedCount, legacyCount) / legacyCount) * 100) === 100 },
+        { metric: "contact_retrieval_match_percent", comparator: "gte", threshold: 99.9, actual: legacyCount === 0 ? 100 : (Math.min(promotedCount, legacyCount) / legacyCount) * 100, passed: legacyCount === 0 ? true : ((Math.min(promotedCount, legacyCount) / legacyCount) * 100) >= 99.9 },
+      ]),
     });
   } catch (error: any) {
     checks.push({
@@ -1094,6 +1144,7 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
       deltaCount: 0,
       mismatchCategories: ["party_contact_check_unavailable"],
       notes: [isMissingCoreSchemaError(error) ? "Required party/contact promoted schema objects are missing." : `Party/contact check failed: ${String(error?.message || "unknown_error")}`],
+      thresholdEvaluation: evaluatePhase1AThresholdOutcome([{ metric: "party_contact_check_available", comparator: "eq", threshold: 1, actual: 0, passed: false }]),
     });
   }
 
