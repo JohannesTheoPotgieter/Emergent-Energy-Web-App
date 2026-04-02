@@ -1,9 +1,7 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronRight, Eye, EyeOff } from "lucide-react";
-import { NAV_SECTIONS } from "../settings-types";
+import { NAVIGATION_PERMISSION_MODEL, type AccessLevel } from "@/config/navigation-permissions";
 import type { RoleSummary } from "../settings-types";
-import { TOP_SECTIONS } from "@/config/app-navigation";
 
 interface RoleNavAccessProps {
   role: RoleSummary;
@@ -12,208 +10,213 @@ interface RoleNavAccessProps {
   canManageRoles: boolean;
 }
 
-function getSecondaryItems(sectionKey: string): { label: string; path: string }[] {
-  const section = TOP_SECTIONS.find((s) => s.key === sectionKey);
-  if (!section) return [];
-  return section.secondary.map((item) => ({ label: item.label, path: item.path }));
+function basePath(path: string) {
+  return path.split("?")[0] || path;
 }
 
 function isSubPageDisabled(sections: string[], sectionKey: string, path: string): boolean {
-  return sections.includes(`!${sectionKey}:${path}`);
+  return sections.includes(`!${sectionKey}:${path}`) || sections.includes(`!${sectionKey}:${basePath(path)}`);
 }
 
-function getEnabledSubPageCount(sections: string[], sectionKey: string): { total: number; enabled: number } {
-  const items = getSecondaryItems(sectionKey);
-  const sectionEnabled = sections.includes(sectionKey);
-  if (!sectionEnabled) return { total: items.length, enabled: 0 };
-  const disabled = items.filter((item) => isSubPageDisabled(sections, sectionKey, item.path));
-  return { total: items.length, enabled: items.length - disabled.length };
+function updateSubPageExclusion(next: string[], sectionKey: string, path: string, disabled: boolean) {
+  const rawKey = `!${sectionKey}:${path}`;
+  const baseKey = `!${sectionKey}:${basePath(path)}`;
+  const removeKeys = [rawKey, baseKey];
+
+  removeKeys.forEach((k) => {
+    const idx = next.indexOf(k);
+    if (idx >= 0) next.splice(idx, 1);
+  });
+
+  if (disabled) {
+    next.push(baseKey);
+  }
+}
+
+function AccessPill({
+  value,
+  onChange,
+  disabled,
+  compact,
+}: {
+  value: AccessLevel;
+  onChange: (next: AccessLevel) => void;
+  disabled?: boolean;
+  compact?: boolean;
+}) {
+  const options: Array<{ value: AccessLevel; label: string }> = [
+    { value: "none", label: "No access" },
+    { value: "view", label: "View" },
+    { value: "edit", label: "Edit" },
+  ];
+
+  return (
+    <div className={`inline-flex rounded-md border border-gray-200 bg-white ${compact ? "text-[10px]" : "text-xs"}`}>
+      {options.map((opt) => {
+        const active = value === opt.value;
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => onChange(opt.value)}
+            disabled={disabled}
+            className={`px-2.5 py-1 font-medium transition-colors ${active ? "bg-emerald-600 text-white" : "text-gray-600 hover:bg-gray-50"} ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 export function RoleNavAccess({ role, draft, onUpdateDraft, canManageRoles }: RoleNavAccessProps) {
-  const effectiveSections = (draft.sections ?? role.sections) || [];
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const sections = (draft.sections ?? role.sections) || [];
+  const entityPermissions = ((draft.entityPermissions ?? role.entityPermissions) || {}) as Record<string, Record<string, boolean>>;
 
-  const toggleExpand = (key: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
+  const setNext = (nextSections: string[], nextEntityPermissions: Record<string, Record<string, boolean>>) => {
+    onUpdateDraft({ sections: nextSections, entityPermissions: nextEntityPermissions });
   };
 
-  const toggleSection = (key: string, checked: boolean) => {
-    const next = [...effectiveSections];
-    if (checked) {
-      if (!next.includes(key)) next.push(key);
-      const exclusions = next.filter((s) => s.startsWith(`!${key}:`));
-      exclusions.forEach((ex) => {
-        const idx = next.indexOf(ex);
-        if (idx >= 0) next.splice(idx, 1);
-      });
-    } else {
-      const idx = next.indexOf(key);
-      if (idx >= 0) next.splice(idx, 1);
-      const exclusions = next.filter((s) => s.startsWith(`!${key}:`));
-      exclusions.forEach((ex) => {
-        const exIdx = next.indexOf(ex);
-        if (exIdx >= 0) next.splice(exIdx, 1);
-      });
+  const resolveItemLevel = (sectionKey: string, path: string, permissionEntity?: string): AccessLevel => {
+    const sectionEnabled = sections.includes(sectionKey);
+    if (!sectionEnabled || isSubPageDisabled(sections, sectionKey, path)) return "none";
+    if (!permissionEntity) return "view";
+
+    const entityPerm = entityPermissions[permissionEntity] || {};
+    if (entityPerm.view === false) return "none";
+    if (entityPerm.edit === true) return "edit";
+    return "view";
+  };
+
+  const setItemLevel = (sectionKey: string, path: string, permissionEntity: string | undefined, level: AccessLevel) => {
+    const nextSections = [...sections];
+    const nextEntityPermissions: Record<string, Record<string, boolean>> = { ...entityPermissions };
+
+    if (!nextSections.includes(sectionKey) && level !== "none") {
+      nextSections.push(sectionKey);
     }
-    onUpdateDraft({ sections: next });
-  };
 
-  const toggleSubPage = (sectionKey: string, path: string, checked: boolean) => {
-    const exclusionKey = `!${sectionKey}:${path}`;
-    const next = [...effectiveSections];
-    if (checked) {
-      const idx = next.indexOf(exclusionKey);
-      if (idx >= 0) next.splice(idx, 1);
-    } else {
-      if (!next.includes(exclusionKey)) next.push(exclusionKey);
+    updateSubPageExclusion(nextSections, sectionKey, path, level === "none");
+
+    if (level === "none" && permissionEntity) {
+      nextEntityPermissions[permissionEntity] = {
+        ...(nextEntityPermissions[permissionEntity] || {}),
+        view: false,
+        edit: false,
+      };
     }
-    onUpdateDraft({ sections: next });
+
+    if (permissionEntity && level !== "none") {
+      nextEntityPermissions[permissionEntity] = {
+        ...(nextEntityPermissions[permissionEntity] || {}),
+        view: true,
+        edit: level === "edit",
+      };
+    }
+
+    setNext(nextSections, nextEntityPermissions);
   };
 
-  const toggleAllSubPages = (sectionKey: string, value: boolean) => {
-    const items = getSecondaryItems(sectionKey);
-    const next = [...effectiveSections];
-    items.forEach((item) => {
-      const exclusionKey = `!${sectionKey}:${item.path}`;
-      const idx = next.indexOf(exclusionKey);
-      if (value) {
-        if (idx >= 0) next.splice(idx, 1);
-      } else {
-        if (!next.includes(exclusionKey)) next.push(exclusionKey);
-      }
-    });
-    onUpdateDraft({ sections: next });
+  const setSectionLevel = (sectionKey: string, level: AccessLevel) => {
+    const section = NAVIGATION_PERMISSION_MODEL.find((s) => s.key === sectionKey);
+    if (!section) return;
+
+    const nextSections = [...sections.filter((entry) => !entry.startsWith(`!${sectionKey}:`))];
+    const nextEntityPermissions: Record<string, Record<string, boolean>> = { ...entityPermissions };
+
+    const keyIdx = nextSections.indexOf(sectionKey);
+    if (level === "none") {
+      if (keyIdx >= 0) nextSections.splice(keyIdx, 1);
+    } else if (keyIdx < 0) {
+      nextSections.push(sectionKey);
+    }
+
+    for (const item of section.items) {
+      updateSubPageExclusion(nextSections, sectionKey, item.path, level === "none");
+      if (!item.permissionEntity) continue;
+      nextEntityPermissions[item.permissionEntity] = {
+        ...(nextEntityPermissions[item.permissionEntity] || {}),
+        view: level !== "none",
+        edit: level === "edit",
+      };
+    }
+
+    setNext(nextSections, nextEntityPermissions);
   };
 
-  const applyPreset = (sections: string[]) => {
-    onUpdateDraft({ sections });
+  const sectionLevel = (sectionKey: string): AccessLevel => {
+    const section = NAVIGATION_PERMISSION_MODEL.find((s) => s.key === sectionKey);
+    if (!section) return "none";
+
+    const levels = section.items.map((item) => resolveItemLevel(sectionKey, item.path, item.permissionEntity));
+    if (levels.every((lvl) => lvl === "none")) return "none";
+    if (levels.every((lvl) => lvl === "edit")) return "edit";
+    return "view";
   };
+
+  const preview = useMemo(() => {
+    return NAVIGATION_PERMISSION_MODEL
+      .map((section) => {
+        const items = section.items.filter((item) => resolveItemLevel(section.key, item.path, item.permissionEntity) !== "none");
+        return { label: section.label, items };
+      })
+      .filter((section) => section.items.length > 0);
+  }, [sections, entityPermissions]);
 
   return (
-    <div className="space-y-3 pt-3">
-      {/* Quick Presets — inline at the top */}
-      {canManageRoles && (
-        <div className="flex flex-wrap gap-1.5">
-          <span className="text-[10px] text-muted-foreground font-medium self-center mr-1">Presets:</span>
-          <button type="button" onClick={() => applyPreset(["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "HSE", "ENGINEERING", "QUALITY", "FINANCE", "REPORTS", "ADMIN"])}
-            className="text-[10px] px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 font-medium" data-testid="preset-full-access">
-            Full Access
-          </button>
-          <button type="button" onClick={() => applyPreset(["HOME", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS"])}
-            className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-medium" data-testid="preset-site-pm">
-            Site PM
-          </button>
-          <button type="button" onClick={() => applyPreset(["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS"])}
-            className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-medium" data-testid="preset-commercial">
-            Commercial
-          </button>
-          <button type="button" onClick={() => applyPreset(["HOME", "ENGINEERING", "QUALITY"])}
-            className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-medium" data-testid="preset-engineer">
-            Engineer
-          </button>
-          <button type="button" onClick={() => applyPreset(["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS"])}
-            className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-medium" data-testid="preset-finance">
-            Finance
-          </button>
-          <button type="button" onClick={() => applyPreset(["HOME", "PROJECT_DELIVERY", "HSE", "QUALITY", "ENGINEERING"])}
-            className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-medium" data-testid="preset-hse">
-            HSE / SSEG
-          </button>
-        </div>
-      )}
+    <div className="space-y-4 pt-3">
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+        <p className="text-xs font-semibold text-emerald-800">What this role will see</p>
+        {preview.length === 0 ? (
+          <p className="text-xs text-emerald-700 mt-1">No pages are visible.</p>
+        ) : (
+          <div className="mt-2 space-y-1.5">
+            {preview.map((section) => (
+              <div key={section.label} className="text-xs">
+                <span className="font-medium text-emerald-900">{section.label}:</span>{" "}
+                <span className="text-emerald-800">{section.items.map((item) => item.itemLabel).join(", ")}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
-      {/* Section toggles — compact list */}
-      <div className="border border-gray-200 rounded-lg overflow-hidden divide-y divide-gray-100">
-        {NAV_SECTIONS.map((section) => {
-          const sectionEnabled = effectiveSections.includes(section.key);
-          const isExpanded = expanded.has(section.key);
-          const secondaryItems = getSecondaryItems(section.key);
-          const subPageStats = getEnabledSubPageCount(effectiveSections, section.key);
-
+      <div className="space-y-3">
+        {NAVIGATION_PERMISSION_MODEL.map((section) => {
+          const currentSectionLevel = sectionLevel(section.key);
           return (
-            <div key={section.key} className={`transition-colors ${sectionEnabled ? "bg-emerald-50/30" : "bg-white"}`}>
-              <div className="flex items-center gap-2.5 px-3 py-2">
-                {secondaryItems.length > 0 && (
-                  <button type="button" onClick={() => toggleExpand(section.key)} className="text-gray-400 hover:text-gray-600 shrink-0" data-testid={`expand-nav-${section.key}`}>
-                    {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                  </button>
-                )}
-                {secondaryItems.length === 0 && <div className="w-3.5" />}
-
-                <input
-                  type="checkbox"
-                  checked={sectionEnabled}
-                  onChange={(e) => toggleSection(section.key, e.target.checked)}
-                  disabled={!canManageRoles}
-                  className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
-                  data-testid={`checkbox-nav-${section.key}`}
-                />
-
-                <div className="flex-1 min-w-0 flex items-center gap-2" onClick={() => secondaryItems.length > 0 ? toggleExpand(section.key) : undefined}>
-                  <span className={`text-xs font-medium ${sectionEnabled ? "text-emerald-800" : "text-gray-600"}`}>
-                    {section.label}
-                  </span>
-                  {secondaryItems.length > 0 && sectionEnabled && subPageStats.enabled < subPageStats.total && (
-                    <Badge variant="outline" className="text-[9px] font-normal text-amber-600 border-amber-200 bg-amber-50">
-                      {subPageStats.enabled}/{subPageStats.total}
-                    </Badge>
-                  )}
+            <div key={section.key} className="rounded-lg border border-gray-200 bg-white p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">{section.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{section.helpText}</p>
                 </div>
-
-                <span className={`text-[10px] shrink-0 ${sectionEnabled ? "text-emerald-600" : "text-gray-400"}`}>
-                  {sectionEnabled ? "Visible" : "Hidden"}
-                </span>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-[10px]">Section access</Badge>
+                  <AccessPill value={currentSectionLevel} onChange={(level) => setSectionLevel(section.key, level)} disabled={!canManageRoles} />
+                </div>
               </div>
 
-              {isExpanded && secondaryItems.length > 0 && (
-                <div className="px-6 pb-2.5 pt-0 ml-6">
-                  {canManageRoles && sectionEnabled && (
-                    <div className="flex gap-1.5 mb-1.5">
-                      <button type="button" onClick={() => toggleAllSubPages(section.key, true)}
-                        className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100 font-medium border border-emerald-200" data-testid={`button-enable-all-subpages-${section.key}`}>
-                        All
-                      </button>
-                      <button type="button" onClick={() => toggleAllSubPages(section.key, false)}
-                        className="text-[9px] px-1.5 py-0.5 rounded bg-red-50 text-red-600 hover:bg-red-100 font-medium border border-red-200" data-testid={`button-disable-all-subpages-${section.key}`}>
-                        None
-                      </button>
+              <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+                {section.items.map((item) => {
+                  const level = resolveItemLevel(section.key, item.path, item.permissionEntity);
+                  return (
+                    <div key={`${section.key}:${item.path}`} className="flex items-center justify-between gap-3 rounded-md border border-gray-100 px-3 py-2">
+                      <div>
+                        <p className="text-xs font-medium text-gray-900">{item.itemLabel}</p>
+                        {item.description && <p className="text-[11px] text-muted-foreground">{item.description}</p>}
+                      </div>
+                      <AccessPill
+                        value={level}
+                        onChange={(next) => setItemLevel(section.key, item.path, item.permissionEntity, next)}
+                        disabled={!canManageRoles}
+                        compact
+                      />
                     </div>
-                  )}
-                  <div className="space-y-0.5">
-                    {secondaryItems.map((item) => {
-                      const subEnabled = sectionEnabled && !isSubPageDisabled(effectiveSections, section.key, item.path);
-                      const isDisabledSection = !sectionEnabled;
-                      return (
-                        <label
-                          key={item.path}
-                          className={`flex items-center gap-2 px-2 py-1 rounded transition-colors cursor-pointer ${
-                            isDisabledSection ? "opacity-40 cursor-not-allowed" : subEnabled ? "hover:bg-emerald-50" : "hover:bg-gray-50"
-                          }`}
-                          data-testid={`subpage-row-${section.key}-${item.path.replace(/\//g, "-")}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={subEnabled}
-                            onChange={(e) => toggleSubPage(section.key, item.path, e.target.checked)}
-                            disabled={!canManageRoles || isDisabledSection}
-                            className="h-3 w-3 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
-                            data-testid={`checkbox-subpage-${section.key}-${item.path.replace(/\//g, "-")}`}
-                          />
-                          {subEnabled ? <Eye className="h-3 w-3 text-emerald-500 shrink-0" /> : <EyeOff className="h-3 w-3 text-gray-300 shrink-0" />}
-                          <span className={`text-[11px] ${isDisabledSection ? "text-gray-400" : subEnabled ? "text-gray-700" : "text-gray-400 line-through"}`}>
-                            {item.label}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </div>
           );
         })}

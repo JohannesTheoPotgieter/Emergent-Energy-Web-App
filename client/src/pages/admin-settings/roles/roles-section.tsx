@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Shield, Plus } from "lucide-react";
 import { AdminQueryState } from "@/components/admin/admin-shell";
 import { useToast } from "@/hooks/use-toast";
+import { queryClient } from "@/lib/queryClient";
 import * as api from "../settings-api";
 import type { RoleSummary, UserSummary } from "../settings-types";
 import { resolveSelectedRole, resolveAdminRolesViewState, canManageRoleActions } from "../settings-types";
@@ -64,7 +65,12 @@ export function RolesSection() {
       const result = await api.saveRole(selected.role, draft);
       if (!result.ok) throw new Error(result.error || "Save failed");
     },
-    onSuccess: () => { setDraft({}); load(); toast({ title: "Role saved successfully" }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["auth-permissions-matrix"] });
+      setDraft({});
+      load();
+      toast({ title: "Role saved successfully" });
+    },
     onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
   });
 
