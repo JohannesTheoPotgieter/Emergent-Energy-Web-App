@@ -186,6 +186,21 @@ export interface WorkItemSummaryDiagnostics {
     mismatchCategories: string[];
   }>;
 }
+
+export interface Phase1ADiagnosticSummary {
+  domain: "project_reads" | "lifecycle_gates" | "approvals" | "finance" | "deliverables" | "party_contacts";
+  status: ComparisonStatus;
+  legacyCount: number;
+  promotedCount: number;
+  deltaCount: number;
+  mismatchCategories: string[];
+  notes: string[];
+}
+
+export interface Phase1AReconciliationReport {
+  generatedAt: string;
+  checks: Phase1ADiagnosticSummary[];
+}
 function blockedDomainSummary(domain: DomainComparisonSummary["domain"], note: string): DomainComparisonSummary {
   return {
     domain,
@@ -919,4 +934,171 @@ export async function compareImportsGovernanceReadiness(): Promise<DomainCompari
     }
     throw error;
   }
+}
+
+export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconciliationReport> {
+  const checks: Phase1ADiagnosticSummary[] = [];
+  const projectReadiness = await compareCoreProjectsReadiness();
+  checks.push({
+    domain: "project_reads",
+    status: projectReadiness.status,
+    legacyCount: projectReadiness.legacyCount,
+    promotedCount: projectReadiness.promotedCount,
+    deltaCount: projectReadiness.legacyCount - projectReadiness.promotedCount,
+    mismatchCategories: projectReadiness.mismatchCategories,
+    notes: projectReadiness.notes,
+  });
+
+  try {
+    const [legacyRows, promotedRows] = await Promise.all([
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.project_execution_state`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM core.projects WHERE execution_gate_status IS NOT NULL`).then((r: any) => r.rows ?? r),
+    ]);
+    const legacyCount = Number(legacyRows[0]?.cnt ?? 0);
+    const promotedCount = Number(promotedRows[0]?.cnt ?? 0);
+    checks.push({
+      domain: "lifecycle_gates",
+      status: legacyCount === promotedCount ? "ready" : (promotedCount === 0 ? "blocked" : "partial"),
+      legacyCount,
+      promotedCount,
+      deltaCount: legacyCount - promotedCount,
+      mismatchCategories: legacyCount === promotedCount ? [] : ["execution_gate_count_delta"],
+      notes: ["Lifecycle/gates check compares legacy project_execution_state with promoted core.projects execution gate columns."],
+    });
+  } catch (error: any) {
+    checks.push({
+      domain: "lifecycle_gates",
+      status: "blocked",
+      legacyCount: 0,
+      promotedCount: 0,
+      deltaCount: 0,
+      mismatchCategories: ["lifecycle_gate_check_unavailable"],
+      notes: [isMissingCoreSchemaError(error) ? "Required lifecycle/gate promoted schema objects are missing." : `Lifecycle/gate check failed: ${String(error?.message || "unknown_error")}`],
+    });
+  }
+
+  try {
+    const [legacyRows, promotedRows] = await Promise.all([
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.approvals WHERE COALESCE(deleted_at, NULL) IS NULL`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM documentation.document_approvals`).then((r: any) => r.rows ?? r),
+    ]);
+    const legacyCount = Number(legacyRows[0]?.cnt ?? 0);
+    const promotedCount = Number(promotedRows[0]?.cnt ?? 0);
+    checks.push({
+      domain: "approvals",
+      status: legacyCount === promotedCount ? "ready" : "partial",
+      legacyCount,
+      promotedCount,
+      deltaCount: legacyCount - promotedCount,
+      mismatchCategories: legacyCount === promotedCount ? [] : ["approval_count_delta"],
+      notes: ["Approvals diagnostics are summary-only and do not emit approval payload details."],
+    });
+  } catch (error: any) {
+    checks.push({
+      domain: "approvals",
+      status: "blocked",
+      legacyCount: 0,
+      promotedCount: 0,
+      deltaCount: 0,
+      mismatchCategories: ["approvals_check_unavailable"],
+      notes: [isMissingCoreSchemaError(error) ? "Required approvals promoted schema objects are missing." : `Approvals check failed: ${String(error?.message || "unknown_error")}`],
+    });
+  }
+
+  try {
+    const [legacyRevenueRows, legacyCostRows, promotedRevenueRows, promotedCostRows] = await Promise.all([
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.program_inflows`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.program_expense`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM finance.revenue_lines`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM finance.cost_lines`).then((r: any) => r.rows ?? r),
+    ]);
+    const legacyCount = Number(legacyRevenueRows[0]?.cnt ?? 0) + Number(legacyCostRows[0]?.cnt ?? 0);
+    const promotedCount = Number(promotedRevenueRows[0]?.cnt ?? 0) + Number(promotedCostRows[0]?.cnt ?? 0);
+    checks.push({
+      domain: "finance",
+      status: legacyCount === promotedCount ? "ready" : "partial",
+      legacyCount,
+      promotedCount,
+      deltaCount: legacyCount - promotedCount,
+      mismatchCategories: legacyCount === promotedCount ? [] : ["finance_line_count_delta"],
+      notes: ["Finance diagnostics summarize line-count parity only (program_* vs finance.*)."],
+    });
+  } catch (error: any) {
+    checks.push({
+      domain: "finance",
+      status: "blocked",
+      legacyCount: 0,
+      promotedCount: 0,
+      deltaCount: 0,
+      mismatchCategories: ["finance_check_unavailable"],
+      notes: [isMissingCoreSchemaError(error) ? "Required finance promoted schema objects are missing." : `Finance check failed: ${String(error?.message || "unknown_error")}`],
+    });
+  }
+
+  try {
+    const [legacyRows, promotedRows] = await Promise.all([
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.deliverables`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM documentation.documents`).then((r: any) => r.rows ?? r),
+    ]);
+    const legacyCount = Number(legacyRows[0]?.cnt ?? 0);
+    const promotedCount = Number(promotedRows[0]?.cnt ?? 0);
+    checks.push({
+      domain: "deliverables",
+      status: legacyCount === promotedCount ? "ready" : "partial",
+      legacyCount,
+      promotedCount,
+      deltaCount: legacyCount - promotedCount,
+      mismatchCategories: legacyCount === promotedCount ? [] : ["deliverable_document_count_delta"],
+      notes: ["Deliverables diagnostics summarize parity between public.deliverables and documentation.documents."],
+    });
+  } catch (error: any) {
+    checks.push({
+      domain: "deliverables",
+      status: "blocked",
+      legacyCount: 0,
+      promotedCount: 0,
+      deltaCount: 0,
+      mismatchCategories: ["deliverables_check_unavailable"],
+      notes: [isMissingCoreSchemaError(error) ? "Required deliverables promoted schema objects are missing." : `Deliverables check failed: ${String(error?.message || "unknown_error")}`],
+    });
+  }
+
+  try {
+    const [legacyCounterpartyRows, legacyClientContactRows, promotedFinanceCounterpartyRows, promotedClientRows] = await Promise.all([
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM public.counterparties`).then((r: any) => r.rows ?? r),
+      db.execute(sql`
+        SELECT COUNT(*)::INTEGER AS cnt
+        FROM public.clients
+        WHERE COALESCE(primary_contact_name, primary_contact_email, primary_contact_phone, secondary_contact_name, secondary_contact_email, secondary_contact_phone) IS NOT NULL
+      `).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(DISTINCT COALESCE(counterparty_name, ''))::INTEGER AS cnt FROM finance.cost_lines`).then((r: any) => r.rows ?? r),
+      db.execute(sql`SELECT COUNT(*)::INTEGER AS cnt FROM core.clients`).then((r: any) => r.rows ?? r),
+    ]);
+    const legacyCount = Number(legacyCounterpartyRows[0]?.cnt ?? 0) + Number(legacyClientContactRows[0]?.cnt ?? 0);
+    const promotedCount = Number(promotedFinanceCounterpartyRows[0]?.cnt ?? 0) + Number(promotedClientRows[0]?.cnt ?? 0);
+    checks.push({
+      domain: "party_contacts",
+      status: legacyCount === promotedCount ? "ready" : "partial",
+      legacyCount,
+      promotedCount,
+      deltaCount: legacyCount - promotedCount,
+      mismatchCategories: legacyCount === promotedCount ? [] : ["party_contact_count_delta"],
+      notes: ["Party/contact diagnostics summarize counterparties and contact-bearing client rows without payload detail logging."],
+    });
+  } catch (error: any) {
+    checks.push({
+      domain: "party_contacts",
+      status: "blocked",
+      legacyCount: 0,
+      promotedCount: 0,
+      deltaCount: 0,
+      mismatchCategories: ["party_contact_check_unavailable"],
+      notes: [isMissingCoreSchemaError(error) ? "Required party/contact promoted schema objects are missing." : `Party/contact check failed: ${String(error?.message || "unknown_error")}`],
+    });
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    checks,
+  };
 }
