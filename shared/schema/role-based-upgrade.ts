@@ -479,8 +479,8 @@ export const DEFAULT_LENS_PROFILES: LensProfileSeed[] = [
  * This is the bridge between the new module model and existing page registry.
  */
 export const MODULE_TO_NAV_GROUPS: Record<CanonicalModule, string[]> = {
-  HOME: ['MY_WORK', 'EXCO'],
-  EXECUTIVE: ['EXCO', 'PROJECT_MANAGEMENT'],
+  HOME: ['MY_WORK', 'PRIORITIES'],
+  EXECUTIVE: ['PRIORITIES', 'PROJECT_MANAGEMENT'],
   PORTFOLIO: ['PROJECT_MANAGEMENT'],
   PIPELINE: ['PROJECT_DEVELOPMENT'],
   PROJECTS: ['PROJECTS', 'PROJECT_MANAGEMENT'],
