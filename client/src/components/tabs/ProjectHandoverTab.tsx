@@ -2,7 +2,7 @@
  * Project-level Handover tab — shows handover packs and SSEG items
  * scoped to the current project.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +16,7 @@ import { Handshake, Plus, FileCheck, AlertTriangle, Clock, ExternalLink } from "
 import { apiRequest } from "@/lib/queryClient";
 import { Link } from "wouter";
 
-interface Props { projectId: number; projectName: string; }
+interface Props { projectId: number; projectName: string; initialFilter?: "all" | "blocked"; }
 
 interface HandoverPackRow { id: number; packType: string; checklistStatus: string; documentCompletenessPct: number; openSnagsCount: number; status: string; }
 interface SsegItemRow { id: number; itemType: string; authority: string | null; status: string; expectedDate: string | null; }
@@ -37,11 +37,16 @@ function statusColor(s: string) {
   return "bg-muted text-muted-foreground";
 }
 
-export function ProjectHandoverTab({ projectId, projectName }: Props) {
+export function ProjectHandoverTab({ projectId, projectName, initialFilter = "all" }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [packType, setPackType] = useState("client_handover");
+  const [activeFilter, setActiveFilter] = useState<"all" | "blocked">(initialFilter);
+
+  useEffect(() => {
+    setActiveFilter(initialFilter);
+  }, [initialFilter]);
 
   const { data: packs = [], isLoading: packsLoading } = useQuery<HandoverPackRow[]>({
     queryKey: ["/api/handover/packs", projectId],
@@ -71,12 +76,23 @@ export function ProjectHandoverTab({ projectId, projectName }: Props) {
     },
   });
 
+  const filteredPacks = packs.filter((pack) => {
+    if (activeFilter !== "blocked") return true;
+    return pack.openSnagsCount > 0 || ["rejected", "in_progress"].includes(pack.status);
+  });
+
+  const filteredSsegItems = ssegItems.filter((item) => {
+    if (activeFilter !== "blocked") return true;
+    const isOpen = item.status !== "complete" && item.status !== "approved";
+    return isOpen;
+  });
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Handshake className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">{packs.length} handover packs</span>
+          <span className="text-sm font-medium">{filteredPacks.length} handover packs</span>
         </div>
         <div className="flex items-center gap-2">
           <Link href="/handover"><Button size="sm" variant="ghost" className="gap-1 text-xs text-muted-foreground"><ExternalLink className="h-3 w-3" />Handover Dashboard</Button></Link>
@@ -87,13 +103,18 @@ export function ProjectHandoverTab({ projectId, projectName }: Props) {
         </div>
       </div>
 
+      <div className="flex items-center gap-1">
+        <Button size="sm" variant={activeFilter === "all" ? "default" : "outline"} className="h-7 text-xs" onClick={() => setActiveFilter("all")}>All</Button>
+        <Button size="sm" variant={activeFilter === "blocked" ? "default" : "outline"} className="h-7 text-xs" onClick={() => setActiveFilter("blocked")}>Blocked/Open</Button>
+      </div>
+
       {/* Handover Packs */}
       {packsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {!packsLoading && packs.length === 0 && ssegItems.length === 0 && (
         <PageEmpty icon={FileCheck} title="No handover data" description="Create a handover pack to start tracking closeout for this project." />
       )}
 
-      {packs.map(pack => (
+      {filteredPacks.map(pack => (
         <Card key={pack.id}>
           <CardContent className="p-3">
             <div className="flex items-center gap-2 mb-2">
@@ -115,11 +136,11 @@ export function ProjectHandoverTab({ projectId, projectName }: Props) {
       ))}
 
       {/* SSEG Items */}
-      {ssegItems.length > 0 && (
+      {filteredSsegItems.length > 0 && (
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">SSEG Items</h4>
           <div className="space-y-1.5">
-            {ssegItems.map(item => {
+            {filteredSsegItems.map(item => {
               const isOverdue = item.expectedDate && new Date(item.expectedDate) < new Date() && item.status !== "complete" && item.status !== "approved";
               return (
                 <Card key={item.id} className={isOverdue ? "border-red-200" : ""}>

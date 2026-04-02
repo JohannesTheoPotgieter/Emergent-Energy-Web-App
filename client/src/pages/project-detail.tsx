@@ -63,6 +63,7 @@ import { usePermission } from "@/hooks/use-permissions";
 import { type NextMilestoneSummary } from "@/lib/next-milestone";
 import { useProjectDetail, useProjectFinance, useProjectPlan, useProjectQuality, useProjectEngineering } from "@/hooks/use-project-v2";
 import type { ProjectPermissions } from "@shared/api-types/project-v2";
+import { buildProjectSummaryChipDestinations, type ProjectSummaryChipKey } from "@/lib/project-summary-chip-navigation";
 
 const PHASE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   P0_FIRST_ASSESSMENT: { bg: "bg-muted", text: "text-foreground", border: "border-border" },
@@ -120,8 +121,8 @@ function ProjectPriorityBadges({ projectId }: { projectId: number | null }) {
     <div className="flex items-center gap-2 mt-1 mb-2 flex-wrap">
       <span className="text-xs text-muted-foreground">Priorities:</span>
       {priorities.map((p: any) => (
-        <Link key={p.id} href={`/priorities/${p.id}`} className="no-underline">
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border cursor-pointer hover:shadow-sm ${healthColors[p.effectiveHealth] || healthColors.healthy}`}>
+        <Link key={p.id} href={`/priorities/${p.id}`} className="no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-full" aria-label={`Open priority ${p.title}`} title={`Open priority ${p.title}`}>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border cursor-pointer hover:shadow-sm transition-shadow ${healthColors[p.effectiveHealth] || healthColors.healthy}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${p.effectiveHealth === "critical" ? "bg-red-500" : p.effectiveHealth === "at_risk" ? "bg-amber-500" : "bg-blue-500"}`} />
             {p.title}
           </span>
@@ -259,7 +260,17 @@ const STATUS_BADGE: Record<string, string> = {
 const ALL_STATUSES = ["TO DO", "IN PROGRESS", "HOLD", "NEEDS APPROVAL", "COMPLETE", "QC APPROVED", "PROVIDE FEEDBACK", "OPERATIONAL APPROVAL", "PROJECTS ASSISTANCE"];
 const ALL_PRIORITIES = ["Low", "Med", "High", "Critical"];
 
-function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: number | null; isAdmin: boolean; projectName: string }) {
+function EngTasksTab({
+  projectInfoId,
+  isAdmin,
+  projectName,
+  initialStatusFilter,
+}: {
+  projectInfoId: number | null;
+  isAdmin: boolean;
+  projectName: string;
+  initialStatusFilter?: string;
+}) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [, setLocation] = useLocation();
@@ -276,6 +287,11 @@ function EngTasksTab({ projectInfoId, isAdmin, projectName }: { projectInfoId: n
   const [searchQuery, setSearchQuery] = useState("");
   const { allowed: canEdit } = usePermission('pd_eng_tasks', 'edit');
   const { allowed: canDelete } = usePermission('pd_eng_tasks', 'delete');
+
+  useEffect(() => {
+    if (!initialStatusFilter) return;
+    setStatusFilter(initialStatusFilter);
+  }, [initialStatusFilter]);
 
   const { data: engData, isLoading } = useQuery<{ projectName: string; phase: string; tasks: any[] }>({
     queryKey: ["project-eng-tasks", projectInfoId],
@@ -942,6 +958,11 @@ export default function ProjectDetailPage() {
   // Resolve initial department from URL: ?dept= takes priority, then legacy ?tab=
   const urlDept = searchParams.get("dept");
   const urlSub = searchParams.get("sub");
+  const engFilter = searchParams.get("engFilter");
+  const qualityFilter = searchParams.get("qualityFilter");
+  const costFilter = searchParams.get("costFilter");
+  const handoverFilter = searchParams.get("handoverFilter");
+  const procurementFilter = searchParams.get("procurementFilter");
 
   const resolvedFromUrl = useMemo(() => {
     if (urlDept) return { dept: urlDept, subTab: urlSub || DEPT_DEFAULT_SUBTAB[urlDept] || "" };
@@ -1255,6 +1276,7 @@ export default function ProjectDetailPage() {
   const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
   const canInitiateFinancialReview = ['PROJECT_MANAGER_SITE', 'PROGRAM_MANAGER', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
   const ragStatus = v2Detail?.executionState?.ragStatus ?? projectInfo?.rag_status ?? null;
+  const chipDestinations = useMemo(() => buildProjectSummaryChipDestinations(projectName), [projectName]);
 
   // ─── KPI computation: V2 detail → healthSummary → client-side fallback ───
   const v2ContractValue = v2Detail?.financeSummary?.contractValue;
@@ -1355,11 +1377,11 @@ export default function ProjectDetailPage() {
   const dependencyCount = pdTicketsData.length;
   // GC-010: Normalize engineering status casing for overdue count
   const overdueEngineeringCount = healthSummary?.alerts.overdueEngineeringTasks ?? (engDataForAlerts?.tasks || []).filter((t: any) => t.dueDate && t.dueDate < today && String(t.status).toUpperCase() !== "COMPLETE").length;
-  const topAlerts = [
-    { label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => navigateToDept("pm", "plan") },
-    { label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => navigateToDept("eng", "tasks") },
-    { label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => navigateToDept("quality", "checklist") },
-    { label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => navigateToDept("finance", "cost-lines") },
+  const topAlerts: Array<{ key: ProjectSummaryChipKey; label: string; count: number; action: () => void; title: string; ariaLabel: string }> = [
+    { key: "overdue-plan-tasks", label: "Overdue plan tasks", count: overduePlanTasks.length, action: () => setLocation(chipDestinations["overdue-plan-tasks"]?.path || ""), title: chipDestinations["overdue-plan-tasks"]?.title || "Open plan tasks", ariaLabel: chipDestinations["overdue-plan-tasks"]?.ariaLabel || "Open plan tasks" },
+    { key: "overdue-engineering-tasks", label: "Overdue engineering tasks", count: overdueEngineeringCount, action: () => setLocation(chipDestinations["overdue-engineering-tasks"]?.path || ""), title: chipDestinations["overdue-engineering-tasks"]?.title || "Open overdue engineering tasks", ariaLabel: chipDestinations["overdue-engineering-tasks"]?.ariaLabel || "Open overdue engineering tasks" },
+    { key: "pending-quality-approvals", label: "Pending quality approvals", count: Math.max(qualityTotalItems - qualityApprovedItems, 0), action: () => setLocation(chipDestinations["pending-quality-approvals"]?.path || ""), title: chipDestinations["pending-quality-approvals"]?.title || "Open pending quality approvals", ariaLabel: chipDestinations["pending-quality-approvals"]?.ariaLabel || "Open quality approvals" },
+    { key: "overdue-supplier-costs", label: "Overdue supplier costs", count: unpaidExpenseCount, action: () => setLocation(chipDestinations["overdue-supplier-costs"]?.path || ""), title: chipDestinations["overdue-supplier-costs"]?.title || "Open overdue supplier costs", ariaLabel: chipDestinations["overdue-supplier-costs"]?.ariaLabel || "Open overdue supplier costs" },
   ].filter((alert) => alert.count > 0);
   const collaborationSignals = {
     hasHistory: !!projectInfoId,
@@ -1457,7 +1479,14 @@ export default function ProjectDetailPage() {
       {topAlerts.length > 0 && (
         <div className="flex flex-wrap gap-1.5" data-testid="cockpit-exception-strip">
           {topAlerts.map((alert) => (
-            <button key={alert.label} onClick={alert.action} className="text-xs rounded-md border border-amber-200 bg-amber-50 px-2 py-1 hover:bg-amber-100">
+            <button
+              key={alert.label}
+              type="button"
+              onClick={alert.action}
+              title={alert.title}
+              aria-label={alert.ariaLabel}
+              className="text-xs rounded-md border border-amber-200 bg-amber-50 px-2 py-1 cursor-pointer transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50"
+            >
               <span className="font-semibold text-amber-800">{alert.count}</span> {alert.label}
             </button>
           ))}
@@ -1538,7 +1567,7 @@ export default function ProjectDetailPage() {
             </div>
           )}
           {activeSubTab === "raid" && projectInfoId && <ProjectRaidTab projectId={projectInfoId} projectName={projectName} />}
-          {activeSubTab === "handover" && projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "handover" && projectInfoId && <ProjectHandoverTab projectId={projectInfoId} projectName={projectName} initialFilter={handoverFilter === "blocked" ? "blocked" : "all"} />}
           {activeSubTab === "financial-review" && projectInfoId && <FinancialReviewTab projectId={projectInfoId} projectName={projectName} />}
         </div>
       )}
@@ -1569,7 +1598,7 @@ export default function ProjectDetailPage() {
             ))}
           </div>
 
-          {activeSubTab === "tasks" && projectInfoId && <EngTasksTab projectInfoId={projectInfoId} isAdmin={isAdmin} projectName={projectName} />}
+          {activeSubTab === "tasks" && projectInfoId && <EngTasksTab projectInfoId={projectInfoId} isAdmin={isAdmin} projectName={projectName} initialStatusFilter={engFilter || undefined} />}
           {activeSubTab === "timeline" && (
             <div className="space-y-4">
               {projectInfoId && <StageTimeline projectId={projectInfoId} />}
@@ -1610,7 +1639,7 @@ export default function ProjectDetailPage() {
             ))}
           </div>
 
-          {activeSubTab === "checklist" && <QualityTab projectName={projectName} />}
+          {activeSubTab === "checklist" && <QualityTab projectName={projectName} initialStatusFilter={qualityFilter || undefined} />}
           {activeSubTab === "history" && (
             <div className="space-y-2">
               <WeeklyReviewWizard
@@ -1669,9 +1698,9 @@ export default function ProjectDetailPage() {
           )}
 
           {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
-          {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} />}
+          {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
           {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
-          {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} />}
+          {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} initialFilter={procurementFilter || undefined} />}
           {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}
         </div>
       )}

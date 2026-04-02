@@ -75,6 +75,7 @@ function getRiskLevelClass(level: string) {
 
 interface QualityTabProps {
   projectName: string;
+  initialStatusFilter?: string;
 }
 
 interface QualityWorkspaceData {
@@ -143,7 +144,7 @@ interface QualityWorkspaceData {
   }>;
 }
 
-export function QualityTab({ projectName }: QualityTabProps) {
+export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -167,6 +168,11 @@ export function QualityTab({ projectName }: QualityTabProps) {
   const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '');
   const canEdit = isQmOrAdmin;
   const { allowed: canDeleteQc } = usePermission('pd_quality', 'delete');
+
+  useEffect(() => {
+    if (!initialStatusFilter) return;
+    setStatusFilter(initialStatusFilter);
+  }, [initialStatusFilter]);
 
   const { data: checklistData, isLoading, error } = useQuery({
     queryKey: ["quality-checklist", projectName],
