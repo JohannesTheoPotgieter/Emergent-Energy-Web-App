@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { checkPermission, normalizeRoleForPermissions, type PermissionAction, type PermissionEntity } from "@shared/schema";
 import { getPermissionEntityForPath, getAppSectionForPath } from "@/config/page-registry";
 import { parseDisabledSubPages } from "@/config/app-navigation";
+import { NAVIGATION_PERMISSION_MODEL, validateNavigationPermissionModel } from "@/config/navigation-permissions";
 import { useAuth } from "./use-auth";
 import { useLensContext } from "./use-lens-context";
 
@@ -107,11 +108,22 @@ export function useAccessMatrix() {
   }, [effectiveRole, permissions?.entityPermissions, permissions?.userOverrides]);
 
   const canViewPath = useMemo(() => {
+    if (import.meta.env.DEV) {
+      validateNavigationPermissionModel().forEach((warning) => {
+        console.warn(`[NavPermissions] ${warning}`);
+      });
+    }
+    const knownNavPaths = new Set(
+      NAVIGATION_PERMISSION_MODEL.flatMap((section) => section.items.map((item) => item.path.split("?")[0])),
+    );
     return (path: string) => {
       if (path === "/") return true;
 
       if (allowedSections) {
         const section = getAppSectionForPath(path);
+        if (!section && import.meta.env.DEV && knownNavPaths.has(path.split("?")[0])) {
+          console.warn(`[AccessMatrix] Missing section mapping for nav path "${path}". This can cause permission drift.`);
+        }
         if (section && !allowedSections.has(section)) {
           return false;
         }
@@ -124,6 +136,9 @@ export function useAccessMatrix() {
       }
 
       const entity = getPermissionEntityForPath(path);
+      if (!entity && import.meta.env.DEV && knownNavPaths.has(path.split("?")[0])) {
+        console.warn(`[AccessMatrix] Missing permission entity mapping for nav path "${path}". Falling back to allow to avoid false deny.`);
+      }
       if (!entity) return true;
       return canAccessEntityAction(entity, "view");
     };

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildVisibleTopSections, getBreadcrumbs, parseDisabledSubPages } from "@/config/app-navigation";
 import { ADMIN_SURFACES } from "@/config/admin-surfaces";
+import { getAppSectionForPath } from "@/config/page-registry";
+import { NAVIGATION_PERMISSION_MODEL } from "@/config/navigation-permissions";
 
 describe("app navigation visibility", () => {
   it("keeps Home secondary navigation items matching sidebar config", () => {
@@ -199,6 +201,18 @@ describe("app navigation visibility", () => {
     const adminSection = sections.find((section) => section.label === "Admin");
 
     expect(adminSection?.secondary.some((item) => /command center/i.test(item.label))).toBe(false);
+  });
+
+  it("maps Priorities route to PRIORITIES section key (regression)", () => {
+    expect(getAppSectionForPath("/priorities")).toBe("PRIORITIES");
+    expect(getAppSectionForPath("/Priorities")).toBe("PRIORITIES");
+  });
+
+  it("keeps a single nav-permission source with unique section:path keys", () => {
+    const keys = NAVIGATION_PERMISSION_MODEL.flatMap((section) =>
+      section.items.map((item) => `${section.key}:${item.path}`),
+    );
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 

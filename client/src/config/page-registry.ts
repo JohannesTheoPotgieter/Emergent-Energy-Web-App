@@ -197,12 +197,28 @@ export function findPageByPath(pathname: string): PageRegistryEntry | undefined 
   return sorted.find((page) => page.matchSubRoutes && (pathname === page.path || pathname.startsWith(`${page.path}/`)));
 }
 
+function normalizePathname(input: string): string {
+  const [withoutHash] = input.split("#");
+  const [withoutQuery] = withoutHash.split("?");
+  if (!withoutQuery) return "/";
+  const normalized = withoutQuery.trim().toLowerCase();
+  if (normalized === "") return "/";
+  if (normalized.length > 1 && normalized.endsWith("/")) {
+    return normalized.slice(0, -1);
+  }
+  return normalized;
+}
+
 export function getPermissionEntityForPath(pathname: string): PermissionEntity | undefined {
+  const normalizedPath = normalizePathname(pathname);
   const sorted = [...PAGE_REGISTRY]
     .filter((page) => !!page.permissionEntity && !page.path.includes(":"))
     .sort((a, b) => b.path.length - a.path.length);
 
-  const match = sorted.find((page) => pathname === page.path || pathname.startsWith(`${page.path}/`));
+  const match = sorted.find((page) => {
+    const pagePath = normalizePathname(page.path);
+    return normalizedPath === pagePath || normalizedPath.startsWith(`${pagePath}/`);
+  });
   return match?.permissionEntity;
 }
 
@@ -239,77 +255,81 @@ const NAV_GROUP_TO_SECTION: Record<string, string> = {
 export const PAGES = PAGE_REGISTRY;
 
 export function getAppSectionForPath(pathname: string): string | undefined {
-  if (pathname === "/") {
+  const normalizedPath = normalizePathname(pathname);
+  if (normalizedPath === "/") {
     return "HOME";
   }
-  if (pathname === "/my-work" || pathname.startsWith("/my-work/") || pathname === "/inbox") {
+  if (normalizedPath === "/my-work" || normalizedPath.startsWith("/my-work/") || normalizedPath === "/inbox") {
     return "HOME";
   }
   // Milestone Tracker lives under Project Delivery
-  if (pathname === "/gates/commitments" || pathname === "/milestone-tracker" || pathname.startsWith("/milestone-tracker/")) {
+  if (normalizedPath === "/gates/commitments" || normalizedPath === "/milestone-tracker" || normalizedPath.startsWith("/milestone-tracker/")) {
     return "PROJECT_DELIVERY";
   }
   // Portfolio Dashboard lives under Project Delivery
-  if (pathname === "/portfolios" || pathname.startsWith("/portfolios/")) {
+  if (normalizedPath === "/portfolios" || normalizedPath.startsWith("/portfolios/")) {
     return "PROJECT_DELIVERY";
   }
   // Weekly Reviews lives under Project Delivery
-  if (pathname === "/weekly-reviews" || pathname.startsWith("/weekly-reviews/")) {
+  if (normalizedPath === "/weekly-reviews" || normalizedPath.startsWith("/weekly-reviews/")) {
     return "PROJECT_DELIVERY";
   }
   // Gates live under Portfolio
-  if (pathname === "/gates" || pathname.startsWith("/gates/")) {
+  if (normalizedPath === "/gates" || normalizedPath.startsWith("/gates/")) {
     return "PORTFOLIO";
   }
   // Quality (separate from HSE)
-  if (pathname === "/quality" || pathname.startsWith("/quality/")) {
+  if (normalizedPath === "/quality" || normalizedPath.startsWith("/quality/")) {
     return "QUALITY";
   }
   // HSE (separate from Quality)
-  if (pathname === "/hse" || pathname.startsWith("/hse/")) {
+  if (normalizedPath === "/hse" || normalizedPath.startsWith("/hse/")) {
     return "HSE";
   }
   // Engineering
-  if (pathname === "/engineering" || pathname.startsWith("/engineering/")) {
+  if (normalizedPath === "/engineering" || normalizedPath.startsWith("/engineering/")) {
     return "ENGINEERING";
   }
   // PD
-  if (pathname === "/pd" || pathname.startsWith("/pd/") || pathname === "/opportunities" || pathname === "/clients" || pathname.startsWith("/clients/")) {
+  if (normalizedPath === "/pd" || normalizedPath.startsWith("/pd/") || normalizedPath === "/opportunities" || normalizedPath === "/clients" || normalizedPath.startsWith("/clients/")) {
     return "PROJECT_DEVELOPMENT";
   }
   // Execution Board lives under Project Delivery
-  if (pathname === "/execution-board" || pathname.startsWith("/execution-board/")) {
+  if (normalizedPath === "/execution-board" || normalizedPath.startsWith("/execution-board/")) {
     return "PROJECT_DELIVERY";
   }
   // PM Dashboard lives under Project Delivery
-  if (pathname === "/pm-dashboard" || pathname.startsWith("/pm-dashboard/")) {
+  if (normalizedPath === "/pm-dashboard" || normalizedPath.startsWith("/pm-dashboard/")) {
     return "PROJECT_DELIVERY";
   }
   // Commissioning lives under Quality
-  if (pathname === "/commissioning-dashboard" || pathname.startsWith("/commissioning-dashboard/")) {
+  if (normalizedPath === "/commissioning-dashboard" || normalizedPath.startsWith("/commissioning-dashboard/")) {
     return "QUALITY";
   }
   // Company Overview lives under Portfolio
-  if (pathname === "/company-overview") {
+  if (normalizedPath === "/company-overview") {
     return "PORTFOLIO";
   }
-  // Priorities lives under EXCO
-  if (pathname === "/priorities" || pathname.startsWith("/priorities/")) {
-    return "EXCO";
+  // Priorities lives under PRIORITIES
+  if (normalizedPath === "/priorities" || normalizedPath.startsWith("/priorities/")) {
+    return "PRIORITIES";
   }
   // Portfolio paths (lifecycle)
-  if (pathname === "/project-lifecycle" || pathname.startsWith("/project-lifecycle/")) {
+  if (normalizedPath === "/project-lifecycle" || normalizedPath.startsWith("/project-lifecycle/")) {
     return "PORTFOLIO";
   }
   // Reports section
-  if (pathname === "/reports" || pathname.startsWith("/reports/")) {
+  if (normalizedPath === "/reports" || normalizedPath.startsWith("/reports/")) {
     return "REPORTS";
   }
   const sorted = [...PAGE_REGISTRY]
     .filter((page) => !!page.navGroup && !page.path.includes(":"))
     .sort((a, b) => b.path.length - a.path.length);
 
-  const match = sorted.find((page) => pathname === page.path || pathname.startsWith(`${page.path}/`));
+  const match = sorted.find((page) => {
+    const pagePath = normalizePathname(page.path);
+    return normalizedPath === pagePath || normalizedPath.startsWith(`${pagePath}/`);
+  });
   if (!match?.navGroup) return undefined;
   return NAV_GROUP_TO_SECTION[match.navGroup];
 }
