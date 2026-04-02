@@ -3383,37 +3383,10 @@ export async function registerRoutes(
         }
       }
 
-      const [projectDualWriteEnabled, importsGovernancePreview] = await Promise.all([
-        getFeatureFlag("promoted_core_project_master_dual_write"),
-        getFeatureFlag("imports_source_update_governance_preview"),
-      ]);
+      const importsGovernancePreview = await getFeatureFlag("imports_source_update_governance_preview");
 
-      let projectMirror: { attempted: boolean; success: boolean; error: string | null } = { attempted: false, success: false, error: null };
-      if (projectDualWriteEnabled) {
-        projectMirror.attempted = true;
-        try {
-          await db.execute(sql`
-            INSERT INTO core.projects (
-              id, legacy_project_info_id, project_name, client_id, phase, rag_status, execution_gate_status, execution_gate_reason, updated_at, source_table
-            ) VALUES (
-              ${updated.id}, ${updated.id}, ${updated.projectName}, ${updated.clientId ?? null}, ${updated.phase ?? null}, ${updated.ragStatus ?? null}, ${updated.executionGateStatus ?? null}, ${updated.executionGateReason ?? null}, NOW(), 'public.project_info'
-            )
-            ON CONFLICT (id) DO UPDATE
-            SET
-              project_name = EXCLUDED.project_name,
-              client_id = EXCLUDED.client_id,
-              phase = EXCLUDED.phase,
-              rag_status = EXCLUDED.rag_status,
-              execution_gate_status = EXCLUDED.execution_gate_status,
-              execution_gate_reason = EXCLUDED.execution_gate_reason,
-              updated_at = NOW()
-          `);
-          projectMirror.success = true;
-        } catch (mirrorError: any) {
-          projectMirror.error = mirrorError?.message || "unknown_error";
-          console.error("[dual-write][project-master] promoted mirror write failed", { projectId: updated.id, error: mirrorError });
-        }
-      }
+      // Phase 2 bridge write is now handled by storage.ts → bridge-writer.ts
+      // (replaces the inline dual-write that was previously here)
 
       let importsGovernancePreviewRecord: { attempted: boolean; requestId: number | null; error: string | null } = { attempted: false, requestId: null, error: null };
       if (importsGovernancePreview && sourceOfTruth.requiresSourceUpdateGovernance) {
@@ -3620,34 +3593,15 @@ export async function registerRoutes(
         updatedBy: req.user?.id,
       }).returning();
 
-      const dualWriteEnabled = await getFeatureFlag("promoted_core_clients_dual_write");
-      let promotedMirror: { attempted: boolean; success: boolean; error: string | null } = { attempted: false, success: false, error: null };
-      if (dualWriteEnabled) {
-        promotedMirror.attempted = true;
-        try {
-          await db.execute(sql`
-            INSERT INTO core.clients (id, legacy_id, client_code, name, created_by, updated_by, created_at, updated_at, source_table)
-            VALUES (${created.id}, ${created.id}, ${generatedClientId}, ${parsed.name}, ${req.user?.id ?? null}, ${req.user?.id ?? null}, NOW(), NOW(), 'public.clients')
-            ON CONFLICT (id) DO UPDATE
-            SET name = EXCLUDED.name,
-                client_code = EXCLUDED.client_code,
-                updated_by = EXCLUDED.updated_by,
-                updated_at = NOW()
-          `);
-          promotedMirror.success = true;
-        } catch (mirrorError: any) {
-          promotedMirror.error = mirrorError?.message || "unknown_error";
-          console.error("[dual-write][clients] promoted mirror write failed", {
-            clientId: created.id,
-            error: mirrorError,
-          });
-        }
-      }
+      // Phase 2 bridge write: mirror to core.clients (always-on, best-effort)
+      const { syncClient } = await import("./bridge/bridge-writer");
+      const promotedMirror = await syncClient({
+        id: created.id, name: parsed.name, clientId: generatedClientId,
+        createdBy: req.user?.id ?? null, updatedBy: req.user?.id ?? null,
+      });
+      res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
 
       logAuditFromReq(req, { entityType: "client", entityId: String(created.id), action: "create", changesJson: { name: parsed.name, clientId: generatedClientId, promotedMirror } });
-      if (promotedMirror.attempted) {
-        res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
-      }
       res.json({ ...created, _promotedMirror: promotedMirror });
     } catch (error) {
       console.error("Client create error:", error);
