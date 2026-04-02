@@ -320,6 +320,7 @@ export function registerRoleManagementRoutes(app: Express) {
         .where(eq(rolePermissions.role, roleKey))
         .returning();
       invalidateEntityPermCache();
+      invalidateUserOverrideCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: "update", entityId: roleKey, changesJson: { description: "Role permissions updated", role: roleKey, sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined } });
       logPermissionAudit(req, { eventType: "role_updated", targetRole: roleKey, changeDetail: { sections, canManageUsers, canManageRoles, canEditData, hasEntityPermChanges: ep !== undefined, hasAuthorityModelChanges: authorityModel !== undefined } });
       res.json(updated);
@@ -349,6 +350,7 @@ export function registerRoleManagementRoutes(app: Express) {
         isSystem: false,
       }).returning();
       invalidateEntityPermCache();
+      invalidateUserOverrideCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: "create", entityId: role, changesJson: { description: "New role created", role, label, sections } });
       logPermissionAudit(req, { eventType: "role_created", targetRole: role, changeDetail: { label, sections } });
       res.json(created);
@@ -384,6 +386,7 @@ export function registerRoleManagementRoutes(app: Express) {
       }).returning();
 
       invalidateEntityPermCache();
+      invalidateUserOverrideCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: "clone", entityId: newRole, changesJson: { description: "Role cloned", sourceRole: sourceRoleKey, newRole } });
       logPermissionAudit(req, { eventType: "role_cloned", targetRole: newRole, changeDetail: { sourceRole: sourceRoleKey, label } });
       res.json(created);
@@ -410,6 +413,7 @@ export function registerRoleManagementRoutes(app: Express) {
         .returning();
 
       invalidateEntityPermCache();
+      invalidateUserOverrideCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: archived ? "archive" : "unarchive", entityId: roleKey, changesJson: { description: archived ? "Role archived" : "Role unarchived" } });
       res.json(updated);
     } catch (err: any) {
@@ -515,6 +519,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       await db.delete(rolePermissions).where(eq(rolePermissions.role, roleKey));
       invalidateEntityPermCache();
+      invalidateUserOverrideCache();
       logAuditFromReq(req, { entityType: "role_permissions", action: "delete", entityId: roleKey, changesJson: { description: "Role deleted", role: roleKey, label: existing.label } });
       logPermissionAudit(req, { eventType: "role_deleted", targetRole: roleKey, changeDetail: { label: existing.label } });
       res.json({ success: true });
@@ -689,7 +694,7 @@ export function registerRoleManagementRoutes(app: Express) {
       const raw = companyRole || userRole;
 
       if (!raw) {
-        return res.json({ sections: ["PROJECTS"], canManageUsers: false, canManageRoles: false, canEditData: false });
+        return res.json({ sections: [], canManageUsers: false, canManageRoles: false, canEditData: false });
       }
 
       const activeRole = mapRole(raw);
@@ -705,7 +710,7 @@ export function registerRoleManagementRoutes(app: Express) {
         perm = buildDefaultRolePermissionsSnapshot().find((entry) => entry.role === activeRole) || null;
       }
       if (!perm) {
-        return res.json({ sections: ["PROJECTS"], canManageUsers: false, canManageRoles: false, canEditData: false });
+        return res.json({ sections: [], canManageUsers: false, canManageRoles: false, canEditData: false });
       }
 
       // Load user-specific overrides
