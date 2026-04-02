@@ -235,15 +235,16 @@ function extractFontColorHex(fontColor: any): string | null {
     return fontColor.rgb.toLowerCase();
   }
   // Theme color resolution — standard Excel theme defaults:
-  // theme 0 = white (window background), theme 1 = black (window text)
-  // theme 2-3 = other system colors, theme 4+ = accent colors
+  // theme 0 = window background, theme 1 = window text (black)
+  // Legacy parser treated both theme 0 and theme 1 as black/confirmed.
+  // In practice, tracker spreadsheets use theme 1 for confirmed (black) dates
+  // and explicit red ARGB for unconfirmed dates. Tinted variants of theme 1
+  // (e.g. tint 0.35 = dark grey) are still "confirmed" — only explicit red is not.
   if (fontColor.theme != null && typeof fontColor.theme === "number") {
-    // Apply tint if present (tint=0 or absent means pure theme color)
-    const tint = fontColor.tint || 0;
-    if (fontColor.theme === 1 && Math.abs(tint) < 0.2) return "000000"; // black
-    if (fontColor.theme === 0 && Math.abs(tint) < 0.2) return "ffffff"; // white
-    // Cannot reliably resolve other theme colors without the workbook theme XML
-    return null;
+    if (fontColor.theme === 1 || fontColor.theme === 0) return "000000"; // black — matches legacy parser
+    // Cannot reliably resolve accent/other theme colors without workbook theme XML.
+    // Default to black since tracker text is black unless explicitly red.
+    return "000000";
   }
   return null;
 }
@@ -274,12 +275,15 @@ function getCellFontColor(ws: ExcelJS.Worksheet, rowIdx: number, colIdx: number)
     }
     const hex = extractFontColorHex(font.color);
     if (hex === null) {
-      // Unresolvable theme/color → treat as unconfirmed (safe default)
-      return { color: null, isBlack: false };
+      // Unresolvable color → default to black/confirmed.
+      // Tracker convention: only explicitly red text means unconfirmed.
+      // Matches legacy excelParser behaviour which treated theme 0/1 as black.
+      return { color: "black", isBlack: true };
     }
     return classifyColorHex(hex);
   } catch {
-    return { color: null, isBlack: false };
+    // Extraction error → default to black/confirmed (matches legacy parser).
+    return { color: "black", isBlack: true };
   }
 }
 
