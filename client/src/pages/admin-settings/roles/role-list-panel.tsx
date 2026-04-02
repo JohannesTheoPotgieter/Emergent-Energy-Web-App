@@ -10,7 +10,6 @@ interface RoleListPanelProps {
   selectedRole: string;
   onSelectRole: (role: string) => void;
   onCreateRole: () => void;
-  onCompareRoles: () => void;
   canManageRoles: boolean;
 }
 
