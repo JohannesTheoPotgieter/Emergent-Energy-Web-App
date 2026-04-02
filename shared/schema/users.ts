@@ -156,9 +156,10 @@ export type AppSetting = typeof appSettings.$inferSelect;
 // ===================== UNIFIED ROLE PERMISSIONS =====================
 
 export const APP_SECTIONS = [
-  // Current 10-section navigation model
+  // Current 11-section navigation model
   'HOME',
   'PORTFOLIO',
+  'PRIORITIES',
   'PROJECT_DEVELOPMENT',
   'PROJECT_DELIVERY',
   'ENGINEERING',
@@ -185,9 +186,10 @@ export const APP_SECTIONS = [
 export type AppSection = typeof APP_SECTIONS[number];
 
 export const APP_SECTION_LABELS: Record<AppSection, string> = {
-  // Current 10-section model
+  // Current 11-section model
   HOME: "Home",
   PORTFOLIO: "Portfolio (Lifecycle, Gates, Programme)",
+  PRIORITIES: "Priorities (My, Department, Company)",
   PROJECT_DEVELOPMENT: "Project Development (Pipeline, Clients, Handovers)",
   PROJECT_DELIVERY: "Project Delivery (Execution, Projects, Construction, Procurement, Milestones)",
   ENGINEERING: "Engineering (Design, Tasks, Reviews)",
@@ -1407,8 +1409,8 @@ export const ROLE_DEPARTMENT_MAP: Record<string, DepartmentCluster> = {
 };
 
 /** Default workstream visibility per role — used when no DB config exists.
- *  Sections use the canonical 10-section model: HOME, PORTFOLIO, PROJECT_DEVELOPMENT,
- *  PROJECT_DELIVERY, ENGINEERING, QUALITY, HSE, FINANCE, REPORTS, ADMIN.
+ *  Sections use the canonical 11-section model: HOME, PORTFOLIO, PRIORITIES,
+ *  PROJECT_DEVELOPMENT, PROJECT_DELIVERY, ENGINEERING, QUALITY, HSE, FINANCE, REPORTS, ADMIN.
  *  Must stay aligned with ROLE_VISIBLE_SECTIONS in app-navigation.ts and
  *  DEFAULT_ROLE_PERMISSIONS.sections below.
  */
