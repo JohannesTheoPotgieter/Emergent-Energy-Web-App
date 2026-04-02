@@ -9,7 +9,7 @@ import { OVERRIDE_CATEGORIES, users, projectInfo } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClassifier";
-import { isCosRealised } from "../lib/calculations/financeUtils";
+import { isCosRealised, classifyCosStatusFull } from "../lib/calculations/financeUtils";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { buildCanonicalResolver } from "../services/project-summary-helpers";
 import { getProjectHeaderKpis, recomputeHeaderKpiProjectionForActiveProjects } from "../services/project-header-kpi-service";
@@ -1220,7 +1220,13 @@ router.get("/api/program-dashboard", requireAuth, async (req, res) => {
       const monthKey = `${dateMatch[1]}-${dateMatch[2]}`;
       cosTotalByMonth.set(monthKey, (cosTotalByMonth.get(monthKey) || 0) + amount);
 
-      if (isCosRealised(exp)) {
+      // Past-month committed costs are effectively realised
+      const nowD = new Date();
+      const curMK = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
+      const cosStatus = classifyCosStatusFull(exp);
+      const effectivelyRealised = (cosStatus === 'COS Realised' && monthKey <= curMK) ||
+                                   (cosStatus === 'Committed' && monthKey < curMK);
+      if (effectivelyRealised) {
         cosRealisedByMonth.set(monthKey, (cosRealisedByMonth.get(monthKey) || 0) + amount);
       }
     }
