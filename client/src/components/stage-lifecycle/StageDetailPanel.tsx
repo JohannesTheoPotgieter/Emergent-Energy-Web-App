@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +60,11 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
   const { toast } = useToast();
   const [exceptionDialogOpen, setExceptionDialogOpen] = useState(false);
   const [exceptionReqCode, setExceptionReqCode] = useState<string | undefined>();
+  const [lastTemplatesFound, setLastTemplatesFound] = useState<number | null>(null);
+
+  useEffect(() => {
+    setLastTemplatesFound(null);
+  }, [projectId, stageCode]);
 
   if (isLoading) {
     return <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading stage...</div>;
@@ -102,17 +107,62 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
 
   // If a dedicated workspace exists for this stage, render it
   const WorkspaceComponent = STAGE_WORKSPACE_MAP[stageCode];
+  const hasNoRequirements = data.requirements.length === 0;
+  const hasNoTemplates = lastTemplatesFound === 0;
+  const hydrateHelperText = hydrateMutation.isPending
+    ? "Hydrating checklist templates..."
+    : hasNoTemplates
+      ? "No active checklist templates found for this stage."
+      : "Populate checklist from active templates to begin.";
+  const hydrateButtonLabel = hydrateMutation.isPending ? "Hydrating..." : hasNoTemplates ? "Recheck Templates" : "Hydrate Checklist";
+
+  const handleHydrate = () => {
+    hydrateMutation.mutate(stageCode, {
+      onSuccess: (result) => {
+        const createdCount = result?.createdCount ?? 0;
+        const templatesFound = result?.templatesFound ?? 0;
+        setLastTemplatesFound(templatesFound);
+
+        console.info("[stage-lifecycle] hydrate checklist result", {
+          stageCode,
+          createdCount,
+          templatesFound,
+        });
+
+        if (templatesFound === 0 || createdCount === 0) {
+          toast({
+            title: "No templates available",
+            description: "No active checklist templates found for this stage.",
+          });
+          return;
+        }
+
+        toast({
+          title: "Checklist hydrated",
+          description: `Created ${createdCount} requirement${createdCount === 1 ? "" : "s"} for ${stageCode}.`,
+        });
+      },
+      onError: (err: Error) => {
+        toast({
+          title: "Failed to hydrate checklist",
+          description: err.message || "Unable to hydrate stage checklist.",
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
   if (WorkspaceComponent) {
     return (
       <div className="space-y-4">
         {/* Hydrate button if no requirements exist */}
-        {data.requirements.length === 0 && (
+        {hasNoRequirements && (
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" onClick={() => hydrateMutation.mutate(stageCode)} disabled={hydrateMutation.isPending}>
+            <Button size="sm" variant="outline" onClick={handleHydrate} disabled={hydrateMutation.isPending}>
               {hydrateMutation.isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-              Hydrate Checklist
+              {hydrateButtonLabel}
             </Button>
-            <span className="text-xs text-muted-foreground">Populate checklist from templates to begin.</span>
+            <span className="text-xs text-muted-foreground">{hydrateHelperText}</span>
           </div>
         )}
         <WorkspaceComponent projectId={projectId} isAdmin={isAdmin} />
@@ -133,10 +183,6 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
     });
   };
 
-  const handleHydrate = () => {
-    hydrateMutation.mutate(stageCode);
-  };
-
   const handleRequestException = (requirementCode: string) => {
     setExceptionReqCode(requirementCode);
     setExceptionDialogOpen(true);
@@ -152,10 +198,10 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
         <span className="text-xs text-muted-foreground">Readiness: {stage.readinessPct}%</span>
 
         <div className="ml-auto flex gap-1">
-          {data.requirements.length === 0 && (
+          {hasNoRequirements && (
             <Button size="sm" variant="outline" onClick={handleHydrate} disabled={hydrateMutation.isPending}>
               {hydrateMutation.isPending && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
-              Hydrate Checklist
+              {hydrateButtonLabel}
             </Button>
           )}
           {validNext.map(next => (
@@ -172,6 +218,9 @@ export function StageDetailPanel({ projectId, stageCode, isAdmin = false }: Stag
           ))}
         </div>
       </div>
+      {hasNoRequirements && (
+        <p className="text-xs text-muted-foreground">{hydrateHelperText}</p>
+      )}
 
       <Tabs defaultValue="checklist" className="w-full">
         <TabsList>

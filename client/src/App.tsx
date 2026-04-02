@@ -34,6 +34,7 @@ const RevenueTrackerPage = lazy(() => import("@/pages/revenue-tracker"));
 const CostTracker = lazy(() => import("@/pages/cos"));
 const GpTrackerPage = lazy(() => import("@/pages/gp-tracker"));
 const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
+const ProjectStageGatePage = lazy(() => import("@/pages/project-stage-gate"));
 const MyWorkAdminSettingsPage = lazy(() => import("@/pages/my-work-admin-settings"));
 const MyWorkPrioritiesPage = lazy(() => import("@/pages/my-work-priorities"));
 const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
@@ -158,6 +159,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   ProjectsSummary,
   FinancialLinkingPage,
   ProjectDetailPage,
+  ProjectStageGatePage,
   CashflowPage,
   CostTracker,
   RevenueTrackerPage,
