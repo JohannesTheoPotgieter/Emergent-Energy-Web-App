@@ -1,8 +1,8 @@
 /**
  * Master Navigation Structure
  *
- * 10-section model reflecting the real business system:
- *   Home | Portfolio | Project Development | Project Delivery | Engineering | Quality | HSE | Finance | Reports | Admin
+ * 11-section model reflecting the real business system:
+ *   Home | Company | Priorities | Project Development | Project Delivery | Finance | Engineering | HSE | Quality | Reports | Admin
  *
  * Role-based visibility determines which sections each role sees.
  * "Gates" is not a top-level section — it lives inside Portfolio and functional areas.
@@ -60,6 +60,17 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
+    label: "Priorities",
+    key: "PRIORITIES",
+    path: "/priorities",
+    match: (pathname) => startsWithAny(pathname, ["/priorities"]),
+    secondary: [
+      { label: "My Priorities", path: "/priorities?tab=mine" },
+      { label: "Department", path: "/priorities?tab=department" },
+      { label: "Company", path: "/priorities?tab=company" },
+    ],
+  },
+  {
     label: "Project Development",
     key: "PROJECT_DEVELOPMENT",
     path: "/pd",
@@ -113,36 +124,6 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
-    label: "HSE",
-    key: "HSE",
-    path: "/hse",
-    match: (pathname) => startsWithAny(pathname, ["/hse"]),
-    secondary: [
-      { label: "HSE Dashboard", path: "/hse" },
-    ],
-  },
-  {
-    label: "Engineering",
-    key: "ENGINEERING",
-    path: "/engineering",
-    match: (pathname) => startsWithAny(pathname, ["/engineering"]),
-    secondary: [
-      { label: "Engineering Dashboard", path: "/engineering" },
-      { label: "Task Board", path: "/engineering/tasks" },
-      { label: "Standup", path: "/engineering/standup" },
-    ],
-  },
-  {
-    label: "Quality",
-    key: "QUALITY",
-    path: "/quality",
-    match: (pathname) => startsWithAny(pathname, ["/quality", "/commissioning-dashboard"]),
-    secondary: [
-      { label: "Quality Dashboard", path: "/quality" },
-      { label: "Commissioning", path: "/commissioning-dashboard" },
-    ],
-  },
-  {
     label: "Finance",
     key: "FINANCE",
     path: "/cashflow",
@@ -163,6 +144,36 @@ export const TOP_SECTIONS: TopSection[] = [
     ],
   },
   {
+    label: "Engineering",
+    key: "ENGINEERING",
+    path: "/engineering",
+    match: (pathname) => startsWithAny(pathname, ["/engineering"]),
+    secondary: [
+      { label: "Engineering Dashboard", path: "/engineering" },
+      { label: "Task Board", path: "/engineering/tasks" },
+      { label: "Standup", path: "/engineering/standup" },
+    ],
+  },
+  {
+    label: "HSE",
+    key: "HSE",
+    path: "/hse",
+    match: (pathname) => startsWithAny(pathname, ["/hse"]),
+    secondary: [
+      { label: "HSE Dashboard", path: "/hse" },
+    ],
+  },
+  {
+    label: "Quality",
+    key: "QUALITY",
+    path: "/quality",
+    match: (pathname) => startsWithAny(pathname, ["/quality", "/commissioning-dashboard"]),
+    secondary: [
+      { label: "Quality Dashboard", path: "/quality" },
+      { label: "Commissioning", path: "/commissioning-dashboard" },
+    ],
+  },
+  {
     label: "Reports",
     key: "REPORTS",
     path: "/reports/center",
@@ -173,17 +184,6 @@ export const TOP_SECTIONS: TopSection[] = [
       { label: "PM Monthly", path: "/reports/pm/monthly" },
       { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
       { label: "Performance", path: "/reports/performance" },
-    ],
-  },
-  {
-    label: "Priorities",
-    key: "PRIORITIES",
-    path: "/priorities",
-    match: (pathname) => startsWithAny(pathname, ["/priorities"]),
-    secondary: [
-      { label: "My Priorities", path: "/priorities?tab=mine" },
-      { label: "Department", path: "/priorities?tab=department" },
-      { label: "Company", path: "/priorities?tab=company" },
     ],
   },
   {

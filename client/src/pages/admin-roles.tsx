@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { isSuperAdmin } from "@/lib/access-control";
+import { TOP_SECTIONS, buildVisibleTopSections, parseDisabledSubPages } from "@/config/app-navigation";
 import {
   canManageRoleActions,
   resolveAdminRolesViewState,
@@ -31,19 +32,6 @@ const DEPARTMENTS = [
 ];
 
 const ACTIONS: PermissionAction[] = ["view", "create", "edit", "approve", "override", "delete"];
-const NAV_SECTIONS = [
-  { key: "HOME", label: "Home", description: "Dashboard, My Tasks, Approvals, Calendar, Meetings, Priorities, Inbox" },
-  { key: "PORTFOLIO", label: "Company", description: "Lifecycle Overview, Lifecycle Board, Gate Tracker, Blocked Gates, Exceptions" },
-  { key: "PROJECT_DEVELOPMENT", label: "Project Development", description: "PD Dashboard, Pipeline / Opportunities, PD Tickets, Clients, Handover Queue, PD Reports" },
-  { key: "PROJECT_DELIVERY", label: "Project Delivery", description: "Execution Dashboard, Portfolio, All Projects, Procurement, PO Approvals, Payment Requests, Milestones, Weekly Reviews, Handover & Closeout, Financial Reviews, Sites" },
-  { key: "HSE", label: "HSE", description: "HSE Dashboard, Compliance / SSEG" },
-  { key: "ENGINEERING", label: "Engineering", description: "Engineering Dashboard, Task Board, Standup" },
-  { key: "QUALITY", label: "Quality", description: "Quality Dashboard, Commissioning" },
-  { key: "FINANCE", label: "Finance", description: "Cashflow, Revenue, COS, GP / Margin, FYE Revenue, Counterparties, Subcontractors, Invoice Patterns" },
-  { key: "REPORTS", label: "Reports", description: "Report Center, Programme Reports, PM Monthly, Engineering Monthly, Performance" },
-  { key: "ADMIN", label: "Admin", description: "Control Center, Roles & Permissions, Smart Import, Audit Log, Processes & SOPs, Templates, Recovery" },
-];
-
 const ENTITY_DESCRIPTIONS: Record<string, string> = {
   home: "Home page dashboard & landing",
   my_work: "My Work hub — tasks, calendar, meetings",
@@ -384,6 +372,49 @@ function RolesControlCenter() {
 
   const effectiveRole = { ...selected, ...draft } as RoleRow;
   const currentEp = (effectiveRole.entityPermissions || {}) as Record<string, Record<string, boolean>>;
+  const roleSections = useMemo(() => (Array.isArray(effectiveRole.sections) ? effectiveRole.sections : []), [effectiveRole.sections]);
+  const enabledSectionKeys = useMemo(
+    () => new Set(roleSections.filter((entry) => !entry.startsWith("!"))),
+    [roleSections],
+  );
+  const disabledSubPages = useMemo(() => parseDisabledSubPages(roleSections), [roleSections]);
+  const navPreviewSections = useMemo(() => buildVisibleTopSections({
+    canViewPath: () => true,
+    allowedSectionKeys: Array.from(enabledSectionKeys),
+    disabledSubPages,
+  }), [disabledSubPages, enabledSectionKeys]);
+
+  const applySectionsUpdate = useCallback((updater: (current: string[]) => string[]) => {
+    const baseSections = Array.isArray(effectiveRole.sections) ? effectiveRole.sections : [];
+    const nextSections = updater(baseSections);
+    setDraft((d) => ({ ...d, sections: nextSections }));
+  }, [effectiveRole.sections]);
+
+  const toggleTopSection = useCallback((sectionKey: string, enabled: boolean) => {
+    applySectionsUpdate((current) => {
+      const next = new Set(current);
+      if (enabled) {
+        next.add(sectionKey);
+      } else {
+        next.delete(sectionKey);
+      }
+      return Array.from(next);
+    });
+  }, [applySectionsUpdate]);
+
+  const toggleSubPage = useCallback((sectionKey: string, path: string, enabled: boolean) => {
+    const marker = `!${sectionKey}:${path}`;
+    applySectionsUpdate((current) => {
+      const next = new Set(current);
+      if (enabled) {
+        next.delete(marker);
+      } else {
+        next.add(marker);
+      }
+      return Array.from(next);
+    });
+  }, [applySectionsUpdate]);
+
   const updateEp = (entity: string, action: string, value: boolean) => {
     const next = { ...currentEp, [entity]: { ...(currentEp[entity] || {}), [action]: value } };
     if ((action === "edit" || action === "approve" || action === "delete") && value) next[entity].view = true;
@@ -846,30 +877,63 @@ function RolesControlCenter() {
                     )}
 
                     {activeTab === "navigation" && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                        {NAV_SECTIONS.map((section) => {
-                          const checked = Boolean((effectiveRole.sections || []).includes(section.key));
-                          return (
-                            <label key={section.key}
-                              className={`flex items-center gap-2.5 rounded-lg border p-3 cursor-pointer transition-colors ${checked ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-white hover:bg-gray-50"}`}
-                            >
-                              <input type="checkbox" checked={checked}
-                                onChange={(e) => {
-                                  const next = new Set(effectiveRole.sections || []);
-                                  if (e.target.checked) next.add(section.key); else next.delete(section.key);
-                                  setDraft((d) => ({ ...d, sections: [...next] }));
-                                }}
-                                disabled={!canManageRoles}
-                                className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
-                                data-testid={`checkbox-nav-${section.key}`}
-                              />
-                              <div className="min-w-0">
-                                <span className={`text-sm font-semibold block ${checked ? "text-emerald-800" : "text-gray-700"}`}>{section.label}</span>
-                                <span className="text-[11px] text-muted-foreground">{section.description}</span>
+                      <div className="space-y-4">
+                        <div className="space-y-3">
+                          {TOP_SECTIONS.map((section) => {
+                            const sectionEnabled = enabledSectionKeys.has(section.key);
+                            const sectionDisabledSet = disabledSubPages.get(section.key) ?? new Set<string>();
+                            return (
+                              <div key={section.key} className={`rounded-lg border p-3 ${sectionEnabled ? "border-emerald-300 bg-emerald-50/40" : "border-gray-200 bg-white"}`}>
+                                <label className="flex items-center gap-2.5 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={sectionEnabled}
+                                    onChange={(e) => toggleTopSection(section.key, e.target.checked)}
+                                    disabled={!canManageRoles}
+                                    className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 shrink-0"
+                                    data-testid={`checkbox-nav-${section.key}`}
+                                  />
+                                  <div className="min-w-0">
+                                    <span className={`text-sm font-semibold block ${sectionEnabled ? "text-emerald-800" : "text-gray-700"}`}>{section.label}</span>
+                                    <span className="text-[11px] text-muted-foreground">{section.secondary.map((item) => item.label).join(", ")}</span>
+                                  </div>
+                                </label>
+                                {sectionEnabled && (
+                                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 pl-6">
+                                    {section.secondary.map((item) => {
+                                      const subPageEnabled = !sectionDisabledSet.has(item.path);
+                                      return (
+                                        <label key={`${section.key}:${item.path}`} className="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                                          <Switch
+                                            checked={subPageEnabled}
+                                            onCheckedChange={(checked) => toggleSubPage(section.key, item.path, checked)}
+                                            disabled={!canManageRoles}
+                                          />
+                                          <span>{item.label}</span>
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
-                            </label>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
+
+                        <div className="rounded-lg border border-gray-200 bg-white p-3">
+                          <p className="text-xs font-semibold text-gray-700 mb-2">Current Navigation Preview</p>
+                          <div className="space-y-2">
+                            {navPreviewSections.map((section) => (
+                              <div key={`preview-${section.key}`} className="text-xs">
+                                <div className="font-semibold text-gray-800">{section.label}</div>
+                                <div className="text-muted-foreground">{section.secondary.map((item) => item.label).join(" · ") || "No visible sub-pages"}</div>
+                              </div>
+                            ))}
+                            {navPreviewSections.length === 0 && (
+                              <div className="text-xs text-muted-foreground">No navigation sections are currently enabled.</div>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     )}
 
