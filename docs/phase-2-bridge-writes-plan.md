@@ -45,11 +45,36 @@ All data mutations route through `DatabaseStorage` class methods. Key write meth
 | Work item CRUD | `work_items` | `core.work_items` | MEDIUM |
 | Deliverable updates | `deliverables` | `documentation.documents` | LOW |
 
+### What ALREADY exists (discovered in codebase)
+
+**Two domains have dual-write code deployed and feature-flagged OFF:**
+
+1. **Project master dual-write** (`server/routes.ts` ~line 3386)
+   - Flag: `promoted_core_project_master_dual_write` (default OFF)
+   - Mirrors `project_info` updates → `core.projects` via `INSERT ... ON CONFLICT UPDATE`
+   - Returns `X-Promoted-Clients-Dual-Write: mirrored|mirror_failed` header
+
+2. **Clients dual-write** (`server/routes.ts` ~line 3623, `server/pd-routes.ts` ~line 185)
+   - Flag: `promoted_core_clients_dual_write` (default OFF)
+   - Mirrors client creates → `core.clients` via `INSERT ... ON CONFLICT UPDATE`
+
+**Feature flags defined** (`shared/feature-flags.ts`):
+- `promoted_core_clients_dual_write` — implemented, flag OFF
+- `promoted_core_project_master_dual_write` — implemented, flag OFF
+- `migration_bridge_approvals_dual_write_v1` — defined, no code yet
+- `migration_bridge_project_dual_write_v1` — defined, no code yet
+
+**Related patterns already in use:**
+- `server/lib/project-info-sync.ts` — split-table sync (project_info → project_execution_state)
+- `server/services/personal-task-bridge.ts` — bridge from mytool_tasks → work_items
+- `server/ms-sync-service.ts` — watermark tracking with `last_synced_at`
+
 ### What does NOT exist yet
-- No bridge write logic in any write path
-- No triggers or event-driven sync
-- No dual-write transaction coordination
-- No conflict resolution for concurrent writes
+- Bridge write logic for finance, approvals, deliverables, parties
+- State history snapshot writes on mutation
+- `last_synced_at` population on any bridge write
+- `sync_watermarks` population by reconciliation
+- Conflict resolution for concurrent writes
 
 ---
 
@@ -109,24 +134,26 @@ Application-layer bridge writes in `storage.ts` are the simplest, most debuggabl
 
 ## 4. Implementation Plan
 
-### Phase 2a: Core Bridge Writes (Highest Priority)
+### Phase 2a: Activate Existing + Extend Core Bridge Writes (Highest Priority)
 
-**Scope:** `project_info` ↔ `core.projects`, `program_expense` ↔ `finance.cost_lines`, `program_inflows` ↔ `finance.revenue_lines`
-
-These are the three most-written domains and the ones reconciliation already monitors.
+**Scope:** `project_info` ↔ `core.projects`, `clients` ↔ `core.clients`, `program_expense` ↔ `finance.cost_lines`, `program_inflows` ↔ `finance.revenue_lines`
 
 **Steps:**
-1. Create `server/bridge/bridge-writer.ts` — centralized bridge write module
-2. Define mapping functions: `mapProjectInfoToCoreProject()`, `mapProgramExpenseToCostLine()`, `mapProgramInflowToRevenueLine()`
-3. Add bridge calls to `storage.ts` methods:
-   - `updateProjectInfoById` → upsert `core.projects` + insert `core.project_state_history`
-   - `upsertProjectInfo` → same
-   - `updateProgramExpenseFields` → upsert `finance.cost_lines` + insert `finance.cost_line_history`
+1. **Validate existing dual-write code** — review `routes.ts` lines 3386-3416 (projects) and 3623-3645 (clients) for correctness against current promoted schema (Phase 1B added columns that the existing bridge code may not cover)
+2. **Extend existing bridges** — add Phase 1B columns to project dual-write (current_stage_code, gate_status, gate_readiness_pct, phase_updated_at, signed_status, execution_phase) and client dual-write (legal_entity_name, trading_name, client_type, primary_contact_*)
+3. **Add `last_synced_at = NOW()`** to both existing bridge write queries
+4. **Add state history snapshots** — insert `core.project_state_history` row with `snapshot_reason = 'bridge_write'` on every project bridge write
+5. **Create `server/bridge/bridge-writer.ts`** — centralized module for new finance bridge writes:
+   - `mapProgramExpenseToCostLine()` + `mapProgramInflowToRevenueLine()`
+   - Fiscal period derivation on write (lookup `finance.fiscal_periods` by date)
+   - `finance.cost_line_history` / `finance.revenue_line_history` snapshots
+6. Wire finance bridge calls into `storage.ts`:
+   - `updateProgramExpenseFields` → upsert `finance.cost_lines`
    - `createManyProgramExpenses` → bulk upsert `finance.cost_lines`
    - `deleteProgramExpensesByProject` → soft-mark or delete from `finance.cost_lines`
    - Same pattern for `program_inflows` → `finance.revenue_lines`
-4. Set `last_synced_at = NOW()` on every bridge write
-5. Add error logging + staleness detection
+7. **Enable flags** — turn on `promoted_core_project_master_dual_write` and `promoted_core_clients_dual_write` after validation
+8. Add error logging + staleness detection
 
 **Validation:**
 - Reconciliation report shows zero delta after bridge-written mutations
