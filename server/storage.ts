@@ -826,13 +826,23 @@ export class DatabaseStorage implements IStorage {
         .from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .orderBy(desc(projectInfo.updatedAt));
-      return rows.map(r => ({
-        ...r.project_info,
-        ...r.project_execution_state,
-        // Preserve identity id (not execution state id)
-        id: r.project_info.id,
-        updatedAt: r.project_info.updatedAt,
-      }));
+      return rows.map(r => {
+        // Filter out null values from execution state so they don't overwrite project_info fields
+        const execState = r.project_execution_state ?? {};
+        const nonNullExecState: Record<string, any> = {};
+        for (const [key, value] of Object.entries(execState)) {
+          if (value !== null && value !== undefined) {
+            nonNullExecState[key] = value;
+          }
+        }
+        return {
+          ...r.project_info,
+          ...nonNullExecState,
+          // Preserve identity id (not execution state id)
+          id: r.project_info.id,
+          updatedAt: r.project_info.updatedAt,
+        };
+      });
     } catch (error) {
       if (this.shouldUseLegacyProjectInfoReadFallback(error)) {
         return this.listLegacyCompatibleProjectInfo();
@@ -1074,6 +1084,7 @@ export class DatabaseStorage implements IStorage {
     const adapted = costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
 
     const projectsWithCostLines = new Set(costLines.map(c => resolve(c.projectName)));
+    const projectIdsWithCostLines = new Set(costLines.map(c => c.projectId).filter(Boolean));
 
     if (peRows.length > 0) {
       const budgetByKey = new Map<string, any>();
@@ -1099,7 +1110,13 @@ export class DatabaseStorage implements IStorage {
         }
       }
 
-      const legacyOnly = peRows.filter(pe => !projectsWithCostLines.has(pe.projectName) && !projectsWithCostLines.has(resolve(pe.projectName)));
+      // Exclude PE rows whose project already has normalizedCostLines (by name OR projectId)
+      const legacyOnly = peRows.filter(pe => {
+        if (pe.projectId && projectIdsWithCostLines.has(pe.projectId)) return false;
+        if (projectsWithCostLines.has(pe.projectName)) return false;
+        if (projectsWithCostLines.has(resolve(pe.projectName))) return false;
+        return true;
+      });
       if (legacyOnly.length > 0) {
         adapted.push(...legacyOnly.map(pe => ({
           ...pe,
