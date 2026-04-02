@@ -165,6 +165,11 @@ interface QualityDashboardSummary {
   }>;
 }
 
+interface ProjectChecklistResponse {
+  created?: boolean;
+  checklist?: { id?: number; projectName?: string } | null;
+}
+
 type ProjectSortKey = "name" | "completion" | "warnings" | "updated";
 type ProjectSortDir = "asc" | "desc";
 
@@ -276,20 +281,25 @@ export default function QmDashboardPage() {
   const projectsWithChecklist = useMemo(() => {
     return new Set(
       checklists
-        .filter((checklist) => checklist.hasLoggedActivity ?? true)
         .map((checklist) => checklist.projectName)
     );
   }, [checklists]);
 
 
-  const startQmMutation = useMutation({
+  const startQmMutation = useMutation<ProjectChecklistResponse, Error, string>({
     mutationFn: (projectName: string) =>
       qFetch(`/api/quality/project/${encodeURIComponent(projectName)}/checklist`),
-    onSuccess: (_data, projectName) => {
+    onSuccess: (data, projectName) => {
       queryClient.invalidateQueries({ queryKey: ["quality-checklists"] });
-      toast({ title: "Quality process started", description: `Quality checklist created for ${projectName}.` });
+      const resolvedProjectName = data?.checklist?.projectName || projectName;
+      if (data?.created) {
+        toast({ title: "Quality process started", description: `Quality checklist created for ${resolvedProjectName}.` });
+      } else {
+        toast({ title: "Checklist already exists", description: `Opened existing quality checklist for ${resolvedProjectName}.` });
+      }
       setStartQmOpen(false);
       setStartQmProject("");
+      setSelectedProjectName(resolvedProjectName);
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to start quality process.", variant: "destructive" });
@@ -431,20 +441,8 @@ export default function QmDashboardPage() {
     return new Date(value).toLocaleDateString();
   };
 
-  const hasLinkedItems = (c: Checklist) => {
-    if (!c.phases || c.phases.length === 0) return false;
-    return c.phases.reduce((t, p) => t + p.total, 0) > 0;
-  };
-
-  const projectsWithLinkedItems = useMemo(
-    () => checklists.filter(hasLinkedItems),
-    [checklists]
-  );
-
-  const projectsWithWarningsCount = useMemo(() => checklists.filter(c => getProjectWarnings(c) > 0).length, [checklists, warnings]);
-
   const filteredProjects = useMemo(() => {
-    let list = projectsWithLinkedItems.filter(c =>
+    let list = checklists.filter(c =>
       c.projectName.toLowerCase().includes(searchTerm.toLowerCase())
     );
     if (statusFilter === "active") list = list.filter(c => c.status === "active");
@@ -461,7 +459,7 @@ export default function QmDashboardPage() {
       return projectSortDir === "desc" ? -cmp : cmp;
     });
     return list;
-  }, [projectsWithLinkedItems, searchTerm, statusFilter, warningFilter, projectSort, projectSortDir, warnings]);
+  }, [checklists, searchTerm, statusFilter, warningFilter, projectSort, projectSortDir, warnings]);
 
   const selectedProjectChecklist = useMemo(
     () => checklists.find((c) => c.projectName === selectedProjectName) ?? null,
@@ -970,7 +968,7 @@ export default function QmDashboardPage() {
                     </table>
                   </div>
                   <p className="text-xs text-muted-foreground text-right mt-3 px-3">
-                    Showing {filteredProjects.length} of {projectsWithLinkedItems.length} projects with linked items
+                    Showing {filteredProjects.length} of {checklists.length} projects
                   </p>
                 </>
               )}
@@ -1236,7 +1234,7 @@ export default function QmDashboardPage() {
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Select a project to start the quality management process. Projects with an active quality checklist and logged activity are shown but cannot be selected.
+              Select a project to start the quality management process. Projects that already have a quality checklist are shown but cannot be selected.
             </p>
             <div>
               <label className="text-sm font-medium block mb-1.5">Project</label>
