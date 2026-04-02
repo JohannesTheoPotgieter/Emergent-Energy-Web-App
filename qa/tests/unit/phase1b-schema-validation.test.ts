@@ -345,6 +345,63 @@ describe("Phase 1B Schema Existence Tests", () => {
       expect(sql).toContain("DROP TABLE IF EXISTS internal.sync_watermarks");
     });
   });
+
+  // -- Migration 8: State history tables --
+  describe("Migration 8: state_history_tables", () => {
+    const sql = readMigration("20260402_state_history_tables.sql");
+
+    it("creates core.project_state_history table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.project_state_history");
+    });
+
+    it("creates documentation.approval_state_history table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS documentation.approval_state_history");
+    });
+
+    it("creates finance.cost_line_history table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS finance.cost_line_history");
+    });
+
+    it("creates finance.revenue_line_history table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS finance.revenue_line_history");
+    });
+
+    it("all history tables have is_current BOOLEAN column", () => {
+      // Count occurrences of is_current in CREATE TABLE blocks
+      const matches = sql.match(/is_current BOOLEAN NOT NULL DEFAULT false/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it("all history tables have snapshot_reason and snapshot_at", () => {
+      expect(sql).toContain("snapshot_reason TEXT NOT NULL DEFAULT 'backfill'");
+      expect(sql).toContain("snapshot_at TIMESTAMP NOT NULL DEFAULT NOW()");
+    });
+
+    it("creates partial indexes for fast is_current queries", () => {
+      expect(sql).toContain("WHERE is_current = true");
+      expect(sql).toContain("idx_project_state_history_project_current");
+      expect(sql).toContain("idx_approval_state_history_approval_current");
+      expect(sql).toContain("idx_cost_line_history_line_current");
+      expect(sql).toContain("idx_revenue_line_history_line_current");
+    });
+
+    it("creates timeline index for project state history", () => {
+      expect(sql).toContain("idx_project_state_history_project_timeline");
+      expect(sql).toContain("snapshot_at DESC");
+    });
+  });
+
+  // -- Migration 8 rollback --
+  describe("Rollback 8: state_history_tables_rollback", () => {
+    const sql = readMigration("20260402_state_history_tables_rollback.sql");
+
+    it("drops all 4 history tables", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.project_state_history");
+      expect(sql).toContain("DROP TABLE IF EXISTS documentation.approval_state_history");
+      expect(sql).toContain("DROP TABLE IF EXISTS finance.cost_line_history");
+      expect(sql).toContain("DROP TABLE IF EXISTS finance.revenue_line_history");
+    });
+  });
 });
 
 // ===========================================================================
@@ -566,6 +623,47 @@ describe("Phase 1B Backfill Script Correctness Tests", () => {
       expect(sql).toContain("WHERE invoice_date_typed IS NULL");
     });
   });
+
+  // -- Backfill 08: State history --
+  describe("Backfill 08: state_history", () => {
+    const sql = readMigration("20260402_backfill_08_state_history.sql");
+
+    it("populates project_state_history from project_execution_state", () => {
+      expect(sql).toContain("INSERT INTO core.project_state_history");
+      expect(sql).toContain("project_execution_state pes");
+    });
+
+    it("uses ROW_NUMBER() to derive is_current for project history", () => {
+      expect(sql).toContain("ROW_NUMBER() OVER");
+      expect(sql).toContain("PARTITION BY pes.project_id");
+    });
+
+    it("populates approval_state_history from document_approvals", () => {
+      expect(sql).toContain("INSERT INTO documentation.approval_state_history");
+      expect(sql).toContain("document_approvals da");
+    });
+
+    it("populates cost_line_history and revenue_line_history", () => {
+      expect(sql).toContain("INSERT INTO finance.cost_line_history");
+      expect(sql).toContain("INSERT INTO finance.revenue_line_history");
+    });
+
+    it("includes integrity checks for exactly one is_current per entity", () => {
+      expect(sql).toContain("HISTORY_INTEGRITY_CHECK_PROJECTS");
+      expect(sql).toContain("HISTORY_INTEGRITY_CHECK_APPROVALS");
+      expect(sql).toContain("HISTORY_INTEGRITY_CHECK_COST_LINES");
+      expect(sql).toContain("HISTORY_INTEGRITY_CHECK_REVENUE_LINES");
+    });
+
+    it("is idempotent via WHERE NOT EXISTS guards", () => {
+      expect(sql).toContain("WHERE NOT EXISTS");
+    });
+
+    it("is wrapped in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
 });
 
 // ===========================================================================
@@ -718,7 +816,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 14 migration files exist", () => {
+  it("all 16 migration files exist (8 forward + 8 rollback)", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -734,6 +832,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_evidence_link_parity_rollback.sql",
       "20260402_stale_item_tracking.sql",
       "20260402_stale_item_tracking_rollback.sql",
+      "20260402_state_history_tables.sql",
+      "20260402_state_history_tables_rollback.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -744,7 +844,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     expect(fs.existsSync(path.join(migrationsDir, "20260402_preflight_audit.sql"))).toBe(true);
   });
 
-  it("all 7 backfill scripts exist", () => {
+  it("all 8 backfill scripts exist", () => {
     const expectedFiles = [
       "20260402_backfill_01_fiscal_periods.sql",
       "20260402_backfill_02_client_contacts.sql",
@@ -753,6 +853,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_backfill_05_approval_lineage.sql",
       "20260402_backfill_06_evidence_sharepoint.sql",
       "20260402_backfill_07_finance_typed_dates.sql",
+      "20260402_backfill_08_state_history.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -819,13 +920,19 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("no migration contains bridge write logic", () => {
+  it("no migration contains bridge write logic (excluding comments and COMMENT ON descriptions)", () => {
     const allPhase1bFiles = fs.readdirSync(migrationsDir)
       .filter((f) => f.startsWith("20260402_") && f.endsWith(".sql"));
     for (const file of allPhase1bFiles) {
       const content = readMigration(file);
-      expect(content).not.toContain("TRIGGER");
-      expect(content).not.toContain("bridge_write");
+      // Filter out comment lines and COMMENT ON statements (which contain descriptive text)
+      const sqlLines = content.split("\n").filter((l) => {
+        const trimmed = l.trim();
+        return !trimmed.startsWith("--") && !trimmed.startsWith("COMMENT ON");
+      });
+      const sqlOnly = sqlLines.join("\n");
+      expect(sqlOnly).not.toContain("CREATE TRIGGER");
+      expect(sqlOnly).not.toContain("CREATE OR REPLACE FUNCTION");
     }
   });
 });

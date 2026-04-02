@@ -186,6 +186,23 @@ Add `COMMENT ON TABLE` and `COMMENT ON COLUMN` for `lag_seconds`.
 
 Drop `last_synced_at` from all 6 tables. Drop index and table.
 
+### 8a. `20260402_state_history_tables.sql`
+
+Create 4 history tables that store full audit trail of every entity pulled from legacy:
+
+- `core.project_state_history` — all project execution state snapshots, with `is_current BOOLEAN` marking the latest per project
+- `documentation.approval_state_history` — all approval status snapshots
+- `finance.cost_line_history` — all cost line snapshots
+- `finance.revenue_line_history` — all revenue line snapshots
+
+Each table has: `is_current BOOLEAN NOT NULL DEFAULT false`, `snapshot_reason TEXT`, `source_table TEXT`, `source_updated_at TIMESTAMPTZ`, `snapshot_at TIMESTAMP`.
+
+Partial indexes on `(entity_id, is_current) WHERE is_current = true` for fast current-state queries.
+
+### 8b. `20260402_state_history_tables_rollback.sql`
+
+Drop all 4 history tables and their indexes.
+
 ---
 
 ## Part 2: Preflight Audit Script
@@ -252,6 +269,16 @@ Six steps in order:
 4. Derive `fiscal_period_id` on `revenue_lines` from `finance.fiscal_periods` date range. **EXCLUDE opening balance rows** (`AND is_opening_balance = false`).
 Guard all UPDATE steps with `WHERE ... IS NULL` for idempotency. Opening balance rows retain `fiscal_period_id = NULL` — they are structurally excluded from period movement totals.
 
+### `20260402_backfill_08_state_history.sql`
+Populate all 4 history tables with initial snapshots from legacy/promoted data.
+- **Project state history:** INSERT all `project_execution_state` rows via `core.projects` join. Use `ROW_NUMBER()` to set `is_current = true` on the latest row per project.
+- **Approval state history:** INSERT all `document_approvals` rows where `legacy_approval_id IS NOT NULL`. Each gets `is_current = true` (one row per approval in legacy).
+- **Cost line history:** INSERT all `cost_lines` rows. Each gets `is_current = true`.
+- **Revenue line history:** INSERT all `revenue_lines` rows. Each gets `is_current = true`.
+- Includes integrity checks (SELECT) verifying exactly one `is_current = true` per entity.
+- Idempotent via `WHERE NOT EXISTS` guards.
+- Must run LAST (after all other backfills).
+
 ---
 
 ## Part 4: Validation Tests
@@ -290,9 +317,9 @@ Use the project's existing test patterns (vitest, `db.execute(sql\`...\`)` for r
 
 These rules apply to ALL migrations, backfills, reconciliation queries, and any future code that touches promoted schema data.
 
-### Rule 1: One Current Row Per Project
+### Rule 1: One Current Row Per Project (Full History Preserved)
 
-Where the target concept is a current-state record (not an event log or transaction), only one row per project is allowed. Use:
+Where the target concept is a current-state record (not an event log or transaction), only one row per project is allowed as "current". All historical rows are preserved in dedicated history tables. Use:
 
 ```sql
 ROW_NUMBER() OVER (
@@ -302,8 +329,9 @@ ROW_NUMBER() OVER (
 ```
 
 - Applies to: `project_execution_state` (lifecycle backfill), any future current-state source.
-- Does NOT apply to: Transaction records (approvals, cost_lines, revenue_lines).
+- Does NOT apply to: Transaction records (approvals, cost_lines, revenue_lines) for current-row selection, but ALL entities get history snapshots.
 - DISTINCT is NOT an acceptable substitute. It hides row multiplication silently.
+- History tables: `core.project_state_history`, `documentation.approval_state_history`, `finance.cost_line_history`, `finance.revenue_line_history` — store every row pulled from legacy with `is_current` flag. Backfill 08 populates initial snapshots. Phase 2 bridge writes add new snapshots on every change.
 
 ### Rule 2: Opening Balance Separation
 
@@ -336,9 +364,9 @@ All aggregate checks must cover:
 
 ## Execution checklist
 
-1. Write all 14 migration files (7 forward + 7 rollback)
+1. Write all 16 migration files (8 forward + 8 rollback)
 2. Write the preflight audit script
-3. Write all 7 backfill scripts
+3. Write all 8 backfill scripts
 4. Write the validation test file
 5. Run the validation tests to confirm they compile (they will fail until migrations + backfills run — that is expected)
 6. Commit all files in a single commit
