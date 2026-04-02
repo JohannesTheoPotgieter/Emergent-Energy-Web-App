@@ -50,8 +50,12 @@ COMMIT;
 
 ### Rollback
 
+**Non-destructive (operational):** Revert reconciliation code to skip the new lifecycle fields. The columns remain but are unused. No data loss. Reconciliation falls back to the Phase 1A PROVISIONAL behavior (compares only `phase`, `execution_gate_status`, `rag_status`).
+
+**Destructive (SQL) — only if columns must be physically removed:**
 ```sql
 -- 20260402_lifecycle_parity_columns_rollback.sql
+-- WARNING: Destroys all backfilled data in these columns. Only run if operational rollback is insufficient.
 BEGIN;
 ALTER TABLE core.projects DROP COLUMN IF EXISTS current_stage_code;
 ALTER TABLE core.projects DROP COLUMN IF EXISTS gate_status;
@@ -160,8 +164,14 @@ COMMIT;
 
 ### Rollback
 
+**Non-destructive (operational):** Revert reconciliation code to skip per-type distribution comparison. The new columns remain but are unused. Reconciliation falls back to count-only + status-distribution comparison (Phase 1A behavior).
+
+**Destructive (SQL) — only if columns must be physically removed:**
 ```sql
 -- 20260402_approval_type_support_rollback.sql
+-- WARNING: Destroys all backfilled approval lineage data. The legacy_approval_id mapping is lost.
+-- If backfilled rows were inserted (not just columns added), those rows will remain but lose their
+-- enrichment columns. Consider whether DELETE WHERE source_table = 'public.approvals' is needed first.
 BEGIN;
 ALTER TABLE documentation.document_approvals DROP COLUMN IF EXISTS legacy_approval_id;
 ALTER TABLE documentation.document_approvals DROP COLUMN IF EXISTS approval_type;
@@ -327,8 +337,12 @@ COMMIT;
 
 ### Rollback
 
+**Non-destructive (operational):** Revert reconciliation code to use name-match proxy for clients and cost-line name lookup for counterparties. The new columns and `core.parties` table remain but are unused. No code path reads from them.
+
+**Destructive (SQL) — only if schema objects must be physically removed:**
 ```sql
 -- 20260402_client_contact_fields_rollback.sql
+-- WARNING: Destroys backfilled contact data on core.clients.
 BEGIN;
 ALTER TABLE core.clients DROP COLUMN IF EXISTS legal_entity_name;
 ALTER TABLE core.clients DROP COLUMN IF EXISTS trading_name;
@@ -339,6 +353,8 @@ ALTER TABLE core.clients DROP COLUMN IF EXISTS primary_contact_phone;
 COMMIT;
 
 -- 20260402_party_abstraction_rollback.sql
+-- WARNING: Drops the entire core.parties table and all backfilled party data.
+-- No other promoted table has FK references to core.parties, so this is safe from a constraint perspective.
 BEGIN;
 DROP INDEX IF EXISTS core.idx_parties_name_canonical;
 DROP INDEX IF EXISTS core.idx_parties_party_type;
@@ -479,8 +495,13 @@ COMMIT;
 
 ### Rollback
 
+**Non-destructive (operational):** Revert reconciliation code to use portfolio-level aggregate instead of per-project-month breakdown. The typed date columns, `fiscal_period_id`, and `finance.fiscal_periods` table remain but are unused. No operational code path reads from them.
+
+**Destructive (SQL) — only if schema objects must be physically removed:**
 ```sql
 -- 20260402_finance_period_derivation_rollback.sql
+-- WARNING: Destroys all derived typed dates and fiscal period assignments.
+-- The original TEXT date columns are untouched — no data loss on source fields.
 BEGIN;
 DROP INDEX IF EXISTS finance.idx_finance_cost_lines_fiscal_period;
 DROP INDEX IF EXISTS finance.idx_finance_revenue_lines_fiscal_period;
@@ -582,11 +603,18 @@ In `promoted-read-compat.ts` `buildPhase1AReconciliationReport()` finance sectio
 
 The Phase 1A `deliverables` domain check uses migration mapping ratio (how many `public.deliverables` rows have a `documentation.documents` counterpart) as a proxy for evidence-link completeness. True parity requires verifying that the *files/evidence attached to each deliverable* also exist in the promoted schema.
 
-The legacy chain is:
-- `deliverables` (1) -> `deliverable_files` (N) — SharePoint file references per deliverable
-- `deliverables` (1) -> `deliverable_versions` (N) -> files per version
+**Key existing lineage (from `20260314_multischema_foundation.sql` lines 575-599):**
 
-The promoted schema has `documentation.document_versions` (maps to `deliverable_versions`) but no equivalent of `deliverable_files`. The `document_versions` table has `storage_path` and `file_name` but lacks SharePoint identifiers (`site_id`, `drive_id`, `file_item_id`, `web_url`).
+The foundation migration already handles files via TWO separate inserts into `document_versions`:
+
+1. **Version-sourced rows:** `INSERT INTO documentation.document_versions ... FROM public.deliverable_versions dv` — keyed by `legacy_deliverable_version_id = dv.id`
+2. **File-sourced rows:** `INSERT INTO documentation.document_versions ... FROM public.deliverable_files df` — keyed by `legacy_deliverable_file_id = df.id`, with `web_url` stored as `storage_path` and `version_number` derived from `COALESCE(dv.version_number, 1)`
+
+This means `deliverable_files` were **flattened into `document_versions` rows** during the foundation backfill. The `legacy_deliverable_file_id` column on `document_versions` is the lineage key: if it is NOT NULL, that version row originated from a `deliverable_files` record.
+
+**The actual gap:** The flattened rows captured `web_url` (as `storage_path`) and `file_name`, but lost the SharePoint structural identifiers (`site_id`, `drive_id`, `file_item_id`) and the `is_approved` flag. Evidence parity requires these fields.
+
+**The wrong approach (corrected):** Creating a separate `document_files` table would double-count files that were already flattened into `document_versions`. Instead, we enrich the existing `document_versions` rows that already carry `legacy_deliverable_file_id`.
 
 ### Exact Schema Change
 
@@ -594,46 +622,36 @@ The promoted schema has `documentation.document_versions` (maps to `deliverable_
 -- Migration: 20260402_evidence_link_parity.sql
 BEGIN;
 
--- Add SharePoint reference columns to document_versions
+-- Enrich document_versions with SharePoint fields lost during foundation flattening
 ALTER TABLE documentation.document_versions ADD COLUMN IF NOT EXISTS site_id TEXT;
 ALTER TABLE documentation.document_versions ADD COLUMN IF NOT EXISTS drive_id TEXT;
 ALTER TABLE documentation.document_versions ADD COLUMN IF NOT EXISTS file_item_id TEXT;
 ALTER TABLE documentation.document_versions ADD COLUMN IF NOT EXISTS web_url TEXT;
 ALTER TABLE documentation.document_versions ADD COLUMN IF NOT EXISTS is_approved BOOLEAN DEFAULT false;
 
--- Create document_files for non-version-linked file attachments
-CREATE TABLE IF NOT EXISTS documentation.document_files (
-  id BIGSERIAL PRIMARY KEY,
-  legacy_deliverable_file_id INTEGER UNIQUE,
-  document_id BIGINT NOT NULL REFERENCES documentation.documents(id) ON DELETE CASCADE,
-  version_id BIGINT REFERENCES documentation.document_versions(id) ON DELETE SET NULL,
-  file_name TEXT NOT NULL,
-  site_id TEXT,
-  drive_id TEXT,
-  file_item_id TEXT,
-  web_url TEXT,
-  is_approved BOOLEAN NOT NULL DEFAULT false,
-  uploaded_by_user_id INTEGER,
-  uploaded_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  source_table TEXT NOT NULL DEFAULT 'public.deliverable_files'
-);
+-- Index for evidence parity queries: find all file-sourced version rows per document
+CREATE INDEX IF NOT EXISTS idx_document_versions_file_lineage
+  ON documentation.document_versions (document_id)
+  WHERE legacy_deliverable_file_id IS NOT NULL;
 
-CREATE INDEX IF NOT EXISTS idx_document_files_document_id
-  ON documentation.document_files (document_id);
-
-COMMENT ON TABLE documentation.document_files IS 'Promoted equivalent of public.deliverable_files. Maps SharePoint file references per document.';
+COMMENT ON COLUMN documentation.document_versions.site_id IS 'SharePoint site ID from deliverable_files, backfilled via legacy_deliverable_file_id join';
+COMMENT ON COLUMN documentation.document_versions.drive_id IS 'SharePoint drive ID from deliverable_files';
+COMMENT ON COLUMN documentation.document_versions.file_item_id IS 'SharePoint file item ID from deliverable_files';
+COMMENT ON COLUMN documentation.document_versions.web_url IS 'Direct web URL from deliverable_files (note: storage_path already holds this for file-sourced rows from foundation backfill)';
+COMMENT ON COLUMN documentation.document_versions.is_approved IS 'Approval flag from deliverable_files.is_approved';
 
 COMMIT;
 ```
 
 ### Rollback
 
+**Non-destructive (operational):** Set a feature flag to disable evidence-link parity checks in reconciliation. The new columns remain but are ignored.
+
+**Destructive (SQL):**
 ```sql
 -- 20260402_evidence_link_parity_rollback.sql
 BEGIN;
-DROP INDEX IF EXISTS documentation.idx_document_files_document_id;
-DROP TABLE IF EXISTS documentation.document_files;
-
+DROP INDEX IF EXISTS documentation.idx_document_versions_file_lineage;
 ALTER TABLE documentation.document_versions DROP COLUMN IF EXISTS site_id;
 ALTER TABLE documentation.document_versions DROP COLUMN IF EXISTS drive_id;
 ALTER TABLE documentation.document_versions DROP COLUMN IF EXISTS file_item_id;
@@ -644,71 +662,59 @@ COMMIT;
 
 ### Migration Safety
 
-- **`document_versions` additions:** Nullable columns, no row rewrites. Existing version rows simply get NULLs for SharePoint fields.
-- **`document_files` table:** New table with FK to `documentation.documents`. No existing code references it. The `ON DELETE CASCADE` ensures cleanup if a parent document is removed.
-- **`legacy_deliverable_file_id` UNIQUE:** Enables idempotent backfill with `ON CONFLICT` and direct lineage tracing.
+- **Columns only on existing table:** Nullable, no defaults that rewrite rows. Existing file-sourced version rows get NULLs until backfill.
+- **No new table:** Avoids the double-counting risk of a separate `document_files` table.
+- **Partial index:** `WHERE legacy_deliverable_file_id IS NOT NULL` keeps the index small — only file-sourced rows are indexed.
 
 ### Backfill
 
-```sql
--- Backfill document_files from legacy deliverable_files
-INSERT INTO documentation.document_files (
-  legacy_deliverable_file_id, document_id, version_id,
-  file_name, site_id, drive_id, file_item_id, web_url,
-  is_approved, uploaded_by_user_id, uploaded_at, source_table
-)
-SELECT
-  df.id,
-  doc.id,
-  dv.id,  -- NULL if no version match
-  df.file_name,
-  df.site_id,
-  df.drive_id,
-  df.file_item_id,
-  df.web_url,
-  df.is_approved,
-  df.uploaded_by_user_id,
-  df.uploaded_at,
-  'public.deliverable_files'
-FROM public.deliverable_files df
-JOIN documentation.documents doc ON doc.legacy_deliverable_id = df.deliverable_id
-LEFT JOIN documentation.document_versions dv ON dv.legacy_deliverable_version_id = df.version_id
-ON CONFLICT (legacy_deliverable_file_id) DO NOTHING;
+The join logic uses `legacy_deliverable_file_id` as the sole join key. This column was populated by the foundation migration and maps 1:1 to `deliverable_files.id`.
 
--- Backfill SharePoint fields into existing document_versions rows
+```sql
+-- Backfill SharePoint fields into document_versions rows that originated from deliverable_files.
+-- Join key: document_versions.legacy_deliverable_file_id = deliverable_files.id
+-- This is the ONLY correct join. Do NOT join on version_id — that is a separate lineage path.
 UPDATE documentation.document_versions dv_promoted
 SET
-  site_id = df.site_id,
-  drive_id = df.drive_id,
+  site_id    = df.site_id,
+  drive_id   = df.drive_id,
   file_item_id = df.file_item_id,
-  web_url = df.web_url,
+  web_url    = df.web_url,
   is_approved = df.is_approved
 FROM public.deliverable_files df
-WHERE dv_promoted.legacy_deliverable_file_id = df.version_id
+WHERE dv_promoted.legacy_deliverable_file_id = df.id
   AND dv_promoted.site_id IS NULL;
 ```
+
+**Join key proof:**
+- `deliverable_files.id` (PK) is the file's identity
+- `document_versions.legacy_deliverable_file_id` was populated as `df.id` in foundation migration line 586
+- This is a 1:1 mapping. Every non-NULL `legacy_deliverable_file_id` corresponds to exactly one `deliverable_files` row.
+
+**What about files with no `document_versions` row?** The preflight audit (Section 8) detects any `deliverable_files` rows that were not flattened into `document_versions` during the foundation migration. These are reported as `orphan_legacy_files` and must be resolved before evidence parity can pass.
 
 ### Provisional Metrics Resolved
 
 | Provisional metric | Resolution |
 |---|---|
-| `evidence_link_completeness` uses migration mapping ratio as proxy | **Fully resolved.** Reconciliation can now count `documentation.document_files` per document and compare against `public.deliverable_files` per deliverable for true per-deliverable file parity. |
+| `evidence_link_completeness` uses migration mapping ratio as proxy | **Fully resolved.** Reconciliation can now count `document_versions WHERE legacy_deliverable_file_id IS NOT NULL` per document and compare against `deliverable_files` per deliverable for true per-deliverable file parity, including SharePoint field verification. |
 
 ### Reconciliation Code Change Required
 
 In `promoted-read-compat.ts` `buildPhase1AReconciliationReport()` deliverables section (~line 1174):
-- Add a sub-query: for each mapped deliverable, count `deliverable_files` in legacy vs `document_files` in promoted
-- Replace mapping-ratio proxy with actual file-count comparison
+- Add sub-query: for each mapped deliverable, count `deliverable_files` in legacy vs `document_versions WHERE legacy_deliverable_file_id IS NOT NULL` in promoted (grouped by `document_id`)
+- Add SharePoint field presence check: `site_id IS NOT NULL` on file-sourced version rows
+- Replace mapping-ratio proxy with actual file-count + field-presence comparison
 - Add threshold rule: `evidence_file_count_delta == 0` per deliverable
 - Remove the PROVISIONAL note
 
 ### Tests Required Before Phase 2
 
-1. **Schema test:** Verify `documentation.document_files` table exists with all expected columns
-2. **Backfill test:** `COUNT(*) FROM documentation.document_files` equals `COUNT(*) FROM public.deliverable_files df JOIN documentation.documents doc ON doc.legacy_deliverable_id = df.deliverable_id`
-3. **Per-deliverable parity test:** For each mapped deliverable, `COUNT(document_files)` in promoted equals `COUNT(deliverable_files)` in legacy
-4. **Reconciliation test:** `deliverables` domain passes with per-file evidence comparison (no proxy)
-5. **Orphan check test:** No `document_files` rows exist where `document_id` points to a non-existent document
+1. **Schema test:** Verify 5 new columns exist on `documentation.document_versions`
+2. **Backfill test:** After backfill, `COUNT(*) FROM documentation.document_versions WHERE legacy_deliverable_file_id IS NOT NULL AND site_id IS NULL` is zero (all file-sourced rows have SharePoint fields)
+3. **Per-deliverable parity test:** For each mapped deliverable, `COUNT(document_versions WHERE legacy_deliverable_file_id IS NOT NULL)` in promoted equals `COUNT(deliverable_files)` in legacy
+4. **No double-counting test:** Verify no `document_files` table exists — all evidence is in `document_versions`
+5. **Reconciliation test:** `deliverables` domain passes with per-file evidence comparison (no proxy)
 
 ---
 
@@ -756,8 +762,13 @@ COMMIT;
 
 ### Rollback
 
+**Non-destructive (operational):** Revert reconciliation code to report `stale_items_over_15m = 0` with a hardcoded pass (Phase 1A behavior). The `last_synced_at` columns and `sync_watermarks` table remain but are unused. Since no bridge writes exist yet, these columns are all NULL anyway — no data to lose.
+
+**Destructive (SQL) — only if schema objects must be physically removed:**
 ```sql
 -- 20260402_stale_item_tracking_rollback.sql
+-- WARNING: If bridge writes have started populating last_synced_at, dropping these columns
+-- destroys the only record of sync timestamps. Only safe pre-bridge-write.
 BEGIN;
 ALTER TABLE core.projects DROP COLUMN IF EXISTS last_synced_at;
 ALTER TABLE core.clients DROP COLUMN IF EXISTS last_synced_at;
@@ -804,6 +815,228 @@ In `promoted-read-compat.ts` `buildPhase1AReconciliationReport()` approvals sect
 
 ---
 
+## Mandatory Preflight Audit Pack
+
+> **Gate rule:** ALL preflight checks must return PASS before any migration or backfill is executed. Any FAIL is a hard stop.
+
+These checks detect data conditions that would cause backfill failures, silent data corruption, or incorrect reconciliation results.
+
+### Preflight 1: Duplicate Approval Lineage Candidates
+
+Detects legacy approval rows that would produce UNIQUE constraint violations on `legacy_approval_id` during backfill.
+
+```sql
+-- PASS condition: count = 0
+-- FAIL condition: count > 0 (duplicates exist that need manual dedup before backfill)
+SELECT id, COUNT(*) AS cnt
+FROM public.approvals
+WHERE deleted_at IS NULL
+GROUP BY id
+HAVING COUNT(*) > 1;
+```
+
+```sql
+-- Also check: any existing document_approvals rows that already have a legacy_approval_id
+-- (would conflict with backfill INSERT ON CONFLICT)
+-- PASS condition: count = 0
+SELECT legacy_approval_id, COUNT(*) AS cnt
+FROM documentation.document_approvals
+WHERE legacy_approval_id IS NOT NULL
+GROUP BY legacy_approval_id
+HAVING COUNT(*) > 1;
+```
+
+### Preflight 2: Orphan FK Mappings
+
+Detects promoted rows whose FKs point to legacy IDs that no longer exist, or legacy rows that reference nonexistent promoted parents.
+
+```sql
+-- core.projects referencing nonexistent legacy project_execution_state
+-- PASS condition: count = 0
+SELECT cp.id, cp.legacy_project_info_id
+FROM core.projects cp
+WHERE cp.legacy_project_info_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM public.project_execution_state pes
+    WHERE pes.project_id = cp.legacy_project_info_id AND pes.deleted_at IS NULL
+  );
+```
+
+```sql
+-- core.clients referencing nonexistent legacy clients
+-- PASS condition: count = 0
+SELECT cc.id, cc.legacy_id
+FROM core.clients cc
+WHERE cc.legacy_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM public.clients lc WHERE lc.id = cc.legacy_id);
+```
+
+```sql
+-- documentation.documents referencing nonexistent legacy deliverables
+-- PASS condition: count = 0
+SELECT doc.id, doc.legacy_deliverable_id
+FROM documentation.documents doc
+WHERE doc.legacy_deliverable_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM public.deliverables d WHERE d.id = doc.legacy_deliverable_id);
+```
+
+```sql
+-- finance lines referencing nonexistent legacy rows
+-- PASS condition: both counts = 0
+SELECT 'cost_lines' AS source, COUNT(*) AS orphan_count
+FROM finance.cost_lines cl
+WHERE cl.legacy_program_expense_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM public.program_expense pe WHERE pe.id = cl.legacy_program_expense_id)
+UNION ALL
+SELECT 'revenue_lines', COUNT(*)
+FROM finance.revenue_lines rl
+WHERE rl.legacy_program_inflow_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM public.program_inflows pi WHERE pi.id = rl.legacy_program_inflow_id);
+```
+
+### Preflight 3: Unparseable Finance Dates
+
+Detects TEXT date fields that will fail `::DATE` casting during the typed-date backfill.
+
+```sql
+-- Cost lines with unparseable invoice_date
+-- PASS condition: count = 0 (or all listed values are known and acceptable as NULL post-cast)
+SELECT cl.id, cl.invoice_date, cl.approved_date, cl.paid_date
+FROM finance.cost_lines cl
+WHERE (cl.invoice_date IS NOT NULL AND cl.invoice_date !~ '^\d{4}-\d{2}-\d{2}')
+   OR (cl.approved_date IS NOT NULL AND cl.approved_date !~ '^\d{4}-\d{2}-\d{2}')
+   OR (cl.paid_date IS NOT NULL AND cl.paid_date !~ '^\d{4}-\d{2}-\d{2}');
+```
+
+```sql
+-- Revenue lines with unparseable dates
+-- PASS condition: count = 0 (or all listed values are known and acceptable as NULL post-cast)
+SELECT rl.id, rl.invoice_date, rl.expected_payment_date, rl.paid_date
+FROM finance.revenue_lines rl
+WHERE (rl.invoice_date IS NOT NULL AND rl.invoice_date !~ '^\d{4}-\d{2}-\d{2}')
+   OR (rl.expected_payment_date IS NOT NULL AND rl.expected_payment_date !~ '^\d{4}-\d{2}-\d{2}')
+   OR (rl.paid_date IS NOT NULL AND rl.paid_date !~ '^\d{4}-\d{2}-\d{2}');
+```
+
+### Preflight 4: Party Canonicalization Collisions
+
+Detects counterparties whose canonical names would collide in `core.parties` after case-normalization.
+
+```sql
+-- PASS condition: count = 0
+SELECT LOWER(TRIM(name_canonical)) AS normalized_name, COUNT(*) AS cnt,
+       ARRAY_AGG(id ORDER BY id) AS conflicting_ids
+FROM public.counterparties
+WHERE deleted_at IS NULL AND is_active = true
+GROUP BY LOWER(TRIM(name_canonical))
+HAVING COUNT(*) > 1;
+```
+
+```sql
+-- Also: counterparties whose canonical name matches a client name (party type collision)
+-- PASS condition: count = 0 (or reviewed and accepted as distinct parties)
+SELECT cp.id AS counterparty_id, cp.name_canonical, lc.id AS client_id, lc.name AS client_name
+FROM public.counterparties cp
+JOIN public.clients lc ON LOWER(TRIM(cp.name_canonical)) = LOWER(TRIM(lc.name))
+WHERE cp.deleted_at IS NULL AND cp.is_active = true;
+```
+
+### Preflight 5: Unresolved Project FK Mappings
+
+Detects legacy rows that reference project IDs with no corresponding `core.projects` entry — these would produce NULL `project_id` in backfilled promoted rows.
+
+```sql
+-- Approvals referencing projects not in core.projects
+-- PASS condition: count = 0
+SELECT a.id, a.project_id
+FROM public.approvals a
+WHERE a.deleted_at IS NULL
+  AND a.project_id IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM core.projects cp WHERE cp.legacy_project_info_id = a.project_id
+  );
+```
+
+```sql
+-- Deliverable files whose parent deliverable's project has no core.projects entry
+-- PASS condition: count = 0
+SELECT df.id, d.project_id
+FROM public.deliverable_files df
+JOIN public.deliverables d ON d.id = df.deliverable_id
+WHERE NOT EXISTS (
+  SELECT 1 FROM core.projects cp WHERE cp.legacy_project_info_id = d.project_id
+);
+```
+
+### Preflight 6: Existing Promoted Rows That Collide With Backfill Assumptions
+
+Detects pre-existing data in promoted tables that the backfill scripts assume are empty or append-only.
+
+```sql
+-- document_approvals already populated with non-null legacy_approval_id
+-- (Would be skipped by ON CONFLICT, but may indicate a partial prior run)
+-- INFO: If count > 0, verify these are from a prior clean backfill, not stale partial data
+SELECT COUNT(*) AS existing_legacy_mapped_approvals
+FROM documentation.document_approvals
+WHERE legacy_approval_id IS NOT NULL;
+```
+
+```sql
+-- document_versions already have SharePoint fields populated
+-- (Would be skipped by WHERE site_id IS NULL, but may indicate partial prior run)
+-- INFO: If count > 0, verify these are from a prior clean backfill
+SELECT COUNT(*) AS existing_sharepoint_enriched_versions
+FROM documentation.document_versions
+WHERE legacy_deliverable_file_id IS NOT NULL AND site_id IS NOT NULL;
+```
+
+```sql
+-- core.parties already has rows
+-- INFO: If count > 0, this is a new table — any existing rows indicate a prior run
+SELECT COUNT(*) AS existing_party_rows FROM core.parties;
+```
+
+```sql
+-- finance lines already have fiscal_period_id populated
+-- INFO: If count > 0, verify prior backfill was clean
+SELECT
+  'cost_lines' AS source, COUNT(*) AS already_derived
+FROM finance.cost_lines WHERE fiscal_period_id IS NOT NULL
+UNION ALL
+SELECT
+  'revenue_lines', COUNT(*)
+FROM finance.revenue_lines WHERE fiscal_period_id IS NOT NULL;
+```
+
+### Preflight 7: Orphan Legacy Files (Evidence Parity)
+
+Detects `deliverable_files` rows that were NOT flattened into `document_versions` during the foundation migration — these would be invisible to the evidence parity check.
+
+```sql
+-- PASS condition: count = 0
+-- FAIL condition: these files exist in legacy but have no promoted representation
+SELECT df.id, df.deliverable_id, df.file_name
+FROM public.deliverable_files df
+WHERE NOT EXISTS (
+  SELECT 1 FROM documentation.document_versions dv
+  WHERE dv.legacy_deliverable_file_id = df.id
+);
+```
+
+### Preflight Summary Gate
+
+| Check | Pass condition | Severity |
+|---|---|---|
+| PF-1: Duplicate approval lineage | 0 duplicate IDs | **HARD STOP** |
+| PF-2: Orphan FK mappings | 0 orphans across all 4 queries | **HARD STOP** |
+| PF-3: Unparseable finance dates | 0 unparseable rows (or documented exceptions) | **SOFT STOP** (can proceed if exceptions are logged) |
+| PF-4: Party canonicalization collisions | 0 collisions | **HARD STOP** |
+| PF-5: Unresolved project FK mappings | 0 unresolved | **HARD STOP** |
+| PF-6: Existing promoted rows | Counts documented and verified | **INFO** (review required, not blocking) |
+| PF-7: Orphan legacy files | 0 orphan files | **HARD STOP** |
+
+---
+
 ## Cross-Cutting Summary
 
 ### Migration Execution Order
@@ -817,10 +1050,10 @@ All migrations are independent and can run in any order, but the recommended seq
 | 3 | `20260402_client_contact_fields.sql` | 6 columns on `core.clients` | Minimal |
 | 4 | `20260402_party_abstraction.sql` | 1 new table `core.parties` + 2 indexes | Minimal |
 | 5 | `20260402_finance_period_derivation.sql` | 8 columns on 2 tables + 1 new table `finance.fiscal_periods` + 3 indexes | Low |
-| 6 | `20260402_evidence_link_parity.sql` | 5 columns on `document_versions` + 1 new table `documentation.document_files` + 1 index | Low |
+| 6 | `20260402_evidence_link_parity.sql` | 5 columns on `document_versions` + 1 partial index | Low |
 | 7 | `20260402_stale_item_tracking.sql` | 6 columns across tables + 1 new table `internal.sync_watermarks` + 1 index | Minimal |
 
-**Total new objects:** 42 columns, 4 new tables, 7 indexes.  
+**Total new objects:** 37 columns, 3 new tables, 7 indexes.  
 **Total legacy objects modified:** 0.  
 **Total existing promoted columns modified:** 0.
 
@@ -833,7 +1066,7 @@ Backfills must run after all migrations. Order matters for FK resolution:
 3. `core.parties` backfill (no FK deps)
 4. `core.projects` lifecycle columns backfill (no FK deps)
 5. `documentation.document_approvals` backfill (depends on `core.projects` existing)
-6. `documentation.document_files` backfill (depends on `documentation.documents` existing)
+6. `documentation.document_versions` SharePoint field enrichment (depends on `document_versions` rows existing from foundation backfill)
 7. `finance.cost_lines` / `finance.revenue_lines` typed dates + fiscal period derivation (depends on `finance.fiscal_periods`)
 
 ### Provisional-to-Resolved Mapping
@@ -848,7 +1081,10 @@ Backfills must run after all migrations. Order matters for FK resolution:
 | 6 | party_contacts | `contact_retrieval_match` is proxy | Blocker 3 | Migration 3 + backfill |
 | 7 | party_contacts | Counterparty resolution incomplete | Blocker 3 | Migration 4 + backfill |
 
-**After all 7 migrations + backfills: 0 provisional metrics remain.**
+**Status after all migrations + backfills:**
+- **6 of 7 provisional metrics become fully measurable** — schema and data exist to perform real field-level comparisons with no proxies.
+- **1 metric (stale_items_over_15m) becomes infrastructure-resolved** — the `last_synced_at` column and `sync_watermarks` table provide the measurement machinery, but the metric will report measured-zero until bridge writes are enabled in Phase 2. This is *structurally correct* (the measurement is real, not hardcoded), but the metric cannot detect actual staleness until writes flow through the promoted path.
+- **No provisional metrics require proxies or hardcoded values after Phase 1B.** The distinction is between "fully exercised" (6 metrics) and "fully instrumented, awaiting activation" (1 metric).
 
 ### Phase 2 Bridge Write Prerequisites
 
