@@ -603,6 +603,15 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS site_establishment_actual TEXT;
     ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS financial_review_status TEXT NOT NULL DEFAULT 'NOT_STARTED';
     ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS financial_review_id INTEGER;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS current_stage_code TEXT;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS gate_status TEXT;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS gate_readiness_pct INTEGER;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS waiting_on_department TEXT;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS waiting_on_user_id INTEGER REFERENCES users(id);
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS next_required_action TEXT;
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS stage_owner_user_id INTEGER REFERENCES users(id);
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS stage_approver_user_id INTEGER REFERENCES users(id);
+    ALTER TABLE project_execution_state ADD COLUMN IF NOT EXISTS kam_user_id INTEGER REFERENCES users(id);
   `);
 
   // ── users columns ──
