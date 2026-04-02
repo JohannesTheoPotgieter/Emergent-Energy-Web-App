@@ -40,6 +40,7 @@ import {
   type KpiScore,
 } from "@shared/config/kpi-registry";
 import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
+import { getTrackerLinkedActiveProjectIdSet } from "./kpi-active-project-scope";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -124,13 +125,9 @@ export async function getCompanyOverviewData() {
   const userMap = new Map(allUsers.map((u) => [u.id, u]));
   const projectMap = new Map(allProjects.map((p) => [p.id, p]));
 
-  // Active projects = have execution state and not archived
-  const activeProjects = allProjects.filter((p) => {
-    const exec = execByProjectId.get(p.id);
-    return exec && exec.archivedStatus === "ACTIVE";
-  });
-
-  const activeProjectIds = new Set(activeProjects.map((p) => p.id));
+  // Active projects (canonical KPI scope): Excel tracker linked.
+  const activeProjectIds = await getTrackerLinkedActiveProjectIdSet();
+  const activeProjects = allProjects.filter((p) => activeProjectIds.has(p.id));
 
   // ── Finance FYTD aggregation ───────────────────────────────────────
   const isInFy = (d: string | null | undefined) =>
@@ -288,7 +285,7 @@ export async function getCompanyOverviewData() {
     : 0;
 
   const pdKpis = new Map<string, { actual: number | null; target?: number | null; trend?: "up" | "down" | "flat" }>([
-    ["pd_signed_pipeline_vs_target", { actual: signedPipelineValue, target: signedPipelineValue * 1.2 }], // placeholder target
+    ["pd_signed_pipeline_vs_target", { actual: signedPipelineValue, target: activeOpps.reduce((sum, o) => sum + toNum(o.estimatedValue), 0) }],
     ["pd_deal_conversion_rate", { actual: conversionRate }],
     ["pd_active_deal_ageing", { actual: Math.round(avgDealAgeing) }],
     ["pd_blocked_deal_count", { actual: blockedDeals.length }],
@@ -469,7 +466,6 @@ export async function getCompanyOverviewData() {
   ]);
 
   // --- Finance ---
-  // Revenue target placeholder (use total planned as target proxy)
   const totalPlannedRevenue = revenueRows
     .filter((r) => activeProjectIds.has(r.projectId))
     .reduce((sum, r) => sum + toNum(r.amountExVat), 0);
@@ -497,12 +493,14 @@ export async function getCompanyOverviewData() {
     (sum, r) => sum + toNum(r.amountExVat), 0
   );
 
-  const targetMarginPct = 20; // Target margin placeholder
+  const targetMarginPct = totalPlannedRevenue > 0
+    ? ((totalPlannedRevenue - totalPlannedCost) / totalPlannedRevenue) * 100
+    : 0;
 
   const finKpis = new Map<string, { actual: number | null; target?: number | null }>([
-    ["fin_revenue_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue * 0.75 }], // FYTD pro-rata estimate
-    ["fin_cash_collected_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue * 0.7 }],
-    ["fin_cos_vs_target", { actual: paidCostFytd, target: totalPlannedCost * 0.75 }],
+    ["fin_revenue_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue }],
+    ["fin_cash_collected_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue }],
+    ["fin_cos_vs_target", { actual: paidCostFytd, target: totalPlannedCost }],
     ["fin_gross_margin_vs_target", { actual: grossMarginPct, target: targetMarginPct }],
     ["fin_overdue_debtors", { actual: overdueDebtorValue }],
   ]);
