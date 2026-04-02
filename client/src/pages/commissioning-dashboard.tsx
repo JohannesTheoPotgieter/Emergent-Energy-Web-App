@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { useProjectsSummary } from "@/hooks/use-projects-summary";
-import { useAuth } from "@/hooks/use-auth";
+import { useToast } from "@/hooks/use-toast";
 import {
   RefreshCw,
   ExternalLink,
@@ -126,8 +126,10 @@ export default function CommissioningDashboardPage() {
   const [, setLocation] = useLocation();
 
   const { projectsSummary, isLoading: projectsLoading } = useProjectsSummary();
+  const { toast } = useToast();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   const [selectedProjectId, setSelectedProjectId] = useState<number | undefined>(urlProjectId);
   const projectId = urlProjectId || selectedProjectId;
@@ -190,6 +192,8 @@ export default function CommissioningDashboardPage() {
     staleTime: 30_000,
   });
 
+  const dashboardErrorMessage = dashboardError instanceof Error ? dashboardError.message : "Failed to load";
+
   const refreshMutation = useMutation({
     mutationFn: async () => {
       const res = await fetch(`/api/commissioning-dashboard/${projectId}/refresh`, { method: "POST", headers: getAuthHeaders(), credentials: "include" });
@@ -201,9 +205,10 @@ export default function CommissioningDashboardPage() {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !projectId) return;
+    if (!file || !projectId || isUploading) return;
     const formData = new FormData();
     formData.append("file", file);
+    setIsUploading(true);
     try {
       const headers: Record<string, string> = {};
       const token = localStorage.getItem("auth_token");
@@ -211,8 +216,42 @@ export default function CommissioningDashboardPage() {
       const csrf = document.cookie.split(";").map(c => c.trim()).find(c => c.startsWith("csrf-token="))?.split("=")[1];
       if (csrf) headers["X-CSRF-Token"] = csrf;
       const res = await fetch(`/api/commissioning-dashboard/${projectId}/upload`, { method: "POST", headers, credentials: "include", body: formData });
-      if (res.ok) queryClient.invalidateQueries({ queryKey: ["commissioning-dashboard", projectId] });
-    } catch (err) { console.error("Upload failed:", err); }
+      let payload: any = null;
+      try {
+        payload = await res.json();
+      } catch {
+        payload = null;
+      }
+      if (!res.ok) {
+        const detail = payload?.detail || payload?.parseMessage || payload?.error || "Upload failed";
+        const warningText = Array.isArray(payload?.warnings) ? payload.warnings.join(" | ") : "";
+        toast({
+          title: "Workbook upload failed",
+          description: warningText ? `${detail} — ${warningText}` : detail,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Workbook uploaded",
+        description: payload?.warnings?.length
+          ? `Upload parsed with ${payload.warnings.length} warning(s).`
+          : "Commissioning snapshot refreshed successfully.",
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["commissioning-dashboard", projectId] });
+      await queryClient.refetchQueries({ queryKey: ["commissioning-dashboard", projectId], type: "active" });
+    } catch (err) {
+      console.error("Upload failed:", err);
+      toast({
+        title: "Workbook upload failed",
+        description: err instanceof Error ? err.message : "Unexpected error during upload",
+        variant: "destructive",
+      });
+    } finally {
+      setIsUploading(false);
+    }
     e.target.value = "";
   };
 
@@ -247,8 +286,8 @@ export default function CommissioningDashboardPage() {
         </div>
         <div className="flex items-center gap-2">
           <input ref={fileInputRef} type="file" accept=".xlsx,.xlsm" className="hidden" onChange={handleFileUpload} />
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()}>
-            <Upload className="h-3.5 w-3.5" /> Upload
+          <Button variant="outline" size="sm" className="gap-1.5" onClick={() => fileInputRef.current?.click()} disabled={isUploading}>
+            {isUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />} {isUploading ? "Uploading..." : "Upload"}
           </Button>
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => refreshMutation.mutate()} disabled={refreshMutation.isPending}>
             <RefreshCw className={`h-3.5 w-3.5 ${refreshMutation.isPending ? "animate-spin" : ""}`} /> Refresh
@@ -258,7 +297,7 @@ export default function CommissioningDashboardPage() {
 
       {/* Loading / Error */}
       {dashboardLoading && <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading...</div>}
-      {dashboardError && <Card className="border-red-200 bg-red-50"><CardContent className="py-4 text-sm text-red-800"><AlertTriangle className="inline h-4 w-4 mr-1" />{dashboardError instanceof Error ? dashboardError.message : "Failed to load"}</CardContent></Card>}
+      {dashboardError && <Card className="border-red-200 bg-red-50"><CardContent className="py-4 text-sm text-red-800"><AlertTriangle className="inline h-4 w-4 mr-1" />{dashboardErrorMessage}</CardContent></Card>}
 
       {dashboard && !dashboardLoading && (<>
         {/* Project info from workbook + source links */}
