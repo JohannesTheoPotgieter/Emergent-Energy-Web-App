@@ -137,15 +137,19 @@ function toMytoolDbPriority(priority: string): string {
 }
 import { computeNextRecurrenceDate, computeMilestoneProgress, isOverdue, shouldBlockTask, validateDependencyPair } from "./lib/mytool-work-engine";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag, DEFAULT_RAG_THRESHOLDS } from "@shared/kpi-definitions";
-import { STATIC_COS_BUDGET_FY26 } from "./lib/calculations/financeUtils";
+import { STATIC_COS_BUDGET_FY26, classifyCosStatusFull } from "./lib/calculations/financeUtils";
 import { isDateConfirmedCheck, getMergedExpensesAndInflows, resolveInflowEffectiveDates } from "./lib/cashflow-helpers";
 
 function isCosRealisedCheck(exp: any): boolean {
-  const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
-  const hasInvDate = !!(exp.expenseInvoicedDate && String(exp.expenseInvoicedDate).trim());
-  if (!hasInvoice || !hasInvDate) return false;
-  const invoiceDateBlack = isDateConfirmedCheck(exp.invoiceDateConfirmed, exp.invoiceDateFontColor);
-  return invoiceDateBlack;
+  return classifyCosStatusFull(exp) === 'COS Realised';
+}
+
+// Unified realisation check: past-month committed costs are treated as realised.
+function isEffectivelyRealisedLocal(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  const cosStatus = classifyCosStatusFull(exp);
+  if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
+  if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
+  return false;
 }
 
 function isCashflowConfirmedCheck(exp: any): boolean {
@@ -2171,7 +2175,7 @@ export async function registerRoutes(
           const cosDateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
           if (cosDateMatch) {
             const mk = `${cosDateMatch[1]}-${cosDateMatch[2]}`;
-            const isCosReal = isCosRealisedCheck(exp) && mk <= currentMK;
+            const isCosReal = isEffectivelyRealisedLocal(exp, mk, currentMK);
 
             // Monthly series
             if (!cosMonthly.has(mk)) cosMonthly.set(mk, { total: 0, realised: 0 });

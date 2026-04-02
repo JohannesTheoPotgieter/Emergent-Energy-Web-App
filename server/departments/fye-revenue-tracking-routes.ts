@@ -68,7 +68,7 @@ import {
 } from "@shared/schema";
 import { eq, and, sql, desc, isNull, gte } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { extractMonthKey, normalizeProjectName, isCosRealised, currentMonthKey } from "../lib/calculations/financeUtils";
+import { extractMonthKey, normalizeProjectName, isCosRealised, classifyCosStatusFull, currentMonthKey } from "../lib/calculations/financeUtils";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 
 const router = Router();
@@ -783,8 +783,10 @@ router.get(
         // Only future months are excluded; realised check handles confirmation
         if (mk > curMk) continue;
 
-        // Check if this expense line is realised (invoice confirmed)
-        if (!isCosRealised(exp)) continue;
+        // Check if this expense line is effectively realised (invoice confirmed or past-month committed)
+        const cosStatus = classifyCosStatusFull(exp);
+        const effectivelyRealised = cosStatus === 'COS Realised' || (cosStatus === 'Committed' && mk < curMk);
+        if (!effectivelyRealised) continue;
 
         const pn = normalizeProjectName(exp.projectName);
 

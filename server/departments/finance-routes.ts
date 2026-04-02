@@ -119,6 +119,21 @@ function isCosRealised(exp: any): boolean {
   return isCosRealisedShared(exp);
 }
 
+// Unified realisation check: returns true if cost is effectively realised for a given month.
+// Past-month committed costs are treated as realised (the cost has been incurred).
+function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  const cosStatus = classifyCosStatusFull(exp);
+  if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
+  if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
+  return false;
+}
+
+// Returns true if a cost is still actively committed (current/future month only).
+function isEffectivelyCommitted(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  const cosStatus = classifyCosStatusFull(exp);
+  return cosStatus === 'Committed' && (monthKey == null || monthKey >= currentMonthKey);
+}
+
 function isCashflowConfirmed(exp: any): boolean {
   const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
   const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
@@ -1539,11 +1554,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       cosBucket.total += amount;
       cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
 
-      const cosStatus = classifyCosStatusFull(exp);
-      // Past-month committed costs are effectively realised (cost already incurred)
-      const isRealised = (cosStatus === 'COS Realised' && monthKey <= currentMonthKey) ||
-                         (cosStatus === 'Committed' && monthKey < currentMonthKey);
-      const isCommitted = cosStatus === 'Committed' && monthKey >= currentMonthKey;
+      const isRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
+      const isCommitted = isEffectivelyCommitted(exp, monthKey, currentMonthKey);
 
       if (isRealised) {
         if (!realisedByMonth.has(monthKey)) {
@@ -1672,11 +1684,8 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
 
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
 
-      const cosStatus = classifyCosStatusFull(exp);
-      // Past-month committed costs are effectively realised (cost already incurred)
-      const isRealised = (cosStatus === 'COS Realised' && monthKey <= currentMonthKey) ||
-                         (cosStatus === 'Committed' && monthKey < currentMonthKey);
-      const isCommitted = cosStatus === 'Committed' && monthKey >= currentMonthKey;
+      const isRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
+      const isCommitted = isEffectivelyCommitted(exp, monthKey, currentMonthKey);
       if (isRealised) {
         realisedByMonth.set(monthKey, (realisedByMonth.get(monthKey) || 0) + amount);
       }
@@ -1825,13 +1834,11 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const nowD = new Date();
       const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
-      const fullCosStatus = classifyCosStatusFull(exp);
-      // Past-month committed costs are effectively realised (cost already incurred)
-      const isRealised = (fullCosStatus === 'COS Realised' && (itemMonthKey ? itemMonthKey <= currentMonthKey : true)) ||
-                         (fullCosStatus === 'Committed' && itemMonthKey != null && itemMonthKey < currentMonthKey);
-      const isCommitted = fullCosStatus === 'Committed' && (itemMonthKey == null || itemMonthKey >= currentMonthKey);
+      const isRealised = isEffectivelyRealised(exp, itemMonthKey, currentMonthKey);
+      const isCommitted = isEffectivelyCommitted(exp, itemMonthKey, currentMonthKey);
 
-      // COS state derived from classifyCosStatusFull
+      // COS state derived from effective realisation
+      const fullCosStatus = classifyCosStatusFull(exp);
       const cosState = isRealised ? 'COS Realised' : fullCosStatus;
 
       // Cashflow payment status (4-state model)
@@ -2092,7 +2099,7 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
 
       revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
 
-      const cosRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      const cosRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
       if (cosRealised) {
         realisedRevByMonth.set(monthKey, (realisedRevByMonth.get(monthKey) || 0) + revenueAmount);
       }
@@ -2240,7 +2247,7 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
       revByMonth.set(monthKey, (revByMonth.get(monthKey) || 0) + revenueAmount);
 
-      const cosRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      const cosRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
       if (cosRealised) {
         realisedCosByMonth.set(monthKey, (realisedCosByMonth.get(monthKey) || 0) + amount);
         realisedRevByMonth.set(monthKey, (realisedRevByMonth.get(monthKey) || 0) + revenueAmount);
@@ -2383,7 +2390,7 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
 
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
 
-      const cosRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      const cosRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
       if (cosRealised) {
         realisedCosByMonth.set(monthKey, (realisedCosByMonth.get(monthKey) || 0) + amount);
       }
@@ -2530,7 +2537,7 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
       const revenueAmount = allocateRevenue(amount, totalCOSProject, totalRevProject, isNoRevLinked);
       const gpAmount = revenueAmount - amount;
 
-      const cosRealised = isCosRealised(exp) && (itemMonthKey ? itemMonthKey <= curMK : false);
+      const cosRealised = isEffectivelyRealised(exp, itemMonthKey, curMK);
       const gpState = cosRealised ? 'Realised' : 'Unrealised';
 
       if (stateFilter && stateFilter.toLowerCase() !== gpState.toLowerCase()) continue;
@@ -2636,7 +2643,7 @@ async function revenueTrackerHandler(req: Request, res: Response) {
       revBucket.total += revenueAmount;
       revBucket.projects.set(pName, (revBucket.projects.get(pName) || 0) + revenueAmount);
 
-      const cosRealised = isCosRealised(exp) && monthKey <= currentMonthKey;
+      const cosRealised = isEffectivelyRealised(exp, monthKey, currentMonthKey);
       if (cosRealised) {
         if (!realisedByMonth.has(monthKey)) realisedByMonth.set(monthKey, { total: 0, projects: new Map() });
         const realBucket = realisedByMonth.get(monthKey)!;
@@ -2779,7 +2786,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
         ? (amount / projectTotalCOS) * projectTotalRevenue
         : 0;
 
-      const cosRealised = isCosRealised(exp) && itemMonthKey <= currentMonthKey;
+      const cosRealised = isEffectivelyRealised(exp, itemMonthKey, currentMonthKey);
       const revState = cosRealised ? 'Realised' : 'Unrealised';
 
       if (stateFilter && stateFilter.toLowerCase() !== revState.toLowerCase()) continue;
