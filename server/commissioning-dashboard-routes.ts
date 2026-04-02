@@ -8,7 +8,7 @@ import { Express, Request, Response } from "express";
 import multer from "multer";
 import path from "path";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { projectInfo } from "@shared/schema";
 import {
   commissioningSources,
@@ -41,6 +41,120 @@ const workbookUpload = multer({
   },
 });
 
+const COMMISSIONING_MIGRATION_HINT = "Run migration: migrations/20260401_commissioning_workbook_source.sql";
+
+let commissioningSchemaReady: Promise<void> | null = null;
+
+function toErrorDetails(err: unknown): { message: string; code?: string; detail?: string } {
+  if (err && typeof err === "object") {
+    const anyErr = err as Record<string, unknown>;
+    return {
+      message: anyErr.message ? String(anyErr.message) : "Unknown error",
+      code: anyErr.code ? String(anyErr.code) : undefined,
+      detail: anyErr.detail ? String(anyErr.detail) : undefined,
+    };
+  }
+  return { message: String(err ?? "Unknown error") };
+}
+
+function isCommissioningSchemaMissingError(err: unknown): boolean {
+  const details = toErrorDetails(err);
+  return details.code === "42P01" || details.code === "42703" || details.message.toLowerCase().includes("commissioning_sources") || details.message.toLowerCase().includes("commissioning_snapshots");
+}
+
+async function ensureCommissioningDashboardSchema(): Promise<void> {
+  if (!commissioningSchemaReady) {
+    commissioningSchemaReady = (async () => {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS commissioning_sources (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES project_info(id),
+          source_type TEXT NOT NULL DEFAULT 'sharepoint',
+          source_format TEXT NOT NULL DEFAULT 'commissioning_workbook',
+          drive_id TEXT,
+          item_id TEXT,
+          file_path TEXT,
+          workbook_url TEXT,
+          folder_url TEXT,
+          is_active BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+          created_by INTEGER REFERENCES users(id),
+          UNIQUE(project_id)
+        );
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS commissioning_snapshots (
+          id SERIAL PRIMARY KEY,
+          project_id INTEGER NOT NULL REFERENCES project_info(id),
+          source_id INTEGER REFERENCES commissioning_sources(id),
+          source_etag TEXT,
+          source_ctag TEXT,
+          source_modified_at TIMESTAMP,
+          parse_status TEXT NOT NULL DEFAULT 'pending',
+          parse_message TEXT,
+          parsed_sections JSONB NOT NULL DEFAULT '[]'::jsonb,
+          parsed_at TIMESTAMP NOT NULL DEFAULT NOW(),
+          is_latest BOOLEAN NOT NULL DEFAULT true,
+          created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        );
+      `);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_commissioning_snapshots_project ON commissioning_snapshots(project_id, is_latest);`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_commissioning_sources_project ON commissioning_sources(project_id);`);
+      await db.execute(sql`ALTER TABLE commissioning_sources ADD COLUMN IF NOT EXISTS source_format TEXT NOT NULL DEFAULT 'commissioning_workbook';`);
+      await db.execute(sql`ALTER TABLE commissioning_snapshots ADD COLUMN IF NOT EXISTS parsed_sections JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+    })().catch((err) => {
+      commissioningSchemaReady = null;
+      throw err;
+    });
+  }
+
+  await commissioningSchemaReady;
+}
+
+function respondCommissioningError(
+  res: Response,
+  routeLabel: string,
+  err: unknown,
+  fallbackMessage: string,
+) {
+  const details = toErrorDetails(err);
+  console.error(`[CommissioningDashboard] ${routeLabel} failed`, {
+    message: details.message,
+    code: details.code,
+    detail: details.detail,
+    stack: err instanceof Error ? err.stack : undefined,
+  });
+
+  if (isCommissioningSchemaMissingError(err)) {
+    return res.status(503).json({
+      error: "Commissioning dashboard schema is not available in this environment",
+      code: "COMMISSIONING_SCHEMA_MISSING",
+      detail: details.detail || details.message,
+      migration: COMMISSIONING_MIGRATION_HINT,
+    });
+  }
+
+  return res.status(500).json({
+    error: fallbackMessage,
+    code: details.code || "COMMISSIONING_DASHBOARD_ERROR",
+    detail: details.detail || details.message,
+  });
+}
+
+function workbookUploadSingle(req: Request, res: Response, next: (err?: unknown) => void) {
+  workbookUpload.single("file")(req, res, (err: unknown) => {
+    if (!err) return next();
+    const details = toErrorDetails(err);
+    console.error("[CommissioningDashboard] Upload validation failed", details);
+    res.status(400).json({
+      error: "Invalid workbook upload",
+      code: "UPLOAD_VALIDATION_ERROR",
+      detail: details.message,
+    });
+  });
+}
+
 async function tryDownloadFromSharePoint(driveId: string, itemId: string): Promise<{
   buffer: Buffer; etag: string; ctag: string; modifiedAt: string | null;
 } | null> {
@@ -65,6 +179,7 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
   /** GET /api/commissioning-dashboard/:projectId — main dashboard payload */
   app.get("/api/commissioning-dashboard/:projectId", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
+      await ensureCommissioningDashboardSchema();
       const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
@@ -120,14 +235,14 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
 
       res.json(payload);
     } catch (err) {
-      console.error("[CommissioningDashboard] Error:", err instanceof Error ? err.message : err);
-      res.status(500).json({ error: "Failed to fetch commissioning dashboard" });
+      return respondCommissioningError(res, "GET /api/commissioning-dashboard/:projectId", err, "Failed to fetch commissioning dashboard");
     }
   });
 
   /** POST /api/commissioning-dashboard/:projectId/refresh — re-parse workbook from source */
   app.post("/api/commissioning-dashboard/:projectId/refresh", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
+      await ensureCommissioningDashboardSchema();
       const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
 
@@ -232,14 +347,14 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
 
       res.json({ refreshed: true, snapshot: newSnapshot, warnings: parseResult.warnings });
     } catch (err) {
-      console.error("[CommissioningDashboard] Refresh error:", err instanceof Error ? err.message : err);
-      res.status(500).json({ error: "Failed to refresh commissioning data" });
+      return respondCommissioningError(res, "POST /api/commissioning-dashboard/:projectId/refresh", err, "Failed to refresh commissioning data");
     }
   });
 
   /** GET /api/commissioning-dashboard/:projectId/source */
   app.get("/api/commissioning-dashboard/:projectId/source", jwtAuth, requireAuth, requirePermission("commissioning", "view"), async (req: Request, res: Response) => {
     try {
+      await ensureCommissioningDashboardSchema();
       const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
       const [source] = await db.select()
@@ -247,13 +362,14 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
         .where(and(eq(commissioningSources.projectId, projectId), eq(commissioningSources.isActive, true)));
       res.json(source || null);
     } catch (err) {
-      res.status(500).json({ error: "Failed to fetch source config" });
+      return respondCommissioningError(res, "GET /api/commissioning-dashboard/:projectId/source", err, "Failed to fetch source config");
     }
   });
 
   /** PUT /api/commissioning-dashboard/:projectId/source */
   app.put("/api/commissioning-dashboard/:projectId/source", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), async (req: Request, res: Response) => {
     try {
+      await ensureCommissioningDashboardSchema();
       const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
       const user = getEffectiveUser(req);
@@ -303,14 +419,14 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
 
       res.json(result);
     } catch (err) {
-      console.error("[CommissioningDashboard] Source update error:", err instanceof Error ? err.message : err);
-      res.status(500).json({ error: "Failed to update source config" });
+      return respondCommissioningError(res, "PUT /api/commissioning-dashboard/:projectId/source", err, "Failed to update source config");
     }
   });
 
   /** POST /api/commissioning-dashboard/:projectId/upload — manual workbook upload */
-  app.post("/api/commissioning-dashboard/:projectId/upload", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), workbookUpload.single("file"), async (req: Request, res: Response) => {
+  app.post("/api/commissioning-dashboard/:projectId/upload", jwtAuth, requireAuth, requirePermission("commissioning", "edit"), workbookUploadSingle, async (req: Request, res: Response) => {
     try {
+      await ensureCommissioningDashboardSchema();
       const projectId = parseInt(String(req.params.projectId));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
       if (!req.file) return res.status(400).json({ error: "No file uploaded. Send multipart/form-data with field 'file'." });
@@ -325,6 +441,14 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
       const sourceFormat = source?.sourceFormat || "commissioning_workbook";
 
       const parseResult = await parseCommissioningWorkbook(buffer, sourceFormat);
+      if (parseResult.parseStatus === "failed") {
+        return res.status(422).json({
+          error: "Workbook validation failed",
+          code: "WORKBOOK_VALIDATION_FAILED",
+          parseMessage: parseResult.parseMessage,
+          warnings: parseResult.warnings,
+        });
+      }
 
       // Rotate snapshots
       await db.update(commissioningSnapshots)
@@ -358,8 +482,7 @@ export function registerCommissioningDashboardRoutes(app: Express): void {
 
       res.json({ refreshed: true, snapshot: newSnapshot, warnings: parseResult.warnings });
     } catch (err) {
-      console.error("[CommissioningDashboard] Upload error:", err instanceof Error ? err.message : err);
-      res.status(500).json({ error: "Failed to process uploaded workbook" });
+      return respondCommissioningError(res, "POST /api/commissioning-dashboard/:projectId/upload", err, "Failed to process uploaded workbook");
     }
   });
 }
