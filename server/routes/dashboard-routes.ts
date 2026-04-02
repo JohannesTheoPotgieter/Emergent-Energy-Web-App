@@ -11,6 +11,7 @@ import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
 import { classifyCosStatus } from "../lib/calculations/stateClassifier";
+import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
@@ -1048,14 +1049,20 @@ export function registerDashboardRoutes(app: Express) {
       for (const inflow of allInflows) {
         if (inflow.milestoneAmount) {
           const amt = parseFloat(inflow.milestoneAmount) || 0;
-          const hasInvoiceNum = inflow.milestoneInvoiceNumber && inflow.milestoneInvoiceNumber.trim() !== '';
-          const paymentNotReceived = !inflow.paymentReceivedDate || inflow.paymentReceivedDate.trim() === '';
           const rawInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
           const overrideInBank = inBankOverrideSet.has(`${inflow.projectName}::${inflow.rowNumber}`);
-          const markedInBank = rawInBank || overrideInBank;
           const dateToCheck = inflow.effectiveDate || inflow.invoiceRaisedDate;
-          const dateInPast = dateToCheck && /^\d{4}-\d{2}-\d{2}/.test(dateToCheck) && dateToCheck < today;
-          if (amt > 0 && hasInvoiceNum && paymentNotReceived && !markedInBank && dateInPast) {
+          const arState = evaluateRevenueArStatus({
+            status: inflow.lineStatus || inflow.status || inflow.computedState || null,
+            manualInBank: rawInBank || overrideInBank,
+            paymentReceivedDate: inflow.paymentReceivedDate,
+            dueDate: dateToCheck,
+            invoiceNumber: inflow.milestoneInvoiceNumber,
+            amount: amt,
+            today,
+          });
+
+          if (arState.isOverdue) {
             if (dateToCheck && isMegaParkOutsideFY(inflow.projectName, dateToCheck)) continue;
             revenueOutstanding.push({
               id: inflow.id,

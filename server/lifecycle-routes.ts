@@ -15,6 +15,7 @@ import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle
 import { buildProjectLifecycleWorkspace } from "./services/project-lifecycle-workspace-service";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { initializeProjectStages } from "./services/stage-lifecycle-service";
+import { evaluateRevenueArStatus } from "./lib/finance/revenue-ar-status";
 import { projectStageInstances, STAGE_CODES } from "@shared/schema";
 import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../shared/utils/phase-to-stage-map";
 import { jwtAuth, requireAuth } from "./auth-context";
@@ -244,13 +245,23 @@ function buildOverdueFinanceLedger(params: {
     const keyDate = dueDate || invoiceDate;
     if (!isDateInRange(keyDate, fyStart, fyEnd)) continue;
 
-    const received = (hasText(row.paidDate) && isBlack(row.paidDateFontColor)) || Boolean(row.paidDateConfirmed) || Boolean(row.inBankDate);
-    if (received) continue;
+    const arState = evaluateRevenueArStatus({
+      status: row.status,
+      paidDate: row.paidDate,
+      paidDateConfirmed: row.paidDateConfirmed,
+      paidDateFontColor: row.paidDateFontColor,
+      inBankDate: row.inBankDate,
+      dueDate,
+      invoiceNumber: row.invoiceNumber,
+      amount,
+      today,
+    });
+    if (arState.isSettled) continue;
     if (!dueDate) {
       arMissingDueDate += 1;
       continue;
     }
-    if (!(dueDate < today)) continue;
+    if (!arState.isOverdue) continue;
 
     const dedupeKey = `${row.projectId || row.projectName}::${row.sourceRow || ""}::${row.invoiceNumber}`;
     if (arSeen.has(dedupeKey)) continue;
@@ -1206,7 +1217,7 @@ export function registerLifecycleRoutes(app: Express) {
           },
           ar: {
             dueDateField: "expectedPaymentDate",
-            settledLogic: "paidDateConfirmed OR inBankDate OR paidDate with black font",
+            settledLogic: "status in (IN_BANK/PAID/REALISED/RECEIVED/SETTLED) OR payment/paid date OR inBankDate OR paidDateConfirmed/manual in-bank",
             missingDueDateCount: overdueLedger.ar.missingDueDateCount,
             itemCount: overdueLedger.ar.count,
           },
@@ -1270,6 +1281,7 @@ export function registerLifecycleRoutes(app: Express) {
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
         paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
         inBankDate: normalizedRevenueLines.inBankDate,
+        status: normalizedRevenueLines.status,
         sourceRow: normalizedRevenueLines.sourceRow,
       }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 

@@ -39,6 +39,7 @@ import {
   type DepartmentScore,
   type KpiScore,
 } from "@shared/config/kpi-registry";
+import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -146,7 +147,13 @@ export async function getCompanyOverviewData() {
     const dateRef = (row as any).paidDate || (row as any).inBankDate || (row as any).expectedPaymentDate || (row as any).invoiceDate;
     if (isInFy(dateRef)) {
       totalRevenueFytd += amount;
-      if ((row as any).paidDate || (row as any).inBankDate) {
+      if (isRevenueSettled({
+        status: (row as any).status,
+        paidDate: (row as any).paidDate,
+        inBankDate: (row as any).inBankDate,
+        paidDateConfirmed: (row as any).paidDateConfirmed,
+        paidDateFontColor: (row as any).paidDateFontColor,
+      })) {
         receivedRevenueFytd += amount;
       }
     }
@@ -474,9 +481,17 @@ export async function getCompanyOverviewData() {
   // Overdue debtors (revenue expected but not received, past date)
   const overdueDebtors = revenueRows.filter((r) => {
     if (!activeProjectIds.has(r.projectId)) return false;
-    if ((r as any).paidDate || (r as any).inBankDate) return false;
-    const expectedDate = (r as any).expectedPaymentDate;
-    return expectedDate && expectedDate < today;
+    return evaluateRevenueArStatus({
+      status: (r as any).status,
+      paidDate: (r as any).paidDate,
+      inBankDate: (r as any).inBankDate,
+      paidDateConfirmed: (r as any).paidDateConfirmed,
+      paidDateFontColor: (r as any).paidDateFontColor,
+      dueDate: (r as any).expectedPaymentDate,
+      invoiceNumber: (r as any).invoiceNumber,
+      amount: (r as any).amountExVat,
+      today,
+    }).isOverdue;
   });
   const overdueDebtorValue = overdueDebtors.reduce(
     (sum, r) => sum + toNum(r.amountExVat), 0
