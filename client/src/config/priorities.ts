@@ -1,13 +1,19 @@
-export const PRIORITY_ADMIN_ROLES = [
-  "COO_ADMIN",
-  "CEO_ADMIN",
-  "CCO",
-  "CFO",
-  "PROGRAM_MANAGER",
-] as const;
-
-export type PriorityAdminRole = (typeof PRIORITY_ADMIN_ROLES)[number];
-
-export function isPriorityAdminRole(role: string | null | undefined): boolean {
-  return !!role && PRIORITY_ADMIN_ROLES.includes(role as PriorityAdminRole);
-}
+/**
+ * Re-export shared priority constants for client usage.
+ * Single source of truth lives in shared/config/priorities.ts
+ */
+export {
+  PRIORITY_ADMIN_ROLES,
+  DEPARTMENT_HEAD_ROLES,
+  PRIORITY_SCOPES,
+  ESCALATION_REASONS,
+  SCOPE_LABELS,
+  isPriorityAdminRole,
+  isDepartmentHeadRole,
+} from "@shared/config/priorities";
+export type {
+  PriorityAdminRole,
+  DepartmentHeadRole,
+  PriorityScope,
+  EscalationReason,
+} from "@shared/config/priorities";
