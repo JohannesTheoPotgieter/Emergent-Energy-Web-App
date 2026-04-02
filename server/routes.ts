@@ -39,6 +39,7 @@ import { runDataQualityChecks } from "./lib/calculations/dataQuality";
 import { computeMonthlyBuckets } from "./lib/calculations/scenarioResolver";
 import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
+import { getCosEffectiveDateAndSource } from "./lib/expense-row-selector";
 
 /** Record a manual edit flag for conflict detection during smart import */
 async function recordManualEditFlag(opts: {
@@ -2164,12 +2165,12 @@ export async function registerRoutes(
         if (isNaN(amount) || amount === 0) continue;
         const pName = (exp.projectName || '').replace(/_Tracker$/i, '');
 
-        // COS: uses invoice date for bucketing
-        const invDate = exp.expenseInvoicedDate as string | null;
-        if (invDate) {
-          const invDateMatch = invDate.match(/^(\d{4})-(\d{2})/);
-          if (invDateMatch) {
-            const mk = `${invDateMatch[1]}-${invDateMatch[2]}`;
+        // COS: uses canonical COS date for bucketing (respects admin overrides)
+        const { date: cosDate } = getCosEffectiveDateAndSource(exp);
+        if (cosDate) {
+          const cosDateMatch = cosDate.match(/^(\d{4})-(\d{2})/);
+          if (cosDateMatch) {
+            const mk = `${cosDateMatch[1]}-${cosDateMatch[2]}`;
             const isCosReal = isCosRealisedCheck(exp) && mk <= currentMK;
 
             // Monthly series
@@ -2179,15 +2180,15 @@ export async function registerRoutes(
             if (isCosReal) cm.realised += amount;
 
             // Weekly buckets
-            if (inRange(invDate, thisWeekMon, thisWeekSun)) addToBucket(cosThisWeek, amount, isCosReal, pName);
-            if (inRange(invDate, lastWeekMon, lastWeekSun)) addToBucket(cosLastWeek, amount, isCosReal, pName);
+            if (inRange(cosDate, thisWeekMon, thisWeekSun)) addToBucket(cosThisWeek, amount, isCosReal, pName);
+            if (inRange(cosDate, lastWeekMon, lastWeekSun)) addToBucket(cosLastWeek, amount, isCosReal, pName);
 
             // Monthly buckets
-            if (inRange(invDate, thisMonthStart, thisMonthEnd)) addToBucket(cosThisMonth, amount, isCosReal, pName);
-            if (inRange(invDate, lastMonthStart, lastMonthEnd)) addToBucket(cosLastMonth, amount, isCosReal, pName);
+            if (inRange(cosDate, thisMonthStart, thisMonthEnd)) addToBucket(cosThisMonth, amount, isCosReal, pName);
+            if (inRange(cosDate, lastMonthStart, lastMonthEnd)) addToBucket(cosLastMonth, amount, isCosReal, pName);
 
             // YTD (within FY)
-            if (inRange(invDate, fyStart, fyEnd)) addToBucket(cosYTD, amount, isCosReal, pName);
+            if (inRange(cosDate, fyStart, fyEnd)) addToBucket(cosYTD, amount, isCosReal, pName);
           }
         }
 
