@@ -108,12 +108,16 @@ Add to `finance.cost_lines`:
 - `approved_date_typed DATE`
 - `paid_date_typed DATE`
 - `fiscal_period_id INTEGER`
+- `is_opening_balance BOOLEAN NOT NULL DEFAULT false`
+- `legacy_row_type TEXT`
 
 Add to `finance.revenue_lines`:
 - `invoice_date_typed DATE`
 - `expected_payment_date_typed DATE`
 - `paid_date_typed DATE`
 - `fiscal_period_id INTEGER`
+- `is_opening_balance BOOLEAN NOT NULL DEFAULT false`
+- `legacy_row_type TEXT`
 
 Create `finance.fiscal_periods`:
 ```
@@ -182,6 +186,23 @@ Add `COMMENT ON TABLE` and `COMMENT ON COLUMN` for `lag_seconds`.
 
 Drop `last_synced_at` from all 6 tables. Drop index and table.
 
+### 8a. `20260402_state_history_tables.sql`
+
+Create 4 history tables that store full audit trail of every entity pulled from legacy:
+
+- `core.project_state_history` — all project execution state snapshots, with `is_current BOOLEAN` marking the latest per project
+- `documentation.approval_state_history` — all approval status snapshots
+- `finance.cost_line_history` — all cost line snapshots
+- `finance.revenue_line_history` — all revenue line snapshots
+
+Each table has: `is_current BOOLEAN NOT NULL DEFAULT false`, `snapshot_reason TEXT`, `source_table TEXT`, `source_updated_at TIMESTAMPTZ`, `snapshot_at TIMESTAMP`.
+
+Partial indexes on `(entity_id, is_current) WHERE is_current = true` for fast current-state queries.
+
+### 8b. `20260402_state_history_tables_rollback.sql`
+
+Drop all 4 history tables and their indexes.
+
 ---
 
 ## Part 2: Preflight Audit Script
@@ -190,7 +211,7 @@ Create file: `migrations/20260402_preflight_audit.sql`
 
 This is NOT a migration. It is a read-only diagnostic script that outputs PASS/FAIL for each check. It must be run manually before any migration.
 
-Implement all 7 preflight checks from the spec's "Mandatory Preflight Audit Pack" section:
+Implement all 11 preflight checks from the spec's "Mandatory Preflight Audit Pack" and "Cross-Cutting Rules" sections:
 1. Duplicate approval lineage candidates
 2. Orphan FK mappings (4 sub-queries)
 3. Unparseable finance dates (2 sub-queries)
@@ -198,8 +219,12 @@ Implement all 7 preflight checks from the spec's "Mandatory Preflight Audit Pack
 5. Unresolved project FK mappings (2 sub-queries)
 6. Existing promoted rows that collide with backfill assumptions (4 sub-queries)
 7. Orphan legacy files (evidence parity)
+8. Ambiguous current-state rows after deterministic ranking (INFO for history, HARD STOP for tied rankings)
+9. Opening balance detection and classification audit (SOFT STOP for detected OBs, HARD STOP for multiple OBs per project) — must include detail reports listing every classified row
+10. Join multiplication detection on finance lines (duplicate legacy IDs, ambiguous project names)
+11. Aggregate inflation detection — row count AND amount, at BOTH per-project AND portfolio/aggregate levels
 
-Format: Each check should be a standalone `SELECT` that can be run independently. Add a comment header with the check name, pass condition, and severity level.
+Format: Each check should be a standalone `SELECT` that can be run independently. Add a comment header with the check name, pass condition, and severity level. Opening balance detail reports (PF-9a-detail, PF-9b-detail) must list every row classified as opening balance for manual review.
 
 ---
 
@@ -220,6 +245,7 @@ Insert counterparties and clients into `core.parties`. Two separate `INSERT ... 
 
 ### `20260402_backfill_04_lifecycle_columns.sql`
 Update `core.projects` lifecycle fields from `public.project_execution_state` via `legacy_project_info_id = project_id` join. Filter `deleted_at IS NULL`.
+**CRITICAL:** Use `ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC) = 1` to select only the single latest row per project. Do NOT use DISTINCT. Multiple historical rows per project are acceptable in the source; only one must be applied to the promoted table.
 
 ### `20260402_backfill_05_approval_lineage.sql`
 Insert into `documentation.document_approvals` from `public.approvals`. Join keys:
@@ -233,12 +259,25 @@ Join key: `dv_promoted.legacy_deliverable_file_id = df.id` (NOT `df.version_id`)
 Guard: `WHERE dv_promoted.site_id IS NULL`.
 
 ### `20260402_backfill_07_finance_typed_dates.sql`
-Four steps in order:
+Six steps in order:
+0a. Classify opening balance rows on `cost_lines` from `program_expense.row_type` pattern matching. Flag `is_opening_balance = true`. Backfill `legacy_row_type` for all rows.
+0b. Classify opening balance rows on `revenue_lines` from `program_inflows.milestone_name` pattern matching.
+0c. **AUDIT REPORT** — Output (SELECT, read-only) all rows classified as `is_opening_balance = true` for manual review. Operator MUST review before proceeding.
 1. Parse TEXT dates to typed DATE on `finance.cost_lines` (regex guard for `^\d{4}-\d{2}-\d{2}`)
 2. Parse TEXT dates to typed DATE on `finance.revenue_lines`
-3. Derive `fiscal_period_id` on `cost_lines` from `finance.fiscal_periods` date range
-4. Derive `fiscal_period_id` on `revenue_lines` from `finance.fiscal_periods` date range
-Guard all with `WHERE ... IS NULL` for idempotency.
+3. Derive `fiscal_period_id` on `cost_lines` from `finance.fiscal_periods` date range. **EXCLUDE opening balance rows** (`AND is_opening_balance = false`).
+4. Derive `fiscal_period_id` on `revenue_lines` from `finance.fiscal_periods` date range. **EXCLUDE opening balance rows** (`AND is_opening_balance = false`).
+Guard all UPDATE steps with `WHERE ... IS NULL` for idempotency. Opening balance rows retain `fiscal_period_id = NULL` — they are structurally excluded from period movement totals.
+
+### `20260402_backfill_08_state_history.sql`
+Populate all 4 history tables with initial snapshots from legacy/promoted data.
+- **Project state history:** INSERT all `project_execution_state` rows via `core.projects` join. Use `ROW_NUMBER()` to set `is_current = true` on the latest row per project.
+- **Approval state history:** INSERT all `document_approvals` rows where `legacy_approval_id IS NOT NULL`. Each gets `is_current = true` (one row per approval in legacy).
+- **Cost line history:** INSERT all `cost_lines` rows. Each gets `is_current = true`.
+- **Revenue line history:** INSERT all `revenue_lines` rows. Each gets `is_current = true`.
+- Includes integrity checks (SELECT) verifying exactly one `is_current = true` per entity.
+- Idempotent via `WHERE NOT EXISTS` guards.
+- Must run LAST (after all other backfills).
 
 ---
 
@@ -274,6 +313,43 @@ Use the project's existing test patterns (vitest, `db.execute(sql\`...\`)` for r
 
 ---
 
+## Cross-Cutting Rules (Non-Negotiable)
+
+These rules apply to ALL migrations, backfills, reconciliation queries, and any future code that touches promoted schema data.
+
+### Rule 1: One Current Row Per Project (Full History Preserved)
+
+Where the target concept is a current-state record (not an event log or transaction), only one row per project is allowed as "current". All historical rows are preserved in dedicated history tables. Use:
+
+```sql
+ROW_NUMBER() OVER (
+  PARTITION BY project_id
+  ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+) = 1
+```
+
+- Applies to: `project_execution_state` (lifecycle backfill), any future current-state source.
+- Does NOT apply to: Transaction records (approvals, cost_lines, revenue_lines) for current-row selection, but ALL entities get history snapshots.
+- DISTINCT is NOT an acceptable substitute. It hides row multiplication silently.
+- History tables: `core.project_state_history`, `documentation.approval_state_history`, `finance.cost_line_history`, `finance.revenue_line_history` — store every row pulled from legacy with `is_current` flag. Backfill 08 populates initial snapshots. Phase 2 bridge writes add new snapshots on every change.
+
+### Rule 2: Opening Balance Separation
+
+Opening balances must never be mixed into normal transactional movement totals.
+
+- Classification is heuristic (text-pattern matching). Every classified row must appear in the audit report.
+- `is_opening_balance = true` rows are excluded from `fiscal_period_id` derivation.
+- Reconciliation must separate: opening balance, period movement, closing balance.
+- Ambiguous rows default to transaction. The audit report exists to catch misclassification.
+
+### Rule 3: Inflation Prevention
+
+All aggregate checks must cover:
+- Row-count inflation AND amount inflation
+- Per-project level AND portfolio/aggregate level
+
+---
+
 ## What NOT to build
 
 - No changes to any route handler
@@ -288,9 +364,9 @@ Use the project's existing test patterns (vitest, `db.execute(sql\`...\`)` for r
 
 ## Execution checklist
 
-1. Write all 14 migration files (7 forward + 7 rollback)
+1. Write all 16 migration files (8 forward + 8 rollback)
 2. Write the preflight audit script
-3. Write all 7 backfill scripts
+3. Write all 8 backfill scripts
 4. Write the validation test file
 5. Run the validation tests to confirm they compile (they will fail until migrations + backfills run — that is expected)
 6. Commit all files in a single commit

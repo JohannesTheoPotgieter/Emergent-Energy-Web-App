@@ -1053,9 +1053,13 @@ All migrations are independent and can run in any order, but the recommended seq
 | 6 | `20260402_evidence_link_parity.sql` | 5 columns on `document_versions` + 1 partial index | Low |
 | 7 | `20260402_stale_item_tracking.sql` | 6 columns across tables + 1 new table `internal.sync_watermarks` + 1 index | Minimal |
 
-**Total new objects:** 37 columns, 3 new tables, 7 indexes.  
+**Total new objects:** 41 columns, 7 new tables, 13 indexes.  
 **Total legacy objects modified:** 0.  
 **Total existing promoted columns modified:** 0.
+
+| Order | Migration | New objects | Risk |
+|---|---|---|---|
+| 8 | `20260402_state_history_tables.sql` | 4 new tables (`core.project_state_history`, `documentation.approval_state_history`, `finance.cost_line_history`, `finance.revenue_line_history`) + 5 indexes | Minimal |
 
 ### Backfill Execution Order
 
@@ -1068,6 +1072,7 @@ Backfills must run after all migrations. Order matters for FK resolution:
 5. `documentation.document_approvals` backfill (depends on `core.projects` existing)
 6. `documentation.document_versions` SharePoint field enrichment (depends on `document_versions` rows existing from foundation backfill)
 7. `finance.cost_lines` / `finance.revenue_lines` typed dates + fiscal period derivation (depends on `finance.fiscal_periods`)
+8. State history tables (depends on all prior backfills — snapshots current state of all entities)
 
 ### Provisional-to-Resolved Mapping
 
@@ -1086,14 +1091,91 @@ Backfills must run after all migrations. Order matters for FK resolution:
 - **1 metric (stale_items_over_15m) becomes infrastructure-resolved** — the `last_synced_at` column and `sync_watermarks` table provide the measurement machinery, but the metric will report measured-zero until bridge writes are enabled in Phase 2. This is *structurally correct* (the measurement is real, not hardcoded), but the metric cannot detect actual staleness until writes flow through the promoted path.
 - **No provisional metrics require proxies or hardcoded values after Phase 1B.** The distinction is between "fully exercised" (6 metrics) and "fully instrumented, awaiting activation" (1 metric).
 
+### Cross-Cutting Rules (Non-Negotiable)
+
+These rules apply to ALL migrations, backfills, reconciliation queries, and any future code that touches promoted schema data.
+
+#### Rule 1: One Current Row Per Project (Latest-Row Selection)
+
+Where the target concept is a current-state record (not an event log or transaction), only one row per project is allowed. Any migration, backfill, or query that derives a "current" row per project MUST use a deterministic latest-row rule:
+
+```sql
+ROW_NUMBER() OVER (
+  PARTITION BY project_id
+  ORDER BY updated_at DESC NULLS LAST,
+           created_at DESC NULLS LAST,
+           id DESC
+) = 1
+```
+
+- **Applies to:** `project_execution_state` (lifecycle backfill), and any future current-state source.
+- **Does NOT apply to:** Transaction/event records (approvals, cost_lines, revenue_lines) — these are individual records, not snapshots.
+- **Does NOT apply to:** Tables where the FK join key is already UNIQUE (e.g., `core.projects.legacy_project_info_id` is UNIQUE, so joins through it are inherently 1:1).
+- **DISTINCT is NOT an acceptable substitute.** DISTINCT hides row multiplication silently. Use explicit ROW_NUMBER() ranking.
+- **Full history is preserved.** All rows from legacy sources are stored in history tables (`core.project_state_history`, `documentation.approval_state_history`, `finance.cost_line_history`, `finance.revenue_line_history`). The latest row per entity is marked `is_current = true`. Reconciliation and summaries use only `is_current = true` rows. Full history is available for audit.
+- **Preflight check PF-8b** detects ambiguous rankings (rows tied on all tiebreaker columns). PF-8a reports (INFO) the count of projects with multiple historical rows for visibility.
+
+#### Rule 2: Opening Balance Separation
+
+Opening balances must be handled explicitly. They must never be mixed into normal transactional movement totals.
+
+- **Classification:** Opening balance rows are detected via text-pattern matching on `program_expense.row_type` and `program_inflows.milestone_name`. This is heuristic and must be reviewed manually before each backfill run.
+- **Schema columns:** `is_opening_balance BOOLEAN NOT NULL DEFAULT false` and `legacy_row_type TEXT` exist on both `finance.cost_lines` and `finance.revenue_lines`.
+- **Fiscal period exclusion:** Rows where `is_opening_balance = true` are excluded from `fiscal_period_id` derivation. They retain `fiscal_period_id = NULL`.
+- **Reconciliation separation:** Any aggregate parity check MUST separate:
+  - Opening balance (where `is_opening_balance = true`)
+  - Period movement (where `is_opening_balance = false AND fiscal_period_id IS NOT NULL`)
+  - Closing balance (opening balance + period movement)
+- **Audit trail:** Backfill 07 produces a read-only audit report (SELECT) of all rows classified as opening balance. Operator MUST review before proceeding.
+- **Preflight checks:** PF-9a/PF-9b (SOFT STOP) require manual review of all detected opening balance rows. PF-9c/PF-9d (HARD STOP) reject multiple opening balances per project.
+- **Ambiguous rows:** Rows not matched by the heuristic patterns are treated as normal transactions. If they are actually opening balances, they will be silently miscounted as movement. The preflight detail reports exist to catch these.
+
+#### Rule 3: Inflation Prevention
+
+All inflation checks must cover both:
+- **Row-count inflation** — promoted row count must not exceed legacy row count per project
+- **Amount inflation** — promoted amount total must not exceed legacy amount total per project
+
+At both levels:
+- **Per-project** — PF-11a through PF-11d
+- **Portfolio/aggregate** — PF-11e and PF-11f
+
+### Preflight Severity Summary (Updated)
+
+| Check | Pass condition | Severity |
+|---|---|---|
+| PF-1: Duplicate approval lineage | 0 duplicate IDs | **HARD STOP** |
+| PF-2: Orphan FK mappings | 0 orphans across all 4 queries | **HARD STOP** |
+| PF-3: Unparseable finance dates | 0 unparseable rows (or documented exceptions) | **SOFT STOP** |
+| PF-4: Party canonicalization collisions | 0 collisions | **HARD STOP** |
+| PF-5: Unresolved project FK mappings | 0 unresolved | **HARD STOP** |
+| PF-6: Existing promoted rows | Counts documented and verified | **INFO** |
+| PF-7: Orphan legacy files | 0 orphan files | **HARD STOP** |
+| PF-8a: Multiple project_execution_state rows | Count documented | **INFO** |
+| PF-8b: Ambiguous current-state ranking | 0 tied rankings | **HARD STOP** |
+| PF-9a: Opening balance cost lines detected | Review and sign off | **SOFT STOP** |
+| PF-9b: Opening balance revenue lines detected | Review and sign off | **SOFT STOP** |
+| PF-9c: Multiple OB cost lines per project | 0 | **HARD STOP** |
+| PF-9d: Multiple OB revenue lines per project | 0 | **HARD STOP** |
+| PF-10a: Duplicate legacy cost line IDs | 0 | **HARD STOP** |
+| PF-10b: Duplicate legacy revenue line IDs | 0 | **HARD STOP** |
+| PF-10c: Ambiguous project names | 0 | **HARD STOP** |
+| PF-11a: Per-project cost amount inflation | 0 projects >$0.50 delta | **HARD STOP** |
+| PF-11b: Per-project cost row count inflation | 0 projects inflated | **HARD STOP** |
+| PF-11c: Per-project revenue amount inflation | 0 projects >$0.50 delta | **HARD STOP** |
+| PF-11d: Per-project revenue row count inflation | 0 projects inflated | **HARD STOP** |
+| PF-11e: Portfolio cost aggregate inflation | Delta ≤$0.50 | **HARD STOP** |
+| PF-11f: Portfolio revenue aggregate inflation | Delta ≤$0.50 | **HARD STOP** |
+
 ### Phase 2 Bridge Write Prerequisites
 
 Before enabling ANY bridge write behavior, ALL of the following must be true:
 
 1. All 7 migrations applied successfully
 2. All 7 backfills completed with zero errors
-3. Phase 1A reconciliation endpoint (`/api/admin/reconciliation/phase-1a?compare=1`) returns `outcome: "pass"` for all 6 domains with NO provisional notes
-4. `internal.sync_watermarks` table populated with baseline readings
-5. Rollback migrations tested in staging environment
-6. Feature flag `migration_bridge_*_write_v1` flags created (default OFF) for each domain
-7. Monitoring alert configured for `stale_items_over_15m > 0` on any domain
+3. All HARD STOP preflight checks pass; all SOFT STOP checks reviewed and signed off
+4. Phase 1A reconciliation endpoint (`/api/admin/reconciliation/phase-1a?compare=1`) returns `outcome: "pass"` for all 6 domains with NO provisional notes
+5. `internal.sync_watermarks` table populated with baseline readings
+6. Rollback migrations tested in staging environment
+7. Feature flag `migration_bridge_*_write_v1` flags created (default OFF) for each domain
+8. Monitoring alert configured for `stale_items_over_15m > 0` on any domain
