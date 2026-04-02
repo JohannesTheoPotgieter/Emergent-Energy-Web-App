@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { invalidateAllTaskCaches } from "@/lib/task-cache";
@@ -53,7 +52,6 @@ import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
 import { CriticalControlPanel } from "@/components/stage-lifecycle/CriticalControlPanel";
 import { StageTimeline } from "@/components/stage-lifecycle/StageTimeline";
-import { StageDetailPanel } from "@/components/stage-lifecycle/StageDetailPanel";
 import { useProjectStages } from "@/hooks/use-stage-lifecycle";
 import { Milestone } from "lucide-react";
 import { PageShell } from "@/components/layout/page-shell";
@@ -947,7 +945,6 @@ export default function ProjectDetailPage() {
   const [selectedTaskId, setSelectedTaskId] = useState<number | null>(null);
   const [selectedTaskRole, setSelectedTaskRole] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [gateDrawerOpen, setGateDrawerOpen] = useState(false);
 
 
   const searchParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
@@ -1445,7 +1442,7 @@ export default function ProjectDetailPage() {
       {projectInfoId && (
         <CriticalControlPanel
           projectId={projectInfoId}
-          onViewGate={() => setGateDrawerOpen(true)}
+          onViewGate={() => setLocation(`/project/${encodeURIComponent(projectName)}/gate/${encodeURIComponent(stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT")}`)}
           isAdmin={isAdmin}
         />
       )}
@@ -1736,23 +1733,6 @@ export default function ProjectDetailPage() {
         projectName={projectName}
         trackingRole={selectedTaskRole === "VIEWER" ? "viewer" : selectedTaskRole === "OWNER" ? "assignee" : selectedTaskRole === "REVIEWER" ? "assignee" : null}
       />
-
-      {/* Current Gate drawer */}
-      <Sheet open={gateDrawerOpen} onOpenChange={setGateDrawerOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
-          <SheetHeader>
-            <SheetTitle>Current Gate</SheetTitle>
-          </SheetHeader>
-          {projectInfoId && (
-            <StageDetailPanel
-              projectId={projectInfoId}
-              stageCode={stageData?.currentStage?.stageCode || "S01_FIRST_ASSESSMENT"}
-              isAdmin={isAdmin}
-            />
-          )}
-        </SheetContent>
-      </Sheet>
-
 
       <DataSourceDebug
         pageName="Project Detail"

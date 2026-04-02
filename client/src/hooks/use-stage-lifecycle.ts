@@ -34,6 +34,12 @@ export interface StageDetailPayload {
   dependencies: ProjectStageDependency[];
 }
 
+export interface HydrateChecklistPayload {
+  templatesFound: number;
+  createdCount: number;
+  requirements: ProjectStageRequirement[];
+}
+
 // ── Query Hooks ─────────────────────────────────────────────
 
 export function useProjectStages(projectId: number | undefined) {
@@ -162,8 +168,8 @@ export function useAdvanceToStage(projectId: number | undefined) {
 
 export function useHydrateChecklist(projectId: number | undefined) {
   const invalidate = useInvalidateStages(projectId);
-  return useMutation({
-    mutationFn: async (stageCode: string) => {
+  return useMutation<HydrateChecklistPayload, Error, string>({
+    mutationFn: async (stageCode: string): Promise<HydrateChecklistPayload> => {
       const res = await apiRequest("POST", `/api/projects/${projectId}/stages/${stageCode}/requirements/hydrate`);
       return res.json();
     },
