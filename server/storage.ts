@@ -1128,7 +1128,19 @@ export class DatabaseStorage implements IStorage {
       }
     }
 
-    return adapted;
+    // Final dedup: if a (projectName, rowNumber) pair appears more than once
+    // (e.g. from both normalizedCostLines and programExpense), keep only the
+    // first occurrence (the adapted/normalized version).
+    const seen = new Set<string>();
+    const deduped: any[] = [];
+    for (const item of adapted) {
+      const key = `${item.projectName}::${item.rowNumber ?? item._sourceRow ?? item.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      deduped.push(item);
+    }
+
+    return deduped;
   }
 
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {

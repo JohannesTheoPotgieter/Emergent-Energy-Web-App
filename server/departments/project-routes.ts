@@ -648,7 +648,7 @@ router.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
 
 router.get("/api/projects-summary", requireAuth, async (req, res) => {
   try {
-    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, smartImportRows, workItemsResult, handoverRows] = await Promise.all([
+    const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, uploadMetaRows, smartImportRows, workItemsResult, handoverRows, phaseRows] = await Promise.all([
       storage.getAllProjectInfo().catch((e: any) => { console.warn("[dept-projects] allProjectInfo failed:", e.message); return []; }),
       storage.getAllProgramExpenses().catch((e: any) => { console.warn("[dept-projects] allExpenses failed:", e.message); return []; }),
       storage.getAllProgramInflows().catch((e: any) => { console.warn("[dept-projects] rawInflows failed:", e.message); return []; }),
@@ -660,7 +660,15 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
       db.execute(sql`SELECT DISTINCT project_name FROM smart_import_runs WHERE status = 'COMMITTED'`).catch((e: any) => { console.warn("[dept-projects] smartImportRuns failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT wi.project_id, pi.project_name, wi.percent_complete, wi.duration, wi.wbs_code, wi.start_date, wi.end_date, wi.title, wi.type FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id WHERE wi.workstream = 'PM' AND wi.source = 'SMART_IMPORT' AND wi.deleted_at IS NULL`).catch((e: any) => { console.warn("[dept-projects] workItems failed:", e.message); return { rows: [] }; }),
       db.execute(sql`SELECT project_id, status, rejection_reason FROM project_pd_pm_handover`).catch(() => ({ rows: [] })),
+      db.execute(sql`SELECT DISTINCT ON (project_id) project_id, phase_name FROM normalized_execution_phases ORDER BY project_id, created_at DESC`).catch((e: any) => { console.warn("[dept-projects] phaseRows failed:", e.message); return { rows: [] }; }),
     ]);
+
+    // Build fallback phase lookup from normalized_execution_phases (populated by smart import)
+    const phaseByProjectId = new Map<number, string>();
+    for (const row of (phaseRows.rows || [])) {
+      const r = row as any;
+      if (r.project_id && r.phase_name) phaseByProjectId.set(r.project_id, r.phase_name);
+    }
 
     const handoverMap = new Map<number, any>();
     for (const row of (handoverRows.rows || [])) {
@@ -1021,7 +1029,7 @@ router.get("/api/projects-summary", requireAuth, async (req, res) => {
           (editable?.fundingType === 'link' || editable?.fundingType === 'na') &&
           (editable?.epcContractType === 'link' || editable?.epcContractType === 'na')
         ),
-        phase: info?.executionPhase || info?.phase || null,
+        phase: info?.executionPhase || info?.phase || (info?.id ? phaseByProjectId.get(info.id) : null) || null,
         pd_handover_date: pdHandoverDate,
         construction_start_date: constructionStartDate,
         duration,
