@@ -15,6 +15,19 @@ import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from ".
 import { runDataQualityChecks } from "../lib/calculations/dataQuality";
 import { computeMonthlyBuckets } from "../lib/calculations/scenarioResolver";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
+import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
+
+// Unified realisation check: past-month committed costs are treated as realised.
+function isCosRealisedCheck(exp: any): boolean {
+  return classifyCosStatusFull(exp) === 'COS Realised';
+}
+
+function isEffectivelyRealisedLocal(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  const cosStatus = classifyCosStatusFull(exp);
+  if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
+  if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
+  return false;
+}
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
@@ -803,7 +816,7 @@ export function registerCosControlRoutes(app: Express) {
 
           const _nw = new Date();
           const _cmk = `${_nw.getFullYear()}-${String(_nw.getMonth() + 1).padStart(2, '0')}`;
-          if (isCosRealisedCheck(e) && monthKey <= _cmk) {
+          if (isEffectivelyRealisedLocal(e, monthKey, _cmk)) {
             bucket.realised += actualAmt;
           }
         }
@@ -890,7 +903,7 @@ export function registerCosControlRoutes(app: Express) {
         const _nw2 = new Date();
         const _cmk2 = `${_nw2.getFullYear()}-${String(_nw2.getMonth() + 1).padStart(2, '0')}`;
         const _wkMonth = wk.substring(0, 7);
-        if (isCosRealisedCheck(e) && _wkMonth <= _cmk2) {
+        if (isEffectivelyRealisedLocal(e, _wkMonth, _cmk2)) {
           bucket.invoicedPayments += amt;
         }
       }
