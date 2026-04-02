@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildVisibleTopSections, getBreadcrumbs } from "@/config/app-navigation";
+import { buildVisibleTopSections, getBreadcrumbs, parseDisabledSubPages } from "@/config/app-navigation";
 import { ADMIN_SURFACES } from "@/config/admin-surfaces";
 
 describe("app navigation visibility", () => {
@@ -66,16 +66,120 @@ describe("app navigation visibility", () => {
     expect(sections.map((s) => s.label)).toEqual([
       "Home",
       "Company",
+      "Priorities",
       "Project Development",
       "Project Delivery",
-      "HSE",
-      "Engineering",
-      "Quality",
       "Finance",
+      "Engineering",
+      "HSE",
+      "Quality",
       "Reports",
-      "Priorities",
       "Admin",
     ]);
+  });
+
+  it("hides disabled sub-pages from section secondary navigation", () => {
+    const disabled = parseDisabledSubPages([
+      "HOME",
+      "PROJECT_DELIVERY",
+      "ADMIN",
+      "!HOME:/my-work/calendar",
+      "!PROJECT_DELIVERY:/weekly-reviews",
+      "!ADMIN:/admin/smart-import",
+    ]);
+    const sections = buildVisibleTopSections({
+      canViewPath: () => true,
+      allowedSectionKeys: ["HOME", "PROJECT_DELIVERY", "ADMIN"],
+      disabledSubPages: disabled,
+    });
+
+    const home = sections.find((section) => section.key === "HOME");
+    expect(home?.secondary.some((item) => item.path === "/my-work/calendar")).toBe(false);
+
+    const delivery = sections.find((section) => section.key === "PROJECT_DELIVERY");
+    expect(delivery?.secondary.some((item) => item.path === "/weekly-reviews")).toBe(false);
+
+    const admin = sections.find((section) => section.key === "ADMIN");
+    expect(admin?.secondary.some((item) => item.path === "/admin/smart-import")).toBe(false);
+  });
+
+  it("shows COO/Admin all sections in current FE order", () => {
+    const sections = buildVisibleTopSections({
+      canViewPath: () => true,
+      companyRole: "COO_ADMIN",
+    });
+    expect(sections.map((s) => s.label)).toEqual([
+      "Home",
+      "Company",
+      "Priorities",
+      "Project Development",
+      "Project Delivery",
+      "Finance",
+      "Engineering",
+      "HSE",
+      "Quality",
+      "Reports",
+      "Admin",
+    ]);
+  });
+
+  it("limits Engineer to allowed sections and excludes Finance/Admin", () => {
+    const sections = buildVisibleTopSections({
+      canViewPath: () => true,
+      companyRole: "ENGINEER",
+    });
+    const labels = sections.map((s) => s.label);
+    expect(labels).toEqual(["Home", "Priorities", "Engineering", "Quality"]);
+    expect(labels).not.toContain("Finance");
+    expect(labels).not.toContain("Admin");
+  });
+
+  it("keeps PM/Construction delivery sub-pages aligned with app navigation", () => {
+    const pmSections = buildVisibleTopSections({
+      canViewPath: () => true,
+      companyRole: "PROJECT_MANAGER_SITE",
+    });
+    const pmDelivery = pmSections.find((section) => section.label === "Project Delivery");
+    const pmLabels = pmDelivery?.secondary.map((item) => item.label) ?? [];
+    expect(pmLabels).toContain("Weekly Reviews");
+    expect(pmLabels).toContain("Milestone Tracker");
+    expect(pmLabels).toContain("PM On-The-Go");
+    expect(pmLabels).toContain("Handover & Closeout");
+
+    const constructionSections = buildVisibleTopSections({
+      canViewPath: () => true,
+      companyRole: "CONSTRUCTION_MANAGER",
+    });
+    expect(constructionSections.some((section) => section.label === "Project Delivery")).toBe(true);
+  });
+
+  it("keeps Accountant scoped to Home/Priorities/Finance section set", () => {
+    const sections = buildVisibleTopSections({
+      canViewPath: () => true,
+      companyRole: "ACCOUNTANT",
+    });
+    expect(sections.map((s) => s.label)).toEqual(["Home", "Priorities", "Finance"]);
+    const finance = sections.find((s) => s.label === "Finance");
+    expect(finance?.secondary.map((item) => item.label)).toEqual([
+      "Cashflow",
+      "Revenue",
+      "COS",
+      "GP / Margin",
+      "FYE Revenue",
+      "Counterparties",
+      "Subcontractors",
+      "Invoice Patterns",
+    ]);
+  });
+
+  it("hides a section entirely when its top-level key is removed", () => {
+    const sections = buildVisibleTopSections({
+      canViewPath: () => true,
+      allowedSectionKeys: ["HOME", "FINANCE"],
+      disabledSubPages: parseDisabledSubPages(["HOME", "FINANCE", "!FINANCE:/cashflow"]),
+    });
+    expect(sections.some((section) => section.key === "PROJECT_DELIVERY")).toBe(false);
+    expect(sections.some((section) => section.key === "ADMIN")).toBe(false);
   });
 
   it("keeps admin navigation aligned to the approved governed surfaces", () => {
@@ -106,9 +210,9 @@ describe("breadcrumb generation", () => {
     expect(getBreadcrumbs("/", findSection("Home"))).toEqual([]);
   });
 
-  it("shows 'Company Priorities' for /priorities (no Home duplication)", () => {
+  it("shows 'Priorities' for /priorities (no Home duplication)", () => {
     const crumbs = getBreadcrumbs("/priorities", findSection("Home"));
-    expect(crumbs).toEqual([{ label: "Company Priorities" }]);
+    expect(crumbs).toEqual([{ label: "Priorities" }]);
   });
 
   it("maps priority detail with clickable parent", () => {
