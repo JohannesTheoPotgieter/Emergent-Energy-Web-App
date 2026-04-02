@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { checkPermission, normalizeRoleForPermissions, type PermissionAction, type PermissionEntity } from "@shared/schema";
-import { getPermissionEntityForPath, getAppSectionForPath } from "@/config/page-registry";
+import { normalizeRoleForPermissions, type PermissionAction, type PermissionEntity } from "@shared/schema";
 import { parseDisabledSubPages } from "@/config/app-navigation";
 import { NAVIGATION_PERMISSION_MODEL, validateNavigationPermissionModel } from "@/config/navigation-permissions";
+import { evaluateEntityAccess, evaluatePathAccess } from "@/config/runtime-access";
 import { useAuth } from "./use-auth";
 import { useLensContext } from "./use-lens-context";
 
@@ -37,46 +37,6 @@ export function useAccessMatrix() {
     staleTime: 30_000,
   });
 
-  // Normalize legacy section keys to the current 6-section navigation model.
-  // Existing DB records may still contain old keys (COCKPIT, MONEY, etc.).
-  // Normalize legacy + current section keys to the 8-section nav model.
-  // DB records may contain old keys (COCKPIT, MONEY, etc.) or
-  // the intermediate 6-section keys (PROJECTS, REPORTS, etc.).
-  const OLD_TO_NEW_SECTIONS: Record<string, string[]> = {
-    // Legacy keys
-    COCKPIT: ["HOME"],
-    MONEY: ["FINANCE"],
-    INFORMATION: ["ADMIN"],
-    COLLABORATION: ["HOME"],
-    // Intermediate 6-section model keys
-    PROJECTS: ["PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE"],
-    MY_WORK: ["HOME"],
-    GATES: ["PORTFOLIO"],
-    // Legacy combined section — expand to both new sections
-    QUALITY_HSE: ["QUALITY", "HSE"],
-    // Standalone QUALITY always implies HSE visibility
-    QUALITY: ["QUALITY", "HSE"],
-    // Legacy department keys
-    GOVERNANCE: ["QUALITY", "HSE"],
-    PROJECT_MANAGEMENT: ["PROJECT_DELIVERY"],
-  };
-
-  const allowedSections = useMemo(() => {
-    const s = permissions?.sections;
-    if (!s || s.length === 0) return null;
-    const normalized = new Set<string>();
-    for (const key of s) {
-      if (key.startsWith("!")) continue;
-      const mapped = OLD_TO_NEW_SECTIONS[key];
-      if (mapped) {
-        for (const k of mapped) normalized.add(k);
-      } else {
-        normalized.add(key);
-      }
-    }
-    return normalized;
-  }, [permissions?.sections]);
-
   const disabledSubPages = useMemo(() => {
     const s = permissions?.sections;
     if (!s || s.length === 0) return null;
@@ -87,25 +47,18 @@ export function useAccessMatrix() {
   const canAccessEntityAction = useMemo(() => {
     return (entity: PermissionEntity, action: PermissionAction) => {
       if (!effectiveRole) return false;
-
-      // Check user-specific overrides first (highest priority)
-      const overrideKey = `${entity}:${action}`;
-      const userOverrides = permissions?.userOverrides;
-      if (userOverrides && overrideKey in userOverrides) {
-        return userOverrides[overrideKey];
-      }
-
-      // Then check DB entity permission overrides
-      const entityPermissions = permissions?.entityPermissions as Partial<Record<PermissionEntity, Record<string, boolean>>> | undefined;
-      const explicit = entityPermissions?.[entity];
-      if (explicit && typeof explicit[action] === "boolean") {
-        return explicit[action] === true;
-      }
-
-      // Fall back to hardcoded defaults
-      return checkPermission(effectiveRole, entity, action);
+      return evaluateEntityAccess({
+        role: effectiveRole,
+        entity,
+        action,
+        snapshot: {
+          sections: permissions?.sections,
+          entityPermissions: permissions?.entityPermissions,
+          userOverrides: permissions?.userOverrides,
+        },
+      });
     };
-  }, [effectiveRole, permissions?.entityPermissions, permissions?.userOverrides]);
+  }, [effectiveRole, permissions?.sections, permissions?.entityPermissions, permissions?.userOverrides]);
 
   const canViewPath = useMemo(() => {
     if (import.meta.env.DEV) {
@@ -117,32 +70,21 @@ export function useAccessMatrix() {
       NAVIGATION_PERMISSION_MODEL.flatMap((section) => section.items.map((item) => item.path.split("?")[0])),
     );
     return (path: string) => {
-      if (path === "/") return true;
-
-      if (allowedSections) {
-        const section = getAppSectionForPath(path);
-        if (!section && import.meta.env.DEV && knownNavPaths.has(path.split("?")[0])) {
-          console.warn(`[AccessMatrix] Missing section mapping for nav path "${path}". This can cause permission drift.`);
-        }
-        if (section && !allowedSections.has(section)) {
-          return false;
-        }
+      const result = evaluatePathAccess({
+        role: effectiveRole,
+        path,
+        snapshot: {
+          sections: permissions?.sections,
+          entityPermissions: permissions?.entityPermissions,
+          userOverrides: permissions?.userOverrides,
+        },
+      });
+      if (!result.allowed && import.meta.env.DEV && knownNavPaths.has(path.split("?")[0])) {
+        console.warn(`[AccessMatrix] Blocked path "${path}" due to ${result.reason}.`);
       }
-
-      if (disabledSubPages) {
-        for (const [sectionKey, paths] of disabledSubPages) {
-          if (paths.has(path)) return false;
-        }
-      }
-
-      const entity = getPermissionEntityForPath(path);
-      if (!entity && import.meta.env.DEV && knownNavPaths.has(path.split("?")[0])) {
-        console.warn(`[AccessMatrix] Missing permission entity mapping for nav path "${path}". Falling back to allow to avoid false deny.`);
-      }
-      if (!entity) return true;
-      return canAccessEntityAction(entity, "view");
+      return result.allowed;
     };
-  }, [canAccessEntityAction, allowedSections, disabledSubPages]);
+  }, [effectiveRole, permissions?.sections, permissions?.entityPermissions, permissions?.userOverrides]);
 
   return {
     effectiveRole,

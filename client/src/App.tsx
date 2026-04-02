@@ -13,7 +13,7 @@ import { normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE, getPermissionEntityForPath } from "@/config/page-registry";
+import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 import { LensProvider } from "@/hooks/use-lens-context";
 import { lazy, Suspense, useEffect } from "react";
@@ -139,11 +139,6 @@ const GatesHandoversPage = lazy(() => import("@/pages/gates/gates-handovers"));
 const GatesQueriesPage = lazy(() => import("@/pages/gates/gates-queries"));
 const GatesCommitmentsPage = lazy(() => import("@/pages/gates/gates-commitments"));
 
-const EPM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/hse", "/handover", "/procurement", "/milestone-tracker", "/commissioning-dashboard", "/sseg", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments", "/company-overview"];
-const PM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/pm/approvals", "/pm/on-the-go", "/pm/handover-review", "/pm-dashboard", "/projects", "/execution-board", "/execution-board/program", "/execution-board/finance", "/weekly-reviews", "/portfolios", "/engineering", "/engineering/tasks", "/quality", "/quality/ncrs", "/feedback", "/inbox", "/exceptions", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/standups", "/hse", "/handover", "/procurement", "/milestone-tracker", "/commissioning-dashboard", "/sseg", "/payment-batch-manager", "/po-approval-board", "/payment-request-board", "/governance/financial-reviews", "/sites", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/client-updates", "/gates/handovers", "/gates/queries", "/gates/commitments", "/company-overview", "/priorities"];
-const QM_ALLOWED_PATHS = ["/", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/project-lifecycle/client-overview", "/lifecycle-board", "/clients", "/handover-control", "/quality", "/quality/ncrs", "/projects", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/hse", "/commissioning-dashboard", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers"];
-const HSE_ALLOWED_PATHS = ["/", "/hse", "/quality", "/quality/ncrs", "/projects", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/handover", "/handover-control", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers", "/gates/client-updates", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/reports/center"];
-const SSEG_ALLOWED_PATHS = ["/", "/hse", "/engineering", "/engineering/tasks", "/engineering/standup", "/quality", "/quality/ncrs", "/projects", "/project-lifecycle", "/project-lifecycle/stage-gates", "/project-lifecycle/latest-updates", "/handover", "/sseg", "/commissioning-dashboard", "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions", "/gates/handovers", "/gates/client-updates", "/feedback", "/inbox", "/my-work", "/my-work/calendar", "/my-work/tasks", "/my-work/approvals", "/my-work/meetings", "/my-work/email", "/my-work/teams", "/tasks", "/reports/center"];
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };
 
@@ -328,54 +323,7 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
 
   const { canViewPath } = useAccessMatrix();
 
-  if (effectiveRole === "PROJECT_MANAGER_SITE") {
-    const allowed = PM_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/pm/on-the-go" && location.startsWith("/pm/on-the-go")) || (p === "/clients" && location.startsWith("/clients/"))
-    );
-    if (!allowed) {
-      // Legacy: was /execution-board → /gates. Collapsed to direct.
-      return <Redirect to="/gates" />;
-    }
-  }
-
-  if (user?.role === "eng_program_manager") {
-    const allowed = EPM_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/clients" && location.startsWith("/clients/"))
-    );
-    if (!allowed) {
-      return <Redirect to="/" />;
-    }
-  }
-
-  if (user?.role === "quality_manager") {
-    const allowed = QM_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/clients" && location.startsWith("/clients/"))
-    );
-    if (!allowed) {
-      return <Redirect to="/" />;
-    }
-  }
-
-  if (effectiveRole === "HSE_MANAGER") {
-    const allowed = HSE_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/clients" && location.startsWith("/clients/"))
-    );
-    if (!allowed) {
-      return <Redirect to="/hse" />;
-    }
-  }
-
-  if (effectiveRole === "SSEG_MANAGER") {
-    const allowed = SSEG_ALLOWED_PATHS.some(p =>
-      p === location || (p === "/projects" && location.startsWith("/project/")) || (p === "/clients" && location.startsWith("/clients/"))
-    );
-    if (!allowed) {
-      return <Redirect to="/hse" />;
-    }
-  }
-
-  const entity = getPermissionEntityForPath(location);
-  if (entity && effectiveRole && !canViewPath(location)) {
+  if (effectiveRole && !canViewPath(location)) {
     return <AccessDenied />;
   }
 
