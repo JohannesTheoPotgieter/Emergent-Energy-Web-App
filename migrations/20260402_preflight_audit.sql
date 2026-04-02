@@ -229,8 +229,174 @@ WHERE NOT EXISTS (
   WHERE dv.legacy_deliverable_file_id = df.id
 );
 
+-- ----------------------------------------------------------------------------
+-- PF-8: Duplicate Latest/Current Project Execution State Per Project
+-- PASS condition: 0 projects with multiple active rows
+-- Severity: HARD STOP
+-- Detects projects that have more than one non-deleted project_execution_state
+-- row. The backfill uses ROW_NUMBER() to pick the latest, but duplicates should
+-- be flagged so the data team can verify correctness.
+-- ----------------------------------------------------------------------------
+
+SELECT 'PF-8: Duplicate project_execution_state rows per project' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS violation_count
+FROM (
+  SELECT pes.project_id, COUNT(*) AS row_count
+  FROM public.project_execution_state pes
+  WHERE pes.deleted_at IS NULL
+  GROUP BY pes.project_id
+  HAVING COUNT(*) > 1
+) dup_projects;
+
+-- ----------------------------------------------------------------------------
+-- PF-9: Opening Balance Rows That Would Be Included in Movement Totals
+-- PASS condition: All sub-queries return 0 or documented exceptions
+-- Severity: HARD STOP
+-- Detects finance rows that look like opening balances but would be treated as
+-- normal transactions if not explicitly flagged.
+-- ----------------------------------------------------------------------------
+
+-- PF-9a: Cost lines with opening balance row_type
+SELECT 'PF-9a: Cost lines with opening balance row_type' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'WARN' END AS result,
+       COUNT(*) AS opening_balance_count
+FROM public.program_expense pe
+WHERE LOWER(COALESCE(pe.row_type, '')) IN ('opening_balance', 'opening balance', 'balance_forward', 'brought_forward', 'ob');
+
+-- PF-9b: Revenue lines with opening balance milestone names
+SELECT 'PF-9b: Revenue lines with opening balance milestone names' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'WARN' END AS result,
+       COUNT(*) AS opening_balance_count
+FROM public.program_inflows pi
+WHERE LOWER(COALESCE(pi.milestone_name, '')) IN ('opening balance', 'balance forward', 'brought forward', 'ob');
+
+-- PF-9c: Projects with more than one opening balance cost line
+-- (only one opening balance per project should exist)
+SELECT 'PF-9c: Projects with multiple opening balance cost lines' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS violation_count
+FROM (
+  SELECT pe.project_name, COUNT(*) AS ob_count
+  FROM public.program_expense pe
+  WHERE LOWER(COALESCE(pe.row_type, '')) IN ('opening_balance', 'opening balance', 'balance_forward', 'brought_forward', 'ob')
+  GROUP BY pe.project_name
+  HAVING COUNT(*) > 1
+) multi_ob_projects;
+
+-- ----------------------------------------------------------------------------
+-- PF-10: Join Multiplication Detection on Finance Lines
+-- PASS condition: 0 multiplied rows
+-- Severity: HARD STOP
+-- Detects cases where LEFT JOIN core.projects ON project_name produces multiple
+-- matches, inflating promoted finance line counts. This checks if the existing
+-- foundation backfill created duplicate cost/revenue lines per legacy ID.
+-- ----------------------------------------------------------------------------
+
+-- PF-10a: Cost lines with duplicate legacy_program_expense_id (should be UNIQUE but check)
+SELECT 'PF-10a: Duplicate legacy_program_expense_id in cost_lines' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS violation_count
+FROM (
+  SELECT legacy_program_expense_id, COUNT(*) AS cnt
+  FROM finance.cost_lines
+  WHERE legacy_program_expense_id IS NOT NULL
+  GROUP BY legacy_program_expense_id
+  HAVING COUNT(*) > 1
+) dup_cost;
+
+-- PF-10b: Revenue lines with duplicate legacy_program_inflow_id (should be UNIQUE but check)
+SELECT 'PF-10b: Duplicate legacy_program_inflow_id in revenue_lines' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS violation_count
+FROM (
+  SELECT legacy_program_inflow_id, COUNT(*) AS cnt
+  FROM finance.revenue_lines
+  WHERE legacy_program_inflow_id IS NOT NULL
+  GROUP BY legacy_program_inflow_id
+  HAVING COUNT(*) > 1
+) dup_rev;
+
+-- PF-10c: Project names that resolve to multiple core.projects rows
+-- (would cause join multiplication in any project_name-based join)
+SELECT 'PF-10c: Ambiguous project names in core.projects' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS violation_count
+FROM (
+  SELECT project_name, COUNT(*) AS cnt
+  FROM core.projects
+  WHERE project_name IS NOT NULL
+  GROUP BY project_name
+  HAVING COUNT(*) > 1
+) dup_project_names;
+
+-- ----------------------------------------------------------------------------
+-- PF-11: Aggregate Inflation Detection
+-- PASS condition: Legacy and promoted per-project totals match within tolerance
+-- Severity: HARD STOP
+-- Detects if joins or duplicates have inflated project-level finance totals
+-- in the promoted schema compared to legacy source.
+-- ----------------------------------------------------------------------------
+
+-- PF-11a: Per-project cost total comparison (promoted vs legacy)
+SELECT 'PF-11a: Per-project cost total inflation check' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS projects_with_inflated_totals
+FROM (
+  SELECT
+    cp.id AS project_id,
+    ABS(
+      COALESCE(SUM(cl.amount_ex_vat), 0) -
+      COALESCE((
+        SELECT SUM(NULLIF(pe.expense_actual_total, '')::NUMERIC(15,2))
+        FROM public.program_expense pe
+        WHERE pe.project_name = cp.project_name
+      ), 0)
+    ) AS delta
+  FROM core.projects cp
+  LEFT JOIN finance.cost_lines cl ON cl.project_id = cp.id
+  GROUP BY cp.id, cp.project_name
+  HAVING ABS(
+    COALESCE(SUM(cl.amount_ex_vat), 0) -
+    COALESCE((
+      SELECT SUM(NULLIF(pe2.expense_actual_total, '')::NUMERIC(15,2))
+      FROM public.program_expense pe2
+      WHERE pe2.project_name = cp.project_name
+    ), 0)
+  ) > 0.50
+) inflated_projects;
+
+-- PF-11b: Per-project revenue total comparison (promoted vs legacy)
+SELECT 'PF-11b: Per-project revenue total inflation check' AS check_name,
+       CASE WHEN COUNT(*) = 0 THEN 'PASS' ELSE 'FAIL' END AS result,
+       COUNT(*) AS projects_with_inflated_totals
+FROM (
+  SELECT
+    cp.id AS project_id,
+    ABS(
+      COALESCE(SUM(rl.amount_ex_vat), 0) -
+      COALESCE((
+        SELECT SUM(NULLIF(pi.milestone_amount, '')::NUMERIC(15,2))
+        FROM public.program_inflows pi
+        WHERE pi.project_name = cp.project_name
+      ), 0)
+    ) AS delta
+  FROM core.projects cp
+  LEFT JOIN finance.revenue_lines rl ON rl.project_id = cp.id
+  GROUP BY cp.id, cp.project_name
+  HAVING ABS(
+    COALESCE(SUM(rl.amount_ex_vat), 0) -
+    COALESCE((
+      SELECT SUM(NULLIF(pi2.milestone_amount, '')::NUMERIC(15,2))
+      FROM public.program_inflows pi2
+      WHERE pi2.project_name = cp.project_name
+    ), 0)
+  ) > 0.50
+) inflated_projects;
+
 -- ============================================================================
 -- SUMMARY: Review all results above. ALL HARD STOP checks must show PASS.
 -- SOFT STOP checks (PF-3) may show WARN if exceptions are documented.
 -- INFO checks (PF-6) require review but are not blocking.
+-- WARN checks (PF-9a, PF-9b) flag opening balances for classification.
 -- ============================================================================

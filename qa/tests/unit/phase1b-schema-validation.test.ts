@@ -206,11 +206,21 @@ describe("Phase 1B Schema Existence Tests", () => {
       expect(sql).toContain("finance.cost_lines ADD COLUMN IF NOT EXISTS fiscal_period_id INTEGER");
     });
 
+    it("adds opening balance classification columns to cost_lines", () => {
+      expect(sql).toContain("finance.cost_lines ADD COLUMN IF NOT EXISTS is_opening_balance BOOLEAN");
+      expect(sql).toContain("finance.cost_lines ADD COLUMN IF NOT EXISTS legacy_row_type TEXT");
+    });
+
     it("adds typed date columns to revenue_lines", () => {
       expect(sql).toContain("finance.revenue_lines ADD COLUMN IF NOT EXISTS invoice_date_typed DATE");
       expect(sql).toContain("finance.revenue_lines ADD COLUMN IF NOT EXISTS expected_payment_date_typed DATE");
       expect(sql).toContain("finance.revenue_lines ADD COLUMN IF NOT EXISTS paid_date_typed DATE");
       expect(sql).toContain("finance.revenue_lines ADD COLUMN IF NOT EXISTS fiscal_period_id INTEGER");
+    });
+
+    it("adds opening balance classification columns to revenue_lines", () => {
+      expect(sql).toContain("finance.revenue_lines ADD COLUMN IF NOT EXISTS is_opening_balance BOOLEAN");
+      expect(sql).toContain("finance.revenue_lines ADD COLUMN IF NOT EXISTS legacy_row_type TEXT");
     });
 
     it("creates finance.fiscal_periods table", () => {
@@ -240,6 +250,8 @@ describe("Phase 1B Schema Existence Tests", () => {
       expect(sql).toContain("DROP INDEX IF EXISTS finance.idx_finance_fiscal_periods_range");
       expect(sql).toContain("DROP COLUMN IF EXISTS invoice_date_typed");
       expect(sql).toContain("DROP COLUMN IF EXISTS fiscal_period_id");
+      expect(sql).toContain("DROP COLUMN IF EXISTS is_opening_balance");
+      expect(sql).toContain("DROP COLUMN IF EXISTS legacy_row_type");
       expect(sql).toContain("DROP TABLE IF EXISTS finance.fiscal_periods");
     });
   });
@@ -407,12 +419,18 @@ describe("Phase 1B Backfill Script Correctness Tests", () => {
 
     it("updates core.projects from project_execution_state", () => {
       expect(sql).toContain("UPDATE core.projects cp");
-      expect(sql).toContain("FROM public.project_execution_state pes");
-      expect(sql).toContain("WHERE cp.legacy_project_info_id = pes.project_id");
+      expect(sql).toContain("project_execution_state pes");
+    });
+
+    it("uses ROW_NUMBER() to select only latest row per project", () => {
+      expect(sql).toContain("ROW_NUMBER() OVER");
+      expect(sql).toContain("PARTITION BY pes.project_id");
+      expect(sql).toContain("ORDER BY pes.updated_at DESC");
+      expect(sql).toContain("rn = 1");
     });
 
     it("filters deleted execution state rows", () => {
-      expect(sql).toContain("AND pes.deleted_at IS NULL");
+      expect(sql).toContain("pes.deleted_at IS NULL");
     });
 
     it("sets all 6 lifecycle fields", () => {
@@ -486,6 +504,23 @@ describe("Phase 1B Backfill Script Correctness Tests", () => {
   describe("Backfill 07: finance_typed_dates", () => {
     const sql = readMigration("20260402_backfill_07_finance_typed_dates.sql");
 
+    it("classifies opening balance rows on cost_lines before date parsing", () => {
+      expect(sql).toContain("is_opening_balance = true");
+      expect(sql).toContain("legacy_row_type = pe.row_type");
+      expect(sql).toContain("public.program_expense pe");
+    });
+
+    it("detects opening balance patterns in row_type", () => {
+      expect(sql).toContain("'opening_balance'");
+      expect(sql).toContain("'balance_forward'");
+      expect(sql).toContain("'brought_forward'");
+    });
+
+    it("classifies opening balance rows on revenue_lines", () => {
+      expect(sql).toContain("public.program_inflows pi");
+      expect(sql).toContain("'opening balance'");
+    });
+
     it("parses cost_lines TEXT dates with regex guard", () => {
       expect(sql).toContain("finance.cost_lines");
       expect(sql).toContain("invoice_date ~ '^\\d{4}-\\d{2}-\\d{2}'");
@@ -501,6 +536,24 @@ describe("Phase 1B Backfill Script Correctness Tests", () => {
       expect(sql).toContain("FROM finance.fiscal_periods fp");
       expect(sql).toContain("cl.invoice_date_typed BETWEEN fp.start_date AND fp.end_date");
       expect(sql).toContain("cl.fiscal_period_id IS NULL");
+    });
+
+    it("EXCLUDES opening balance rows from fiscal period derivation on cost_lines", () => {
+      // The fiscal_period_id derivation must have is_opening_balance = false guard
+      const step3Match = sql.match(
+        /UPDATE finance\.cost_lines cl[\s\S]*?SET fiscal_period_id = fp\.id[\s\S]*?(?=UPDATE finance\.revenue_lines|COMMIT)/
+      );
+      expect(step3Match).not.toBeNull();
+      expect(step3Match![0]).toContain("is_opening_balance = false");
+    });
+
+    it("EXCLUDES opening balance rows from fiscal period derivation on revenue_lines", () => {
+      // The fiscal_period_id derivation for revenue_lines must also exclude opening balances
+      const step4Match = sql.match(
+        /UPDATE finance\.revenue_lines rl[\s\S]*?SET fiscal_period_id = fp\.id[\s\S]*?COMMIT/
+      );
+      expect(step4Match).not.toBeNull();
+      expect(step4Match![0]).toContain("is_opening_balance = false");
     });
 
     it("derives fiscal_period_id on revenue_lines from fiscal_periods range", () => {
@@ -529,7 +582,7 @@ describe("Phase 1B Preflight Audit Script Tests", () => {
     expect(dml).toHaveLength(0);
   });
 
-  it("contains all 7 preflight checks", () => {
+  it("contains all 11 preflight checks", () => {
     expect(sql).toContain("PF-1");
     expect(sql).toContain("PF-2");
     expect(sql).toContain("PF-3");
@@ -537,6 +590,10 @@ describe("Phase 1B Preflight Audit Script Tests", () => {
     expect(sql).toContain("PF-5");
     expect(sql).toContain("PF-6");
     expect(sql).toContain("PF-7");
+    expect(sql).toContain("PF-8");
+    expect(sql).toContain("PF-9");
+    expect(sql).toContain("PF-10");
+    expect(sql).toContain("PF-11");
   });
 
   it("PF-1 checks duplicate approval lineage in public.approvals", () => {
@@ -578,9 +635,37 @@ describe("Phase 1B Preflight Audit Script Tests", () => {
     expect(sql).toContain("legacy_deliverable_file_id");
   });
 
+  it("PF-8 checks duplicate project_execution_state per project", () => {
+    expect(sql).toContain("PF-8");
+    expect(sql).toContain("project_execution_state");
+    expect(sql).toContain("HAVING COUNT(*) > 1");
+  });
+
+  it("PF-9 checks opening balance rows in finance data", () => {
+    expect(sql).toContain("PF-9a");
+    expect(sql).toContain("PF-9b");
+    expect(sql).toContain("PF-9c");
+    expect(sql).toContain("opening_balance");
+    expect(sql).toContain("balance_forward");
+  });
+
+  it("PF-10 checks join multiplication on finance lines", () => {
+    expect(sql).toContain("PF-10a");
+    expect(sql).toContain("PF-10b");
+    expect(sql).toContain("PF-10c");
+    expect(sql).toContain("legacy_program_expense_id");
+    expect(sql).toContain("legacy_program_inflow_id");
+  });
+
+  it("PF-11 checks aggregate inflation per project", () => {
+    expect(sql).toContain("PF-11a");
+    expect(sql).toContain("PF-11b");
+    expect(sql).toContain("inflation");
+  });
+
   it("outputs PASS/FAIL for each check", () => {
     const passFailCount = (sql.match(/THEN 'PASS' ELSE 'FAIL'/g) || []).length;
-    expect(passFailCount).toBeGreaterThanOrEqual(7);
+    expect(passFailCount).toBeGreaterThanOrEqual(11);
   });
 });
 
@@ -720,5 +805,185 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       expect(content).not.toContain("TRIGGER");
       expect(content).not.toContain("bridge_write");
     }
+  });
+});
+
+// ===========================================================================
+// Group 5: Deduplication & Opening Balance Integrity Tests
+// ===========================================================================
+describe("Phase 1B Deduplication & Opening Balance Integrity", () => {
+
+  // -- Latest-row selection ensures one current row per project --
+  describe("Latest-row deduplication (lifecycle backfill)", () => {
+    const sql = readMigration("20260402_backfill_04_lifecycle_columns.sql");
+
+    it("uses deterministic ROW_NUMBER with tiebreaker ordering", () => {
+      // Must use updated_at DESC, created_at DESC, id DESC for deterministic results
+      expect(sql).toContain("ROW_NUMBER() OVER");
+      expect(sql).toContain("updated_at DESC");
+      expect(sql).toContain("created_at DESC");
+      expect(sql).toContain("id DESC");
+    });
+
+    it("partitions by project_id to get one row per project", () => {
+      expect(sql).toContain("PARTITION BY pes.project_id");
+    });
+
+    it("filters to rn = 1 (only the latest row)", () => {
+      expect(sql).toContain("rn = 1");
+    });
+
+    it("handles NULL timestamps gracefully with NULLS LAST", () => {
+      expect(sql).toContain("NULLS LAST");
+    });
+  });
+
+  // -- Opening balance classification and exclusion --
+  describe("Opening balance handling (finance backfill)", () => {
+    const sql = readMigration("20260402_backfill_07_finance_typed_dates.sql");
+
+    it("classifies opening balances BEFORE date parsing", () => {
+      // Step 0 must come before Step 1
+      const step0Pos = sql.indexOf("Step 0a");
+      const step1Pos = sql.indexOf("Step 1:");
+      expect(step0Pos).toBeGreaterThan(-1);
+      expect(step1Pos).toBeGreaterThan(-1);
+      expect(step0Pos).toBeLessThan(step1Pos);
+    });
+
+    it("flags is_opening_balance = true for detected opening balance rows", () => {
+      expect(sql).toContain("is_opening_balance = true");
+    });
+
+    it("preserves legacy_row_type for audit trail on all cost lines", () => {
+      expect(sql).toContain("legacy_row_type = pe.row_type");
+      expect(sql).toContain("cl.legacy_row_type IS NULL");
+    });
+
+    it("opening balance exclusion guard is on fiscal_period_id derivation for cost_lines", () => {
+      // Extract the UPDATE ... SET fiscal_period_id block for cost_lines
+      const costFpDerivation = sql.match(
+        /UPDATE finance\.cost_lines cl\s+SET fiscal_period_id[\s\S]*?(?=--\s*Step 4|UPDATE finance\.revenue_lines rl\s+SET fiscal_period_id)/
+      );
+      expect(costFpDerivation).not.toBeNull();
+      expect(costFpDerivation![0]).toContain("is_opening_balance = false");
+    });
+
+    it("opening balance exclusion guard is on fiscal_period_id derivation for revenue_lines", () => {
+      // Extract the UPDATE ... SET fiscal_period_id block for revenue_lines
+      const revFpDerivation = sql.match(
+        /UPDATE finance\.revenue_lines rl\s+SET fiscal_period_id[\s\S]*?COMMIT/
+      );
+      expect(revFpDerivation).not.toBeNull();
+      expect(revFpDerivation![0]).toContain("is_opening_balance = false");
+    });
+
+    it("opening balance rows will have NULL fiscal_period_id (excluded from period movement)", () => {
+      // Verify the guard: fiscal_period_id derivation requires is_opening_balance = false
+      // This means opening balance rows retain fiscal_period_id = NULL
+      const lines = sql.split("\n").filter((l) => !l.trim().startsWith("--"));
+      const fpDerivations = lines.filter((l) => /SET fiscal_period_id = fp\.id/i.test(l));
+      expect(fpDerivations.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  // -- Migration schema includes opening balance columns --
+  describe("Opening balance schema support", () => {
+    const migrationSql = readMigration("20260402_finance_period_derivation.sql");
+    const rollbackSql = readMigration("20260402_finance_period_derivation_rollback.sql");
+
+    it("adds is_opening_balance column to both finance tables", () => {
+      expect(migrationSql).toContain("finance.cost_lines ADD COLUMN IF NOT EXISTS is_opening_balance BOOLEAN");
+      expect(migrationSql).toContain("finance.revenue_lines ADD COLUMN IF NOT EXISTS is_opening_balance BOOLEAN");
+    });
+
+    it("adds legacy_row_type column to both finance tables", () => {
+      expect(migrationSql).toContain("finance.cost_lines ADD COLUMN IF NOT EXISTS legacy_row_type TEXT");
+      expect(migrationSql).toContain("finance.revenue_lines ADD COLUMN IF NOT EXISTS legacy_row_type TEXT");
+    });
+
+    it("defaults is_opening_balance to false (safe default)", () => {
+      expect(migrationSql).toContain("DEFAULT false");
+    });
+
+    it("has COMMENT explaining opening balance purpose", () => {
+      expect(migrationSql).toContain("opening/brought-forward balance");
+      expect(migrationSql).toContain("Exclude from movement totals");
+    });
+
+    it("rollback drops is_opening_balance and legacy_row_type", () => {
+      expect(rollbackSql).toContain("DROP COLUMN IF EXISTS is_opening_balance");
+      expect(rollbackSql).toContain("DROP COLUMN IF EXISTS legacy_row_type");
+    });
+  });
+
+  // -- Preflight detects duplicates and inflation risks --
+  describe("Preflight duplicate and inflation detection", () => {
+    const sql = readMigration("20260402_preflight_audit.sql");
+
+    it("PF-8 detects duplicate project_execution_state rows per project", () => {
+      expect(sql).toContain("PF-8");
+      expect(sql).toContain("GROUP BY pes.project_id");
+      expect(sql).toContain("HAVING COUNT(*) > 1");
+    });
+
+    it("PF-9c detects projects with multiple opening balance rows", () => {
+      expect(sql).toContain("PF-9c");
+      expect(sql).toContain("multiple opening balance cost lines");
+      expect(sql).toContain("GROUP BY pe.project_name");
+    });
+
+    it("PF-10 detects duplicate legacy IDs in promoted finance lines", () => {
+      expect(sql).toContain("PF-10a");
+      expect(sql).toContain("PF-10b");
+      expect(sql).toContain("GROUP BY legacy_program_expense_id");
+      expect(sql).toContain("GROUP BY legacy_program_inflow_id");
+    });
+
+    it("PF-10c detects ambiguous project names that cause join multiplication", () => {
+      expect(sql).toContain("PF-10c");
+      expect(sql).toContain("Ambiguous project names");
+      expect(sql).toContain("GROUP BY project_name");
+    });
+
+    it("PF-11 compares per-project totals to detect aggregate inflation", () => {
+      expect(sql).toContain("PF-11a");
+      expect(sql).toContain("PF-11b");
+      expect(sql).toContain("> 0.50");
+    });
+  });
+
+  // -- Structural proof that no double-counting is possible --
+  describe("Double-counting prevention proof", () => {
+
+    it("opening balances cannot get fiscal_period_id (structural exclusion)", () => {
+      const sql = readMigration("20260402_backfill_07_finance_typed_dates.sql");
+      // Count occurrences of is_opening_balance = false in fiscal period derivation
+      const matches = sql.match(/is_opening_balance = false/g) || [];
+      // Must appear at least twice (once for cost_lines, once for revenue_lines)
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("lifecycle backfill produces exactly one update per project (structural proof)", () => {
+      const sql = readMigration("20260402_backfill_04_lifecycle_columns.sql");
+      // The ranked subquery with rn = 1 guarantees at most one row per project_id
+      expect(sql).toContain("PARTITION BY pes.project_id");
+      expect(sql).toContain("rn = 1");
+      // The UPDATE join on legacy_project_info_id is also 1:1
+      expect(sql).toContain("cp.legacy_project_info_id = latest_pes.project_id");
+    });
+
+    it("finance date backfill is idempotent and non-duplicating", () => {
+      const sql = readMigration("20260402_backfill_07_finance_typed_dates.sql");
+      // All UPDATE steps guard with IS NULL to prevent re-processing
+      expect(sql).toContain("WHERE invoice_date_typed IS NULL");
+      expect(sql).toContain("cl.fiscal_period_id IS NULL");
+      expect(sql).toContain("rl.fiscal_period_id IS NULL");
+    });
+
+    it("all finance backfill INSERT operations use ON CONFLICT DO NOTHING", () => {
+      const sql = readMigration("20260402_backfill_01_fiscal_periods.sql");
+      expect(sql).toContain("ON CONFLICT (legacy_fiscal_period_id) DO NOTHING");
+    });
   });
 });

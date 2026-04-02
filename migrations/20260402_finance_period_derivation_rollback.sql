@@ -10,11 +10,15 @@ ALTER TABLE finance.cost_lines DROP COLUMN IF EXISTS invoice_date_typed;
 ALTER TABLE finance.cost_lines DROP COLUMN IF EXISTS approved_date_typed;
 ALTER TABLE finance.cost_lines DROP COLUMN IF EXISTS paid_date_typed;
 ALTER TABLE finance.cost_lines DROP COLUMN IF EXISTS fiscal_period_id;
+ALTER TABLE finance.cost_lines DROP COLUMN IF EXISTS is_opening_balance;
+ALTER TABLE finance.cost_lines DROP COLUMN IF EXISTS legacy_row_type;
 
 ALTER TABLE finance.revenue_lines DROP COLUMN IF EXISTS invoice_date_typed;
 ALTER TABLE finance.revenue_lines DROP COLUMN IF EXISTS expected_payment_date_typed;
 ALTER TABLE finance.revenue_lines DROP COLUMN IF EXISTS paid_date_typed;
 ALTER TABLE finance.revenue_lines DROP COLUMN IF EXISTS fiscal_period_id;
+ALTER TABLE finance.revenue_lines DROP COLUMN IF EXISTS is_opening_balance;
+ALTER TABLE finance.revenue_lines DROP COLUMN IF EXISTS legacy_row_type;
 
 DROP TABLE IF EXISTS finance.fiscal_periods;
 COMMIT;
