@@ -11,6 +11,7 @@ import { recordOverride } from "../lib/audit/diff-engine";
 import { classifyExpenseState, isDateBlack } from "../lib/calculations/stateClassifier";
 import { isCosRealised } from "../lib/calculations/financeUtils";
 import { buildCanonicalResolver } from "../services/project-summary-helpers";
+import { getProjectHeaderKpis, recomputeHeaderKpiProjectionForActiveProjects } from "../services/project-header-kpi-service";
 
 const router = Router();
 
@@ -1822,6 +1823,28 @@ router.get("/api/projects/:id", requireAuth, async (req, res) => {
     res.json(project);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch project", message: "Failed to fetch project" });
+  }
+});
+
+router.get("/api/projects/:id/header-kpis", requireAuth, async (req, res) => {
+  try {
+    const projectId = Number(req.params.id);
+    if (!Number.isFinite(projectId) || projectId <= 0) {
+      return res.status(400).json({ error: "Invalid project id" });
+    }
+    const kpis = await getProjectHeaderKpis(projectId);
+    return res.json(kpis);
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message || "Failed to load header KPIs" });
+  }
+});
+
+router.post("/api/projects/header-kpis/recompute", requireAuth, requireAdmin, async (_req, res) => {
+  try {
+    const result = await recomputeHeaderKpiProjectionForActiveProjects();
+    return res.json({ ok: true, ...result });
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message || "Failed to recompute KPI projection" });
   }
 });
 
