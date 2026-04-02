@@ -1540,8 +1540,10 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       cosBucket.projects.set(pName, (cosBucket.projects.get(pName) || 0) + amount);
 
       const cosStatus = classifyCosStatusFull(exp);
-      const isRealised = cosStatus === 'COS Realised' && monthKey <= currentMonthKey;
-      const isCommitted = cosStatus === 'Committed';
+      // Past-month committed costs are effectively realised (cost already incurred)
+      const isRealised = (cosStatus === 'COS Realised' && monthKey <= currentMonthKey) ||
+                         (cosStatus === 'Committed' && monthKey < currentMonthKey);
+      const isCommitted = cosStatus === 'Committed' && monthKey >= currentMonthKey;
 
       if (isRealised) {
         if (!realisedByMonth.has(monthKey)) {
@@ -1671,8 +1673,10 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       cosByMonth.set(monthKey, (cosByMonth.get(monthKey) || 0) + amount);
 
       const cosStatus = classifyCosStatusFull(exp);
-      const isRealised = cosStatus === 'COS Realised' && monthKey <= currentMonthKey;
-      const isCommitted = cosStatus === 'Committed';
+      // Past-month committed costs are effectively realised (cost already incurred)
+      const isRealised = (cosStatus === 'COS Realised' && monthKey <= currentMonthKey) ||
+                         (cosStatus === 'Committed' && monthKey < currentMonthKey);
+      const isCommitted = cosStatus === 'Committed' && monthKey >= currentMonthKey;
       if (isRealised) {
         realisedByMonth.set(monthKey, (realisedByMonth.get(monthKey) || 0) + amount);
       }
@@ -1822,8 +1826,10 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       const currentMonthKey = `${nowD.getFullYear()}-${String(nowD.getMonth() + 1).padStart(2, '0')}`;
 
       const fullCosStatus = classifyCosStatusFull(exp);
-      const isRealised = fullCosStatus === 'COS Realised' && (itemMonthKey ? itemMonthKey <= currentMonthKey : true);
-      const isCommitted = fullCosStatus === 'Committed';
+      // Past-month committed costs are effectively realised (cost already incurred)
+      const isRealised = (fullCosStatus === 'COS Realised' && (itemMonthKey ? itemMonthKey <= currentMonthKey : true)) ||
+                         (fullCosStatus === 'Committed' && itemMonthKey != null && itemMonthKey < currentMonthKey);
+      const isCommitted = fullCosStatus === 'Committed' && (itemMonthKey == null || itemMonthKey >= currentMonthKey);
 
       // COS state derived from classifyCosStatusFull
       const cosState = isRealised ? 'COS Realised' : fullCosStatus;
