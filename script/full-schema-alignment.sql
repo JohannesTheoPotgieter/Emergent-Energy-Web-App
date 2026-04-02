@@ -5047,6 +5047,33 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='financial_review_id') THEN
     ALTER TABLE "project_execution_state" ADD COLUMN "financial_review_id" INTEGER;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='current_stage_code') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "current_stage_code" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='gate_status') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "gate_status" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='gate_readiness_pct') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "gate_readiness_pct" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='waiting_on_department') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "waiting_on_department" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='waiting_on_user_id') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "waiting_on_user_id" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='next_required_action') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "next_required_action" TEXT;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='stage_owner_user_id') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "stage_owner_user_id" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='stage_approver_user_id') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "stage_approver_user_id" INTEGER;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_execution_state') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_execution_state' AND column_name='kam_user_id') THEN
+    ALTER TABLE "project_execution_state" ADD COLUMN "kam_user_id" INTEGER;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='project_gate_evaluations') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='project_gate_evaluations' AND column_name='project_id') THEN
     ALTER TABLE "project_gate_evaluations" ADD COLUMN "project_id" INTEGER;
   END IF;
@@ -8038,4 +8065,3 @@ ALTER TABLE project_eng_approvals ADD COLUMN IF NOT EXISTS scheduled_end_time TE
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS scheduled_date DATE;
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS scheduled_start_time TEXT;
 ALTER TABLE approvals ADD COLUMN IF NOT EXISTS scheduled_end_time TEXT;
-
