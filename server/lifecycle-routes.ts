@@ -75,6 +75,12 @@ function pickFirstPopulatedDate(source: Record<string, any>, fields: string[]): 
   return null;
 }
 
+function selectDefinedFields<T extends Record<string, any>>(fields: T): T {
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== undefined),
+  ) as T;
+}
+
 function formatDateKey(y: number, m: number, d: number): string {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
@@ -807,7 +813,7 @@ export function registerLifecycleRoutes(app: Express) {
     try {
       const fy = getCurrentFinancialYearBounds();
       const today = new Date().toISOString().slice(0, 10);
-      const activeProjects = await db.select({
+      const activeProjects = await db.select(selectDefinedFields({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
         pm: projectInfo.pm,
@@ -816,7 +822,7 @@ export function registerLifecycleRoutes(app: Express) {
         ragStatus: projectExecutionState.ragStatus,
         archivedStatus: projectExecutionState.archivedStatus,
         phase: projectExecutionState.phase,
-      }).from(projectInfo)
+      })).from(projectInfo)
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
         .where(eq(projectExecutionState.archivedStatus, "ACTIVE"));
 
@@ -906,7 +912,7 @@ export function registerLifecycleRoutes(app: Express) {
         });
       }
 
-      const revenueLines = await db.select({
+      const revenueLines = await db.select(selectDefinedFields({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
         client: normalizedRevenueLines.counterpartyName,
@@ -921,9 +927,9 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceDate: normalizedRevenueLines.invoiceDate,
         expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
         sourceRow: normalizedRevenueLines.sourceRow,
-      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+      })).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
-      const costLines = await db.select({
+      const costLines = await db.select(selectDefinedFields({
         projectId: normalizedCostLines.projectId,
         projectName: normalizedCostLines.projectName,
         supplier: normalizedCostLines.counterpartyName,
@@ -935,8 +941,11 @@ export function registerLifecycleRoutes(app: Express) {
         invoiceDate: normalizedCostLines.invoiceDate,
         approvedDate: normalizedCostLines.approvedDate,
         cosRealised: normalizedCostLines.cosRealised,
+        poNumber: normalizedCostLines.poNumber,
+        invoiceDateConfirmed: normalizedCostLines.invoiceDateConfirmed,
+        invoiceDateFontColor: normalizedCostLines.invoiceDateFontColor,
         sourceRow: normalizedCostLines.sourceRow,
-      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+      })).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
 
       const overdueLedger = buildOverdueFinanceLedger({
         revenueLines,
@@ -1040,9 +1049,9 @@ export function registerLifecycleRoutes(app: Express) {
         FROM work_items wi JOIN project_info pi ON wi.project_id = pi.id
         WHERE wi.deleted_at IS NULL
       `).then((r: any) => r.rows || r);
-      const qualityRows = await db.select({ projectName: qcWarning.projectName, status: qcWarning.status, severity: qcWarning.severity, title: qcWarning.title, dueDate: qcWarning.dueDate, ownerUserId: qcWarning.ownerUserId }).from(qcWarning);
-      const approvalRows = await db.select({ projectId: approvals.projectId, status: approvals.status, title: approvals.title, dueDate: approvals.dueDate, assignedApprover: approvals.assignedApprover }).from(approvals);
-      const importRuns = await db.select({ projectId: smartImportRuns.projectId, projectName: smartImportRuns.projectName, uploadedAt: smartImportRuns.uploadedAt }).from(smartImportRuns);
+      const qualityRows = await db.select(selectDefinedFields({ projectName: qcWarning.projectName, status: qcWarning.status, severity: qcWarning.severity, title: qcWarning.title, dueDate: qcWarning.dueDate, ownerUserId: qcWarning.ownerUserId })).from(qcWarning);
+      const approvalRows = await db.select(selectDefinedFields({ projectId: approvals.projectId, status: approvals.status, title: approvals.title, dueDate: approvals.dueDate, assignedApprover: approvals.assignedApprover })).from(approvals);
+      const importRuns = await db.select(selectDefinedFields({ projectId: smartImportRuns.projectId, projectName: smartImportRuns.projectName, uploadedAt: smartImportRuns.uploadedAt })).from(smartImportRuns);
 
       const latestImportByProjectId = new Map<number, Date>();
       const latestImportByNorm = new Map<string, Date>();
