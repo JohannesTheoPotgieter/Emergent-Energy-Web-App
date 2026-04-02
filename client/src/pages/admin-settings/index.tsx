@@ -9,11 +9,11 @@ import { VisibilitySection } from "./visibility/visibility-section";
 import { AuditSection } from "./audit/audit-section";
 import type { AdminSettingsSection } from "./settings-types";
 
-const SETTINGS_NAV: Array<{ key: AdminSettingsSection; label: string; description: string; icon: React.ElementType }> = [
-  { key: "roles", label: "Roles & Permissions", description: "Configure role access, navigation, and entity permissions", icon: Shield },
-  { key: "users", label: "User Management", description: "Manage users, assign roles, and set overrides", icon: Users },
-  { key: "visibility", label: "Visibility Config", description: "PD ticket and workstream visibility by role", icon: Eye },
-  { key: "audit", label: "Audit Log", description: "Track permission changes and access events", icon: ScrollText },
+const SETTINGS_NAV: Array<{ key: AdminSettingsSection; label: string; icon: React.ElementType }> = [
+  { key: "roles", label: "Roles & Permissions", icon: Shield },
+  { key: "users", label: "Users", icon: Users },
+  { key: "visibility", label: "Visibility", icon: Eye },
+  { key: "audit", label: "Audit Log", icon: ScrollText },
 ];
 
 function getInitialSection(): AdminSettingsSection {
@@ -63,53 +63,37 @@ function AdminSettingsContent() {
     <AdminPageShell
       surfaceId="roles"
       title="Admin Settings"
-      description="Complete control over roles, permissions, user access, visibility, and audit trail — all from one trusted surface."
+      description="Roles, permissions, users, and visibility."
       statuses={[
         { label: "Backend enforcement aligned", tone: "success" },
-        { label: "Role-aware administration", tone: "info" },
       ]}
     >
-      <div className="flex gap-5" style={{ minHeight: "calc(100vh - 14rem)" }} data-testid="admin-roles-page">
-        {/* Sidebar Navigation */}
-        <div className="w-[220px] shrink-0 sticky top-4 self-start">
-          <nav className="space-y-1">
-            {SETTINGS_NAV.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeSection === item.key;
-              return (
-                <button
-                  key={item.key}
-                  onClick={() => navigateSection(item.key)}
-                  className={`w-full text-left rounded-lg px-3 py-2.5 transition-all group ${
-                    isActive
-                      ? "bg-emerald-50 border border-emerald-200 shadow-sm"
-                      : "hover:bg-gray-50 border border-transparent"
-                  }`}
-                  data-testid={`settings-nav-${item.key}`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className={`h-7 w-7 rounded-md flex items-center justify-center shrink-0 ${
-                      isActive ? "bg-emerald-100" : "bg-gray-100 group-hover:bg-gray-200"
-                    }`}>
-                      <Icon className={`h-3.5 w-3.5 ${isActive ? "text-emerald-600" : "text-gray-500"}`} />
-                    </div>
-                    <div className="min-w-0">
-                      <span className={`text-sm font-semibold block ${isActive ? "text-emerald-900" : "text-gray-700"}`}>
-                        {item.label}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground leading-tight block">
-                        {item.description}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </nav>
+      <div data-testid="admin-roles-page">
+        {/* Compact top pill navigation */}
+        <div className="flex items-center gap-1 mb-4 border-b border-gray-200 pb-3">
+          {SETTINGS_NAV.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeSection === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => navigateSection(item.key)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
+                  isActive
+                    ? "bg-emerald-600 text-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-100"
+                }`}
+                data-testid={`settings-nav-${item.key}`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {item.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 min-w-0">
+        {/* Content Area — full width */}
+        <div className="min-w-0">
           {activeSection === "roles" && <RolesSection />}
           {activeSection === "users" && <UsersSection />}
           {activeSection === "visibility" && <VisibilitySection />}

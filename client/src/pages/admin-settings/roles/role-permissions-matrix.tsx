@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Check, ChevronDown, ChevronRight, Eye, Pencil, Plus, Search, Shield, ShieldCheck, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Eye, Pencil, Plus, Search, ShieldCheck, Trash2, X } from "lucide-react";
 import type { PermissionAction } from "@shared/schema";
 import { ENTITY_PERMISSION_DEFAULTS } from "@shared/schema";
 import type { RoleSummary } from "../settings-types";
@@ -25,16 +25,6 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   delete: <Trash2 className="h-3 w-3" />,
 };
 
-const ACTION_SHORT: Record<string, string> = {
-  view: "V",
-  create: "C",
-  edit: "E",
-  approve: "A",
-  override: "O",
-  delete: "D",
-};
-
-// Source-based colors — compact style
 const CELL_STYLES = {
   role_override_on: "bg-emerald-100 text-emerald-700 border-emerald-300",
   default_on: "bg-blue-50 text-blue-600 border-blue-200",
@@ -62,7 +52,6 @@ function getPermissionState(
 
 export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRoles, enabledNavSections }: RolePermissionsMatrixProps) {
   const [permSearch, setPermSearch] = useState("");
-  // Start with all categories collapsed for compact view
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   const effectiveRole = { ...role, ...draft } as RoleSummary;
@@ -94,7 +83,6 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
     });
   };
 
-  // Merge entities from DB overrides + ENTITY_PERMISSION_DEFAULTS so we always show the full picture
   const allKnownEntities = useMemo(() => {
     const set = new Set<string>();
     Object.keys(currentEp).filter((k) => !k.startsWith("_")).forEach((e) => set.add(e));
@@ -139,12 +127,11 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
     return summary;
   }, [categorizedEntities, currentEp, normalizedRole]);
 
-  // When searching, auto-expand all categories
   const isExpanded = (key: string) => permSearch ? true : expandedCategories.has(key);
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-2">
+    <div className="pt-3">
+      <div className="flex items-center gap-2 mb-3">
         <div className="relative flex-1">
           <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input className="pl-8 h-7 text-xs bg-gray-50 border-gray-200" placeholder="Filter permissions..." value={permSearch} onChange={(e) => setPermSearch(e.target.value)} data-testid="input-search-permissions" />
@@ -157,12 +144,12 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
         )}
       </div>
 
-      {/* Legend */}
+      {/* Legend — compact */}
       <div className="flex items-center gap-3 mb-2 text-[9px] text-muted-foreground px-1">
-        <div className="flex items-center gap-1"><div className="h-2.5 w-2.5 rounded border bg-emerald-100 border-emerald-300" /><span>Role override (granted)</span></div>
-        <div className="flex items-center gap-1"><div className="h-2.5 w-2.5 rounded border bg-blue-50 border-blue-200" /><span>Default (granted)</span></div>
-        <div className="flex items-center gap-1"><div className="h-2.5 w-2.5 rounded border bg-red-50 border-red-200" /><span>Role override (denied)</span></div>
-        <div className="flex items-center gap-1"><div className="h-2.5 w-2.5 rounded border bg-gray-50 border-gray-200" /><span>No access</span></div>
+        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-emerald-100 border-emerald-300" /><span>Override (on)</span></div>
+        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-blue-50 border-blue-200" /><span>Default (on)</span></div>
+        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-red-50 border-red-200" /><span>Override (off)</span></div>
+        <div className="flex items-center gap-1"><div className="h-2 w-2 rounded border bg-gray-50 border-gray-200" /><span>No access</span></div>
       </div>
 
       <div className="border border-gray-200 rounded-lg overflow-hidden max-h-[65vh] overflow-y-auto">
@@ -202,9 +189,7 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                           <div className="flex items-center gap-1.5">
                             {expanded ? <ChevronDown className="h-3 w-3 text-gray-400" /> : <ChevronRight className="h-3 w-3 text-gray-400" />}
                             <span className={`text-[10px] font-bold uppercase tracking-wider ${navDisabled ? "text-gray-400 line-through" : "text-gray-500"}`}>{cat.label}</span>
-                            {navDisabled && (
-                              <span className="text-[9px] text-red-400 font-medium ml-1">Nav disabled</span>
-                            )}
+                            {navDisabled && <span className="text-[9px] text-red-400 font-medium ml-1">Nav disabled</span>}
                             {!navDisabled && summary && (
                               <div className="flex items-center gap-1 ml-1">
                                 <div className="w-12 h-1 bg-gray-200 rounded-full overflow-hidden">
@@ -226,7 +211,7 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                     {expanded && navDisabled && (
                       <tr>
                         <td colSpan={ACTIONS.length + (canManageRoles ? 2 : 1)} className="px-4 py-2 bg-gray-50">
-                          <p className="text-[10px] text-gray-400 italic">This section is hidden in navigation — enable it on the Navigation tab first. Permissions here won't take effect until the section is visible.</p>
+                          <p className="text-[10px] text-gray-400 italic">Enable this section in Navigation Access first.</p>
                         </td>
                       </tr>
                     )}
@@ -255,14 +240,10 @@ export function RolePermissionsMatrix({ role, draft, onUpdateDraft, canManageRol
                                 : state.source === "role_override" ? CELL_STYLES.role_override_off : CELL_STYLES.no_access;
 
                             const tooltipText = navDisabled
-                              ? "Navigation disabled — enable section first"
+                              ? "Navigation disabled"
                               : state.allowed
-                                ? state.source === "role_override"
-                                  ? `Granted via role override`
-                                  : `Granted via default`
-                                : state.source === "role_override"
-                                  ? `Denied via role override`
-                                  : `No access`;
+                                ? state.source === "role_override" ? `Granted via role override` : `Granted via default`
+                                : state.source === "role_override" ? `Denied via role override` : `No access`;
 
                             return (
                               <td key={action} className="text-center px-0.5 py-1">
