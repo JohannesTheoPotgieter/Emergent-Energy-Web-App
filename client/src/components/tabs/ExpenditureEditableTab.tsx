@@ -165,6 +165,7 @@ interface CategoryGroup {
 interface ExpenditureEditableTabProps {
   projectName: string;
   highlightId?: number | null;
+  initialFilter?: string;
 }
 
 type ColumnKey =
@@ -288,7 +289,7 @@ const OverrideDot = ({ originalValue, audit }: { originalValue: string; audit?: 
   </TooltipProvider>
 );
 
-export function ExpenditureEditableTab({ projectName, highlightId }: ExpenditureEditableTabProps) {
+export function ExpenditureEditableTab({ projectName, highlightId, initialFilter }: ExpenditureEditableTabProps) {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -297,6 +298,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   const [edits, setEdits] = useState<Map<number, Record<string, string>>>(new Map());
   const [editingCell, setEditingCell] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [overdueSupplierOnly, setOverdueSupplierOnly] = useState(initialFilter === "overdue_supplier");
   const [subProjectFilter, setSubProjectFilter] = useState<string>("all");
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [visibleColumns, setVisibleColumns] = useState<Set<ColumnKey>>(() => {
@@ -321,6 +323,10 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   const [supplierSearchTerm, setSupplierSearchTerm] = useState("");
   const [overrideCategory, setOverrideCategory] = useState("DATA_CORRECTION");
   const [overrideComment, setOverrideComment] = useState("");
+
+  useEffect(() => {
+    setOverdueSupplierOnly(initialFilter === "overdue_supplier");
+  }, [initialFilter]);
 
   const breakdownKey = ["expenditure-breakdown", projectName];
 
@@ -694,6 +700,7 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
   }, [items, edits, reconciliation]);
 
   const filteredItems = useMemo(() => {
+    const today = new Date().toISOString().split("T")[0];
     let data = items.map((row) => {
       const rowEdits = edits.get(row.id);
       return rowEdits ? { ...row, ...rowEdits } : row;
@@ -708,8 +715,20 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
     if (subProjectFilter !== "all") {
       data = data.filter((e: any) => e.subProjectName === subProjectFilter);
     }
+    if (overdueSupplierOnly) {
+      data = data.filter((e: any) => {
+        const dueDate = e.expensePaymentDate || e.forecastPaymentDate || e.computedForecastPaymentDate || e.expenseInvoicedDate;
+        if (!dueDate || !String(dueDate).trim()) return false;
+        const hasPaymentDate = !!(e.expensePaymentDate && String(e.expensePaymentDate).trim());
+        const paymentDateConfirmed = e.paymentDateFontColor === 'red'
+          ? false
+          : (e.paymentDateFontColor === 'black' ? true : e.paymentDateConfirmed === true);
+        if (hasPaymentDate && paymentDateConfirmed) return false;
+        return String(dueDate).substring(0, 10) < today;
+      });
+    }
     return data;
-  }, [items, edits, statusFilter, subProjectFilter]);
+  }, [items, edits, statusFilter, subProjectFilter, overdueSupplierOnly]);
 
   const categoryGroups = useMemo(() => {
     const groupMap = new Map<string, CategoryGroup>();
@@ -1480,6 +1499,15 @@ export function ExpenditureEditableTab({ projectName, highlightId }: Expenditure
             { value: "Planned", label: `Planned (${kpis.countByCos.Planned})` },
           ]}
         />
+        <Button
+          size="sm"
+          variant={overdueSupplierOnly ? "default" : "outline"}
+          className="h-7 text-xs"
+          onClick={() => setOverdueSupplierOnly((prev) => !prev)}
+          title="Toggle overdue supplier cost filter"
+        >
+          {overdueSupplierOnly ? "Overdue supplier only" : "Show overdue supplier"}
+        </Button>
 
         {/* Sub-project filter (only visible for multi-project/Ad Hoc trackers) */}
         {(() => {

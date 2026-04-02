@@ -18,6 +18,7 @@ import { POGenerator } from "@/components/POGenerator";
 import CaptureDeliverable from "@/components/CaptureDeliverable";
 import { PROJECT_PHASE_LABELS, type ProjectPhase } from "@shared/schema";
 import { formatNextMilestoneSummary, type NextMilestoneSummary } from "@/lib/next-milestone";
+import { buildProjectSummaryChipDestinations, type ProjectSummaryChipKey } from "@/lib/project-summary-chip-navigation";
 
 function getPhaseLabel(phase: string | null): string {
   if (!phase) return "Unknown";
@@ -204,6 +205,7 @@ function useAlertStripData(projectInfoId: number | null, projectName?: string) {
 }
 
 function AlertStrip({ projectInfoId, projectName }: { projectInfoId: number | null; projectName?: string }) {
+  const [, setLocation] = useLocation();
   const {
     overdueProcurement,
     openRaid,
@@ -236,7 +238,8 @@ function AlertStrip({ projectInfoId, projectName }: { projectInfoId: number | nu
   const totalAlerts = overdueProcurement + openRaid + activeChanges + incompleteCommissioning + qualityAlertCount;
   const hasAlerts = totalAlerts > 0;
 
-  const badges: { key: string; count: number; label: string; icon: React.ReactNode; color: "red" | "amber" }[] = [];
+  const badges: { key: ProjectSummaryChipKey; count: number; label: string; icon: React.ReactNode; color: "red" | "amber" }[] = [];
+  const destinations = projectName ? buildProjectSummaryChipDestinations(projectName) : {};
 
   if (blockedHandover) {
     badges.push({ key: "handover-blocked", count: 1, label: "Handover Blocked", icon: <Ban className="h-3 w-3" />, color: "red" });
@@ -273,20 +276,34 @@ function AlertStrip({ projectInfoId, projectName }: { projectInfoId: number | nu
           <>
             <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />
             {badges.map((b) => (
-              <span
+              (() => {
+                const destination = destinations[b.key];
+                const isClickable = !!destination;
+                return (
+              <button
                 key={b.key}
-                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold cursor-default ${
+                type="button"
+                onClick={() => destination && setLocation(destination.path)}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors ${
                   b.color === "red"
-                    ? "bg-red-100 text-red-700 border border-red-200"
-                    : "bg-amber-100 text-amber-700 border border-amber-200"
+                    ? "bg-red-100 text-red-700 border-red-200"
+                    : "bg-amber-100 text-amber-700 border-amber-200"
+                } ${
+                  isClickable
+                    ? "cursor-pointer hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                    : "cursor-default"
                 }`}
                 data-testid={`alert-badge-${b.key}`}
-                title={`${b.count} ${b.label}`}
+                title={destination?.title || `${b.count} ${b.label}`}
+                aria-label={destination?.ariaLabel || `${b.count} ${b.label}`}
+                disabled={!isClickable}
               >
                 {b.icon}
                 <span>{b.count}</span>
                 <span className="hidden sm:inline">{b.label}</span>
-              </span>
+              </button>
+                );
+              })()
             ))}
           </>
         ) : anyLoaded ? (
