@@ -2359,6 +2359,267 @@ describe("Phase 1B Schema Existence Tests", () => {
     }
   });
 
+  // -- Migration G.1: Create external_resources + resource_links --
+  describe("Migration G.1: create_external_resources", () => {
+    const sql = readMigration("20260403_g01_create_external_resources.sql");
+
+    it("creates core.external_resources table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.external_resources");
+    });
+
+    it("includes all required columns on external_resources", () => {
+      const columns = [
+        "legacy_resource_id", "legacy_resource_table", "resource_type",
+        "file_name", "web_url", "site_id", "drive_id", "item_id",
+        "mime_type", "file_size", "etag", "is_active",
+        "uploaded_by_party_id", "uploaded_at", "resource_data",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("creates core.resource_links junction table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.resource_links");
+    });
+
+    it("resource_links has UNIQUE on (resource_id, entity_type, entity_id)", () => {
+      expect(sql).toContain("UNIQUE (external_resource_id, entity_type, entity_id)");
+    });
+
+    it("creates indexes on both tables", () => {
+      expect(sql).toContain("idx_external_resources_site_drive_item");
+      expect(sql).toContain("idx_external_resources_resource_type");
+      expect(sql).toContain("idx_resource_links_resource_id");
+      expect(sql).toContain("idx_resource_links_entity");
+    });
+
+    it("has COMMENT ON TABLE for both tables", () => {
+      expect(sql).toContain("COMMENT ON TABLE core.external_resources");
+      expect(sql).toContain("COMMENT ON TABLE core.resource_links");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill G.2: External resources --
+  describe("Backfill G.2: backfill_external_resources", () => {
+    const sql = readMigration("20260403_g02_backfill_external_resources.sql");
+
+    it("backfills from all 3 file sources", () => {
+      expect(sql).toContain("'sp_files'");
+      expect(sql).toContain("'deliverable_files'");
+      expect(sql).toContain("'sp_file_pointers'");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      const matches = sql.match(/ON CONFLICT \(legacy_resource_table, legacy_resource_id\) DO NOTHING/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it("creates resource_links for deliverable_files", () => {
+      expect(sql).toContain("'deliverable'");
+      expect(sql).toContain("'attachment'");
+    });
+
+    it("creates resource_links for sp_file_pointers", () => {
+      expect(sql).toContain("sfp.entity_type");
+      expect(sql).toContain("sfp.entity_id");
+    });
+
+    it("resolves uploaded_by_party_id via user_accounts", () => {
+      expect(sql).toContain("SET uploaded_by_party_id = ua.party_id");
+    });
+
+    it("excludes soft-deleted sp_files", () => {
+      expect(sql).toContain("sf.deleted_at IS NULL");
+    });
+
+    it("includes safety warnings", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase G.2 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Migration G.3: Create activity_log + audit_log --
+  describe("Migration G.3: create_activity_audit_logs", () => {
+    const sql = readMigration("20260403_g03_create_activity_audit_logs.sql");
+
+    it("creates core.activity_log table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.activity_log");
+    });
+
+    it("includes all required columns on activity_log", () => {
+      const columns = [
+        "legacy_event_id", "legacy_event_table", "event_type",
+        "aggregate_type", "aggregate_id", "project_instance_id",
+        "actor_party_id", "payload", "processed_at",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("creates core.audit_log table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.audit_log");
+    });
+
+    it("includes all required columns on audit_log", () => {
+      const columns = [
+        "legacy_audit_id", "legacy_audit_table", "actor_party_id",
+        "actor_role", "source", "entity_type", "entity_id",
+        "action", "changes", "correlation_id", "ip_address",
+        "request_path", "request_method",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("creates indexes on both tables", () => {
+      expect(sql).toContain("idx_activity_log_event_type");
+      expect(sql).toContain("idx_activity_log_created_at");
+      expect(sql).toContain("idx_audit_log_entity");
+      expect(sql).toContain("idx_audit_log_created_at");
+      expect(sql).toContain("idx_audit_log_correlation_id");
+    });
+
+    it("has partial index on correlation_id", () => {
+      expect(sql).toContain("WHERE correlation_id IS NOT NULL");
+    });
+
+    it("has COMMENT ON TABLE for both tables", () => {
+      expect(sql).toContain("COMMENT ON TABLE core.activity_log");
+      expect(sql).toContain("COMMENT ON TABLE core.audit_log");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill G.4: Activity log --
+  describe("Backfill G.4: backfill_activity_log", () => {
+    const sql = readMigration("20260403_g04_backfill_activity_log.sql");
+
+    it("backfills from domain_events and deliverable_events", () => {
+      expect(sql).toContain("'domain_events'");
+      expect(sql).toContain("'deliverable_events'");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      const matches = sql.match(/ON CONFLICT \(legacy_event_table, legacy_event_id\) DO NOTHING/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("resolves actor_party_id via user_accounts", () => {
+      expect(sql).toContain("SET actor_party_id = ua.party_id");
+    });
+
+    it("includes safety warnings", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase G.4 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill G.5: Audit log --
+  describe("Backfill G.5: backfill_audit_log", () => {
+    const sql = readMigration("20260403_g05_backfill_audit_log.sql");
+
+    it("backfills from audit_events and audit_trail", () => {
+      expect(sql).toContain("'audit_events'");
+      expect(sql).toContain("'audit_trail'");
+    });
+
+    it("preserves before/after snapshots from audit_trail", () => {
+      expect(sql).toContain("'before'");
+      expect(sql).toContain("'after'");
+      expect(sql).toContain("at2.before_value");
+      expect(sql).toContain("at2.after_value");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      const matches = sql.match(/ON CONFLICT \(legacy_audit_table, legacy_audit_id\) DO NOTHING/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("resolves actor_party_id via user_accounts", () => {
+      expect(sql).toContain("SET actor_party_id = ua.party_id");
+    });
+
+    it("includes safety warnings", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase G.5 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback G.6: Activity + Audit logs rollback --
+  describe("Rollback G.6: rollback_activity_audit_logs", () => {
+    const sql = readMigration("20260403_g06_rollback_activity_audit_logs.sql");
+
+    it("drops audit_log and activity_log", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.audit_log");
+      expect(sql).toContain("DROP TABLE IF EXISTS core.activity_log");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback G.7: External resources rollback --
+  describe("Rollback G.7: rollback_external_resources", () => {
+    const sql = readMigration("20260403_g07_rollback_external_resources.sql");
+
+    it("drops links before resources (FK order)", () => {
+      const dropLinks = sql.indexOf("DROP TABLE IF EXISTS core.resource_links");
+      const dropResources = sql.indexOf("DROP TABLE IF EXISTS core.external_resources");
+      expect(dropLinks).toBeGreaterThan(-1);
+      expect(dropResources).toBeGreaterThan(-1);
+      expect(dropLinks).toBeLessThan(dropResources);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Phase G dependency order --
+  it("Phase G migration files sort in correct dependency order", () => {
+    const phaseGFiles = fs.readdirSync(migrationsDir)
+      .filter((f) => f.startsWith("20260403_g") && f.endsWith(".sql") && !f.includes("rollback"))
+      .sort();
+    const expectedOrder = [
+      "20260403_g01_create_external_resources.sql",
+      "20260403_g02_backfill_external_resources.sql",
+      "20260403_g03_create_activity_audit_logs.sql",
+      "20260403_g04_backfill_activity_log.sql",
+      "20260403_g05_backfill_audit_log.sql",
+    ];
+    expect(phaseGFiles).toEqual(expectedOrder);
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -2980,7 +3241,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 73 migration files exist", () => {
+  it("all 80 migration files exist", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -3055,6 +3316,13 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_f05_backfill_finance_records_po_payments.sql",
       "20260403_f06_backfill_budget_lines.sql",
       "20260403_f07_backfill_finance_record_events.sql",
+      "20260403_g01_create_external_resources.sql",
+      "20260403_g07_rollback_external_resources.sql",
+      "20260403_g02_backfill_external_resources.sql",
+      "20260403_g03_create_activity_audit_logs.sql",
+      "20260403_g06_rollback_activity_audit_logs.sql",
+      "20260403_g04_backfill_activity_log.sql",
+      "20260403_g05_backfill_audit_log.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -3153,6 +3421,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_e04_create_approval_rules_instances.sql",
       "20260403_f01_create_finance_records.sql",
       "20260403_f02_create_budget_lines.sql",
+      "20260403_g01_create_external_resources.sql",
+      "20260403_g03_create_activity_audit_logs.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -3189,6 +3459,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_e04_create_approval_rules_instances.sql",
       "20260403_f01_create_finance_records.sql",
       "20260403_f02_create_budget_lines.sql",
+      "20260403_g01_create_external_resources.sql",
+      "20260403_g03_create_activity_audit_logs.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
