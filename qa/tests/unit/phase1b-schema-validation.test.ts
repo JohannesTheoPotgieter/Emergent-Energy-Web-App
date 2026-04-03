@@ -629,6 +629,95 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration B.2: Create project_instances + backfill --
+  describe("Migration B.2: create_project_instances", () => {
+    const sql = readMigration("20260403_b02_create_project_instances.sql");
+
+    it("creates core.project_instances table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.project_instances");
+    });
+
+    it("has legacy_project_id UNIQUE NOT NULL", () => {
+      expect(sql).toContain("legacy_project_id   INTEGER UNIQUE NOT NULL");
+    });
+
+    it("has project_type_id FK to core.project_types (nullable)", () => {
+      expect(sql).toContain("project_type_id");
+      expect(sql).toContain("REFERENCES core.project_types(id)");
+    });
+
+    it("has client_party_id FK to core.parties (nullable)", () => {
+      expect(sql).toContain("client_party_id");
+      expect(sql).toContain("REFERENCES core.parties(id)");
+    });
+
+    it("has status, current_phase, and date columns", () => {
+      expect(sql).toContain("status");
+      expect(sql).toContain("current_phase");
+      expect(sql).toContain("planned_start_date");
+      expect(sql).toContain("planned_end_date");
+    });
+
+    it("does NOT have pm_user_id or pd_user_id", () => {
+      expect(sql).not.toContain("pm_user_id");
+      expect(sql).not.toContain("pd_user_id");
+    });
+
+    it("creates indexes on key columns", () => {
+      expect(sql).toContain("idx_project_instances_project_code");
+      expect(sql).toContain("idx_project_instances_project_type_id");
+      expect(sql).toContain("idx_project_instances_client_party_id");
+      expect(sql).toContain("idx_project_instances_status");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Backfill B.2: backfill_project_instances", () => {
+    const sql = readMigration("20260403_b03_backfill_project_instances.sql");
+
+    it("sources from core.projects with LEFT JOINs", () => {
+      expect(sql).toContain("FROM core.projects p");
+      expect(sql).toContain("LEFT JOIN core.parties cp ON cp.legacy_client_id = p.client_id");
+      expect(sql).toContain("LEFT JOIN project_execution_state pes");
+    });
+
+    it("derives status from archived_status and execution_gate_status", () => {
+      expect(sql).toContain("archived_status = 'archived'");
+      expect(sql).toContain("execution_gate_status = 'blocked'");
+    });
+
+    it("maps planned dates from execution_state", () => {
+      expect(sql).toContain("pes.construction_start_date");
+      expect(sql).toContain("pes.client_handover_date");
+    });
+
+    it("is idempotent via ON CONFLICT", () => {
+      expect(sql).toContain("ON CONFLICT (legacy_project_id) DO NOTHING");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback B.2: create_project_instances_rollback", () => {
+    const sql = readMigration("20260403_b02_create_project_instances_rollback.sql");
+
+    it("drops core.project_instances table", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.project_instances");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -1250,7 +1339,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 29 migration files exist (8+5 forward + 8+5 rollback + 3 backfill)", () => {
+  it("all 32 migration files exist (8+6 forward + 8+6 rollback + 4 backfill)", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -1281,6 +1370,9 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_a09_backfill_role_assignments.sql",
       "20260403_b01_create_project_types.sql",
       "20260403_b01_create_project_types_rollback.sql",
+      "20260403_b02_create_project_instances.sql",
+      "20260403_b02_create_project_instances_rollback.sql",
+      "20260403_b03_backfill_project_instances.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -1366,6 +1458,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_a03_create_departments_role_definitions.sql",
       "20260403_a08_create_role_assignments.sql",
       "20260403_b01_create_project_types.sql",
+      "20260403_b02_create_project_instances.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -1389,6 +1482,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_a03_create_departments_role_definitions.sql",
       "20260403_a08_create_role_assignments.sql",
       "20260403_b01_create_project_types.sql",
+      "20260403_b02_create_project_instances.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
