@@ -328,6 +328,77 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration A.3b: Create microsoft_identities table + backfill --
+  describe("Migration A.3b: create_microsoft_identities", () => {
+    const sql = readMigration("20260403_create_microsoft_identities.sql");
+
+    it("creates core.microsoft_identities table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.microsoft_identities");
+    });
+
+    it("has user_account_id column with UNIQUE FK to core.user_accounts", () => {
+      expect(sql).toContain("user_account_id");
+      expect(sql).toContain("REFERENCES core.user_accounts(id)");
+    });
+
+    it("has microsoft_user_id column with UNIQUE constraint", () => {
+      expect(sql).toContain("microsoft_user_id TEXT NOT NULL UNIQUE");
+    });
+
+    it("has tenant_id column NOT NULL", () => {
+      expect(sql).toContain("tenant_id         TEXT NOT NULL");
+    });
+
+    it("creates idx_microsoft_identities_tenant_id index", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_microsoft_identities_tenant_id");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Backfill A.3b: backfill_microsoft_identities", () => {
+    const sql = readMigration("20260403_backfill_microsoft_identities.sql");
+
+    it("joins users to user_accounts and left joins ms_accounts", () => {
+      expect(sql).toContain("FROM public.users u");
+      expect(sql).toContain("JOIN core.user_accounts ua ON ua.legacy_user_id = u.id");
+      expect(sql).toContain("LEFT JOIN ms_accounts ms ON ms.user_id = u.id");
+    });
+
+    it("filters to users with microsoft_id", () => {
+      expect(sql).toContain("WHERE u.microsoft_id IS NOT NULL AND u.microsoft_id <> ''");
+    });
+
+    it("uses COALESCE for tenant_id fallback", () => {
+      expect(sql).toContain("COALESCE(ms.tenant_id,");
+    });
+
+    it("is idempotent via ON CONFLICT", () => {
+      expect(sql).toContain("ON CONFLICT (user_account_id) DO NOTHING");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback A.3b: create_microsoft_identities_rollback", () => {
+    const sql = readMigration("20260403_create_microsoft_identities_rollback.sql");
+
+    it("drops core.microsoft_identities table", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.microsoft_identities");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -949,7 +1020,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 19 migration files exist (8+1 forward + 8+1 rollback + 1 backfill)", () => {
+  it("all 22 migration files exist (8+2 forward + 8+2 rollback + 2 backfill)", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -970,6 +1041,9 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_create_user_accounts.sql",
       "20260403_create_user_accounts_rollback.sql",
       "20260403_backfill_user_accounts.sql",
+      "20260403_create_microsoft_identities.sql",
+      "20260403_create_microsoft_identities_rollback.sql",
+      "20260403_backfill_microsoft_identities.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -1014,6 +1088,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_evidence_link_parity.sql",
       "20260402_stale_item_tracking.sql",
       "20260403_create_user_accounts.sql",
+      "20260403_create_microsoft_identities.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -1033,6 +1108,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_evidence_link_parity.sql",
       "20260402_stale_item_tracking.sql",
       "20260403_create_user_accounts.sql",
+      "20260403_create_microsoft_identities.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
