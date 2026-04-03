@@ -399,6 +399,81 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration A.1: Create departments + role_definitions --
+  describe("Migration A.1: create_departments_role_definitions", () => {
+    const sql = readMigration("20260403_create_departments_role_definitions.sql");
+
+    it("creates core.departments table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.departments");
+    });
+
+    it("departments has code UNIQUE and name columns", () => {
+      expect(sql).toContain("code   TEXT NOT NULL UNIQUE");
+      expect(sql).toContain("name   TEXT NOT NULL");
+    });
+
+    it("seeds 6 departments", () => {
+      const deptCodes = ["ADMIN", "LEADERSHIP", "ENGINEERING", "PROJECT_DEVELOPMENT", "PROJECT_MANAGEMENT", "FINANCE"];
+      for (const code of deptCodes) {
+        expect(sql).toContain(`'${code}'`);
+      }
+    });
+
+    it("creates core.role_definitions table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.role_definitions");
+    });
+
+    it("role_definitions has code UNIQUE, name, description, and department_id FK", () => {
+      expect(sql).toContain("code          TEXT NOT NULL UNIQUE");
+      expect(sql).toContain("REFERENCES core.departments(id)");
+    });
+
+    it("seeds 16 role definitions", () => {
+      const roleCodes = [
+        "COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER",
+        "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER", "QUALITY_MANAGER",
+        "ENGINEERING_MANAGER", "KEY_ACCOUNTS_MANAGER", "ACCOUNTANT", "ENGINEER",
+        "PROJECT_MANAGER_SITE", "PROJECT_DEVELOPER", "HSE_MANAGER", "SSEG_MANAGER",
+      ];
+      for (const code of roleCodes) {
+        expect(sql).toContain(`'${code}'`);
+      }
+    });
+
+    it("creates idx_role_definitions_department_id index", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_role_definitions_department_id");
+    });
+
+    it("seeds are idempotent via ON CONFLICT", () => {
+      // Two ON CONFLICT clauses: one for departments, one for role_definitions
+      const matches = sql.match(/ON CONFLICT \(code\) DO NOTHING/g);
+      expect(matches).not.toBeNull();
+      expect(matches!.length).toBe(2);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback A.1: create_departments_role_definitions_rollback", () => {
+    const sql = readMigration("20260403_create_departments_role_definitions_rollback.sql");
+
+    it("drops role_definitions before departments (FK order)", () => {
+      const dropRoles = sql.indexOf("DROP TABLE IF EXISTS core.role_definitions");
+      const dropDepts = sql.indexOf("DROP TABLE IF EXISTS core.departments");
+      expect(dropRoles).toBeGreaterThan(-1);
+      expect(dropDepts).toBeGreaterThan(-1);
+      expect(dropRoles).toBeLessThan(dropDepts);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -1020,7 +1095,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 22 migration files exist (8+2 forward + 8+2 rollback + 2 backfill)", () => {
+  it("all 24 migration files exist (8+3 forward + 8+3 rollback + 2 backfill)", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -1044,6 +1119,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_create_microsoft_identities.sql",
       "20260403_create_microsoft_identities_rollback.sql",
       "20260403_backfill_microsoft_identities.sql",
+      "20260403_create_departments_role_definitions.sql",
+      "20260403_create_departments_role_definitions_rollback.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -1089,6 +1166,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_stale_item_tracking.sql",
       "20260403_create_user_accounts.sql",
       "20260403_create_microsoft_identities.sql",
+      "20260403_create_departments_role_definitions.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -1109,6 +1187,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_stale_item_tracking.sql",
       "20260403_create_user_accounts.sql",
       "20260403_create_microsoft_identities.sql",
+      "20260403_create_departments_role_definitions.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
