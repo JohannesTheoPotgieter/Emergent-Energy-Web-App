@@ -1,7 +1,7 @@
--- Backfill: 20260403_backfill_parties_users.sql
+-- Backfill: 20260403_a02_backfill_parties_users.sql
 -- Phase A.2: Set party_kind on existing rows, insert users as person parties
 -- Idempotent: UPDATE guarded by WHERE NULL, INSERT uses ON CONFLICT DO NOTHING
--- Must run AFTER: 20260403_expand_parties_add_party_kind.sql
+-- Must run AFTER: 20260403_a01_expand_parties_add_party_kind.sql
 BEGIN;
 
 -- Backfill party_kind for existing organisation rows

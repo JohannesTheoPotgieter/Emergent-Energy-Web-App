@@ -1,4 +1,4 @@
--- Rollback: 20260403_expand_parties_add_party_kind_rollback.sql
+-- Rollback: 20260403_a01_expand_parties_add_party_kind_rollback.sql
 -- Reverses Phase A.2 expansion: removes user rows, drops new columns and index.
 -- Safe: no app code reads from core.parties; no downstream FK dependencies.
 BEGIN;
