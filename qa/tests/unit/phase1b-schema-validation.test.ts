@@ -1114,6 +1114,272 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration C.1: Create work_packages --
+  describe("Migration C.1: create_work_packages", () => {
+    const sql = readMigration("20260403_c01_create_work_packages.sql");
+
+    it("creates core.work_packages table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.work_packages");
+    });
+
+    it("has project_instance_id FK NOT NULL", () => {
+      expect(sql).toContain("project_instance_id   BIGINT NOT NULL REFERENCES core.project_instances(id)");
+    });
+
+    it("has phase_definition_id FK (nullable)", () => {
+      expect(sql).toContain("phase_definition_id   INTEGER REFERENCES core.phase_definitions(id)");
+    });
+
+    it("has workstream NOT NULL", () => {
+      expect(sql).toContain("workstream            TEXT NOT NULL");
+    });
+
+    it("has owner_party_id FK (nullable)", () => {
+      expect(sql).toContain("owner_party_id        BIGINT REFERENCES core.parties(id)");
+    });
+
+    it("has composite unique on (project_instance_id, workstream)", () => {
+      expect(sql).toContain("UNIQUE (project_instance_id, workstream)");
+    });
+
+    it("creates indexes on key columns", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_packages_project_instance_id");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_packages_workstream");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_packages_status");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Backfill C.1: backfill_work_packages", () => {
+    const sql = readMigration("20260403_c02_backfill_work_packages.sql");
+
+    it("derives work_packages from work_items grouped by project + workstream", () => {
+      expect(sql).toContain("FROM work_items wi");
+      expect(sql).toContain("JOIN core.project_instances pi");
+      expect(sql).toContain("wi.workstream");
+    });
+
+    it("excludes personal tasks", () => {
+      expect(sql).toContain("wi.workstream <> 'PERSONAL'");
+    });
+
+    it("excludes deleted work items", () => {
+      expect(sql).toContain("wi.deleted_at IS NULL");
+    });
+
+    it("includes safety warning for unresolvable projects", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("not resolvable to project_instances");
+    });
+
+    it("is idempotent via ON CONFLICT", () => {
+      expect(sql).toContain("ON CONFLICT (project_instance_id, workstream) DO NOTHING");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback C.1: create_work_packages_rollback", () => {
+    const sql = readMigration("20260403_c01_create_work_packages_rollback.sql");
+
+    it("drops core.work_packages table", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.work_packages");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Migration C.2: Create work_items_clean --
+  describe("Migration C.2: create_work_items_clean", () => {
+    const sql = readMigration("20260403_c03_create_work_items_clean.sql");
+
+    it("creates core.work_items_clean table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.work_items_clean");
+    });
+
+    it("has legacy_work_item_id UNIQUE NOT NULL", () => {
+      expect(sql).toContain("legacy_work_item_id   INTEGER UNIQUE NOT NULL");
+    });
+
+    it("has work_package_id FK to work_packages", () => {
+      expect(sql).toContain("work_package_id       BIGINT REFERENCES core.work_packages(id)");
+    });
+
+    it("has project_instance_id FK", () => {
+      expect(sql).toContain("project_instance_id   BIGINT REFERENCES core.project_instances(id)");
+    });
+
+    it("has assigned_to_party_id FK to parties", () => {
+      expect(sql).toContain("assigned_to_party_id  BIGINT REFERENCES core.parties(id)");
+    });
+
+    it("has self-referencing parent_id FK", () => {
+      expect(sql).toContain("parent_id             BIGINT REFERENCES core.work_items_clean(id)");
+    });
+
+    it("has all 17 columns (identity + core + dates + meta)", () => {
+      const cols = [
+        "title", "description", "status", "priority",
+        "start_date", "end_date", "percent_complete", "is_milestone",
+        "sort_order", "created_at", "updated_at",
+      ];
+      for (const col of cols) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("creates indexes on FK and status columns", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_items_clean_work_package_id");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_items_clean_project_instance_id");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_items_clean_assigned_to_party_id");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_items_clean_status");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_items_clean_parent_id");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Backfill C.2: backfill_work_items_clean", () => {
+    const sql = readMigration("20260403_c04_backfill_work_items_clean.sql");
+
+    it("sources from work_items with LEFT JOINs for optional FKs", () => {
+      expect(sql).toContain("FROM work_items wi");
+      expect(sql).toContain("LEFT JOIN core.projects p ON p.legacy_project_info_id = wi.project_id");
+      expect(sql).toContain("LEFT JOIN core.project_instances pi ON pi.legacy_project_id = p.id");
+      expect(sql).toContain("LEFT JOIN core.work_packages wp ON wp.project_instance_id = pi.id AND wp.workstream = wi.workstream");
+      expect(sql).toContain("LEFT JOIN core.user_accounts ua ON ua.legacy_user_id = wi.owner_user_id");
+    });
+
+    it("resolves assigned_to_party_id from user_accounts", () => {
+      expect(sql).toContain("ua.party_id");
+    });
+
+    it("uses 2-pass for parent_id resolution", () => {
+      expect(sql).toContain("UPDATE core.work_items_clean wic");
+      expect(sql).toContain("parent_clean.legacy_work_item_id = wi.parent_id");
+    });
+
+    it("includes safety warnings for unresolvable references", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("project_id not resolvable");
+      expect(sql).toContain("owner_user_id not resolvable");
+    });
+
+    it("is idempotent via ON CONFLICT", () => {
+      expect(sql).toContain("ON CONFLICT (legacy_work_item_id) DO NOTHING");
+    });
+
+    it("excludes deleted work items", () => {
+      expect(sql).toContain("wi.deleted_at IS NULL");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback C.2: create_work_items_clean_rollback", () => {
+    const sql = readMigration("20260403_c03_create_work_items_clean_rollback.sql");
+
+    it("drops core.work_items_clean table", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.work_items_clean");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Migration C.3: Create work_item_dependencies_clean --
+  describe("Migration C.3: create_work_item_dependencies_clean", () => {
+    const sql = readMigration("20260403_c05_create_work_item_dependencies_clean.sql");
+
+    it("creates core.work_item_dependencies_clean table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.work_item_dependencies_clean");
+    });
+
+    it("has predecessor_id FK to work_items_clean with CASCADE", () => {
+      expect(sql).toContain("predecessor_id    BIGINT NOT NULL REFERENCES core.work_items_clean(id) ON DELETE CASCADE");
+    });
+
+    it("has successor_id FK to work_items_clean with CASCADE", () => {
+      expect(sql).toContain("successor_id      BIGINT NOT NULL REFERENCES core.work_items_clean(id) ON DELETE CASCADE");
+    });
+
+    it("has dep_type with FS default", () => {
+      expect(sql).toContain("dep_type          TEXT NOT NULL DEFAULT 'FS'");
+    });
+
+    it("has lag_days column", () => {
+      expect(sql).toContain("lag_days          INTEGER DEFAULT 0");
+    });
+
+    it("creates unique index on (predecessor, successor, dep_type)", () => {
+      expect(sql).toContain("CREATE UNIQUE INDEX IF NOT EXISTS idx_work_item_deps_clean_unique_pair");
+      expect(sql).toContain("(predecessor_id, successor_id, dep_type)");
+    });
+
+    it("creates indexes on FK columns", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_item_deps_clean_predecessor_id");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_work_item_deps_clean_successor_id");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Backfill C.3: backfill_work_item_dependencies_clean", () => {
+    const sql = readMigration("20260403_c06_backfill_work_item_dependencies_clean.sql");
+
+    it("maps legacy IDs to clean IDs via legacy_work_item_id", () => {
+      expect(sql).toContain("JOIN core.work_items_clean pred ON pred.legacy_work_item_id = wid.predecessor_id");
+      expect(sql).toContain("JOIN core.work_items_clean succ ON succ.legacy_work_item_id = wid.successor_id");
+    });
+
+    it("excludes soft-deleted dependencies", () => {
+      expect(sql).toContain("wid.deleted_at IS NULL");
+    });
+
+    it("is idempotent via ON CONFLICT", () => {
+      expect(sql).toContain("ON CONFLICT (predecessor_id, successor_id, dep_type) DO NOTHING");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback C.3: create_work_item_dependencies_clean_rollback", () => {
+    const sql = readMigration("20260403_c05_create_work_item_dependencies_clean_rollback.sql");
+
+    it("drops core.work_item_dependencies_clean table", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.work_item_dependencies_clean");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -1735,7 +2001,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 43 migration files exist", () => {
+  it("all 52 migration files exist", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -1780,6 +2046,15 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_b09_backfill_project_phase_history.sql",
       "20260403_b10_add_phase_definition_fk_to_project_instances.sql",
       "20260403_b10_add_phase_definition_fk_to_project_instances_rollback.sql",
+      "20260403_c01_create_work_packages.sql",
+      "20260403_c01_create_work_packages_rollback.sql",
+      "20260403_c02_backfill_work_packages.sql",
+      "20260403_c03_create_work_items_clean.sql",
+      "20260403_c03_create_work_items_clean_rollback.sql",
+      "20260403_c04_backfill_work_items_clean.sql",
+      "20260403_c05_create_work_item_dependencies_clean.sql",
+      "20260403_c05_create_work_item_dependencies_clean_rollback.sql",
+      "20260403_c06_backfill_work_item_dependencies_clean.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -1870,6 +2145,9 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_b06_create_project_party_links.sql",
       "20260403_b08_create_phase_definitions.sql",
       "20260403_b10_add_phase_definition_fk_to_project_instances.sql",
+      "20260403_c01_create_work_packages.sql",
+      "20260403_c03_create_work_items_clean.sql",
+      "20260403_c05_create_work_item_dependencies_clean.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -1898,6 +2176,9 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_b06_create_project_party_links.sql",
       "20260403_b08_create_phase_definitions.sql",
       "20260403_b10_add_phase_definition_fk_to_project_instances.sql",
+      "20260403_c01_create_work_packages.sql",
+      "20260403_c03_create_work_items_clean.sql",
+      "20260403_c05_create_work_item_dependencies_clean.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
