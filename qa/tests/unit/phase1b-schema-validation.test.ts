@@ -2620,6 +2620,248 @@ describe("Phase 1B Schema Existence Tests", () => {
     expect(phaseGFiles).toEqual(expectedOrder);
   });
 
+  // -- Migration H.1: Create strategic_priorities + links --
+  describe("Migration H.1: create_strategic_priorities", () => {
+    const sql = readMigration("20260403_h01_create_strategic_priorities.sql");
+
+    it("creates core.strategic_priorities table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.strategic_priorities");
+    });
+
+    it("includes key columns on strategic_priorities", () => {
+      const columns = [
+        "legacy_priority_id", "title", "description", "department",
+        "horizon", "severity", "status", "priority_rank", "scope",
+        "owner_party_id", "accountable_party_id", "assigned_party_id",
+        "parent_id", "escalated", "sort_order", "priority_data",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("has self-referential parent_id FK", () => {
+      expect(sql).toContain("REFERENCES core.strategic_priorities(id)");
+    });
+
+    it("creates core.strategic_priority_links junction table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.strategic_priority_links");
+    });
+
+    it("links have UNIQUE on (priority_id, entity_type, entity_id)", () => {
+      expect(sql).toContain("UNIQUE (strategic_priority_id, entity_type, entity_id)");
+    });
+
+    it("has COMMENT ON TABLE for both tables", () => {
+      expect(sql).toContain("COMMENT ON TABLE core.strategic_priorities");
+      expect(sql).toContain("COMMENT ON TABLE core.strategic_priority_links");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill H.2: Strategic priorities --
+  describe("Backfill H.2: backfill_strategic_priorities", () => {
+    const sql = readMigration("20260403_h02_backfill_strategic_priorities.sql");
+
+    it("sources from mytool_company_priorities", () => {
+      expect(sql).toContain("mytool_company_priorities");
+    });
+
+    it("creates links from priority_projects", () => {
+      expect(sql).toContain("priority_projects");
+      expect(sql).toContain("'project'");
+    });
+
+    it("resolves parent_id (self-referential)", () => {
+      expect(sql).toContain("SET parent_id = parent_sp.id");
+    });
+
+    it("resolves owner, accountable, assigned party IDs", () => {
+      expect(sql).toContain("SET owner_party_id = ua.party_id");
+      expect(sql).toContain("SET accountable_party_id = ua.party_id");
+      expect(sql).toContain("SET assigned_party_id = ua.party_id");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      expect(sql).toContain("ON CONFLICT (legacy_priority_id) DO NOTHING");
+    });
+
+    it("includes safety warnings", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase H.2 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Migration H.3: Create import_batches --
+  describe("Migration H.3: create_import_batches", () => {
+    const sql = readMigration("20260403_h03_create_import_batches.sql");
+
+    it("creates core.import_batches table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.import_batches");
+    });
+
+    it("includes all required columns", () => {
+      const columns = [
+        "legacy_import_id", "legacy_import_table", "import_type",
+        "project_instance_id", "uploaded_by_party_id", "source_file_name",
+        "source_file_hash", "status", "records_attempted", "records_succeeded",
+        "records_failed", "import_data", "committed_at", "committed_by_party_id",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("has COMMENT ON TABLE", () => {
+      expect(sql).toContain("COMMENT ON TABLE core.import_batches");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill H.4: Import batches --
+  describe("Backfill H.4: backfill_import_batches", () => {
+    const sql = readMigration("20260403_h04_backfill_import_batches.sql");
+
+    it("backfills from import_runs and smart_import_runs", () => {
+      expect(sql).toContain("'import_runs'");
+      expect(sql).toContain("'smart_import_runs'");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      const matches = sql.match(/ON CONFLICT \(legacy_import_table, legacy_import_id\) DO NOTHING/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("resolves uploaded_by and committed_by party IDs", () => {
+      expect(sql).toContain("SET uploaded_by_party_id = ua.party_id");
+      expect(sql).toContain("SET committed_by_party_id = ua.party_id");
+    });
+
+    it("includes safety warnings", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase H.4 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Migration H.5: Compatibility views --
+  describe("Migration H.5: compatibility_views", () => {
+    const sql = readMigration("20260403_h05_compatibility_views.sql");
+
+    it("creates all 6 compatibility views", () => {
+      expect(sql).toContain("CREATE OR REPLACE VIEW core.v_projects");
+      expect(sql).toContain("CREATE OR REPLACE VIEW core.v_work_items");
+      expect(sql).toContain("CREATE OR REPLACE VIEW finance.v_finance_records");
+      expect(sql).toContain("CREATE OR REPLACE VIEW core.v_deliverables");
+      expect(sql).toContain("CREATE OR REPLACE VIEW core.v_approvals");
+      expect(sql).toContain("CREATE OR REPLACE VIEW core.v_governed_processes");
+    });
+
+    it("views are read-only (no INSTEAD OF triggers)", () => {
+      const sqlLines = sql.split("\n").filter((l: string) => !l.trim().startsWith("--"));
+      const sqlOnly = sqlLines.join("\n");
+      expect(sqlOnly).not.toContain("INSTEAD OF");
+      expect(sqlOnly).not.toContain("CREATE TRIGGER");
+    });
+
+    it("has COMMENT ON VIEW for each view", () => {
+      expect(sql).toContain("COMMENT ON VIEW core.v_projects");
+      expect(sql).toContain("COMMENT ON VIEW core.v_work_items");
+      expect(sql).toContain("COMMENT ON VIEW finance.v_finance_records");
+      expect(sql).toContain("COMMENT ON VIEW core.v_deliverables");
+      expect(sql).toContain("COMMENT ON VIEW core.v_approvals");
+      expect(sql).toContain("COMMENT ON VIEW core.v_governed_processes");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback H.6: Views rollback --
+  describe("Rollback H.6: rollback_views", () => {
+    const sql = readMigration("20260403_h06_rollback_views.sql");
+
+    it("drops all 6 compatibility views", () => {
+      expect(sql).toContain("DROP VIEW IF EXISTS core.v_projects");
+      expect(sql).toContain("DROP VIEW IF EXISTS core.v_work_items");
+      expect(sql).toContain("DROP VIEW IF EXISTS finance.v_finance_records");
+      expect(sql).toContain("DROP VIEW IF EXISTS core.v_deliverables");
+      expect(sql).toContain("DROP VIEW IF EXISTS core.v_approvals");
+      expect(sql).toContain("DROP VIEW IF EXISTS core.v_governed_processes");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback H.7: Import batches rollback --
+  describe("Rollback H.7: rollback_import_batches", () => {
+    const sql = readMigration("20260403_h07_rollback_import_batches.sql");
+
+    it("drops import_batches", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.import_batches");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback H.8: Strategic priorities rollback --
+  describe("Rollback H.8: rollback_strategic_priorities", () => {
+    const sql = readMigration("20260403_h08_rollback_strategic_priorities.sql");
+
+    it("drops links before priorities (FK order)", () => {
+      const dropLinks = sql.indexOf("DROP TABLE IF EXISTS core.strategic_priority_links");
+      const dropPriorities = sql.indexOf("DROP TABLE IF EXISTS core.strategic_priorities");
+      expect(dropLinks).toBeGreaterThan(-1);
+      expect(dropPriorities).toBeGreaterThan(-1);
+      expect(dropLinks).toBeLessThan(dropPriorities);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Phase H dependency order --
+  it("Phase H migration files sort in correct dependency order", () => {
+    const phaseHFiles = fs.readdirSync(migrationsDir)
+      .filter((f) => f.startsWith("20260403_h") && f.endsWith(".sql") && !f.includes("rollback"))
+      .sort();
+    const expectedOrder = [
+      "20260403_h01_create_strategic_priorities.sql",
+      "20260403_h02_backfill_strategic_priorities.sql",
+      "20260403_h03_create_import_batches.sql",
+      "20260403_h04_backfill_import_batches.sql",
+      "20260403_h05_compatibility_views.sql",
+    ];
+    expect(phaseHFiles).toEqual(expectedOrder);
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -3241,7 +3483,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 80 migration files exist", () => {
+  it("all 88 migration files exist", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -3323,6 +3565,14 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_g06_rollback_activity_audit_logs.sql",
       "20260403_g04_backfill_activity_log.sql",
       "20260403_g05_backfill_audit_log.sql",
+      "20260403_h01_create_strategic_priorities.sql",
+      "20260403_h08_rollback_strategic_priorities.sql",
+      "20260403_h02_backfill_strategic_priorities.sql",
+      "20260403_h03_create_import_batches.sql",
+      "20260403_h07_rollback_import_batches.sql",
+      "20260403_h04_backfill_import_batches.sql",
+      "20260403_h05_compatibility_views.sql",
+      "20260403_h06_rollback_views.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -3423,6 +3673,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_f02_create_budget_lines.sql",
       "20260403_g01_create_external_resources.sql",
       "20260403_g03_create_activity_audit_logs.sql",
+      "20260403_h01_create_strategic_priorities.sql",
+      "20260403_h03_create_import_batches.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -3461,6 +3713,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_f02_create_budget_lines.sql",
       "20260403_g01_create_external_resources.sql",
       "20260403_g03_create_activity_audit_logs.sql",
+      "20260403_h01_create_strategic_priorities.sql",
+      "20260403_h03_create_import_batches.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
