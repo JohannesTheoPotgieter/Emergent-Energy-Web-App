@@ -21,6 +21,12 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
   if (mode !== "postgres") return;
   if (!process.env.DATABASE_URL) return;
 
+  // Defense-in-depth: never run in production even if called directly
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") {
+    log("runDrizzleSchemaSync blocked in production/staging — use versioned migrations", "Startup:Schema");
+    return;
+  }
+
   // Wait for PostgreSQL to be fully ready before running schema sync
   const ready = await waitForDbReady();
   if (!ready) {
@@ -172,6 +178,12 @@ async function runAdditiveSchemaAlignments() {
 
   if (mode === "sqlite") {
     console.log("[Schema] Additive alignments skipped for SQLite (handled by SQLite bootstrap)");
+    return;
+  }
+
+  // Defense-in-depth: never run in production even if called directly
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") {
+    console.log("[Schema] Additive alignments blocked in production/staging — use versioned migrations");
     return;
   }
 
@@ -2310,16 +2322,40 @@ export async function runStartupOrchestrator(options: {
     log,
   } = options;
 
-  // Schema authority: versioned migrations (supabase/migrations/ and migrations/) are the
-  // single source of truth. The startup schema sync and additive alignments below are
-  // LEGACY SAFETY NETS for first-boot and pre-migration environments only.
-  // They MUST NOT create or alter tables that conflict with versioned migrations.
-  // See docs/schema-migration-status.md for the canonical migration status.
+  // ── Schema Authority Gate ──────────────────────────────────────────────
+  // Versioned migrations (migrations/*.sql) are the SINGLE schema authority.
+  // Runtime DDL (runDrizzleSchemaSync, runAdditiveSchemaAlignments) is a
+  // LEGACY SAFETY NET for local-dev first-boot only.
+  //
+  // Production/staging: DDL is ALWAYS blocked. Migrations must be run
+  // before the app starts (CI/CD pipeline or manual db:push).
+  //
+  // Development: DDL runs only when the promoted schema is absent AND the
+  // ENABLE_STARTUP_SCHEMA_REPAIR flag is set. Once migrations have been
+  // applied (core.projects exists), DDL is skipped even in dev.
+  //
+  // See docs/schema-authority.md for the canonical model.
+  // ──────────────────────────────────────────────────────────────────────
+  const isProduction = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
   const schemaGuardActive = await isPromotedSchemaPresent();
-  if (schemaGuardActive) {
-    log("Promoted schema detected (core.projects exists) — skipping legacy schema sync to avoid dual authority", "Startup:Schema");
 
-    // Start automated reconciliation scheduler (Phase 2 health monitoring)
+  if (isProduction) {
+    // HARD BLOCK: production never runs startup DDL. Period.
+    log("Production environment — startup schema DDL blocked (versioned migrations are the sole authority)", "Startup:Schema");
+    if (!schemaGuardActive) {
+      log("WARNING: promoted schema (core.projects) not found in production — run versioned migrations before starting the app", "Startup:Schema");
+    }
+  } else if (schemaGuardActive) {
+    log("Promoted schema detected (core.projects exists) — skipping legacy schema sync to avoid dual authority", "Startup:Schema");
+  } else {
+    // Development-only: legacy safety net for first-boot environments
+    log("Development mode, no promoted schema — running legacy schema sync (first-boot safety net)", "Startup:Schema");
+    await runDrizzleSchemaSync(log);
+    await runAdditiveSchemaAlignments();
+  }
+
+  // Start automated reconciliation scheduler (Phase 2 health monitoring)
+  if (schemaGuardActive) {
     try {
       const { startReconciliationScheduler } = await import("../bridge/reconciliation-runner");
       startReconciliationScheduler(15 * 60 * 1000, (result) => {
@@ -2329,9 +2365,6 @@ export async function runStartupOrchestrator(options: {
     } catch {
       // Module may not be available — non-critical
     }
-  } else {
-    await runDrizzleSchemaSync(log);
-    await runAdditiveSchemaAlignments();
   }
 
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });
