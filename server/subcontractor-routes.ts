@@ -477,6 +477,15 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
         projects: projectsProcessed.size,
         message: `Rebuilt ${costValues.length} cost lines across ${projectsProcessed.size} projects with ${counterpartiesCreated + counterpartiesMatched} suppliers`,
       });
+
+      // Phase 2 bridge write: batch-sync cost lines to promoted schema (post-commit, non-blocking)
+      if (costValues.length > 0) {
+        import("./bridge/batch-bridge-sync").then(({ batchSyncCostLinesByProject }) => {
+          for (const pn of projectsProcessed) {
+            batchSyncCostLinesByProject(null, pn).catch(() => {});
+          }
+        }).catch(() => {});
+      }
     });
   } catch (err: any) {
     console.error("[procurement-analysis] Error:", err);

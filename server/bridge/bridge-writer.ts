@@ -380,3 +380,112 @@ export async function syncCostLines(costLines: Parameters<typeof syncCostLine>[0
 export async function syncRevenueLines(revenueLines: Parameters<typeof syncRevenueLine>[0][]): Promise<BridgeResult[]> {
   return Promise.all(revenueLines.map(syncRevenueLine));
 }
+
+// ---------------------------------------------------------------------------
+// Change Request / Variation Order bridge → finance.finance_records
+// ---------------------------------------------------------------------------
+
+export async function syncChangeRequest(cr: {
+  id: number;
+  projectId: number;
+  title: string;
+  changeType?: string | null;
+  status?: string | null;
+  costImpact?: string | number | null;
+  revenueImpact?: string | number | null;
+  cosImpact?: string | number | null;
+  marginImpact?: string | number | null;
+  cause?: string | null;
+  clientLinked?: boolean | null;
+  impactSummary?: string | null;
+  evidenceLink?: string | null;
+}): Promise<BridgeResult> {
+  try {
+    // Resolve project_instance_id from legacy project_id
+    const piResult = await db.execute(sql`
+      SELECT id FROM core.project_instances
+      WHERE legacy_project_id = ${cr.projectId}
+      LIMIT 1
+    `);
+    const projectInstanceId = (piResult.rows[0] as any)?.id ?? null;
+
+    const costAmount = cr.costImpact != null ? Number(cr.costImpact) : null;
+    const direction = costAmount != null && costAmount < 0 ? 'inflow' : 'outflow';
+
+    await db.execute(sql`
+      INSERT INTO finance.finance_records (
+        legacy_entity_id, legacy_entity_table,
+        project_instance_id,
+        financial_type, direction, title,
+        amount_ex_vat, status,
+        record_data, import_source,
+        created_at, updated_at
+      ) VALUES (
+        ${cr.id}, 'public.change_requests',
+        ${projectInstanceId},
+        'variation_order', ${direction}, ${cr.title},
+        ${costAmount}, ${cr.status ?? 'draft'},
+        ${sql`${JSON.stringify({
+          change_type: cr.changeType,
+          cause: cr.cause,
+          client_linked: cr.clientLinked,
+          revenue_impact: cr.revenueImpact,
+          cos_impact: cr.cosImpact,
+          margin_impact: cr.marginImpact,
+          impact_summary: cr.impactSummary,
+          evidence_link: cr.evidenceLink,
+        })}::jsonb`},
+        'bridge_writer',
+        NOW(), NOW()
+      )
+      ON CONFLICT (legacy_entity_table, legacy_entity_id) DO UPDATE SET
+        title = EXCLUDED.title,
+        amount_ex_vat = EXCLUDED.amount_ex_vat,
+        status = EXCLUDED.status,
+        direction = EXCLUDED.direction,
+        record_data = EXCLUDED.record_data,
+        updated_at = NOW()
+    `);
+    return { success: true };
+  } catch (err) {
+    await logBridgeError("change_request", cr.id, err);
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Project execution state bridge → core.project_state_history
+// ---------------------------------------------------------------------------
+
+export async function syncProjectExecutionState(
+  projectId: number,
+  fields: Record<string, any>,
+): Promise<BridgeResult> {
+  try {
+    await db.execute(sql`
+      UPDATE core.projects SET
+        phase = COALESCE(${fields.phase ?? null}, phase),
+        rag_status = COALESCE(${fields.ragStatus ?? null}, rag_status),
+        rag_comment = COALESCE(${fields.ragComment ?? null}, rag_comment),
+        execution_gate_status = COALESCE(${fields.executionGateStatus ?? null}, execution_gate_status),
+        execution_gate_reason = COALESCE(${fields.executionGateReason ?? null}, execution_gate_reason),
+        execution_phase = COALESCE(${fields.executionPhase ?? null}, execution_phase),
+        signed_status = COALESCE(${fields.signedStatus ?? null}, signed_status),
+        signed_date = COALESCE(${fields.signedDate ?? null}, signed_date),
+        is_active = COALESCE(${fields.isActive ?? null}, is_active),
+        execution_enabled = COALESCE(${fields.executionEnabled ?? null}, execution_enabled),
+        archived_status = COALESCE(${fields.archivedStatus ?? null}, archived_status),
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE id = ${projectId}
+    `);
+
+    // Also snapshot to state history for audit
+    await snapshotProjectState(projectId, fields, "execution_state_bridge");
+
+    return { success: true };
+  } catch (err) {
+    await logBridgeError("project_execution_state", projectId, err);
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

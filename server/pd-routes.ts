@@ -225,6 +225,13 @@ export function registerPdRoutes(app: Express) {
         updatedAt: new Date(),
       }).where(eq(clients.id, id)).returning();
 
+      // Phase 2 bridge write: mirror update to core.clients
+      const { syncClient } = await import("./bridge/bridge-writer");
+      syncClient({
+        id: updated.id, name: updated.name, clientId: updated.clientId,
+        updatedBy: user?.id ?? null,
+      }).catch(() => {});
+
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
