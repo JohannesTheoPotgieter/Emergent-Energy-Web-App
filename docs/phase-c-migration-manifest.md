@@ -1,7 +1,7 @@
 # Phase C Migration Manifest
 
 > **Phase:** C — Work Engine  
-> **Status:** Complete  
+> **Status:** Schema DDL + backfill complete. Runtime write/read cutover outstanding (see docs/schema-migration-status.md).  
 > **Total migrations:** 9 (3 DDL + 3 backfill + 3 rollback)
 
 ---

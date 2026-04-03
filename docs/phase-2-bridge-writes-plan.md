@@ -1,8 +1,9 @@
 # Phase 2: Bridge Writes Plan
 
-> **Status:** Plan only — no implementation without sign-off  
+> **Status:** Partially implemented — bridge writer code exists for all domains (see `server/bridge/bridge-writer.ts`). Not yet production-validated. Original plan below preserved for context.  
 > **Prerequisite:** Phase 1B complete, all promoted schemas deployed, backfills validated  
 > **Goal:** Every legacy table write propagates to its promoted counterpart in real-time  
+> **Current reality:** Bridge writers use best-effort fire-and-catch pattern. See `docs/schema-migration-status.md` for the authoritative status of each domain.  
 
 ---
 
