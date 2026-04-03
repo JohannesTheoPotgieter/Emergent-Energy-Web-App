@@ -1647,6 +1647,368 @@ describe("Phase 1B Schema Existence Tests", () => {
     }
   });
 
+  // -- Migration E.1: Create deliverable_definitions + deliverable_instances --
+  describe("Migration E.1: create_deliverable_definitions", () => {
+    const sql = readMigration("20260403_e01_create_deliverable_definitions.sql");
+
+    it("creates core.deliverable_definitions table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.deliverable_definitions");
+    });
+
+    it("includes all required columns on deliverable_definitions", () => {
+      const columns = [
+        "legacy_template_id", "code", "name", "description",
+        "applies_to_scope", "is_required", "allowed_file_types",
+        "required_count", "is_ad_hoc",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("creates core.deliverable_instances table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.deliverable_instances");
+    });
+
+    it("includes all required columns on deliverable_instances", () => {
+      const columns = [
+        "legacy_deliverable_id", "legacy_deliverable_table",
+        "deliverable_definition_id", "project_instance_id", "phase_definition_id",
+        "owner_party_id", "reviewer_party_id", "title", "status",
+        "current_version", "completed_at", "deliverable_data",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("has UNIQUE constraint on instances", () => {
+      expect(sql).toContain("UNIQUE (legacy_deliverable_table, legacy_deliverable_id)");
+    });
+
+    it("deliverable_data defaults to empty JSONB", () => {
+      expect(sql).toContain("deliverable_data          JSONB NOT NULL DEFAULT '{}'");
+    });
+
+    it("references core.project_instances, core.phase_definitions, core.parties, core.deliverable_definitions", () => {
+      expect(sql).toContain("REFERENCES core.project_instances(id)");
+      expect(sql).toContain("REFERENCES core.phase_definitions(id)");
+      expect(sql).toContain("REFERENCES core.parties(id)");
+      expect(sql).toContain("REFERENCES core.deliverable_definitions(id)");
+    });
+
+    it("creates indexes on both tables", () => {
+      expect(sql).toContain("idx_deliverable_definitions_code");
+      expect(sql).toContain("idx_deliverable_definitions_scope");
+      expect(sql).toContain("idx_deliverable_instances_project_instance_id");
+      expect(sql).toContain("idx_deliverable_instances_definition_id");
+      expect(sql).toContain("idx_deliverable_instances_status");
+      expect(sql).toContain("idx_deliverable_instances_owner_party_id");
+      expect(sql).toContain("idx_deliverable_instances_reviewer_party_id");
+    });
+
+    it("has COMMENT ON TABLE for both tables", () => {
+      expect(sql).toContain("COMMENT ON TABLE core.deliverable_definitions");
+      expect(sql).toContain("COMMENT ON TABLE core.deliverable_instances");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill E.2: Backfill deliverable_definitions --
+  describe("Backfill E.2: backfill_deliverable_definitions", () => {
+    const sql = readMigration("20260403_e02_backfill_deliverable_definitions.sql");
+
+    it("sources from eng_deliverable_templates", () => {
+      expect(sql).toContain("eng_deliverable_templates");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      expect(sql).toContain("ON CONFLICT (legacy_template_id) DO NOTHING");
+    });
+
+    it("includes safety warnings for unresolvable references", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase E.2 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill E.3: Backfill deliverable_instances --
+  describe("Backfill E.3: backfill_deliverable_instances", () => {
+    const sql = readMigration("20260403_e03_backfill_deliverable_instances.sql");
+
+    it("backfills from all 3 deliverable sources", () => {
+      expect(sql).toContain("'deliverables'");
+      expect(sql).toContain("'project_eng_deliverables'");
+      expect(sql).toContain("'task_deliverables'");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      const matches = sql.match(/ON CONFLICT \(legacy_deliverable_table, legacy_deliverable_id\) DO NOTHING/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it("builds deliverable_data JSONB for each source", () => {
+      expect(sql).toContain("jsonb_build_object");
+    });
+
+    it("resolves owner_party_id and reviewer_party_id via user_accounts", () => {
+      expect(sql).toContain("SET owner_party_id = ua.party_id");
+      expect(sql).toContain("SET reviewer_party_id = ua.party_id");
+    });
+
+    it("uses IS NULL guards on party resolution UPDATEs", () => {
+      expect(sql).toContain("di.owner_party_id IS NULL");
+      expect(sql).toContain("di.reviewer_party_id IS NULL");
+    });
+
+    it("includes safety warnings for unresolvable references", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase E.3 backfill]");
+      expect(sql).toContain("not resolvable to project_instances");
+      expect(sql).toContain("not resolvable to user_accounts");
+    });
+
+    it("links project_eng_deliverables to deliverable_definitions via template_id", () => {
+      expect(sql).toContain("dd.legacy_template_id = ped.deliverable_template_id");
+    });
+
+    it("links task_deliverables via work_items_clean", () => {
+      expect(sql).toContain("work_items_clean wic ON wic.legacy_work_item_id = td.work_item_id");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Migration E.4: Create approval_rules + approval_instances --
+  describe("Migration E.4: create_approval_rules_instances", () => {
+    const sql = readMigration("20260403_e04_create_approval_rules_instances.sql");
+
+    it("creates core.approval_rules table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.approval_rules");
+    });
+
+    it("includes all required columns on approval_rules", () => {
+      const columns = [
+        "entity_type", "approval_type", "required_role",
+        "is_mandatory", "escalation_days", "is_active",
+        "rule_data", "created_by_party_id",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("creates core.approval_instances table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.approval_instances");
+    });
+
+    it("includes all required columns on approval_instances", () => {
+      const columns = [
+        "legacy_approval_id", "legacy_approval_table", "approval_rule_id",
+        "project_instance_id", "entity_type", "entity_id", "status",
+        "title", "requested_by_party_id", "decided_by_party_id",
+        "decision_note", "urgency", "requested_at", "decided_at",
+        "due_date", "approval_data",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("has UNIQUE constraint on instances", () => {
+      expect(sql).toContain("UNIQUE (legacy_approval_table, legacy_approval_id)");
+    });
+
+    it("approval_data defaults to empty JSONB", () => {
+      expect(sql).toContain("approval_data           JSONB NOT NULL DEFAULT '{}'");
+    });
+
+    it("has partial index on active rules", () => {
+      expect(sql).toContain("WHERE is_active = true");
+    });
+
+    it("creates indexes on both tables", () => {
+      expect(sql).toContain("idx_approval_rules_entity_type");
+      expect(sql).toContain("idx_approval_rules_approval_type");
+      expect(sql).toContain("idx_approval_rules_active");
+      expect(sql).toContain("idx_approval_instances_project_instance_id");
+      expect(sql).toContain("idx_approval_instances_entity_type");
+      expect(sql).toContain("idx_approval_instances_status");
+      expect(sql).toContain("idx_approval_instances_rule_id");
+    });
+
+    it("has COMMENT ON TABLE for both tables", () => {
+      expect(sql).toContain("COMMENT ON TABLE core.approval_rules");
+      expect(sql).toContain("COMMENT ON TABLE core.approval_instances");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Seed E.5: Seed approval rules --
+  describe("Seed E.5: seed_approval_rules", () => {
+    const sql = readMigration("20260403_e05_seed_approval_rules.sql");
+
+    it("seeds known approval rule patterns", () => {
+      const entityTypes = [
+        "'gate'", "'budget'", "'handover'", "'change_request'",
+        "'procurement'", "'gate_exception'", "'hse'", "'quality'",
+        "'contract'", "'sseg'", "'general'",
+      ];
+      for (const t of entityTypes) {
+        expect(sql).toContain(t);
+      }
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      expect(sql).toContain("ON CONFLICT DO NOTHING");
+    });
+
+    it("includes required_role for mandatory rules", () => {
+      expect(sql).toContain("project_manager");
+      expect(sql).toContain("finance_manager");
+      expect(sql).toContain("hse_manager");
+      expect(sql).toContain("quality_manager");
+    });
+
+    it("includes escalation_days", () => {
+      expect(sql).toContain("escalation_days");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill E.6: Backfill approval_instances --
+  describe("Backfill E.6: backfill_approval_instances", () => {
+    const sql = readMigration("20260403_e06_backfill_approval_instances.sql");
+
+    it("backfills from all 4 approval sources", () => {
+      expect(sql).toContain("'approvals'");
+      expect(sql).toContain("'project_eng_approvals'");
+      expect(sql).toContain("'document_approvals'");
+      expect(sql).toContain("'approval_workflows'");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      const matches = sql.match(/ON CONFLICT \(legacy_approval_table, legacy_approval_id\) DO NOTHING/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it("builds approval_data JSONB for each source", () => {
+      expect(sql).toContain("jsonb_build_object");
+    });
+
+    it("resolves requested_by_party_id and decided_by_party_id via user_accounts", () => {
+      expect(sql).toContain("SET requested_by_party_id = ua.party_id");
+      expect(sql).toContain("SET decided_by_party_id = ua.party_id");
+    });
+
+    it("uses IS NULL guards on party resolution UPDATEs", () => {
+      expect(sql).toContain("ai.requested_by_party_id IS NULL");
+      expect(sql).toContain("ai.decided_by_party_id IS NULL");
+    });
+
+    it("excludes soft-deleted approvals", () => {
+      expect(sql).toContain("a.deleted_at IS NULL");
+    });
+
+    it("includes safety warnings for unresolvable references", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase E.6 backfill]");
+      expect(sql).toContain("not resolvable to project_instances");
+      expect(sql).toContain("not resolvable to user_accounts");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback E.7: Approvals rollback --
+  describe("Rollback E.7: rollback_approvals", () => {
+    const sql = readMigration("20260403_e07_rollback_approvals.sql");
+
+    it("drops instances before rules (FK order)", () => {
+      const dropInstances = sql.indexOf("DROP TABLE IF EXISTS core.approval_instances");
+      const dropRules = sql.indexOf("DROP TABLE IF EXISTS core.approval_rules");
+      expect(dropInstances).toBeGreaterThan(-1);
+      expect(dropRules).toBeGreaterThan(-1);
+      expect(dropInstances).toBeLessThan(dropRules);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback E.8: Deliverables rollback --
+  describe("Rollback E.8: rollback_deliverables", () => {
+    const sql = readMigration("20260403_e08_rollback_deliverables.sql");
+
+    it("drops instances before definitions (FK order)", () => {
+      const dropInstances = sql.indexOf("DROP TABLE IF EXISTS core.deliverable_instances");
+      const dropDefs = sql.indexOf("DROP TABLE IF EXISTS core.deliverable_definitions");
+      expect(dropInstances).toBeGreaterThan(-1);
+      expect(dropDefs).toBeGreaterThan(-1);
+      expect(dropInstances).toBeLessThan(dropDefs);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Phase E dependency order --
+  it("Phase E migration files sort in correct dependency order", () => {
+    const phaseEFiles = fs.readdirSync(migrationsDir)
+      .filter((f) => f.startsWith("20260403_e") && f.endsWith(".sql") && !f.includes("rollback"))
+      .sort();
+    const expectedOrder = [
+      "20260403_e01_create_deliverable_definitions.sql",
+      "20260403_e02_backfill_deliverable_definitions.sql",
+      "20260403_e03_backfill_deliverable_instances.sql",
+      "20260403_e04_create_approval_rules_instances.sql",
+      "20260403_e05_seed_approval_rules.sql",
+      "20260403_e06_backfill_approval_instances.sql",
+    ];
+    expect(phaseEFiles).toEqual(expectedOrder);
+  });
+
+  it("Phase E backfill files sort after their DDL files", () => {
+    const pairs = [
+      { ddl: "20260403_e01_create_deliverable_definitions.sql", backfill: "20260403_e02_backfill_deliverable_definitions.sql" },
+      { ddl: "20260403_e02_backfill_deliverable_definitions.sql", backfill: "20260403_e03_backfill_deliverable_instances.sql" },
+      { ddl: "20260403_e04_create_approval_rules_instances.sql", backfill: "20260403_e05_seed_approval_rules.sql" },
+      { ddl: "20260403_e05_seed_approval_rules.sql", backfill: "20260403_e06_backfill_approval_instances.sql" },
+    ];
+    for (const { ddl, backfill } of pairs) {
+      expect(ddl.localeCompare(backfill)).toBeLessThan(0);
+      expect(fs.existsSync(path.join(migrationsDir, ddl))).toBe(true);
+      expect(fs.existsSync(path.join(migrationsDir, backfill))).toBe(true);
+    }
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -2268,7 +2630,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 56 migration files exist", () => {
+  it("all 64 migration files exist", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -2326,6 +2688,14 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_d04_create_governed_processes_rollback.sql",
       "20260403_d02_backfill_governed_processes.sql",
       "20260403_d03_backfill_governed_process_checklist_items.sql",
+      "20260403_e01_create_deliverable_definitions.sql",
+      "20260403_e08_rollback_deliverables.sql",
+      "20260403_e02_backfill_deliverable_definitions.sql",
+      "20260403_e03_backfill_deliverable_instances.sql",
+      "20260403_e04_create_approval_rules_instances.sql",
+      "20260403_e07_rollback_approvals.sql",
+      "20260403_e05_seed_approval_rules.sql",
+      "20260403_e06_backfill_approval_instances.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -2420,6 +2790,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_c03_create_work_items_clean.sql",
       "20260403_c05_create_work_item_dependencies_clean.sql",
       "20260403_d01_create_governed_processes.sql",
+      "20260403_e01_create_deliverable_definitions.sql",
+      "20260403_e04_create_approval_rules_instances.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -2452,6 +2824,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_c03_create_work_items_clean.sql",
       "20260403_c05_create_work_item_dependencies_clean.sql",
       "20260403_d01_create_governed_processes.sql",
+      "20260403_e01_create_deliverable_definitions.sql",
+      "20260403_e04_create_approval_rules_instances.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
