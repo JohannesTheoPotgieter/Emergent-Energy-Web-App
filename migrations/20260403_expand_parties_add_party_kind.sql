@@ -9,4 +9,6 @@ ALTER TABLE core.parties ADD COLUMN IF NOT EXISTS legacy_user_id INTEGER UNIQUE;
 
 CREATE INDEX IF NOT EXISTS idx_parties_party_kind ON core.parties (party_kind);
 
+COMMENT ON TABLE core.parties IS 'Unified party abstraction. Phase A.2: expanded with party_kind (person/organisation), legal_name, and legacy_user_id for user backfill.';
+
 COMMIT;
