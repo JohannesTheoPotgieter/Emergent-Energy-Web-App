@@ -1389,6 +1389,249 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration D.1: Create governed_processes + governed_process_checklist_items --
+  describe("Migration D.1: create_governed_processes", () => {
+    const sql = readMigration("20260403_d01_create_governed_processes.sql");
+
+    it("creates core.governed_processes table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.governed_processes");
+    });
+
+    it("includes all required columns on governed_processes", () => {
+      const columns = [
+        "legacy_entity_id", "legacy_entity_table", "project_instance_id",
+        "process_type", "phase_definition_id", "status", "owner_party_id",
+        "reviewer_party_id", "title", "started_at", "completed_at",
+        "process_data", "created_at", "updated_at",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("has UNIQUE constraint on (legacy_entity_table, legacy_entity_id)", () => {
+      expect(sql).toContain("UNIQUE (legacy_entity_table, legacy_entity_id)");
+    });
+
+    it("process_data defaults to empty JSONB", () => {
+      expect(sql).toContain("process_data          JSONB NOT NULL DEFAULT '{}'");
+    });
+
+    it("references core.project_instances, core.phase_definitions, core.parties", () => {
+      expect(sql).toContain("REFERENCES core.project_instances(id)");
+      expect(sql).toContain("REFERENCES core.phase_definitions(id)");
+      expect(sql).toContain("REFERENCES core.parties(id)");
+    });
+
+    it("creates indexes on governed_processes", () => {
+      expect(sql).toContain("idx_governed_processes_project_instance_id");
+      expect(sql).toContain("idx_governed_processes_process_type");
+      expect(sql).toContain("idx_governed_processes_status");
+      expect(sql).toContain("idx_governed_processes_phase_definition_id");
+      expect(sql).toContain("idx_governed_processes_owner_party_id");
+      expect(sql).toContain("idx_governed_processes_reviewer_party_id");
+    });
+
+    it("creates core.governed_process_checklist_items table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.governed_process_checklist_items");
+    });
+
+    it("includes all required columns on checklist_items", () => {
+      const columns = [
+        "governed_process_id", "legacy_item_id", "legacy_item_table",
+        "item_code", "title", "category", "status", "blocks_gate",
+        "owner_party_id", "completed_at", "evidence_url", "notes", "sort_order",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("checklist_items references governed_processes", () => {
+      expect(sql).toContain("REFERENCES core.governed_processes(id)");
+    });
+
+    it("creates indexes on checklist_items", () => {
+      expect(sql).toContain("idx_gp_checklist_governed_process_id");
+      expect(sql).toContain("idx_gp_checklist_status");
+      expect(sql).toContain("idx_gp_checklist_blocks_gate");
+      expect(sql).toContain("idx_gp_checklist_owner_party_id");
+    });
+
+    it("has partial index on blocks_gate = true", () => {
+      expect(sql).toContain("WHERE blocks_gate = true");
+    });
+
+    it("has COMMENT ON TABLE for both tables", () => {
+      expect(sql).toContain("COMMENT ON TABLE core.governed_processes");
+      expect(sql).toContain("COMMENT ON TABLE core.governed_process_checklist_items");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill D.2: Backfill governed_processes --
+  describe("Backfill D.2: backfill_governed_processes", () => {
+    const sql = readMigration("20260403_d02_backfill_governed_processes.sql");
+
+    it("backfills all 6 process types", () => {
+      const types = [
+        "pd_to_pm_handover", "financial_review", "phase_gate_review",
+        "gate_exception", "change_request", "payment_batch",
+      ];
+      for (const t of types) {
+        expect(sql).toContain(`'${t}'`);
+      }
+    });
+
+    it("sources from correct legacy tables", () => {
+      const tables = [
+        "project_pd_pm_handover", "project_financial_reviews",
+        "project_gate_evaluations", "project_stage_exceptions",
+        "change_requests", "payment_batches",
+      ];
+      for (const t of tables) {
+        expect(sql).toContain(t);
+      }
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      const matches = sql.match(/ON CONFLICT \(legacy_entity_table, legacy_entity_id\) DO NOTHING/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(6);
+    });
+
+    it("builds process_data JSONB for each type", () => {
+      expect(sql).toContain("jsonb_build_object");
+    });
+
+    it("resolves owner_party_id via user_accounts", () => {
+      expect(sql).toContain("SET owner_party_id = ua.party_id");
+    });
+
+    it("resolves reviewer_party_id via user_accounts", () => {
+      expect(sql).toContain("SET reviewer_party_id = ua.party_id");
+    });
+
+    it("uses IS NULL guards on party resolution UPDATEs", () => {
+      expect(sql).toContain("gp.owner_party_id IS NULL");
+      expect(sql).toContain("gp.reviewer_party_id IS NULL");
+    });
+
+    it("payment_batch has no project_instance_id (project-less)", () => {
+      // payment_batches INSERT does not include project_instance_id
+      const pbSection = sql.substring(
+        sql.indexOf("6. payment_batch"),
+        sql.indexOf("7. Resolve owner_party_id")
+      );
+      expect(pbSection).not.toContain("project_instance_id   BIGINT");
+      expect(pbSection).toContain("payment_batches");
+    });
+
+    it("excludes soft-deleted records where applicable", () => {
+      expect(sql).toContain("fr.deleted_at IS NULL");
+      expect(sql).toContain("cr.deleted_at IS NULL");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill D.3: Backfill governed_process_checklist_items --
+  describe("Backfill D.3: backfill_governed_process_checklist_items", () => {
+    const sql = readMigration("20260403_d03_backfill_governed_process_checklist_items.sql");
+
+    it("backfills from handover_checklist_items", () => {
+      expect(sql).toContain("handover_checklist_items");
+      expect(sql).toContain("'handover_checklist_items'");
+    });
+
+    it("backfills from project_stage_requirements", () => {
+      expect(sql).toContain("project_stage_requirements");
+      expect(sql).toContain("'project_stage_requirements'");
+    });
+
+    it("filters out NOT_STARTED stage requirements", () => {
+      expect(sql).toContain("psr.status <> 'NOT_STARTED'");
+    });
+
+    it("creates stage_gate governed_processes from project_stage_instances", () => {
+      expect(sql).toContain("'stage_gate'");
+      expect(sql).toContain("'project_stage_instances'");
+    });
+
+    it("uses NOT EXISTS guards for idempotency", () => {
+      const matches = sql.match(/NOT EXISTS/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("uses ON CONFLICT DO NOTHING for stage_gate inserts", () => {
+      expect(sql).toContain("ON CONFLICT (legacy_entity_table, legacy_entity_id) DO NOTHING");
+    });
+
+    it("resolves owner for stage instances via user_accounts", () => {
+      expect(sql).toContain("SET owner_party_id = ua.party_id");
+      expect(sql).toContain("stage_owner_user_id");
+    });
+
+    it("links handover checklist items via handover_packs → projects → governed_processes", () => {
+      expect(sql).toContain("handover_packs");
+      expect(sql).toContain("legacy_project_info_id");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback D.4: governed_processes rollback --
+  describe("Rollback D.4: governed_processes_rollback", () => {
+    const sql = readMigration("20260403_d04_create_governed_processes_rollback.sql");
+
+    it("drops checklist_items before governed_processes (FK order)", () => {
+      const dropChecklist = sql.indexOf("DROP TABLE IF EXISTS core.governed_process_checklist_items");
+      const dropProcesses = sql.indexOf("DROP TABLE IF EXISTS core.governed_processes");
+      expect(dropChecklist).toBeGreaterThan(-1);
+      expect(dropProcesses).toBeGreaterThan(-1);
+      expect(dropChecklist).toBeLessThan(dropProcesses);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Phase D dependency order --
+  it("Phase D migration files sort in correct dependency order", () => {
+    const phaseDFiles = fs.readdirSync(migrationsDir)
+      .filter((f) => f.startsWith("20260403_d") && f.endsWith(".sql") && !f.includes("rollback"))
+      .sort();
+    const expectedOrder = [
+      "20260403_d01_create_governed_processes.sql",
+      "20260403_d02_backfill_governed_processes.sql",
+      "20260403_d03_backfill_governed_process_checklist_items.sql",
+    ];
+    expect(phaseDFiles).toEqual(expectedOrder);
+  });
+
+  it("Phase D backfill files sort after DDL file", () => {
+    const pairs = [
+      { ddl: "20260403_d01_create_governed_processes.sql", backfill: "20260403_d02_backfill_governed_processes.sql" },
+      { ddl: "20260403_d02_backfill_governed_processes.sql", backfill: "20260403_d03_backfill_governed_process_checklist_items.sql" },
+    ];
+    for (const { ddl, backfill } of pairs) {
+      expect(ddl.localeCompare(backfill)).toBeLessThan(0);
+      expect(fs.existsSync(path.join(migrationsDir, ddl))).toBe(true);
+      expect(fs.existsSync(path.join(migrationsDir, backfill))).toBe(true);
+    }
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -2010,7 +2253,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 52 migration files exist", () => {
+  it("all 56 migration files exist", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -2064,6 +2307,10 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_c05_create_work_item_dependencies_clean.sql",
       "20260403_c07_create_work_item_dependencies_clean_rollback.sql",
       "20260403_c06_backfill_work_item_dependencies_clean.sql",
+      "20260403_d01_create_governed_processes.sql",
+      "20260403_d04_create_governed_processes_rollback.sql",
+      "20260403_d02_backfill_governed_processes.sql",
+      "20260403_d03_backfill_governed_process_checklist_items.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -2157,6 +2404,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_c01_create_work_packages.sql",
       "20260403_c03_create_work_items_clean.sql",
       "20260403_c05_create_work_item_dependencies_clean.sql",
+      "20260403_d01_create_governed_processes.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -2188,6 +2436,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_c01_create_work_packages.sql",
       "20260403_c03_create_work_items_clean.sql",
       "20260403_c05_create_work_item_dependencies_clean.sql",
+      "20260403_d01_create_governed_processes.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
