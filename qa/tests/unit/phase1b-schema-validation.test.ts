@@ -474,6 +474,93 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration A.4: Create role_assignments table + backfill --
+  describe("Migration A.4: create_role_assignments", () => {
+    const sql = readMigration("20260403_create_role_assignments.sql");
+
+    it("creates core.role_assignments table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.role_assignments");
+    });
+
+    it("has user_account_id FK to core.user_accounts", () => {
+      expect(sql).toContain("user_account_id");
+      expect(sql).toContain("REFERENCES core.user_accounts(id)");
+    });
+
+    it("has role_definition_id FK to core.role_definitions", () => {
+      expect(sql).toContain("role_definition_id");
+      expect(sql).toContain("REFERENCES core.role_definitions(id)");
+    });
+
+    it("has department_id FK to core.departments", () => {
+      expect(sql).toContain("department_id");
+      expect(sql).toContain("REFERENCES core.departments(id)");
+    });
+
+    it("has temporal columns start_date and end_date", () => {
+      expect(sql).toContain("start_date");
+      expect(sql).toContain("end_date");
+    });
+
+    it("does NOT enforce unique on user_account_id (multiple roles allowed)", () => {
+      expect(sql).not.toContain("UNIQUE");
+    });
+
+    it("creates partial index for active assignments", () => {
+      expect(sql).toContain("idx_role_assignments_active");
+      expect(sql).toContain("WHERE end_date IS NULL");
+    });
+
+    it("creates indexes on all FK columns", () => {
+      expect(sql).toContain("idx_role_assignments_user_account_id");
+      expect(sql).toContain("idx_role_assignments_role_definition_id");
+      expect(sql).toContain("idx_role_assignments_department_id");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Backfill A.4: backfill_role_assignments", () => {
+    const sql = readMigration("20260403_backfill_role_assignments.sql");
+
+    it("joins users to user_accounts and role_definitions", () => {
+      expect(sql).toContain("FROM public.users u");
+      expect(sql).toContain("JOIN core.user_accounts ua ON ua.legacy_user_id = u.id");
+      expect(sql).toContain("JOIN core.role_definitions rd ON rd.code = u.role");
+    });
+
+    it("uses rd.department_id for department resolution", () => {
+      expect(sql).toContain("rd.department_id");
+    });
+
+    it("is idempotent via NOT EXISTS guard", () => {
+      expect(sql).toContain("WHERE NOT EXISTS");
+      expect(sql).toContain("ra.user_account_id = ua.id");
+      expect(sql).toContain("ra.role_definition_id = rd.id");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback A.4: create_role_assignments_rollback", () => {
+    const sql = readMigration("20260403_create_role_assignments_rollback.sql");
+
+    it("drops core.role_assignments table", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.role_assignments");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -1095,7 +1182,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 24 migration files exist (8+3 forward + 8+3 rollback + 2 backfill)", () => {
+  it("all 27 migration files exist (8+4 forward + 8+4 rollback + 3 backfill)", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -1121,6 +1208,9 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_backfill_microsoft_identities.sql",
       "20260403_create_departments_role_definitions.sql",
       "20260403_create_departments_role_definitions_rollback.sql",
+      "20260403_create_role_assignments.sql",
+      "20260403_create_role_assignments_rollback.sql",
+      "20260403_backfill_role_assignments.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -1167,6 +1257,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_create_user_accounts.sql",
       "20260403_create_microsoft_identities.sql",
       "20260403_create_departments_role_definitions.sql",
+      "20260403_create_role_assignments.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -1188,6 +1279,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_create_user_accounts.sql",
       "20260403_create_microsoft_identities.sql",
       "20260403_create_departments_role_definitions.sql",
+      "20260403_create_role_assignments.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
