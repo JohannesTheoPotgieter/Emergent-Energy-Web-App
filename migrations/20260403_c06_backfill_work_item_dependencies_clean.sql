@@ -6,6 +6,25 @@
 -- Must run AFTER: 20260403_c05_create_work_item_dependencies_clean.sql
 BEGIN;
 
+-- -------------------------------------------------------
+-- Safety check: warn about orphaned dependencies
+-- -------------------------------------------------------
+DO $$
+DECLARE
+  _orphaned INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO _orphaned
+  FROM work_item_dependencies wid
+  WHERE wid.deleted_at IS NULL
+    AND (
+      NOT EXISTS (SELECT 1 FROM core.work_items_clean WHERE legacy_work_item_id = wid.predecessor_id)
+      OR NOT EXISTS (SELECT 1 FROM core.work_items_clean WHERE legacy_work_item_id = wid.successor_id)
+    );
+  IF _orphaned > 0 THEN
+    RAISE WARNING '[Phase C.3 backfill] % work_item_dependencies reference work items not in work_items_clean and will be skipped', _orphaned;
+  END IF;
+END $$;
+
 INSERT INTO core.work_item_dependencies_clean (
   predecessor_id,
   successor_id,

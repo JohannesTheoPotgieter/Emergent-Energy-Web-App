@@ -33,13 +33,13 @@ Phase B (project_instances, work_packages FKs)
 
 ---
 
-## Rollback Files (reverse order)
+## Rollback Files (alphabetical sort = correct reverse FK order)
 
 | # | File | Drops |
 |---|---|---|
-| 1 | `20260403_c05_create_work_item_dependencies_clean_rollback.sql` | `work_item_dependencies_clean` |
-| 2 | `20260403_c03_create_work_items_clean_rollback.sql` | `work_items_clean` |
-| 3 | `20260403_c01_create_work_packages_rollback.sql` | `work_packages` |
+| 1 | `20260403_c07_create_work_item_dependencies_clean_rollback.sql` | `work_item_dependencies_clean` |
+| 2 | `20260403_c08_create_work_items_clean_rollback.sql` | `work_items_clean` |
+| 3 | `20260403_c09_create_work_packages_rollback.sql` | `work_packages` |
 
 ---
 
@@ -58,4 +58,5 @@ Phase B (project_instances, work_packages FKs)
 | File | Check |
 |---|---|
 | `c02` | `RAISE WARNING` for unresolvable `project_id` on work_items |
-| `c04` | `RAISE WARNING` for unresolvable `project_id` and `owner_user_id` on work_items |
+| `c04` | `RAISE WARNING` for unresolvable `project_id`, `owner_user_id`, and orphaned `parent_id` on work_items |
+| `c06` | `RAISE WARNING` for orphaned dependencies (predecessor/successor not in work_items_clean) |
