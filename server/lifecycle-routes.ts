@@ -1772,14 +1772,19 @@ export function registerLifecycleRoutes(app: Express) {
         }
 
         // Update execution state with the mapped stage code
+        const boardSyncFields = {
+          currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
+          gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
+          gateReadinessPct: isCompleted ? 100 : 0,
+          updatedAt: new Date(),
+        };
         await db.update(projectExecutionState)
-          .set({
-            currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
-            gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
-            gateReadinessPct: isCompleted ? 100 : 0,
-            updatedAt: new Date(),
-          })
+          .set(boardSyncFields)
           .where(eq(projectExecutionState.projectId, id));
+        // Phase 2 bridge write: sync execution state to core.projects
+        import("./bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
+          syncProjectExecutionState(id, boardSyncFields)
+        ).catch(() => {});
       } catch (stageErr: any) {
         console.warn("[lifecycle-board] Stage lifecycle sync error (non-fatal):", stageErr.message);
       }
@@ -2261,6 +2266,10 @@ export function registerLifecycleRoutes(app: Express) {
 
         await tx.execute(sql`DELETE FROM project_info WHERE id = ${pId}`);
       });
+      // Phase 2 bridge write: mark promoted project as deleted
+      import("./bridge/bridge-writer").then(({ syncProjectDelete }) =>
+        syncProjectDelete(pId)
+      ).catch(() => {});
 
       console.log(`[lifecycle-board] Project ${projectId} (${pName}) HARD DELETED by ${deletedBy} — all related data removed`);
 
