@@ -2015,6 +2015,350 @@ describe("Phase 1B Schema Existence Tests", () => {
     }
   });
 
+  // -- Migration F.1: Create finance_records + finance_record_events --
+  describe("Migration F.1: create_finance_records", () => {
+    const sql = readMigration("20260403_f01_create_finance_records.sql");
+
+    it("creates finance.finance_records table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS finance.finance_records");
+    });
+
+    it("includes all required columns on finance_records", () => {
+      const columns = [
+        "legacy_entity_id", "legacy_entity_table", "project_instance_id",
+        "party_id", "financial_type", "direction", "title",
+        "amount_ex_vat", "vat_amount", "currency", "status",
+        "fiscal_period_id", "record_data", "import_source", "has_frontend_override",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("has UNIQUE constraint on (legacy_entity_table, legacy_entity_id)", () => {
+      expect(sql).toContain("UNIQUE (legacy_entity_table, legacy_entity_id)");
+    });
+
+    it("creates finance.finance_record_events table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS finance.finance_record_events");
+    });
+
+    it("includes all required columns on events", () => {
+      const columns = [
+        "finance_record_id", "event_type", "event_date",
+        "actor_party_id", "from_status", "to_status", "amount", "event_data",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("events reference finance_records", () => {
+      expect(sql).toContain("REFERENCES finance.finance_records(id)");
+    });
+
+    it("creates indexes on both tables", () => {
+      expect(sql).toContain("idx_finance_records_project_instance_id");
+      expect(sql).toContain("idx_finance_records_financial_type");
+      expect(sql).toContain("idx_finance_records_direction");
+      expect(sql).toContain("idx_finance_records_status");
+      expect(sql).toContain("idx_finance_records_party_id");
+      expect(sql).toContain("idx_finance_record_events_record_id");
+      expect(sql).toContain("idx_finance_record_events_event_type");
+      expect(sql).toContain("idx_finance_record_events_event_date");
+    });
+
+    it("has COMMENT ON TABLE for both tables", () => {
+      expect(sql).toContain("COMMENT ON TABLE finance.finance_records");
+      expect(sql).toContain("COMMENT ON TABLE finance.finance_record_events");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Migration F.2: Create budget_lines --
+  describe("Migration F.2: create_budget_lines", () => {
+    const sql = readMigration("20260403_f02_create_budget_lines.sql");
+
+    it("creates finance.budget_lines table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS finance.budget_lines");
+    });
+
+    it("includes all required columns", () => {
+      const columns = [
+        "legacy_budget_id", "legacy_budget_table", "project_instance_id",
+        "budget_type", "category", "period_key", "fiscal_period_id",
+        "amount", "version", "is_baseline", "approved_by_party_id", "budget_data",
+      ];
+      for (const col of columns) {
+        expect(sql).toContain(col);
+      }
+    });
+
+    it("has partial index on baseline", () => {
+      expect(sql).toContain("WHERE is_baseline = true");
+    });
+
+    it("has COMMENT ON TABLE", () => {
+      expect(sql).toContain("COMMENT ON TABLE finance.budget_lines");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill F.3: Cost lines --
+  describe("Backfill F.3: backfill_finance_records_costs", () => {
+    const sql = readMigration("20260403_f03_backfill_finance_records_costs.sql");
+
+    it("sources from finance.cost_lines (promoted spine)", () => {
+      expect(sql).toContain("finance.cost_lines cl");
+    });
+
+    it("sets direction to outflow", () => {
+      expect(sql).toContain("'outflow'");
+    });
+
+    it("builds record_data JSONB with cost-specific fields", () => {
+      expect(sql).toContain("jsonb_build_object");
+      expect(sql).toContain("'counterparty_name'");
+      expect(sql).toContain("'invoice_number'");
+      expect(sql).toContain("'is_opening_balance'");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      expect(sql).toContain("ON CONFLICT (legacy_entity_table, legacy_entity_id) DO NOTHING");
+    });
+
+    it("resolves party_id from counterparty_name → core.parties", () => {
+      expect(sql).toContain("LOWER(p.name_canonical) = LOWER(cl.counterparty_name)");
+    });
+
+    it("includes safety warnings", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase F.3 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill F.4: Revenue lines --
+  describe("Backfill F.4: backfill_finance_records_revenue", () => {
+    const sql = readMigration("20260403_f04_backfill_finance_records_revenue.sql");
+
+    it("sources from finance.revenue_lines (promoted spine)", () => {
+      expect(sql).toContain("finance.revenue_lines rl");
+    });
+
+    it("sets direction to inflow", () => {
+      expect(sql).toContain("'inflow'");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      expect(sql).toContain("ON CONFLICT (legacy_entity_table, legacy_entity_id) DO NOTHING");
+    });
+
+    it("includes safety warnings", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase F.4 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill F.5: POs, payment requests, invoices, procurement --
+  describe("Backfill F.5: backfill_finance_records_po_payments", () => {
+    const sql = readMigration("20260403_f05_backfill_finance_records_po_payments.sql");
+
+    it("backfills from all 4 sources", () => {
+      expect(sql).toContain("'purchase_orders'");
+      expect(sql).toContain("'payment_requests'");
+      expect(sql).toContain("'invoice_captures'");
+      expect(sql).toContain("'procurement_items'");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      const matches = sql.match(/ON CONFLICT \(legacy_entity_table, legacy_entity_id\) DO NOTHING/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(4);
+    });
+
+    it("resolves party_id for POs via supplier_name", () => {
+      expect(sql).toContain("LOWER(pa.name_canonical) = LOWER(po.supplier_name)");
+    });
+
+    it("resolves party_id for payment requests via counterparty_id", () => {
+      expect(sql).toContain("pa.legacy_counterparty_id = pr.counterparty_id");
+    });
+
+    it("excludes soft-deleted records", () => {
+      expect(sql).toContain("ic.deleted_at IS NULL");
+      expect(sql).toContain("proc.deleted_at IS NULL");
+    });
+
+    it("includes safety warnings for all sources", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase F.5 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill F.6: Budget lines --
+  describe("Backfill F.6: backfill_budget_lines", () => {
+    const sql = readMigration("20260403_f06_backfill_budget_lines.sql");
+
+    it("backfills 4 budget types from budget_baselines", () => {
+      expect(sql).toContain("'budget_baselines_revenue'");
+      expect(sql).toContain("'budget_baselines_cost'");
+      expect(sql).toContain("'budget_baselines_margin'");
+      expect(sql).toContain("'budget_baselines_contingency'");
+    });
+
+    it("backfills from fye_budgets", () => {
+      expect(sql).toContain("'fye_budgets'");
+    });
+
+    it("resolves approved_by_party_id via user_accounts", () => {
+      expect(sql).toContain("SET approved_by_party_id = ua.party_id");
+    });
+
+    it("uses ON CONFLICT DO NOTHING for idempotency", () => {
+      const matches = sql.match(/ON CONFLICT \(legacy_budget_table, legacy_budget_id\) DO NOTHING/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(5);
+    });
+
+    it("includes safety warnings", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase F.6 backfill]");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Backfill F.7: Finance record events --
+  describe("Backfill F.7: backfill_finance_record_events", () => {
+    const sql = readMigration("20260403_f07_backfill_finance_record_events.sql");
+
+    it("creates cost line lifecycle events", () => {
+      expect(sql).toContain("'invoice_received'");
+      expect(sql).toContain("'approved'");
+      expect(sql).toContain("'payment_made'");
+    });
+
+    it("creates revenue line lifecycle events", () => {
+      expect(sql).toContain("'invoice_raised'");
+      expect(sql).toContain("'payment_expected'");
+      expect(sql).toContain("'payment_received'");
+    });
+
+    it("creates PO lifecycle events", () => {
+      expect(sql).toContain("'po_raised'");
+      expect(sql).toContain("'po_sent'");
+    });
+
+    it("creates payment request events", () => {
+      expect(sql).toContain("'payment_requested'");
+    });
+
+    it("creates invoice capture events", () => {
+      expect(sql).toContain("'invoice_captured'");
+    });
+
+    it("creates procurement lifecycle events", () => {
+      expect(sql).toContain("'rfq_sent'");
+      expect(sql).toContain("'quote_received'");
+      expect(sql).toContain("'delivery_received'");
+    });
+
+    it("uses NOT EXISTS guards for idempotency", () => {
+      const matches = sql.match(/NOT EXISTS/g) || [];
+      expect(matches.length).toBeGreaterThanOrEqual(12);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback F.8: Budget lines rollback --
+  describe("Rollback F.8: rollback_budget_lines", () => {
+    const sql = readMigration("20260403_f08_rollback_budget_lines.sql");
+
+    it("drops budget_lines", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS finance.budget_lines");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Rollback F.9: Finance records rollback --
+  describe("Rollback F.9: rollback_finance_records", () => {
+    const sql = readMigration("20260403_f09_rollback_finance_records.sql");
+
+    it("drops events before records (FK order)", () => {
+      const dropEvents = sql.indexOf("DROP TABLE IF EXISTS finance.finance_record_events");
+      const dropRecords = sql.indexOf("DROP TABLE IF EXISTS finance.finance_records");
+      expect(dropEvents).toBeGreaterThan(-1);
+      expect(dropRecords).toBeGreaterThan(-1);
+      expect(dropEvents).toBeLessThan(dropRecords);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  // -- Phase F dependency order --
+  it("Phase F migration files sort in correct dependency order", () => {
+    const phaseFFiles = fs.readdirSync(migrationsDir)
+      .filter((f) => f.startsWith("20260403_f") && f.endsWith(".sql") && !f.includes("rollback"))
+      .sort();
+    const expectedOrder = [
+      "20260403_f01_create_finance_records.sql",
+      "20260403_f02_create_budget_lines.sql",
+      "20260403_f03_backfill_finance_records_costs.sql",
+      "20260403_f04_backfill_finance_records_revenue.sql",
+      "20260403_f05_backfill_finance_records_po_payments.sql",
+      "20260403_f06_backfill_budget_lines.sql",
+      "20260403_f07_backfill_finance_record_events.sql",
+    ];
+    expect(phaseFFiles).toEqual(expectedOrder);
+  });
+
+  it("Phase F backfill files sort after their DDL files", () => {
+    const pairs = [
+      { ddl: "20260403_f01_create_finance_records.sql", backfill: "20260403_f03_backfill_finance_records_costs.sql" },
+      { ddl: "20260403_f02_create_budget_lines.sql", backfill: "20260403_f06_backfill_budget_lines.sql" },
+    ];
+    for (const { ddl, backfill } of pairs) {
+      expect(ddl.localeCompare(backfill)).toBeLessThan(0);
+      expect(fs.existsSync(path.join(migrationsDir, ddl))).toBe(true);
+      expect(fs.existsSync(path.join(migrationsDir, backfill))).toBe(true);
+    }
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -2636,7 +2980,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 64 migration files exist", () => {
+  it("all 73 migration files exist", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -2702,6 +3046,15 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_e07_rollback_approvals.sql",
       "20260403_e05_seed_approval_rules.sql",
       "20260403_e06_backfill_approval_instances.sql",
+      "20260403_f01_create_finance_records.sql",
+      "20260403_f09_rollback_finance_records.sql",
+      "20260403_f02_create_budget_lines.sql",
+      "20260403_f08_rollback_budget_lines.sql",
+      "20260403_f03_backfill_finance_records_costs.sql",
+      "20260403_f04_backfill_finance_records_revenue.sql",
+      "20260403_f05_backfill_finance_records_po_payments.sql",
+      "20260403_f06_backfill_budget_lines.sql",
+      "20260403_f07_backfill_finance_record_events.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -2798,6 +3151,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_d01_create_governed_processes.sql",
       "20260403_e01_create_deliverable_definitions.sql",
       "20260403_e04_create_approval_rules_instances.sql",
+      "20260403_f01_create_finance_records.sql",
+      "20260403_f02_create_budget_lines.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -2832,6 +3187,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_d01_create_governed_processes.sql",
       "20260403_e01_create_deliverable_definitions.sql",
       "20260403_e04_create_approval_rules_instances.sql",
+      "20260403_f01_create_finance_records.sql",
+      "20260403_f02_create_budget_lines.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
