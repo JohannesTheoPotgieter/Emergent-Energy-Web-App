@@ -1,13 +1,23 @@
 /**
  * Master Navigation Structure
  *
- * 11-section model reflecting the real business system:
+ * Two models available (feature-flagged via "department_shell"):
+ *
+ * Legacy 11-section model:
  *   Home | Company | Priorities | Project Development | Project Delivery | Finance | Engineering | HSE | Quality | Reports | Admin
  *
+ * New 9-department model (Migration Control Pack Wave 1):
+ *   Home | Priorities | Project Development | Project Management | Engineering | Quality | Finance | Parties | Admin
+ *   - HSE folded into Project Management
+ *   - Portfolio/Company folded into Project Management
+ *   - Reports distributed into each department
+ *   - Parties added as new top-level department
+ *
  * Role-based visibility determines which sections each role sees.
- * "Gates" is not a top-level section — it lives inside Portfolio and functional areas.
  * Labels are consistent across the company.
  */
+
+import { DEPARTMENT_SECTIONS, DEPARTMENT_ROLE_VISIBLE_SECTIONS, DEPARTMENT_MODULE_TO_SECTION_KEYS } from "./department-nav";
 
 export type SecondaryItem = { label: string; path: string; disabled?: boolean };
 export type TopSection = {
