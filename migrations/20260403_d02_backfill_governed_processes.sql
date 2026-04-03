@@ -6,6 +6,100 @@
 BEGIN;
 
 -- -------------------------------------------------------
+-- 0. Safety warnings: detect unresolvable references
+-- -------------------------------------------------------
+DO $$
+DECLARE
+  _unmatched_handover   INTEGER;
+  _unmatched_finreview  INTEGER;
+  _unmatched_gateeval   INTEGER;
+  _unmatched_exception  INTEGER;
+  _unmatched_changereq  INTEGER;
+  _unmatched_users      INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO _unmatched_handover
+  FROM project_pd_pm_handover h
+  WHERE NOT EXISTS (
+    SELECT 1 FROM core.projects p
+    JOIN core.project_instances pi ON pi.legacy_project_id = p.id
+    WHERE p.legacy_project_info_id = h.project_id
+  );
+  IF _unmatched_handover > 0 THEN
+    RAISE WARNING '[Phase D.2 backfill] % handover(s) have a project_id not resolvable to project_instances', _unmatched_handover;
+  END IF;
+
+  SELECT COUNT(*) INTO _unmatched_finreview
+  FROM project_financial_reviews fr
+  WHERE fr.deleted_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM core.projects p
+      JOIN core.project_instances pi ON pi.legacy_project_id = p.id
+      WHERE p.legacy_project_info_id = fr.project_id
+    );
+  IF _unmatched_finreview > 0 THEN
+    RAISE WARNING '[Phase D.2 backfill] % financial_review(s) have a project_id not resolvable to project_instances', _unmatched_finreview;
+  END IF;
+
+  SELECT COUNT(*) INTO _unmatched_gateeval
+  FROM project_gate_evaluations ge
+  WHERE NOT EXISTS (
+    SELECT 1 FROM core.projects p
+    JOIN core.project_instances pi ON pi.legacy_project_id = p.id
+    WHERE p.legacy_project_info_id = ge.project_id
+  );
+  IF _unmatched_gateeval > 0 THEN
+    RAISE WARNING '[Phase D.2 backfill] % gate_evaluation(s) have a project_id not resolvable to project_instances', _unmatched_gateeval;
+  END IF;
+
+  SELECT COUNT(*) INTO _unmatched_exception
+  FROM project_stage_exceptions se
+  WHERE NOT EXISTS (
+    SELECT 1 FROM core.projects p
+    JOIN core.project_instances pi ON pi.legacy_project_id = p.id
+    WHERE p.legacy_project_info_id = se.project_id
+  );
+  IF _unmatched_exception > 0 THEN
+    RAISE WARNING '[Phase D.2 backfill] % stage_exception(s) have a project_id not resolvable to project_instances', _unmatched_exception;
+  END IF;
+
+  SELECT COUNT(*) INTO _unmatched_changereq
+  FROM change_requests cr
+  WHERE cr.deleted_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM core.projects p
+      JOIN core.project_instances pi ON pi.legacy_project_id = p.id
+      WHERE p.legacy_project_info_id = cr.project_id
+    );
+  IF _unmatched_changereq > 0 THEN
+    RAISE WARNING '[Phase D.2 backfill] % change_request(s) have a project_id not resolvable to project_instances', _unmatched_changereq;
+  END IF;
+
+  -- Check for user_ids that won't resolve to parties (across all source tables)
+  SELECT COUNT(DISTINCT user_id) INTO _unmatched_users
+  FROM (
+    SELECT ge.evaluated_by_user_id AS user_id FROM project_gate_evaluations ge WHERE ge.evaluated_by_user_id IS NOT NULL
+    UNION ALL
+    SELECT fr.approved_by_user_id FROM project_financial_reviews fr WHERE fr.approved_by_user_id IS NOT NULL
+    UNION ALL
+    SELECT se.owner_user_id FROM project_stage_exceptions se WHERE se.owner_user_id IS NOT NULL
+    UNION ALL
+    SELECT se.approver_user_id FROM project_stage_exceptions se WHERE se.approver_user_id IS NOT NULL
+    UNION ALL
+    SELECT cr.owner_user_id FROM change_requests cr WHERE cr.owner_user_id IS NOT NULL
+    UNION ALL
+    SELECT pb.prepared_by_user_id FROM payment_batches pb WHERE pb.prepared_by_user_id IS NOT NULL
+    UNION ALL
+    SELECT pb.approved_by_user_id FROM payment_batches pb WHERE pb.approved_by_user_id IS NOT NULL
+  ) all_users
+  WHERE NOT EXISTS (
+    SELECT 1 FROM core.user_accounts ua WHERE ua.legacy_user_id = all_users.user_id
+  );
+  IF _unmatched_users > 0 THEN
+    RAISE WARNING '[Phase D.2 backfill] % distinct user_id(s) not resolvable to user_accounts; owner/reviewer_party_id will remain NULL', _unmatched_users;
+  END IF;
+END $$;
+
+-- -------------------------------------------------------
 -- 1. pd_to_pm_handover (from project_pd_pm_handover)
 -- -------------------------------------------------------
 INSERT INTO core.governed_processes (
