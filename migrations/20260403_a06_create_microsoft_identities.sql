@@ -1,7 +1,7 @@
--- Migration: 20260403_create_microsoft_identities.sql
+-- Migration: 20260403_a06_create_microsoft_identities.sql
 -- Phase A.3b: Create core.microsoft_identities table extracting users.microsoft_id.
 -- Additive only. Auth and OAuth flows remain unchanged. No app code changes.
--- Must run AFTER: 20260403_create_user_accounts.sql
+-- Must run AFTER: 20260403_a04_create_user_accounts.sql
 BEGIN;
 
 CREATE TABLE IF NOT EXISTS core.microsoft_identities (

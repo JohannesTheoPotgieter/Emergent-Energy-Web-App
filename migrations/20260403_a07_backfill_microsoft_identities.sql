@@ -1,7 +1,7 @@
--- Backfill: 20260403_backfill_microsoft_identities.sql
+-- Backfill: 20260403_a07_backfill_microsoft_identities.sql
 -- Phase A.3b: Populate core.microsoft_identities from public.users + ms_accounts.
 -- Idempotent: ON CONFLICT DO NOTHING.
--- Must run AFTER: 20260403_create_microsoft_identities.sql
+-- Must run AFTER: 20260403_a06_create_microsoft_identities.sql
 BEGIN;
 
 -- Insert one row per user that has a microsoft_id.

@@ -1,4 +1,4 @@
--- Migration: 20260403_create_user_accounts.sql
+-- Migration: 20260403_a04_create_user_accounts.sql
 -- Phase A.3: Create core.user_accounts table linking public.users to core.parties.
 -- Additive only. Auth remains in public.users. No app code changes.
 BEGIN;
