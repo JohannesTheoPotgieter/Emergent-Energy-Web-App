@@ -718,6 +718,100 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration B.3: Create project_info + parameter_values --
+  describe("Migration B.3: create_project_info", () => {
+    const sql = readMigration("20260403_b04_create_project_info.sql");
+
+    it("creates core.project_info table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.project_info");
+    });
+
+    it("has project_instance_id UNIQUE NOT NULL FK to project_instances", () => {
+      expect(sql).toContain("project_instance_id   BIGINT NOT NULL UNIQUE REFERENCES core.project_instances(id)");
+    });
+
+    it("has project_type_id FK to core.project_types (nullable)", () => {
+      expect(sql).toContain("project_type_id       INTEGER REFERENCES core.project_types(id)");
+    });
+
+    it("creates index on project_type_id", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_project_info_project_type_id");
+    });
+
+    it("creates core.project_info_parameter_values table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.project_info_parameter_values");
+    });
+
+    it("parameter_values has FK to project_info", () => {
+      expect(sql).toContain("REFERENCES core.project_info(id)");
+    });
+
+    it("parameter_values has FK to project_type_parameter_definitions", () => {
+      expect(sql).toContain("REFERENCES core.project_type_parameter_definitions(id)");
+    });
+
+    it("parameter_values has composite unique constraint", () => {
+      expect(sql).toContain("UNIQUE (project_info_id, parameter_definition_id)");
+    });
+
+    it("parameter_values supports all 4 value types", () => {
+      expect(sql).toContain("value_text");
+      expect(sql).toContain("value_number");
+      expect(sql).toContain("value_boolean");
+      expect(sql).toContain("value_date");
+    });
+
+    it("creates indexes on parameter_values FK columns", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_param_values_project_info_id");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_param_values_parameter_definition_id");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Backfill B.3: backfill_project_info", () => {
+    const sql = readMigration("20260403_b05_backfill_project_info.sql");
+
+    it("inserts one row per project_instance", () => {
+      expect(sql).toContain("INSERT INTO core.project_info");
+      expect(sql).toContain("FROM core.project_instances pi");
+    });
+
+    it("copies project_type_id from project_instances", () => {
+      expect(sql).toContain("pi.project_type_id");
+    });
+
+    it("is idempotent via ON CONFLICT", () => {
+      expect(sql).toContain("ON CONFLICT (project_instance_id) DO NOTHING");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback B.3: create_project_info_rollback", () => {
+    const sql = readMigration("20260403_b04_create_project_info_rollback.sql");
+
+    it("drops parameter_values before project_info (FK order)", () => {
+      const dropParams = sql.indexOf("DROP TABLE IF EXISTS core.project_info_parameter_values");
+      // Search for the standalone project_info drop after the parameter_values drop
+      const dropInfo = sql.indexOf("DROP TABLE IF EXISTS core.project_info;", dropParams + 1);
+      expect(dropParams).toBeGreaterThan(-1);
+      expect(dropInfo).toBeGreaterThan(-1);
+      expect(dropParams).toBeLessThan(dropInfo);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -1339,7 +1433,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 32 migration files exist (8+6 forward + 8+6 rollback + 4 backfill)", () => {
+  it("all 35 migration files exist (8+6 forward + 8+6 rollback + 4 backfill + 3 B.3)", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -1373,6 +1467,9 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_b02_create_project_instances.sql",
       "20260403_b02_create_project_instances_rollback.sql",
       "20260403_b03_backfill_project_instances.sql",
+      "20260403_b04_create_project_info.sql",
+      "20260403_b04_create_project_info_rollback.sql",
+      "20260403_b05_backfill_project_info.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -1459,6 +1556,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_a08_create_role_assignments.sql",
       "20260403_b01_create_project_types.sql",
       "20260403_b02_create_project_instances.sql",
+      "20260403_b04_create_project_info.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -1483,6 +1581,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_a08_create_role_assignments.sql",
       "20260403_b01_create_project_types.sql",
       "20260403_b02_create_project_instances.sql",
+      "20260403_b04_create_project_info.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
