@@ -2797,6 +2797,11 @@ export async function registerRoutes(
             await softCloseByProjectName(db, "normalized_revenue_lines", resolvedProjectName);
             await softCloseByProjectName(db, "normalized_cost_lines", resolvedProjectName);
             await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, resolvedProjectName));
+            // Phase 2 bridge write: cascade soft-close to promoted finance lines
+            import("./bridge/bridge-writer").then(({ softClosePromotedCostLines, softClosePromotedRevenueLines }) => {
+              softClosePromotedCostLines(pId ?? null, resolvedProjectName).catch(() => {});
+              softClosePromotedRevenueLines(pId ?? null, resolvedProjectName).catch(() => {});
+            }).catch(() => {});
 
             const dummyRun = await db.insert(smartImportRuns).values({
               fileName: file.originalname,
@@ -2869,6 +2874,12 @@ export async function registerRoutes(
                 importRunId, turnaroundDays: c.turnaroundDays,
               }));
               await db.insert(normalizedCostLines).values(addTemporalColumns(costVals, importRunId, uploadTimestamp) as any);
+            }
+            // Phase 2 bridge write: batch-sync imported finance lines to promoted schema
+            if (norm.revenueLines.length > 0 || norm.costLines.length > 0) {
+              import("./bridge/batch-bridge-sync").then(({ batchSyncFinanceByProject }) =>
+                batchSyncFinanceByProject(pId ?? null, resolvedProjectName)
+              ).catch(() => {});
             }
             if (norm.costedSummary) {
               try {

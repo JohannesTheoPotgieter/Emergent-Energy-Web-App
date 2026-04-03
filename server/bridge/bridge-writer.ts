@@ -688,6 +688,8 @@ export async function syncProjectExecutionState(
         is_active = COALESCE(${fields.isActive ?? null}, is_active),
         execution_enabled = COALESCE(${fields.executionEnabled ?? null}, execution_enabled),
         archived_status = COALESCE(${fields.archivedStatus ?? null}, archived_status),
+        current_stage_code = COALESCE(${fields.currentStageCode ?? null}, current_stage_code),
+        gate_status = COALESCE(${fields.gateStatus ?? null}, gate_status),
         last_synced_at = NOW(),
         updated_at = NOW()
       WHERE id = ${projectId}
@@ -696,6 +698,122 @@ export async function syncProjectExecutionState(
     // Also snapshot to state history for audit
     await snapshotProjectState(projectId, fields, "execution_state_bridge");
 
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Targeted field-update bridges: update specific promoted columns without
+// re-reading the full row. Used for metadata updates that touch a few fields.
+// ---------------------------------------------------------------------------
+
+/**
+ * Update specific fields on a promoted cost line without a full re-read.
+ * Fields not in the promoted schema are silently skipped.
+ */
+export async function syncCostLineFieldUpdate(
+  legacyId: number,
+  fields: Record<string, any>,
+): Promise<BridgeResult> {
+  return withRetry("cost_line_field_update", legacyId, async () => {
+  try {
+    await db.execute(sql`
+      UPDATE finance.cost_lines SET
+        counterparty_name = COALESCE(${fields.counterpartyName !== undefined ? fields.counterpartyName : null}, counterparty_name),
+        description = COALESCE(${fields.description !== undefined ? fields.description : null}, description),
+        invoice_number = COALESCE(${fields.invoiceNumber !== undefined ? fields.invoiceNumber : null}, invoice_number),
+        paid_date = COALESCE(${fields.paidDate !== undefined ? fields.paidDate : null}, paid_date),
+        cost_category = COALESCE(${fields.costCategory !== undefined ? fields.costCategory : null}, cost_category),
+        po_number = COALESCE(${fields.poNumber !== undefined ? fields.poNumber : null}, po_number),
+        cost_line_status = COALESCE(${fields.costLineStatus !== undefined ? fields.costLineStatus : null}, cost_line_status),
+        invoice_date_font_color = COALESCE(${fields.invoiceDateFontColor !== undefined ? fields.invoiceDateFontColor : null}, invoice_date_font_color),
+        invoice_date_confirmed = COALESCE(${fields.invoiceDateConfirmed !== undefined ? fields.invoiceDateConfirmed : null}, invoice_date_confirmed),
+        paid_date_font_color = COALESCE(${fields.paidDateFontColor !== undefined ? fields.paidDateFontColor : null}, paid_date_font_color),
+        paid_date_confirmed = COALESCE(${fields.paidDateConfirmed !== undefined ? fields.paidDateConfirmed : null}, paid_date_confirmed),
+        sub_project_name = COALESCE(${fields.subProjectName !== undefined ? fields.subProjectName : null}, sub_project_name),
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE legacy_normalized_cost_line_id = ${legacyId}
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+/**
+ * Update specific fields on a promoted revenue line without a full re-read.
+ */
+export async function syncRevenueLineFieldUpdate(
+  legacyId: number,
+  fields: Record<string, any>,
+): Promise<BridgeResult> {
+  return withRetry("revenue_line_field_update", legacyId, async () => {
+  try {
+    await db.execute(sql`
+      UPDATE finance.revenue_lines SET
+        description = COALESCE(${fields.description !== undefined ? fields.description : null}, description),
+        invoice_number = COALESCE(${fields.invoiceNumber !== undefined ? fields.invoiceNumber : null}, invoice_number),
+        paid_date = COALESCE(${fields.paidDate !== undefined ? fields.paidDate : null}, paid_date),
+        invoice_date_font_color = COALESCE(${fields.invoiceDateFontColor !== undefined ? fields.invoiceDateFontColor : null}, invoice_date_font_color),
+        invoice_date_confirmed = COALESCE(${fields.invoiceDateConfirmed !== undefined ? fields.invoiceDateConfirmed : null}, invoice_date_confirmed),
+        paid_date_font_color = COALESCE(${fields.paidDateFontColor !== undefined ? fields.paidDateFontColor : null}, paid_date_font_color),
+        paid_date_confirmed = COALESCE(${fields.paidDateConfirmed !== undefined ? fields.paidDateConfirmed : null}, paid_date_confirmed),
+        in_bank_date = COALESCE(${fields.inBankDate !== undefined ? fields.inBankDate : null}, in_bank_date),
+        sub_project_name = COALESCE(${fields.subProjectName !== undefined ? fields.subProjectName : null}, sub_project_name),
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE legacy_normalized_revenue_line_id = ${legacyId}
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+/**
+ * Bulk update counterparty_name on promoted cost lines matching a condition.
+ * Used after subcontractor rename/merge operations.
+ */
+export async function syncCostLineCounterpartyBulk(
+  oldName: string,
+  newName: string,
+): Promise<BridgeResult> {
+  return withRetry("cost_line_counterparty_bulk", 0, async () => {
+  try {
+    await db.execute(sql`
+      UPDATE finance.cost_lines SET
+        counterparty_name = ${newName},
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE LOWER(TRIM(counterparty_name)) = LOWER(TRIM(${oldName}))
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+/**
+ * Mark promoted project as deleted/archived.
+ */
+export async function syncProjectDelete(projectId: number): Promise<BridgeResult> {
+  return withRetry("project_delete", projectId, async () => {
+  try {
+    await db.execute(sql`
+      UPDATE core.projects SET
+        is_active = false,
+        archived_status = 'DELETED',
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE id = ${projectId}
+    `);
     return { success: true };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };

@@ -633,6 +633,8 @@ export class DatabaseStorage implements IStorage {
       sourceSheet: expense.sourceSheet,
       sourceRow: expense.rowLocator,
     } as any).returning();
+    // Phase 2 bridge write: mirror to finance.cost_lines
+    syncCostLine(created).catch(() => {});
     return this.mapCostLineToLegacyExpense(created, expense.projectId);
   }
 
@@ -651,6 +653,10 @@ export class DatabaseStorage implements IStorage {
     if (!project?.projectName) return;
     // Temporal: soft-close instead of hard delete (Prompt 10)
     await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", project.projectName);
+    // Phase 2 bridge write: cascade soft-close to promoted schema
+    import("./bridge/bridge-writer").then(({ softClosePromotedCostLines }) =>
+      softClosePromotedCostLines(projectId, project.projectName)
+    ).catch(() => {});
   }
 
   // Revenues (legacy)
@@ -681,6 +687,8 @@ export class DatabaseStorage implements IStorage {
       sourceRow: revenue.rowLocator,
       importRunId: 1,
     } as any).returning();
+    // Phase 2 bridge write: mirror to finance.revenue_lines
+    syncRevenueLine(created).catch(() => {});
     return this.mapRevenueLineToLegacyRevenue(created, revenue.projectId);
   }
 
@@ -699,6 +707,10 @@ export class DatabaseStorage implements IStorage {
     if (!project?.projectName) return;
     // Temporal: soft-close instead of hard delete (Prompt 10)
     await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", project.projectName);
+    // Phase 2 bridge write: cascade soft-close to promoted schema
+    import("./bridge/bridge-writer").then(({ softClosePromotedRevenueLines }) =>
+      softClosePromotedRevenueLines(projectId, project.projectName)
+    ).catch(() => {});
   }
 
   // Tasks (legacy)
@@ -1047,7 +1059,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProjectInfo(projectName: string): Promise<void> {
+    // Look up ID before deleting for bridge sync
+    const [row] = await this.dbInstance.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, projectName));
     await this.dbInstance.delete(projectInfo).where(eq(projectInfo.projectName, projectName));
+    if (row?.id) {
+      import("./bridge/bridge-writer").then(({ syncProjectDelete }) =>
+        syncProjectDelete(row.id)
+      ).catch(() => {});
+    }
   }
 
   async markProjectsActive(activeNames: string[]): Promise<void> {
@@ -1207,6 +1226,10 @@ export class DatabaseStorage implements IStorage {
   async deleteProgramExpensesByProject(projectName: string): Promise<void> {
     // Temporal: soft-close instead of hard delete (Prompt 10)
     await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", projectName);
+    // Phase 2 bridge write: cascade soft-close to promoted schema
+    import("./bridge/bridge-writer").then(({ softClosePromotedCostLines }) =>
+      softClosePromotedCostLines(null, projectName)
+    ).catch(() => {});
   }
 
   async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<ProgramExpense | undefined> {
@@ -1403,6 +1426,10 @@ export class DatabaseStorage implements IStorage {
   async deleteProgramInflowsByProject(projectName: string): Promise<void> {
     // Temporal: soft-close instead of hard delete (Prompt 10)
     await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", projectName);
+    // Phase 2 bridge write: cascade soft-close to promoted schema
+    import("./bridge/bridge-writer").then(({ softClosePromotedRevenueLines }) =>
+      softClosePromotedRevenueLines(null, projectName)
+    ).catch(() => {});
   }
 
   // Project Plan — reads from work_items (PM workstream, SMART_IMPORT source)
@@ -1898,6 +1925,8 @@ export class DatabaseStorage implements IStorage {
       sourceRow: data.rowNumber || null,
     };
     const inserted = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
+    // Phase 2 bridge write: mirror to finance.cost_lines
+    syncCostLine(inserted[0]).catch(() => {});
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return adaptCostToExpense(inserted[0], inserted[0].projectName) as any;
   }
