@@ -801,9 +801,14 @@ router.get("/api/admin/control-center/permission-enforcement", requireAuth, requ
 // ---------------------------------------------------------------------------
 // Reconciliation health check — verifies legacy ↔ promoted schema parity
 // ---------------------------------------------------------------------------
-router.get("/api/admin/reconciliation", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+router.get("/api/admin/reconciliation", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const { runReconciliation } = await import("./bridge/reconciliation-runner");
+    const { runReconciliation, getLastReconciliationResult } = await import("./bridge/reconciliation-runner");
+    // ?cached=true returns the last scheduled result without re-running
+    if (req.query.cached === "true") {
+      const cached = getLastReconciliationResult();
+      if (cached) return res.status(cached.overall === "PASS" ? 200 : 409).json({ ...cached, source: "cached" });
+    }
     const result = await runReconciliation();
     const statusCode = result.overall === "PASS" ? 200 : 409;
     res.status(statusCode).json(result);

@@ -2318,6 +2318,17 @@ export async function runStartupOrchestrator(options: {
   const schemaGuardActive = await isPromotedSchemaPresent();
   if (schemaGuardActive) {
     log("Promoted schema detected (core.projects exists) — skipping legacy schema sync to avoid dual authority", "Startup:Schema");
+
+    // Start automated reconciliation scheduler (Phase 2 health monitoring)
+    try {
+      const { startReconciliationScheduler } = await import("../bridge/reconciliation-runner");
+      startReconciliationScheduler(15 * 60 * 1000, (result) => {
+        console.warn(`[startup] Reconciliation FAIL detected: ${result.summary}`);
+      });
+      log("Reconciliation scheduler started (15-minute interval)", "Startup:Reconciliation");
+    } catch {
+      // Module may not be available — non-critical
+    }
   } else {
     await runDrizzleSchemaSync(log);
     await runAdditiveSchemaAlignments();

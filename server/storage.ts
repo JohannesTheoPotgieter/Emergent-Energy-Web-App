@@ -7,7 +7,7 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
-import { syncProject, snapshotProjectState, syncCostLine, syncRevenueLine } from "./bridge/bridge-writer";
+import { syncProject, syncProjectInsert, snapshotProjectState, syncCostLine, syncRevenueLine } from "./bridge/bridge-writer";
 import { listCostLinesFromPromotedCompat, listRevenueLinesFromPromotedCompat } from "./services/promoted-read-compat";
 import {
   users, uploadMetadata, refreshLogs,
@@ -564,6 +564,8 @@ export class DatabaseStorage implements IStorage {
     };
     const [created] = await this.dbInstance.insert(projectInfo).values(insertFields as any).returning();
     await syncProjectSplitTablesAfterInsert(created.id, insertFields, this.dbInstance);
+    // Phase 2 bridge write: mirror new project to core.projects
+    syncProjectInsert(created as any).catch(() => {});
     return this.mapProjectInfoToLegacyProject(created);
   }
 

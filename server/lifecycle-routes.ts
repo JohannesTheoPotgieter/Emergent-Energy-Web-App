@@ -1532,6 +1532,10 @@ export function registerLifecycleRoutes(app: Express) {
       };
       const [created] = await db.insert(projectInfo).values(promoteInsertFields).returning();
       await syncProjectSplitTablesAfterInsert(created.id, promoteInsertFields);
+      // Phase 2 bridge write: mirror new project to core.projects
+      import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
+        syncProjectInsert(created as any)
+      ).catch(() => {});
 
       const targetPhase = phase || "First Assessment";
       const stageNames = PHASE_TO_ENG_STAGES[targetPhase];
@@ -2208,6 +2212,10 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM work_items WHERE workstream = 'PM' AND source = 'SMART_IMPORT' AND (project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'})`);
         await safeDel(sql`DELETE FROM normalized_revenue_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
         await safeDel(sql`DELETE FROM normalized_cost_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
+        // Phase 2 bridge write: cascade delete promoted finance lines
+        import("./bridge/bridge-writer").then(({ cascadeDeletePromotedFinanceLines }) =>
+          cascadeDeletePromotedFinanceLines(pId, pN)
+        ).catch(() => {});
         await safeDel(sql`DELETE FROM normalized_execution_phases WHERE project_id = ${pId} OR project_name = ${pN}`);
         await safeDel(sql`DELETE FROM pm_site_visits WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM pm_on_the_go_actions WHERE project_id = ${pId}`);

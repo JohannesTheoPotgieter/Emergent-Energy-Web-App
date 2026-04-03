@@ -420,6 +420,167 @@ export async function syncRevenueLine(revenueLine: Record<string, any> & { id: n
 }
 
 // ---------------------------------------------------------------------------
+// Project INSERT bridge: project_info INSERT → core.projects INSERT
+// ---------------------------------------------------------------------------
+
+export async function syncProjectInsert(p: Record<string, any> & { id: number }): Promise<BridgeResult> {
+  return withRetry("project_insert", p.id, async () => {
+  try {
+    await db.execute(sql`
+      INSERT INTO core.projects (
+        id, project_name, client_id, phase,
+        rag_status, rag_comment,
+        execution_gate_status, execution_gate_reason,
+        archived_status, pm_user_id, pd_user_id,
+        current_stage_code, gate_status,
+        signed_status, execution_phase,
+        size_kwp, contract_value,
+        is_active, execution_enabled,
+        signed_date, signed_document_link, excel_tracker_link,
+        cp_signed, cp_signed_date, cp_signed_by_user_id,
+        cp_evidence_type, cp_evidence_ref,
+        pm_task_pack_created, eng_post_cp_task_pack_created,
+        site_id, opportunity_id, delivery_model,
+        last_synced_at, created_at, updated_at
+      ) VALUES (
+        ${p.id}, ${p.projectName ?? null}, ${p.clientId ?? null}, ${p.phase ?? null},
+        ${p.ragStatus ?? null}, ${p.ragComment ?? null},
+        ${p.executionGateStatus ?? null}, ${p.executionGateReason ?? null},
+        ${p.archivedStatus ?? null}, ${p.pmUserId ?? null}, ${p.pdUserId ?? null},
+        ${p.currentStageCode ?? null}, ${p.gateStatus ?? null},
+        ${p.signedStatus ?? null}, ${p.executionPhase ?? null},
+        ${p.sizeKwp ?? null}, ${p.contractValue ?? null},
+        ${p.isActive ?? true}, ${p.executionEnabled ?? false},
+        ${p.signedDate ?? null}, ${p.signedDocumentLink ?? null}, ${p.excelTrackerLink ?? null},
+        ${p.cpSigned ?? null}, ${p.cpSignedDate ?? null}, ${p.cpSignedByUserId ?? null},
+        ${p.cpEvidenceType ?? null}, ${p.cpEvidenceRef ?? null},
+        ${p.pmTaskPackCreated ?? null}, ${p.engPostCpTaskPackCreated ?? null},
+        ${p.siteId ?? null}, ${p.opportunityId ?? null}, ${p.deliveryModel ?? null},
+        NOW(), NOW(), NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        project_name = EXCLUDED.project_name,
+        last_synced_at = NOW(),
+        updated_at = NOW()
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// User bridge: users → core.user_accounts
+// ---------------------------------------------------------------------------
+
+export async function syncUser(user: {
+  id: number;
+  username: string;
+  name: string;
+  email: string;
+  role?: string | null;
+  department?: string | null;
+}): Promise<BridgeResult> {
+  return withRetry("user", user.id, async () => {
+  try {
+    await db.execute(sql`
+      INSERT INTO core.user_accounts (
+        id, legacy_id, username, display_name, email,
+        role_code, department,
+        last_synced_at, source_table, created_at, updated_at
+      ) VALUES (
+        ${user.id}, ${user.id}, ${user.username}, ${user.name}, ${user.email},
+        ${user.role ?? null}, ${user.department ?? null},
+        NOW(), 'public.users', NOW(), NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        username = EXCLUDED.username,
+        display_name = EXCLUDED.display_name,
+        email = EXCLUDED.email,
+        role_code = EXCLUDED.role_code,
+        department = EXCLUDED.department,
+        last_synced_at = NOW(),
+        updated_at = NOW()
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Soft-close bridge: mark promoted finance lines as closed
+// ---------------------------------------------------------------------------
+
+export async function softClosePromotedCostLines(
+  projectId: number | null,
+  projectName: string | null,
+): Promise<BridgeResult> {
+  return withRetry("soft_close_cost_lines", projectId ?? 0, async () => {
+  try {
+    const condition = projectId
+      ? sql`project_id = ${projectId}`
+      : sql`project_name_snapshot = ${projectName}`;
+    await db.execute(sql`
+      UPDATE finance.cost_lines
+      SET effective_to = NOW(), updated_at = NOW()
+      WHERE ${condition} AND effective_to IS NULL
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+export async function softClosePromotedRevenueLines(
+  projectId: number | null,
+  projectName: string | null,
+): Promise<BridgeResult> {
+  return withRetry("soft_close_revenue_lines", projectId ?? 0, async () => {
+  try {
+    const condition = projectId
+      ? sql`project_id = ${projectId}`
+      : sql`project_name_snapshot = ${projectName}`;
+    await db.execute(sql`
+      UPDATE finance.revenue_lines
+      SET effective_to = NOW(), updated_at = NOW()
+      WHERE ${condition} AND effective_to IS NULL
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Hard-delete cascade: remove promoted finance lines when legacy rows deleted
+// ---------------------------------------------------------------------------
+
+export async function cascadeDeletePromotedFinanceLines(
+  projectId: number | null,
+  projectName: string | null,
+): Promise<BridgeResult> {
+  return withRetry("cascade_delete_finance", projectId ?? 0, async () => {
+  try {
+    const costCondition = projectId
+      ? sql`project_id = ${projectId}`
+      : sql`project_name_snapshot = ${projectName}`;
+    const revCondition = costCondition;
+
+    await db.execute(sql`DELETE FROM finance.cost_lines WHERE ${costCondition}`);
+    await db.execute(sql`DELETE FROM finance.revenue_lines WHERE ${revCondition}`);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Bulk helpers
 // ---------------------------------------------------------------------------
 
