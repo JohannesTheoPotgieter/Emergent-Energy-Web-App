@@ -127,16 +127,16 @@ describe("Bridge Writer Targeted Updates", () => {
 // 3. PROJECT_INFO: Every Write Path Has Bridge Coverage
 // ===========================================================================
 describe("project_info Write Path Coverage", () => {
-  it("storage.ts createProject calls syncProjectInsert", () => {
+  it("storage.ts createProject delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const section = s.slice(s.indexOf("async createProject"), s.indexOf("async updateProject"));
-    expect(section).toContain("syncProjectInsert");
+    expect(section).toContain("_createProjectInfo");
   });
 
-  it("storage.ts deleteProjectInfo calls syncProjectDelete", () => {
+  it("storage.ts deleteProjectInfo delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const section = s.slice(s.indexOf("async deleteProjectInfo"), s.indexOf("async markProjectsActive"));
-    expect(section).toContain("syncProjectDelete");
+    expect(section).toContain("_hardDeleteProjectInfo");
   });
 
   it("pm-on-the-go-routes escalation update has bridge call", () => {
@@ -157,7 +157,7 @@ describe("project_info Write Path Coverage", () => {
     expect(section.slice(0, 500)).toContain("syncProjectDelete");
   });
 
-  it("all project creation paths have syncProjectInsert", () => {
+  it("all project creation paths have bridge or write service delegation", () => {
     const files = [
       readServerFile("../server/storage.ts"),
       readServerFile("smart-import-routes.ts"),
@@ -167,7 +167,9 @@ describe("project_info Write Path Coverage", () => {
     ];
     for (const f of files) {
       if (f.includes("insert(projectInfo)")) {
-        expect(f.includes("syncProject") || f.includes("syncProjectInsert")).toBe(true);
+        expect(
+          f.includes("syncProject") || f.includes("syncProjectInsert") || f.includes("_createProjectInfo"),
+        ).toBe(true);
       }
     }
   });
@@ -236,29 +238,29 @@ describe("clients Write Path Coverage", () => {
 // 6. NORMALIZED_COST_LINES: Every Write Path Has Bridge Coverage
 // ===========================================================================
 describe("normalized_cost_lines Write Path Coverage", () => {
-  it("storage.ts createExpense has syncCostLine", () => {
+  it("storage.ts createExpense delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const section = s.slice(s.indexOf("async createExpense"), s.indexOf("async createManyExpenses"));
-    expect(section).toContain("syncCostLine");
+    expect(section).toContain("_createCostLine");
   });
 
-  it("storage.ts createManualExpense has syncCostLine", () => {
+  it("storage.ts createManualExpense delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const section = s.slice(s.indexOf("async createManualExpense"));
-    expect(section.slice(0, 1200)).toContain("syncCostLine");
+    expect(section.slice(0, 1200)).toContain("_createCostLine");
   });
 
-  it("storage.ts deleteExpensesByProject has soft-close bridge", () => {
+  it("storage.ts deleteExpensesByProject delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const start = s.indexOf("async deleteExpensesByProject");
     const section = s.slice(start, start + 600);
-    expect(section).toContain("softClosePromotedCostLines");
+    expect(section).toContain("_softCloseCostLinesByProject");
   });
 
-  it("storage.ts deleteProgramExpensesByProject has soft-close bridge", () => {
+  it("storage.ts deleteProgramExpensesByProject delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const section = s.slice(s.indexOf("async deleteProgramExpensesByProject"));
-    expect(section.slice(0, 500)).toContain("softClosePromotedCostLines");
+    expect(section.slice(0, 500)).toContain("_softCloseCostLinesByProject");
   });
 
   it("subcontractor rename has counterparty bulk bridge", () => {
@@ -293,23 +295,23 @@ describe("normalized_cost_lines Write Path Coverage", () => {
 // 7. NORMALIZED_REVENUE_LINES: Every Write Path Has Bridge Coverage
 // ===========================================================================
 describe("normalized_revenue_lines Write Path Coverage", () => {
-  it("storage.ts createRevenue has syncRevenueLine", () => {
+  it("storage.ts createRevenue delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const section = s.slice(s.indexOf("async createRevenue"), s.indexOf("async createManyRevenues"));
-    expect(section).toContain("syncRevenueLine");
+    expect(section).toContain("_createRevenueLine");
   });
 
-  it("storage.ts deleteRevenuesByProject has soft-close bridge", () => {
+  it("storage.ts deleteRevenuesByProject delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const start = s.indexOf("async deleteRevenuesByProject");
     const section = s.slice(start, start + 600);
-    expect(section).toContain("softClosePromotedRevenueLines");
+    expect(section).toContain("_softCloseRevenueLinesByProject");
   });
 
-  it("storage.ts deleteProgramInflowsByProject has soft-close bridge", () => {
+  it("storage.ts deleteProgramInflowsByProject delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const section = s.slice(s.indexOf("async deleteProgramInflowsByProject"));
-    expect(section.slice(0, 500)).toContain("softClosePromotedRevenueLines");
+    expect(section.slice(0, 500)).toContain("_softCloseRevenueLinesByProject");
   });
 
   it("finance-routes revenue tracking overrides have bridge", () => {
@@ -324,7 +326,69 @@ describe("normalized_revenue_lines Write Path Coverage", () => {
 });
 
 // ===========================================================================
-// 8. Deferred Paths Documentation
+// 8. Write Service Delegation in storage.ts
+// ===========================================================================
+describe("storage.ts Write Service Delegation", () => {
+  it("storage.ts imports all write services", () => {
+    const s = readServerFile("../server/storage.ts");
+    expect(s).toContain("_createProjectInfo");
+    expect(s).toContain("_updateProjectInfo");
+    expect(s).toContain("_softDeleteProject");
+    expect(s).toContain("_hardDeleteProjectInfo");
+    expect(s).toContain("_createCostLine");
+    expect(s).toContain("_softCloseCostLinesByProject");
+    expect(s).toContain("_createRevenueLine");
+    expect(s).toContain("_softCloseRevenueLinesByProject");
+  });
+
+  it("storage.ts upsertProjectInfo delegates to write services", () => {
+    const s = readServerFile("../server/storage.ts");
+    const section = s.slice(s.indexOf("async upsertProjectInfo"), s.indexOf("async deleteProjectInfo"));
+    expect(section).toContain("_updateProjectInfo");
+    expect(section).toContain("_createProjectInfo");
+  });
+
+  it("storage.ts deleteProject delegates to write service", () => {
+    const s = readServerFile("../server/storage.ts");
+    const start = s.indexOf("async deleteProject(id");
+    const section = s.slice(start, start + 300);
+    expect(section).toContain("_softDeleteProject");
+  });
+
+  it("storage.ts updateProjectInfoById delegates to write service", () => {
+    const s = readServerFile("../server/storage.ts");
+    const section = s.slice(s.indexOf("async updateProjectInfoById"));
+    expect(section.slice(0, 300)).toContain("_updateProjectInfo");
+  });
+});
+
+// ===========================================================================
+// 9. Backfill Script Bridge Coverage
+// ===========================================================================
+describe("Backfill Script Bridge Coverage", () => {
+  it("backfillInvoiceConfirmed has bridge sync after updates", () => {
+    const s = readServerFile("backfillInvoiceConfirmed.ts");
+    expect(s).toContain("batchSyncFinanceByProject");
+  });
+});
+
+// ===========================================================================
+// 10. Finance Write Service Bulk Operations
+// ===========================================================================
+describe("Finance Write Service Bulk Operations", () => {
+  it("finance-line-write-service exports renameCostLineCounterparty", () => {
+    const svc = readServerFile("services/finance-line-write-service.ts");
+    expect(svc).toContain("export async function renameCostLineCounterparty");
+  });
+
+  it("finance-line-write-service exports batchSyncFinanceLines", () => {
+    const svc = readServerFile("services/finance-line-write-service.ts");
+    expect(svc).toContain("export async function batchSyncFinanceLines");
+  });
+});
+
+// ===========================================================================
+// 11. Deferred Paths Documentation
 // ===========================================================================
 describe("Deferred Paths Are Documented", () => {
   it("write-authority-model.md exists and documents deferred paths", () => {

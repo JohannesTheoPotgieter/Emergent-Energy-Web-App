@@ -28,7 +28,9 @@ import {
   syncRevenueLineFieldUpdate,
   softClosePromotedCostLines,
   softClosePromotedRevenueLines,
+  syncCostLineCounterpartyBulk,
 } from "../bridge/bridge-writer";
+import { batchSyncFinanceByProject } from "../bridge/batch-bridge-sync";
 import { softCloseByProjectName, softCloseByProjectId } from "../lib/temporal-helpers";
 
 type DbOrTx = typeof db;
@@ -166,4 +168,32 @@ export async function softCloseRevenueLinesByProject(
     await softCloseByProjectName(txOrDb, "normalized_revenue_lines", projectName);
   }
   softClosePromotedRevenueLines(projectId, projectName).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// Bulk operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Rename counterparty across all cost lines (legacy + promoted).
+ */
+export async function renameCostLineCounterparty(
+  oldName: string,
+  newName: string,
+  txOrDb: DbOrTx = db,
+): Promise<void> {
+  await (txOrDb as any).execute(
+    sql`UPDATE normalized_cost_lines SET counterparty_name = ${newName} WHERE counterparty_name = ${oldName} AND effective_to IS NULL`,
+  );
+  syncCostLineCounterpartyBulk(oldName, newName).catch(() => {});
+}
+
+/**
+ * Full re-sync of all finance lines for a project after bulk import.
+ */
+export async function batchSyncFinanceLines(
+  projectId: number | null,
+  projectName: string | null,
+): Promise<void> {
+  batchSyncFinanceByProject(projectId, projectName).catch(() => {});
 }
