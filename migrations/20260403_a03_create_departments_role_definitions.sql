@@ -1,4 +1,4 @@
--- Migration: 20260403_create_departments_role_definitions.sql
+-- Migration: 20260403_a03_create_departments_role_definitions.sql
 -- Phase A.1: Create core.departments and core.role_definitions reference tables.
 -- Additive only. No app code changes. Seeds from hardcoded constants in shared/schema/users.ts.
 BEGIN;

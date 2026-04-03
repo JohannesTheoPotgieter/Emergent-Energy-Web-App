@@ -197,7 +197,7 @@ describe("Phase 1B Schema Existence Tests", () => {
 
   // -- Migration A.2: Expand parties with party_kind + user backfill --
   describe("Migration A.2: expand_parties_add_party_kind", () => {
-    const sql = readMigration("20260403_expand_parties_add_party_kind.sql");
+    const sql = readMigration("20260403_a01_expand_parties_add_party_kind.sql");
 
     it("adds party_kind column", () => {
       expect(sql).toContain("ADD COLUMN IF NOT EXISTS party_kind TEXT");
@@ -217,7 +217,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Backfill A.2: backfill_parties_users", () => {
-    const sql = readMigration("20260403_backfill_parties_users.sql");
+    const sql = readMigration("20260403_a02_backfill_parties_users.sql");
 
     it("backfills existing rows as organisation", () => {
       expect(sql).toContain("SET party_kind = 'organisation' WHERE party_kind IS NULL");
@@ -232,7 +232,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Rollback A.2: expand_parties_add_party_kind_rollback", () => {
-    const sql = readMigration("20260403_expand_parties_add_party_kind_rollback.sql");
+    const sql = readMigration("20260403_a01_expand_parties_add_party_kind_rollback.sql");
 
     it("deletes user rows before dropping columns", () => {
       const deletePos = sql.indexOf("DELETE FROM core.parties WHERE source_table = 'public.users'");
@@ -252,7 +252,7 @@ describe("Phase 1B Schema Existence Tests", () => {
 
   // -- Migration A.3: Create user_accounts table + backfill --
   describe("Migration A.3: create_user_accounts", () => {
-    const sql = readMigration("20260403_create_user_accounts.sql");
+    const sql = readMigration("20260403_a04_create_user_accounts.sql");
 
     it("creates core.user_accounts table", () => {
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.user_accounts");
@@ -294,7 +294,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Backfill A.3: backfill_user_accounts", () => {
-    const sql = readMigration("20260403_backfill_user_accounts.sql");
+    const sql = readMigration("20260403_a05_backfill_user_accounts.sql");
 
     it("joins public.users to core.parties via legacy_user_id", () => {
       expect(sql).toContain("FROM public.users u");
@@ -316,7 +316,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Rollback A.3: create_user_accounts_rollback", () => {
-    const sql = readMigration("20260403_create_user_accounts_rollback.sql");
+    const sql = readMigration("20260403_a04_create_user_accounts_rollback.sql");
 
     it("drops core.user_accounts table", () => {
       expect(sql).toContain("DROP TABLE IF EXISTS core.user_accounts");
@@ -330,7 +330,7 @@ describe("Phase 1B Schema Existence Tests", () => {
 
   // -- Migration A.3b: Create microsoft_identities table + backfill --
   describe("Migration A.3b: create_microsoft_identities", () => {
-    const sql = readMigration("20260403_create_microsoft_identities.sql");
+    const sql = readMigration("20260403_a06_create_microsoft_identities.sql");
 
     it("creates core.microsoft_identities table", () => {
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.microsoft_identities");
@@ -360,7 +360,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Backfill A.3b: backfill_microsoft_identities", () => {
-    const sql = readMigration("20260403_backfill_microsoft_identities.sql");
+    const sql = readMigration("20260403_a07_backfill_microsoft_identities.sql");
 
     it("joins users to user_accounts and left joins ms_accounts", () => {
       expect(sql).toContain("FROM public.users u");
@@ -387,7 +387,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Rollback A.3b: create_microsoft_identities_rollback", () => {
-    const sql = readMigration("20260403_create_microsoft_identities_rollback.sql");
+    const sql = readMigration("20260403_a06_create_microsoft_identities_rollback.sql");
 
     it("drops core.microsoft_identities table", () => {
       expect(sql).toContain("DROP TABLE IF EXISTS core.microsoft_identities");
@@ -401,7 +401,7 @@ describe("Phase 1B Schema Existence Tests", () => {
 
   // -- Migration A.1: Create departments + role_definitions --
   describe("Migration A.1: create_departments_role_definitions", () => {
-    const sql = readMigration("20260403_create_departments_role_definitions.sql");
+    const sql = readMigration("20260403_a03_create_departments_role_definitions.sql");
 
     it("creates core.departments table", () => {
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.departments");
@@ -458,7 +458,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Rollback A.1: create_departments_role_definitions_rollback", () => {
-    const sql = readMigration("20260403_create_departments_role_definitions_rollback.sql");
+    const sql = readMigration("20260403_a03_create_departments_role_definitions_rollback.sql");
 
     it("drops role_definitions before departments (FK order)", () => {
       const dropRoles = sql.indexOf("DROP TABLE IF EXISTS core.role_definitions");
@@ -476,7 +476,7 @@ describe("Phase 1B Schema Existence Tests", () => {
 
   // -- Migration A.4: Create role_assignments table + backfill --
   describe("Migration A.4: create_role_assignments", () => {
-    const sql = readMigration("20260403_create_role_assignments.sql");
+    const sql = readMigration("20260403_a08_create_role_assignments.sql");
 
     it("creates core.role_assignments table", () => {
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.role_assignments");
@@ -524,7 +524,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Backfill A.4: backfill_role_assignments", () => {
-    const sql = readMigration("20260403_backfill_role_assignments.sql");
+    const sql = readMigration("20260403_a09_backfill_role_assignments.sql");
 
     it("joins users to user_accounts and role_definitions", () => {
       expect(sql).toContain("FROM public.users u");
@@ -549,7 +549,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Rollback A.4: create_role_assignments_rollback", () => {
-    const sql = readMigration("20260403_create_role_assignments_rollback.sql");
+    const sql = readMigration("20260403_a08_create_role_assignments_rollback.sql");
 
     it("drops core.role_assignments table", () => {
       expect(sql).toContain("DROP TABLE IF EXISTS core.role_assignments");
@@ -1200,17 +1200,17 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_stale_item_tracking_rollback.sql",
       "20260402_state_history_tables.sql",
       "20260402_state_history_tables_rollback.sql",
-      "20260403_create_user_accounts.sql",
-      "20260403_create_user_accounts_rollback.sql",
-      "20260403_backfill_user_accounts.sql",
-      "20260403_create_microsoft_identities.sql",
-      "20260403_create_microsoft_identities_rollback.sql",
-      "20260403_backfill_microsoft_identities.sql",
-      "20260403_create_departments_role_definitions.sql",
-      "20260403_create_departments_role_definitions_rollback.sql",
-      "20260403_create_role_assignments.sql",
-      "20260403_create_role_assignments_rollback.sql",
-      "20260403_backfill_role_assignments.sql",
+      "20260403_a04_create_user_accounts.sql",
+      "20260403_a04_create_user_accounts_rollback.sql",
+      "20260403_a05_backfill_user_accounts.sql",
+      "20260403_a06_create_microsoft_identities.sql",
+      "20260403_a06_create_microsoft_identities_rollback.sql",
+      "20260403_a07_backfill_microsoft_identities.sql",
+      "20260403_a03_create_departments_role_definitions.sql",
+      "20260403_a03_create_departments_role_definitions_rollback.sql",
+      "20260403_a08_create_role_assignments.sql",
+      "20260403_a08_create_role_assignments_rollback.sql",
+      "20260403_a09_backfill_role_assignments.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -1237,6 +1237,43 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
+  it("Phase A migration files sort in correct dependency order", () => {
+    const phaseAFiles = fs.readdirSync(migrationsDir)
+      .filter((f) => f.startsWith("20260403_a") && f.endsWith(".sql") && !f.includes("rollback"))
+      .sort();
+    const expectedOrder = [
+      "20260403_a01_expand_parties_add_party_kind.sql",
+      "20260403_a02_backfill_parties_users.sql",
+      "20260403_a03_create_departments_role_definitions.sql",
+      "20260403_a04_create_user_accounts.sql",
+      "20260403_a05_backfill_user_accounts.sql",
+      "20260403_a06_create_microsoft_identities.sql",
+      "20260403_a07_backfill_microsoft_identities.sql",
+      "20260403_a08_create_role_assignments.sql",
+      "20260403_a09_backfill_role_assignments.sql",
+    ];
+    expect(phaseAFiles).toEqual(expectedOrder);
+  });
+
+  it("Phase A backfill files always sort after their DDL files", () => {
+    const pairs = [
+      { ddl: "20260403_a04_create_user_accounts.sql", backfill: "20260403_a05_backfill_user_accounts.sql" },
+      { ddl: "20260403_a06_create_microsoft_identities.sql", backfill: "20260403_a07_backfill_microsoft_identities.sql" },
+      { ddl: "20260403_a08_create_role_assignments.sql", backfill: "20260403_a09_backfill_role_assignments.sql" },
+    ];
+    for (const { ddl, backfill } of pairs) {
+      expect(ddl.localeCompare(backfill)).toBeLessThan(0);
+      expect(fs.existsSync(path.join(migrationsDir, ddl))).toBe(true);
+      expect(fs.existsSync(path.join(migrationsDir, backfill))).toBe(true);
+    }
+  });
+
+  it("role_assignments backfill includes unmatched-role safety check", () => {
+    const sql = readMigration("20260403_a09_backfill_role_assignments.sql");
+    expect(sql).toContain("RAISE WARNING");
+    expect(sql).toContain("role code not found in core.role_definitions");
+  });
+
   it("no shared/schema ORM files were modified", () => {
     // Verify we haven't touched the Drizzle schema files
     const schemaDir = path.join(process.cwd(), "shared/schema");
@@ -1254,10 +1291,10 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_finance_period_derivation.sql",
       "20260402_evidence_link_parity.sql",
       "20260402_stale_item_tracking.sql",
-      "20260403_create_user_accounts.sql",
-      "20260403_create_microsoft_identities.sql",
-      "20260403_create_departments_role_definitions.sql",
-      "20260403_create_role_assignments.sql",
+      "20260403_a04_create_user_accounts.sql",
+      "20260403_a06_create_microsoft_identities.sql",
+      "20260403_a03_create_departments_role_definitions.sql",
+      "20260403_a08_create_role_assignments.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -1276,10 +1313,10 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_finance_period_derivation.sql",
       "20260402_evidence_link_parity.sql",
       "20260402_stale_item_tracking.sql",
-      "20260403_create_user_accounts.sql",
-      "20260403_create_microsoft_identities.sql",
-      "20260403_create_departments_role_definitions.sql",
-      "20260403_create_role_assignments.sql",
+      "20260403_a04_create_user_accounts.sql",
+      "20260403_a06_create_microsoft_identities.sql",
+      "20260403_a03_create_departments_role_definitions.sql",
+      "20260403_a08_create_role_assignments.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);

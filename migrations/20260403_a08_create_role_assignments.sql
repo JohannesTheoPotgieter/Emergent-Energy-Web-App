@@ -1,4 +1,4 @@
--- Migration: 20260403_create_role_assignments.sql
+-- Migration: 20260403_a08_create_role_assignments.sql
 -- Phase A.4: Create core.role_assignments linking user_accounts to role_definitions + departments.
 -- Supports multiple active roles per user (no unique constraint on user_account_id).
 -- Additive only. No app code changes. Auth remains in public.users.
