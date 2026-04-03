@@ -2663,6 +2663,13 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
     // Prompt 12: Refresh materialized dashboard metrics after import commit
     if (projectId) refreshProjectMetricsAsync(projectId);
+
+    // Phase 2 bridge write: batch-sync cost/revenue lines to promoted schema (post-commit, non-blocking)
+    if ((counts.costLines || 0) + (counts.revenueLines || 0) > 0) {
+      import("./bridge/batch-bridge-sync").then(({ batchSyncFinanceByProject }) =>
+        batchSyncFinanceByProject(projectId ?? null, projectName ?? null)
+      ).catch(() => {});
+    }
   } catch (err: unknown) {
     console.error("[smart-import] POST commit error:", err);
 

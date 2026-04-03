@@ -130,6 +130,27 @@ function extractAlterStatements(sqlContent: string): string[] {
   return statements;
 }
 
+/**
+ * Check if the promoted schema from versioned migrations (PR523+) is present.
+ * If core.projects exists, the versioned migrations are the schema authority
+ * and the legacy startup schema sync should be skipped.
+ */
+async function isPromotedSchemaPresent(): Promise<boolean> {
+  const mode = getDbMode();
+  if (mode !== "postgres") return false;
+  try {
+    const result = await db.execute(sql.raw(`
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'core' AND table_name = 'projects'
+      LIMIT 1
+    `));
+    const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function waitForDbReady(maxRetries = 5, baseDelayMs = 1000): Promise<boolean> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -2289,8 +2310,18 @@ export async function runStartupOrchestrator(options: {
     log,
   } = options;
 
-  await runDrizzleSchemaSync(log);
-  await runAdditiveSchemaAlignments();
+  // Schema authority: versioned migrations (supabase/migrations/ and migrations/) are the
+  // single source of truth. The startup schema sync and additive alignments below are
+  // LEGACY SAFETY NETS for first-boot and pre-migration environments only.
+  // They MUST NOT create or alter tables that conflict with versioned migrations.
+  // See docs/schema-migration-status.md for the canonical migration status.
+  const schemaGuardActive = await isPromotedSchemaPresent();
+  if (schemaGuardActive) {
+    log("Promoted schema detected (core.projects exists) — skipping legacy schema sync to avoid dual authority", "Startup:Schema");
+  } else {
+    await runDrizzleSchemaSync(log);
+    await runAdditiveSchemaAlignments();
+  }
 
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });
   report.maintenance.push(runtimeMaintenanceEnabled && startupSchemaRepairEnabled ? "completed" : "skipped");
