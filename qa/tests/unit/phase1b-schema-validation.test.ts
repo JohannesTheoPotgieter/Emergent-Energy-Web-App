@@ -250,6 +250,84 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration A.3: Create user_accounts table + backfill --
+  describe("Migration A.3: create_user_accounts", () => {
+    const sql = readMigration("20260403_create_user_accounts.sql");
+
+    it("creates core.user_accounts table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.user_accounts");
+    });
+
+    it("has party_id column with FK to core.parties", () => {
+      expect(sql).toContain("party_id");
+      expect(sql).toContain("REFERENCES core.parties(id)");
+    });
+
+    it("has legacy_user_id column with UNIQUE constraint", () => {
+      expect(sql).toContain("legacy_user_id INTEGER UNIQUE NOT NULL");
+    });
+
+    it("has email column", () => {
+      expect(sql).toContain("email          TEXT NOT NULL");
+    });
+
+    it("has status column with default", () => {
+      expect(sql).toContain("status         TEXT NOT NULL DEFAULT 'active'");
+    });
+
+    it("creates idx_user_accounts_party_id unique index", () => {
+      expect(sql).toContain("CREATE UNIQUE INDEX IF NOT EXISTS idx_user_accounts_party_id");
+    });
+
+    it("creates idx_user_accounts_email index", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_user_accounts_email");
+    });
+
+    it("creates idx_user_accounts_status index", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_user_accounts_status");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Backfill A.3: backfill_user_accounts", () => {
+    const sql = readMigration("20260403_backfill_user_accounts.sql");
+
+    it("joins public.users to core.parties via legacy_user_id", () => {
+      expect(sql).toContain("FROM public.users u");
+      expect(sql).toContain("JOIN core.parties p ON p.legacy_user_id = u.id");
+    });
+
+    it("derives status from deleted_at", () => {
+      expect(sql).toContain("CASE WHEN u.deleted_at IS NULL THEN 'active' ELSE 'inactive' END");
+    });
+
+    it("is idempotent via ON CONFLICT", () => {
+      expect(sql).toContain("ON CONFLICT (legacy_user_id) DO NOTHING");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback A.3: create_user_accounts_rollback", () => {
+    const sql = readMigration("20260403_create_user_accounts_rollback.sql");
+
+    it("drops core.user_accounts table", () => {
+      expect(sql).toContain("DROP TABLE IF EXISTS core.user_accounts");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -871,7 +949,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 16 migration files exist (8 forward + 8 rollback)", () => {
+  it("all 19 migration files exist (8+1 forward + 8+1 rollback + 1 backfill)", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -889,6 +967,9 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_stale_item_tracking_rollback.sql",
       "20260402_state_history_tables.sql",
       "20260402_state_history_tables_rollback.sql",
+      "20260403_create_user_accounts.sql",
+      "20260403_create_user_accounts_rollback.sql",
+      "20260403_backfill_user_accounts.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -932,6 +1013,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_finance_period_derivation.sql",
       "20260402_evidence_link_parity.sql",
       "20260402_stale_item_tracking.sql",
+      "20260403_create_user_accounts.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -950,6 +1032,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260402_finance_period_derivation.sql",
       "20260402_evidence_link_parity.sql",
       "20260402_stale_item_tracking.sql",
+      "20260403_create_user_accounts.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
