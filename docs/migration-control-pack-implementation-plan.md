@@ -6,67 +6,113 @@
 
 ---
 
-## Section 1: Gap Analysis
+## Section 1: Gap Analysis (REVISED — All decisions applied)
 
-Cross-referencing the Migration Control Pack against the live codebase (`shared/schema/`, `server/`, `client/src/pages/`, `migrations/`).
-
----
-
-### BLOCKERS — Cannot start the relevant wave without resolving
-
-| # | Gap | Control Pack expects | Repo has | Affected wave | Why it blocks |
-|---|-----|---------------------|----------|---------------|---------------|
-| B1 | **No `party` entity** | Unified `party` + `party_role` + `contact_method` + `project_party_link` | Separate `users`, `clients`, `counterparties` tables with no shared party identity | Wave 2 | Every core object references party. Without it, project_instance and work_item cannot use a unified identity FK. |
-| B2 | **No `governed_process` entity** | Single process engine for financial reviews, handovers, phase gates, change requests, payment batches | Separate route files per workflow (`financial-review-routes.ts`, `handover-routes.ts`, `stage-lifecycle-routes.ts`, `payment-batch-routes.ts`, `change-control-routes.ts`) with no shared process table | Wave 3 | Cannot consolidate formal workflows without the underlying table. |
-| B3 | **No `finance_record` entity** | Unified transactional finance object (PO, invoice, payment request, client invoice, VO, cash event) | Separate tables: `program_expense`, `program_inflows`, `purchase_orders`, `payment_requests`, `payment_batches`, `invoice_captures` | Wave 5 | Finance workspace and transaction linkage depend on a single finance_record model. |
-| B4 | **`project_instance` not defined** | `project_instance` (master identity) separate from `project_info` (descriptive parameters) | `projectInfo` contains identity + descriptive fields; `projectExecutionState` split exists but is execution state, not the same as project_instance vs project_info split described in control pack | Wave 2 | The control pack's project_instance ≠ the existing projectInfo. The split axis is different from what was already done (execution state vs descriptive parameters). Must reconcile. |
-| B5 | **`approval_requirement` not defined** | Split: `approval_requirement` (template) + `approval_instance` (actual event) | Single `approvals` table in `collaboration.ts` with no template/definition separation | Wave 4 | Cannot build reusable approval patterns without the template entity. |
-| B6 | **`deliverable_definition` not defined** | Split: `deliverable_definition` (template) + `deliverable_instance` (project instance) | Single `deliverables` table in `engineering.ts` with no definition/instance separation | Wave 4 | Deliverable types are embedded in each row rather than referencing a shared definition. |
-| B7 | **`work_package` not defined** | `work_package` as a container above `work_item` with `work_item_dependency` | `work_items` has `parentId` self-reference for hierarchy but no explicit work_package entity | Wave 2 | Control pack expects work_package as a first-class grouping concept. Need decision: is parentId sufficient or do we need a separate table? |
+Cross-referencing the Migration Control Pack against the live codebase, with all 25 business decisions from Johannes applied.
 
 ---
 
-### RISKS — Can start but likely to cause rework
+### BLOCKERS — Status after decisions
 
-| # | Risk | Detail | Affected wave |
-|---|------|--------|---------------|
-| R1 | **Opportunity model already exists but may not match control pack intent** | `opportunities` table exists with Pipedrive integration, stage pipeline, and handover readiness. Control pack lists opportunity/deal handling as an open decision (Wave 0). If the decision changes the shape, existing data and routes need rework. | Wave 0–2 |
-| R2 | **Budget baseline exists but may be incomplete** | `budget_baselines` table exists in `finance.ts` with project/version/totals. Control pack flags "budget baseline" as missing. Need to verify whether the existing table satisfies variance/margin control needs or needs expansion. | Wave 0, 5 |
-| R3 | **Sites table exists but site/portfolio rule is undecided** | `sites` table exists linked to clients. `portfolios` page exists. But control pack flags site/portfolio as needing explicit decision. If one-project-one-site is declared, the current multi-project-per-site FK from `projectInfo.siteId` may need constraints. | Wave 0, 2 |
-| R4 | **Permission model is fragmented** | Three overlapping systems: (1) `COMPANY_ROLES` + role permission groups in code, (2) `rolePermissions` DB table with JSON permission maps, (3) `workstreamVisibilityConfig` for UI filtering. Control pack expects a clean permission model. Consolidation risk is high. | Wave 0, 1 |
-| R5 | **`projectExecutionState` split axis differs from control pack** | The existing split is projectInfo (identity) vs projectExecutionState (lifecycle/dates). The control pack wants project_instance (identity+status) vs project_info (descriptive parameters). These are different decompositions. Must reconcile without breaking existing queries. | Wave 2 |
-| R6 | **Legacy route proliferation** | 70+ route files in `server/`. New API contracts (Control Map 4) must coexist with legacy routes during migration. Risk of new screens accidentally wiring to legacy routes if not strictly enforced. | Wave 1–6 |
-| R7 | **Frontend navigation already has 11 sections** | `APP_SECTIONS` lists HOME, PORTFOLIO, PRIORITIES, PROJECT_DEVELOPMENT, PROJECT_DELIVERY, ENGINEERING, QUALITY, HSE, FINANCE, REPORTS, ADMIN. Control pack specifies 8 departments: Home, Project Development, Project Management, Engineering, Quality, Finance, Parties, Admin. These don't align 1:1. | Wave 1 |
-| R8 | **No `activity_log` / `audit_log` split** | Control pack expects split. Codebase has `audit_events` table and `audit-logger.ts` but no separate activity_log for human-readable history. | Wave 2 |
+| # | Original gap | Decision | New status | Build action | Wave |
+|---|-------------|----------|-----------|-------------|------|
+| B1 | No `party` entity | **Flexible multi-role** — one party can hold multiple roles | **UNBLOCKED** | Build `party` + `party_role` + `contact_method` + `project_party_link`. Merge `users`, `clients`, `counterparties` via legacy_id_map. | Wave 2 |
+| B2 | No `governed_process` entity | **Standard pattern first, extensible later** | **UNBLOCKED** | Build `governed_process` + `governed_process_checklist_item` with standard lifecycle (initiate → checklist → review → approve → close). Migrate handovers (C3 confirmed), financial reviews, phase gates, change requests, payment batches. | Wave 3 |
+| B3 | No `finance_record` entity | **All part of the same process** — finance team sees POs/invoices/payments as one workflow | **UNBLOCKED** | Build `finance_record` with `type` discriminator. Merge POs, payment requests, invoices, VOs. Smart import writes to `finance_record` with change detection (C4 confirmed). `program_expense`/`program_inflows` become read-only reporting views. | Wave 5 |
+| B4 | `project_instance` split axis mismatch | **A project is a project, metadata describes it** | **UNBLOCKED** | Rename `projectInfo` → `project_instance` (identity). Descriptive fields (sizeKwp, deliveryModel, contractValue) become `project_info` metadata. `projectExecutionState` key dates fold into stage lifecycle over time (R5 confirmed). | Wave 2 |
+| B5 | No `approval_requirement` split | **Both templates and one-offs** | **UNBLOCKED** | Build `approval_requirement` (reusable templates) + `approval_instance` (events). Support ad-hoc approvals with null requirement FK. | Wave 4 |
+| B6 | No `deliverable_definition` split | **Both templates and one-offs** | **UNBLOCKED** | Build `deliverable_definition` (templates) + `deliverable_instance` (project-specific). Support ad-hoc deliverables. Migrate QC templates into new structure (C5 confirmed). | Wave 4 |
+| B7 | No `work_package` entity | **Both work packages and tasks needed** | **UNBLOCKED** | Build `work_package` as first-class entity above `work_item`. Keep parent/child within work_items. | Wave 2 |
 
----
-
-### CLARIFICATIONS — Nice to pin down but won't block progress
-
-| # | Question | Context |
-|---|----------|---------|
-| C1 | **Does `work_package` need its own table or is `work_items` with `parentId` + `indentLevel=0` sufficient?** | Current work_items already supports hierarchy. Adding a separate work_package table adds complexity. Could use a type discriminator instead. |
-| C2 | **What happens to `pdTickets` during migration?** | `pdTickets` exists in `projects.ts` for PD pipeline tracking. Overlaps with opportunities. Neither the functional map nor entity map mentions it explicitly. |
-| C3 | **What happens to `projectPdPmHandover`?** | Exists in `projects.ts` as a dedicated handover record. Control pack wants this under `governed_process`. Needs explicit mapping. |
-| C4 | **Are `programExpense` and `programInflows` retained as analytical tables or retired?** | Control pack says "normalized cost/revenue lines → retain outside core as analytical/reporting layer." These tables are currently write targets for smart import. Need to clarify if they become read-only after finance_record exists. |
-| C5 | **What about `qc_template` hierarchy?** | Quality templates (qc_template → qc_template_phase → qc_template_group → qc_template_item) aren't mentioned in the entity migration map. Likely "retain as specialist operational" but should be explicit. |
-| C6 | **Stage lifecycle tables vs phase_definition/project_phase_history** | Control pack expects `phase_definition` + `project_phase_history`. Codebase has `stage_definitions`, `project_stage_instances`, `project_stage_requirements`, `project_stage_evidence`, `project_stage_decisions`, `project_stage_exceptions`. These are more granular than the control pack's model. Need to clarify: adopt the existing stage model as-is, or flatten to phase_definition/history? |
-| C7 | **`external_resource` / `resource_link` tables** | Control pack references these for deliverable evidence and collaboration surfaces. Neither exists yet. Need schema design. |
-| C8 | **Where do `notifications` and `notificationThrottle` land?** | Not explicitly mentioned in entity migration map. Likely support layer. |
-| C9 | **HSE and construction tables** | `hse.ts` and `construction.ts` schema files exist. Not mentioned in control pack entity map. Presumably "specialist operational records" but should be tagged. |
-| C10 | **Gamification tables (`leaderboard`, `feedback`, `training`)** | Not in any control map. Retain, retire, or ignore? |
+**All 7 blockers are now UNBLOCKED.** Decisions are sufficient to begin schema design for every wave.
 
 ---
 
-### Summary count
+### RISKS — Status after decisions
 
-- **7 Blockers** (new entities needed before core waves)
-- **8 Risks** (misalignment between existing code and control pack expectations)
-- **10 Clarifications** (edge cases that won't block but need tagging)
+| # | Original risk | Decision | New status | Residual risk |
+|---|-------------|----------|-----------|--------------|
+| R1 | Opportunity model mismatch | **Keep Pipedrive integration, keep opportunities table** | **MITIGATED** | Align FKs to spine (party, site). Pipedrive sync stays functional. Low residual risk. |
+| R2 | Budget baseline incomplete | **Investigated.** Table exists with header-only fields (revenue/COS/margin baselines, versioning, lock/approval). Routes exist in `budget-baseline-routes.ts` (GET, POST, lock). | **MITIGATED — needs line items** | Existing header is sufficient for Wave 2. Add `budget_baseline_line` in Wave 5 for category-level variance. No blocker. |
+| R3 | Site/portfolio rule undecided | **One project = one site** | **RESOLVED** | Add unique constraint on `project_instance.siteId`. No portfolio entity needed (Portfolio = tab under Project Management). |
+| R4 | Permission model fragmented | **Simplify and fix — make roles and permissions work properly** | **MITIGATED — significant work** | Full consolidation: merge 3 systems into one. Elevated to Wave 1 priority. This is the highest-risk item remaining. |
+| R5 | projectExecutionState split axis | **Execution state = PM dates, lifecycle = company lens. Can be incorporated.** | **RESOLVED** | Key dates migrate into stage lifecycle. projectExecutionState becomes compatibility view, demoted in Wave 6. |
+| R6 | Legacy route proliferation | **Ongoing work, known issue** | **ACCEPTED** | Flag stale routes as encountered per wave. No preemptive cleanup. |
+| R7 | Frontend nav mismatch (11 vs 8) | **HSE→PM, Reports→per dept, Portfolio→PM tab, Priorities stays** | **RESOLVED** | 9 top-level items: Home, Priorities, PD, PM (+HSE +Portfolio tabs), Engineering, Quality, Finance, Parties, Admin. Reports distributed. |
+| R8 | No activity/audit log split | **Both needed** | **UNBLOCKED** | Build `activity_log` (human-readable) + `audit_log` (technical). Wave 2 work. |
+
+**6 of 8 risks resolved. 2 mitigated (R2 needs line items in Wave 5, R4 needs significant permissions work in Wave 1).**
 
 ---
 
-*Next section: Wave 0 Decision Briefs*
+### CLARIFICATIONS — All resolved
+
+| # | Question | Decision | Action |
+|---|----------|----------|--------|
+| C1 | Work package table needed? | **Yes, both** (same as B7) | Build `work_package` table. |
+| C2 | PD tickets fate | **PD tickets = engineering intake requests, not deals** | Retain `pdTickets`. Link to `work_item` or `governed_process` as intake mechanism. Not the same as opportunities. |
+| C3 | Handover record fate | **Becomes a governed process** | Migrate `projectPdPmHandover` → `governed_process` type='pd_pm_handover'. Old table becomes compatibility, retired Wave 6. |
+| C4 | Smart import write target | **Write to `finance_record`, change detection only** | Smart import creates/updates `finance_record` entries. `program_expense`/`program_inflows` become read-only views. |
+| C5 | QC template hierarchy | **Migrate to new structure, same functionality** | QC templates migrate into `deliverable_definition` / `approval_requirement` pattern. Same functionality, new tables. Wave 4. |
+| C6 | Stage lifecycle adopt or simplify? | **Adopt as-is** | Keep S01–S10 stage gate model. Rename to match control pack vocabulary. No flattening. |
+| C7 | External resource/link tables | **Build from scratch** | New `external_resource` + `resource_link` tables for SharePoint, Teams, email linking. Wave 4–5. |
+| C8 | Notifications | **Crucial but smarter — fewer, actionable only** | Redesign: kill noise, flag only actionable items (overdue, pending approval, blocked). |
+| C9 | HSE / construction | **HSE: build out under PM. Construction: ignore, already covered.** | HSE module expands under Project Management. Construction tables retained as-is. |
+| C10 | Gamification | **Ensure working** | Fix and retain leaderboard, badges, training, points. Don't retire. |
+
+**All 10 clarifications resolved.**
+
+---
+
+### R2 Investigation: Budget Baseline Audit
+
+**Existing table** (`shared/schema/finance.ts:1012`):
+- `budget_baselines`: id, projectId, version, revenueBaseline, cosBaseline, marginBaseline, contingency, approvedByUserId, approvedDate, changeLocked, notes
+- Unique constraint on (projectId, version) — supports versioning
+- Lock mechanism: once approved, `changeLocked=true` prevents edits
+
+**Existing routes** (`server/departments/budget-baseline-routes.ts`):
+- `GET /api/budget-baselines?projectId=X` — fetch all versions for a project
+- `POST /api/budget-baselines` — create new version (auto-increments)
+- `POST /api/budget-baselines/:id/lock` — approve and lock a version
+
+**Assessment:**
+- **Header-level baseline: SUFFICIENT** for Wave 2. Revenue/COS/margin totals with versioning and approval workflow.
+- **Missing for full variance control:** No `budget_baseline_line` table for category-level breakdown (e.g. "Panels: R200k budgeted"). Without this, variance reports can only show "project is R50k over budget" but not "panels are R30k over and labor is R20k over."
+- **Recommendation:** Adopt existing table into core now. Add `budget_baseline_line` in Wave 5 when `finance_record` provides category-level actuals to compare against.
+
+---
+
+### Revised Summary
+
+| Category | Original count | Resolved | Remaining |
+|----------|---------------|----------|-----------|
+| Blockers | 7 | **7** | **0** |
+| Risks | 8 | **6 resolved, 2 mitigated** | **0 blocking** |
+| Clarifications | 10 | **10** | **0** |
+
+---
+
+### WAVE 1 READINESS ASSESSMENT
+
+| Prerequisite | Status | Notes |
+|-------------|--------|-------|
+| All Wave 0 decisions signed off | **READY** | All 5 open decisions have answers from Johannes |
+| All blockers resolved for Wave 1 scope | **READY** | Wave 1 is shell + read contracts only — no new core entities needed |
+| Navigation structure decided | **READY** | 9 top-level: Home, Priorities, PD, PM, Engineering, Quality, Finance, Parties, Admin |
+| Permission approach decided | **READY** | Simplify and consolidate — elevated to Wave 1 priority |
+| Rollback path clear | **READY** | Legacy screens and routes remain callable; feature flag controls new shell |
+| Known risks for Wave 1 | **R4 (permissions)** | Highest-effort item in Wave 1. May need its own sub-wave. |
+
+### VERDICT: READY TO START WAVE 1
+
+No blockers remain. All design decisions are captured. The implementation prompts in Sections 3–8 of this document can be executed in sequence.
+
+**Recommended first action:** Wave 1 Step 1 (Navigation Shell + Department Layout)
+
+---
+
+*Next section: Wave 0 Decision Briefs (updated with final answers)*
 
 ---
 
@@ -99,13 +145,13 @@ These five decisions must be documented and signed off by Johannes before Wave 1
 - *Pro:* Minimal disruption. Existing PD dashboard and Pipedrive routes keep working. Clean handover point.
 - *Con:* Still two entities. But the FK alignment makes the bridge thinner.
 
-**Recommended default: Option C (Hybrid)**
-Rationale: The existing opportunities table is well-built and actively used. Forcing everything into project_instance pre-signature adds complexity for a small team. The key improvement is ensuring opportunity uses spine FKs (party, site) so handover is clean.
+**DECIDED: Option C (Hybrid) — APPROVED by Johannes**
+Johannes confirmed: keep Pipedrive integration working, keep opportunities table. Align FKs to spine.
 
-**Downstream impact:**
-- Wave 2: `project_instance` schema doesn't need pre-signature phases
-- Wave 1–2: PD dashboard keeps reading from opportunities table (re-pointed to use party FKs)
-- Wave 3: PD→PM handover governed_process reads opportunity + creates project_instance
+**Downstream impact (updated):**
+- Wave 2: `project_instance` schema doesn't need pre-signature phases. `opportunities` aligned to spine FKs (party, site).
+- Wave 1–2: PD dashboard keeps reading from opportunities table. Pipedrive integration stays functional.
+- Wave 3: PD→PM handover becomes `governed_process` type='pd_pm_handover', reads opportunity + creates project_instance.
 
 ---
 
@@ -133,13 +179,13 @@ Rationale: The existing opportunities table is well-built and actively used. For
 - *Pro:* Zero effort now.
 - *Con:* No formal approval workflow on baseline. No line-level control. Margin tracking stays fuzzy through Waves 2–4.
 
-**Recommended default: Option A with enrichment plan**
-Rationale: The table exists. Adopt it into core now (Wave 2). Add `budget_baseline_line` in Wave 5 when finance_record provides the actuals to compare against. This gives you header-level control immediately and line-level later.
+**DECIDED: Option A with enrichment plan — APPROVED by Johannes**
+Investigation confirmed: existing table has header-level fields (revenue/COS/margin baselines, versioning, lock/approval) and working routes. Adopt into core now, add line items in Wave 5.
 
-**Downstream impact:**
-- Wave 2: `budget_baselines` adopted into core spine, linked to project_instance
-- Wave 5: `budget_baseline_line` added; variance computation wired against finance_record
-- Wave 3: Governed processes (financial review) can reference budget baseline for approval context
+**Downstream impact (updated):**
+- Wave 2: `budget_baselines` adopted into core spine, linked to project_instance. Existing routes retained.
+- Wave 5: `budget_baseline_line` added for category-level variance against `finance_record` actuals.
+- Wave 3: Governed processes (financial review) reference budget baseline for approval context.
 
 ---
 
@@ -165,8 +211,8 @@ Rationale: The table exists. Adopt it into core now (Wave 2). Add `budget_baseli
 - *Pro:* Maximum flexibility. "My work" dashboard can query one table for everything assigned to me.
 - *Con:* Polymorphic FKs are harder to enforce. Index strategy more complex. Violates the "don't make governed_process a junk drawer" spirit.
 
-**Recommended default: Option B (work_item_assignment)**
-Rationale: Multi-assignee is genuinely needed (PM + engineer + reviewer on a task). But keep it scoped to work_items. Deliverables already have their own role fields. Governed processes use checklist items for responsibility. No need for polymorphic assignments.
+**DECIDED: Option B (work_item_assignment) — APPROVED by Johannes**
+Johannes confirmed: both work packages and tasks needed. `work_item_assignment` table already exists in the schema (`shared/schema/tasks.ts`). Build `work_package` as first-class entity above `work_item`.
 
 **Downstream impact:**
 - Wave 2: `work_item_assignment` table created alongside work_item migration
@@ -202,14 +248,14 @@ Rationale: Multi-assignee is genuinely needed (PM + engineer + reviewer on a tas
 - *Pro:* Minimal migration. Additive only.
 - *Con:* Two sources of truth remain. Drift risk between code arrays and DB records.
 
-**Recommended default: Option C (keep hybrid, add enforcement middleware)**
-Rationale: The current system works. The risk of a full permission model rewrite mid-migration is high. Add the enforcement middleware now (Wave 1), then optionally consolidate to Option A or B in a post-migration cleanup phase.
+**DECIDED: Option A (full consolidation) — OVERRIDDEN by Johannes**
+Johannes directed: "Simplify, fix, and make the roles and permissions working." This overrides the conservative recommendation. Full consolidation into `rolePermissions` DB table as single source of truth. Code-level arrays removed. Elevated to Wave 1 priority.
 
-**Downstream impact:**
-- Wave 1: `checkPermission` middleware added; all new API contracts use it
-- Wave 1: Admin migration control page checks permissions via unified middleware
-- Wave 2–6: Every new endpoint uses `checkPermission`; legacy routes untouched until their wave
-- Post-migration: Optional consolidation to single DB-driven model
+**Downstream impact (updated — full consolidation):**
+- Wave 1: Full permission consolidation. Merge code-level arrays + DB table + workstream visibility into one `rolePermissions` DB-driven model.
+- Wave 1: `checkPermission` middleware added; all routes (new AND legacy) use unified enforcement.
+- Wave 2–6: Every endpoint enforces permissions via single model. No dual sources of truth.
+- Admin UI for managing role permissions becomes critical path in Wave 1.
 
 ---
 
@@ -237,26 +283,26 @@ Rationale: The current system works. The risk of a full permission model rewrite
 - *Pro:* Clean grouping for programme-level reporting. Maps to real business concept.
 - *Con:* Another entity. Must decide if portfolio is per-client or per-geography.
 
-**Recommended default: Option B + C (keep many-projects-per-site, add portfolio entity)**
-Rationale: Solar EPC companies routinely have multiple project phases at one site. Enforcing 1:1 creates data duplication. Adding a lightweight portfolio entity enables programme-level reporting that the `portfolios` page already tries to provide.
+**DECIDED: Option A (1:1 project-site) — OVERRIDDEN by Johannes**
+Johannes directed: "One project = one site." Enforce unique constraint on project_instance.siteId. No separate portfolio entity — portfolio becomes a filtered view/tab under Project Management.
 
-**Downstream impact:**
-- Wave 0: Define `portfolio` table schema (id, name, client_id/party_id, status)
-- Wave 2: `project_instance` gets `portfolioId` FK alongside `siteId`
-- Wave 1: Portfolio page reads from new portfolio entity
-- Wave 5–6: Portfolio-level financial aggregations use portfolio grouping
+**Downstream impact (updated — 1:1 site, no portfolio entity):**
+- Wave 2: `project_instance.siteId` gets unique constraint (1:1 enforcement)
+- Wave 1: Portfolio page becomes a filtered project list tab under Project Management — no new entity needed
+- Wave 2: Sites that currently have multiple projects may need data cleanup (duplicate site records created per project)
+- Wave 5–6: No portfolio-level aggregation entity. Group by client or site for programme reporting.
 
 ---
 
-### Decision Summary for Sign-Off
+### Decision Summary — SIGNED OFF
 
-| # | Decision | Recommended default | Sign-off needed |
-|---|----------|-------------------|-----------------|
-| D1 | Opportunity/deal handling | Hybrid: keep opportunities table, align FKs to spine | Johannes |
-| D2 | Budget baseline | Adopt existing table into core; add line items in Wave 5 | Johannes |
-| D3 | Assignment model | Add `work_item_assignment` join table | Johannes |
-| D4 | Permission model | Keep hybrid + add enforcement middleware | Johannes |
-| D5 | Site/portfolio rule | Many-projects-per-site + add portfolio entity | Johannes |
+| # | Decision | Final answer (Johannes) | Implementation action |
+|---|----------|----------------------|---------------------|
+| D1 | Opportunity/deal handling | **Keep Pipedrive integration, keep opportunities table** | Retain `opportunities`. Align FKs to spine (party, site). Pipedrive sync stays. Handover creates `project_instance` + `governed_process`. |
+| D2 | Budget baseline | **Adopt existing table; add line items in Wave 5** | `budget_baselines` adopted into core (Wave 2). `budget_baseline_line` added in Wave 5 for category-level variance. |
+| D3 | Assignment model | **Both work packages and tasks needed** | Build `work_package` as first-class entity. `work_item_assignment` already exists in schema. |
+| D4 | Permission model | **Simplify and fix — make it work properly** | Full consolidation of 3 overlapping systems into one clean model. Elevated to Wave 1 priority. |
+| D5 | Site/portfolio rule | **One project = one site. Portfolio = tab under PM.** | Enforce 1:1 project-site. No separate portfolio entity. Portfolio view = filtered project list under PM department. |
 
 ---
 
@@ -289,16 +335,17 @@ CONTEXT:
 - Current navigation uses 11 APP_SECTIONS defined in shared/schema/users.ts:158-185
 - Current routing uses wouter in client/src/App.tsx with PAGE_REGISTRY from client/src/config/page-registry.ts
 - Current layout is in client/src/components/layout/AppLayout.tsx
-- Target navigation has 8 departments: Home, Project Development, Project Management, Engineering, Quality, Finance, Parties, Admin (Control Map 3)
+- Target navigation has 9 top-level items (revised per Johannes): Home, Priorities, Project Development, Project Management (+HSE tab +Portfolio tab), Engineering, Quality, Finance, Parties, Admin. Reports distributed into each department section.
 
 TASK:
-1. Create a new navigation config file at client/src/config/department-nav.ts that defines the 8 target departments, each with:
+1. Create a new navigation config file at client/src/config/department-nav.ts that defines the 9 target departments, each with:
    - key, label, icon, basePath
    - Sub-navigation items (mapped from current PAGE_REGISTRY entries)
+   - Tab items where applicable (PM has HSE tab and Portfolio tab)
    - Required permission entity for access control
 
 2. Create a new layout wrapper at client/src/components/layout/DepartmentShell.tsx that:
-   - Renders a top nav bar with the 8 department tabs
+   - Renders a top nav bar with the 9 department tabs
    - Shows sub-navigation within each department
    - Uses the existing useAccessMatrix() hook for permission gating
    - Falls back to current AppLayout if a feature flag DEPARTMENT_SHELL_ENABLED is false
@@ -307,13 +354,14 @@ TASK:
 
 4. Update client/src/App.tsx to conditionally use DepartmentShell when the flag is on, keeping all existing routes working
 
-5. Map every existing page to its target department:
-   - Home: home, my-work-*, inbox, priorities, dashboard
-   - Project Development: pd-*, opportunities, clients, client-detail
-   - Project Management: pm-*, execution-board, weekly-reviews, milestone-tracker
-   - Engineering: engineering-*, standups
+5. Map every existing page to its target department (revised per Johannes's nav decisions):
+   - Home: home, my-work-*, inbox, dashboard
+   - Priorities: priorities, priority-detail, department-scores
+   - Project Development: pd-*, opportunities, clients, client-detail, PD reports
+   - Project Management: pm-*, execution-board, weekly-reviews, milestone-tracker, PM reports, +HSE tab (hse-*), +Portfolio tab (portfolios, portfolio-detail)
+   - Engineering: engineering-*, standups, engineering reports
    - Quality: qm-dashboard, quality/*, commissioning-*
-   - Finance: cashflow, revenue-tracker, cos, gp-tracker, financial-*, payment-*, po-*, invoice-*
+   - Finance: cashflow, revenue-tracker, cos, gp-tracker, financial-*, payment-*, po-*, invoice-*, finance reports
    - Parties: counterparties, subcontractor-dashboard, sites
    - Admin: admin-*, smart-import, database-migration, system-activity-log, role-settings
 
@@ -547,65 +595,69 @@ VERIFY:
 
 ---
 
-### Wave 1 — Step 6: Permission Enforcement Middleware
+### Wave 1 — Step 6: Permission System Consolidation + Enforcement Middleware
 
-**Depends on:** Wave 0 Decision 4 signed off
-**Rollback:** Existing middleware continues to work; new middleware is additive
-**Guardrails:** [1] All new API contracts must use this middleware. [5] Write authority must be clear.
+**Depends on:** Wave 0 Decision 4 signed off (Johannes directed: FULL CONSOLIDATION)
+**Rollback:** Existing middleware continues to work; old code-level arrays retained as dead code until verified
+**Guardrails:** [1] All API contracts (new AND legacy) must use this middleware. [5] Write authority must be clear.
 
 ```
 PROMPT:
 
-You are building a unified permission enforcement middleware for all new API contracts.
+You are consolidating and fixing the permission system. Johannes directed: "Simplify, fix, and make the roles and permissions working." This is a FULL CONSOLIDATION, not an additive middleware.
 
 CONTEXT:
 - Current permission systems (see Gap Analysis R4):
-  1. Code-level role groups in shared/schema/users.ts (FINANCE_VIEW_ROLES, etc.)
-  2. rolePermissions DB table with JSON permission maps
-  3. workstreamVisibilityConfig for UI filtering
+  1. Code-level role groups in shared/schema/users.ts (FINANCE_VIEW_ROLES, ENG_EDIT_ROLES, etc.) — static arrays
+  2. rolePermissions DB table with JSON permission maps — editable via admin UI
+  3. workstreamVisibilityConfig for UI filtering — per-role/user overrides
+- These three systems overlap, sometimes conflict, and make permission debugging hard.
 - Current middleware: server/permission-middleware.ts, server/workstream-visibility-middleware.ts
-- Decision 4 outcome: Keep hybrid, add unified enforcement middleware
+- Decision 4 outcome: FULL CONSOLIDATION into rolePermissions DB table as single source of truth
 
 TASK:
-1. Create server/middleware/check-permission.ts that exports:
+1. Audit all code-level role group arrays in shared/schema/users.ts:
+   - FINANCE_VIEW_ROLES, FINANCE_EDIT_ROLES, ENG_VIEW_ROLES, ENG_EDIT_ROLES,
+     QUALITY_HSE_VIEW_ROLES, QUALITY_HSE_EDIT_ROLES, DELIVERY_VIEW_ROLES,
+     PD_VIEW_ROLES, PD_EDIT_ROLES, ALL_STAFF_ROLES, ADMIN_ROLES
+   - For each, ensure the equivalent permission grants exist in the rolePermissions DB table
+   - Create a migration seed that backfills rolePermissions rows for any missing grants
+
+2. Create server/middleware/check-permission.ts that exports:
    - checkPermission(entity: PermissionEntity, action: PermissionAction) — Express middleware
    - Implementation:
      a. Get user from req (via existing auth context)
-     b. Check code-level role groups first (fast path)
-     c. Check rolePermissions DB table for overrides
-     d. Check userPermissionOverrides for user-specific grants/denials
-     e. Return 403 with { error: 'Forbidden', entity, action, role } if denied
+     b. Query rolePermissions DB table for the user's role + entity + action
+     c. Check userPermissionOverrides for user-specific grants/denials
+     d. Return 403 with { error: 'Forbidden', entity, action, role } if denied
+     e. Cache permission lookups with 60-second TTL (matching existing pattern)
    - Log permission checks to audit when action is 'approve', 'override', or 'delete'
+   - DO NOT check code-level arrays — DB is sole source of truth
 
-2. Create server/middleware/require-auth.ts that:
+3. Create server/middleware/require-auth.ts that:
    - Validates session/JWT
    - Attaches user to req.user
    - Returns 401 if not authenticated
    - Wraps existing auth-context.ts logic into reusable middleware
 
-3. Update the 5 new endpoints created in Steps 2–5 to use:
-   - requireAuth() on all routes
-   - checkPermission('home', 'view') on home summary
-   - checkPermission('projects', 'view') on workspace summary
-   - checkPermission('counterparties', 'view') on parties (temporary entity name)
-   - checkPermission('admin', 'view') on migration control
-   - checkPermission('admin', 'edit') on backfill-run
+4. Update the 5 new endpoints created in Steps 2–5 to use checkPermission
 
-4. Add integration tests (or manual test checklist) confirming:
-   - Authenticated user with correct role: 200
-   - Authenticated user without role: 403
-   - Unauthenticated: 401
+5. Deprecate code-level role arrays:
+   - Add @deprecated JSDoc comments to all arrays in users.ts
+   - DO NOT delete them yet — they stay as dead code until all legacy routes are migrated
+   - Ensure workstreamVisibilityConfig only controls UI filtering, not authorization
 
-DO NOT:
-- Modify existing middleware or existing route permission checks
-- Change the rolePermissions table schema
-- Remove any code-level role groups
+6. Update Admin Roles page to ensure rolePermissions can be managed:
+   - Verify that the existing admin-roles.tsx page allows editing role → entity → action grants
+   - If not, add the missing CRUD for rolePermissions
 
 VERIFY:
-- All 5 new endpoints enforce permissions
+- All 5 new endpoints enforce permissions via DB-only checks
 - 403 response includes entity/action/role for debugging
 - Audit log entries created for sensitive actions
-- Existing routes unaffected
+- Existing routes still work (they may still use old middleware temporarily)
+- Admin can add/remove permission grants via UI without code deploy
+- rolePermissions table has complete coverage for all 16 company roles
 ```
 
 ---
@@ -627,7 +679,8 @@ WAVE 1 DONE-WHEN CRITERIA (from Cutover Map):
 CHECKLIST:
 
 1. SHELL STABILITY
-   [ ] DepartmentShell renders all 8 department tabs
+   [ ] DepartmentShell renders all 9 department tabs (Home, Priorities, PD, PM, Engineering, Quality, Finance, Parties, Admin)
+   [ ] PM department has HSE tab and Portfolio tab
    [ ] Every existing page is accessible under its mapped department
    [ ] Feature flag OFF: app behaves identically to pre-migration
    [ ] Feature flag ON: new shell works, no broken routes
@@ -647,8 +700,11 @@ CHECKLIST:
    [ ] All new endpoints are read-only (except admin backfill placeholder)
    [ ] No analytical tables were touched (Guardrail 2)
 
-4. PERMISSIONS
-   [ ] checkPermission middleware enforces access on all new endpoints
+4. PERMISSIONS (CONSOLIDATED — per Johannes directive)
+   [ ] checkPermission middleware enforces access on all new endpoints via DB-only checks
+   [ ] rolePermissions DB table has complete coverage for all 16 company roles
+   [ ] Code-level role arrays deprecated (marked @deprecated, not deleted)
+   [ ] Admin Roles page allows CRUD on rolePermissions without code deploy
    [ ] Unauthorized access returns 403 with structured error
    [ ] Unauthenticated access returns 401
 
