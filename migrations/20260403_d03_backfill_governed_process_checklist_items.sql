@@ -8,6 +8,56 @@
 BEGIN;
 
 -- -------------------------------------------------------
+-- 0. Safety warnings: detect unresolvable references
+-- -------------------------------------------------------
+DO $$
+DECLARE
+  _orphaned_handover_items  INTEGER;
+  _orphaned_stage_reqs      INTEGER;
+  _unmatched_stage_projects INTEGER;
+BEGIN
+  -- Handover checklist items whose handover pack → project chain doesn't resolve
+  SELECT COUNT(*) INTO _orphaned_handover_items
+  FROM handover_checklist_items hci
+  JOIN handover_packs hp ON hp.id = hci.handover_pack_id
+  WHERE NOT EXISTS (
+    SELECT 1 FROM core.projects p
+    JOIN core.project_instances pi ON pi.legacy_project_id = p.id
+    JOIN core.governed_processes gp
+      ON gp.legacy_entity_table = 'project_pd_pm_handover'
+      AND gp.project_instance_id = pi.id
+    WHERE p.legacy_project_info_id = hp.project_id
+  );
+  IF _orphaned_handover_items > 0 THEN
+    RAISE WARNING '[Phase D.3 backfill] % handover_checklist_item(s) have no resolvable governed_process parent; will be skipped', _orphaned_handover_items;
+  END IF;
+
+  -- Stage instances whose project_id doesn't resolve
+  SELECT COUNT(*) INTO _unmatched_stage_projects
+  FROM project_stage_instances psi
+  WHERE NOT EXISTS (
+    SELECT 1 FROM core.projects p
+    JOIN core.project_instances pi ON pi.legacy_project_id = p.id
+    WHERE p.legacy_project_info_id = psi.project_id
+  );
+  IF _unmatched_stage_projects > 0 THEN
+    RAISE WARNING '[Phase D.3 backfill] % stage_instance(s) have a project_id not resolvable to project_instances; stage_gate processes will be skipped', _unmatched_stage_projects;
+  END IF;
+
+  -- Stage requirements whose stage_instance doesn't have a governed_process yet
+  -- (will be created in this migration, but warn about orphaned stage requirements with no stage instance)
+  SELECT COUNT(*) INTO _orphaned_stage_reqs
+  FROM project_stage_requirements psr
+  WHERE psr.status <> 'NOT_STARTED'
+    AND NOT EXISTS (
+      SELECT 1 FROM project_stage_instances psi WHERE psi.id = psr.stage_instance_id
+    );
+  IF _orphaned_stage_reqs > 0 THEN
+    RAISE WARNING '[Phase D.3 backfill] % stage_requirement(s) reference non-existent stage_instance_id; will be skipped', _orphaned_stage_reqs;
+  END IF;
+END $$;
+
+-- -------------------------------------------------------
 -- 1. Handover checklist items → pd_to_pm_handover processes
 -- handover_checklist_items → handover_packs → project (via handover pack's project)
 -- -------------------------------------------------------

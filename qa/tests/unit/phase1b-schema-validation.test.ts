@@ -1535,6 +1535,13 @@ describe("Phase 1B Schema Existence Tests", () => {
       expect(sql).toContain("cr.deleted_at IS NULL");
     });
 
+    it("includes safety warnings for unresolvable references", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase D.2 backfill]");
+      expect(sql).toContain("not resolvable to project_instances");
+      expect(sql).toContain("not resolvable to user_accounts");
+    });
+
     it("wraps in BEGIN/COMMIT", () => {
       expect(sql).toContain("BEGIN;");
       expect(sql).toContain("COMMIT;");
@@ -1581,6 +1588,14 @@ describe("Phase 1B Schema Existence Tests", () => {
     it("links handover checklist items via handover_packs → projects → governed_processes", () => {
       expect(sql).toContain("handover_packs");
       expect(sql).toContain("legacy_project_info_id");
+    });
+
+    it("includes safety warnings for unresolvable references", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("[Phase D.3 backfill]");
+      expect(sql).toContain("no resolvable governed_process parent");
+      expect(sql).toContain("not resolvable to project_instances");
+      expect(sql).toContain("non-existent stage_instance_id");
     });
 
     it("wraps in BEGIN/COMMIT", () => {
