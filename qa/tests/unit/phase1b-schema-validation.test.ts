@@ -1065,6 +1065,55 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration B.5 fix: Add current_phase_definition_id FK --
+  describe("Migration B.5 fix: add_phase_definition_fk_to_project_instances", () => {
+    const sql = readMigration("20260403_b10_add_phase_definition_fk_to_project_instances.sql");
+
+    it("adds current_phase_definition_id column to project_instances", () => {
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS current_phase_definition_id INTEGER");
+    });
+
+    it("references core.phase_definitions(id)", () => {
+      expect(sql).toContain("REFERENCES core.phase_definitions(id)");
+    });
+
+    it("creates index on the new FK column", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_project_instances_current_phase_definition_id");
+    });
+
+    it("backfills from core.projects.current_stage_code via phase_definitions", () => {
+      expect(sql).toContain("UPDATE core.project_instances pi");
+      expect(sql).toContain("JOIN core.phase_definitions pd ON pd.code = p.current_stage_code");
+    });
+
+    it("is idempotent via IF NOT EXISTS and IS NULL guard", () => {
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS");
+      expect(sql).toContain("pi.current_phase_definition_id IS NULL");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback B.5 fix: add_phase_definition_fk_rollback", () => {
+    const sql = readMigration("20260403_b10_add_phase_definition_fk_to_project_instances_rollback.sql");
+
+    it("drops the FK column", () => {
+      expect(sql).toContain("DROP COLUMN IF EXISTS current_phase_definition_id");
+    });
+
+    it("drops the index", () => {
+      expect(sql).toContain("DROP INDEX IF EXISTS core.idx_project_instances_current_phase_definition_id");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -1686,7 +1735,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 41 migration files exist", () => {
+  it("all 43 migration files exist", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -1729,6 +1778,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_b08_create_phase_definitions.sql",
       "20260403_b08_create_phase_definitions_rollback.sql",
       "20260403_b09_backfill_project_phase_history.sql",
+      "20260403_b10_add_phase_definition_fk_to_project_instances.sql",
+      "20260403_b10_add_phase_definition_fk_to_project_instances_rollback.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -1818,6 +1869,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_b04_create_project_info.sql",
       "20260403_b06_create_project_party_links.sql",
       "20260403_b08_create_phase_definitions.sql",
+      "20260403_b10_add_phase_definition_fk_to_project_instances.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -1845,6 +1897,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_b04_create_project_info.sql",
       "20260403_b06_create_project_party_links.sql",
       "20260403_b08_create_phase_definitions.sql",
+      "20260403_b10_add_phase_definition_fk_to_project_instances.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
