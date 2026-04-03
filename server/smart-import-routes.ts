@@ -3280,10 +3280,12 @@ export function registerSmartImportRoutes(app: Express) {
 
   // Ensure program_expense and program_inflows have all required columns.
   // These are additive ALTER TABLE statements (safe to re-run).
+  // Production: blocked — schema must come from versioned migrations.
   schemaReadyPromise = (async () => {
     try {
       const { getDbMode } = await import("./db");
       if (getDbMode() === "sqlite") return;
+      if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
       const { sql: rawSql } = await import("drizzle-orm");
       await db.execute(rawSql.raw(`
         ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT;

@@ -61,6 +61,12 @@ Already returns early in production. No DDL executed.
 ### `maintenance.ts` (already neutered)
 Already returns early. No DDL executed.
 
+### `smart-import-routes.ts` DDL (guarded)
+Module-load-time DDL for `program_expense`/`program_inflows` columns. Blocked in production/staging via `NODE_ENV` check. Dev-only safety net.
+
+### `lifecycle-routes.ts` DDL (guarded)
+Module-load-time DDL for `project_rag_audit` table and `project_info` columns. Blocked in production/staging via `NODE_ENV` check. Dev-only safety net.
+
 ## Migration Workflow
 
 ### Adding a New Table or Column
@@ -88,3 +94,5 @@ Already returns early. No DDL executed.
 | `server/db.ts` | Database connection only (no DDL) |
 | `server/bootstrap/runtime-schema-compatibility.ts` | Neutered — no DDL |
 | `server/bootstrap/maintenance.ts` | Neutered — no DDL |
+| `server/smart-import-routes.ts` | Module-load DDL (blocked in production) |
+| `server/lifecycle-routes.ts` | Module-load DDL (blocked in production) |
