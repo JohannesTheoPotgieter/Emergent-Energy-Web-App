@@ -182,30 +182,13 @@ export function registerPdRoutes(app: Express) {
         createdBy: user?.id || null,
       }).returning();
 
-      const dualWriteEnabled = await getFeatureFlag("promoted_core_clients_dual_write");
-      const promotedMirror = { attempted: false, success: false, error: null as string | null };
-      if (dualWriteEnabled) {
-        promotedMirror.attempted = true;
-        try {
-          await db.execute(sql`
-            INSERT INTO core.clients (id, legacy_id, client_code, name, created_by, updated_by, created_at, updated_at, source_table)
-            VALUES (${created.id}, ${created.id}, ${clientId}, ${created.name}, ${user?.id ?? null}, ${user?.id ?? null}, NOW(), NOW(), 'public.clients')
-            ON CONFLICT (id) DO UPDATE
-            SET name = EXCLUDED.name,
-                client_code = EXCLUDED.client_code,
-                updated_by = EXCLUDED.updated_by,
-                updated_at = NOW()
-          `);
-          promotedMirror.success = true;
-        } catch (mirrorError: any) {
-          promotedMirror.error = mirrorError?.message || "unknown_error";
-          console.error("[dual-write][pd-clients] promoted mirror write failed", mirrorError);
-        }
-      }
-
-      if (promotedMirror.attempted) {
-        res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
-      }
+      // Phase 2 bridge write: mirror to core.clients (always-on, best-effort)
+      const { syncClient } = await import("./bridge/bridge-writer");
+      const promotedMirror = await syncClient({
+        id: created.id, name: created.name, clientId,
+        createdBy: user?.id ?? null, updatedBy: user?.id ?? null,
+      });
+      res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
       res.status(201).json({ ...created, _promotedMirror: promotedMirror });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
