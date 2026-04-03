@@ -1187,7 +1187,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Rollback C.1: create_work_packages_rollback", () => {
-    const sql = readMigration("20260403_c01_create_work_packages_rollback.sql");
+    const sql = readMigration("20260403_c09_create_work_packages_rollback.sql");
 
     it("drops core.work_packages table", () => {
       expect(sql).toContain("DROP TABLE IF EXISTS core.work_packages");
@@ -1278,6 +1278,10 @@ describe("Phase 1B Schema Existence Tests", () => {
       expect(sql).toContain("owner_user_id not resolvable");
     });
 
+    it("includes safety warning for orphaned parent_id references", () => {
+      expect(sql).toContain("parent_id referencing deleted items");
+    });
+
     it("is idempotent via ON CONFLICT", () => {
       expect(sql).toContain("ON CONFLICT (legacy_work_item_id) DO NOTHING");
     });
@@ -1293,7 +1297,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Rollback C.2: create_work_items_clean_rollback", () => {
-    const sql = readMigration("20260403_c03_create_work_items_clean_rollback.sql");
+    const sql = readMigration("20260403_c08_create_work_items_clean_rollback.sql");
 
     it("drops core.work_items_clean table", () => {
       expect(sql).toContain("DROP TABLE IF EXISTS core.work_items_clean");
@@ -1357,6 +1361,11 @@ describe("Phase 1B Schema Existence Tests", () => {
       expect(sql).toContain("wid.deleted_at IS NULL");
     });
 
+    it("includes safety warning for orphaned dependencies", () => {
+      expect(sql).toContain("RAISE WARNING");
+      expect(sql).toContain("not in work_items_clean and will be skipped");
+    });
+
     it("is idempotent via ON CONFLICT", () => {
       expect(sql).toContain("ON CONFLICT (predecessor_id, successor_id, dep_type) DO NOTHING");
     });
@@ -1368,7 +1377,7 @@ describe("Phase 1B Schema Existence Tests", () => {
   });
 
   describe("Rollback C.3: create_work_item_dependencies_clean_rollback", () => {
-    const sql = readMigration("20260403_c05_create_work_item_dependencies_clean_rollback.sql");
+    const sql = readMigration("20260403_c07_create_work_item_dependencies_clean_rollback.sql");
 
     it("drops core.work_item_dependencies_clean table", () => {
       expect(sql).toContain("DROP TABLE IF EXISTS core.work_item_dependencies_clean");
@@ -2047,13 +2056,13 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_b10_add_phase_definition_fk_to_project_instances.sql",
       "20260403_b10_add_phase_definition_fk_to_project_instances_rollback.sql",
       "20260403_c01_create_work_packages.sql",
-      "20260403_c01_create_work_packages_rollback.sql",
+      "20260403_c09_create_work_packages_rollback.sql",
       "20260403_c02_backfill_work_packages.sql",
       "20260403_c03_create_work_items_clean.sql",
-      "20260403_c03_create_work_items_clean_rollback.sql",
+      "20260403_c08_create_work_items_clean_rollback.sql",
       "20260403_c04_backfill_work_items_clean.sql",
       "20260403_c05_create_work_item_dependencies_clean.sql",
-      "20260403_c05_create_work_item_dependencies_clean_rollback.sql",
+      "20260403_c07_create_work_item_dependencies_clean_rollback.sql",
       "20260403_c06_backfill_work_item_dependencies_clean.sql",
     ];
     for (const file of expectedFiles) {

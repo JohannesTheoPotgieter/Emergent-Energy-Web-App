@@ -87,6 +87,26 @@ WHERE wi.deleted_at IS NULL
 ON CONFLICT (legacy_work_item_id) DO NOTHING;
 
 -- -------------------------------------------------------
+-- Safety check: warn about orphaned parent_id references
+-- -------------------------------------------------------
+DO $$
+DECLARE
+  _orphaned_parents INTEGER;
+BEGIN
+  SELECT COUNT(*) INTO _orphaned_parents
+  FROM work_items wi
+  WHERE wi.deleted_at IS NULL
+    AND wi.parent_id IS NOT NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM core.work_items_clean wic
+      WHERE wic.legacy_work_item_id = wi.parent_id
+    );
+  IF _orphaned_parents > 0 THEN
+    RAISE WARNING '[Phase C.2 backfill] % work_item(s) have parent_id referencing deleted items; parent_id will remain NULL', _orphaned_parents;
+  END IF;
+END $$;
+
+-- -------------------------------------------------------
 -- Step 2: Resolve parent_id references
 -- Uses legacy parent_id to find the corresponding clean row.
 -- -------------------------------------------------------
