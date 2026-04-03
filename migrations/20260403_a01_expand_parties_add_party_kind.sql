@@ -1,4 +1,4 @@
--- Migration: 20260403_expand_parties_add_party_kind.sql
+-- Migration: 20260403_a01_expand_parties_add_party_kind.sql
 -- Phase A.2: Expand core.parties with party_kind discriminator and user tracking
 -- Additive only. All new columns nullable. No existing columns modified.
 BEGIN;
