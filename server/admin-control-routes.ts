@@ -798,6 +798,21 @@ router.get("/api/admin/control-center/permission-enforcement", requireAuth, requ
   }
 });
 
+// ---------------------------------------------------------------------------
+// Reconciliation health check — verifies legacy ↔ promoted schema parity
+// ---------------------------------------------------------------------------
+router.get("/api/admin/reconciliation", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const { runReconciliation } = await import("./bridge/reconciliation-runner");
+    const result = await runReconciliation();
+    const statusCode = result.overall === "PASS" ? 200 : 409;
+    res.status(statusCode).json(result);
+  } catch (err: any) {
+    console.error("[Admin] Reconciliation check error:", err.message);
+    res.status(500).json({ error: "Reconciliation check failed", detail: err.message });
+  }
+});
+
 export function registerAdminControlRoutes(app: Express) {
   app.use(router);
 }
