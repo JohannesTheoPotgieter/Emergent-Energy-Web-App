@@ -195,6 +195,61 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration A.2: Expand parties with party_kind + user backfill --
+  describe("Migration A.2: expand_parties_add_party_kind", () => {
+    const sql = readMigration("20260403_expand_parties_add_party_kind.sql");
+
+    it("adds party_kind column", () => {
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS party_kind TEXT");
+    });
+
+    it("adds legal_name column", () => {
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS legal_name TEXT");
+    });
+
+    it("adds legacy_user_id column", () => {
+      expect(sql).toContain("ADD COLUMN IF NOT EXISTS legacy_user_id INTEGER UNIQUE");
+    });
+
+    it("creates idx_parties_party_kind index", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_parties_party_kind ON core.parties (party_kind)");
+    });
+  });
+
+  describe("Backfill A.2: backfill_parties_users", () => {
+    const sql = readMigration("20260403_backfill_parties_users.sql");
+
+    it("backfills existing rows as organisation", () => {
+      expect(sql).toContain("SET party_kind = 'organisation' WHERE party_kind IS NULL");
+    });
+
+    it("inserts users as person-kind parties", () => {
+      expect(sql).toContain("'person'");
+      expect(sql).toContain("'user'");
+      expect(sql).toContain("FROM public.users");
+      expect(sql).toContain("ON CONFLICT (legacy_user_id) DO NOTHING");
+    });
+  });
+
+  describe("Rollback A.2: expand_parties_add_party_kind_rollback", () => {
+    const sql = readMigration("20260403_expand_parties_add_party_kind_rollback.sql");
+
+    it("deletes user rows before dropping columns", () => {
+      const deletePos = sql.indexOf("DELETE FROM core.parties WHERE source_table = 'public.users'");
+      const dropPos = sql.indexOf("DROP COLUMN IF EXISTS party_kind");
+      expect(deletePos).toBeGreaterThan(-1);
+      expect(dropPos).toBeGreaterThan(-1);
+      expect(deletePos).toBeLessThan(dropPos);
+    });
+
+    it("drops index and all three new columns", () => {
+      expect(sql).toContain("DROP INDEX IF EXISTS core.idx_parties_party_kind");
+      expect(sql).toContain("DROP COLUMN IF EXISTS legacy_user_id");
+      expect(sql).toContain("DROP COLUMN IF EXISTS legal_name");
+      expect(sql).toContain("DROP COLUMN IF EXISTS party_kind");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
