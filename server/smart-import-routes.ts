@@ -1623,6 +1623,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         };
         const [newProject] = await db.insert(projectInfo).values(newProjectFields as any).returning();
         await syncProjectSplitTablesAfterInsert(newProject.id, newProjectFields);
+        // Phase 2 bridge write: mirror new project to core.projects
+        import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
+          syncProjectInsert(newProject as any)
+        ).catch(() => {});
         projectId = newProject.id;
         await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
       }
@@ -1778,6 +1782,11 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         await softCloseByProjectName(tx, "normalized_cost_lines", projectName);
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
       }
+      // Phase 2 bridge write: soft-close promoted finance lines to match legacy
+      import("./bridge/bridge-writer").then(({ softClosePromotedCostLines, softClosePromotedRevenueLines }) => {
+        softClosePromotedCostLines(projectId ?? null, projectName ?? null).catch(() => {});
+        softClosePromotedRevenueLines(projectId ?? null, projectName ?? null).catch(() => {});
+      }).catch(() => {});
       const commitTimestamp = new Date();
       const scenarioIds = await tx
         .select({ id: workingPlanScenario.id })

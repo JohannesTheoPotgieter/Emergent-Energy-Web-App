@@ -241,6 +241,10 @@ export function registerSyncRoutes(app: Express) {
               const syncInsertFields = { projectName: clientName, phase: "First Assessment", isActive: true };
               const [newProj] = await db.insert(projectInfo).values(syncInsertFields).returning();
               await syncProjectSplitTablesAfterInsert(newProj.id, syncInsertFields);
+              // Phase 2 bridge write: mirror new project to core.projects
+              import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
+                syncProjectInsert(newProj as any)
+              ).catch(() => {});
               projectId = newProj.id;
               newProjects++;
             }

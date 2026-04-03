@@ -51,9 +51,19 @@ export async function runReconciliation(): Promise<ReconciliationResult> {
       "core.projects rows stale vs project_info",
     ),
     runCheck(
+      "projects_field_drift",
+      `SELECT count(*) AS fail_count FROM project_info pi JOIN core.projects cp ON cp.id = pi.id WHERE COALESCE(cp.project_name,'') != COALESCE(pi.project_name,'') OR COALESCE(cp.phase,'') != COALESCE(pi.phase,'')`,
+      "core.projects field values differ from project_info",
+    ),
+    runCheck(
       "clients_missing",
       `SELECT count(*) AS fail_count FROM clients c LEFT JOIN core.clients cc ON cc.id = c.id WHERE cc.id IS NULL AND c.id IS NOT NULL`,
       "Legacy clients missing from core.clients",
+    ),
+    runCheck(
+      "clients_stale",
+      `SELECT count(*) AS fail_count FROM clients c JOIN core.clients cc ON cc.id = c.id WHERE COALESCE(cc.name,'') != COALESCE(c.name,'')`,
+      "core.clients name differs from legacy clients",
     ),
     runCheck(
       "cost_lines_missing",
@@ -61,14 +71,34 @@ export async function runReconciliation(): Promise<ReconciliationResult> {
       "Active cost lines missing from finance.cost_lines",
     ),
     runCheck(
+      "cost_lines_stale",
+      `SELECT count(*) AS fail_count FROM normalized_cost_lines ncl JOIN finance.cost_lines fcl ON fcl.legacy_normalized_cost_line_id = ncl.id WHERE ncl.effective_to IS NULL AND fcl.last_synced_at < ncl.updated_at - INTERVAL '5 minutes'`,
+      "finance.cost_lines stale vs normalized_cost_lines",
+    ),
+    runCheck(
       "revenue_lines_missing",
       `SELECT count(*) AS fail_count FROM normalized_revenue_lines nrl LEFT JOIN finance.revenue_lines frl ON frl.legacy_normalized_revenue_line_id = nrl.id WHERE nrl.effective_to IS NULL AND frl.id IS NULL`,
       "Active revenue lines missing from finance.revenue_lines",
     ),
     runCheck(
+      "revenue_lines_stale",
+      `SELECT count(*) AS fail_count FROM normalized_revenue_lines nrl JOIN finance.revenue_lines frl ON frl.legacy_normalized_revenue_line_id = nrl.id WHERE nrl.effective_to IS NULL AND frl.last_synced_at < nrl.updated_at - INTERVAL '5 minutes'`,
+      "finance.revenue_lines stale vs normalized_revenue_lines",
+    ),
+    runCheck(
       "change_requests_missing",
       `SELECT count(*) AS fail_count FROM change_requests cr LEFT JOIN finance.finance_records fr ON fr.legacy_entity_table = 'public.change_requests' AND fr.legacy_entity_id = cr.id WHERE cr.deleted_at IS NULL AND fr.id IS NULL`,
       "Change requests missing from finance.finance_records",
+    ),
+    runCheck(
+      "users_missing",
+      `SELECT count(*) AS fail_count FROM users u LEFT JOIN core.user_accounts ua ON ua.id = u.id WHERE ua.id IS NULL AND u.id IS NOT NULL`,
+      "Users missing from core.user_accounts",
+    ),
+    runCheck(
+      "bridge_failures_unresolved",
+      `SELECT count(*) AS fail_count FROM internal.bridge_sync_failures WHERE resolved_at IS NULL`,
+      "Unresolved bridge sync failures",
     ),
   ]);
 
@@ -84,4 +114,53 @@ export async function runReconciliation(): Promise<ReconciliationResult> {
     checks,
     summary,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Automated reconciliation scheduler
+// ---------------------------------------------------------------------------
+
+const DEFAULT_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+let schedulerHandle: ReturnType<typeof setInterval> | null = null;
+let lastResult: ReconciliationResult | null = null;
+
+export function startReconciliationScheduler(
+  intervalMs: number = DEFAULT_INTERVAL_MS,
+  onFail?: (result: ReconciliationResult) => void,
+): void {
+  if (schedulerHandle) return; // Already running
+
+  console.log(`[reconciliation] Starting automated scheduler (interval: ${intervalMs / 1000}s)`);
+
+  const tick = async () => {
+    try {
+      const result = await runReconciliation();
+      lastResult = result;
+
+      if (result.overall === "FAIL") {
+        console.warn(`[reconciliation] FAIL: ${result.summary}`);
+        if (onFail) onFail(result);
+      } else {
+        console.log(`[reconciliation] PASS: ${result.summary}`);
+      }
+    } catch (err) {
+      console.error("[reconciliation] scheduler error:", err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  // Run immediately on start, then on interval
+  tick();
+  schedulerHandle = setInterval(tick, intervalMs);
+}
+
+export function stopReconciliationScheduler(): void {
+  if (schedulerHandle) {
+    clearInterval(schedulerHandle);
+    schedulerHandle = null;
+    console.log("[reconciliation] Scheduler stopped");
+  }
+}
+
+export function getLastReconciliationResult(): ReconciliationResult | null {
+  return lastResult;
 }
