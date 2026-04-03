@@ -1,7 +1,7 @@
 # Phase H Migration Manifest
 
 > **Phase:** H — Strategic Priorities + Import + Compatibility Views  
-> **Status:** Complete  
+> **Status:** Schema DDL + backfill + read-only views complete. Runtime write/read cutover outstanding (see docs/schema-migration-status.md).  
 > **Total migrations:** 8 (3 DDL + 2 backfill + 1 views + 3 rollback - replaces spine_view_swap.sql)
 
 ---

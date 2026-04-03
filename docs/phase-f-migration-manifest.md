@@ -1,7 +1,7 @@
 # Phase F Migration Manifest
 
 > **Phase:** F — Unified Finance  
-> **Status:** Complete  
+> **Status:** Schema DDL + backfill complete. Runtime write/read cutover outstanding (see docs/schema-migration-status.md).  
 > **Total migrations:** 9 (2 DDL + 5 backfill + 2 rollback)
 
 ---

@@ -1,7 +1,7 @@
 # Phase B Migration Manifest
 
 > **Phase:** B — Project Spine  
-> **Status:** Complete  
+> **Status:** Schema DDL + backfill complete. Runtime write/read cutover outstanding (see docs/schema-migration-status.md).  
 > **Total migrations:** 16 (10 forward + 5 rollback + 1 FK fix with rollback)
 
 ---
