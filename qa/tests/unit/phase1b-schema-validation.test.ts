@@ -561,6 +561,74 @@ describe("Phase 1B Schema Existence Tests", () => {
     });
   });
 
+  // -- Migration B.1: Create project_types + parameter_definitions --
+  describe("Migration B.1: create_project_types", () => {
+    const sql = readMigration("20260403_b01_create_project_types.sql");
+
+    it("creates core.project_types table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.project_types");
+    });
+
+    it("project_types has code UNIQUE and name columns", () => {
+      expect(sql).toContain("code      TEXT NOT NULL UNIQUE");
+    });
+
+    it("seeds 6 project types", () => {
+      const typeCodes = ["GRID_TIED", "BESS", "HYBRID", "WATER", "AD_HOC", "OTHER"];
+      for (const code of typeCodes) {
+        expect(sql).toContain(`'${code}'`);
+      }
+    });
+
+    it("creates core.project_type_parameter_definitions table", () => {
+      expect(sql).toContain("CREATE TABLE IF NOT EXISTS core.project_type_parameter_definitions");
+    });
+
+    it("parameter_definitions has composite unique constraint", () => {
+      expect(sql).toContain("UNIQUE (project_type_id, parameter_code)");
+    });
+
+    it("parameter_definitions has FK to project_types", () => {
+      expect(sql).toContain("REFERENCES core.project_types(id)");
+    });
+
+    it("parameter_definitions supports data_type and select_options", () => {
+      expect(sql).toContain("data_type");
+      expect(sql).toContain("select_options  JSONB");
+    });
+
+    it("creates indexes on parameter_definitions", () => {
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_param_defs_project_type_id");
+      expect(sql).toContain("CREATE INDEX IF NOT EXISTS idx_param_defs_active");
+    });
+
+    it("project_types seed is idempotent via ON CONFLICT", () => {
+      expect(sql).toContain("ON CONFLICT (code) DO NOTHING");
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
+  describe("Rollback B.1: create_project_types_rollback", () => {
+    const sql = readMigration("20260403_b01_create_project_types_rollback.sql");
+
+    it("drops parameter_definitions before project_types (FK order)", () => {
+      const dropParams = sql.indexOf("DROP TABLE IF EXISTS core.project_type_parameter_definitions");
+      const dropTypes = sql.indexOf("DROP TABLE IF EXISTS core.project_types");
+      expect(dropParams).toBeGreaterThan(-1);
+      expect(dropTypes).toBeGreaterThan(-1);
+      expect(dropParams).toBeLessThan(dropTypes);
+    });
+
+    it("wraps in BEGIN/COMMIT", () => {
+      expect(sql).toContain("BEGIN;");
+      expect(sql).toContain("COMMIT;");
+    });
+  });
+
   // -- Migration 5: Finance period derivation --
   describe("Migration 5: finance_period_derivation", () => {
     const sql = readMigration("20260402_finance_period_derivation.sql");
@@ -1182,7 +1250,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
     }
   });
 
-  it("all 27 migration files exist (8+4 forward + 8+4 rollback + 3 backfill)", () => {
+  it("all 29 migration files exist (8+5 forward + 8+5 rollback + 3 backfill)", () => {
     const expectedFiles = [
       "20260402_lifecycle_parity_columns.sql",
       "20260402_lifecycle_parity_columns_rollback.sql",
@@ -1211,6 +1279,8 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_a08_create_role_assignments.sql",
       "20260403_a08_create_role_assignments_rollback.sql",
       "20260403_a09_backfill_role_assignments.sql",
+      "20260403_b01_create_project_types.sql",
+      "20260403_b01_create_project_types_rollback.sql",
     ];
     for (const file of expectedFiles) {
       expect(fs.existsSync(path.join(migrationsDir, file))).toBe(true);
@@ -1295,6 +1365,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_a06_create_microsoft_identities.sql",
       "20260403_a03_create_departments_role_definitions.sql",
       "20260403_a08_create_role_assignments.sql",
+      "20260403_b01_create_project_types.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
@@ -1317,6 +1388,7 @@ describe("Phase 1B Reconciliation Integration Tests", () => {
       "20260403_a06_create_microsoft_identities.sql",
       "20260403_a03_create_departments_role_definitions.sql",
       "20260403_a08_create_role_assignments.sql",
+      "20260403_b01_create_project_types.sql",
     ];
     for (const file of forwardMigrations) {
       const content = readMigration(file);
