@@ -233,4 +233,17 @@ WHERE di.legacy_deliverable_table = 'task_deliverables'
   AND td.recipient_user_id IS NOT NULL
   AND di.reviewer_party_id IS NULL;
 
+-- -------------------------------------------------------
+-- 5. Resolve phase_definition_id from deliverables.phase text
+-- Maps the free-text phase column to core.phase_definitions.code
+-- -------------------------------------------------------
+UPDATE core.deliverable_instances di
+SET phase_definition_id = pd.id
+FROM deliverables d
+JOIN core.phase_definitions pd ON pd.code = UPPER(TRIM(d.phase))
+WHERE di.legacy_deliverable_table = 'deliverables'
+  AND di.legacy_deliverable_id = d.id
+  AND d.phase IS NOT NULL
+  AND di.phase_definition_id IS NULL;
+
 COMMIT;

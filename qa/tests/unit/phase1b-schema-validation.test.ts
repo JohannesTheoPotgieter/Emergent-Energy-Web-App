@@ -1785,6 +1785,12 @@ describe("Phase 1B Schema Existence Tests", () => {
       expect(sql).toContain("work_items_clean wic ON wic.legacy_work_item_id = td.work_item_id");
     });
 
+    it("resolves phase_definition_id from deliverables.phase text", () => {
+      expect(sql).toContain("SET phase_definition_id = pd.id");
+      expect(sql).toContain("phase_definitions pd ON pd.code = UPPER(TRIM(d.phase))");
+      expect(sql).toContain("di.phase_definition_id IS NULL");
+    });
+
     it("wraps in BEGIN/COMMIT", () => {
       expect(sql).toContain("BEGIN;");
       expect(sql).toContain("COMMIT;");
