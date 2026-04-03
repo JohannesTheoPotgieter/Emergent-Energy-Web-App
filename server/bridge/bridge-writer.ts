@@ -2,9 +2,9 @@
  * Bridge Writer — Phase 2 dual-write module
  *
  * Propagates legacy table writes to promoted schema tables.
- * All bridge writes are best-effort: failures are logged but never
- * block the legacy write. Staleness is detected by reconciliation
- * via the last_synced_at column.
+ * Bridge writes retry once on transient failures and log persistent
+ * failures to internal.bridge_sync_failures for reconciliation pickup.
+ * Staleness is detected by reconciliation via the last_synced_at column.
  *
  * Each sync method:
  *  1. Maps legacy columns → promoted columns
@@ -24,6 +24,7 @@ import { db } from "../db";
 export interface BridgeResult {
   success: boolean;
   error?: string;
+  retried?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -33,15 +34,60 @@ export interface BridgeResult {
 function safeDate(val: string | null | undefined): string | null {
   if (!val || val.trim() === "") return null;
   if (!/^\d{4}-\d{2}-\d{2}/.test(val)) return null;
-  // Validate by attempting parse — reject dates like 2026-04-31
   const d = new Date(val.slice(0, 10));
   if (isNaN(d.getTime())) return null;
   return val.slice(0, 10);
 }
 
+function isTransientError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /connection|ECONNREFUSED|timeout|deadlock|could not serialize/i.test(msg);
+}
+
 async function logBridgeError(domain: string, entityId: number | string, error: unknown): Promise<void> {
   const msg = error instanceof Error ? error.message : String(error);
   console.error(`[bridge-write][${domain}] failed`, { entityId, error: msg });
+
+  // Persist failure for reconciliation pickup (best-effort, never throw)
+  try {
+    await db.execute(sql`
+      INSERT INTO internal.bridge_sync_failures (
+        domain, entity_id, error_message, created_at
+      ) VALUES (
+        ${domain}, ${String(entityId)}, ${msg.slice(0, 1000)}, NOW()
+      )
+      ON CONFLICT DO NOTHING
+    `);
+  } catch {
+    // Table may not exist yet — swallow silently
+  }
+}
+
+/**
+ * Retry wrapper: attempts the bridge operation, retries once after 200ms
+ * on transient errors (connection, timeout, deadlock).
+ */
+async function withRetry(
+  domain: string,
+  entityId: number | string,
+  operation: () => Promise<BridgeResult>,
+): Promise<BridgeResult> {
+  const first = await operation();
+  if (first.success) return first;
+
+  // Only retry transient errors
+  if (!first.error || !isTransientError(new Error(first.error))) {
+    await logBridgeError(domain, entityId, new Error(first.error));
+    return first;
+  }
+
+  // Wait 200ms then retry once
+  await new Promise(r => setTimeout(r, 200));
+  const second = await operation();
+  if (!second.success) {
+    await logBridgeError(domain, entityId, new Error(second.error));
+  }
+  return { ...second, retried: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +95,7 @@ async function logBridgeError(domain: string, entityId: number | string, error: 
 // ---------------------------------------------------------------------------
 
 export async function syncProject(p: Record<string, any> & { id: number }): Promise<BridgeResult> {
+  return withRetry("project", p.id, async () => {
   try {
     // Full-spine sync: pass through all columns the app writes.
     // Uses a generic UPDATE SET approach to avoid maintaining a huge INSERT.
@@ -91,9 +138,9 @@ export async function syncProject(p: Record<string, any> & { id: number }): Prom
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("project", p.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +216,7 @@ export async function syncClient(client: {
   primaryContactEmail?: string | null;
   primaryContactPhone?: string | null;
 }): Promise<BridgeResult> {
+  return withRetry("client", client.id, async () => {
   try {
     await db.execute(sql`
       INSERT INTO core.clients (
@@ -198,9 +246,9 @@ export async function syncClient(client: {
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("client", client.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +256,7 @@ export async function syncClient(client: {
 // ---------------------------------------------------------------------------
 
 export async function syncCostLine(costLine: Record<string, any> & { id: number }): Promise<BridgeResult> {
+  return withRetry("cost_line", costLine.id, async () => {
   try {
     const invoiceDateTyped = safeDate(costLine.invoiceDate);
     const approvedDateTyped = safeDate(costLine.approvedDate);
@@ -285,9 +334,9 @@ export async function syncCostLine(costLine: Record<string, any> & { id: number 
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("cost_line", costLine.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +344,7 @@ export async function syncCostLine(costLine: Record<string, any> & { id: number 
 // ---------------------------------------------------------------------------
 
 export async function syncRevenueLine(revenueLine: Record<string, any> & { id: number }): Promise<BridgeResult> {
+  return withRetry("revenue_line", revenueLine.id, async () => {
   try {
     const invoiceDateTyped = safeDate(revenueLine.invoiceDate);
     const expectedDateTyped = safeDate(revenueLine.expectedPaymentDate);
@@ -364,9 +414,9 @@ export async function syncRevenueLine(revenueLine: Record<string, any> & { id: n
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("revenue_line", revenueLine.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -400,6 +450,7 @@ export async function syncChangeRequest(cr: {
   impactSummary?: string | null;
   evidenceLink?: string | null;
 }): Promise<BridgeResult> {
+  return withRetry("change_request", cr.id, async () => {
   try {
     // Resolve project_instance_id from legacy project_id
     const piResult = await db.execute(sql`
@@ -448,9 +499,9 @@ export async function syncChangeRequest(cr: {
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("change_request", cr.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -461,6 +512,7 @@ export async function syncProjectExecutionState(
   projectId: number,
   fields: Record<string, any>,
 ): Promise<BridgeResult> {
+  return withRetry("project_execution_state", projectId, async () => {
   try {
     await db.execute(sql`
       UPDATE core.projects SET
@@ -485,7 +537,7 @@ export async function syncProjectExecutionState(
 
     return { success: true };
   } catch (err) {
-    await logBridgeError("project_execution_state", projectId, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
 }

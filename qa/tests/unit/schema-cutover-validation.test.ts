@@ -98,7 +98,8 @@ describe("Batch Bridge Sync", () => {
   });
 
   it("limits batch size to prevent unbounded queries", () => {
-    expect(batchSync).toContain("LIMIT 2000");
+    expect(batchSync).toContain("PAGE_SIZE");
+    expect(batchSync).toContain("MAX_PAGES");
   });
 });
 
@@ -316,5 +317,144 @@ describe("Spine View Swap Triggers", () => {
     expect(swap).toContain("INSERT INTO public._approvals_legacy");
     expect(swap).toContain("INSERT INTO public._deliverables_legacy");
     expect(swap).toContain("INSERT INTO public._work_items_legacy");
+  });
+});
+
+// ===========================================================================
+// 9. Bridge Writer Retry & Resilience Tests
+// ===========================================================================
+describe("Bridge Writer Retry & Resilience", () => {
+  const bridgeWriter = readServerFile("bridge/bridge-writer.ts");
+
+  it("has withRetry helper for transient error handling", () => {
+    expect(bridgeWriter).toContain("async function withRetry");
+  });
+
+  it("detects transient errors (connection, timeout, deadlock)", () => {
+    expect(bridgeWriter).toContain("isTransientError");
+    expect(bridgeWriter).toContain("connection");
+    expect(bridgeWriter).toContain("ECONNREFUSED");
+    expect(bridgeWriter).toContain("timeout");
+    expect(bridgeWriter).toContain("deadlock");
+  });
+
+  it("wraps all sync functions in withRetry", () => {
+    const retryWraps = bridgeWriter.match(/return withRetry\(/g) ?? [];
+    // 6 sync functions: project, client, costLine, revenueLine, changeRequest, executionState
+    expect(retryWraps.length).toBe(6);
+  });
+
+  it("logs persistent failures to internal.bridge_sync_failures", () => {
+    expect(bridgeWriter).toContain("INSERT INTO internal.bridge_sync_failures");
+  });
+
+  it("BridgeResult includes retried flag", () => {
+    expect(bridgeWriter).toContain("retried?: boolean");
+  });
+});
+
+// ===========================================================================
+// 10. Batch Sync Pagination Tests
+// ===========================================================================
+describe("Batch Sync Pagination", () => {
+  const batchSync = readServerFile("bridge/batch-bridge-sync.ts");
+
+  it("uses PAGE_SIZE constant for batch limits", () => {
+    expect(batchSync).toContain("PAGE_SIZE");
+  });
+
+  it("has MAX_PAGES safety limit", () => {
+    expect(batchSync).toContain("MAX_PAGES");
+  });
+
+  it("paginates with OFFSET", () => {
+    expect(batchSync).toContain("OFFSET");
+  });
+
+  it("breaks on empty page (no infinite loop)", () => {
+    expect(batchSync).toContain("if (unsynced.length === 0) break");
+  });
+
+  it("breaks on last page (partial result)", () => {
+    expect(batchSync).toContain("if (unsynced.length < PAGE_SIZE) break");
+  });
+
+  it("orders by id for stable pagination", () => {
+    expect(batchSync).toContain("ORDER BY ncl.id");
+    expect(batchSync).toContain("ORDER BY nrl.id");
+  });
+});
+
+// ===========================================================================
+// 11. Bridge Sync Failures Migration Tests
+// ===========================================================================
+describe("Bridge Sync Failures Migration", () => {
+  const migration = readMigration("20260403_create_bridge_sync_failures.sql");
+
+  it("creates internal schema", () => {
+    expect(migration).toContain("CREATE SCHEMA IF NOT EXISTS internal");
+  });
+
+  it("creates bridge_sync_failures table", () => {
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS internal.bridge_sync_failures");
+  });
+
+  it("has domain and entity_id columns", () => {
+    expect(migration).toContain("domain");
+    expect(migration).toContain("entity_id");
+  });
+
+  it("has resolved_at column for marking resolved failures", () => {
+    expect(migration).toContain("resolved_at");
+  });
+
+  it("has index on unresolved failures", () => {
+    expect(migration).toContain("idx_bridge_sync_failures_unresolved");
+  });
+
+  it("has UNIQUE constraint to prevent duplicates", () => {
+    expect(migration).toContain("UNIQUE (domain, entity_id)");
+  });
+});
+
+// ===========================================================================
+// 12. Reconciliation Health Endpoint Test
+// ===========================================================================
+describe("Reconciliation Health Endpoint", () => {
+  const adminRoutes = readServerFile("admin-control-routes.ts");
+
+  it("registers GET /api/admin/reconciliation endpoint", () => {
+    expect(adminRoutes).toContain('"/api/admin/reconciliation"');
+  });
+
+  it("requires admin authentication", () => {
+    const reconcSection = adminRoutes.slice(adminRoutes.indexOf("reconciliation"));
+    expect(reconcSection).toContain("requireAdmin");
+  });
+
+  it("calls runReconciliation from reconciliation-runner", () => {
+    expect(adminRoutes).toContain("runReconciliation");
+  });
+
+  it("returns 409 on reconciliation failure", () => {
+    expect(adminRoutes).toContain("409");
+  });
+});
+
+// ===========================================================================
+// 13. Zero Pre-existing TS Errors (quality-routes fix)
+// ===========================================================================
+describe("Quality Routes TS Fixes", () => {
+  const qualityRoutes = readServerFile("quality-routes.ts");
+
+  it("uses projectIds (not checklistProjectIds) for project query", () => {
+    expect(qualityRoutes).not.toContain("checklistProjectIds");
+  });
+
+  it("defines resolvedProjectName in projectSummaries callback", () => {
+    // The projectSummaries map callback should define resolvedProjectName locally
+    const summariesSection = qualityRoutes.slice(qualityRoutes.indexOf("projectSummaries = dedupedChecklists.map"));
+    const nextSection = summariesSection.slice(0, summariesSection.indexOf(".sort("));
+    expect(nextSection).toContain("resolvedProjectName");
   });
 });
