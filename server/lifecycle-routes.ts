@@ -315,6 +315,8 @@ export function registerLifecycleRoutes(app: Express) {
       console.log("[Lifecycle] Postgres-only additive migrations skipped for SQLite");
       return;
     }
+    // Production: schema must come from versioned migrations, not runtime DDL
+    if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
 
     try {
       await db.execute(sql.raw(`

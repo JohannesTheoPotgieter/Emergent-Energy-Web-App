@@ -67,6 +67,31 @@ describe("db.ts Contains No PostgreSQL DDL", () => {
 });
 
 // ===========================================================================
+// 2b. Stray DDL Sites Have Production Guards
+// ===========================================================================
+describe("Stray DDL Sites Have Production Guards", () => {
+  it("smart-import-routes.ts schema ready block has production guard", () => {
+    const f = readFile("server/smart-import-routes.ts");
+    const section = f.slice(
+      f.indexOf("Ensure program_expense and program_inflows"),
+      f.indexOf("ALTER TABLE program_expense ADD COLUMN"),
+    );
+    expect(section).toContain("production");
+    expect(section).toContain("staging");
+  });
+
+  it("lifecycle-routes.ts RAG audit DDL has production guard", () => {
+    const f = readFile("server/lifecycle-routes.ts");
+    const section = f.slice(
+      f.indexOf("Postgres-only additive migrations"),
+      f.indexOf("CREATE TABLE IF NOT EXISTS project_rag_audit"),
+    );
+    expect(section).toContain("production");
+    expect(section).toContain("staging");
+  });
+});
+
+// ===========================================================================
 // 3. Defense in Depth: Three Independent Guards
 // ===========================================================================
 describe("Defense in Depth", () => {
