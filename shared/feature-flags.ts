@@ -46,6 +46,9 @@ export const FEATURE_FLAG_KEYS = [
 
   // Handover V2: structured multi-tab PD→PM handover with readiness gating and dual sign-off
   "pd_pm_handover_v2",
+
+  // Wave 1: 9-department navigation shell (Migration Control Pack)
+  "department_shell",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
