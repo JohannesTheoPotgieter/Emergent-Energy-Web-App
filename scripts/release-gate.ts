@@ -24,7 +24,7 @@ import * as path from "node:path";
 import { runReconciliationPack, formatReportText } from "../server/services/reconciliation-pack";
 import type { ReconciliationPackReport, ReconciliationCheck } from "../server/services/reconciliation-pack";
 import { sql } from "drizzle-orm";
-import { db } from "../db";
+import { db, initializeDatabase } from "../server/db";
 
 // ---------------------------------------------------------------------------
 // CLI arg parsing
@@ -165,6 +165,20 @@ function writeReports(
 // ---------------------------------------------------------------------------
 async function main() {
   const startMs = Date.now();
+
+  // Step 0: Initialize database connection
+  console.error("Release gate: initializing database...");
+  try {
+    await initializeDatabase();
+  } catch (err) {
+    console.error("Database initialization failed:", err instanceof Error ? err.message : String(err));
+    console.error(
+      "\nRelease gate cannot proceed without database access.\n" +
+      "Ensure DATABASE_URL is set and the database is reachable.\n" +
+      "See docs/cutover-runbook.md for setup instructions.",
+    );
+    process.exit(2);
+  }
 
   // Step 1: Pre-flight
   console.error("Release gate: checking database connectivity...");
