@@ -60,4 +60,12 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Company Overview routes:", (err instanceof Error ? err.message : String(err)));
   }
+
+  // Wave 1: Parties registry (reads from core.parties)
+  try {
+    const { registerPartiesRoutes } = await import("./parties.routes");
+    registerPartiesRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Parties routes:", (err instanceof Error ? err.message : String(err)));
+  }
 }
