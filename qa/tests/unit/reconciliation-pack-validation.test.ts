@@ -296,9 +296,14 @@ describe("Per-Project Amount Drift", () => {
     expect(f).toContain("finance_project_revenue_amount_drift");
   });
 
-  it("uses 0.01 tolerance for amount comparisons", () => {
+  it("uses relative tolerance for aggregate amount comparisons", () => {
     const f = readFile("server/services/reconciliation-pack.ts");
-    // Per-project drift uses ABS >= 0.01
+    // Aggregate check uses relative tolerance (0.001% of larger value)
+    expect(f).toContain("larger * 0.00001");
+  });
+
+  it("uses 0.01 absolute tolerance for per-project drift SQL", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
     expect(f).toContain("ABS(sub.legacy_sum - sub.promoted_sum) >= 0.01");
   });
 });
