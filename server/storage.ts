@@ -7,7 +7,9 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
-import { syncProject, snapshotProjectState, syncCostLine, syncRevenueLine } from "./bridge/bridge-writer";
+import { syncProject, syncProjectInsert, snapshotProjectState, syncCostLine, syncRevenueLine } from "./bridge/bridge-writer";
+import { createProjectInfo as _createProjectInfo, updateProjectInfo as _updateProjectInfo, softDeleteProject as _softDeleteProject, hardDeleteProjectInfo as _hardDeleteProjectInfo } from "./services/project-write-service";
+import { createCostLine as _createCostLine, softCloseCostLinesByProject as _softCloseCostLinesByProject, createRevenueLine as _createRevenueLine, softCloseRevenueLinesByProject as _softCloseRevenueLinesByProject } from "./services/finance-line-write-service";
 import { listCostLinesFromPromotedCompat, listRevenueLinesFromPromotedCompat } from "./services/promoted-read-compat";
 import {
   users, uploadMetadata, refreshLogs,
@@ -560,10 +562,8 @@ export class DatabaseStorage implements IStorage {
       constructionStartDate: project.startDate,
       clientHandoverDate: project.completionDate,
       contractValue: String(project.budget),
-      updatedAt: new Date(),
     };
-    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields as any).returning();
-    await syncProjectSplitTablesAfterInsert(created.id, insertFields, this.dbInstance);
+    const created = await _createProjectInfo(insertFields, this.dbInstance);
     return this.mapProjectInfoToLegacyProject(created);
   }
 
@@ -589,16 +589,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProject(id: number): Promise<boolean> {
-    const fields = { isActive: false, archivedStatus: "ARCHIVED", updatedAt: new Date() };
-    const result = await this.dbInstance
-      .update(projectInfo)
-      .set(fields)
-      .where(eq(projectInfo.id, id))
-      .returning();
-    if (result.length > 0) {
-      await syncProjectSplitTables(id, fields, this.dbInstance);
-    }
-    return result.length > 0;
+    return _softDeleteProject(id, this.dbInstance);
   }
 
   // Expenses (legacy)
@@ -616,9 +607,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createExpense(expense: InsertExpense): Promise<Expense> {
-    // Explicitly provide timestamp for SQLite compatibility
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, expense.projectId));
-    const [created] = await this.dbInstance.insert(normalizedCostLines).values({
+    const created = await _createCostLine({
       projectId: expense.projectId,
       projectName: project?.projectName || "",
       costCategory: expense.category,
@@ -630,7 +620,7 @@ export class DatabaseStorage implements IStorage {
       status: "PLANNED",
       sourceSheet: expense.sourceSheet,
       sourceRow: expense.rowLocator,
-    } as any).returning();
+    }, this.dbInstance);
     return this.mapCostLineToLegacyExpense(created, expense.projectId);
   }
 
@@ -647,8 +637,7 @@ export class DatabaseStorage implements IStorage {
   async deleteExpensesByProject(projectId: number): Promise<void> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return;
-    // Temporal: soft-close instead of hard delete (Prompt 10)
-    await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", project.projectName);
+    await _softCloseCostLinesByProject(projectId, project.projectName, this.dbInstance);
   }
 
   // Revenues (legacy)
@@ -666,9 +655,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createRevenue(revenue: InsertRevenue): Promise<Revenue> {
-    // Explicitly provide timestamp for SQLite compatibility
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, revenue.projectId));
-    const [created] = await this.dbInstance.insert(normalizedRevenueLines).values({
+    const created = await _createRevenueLine({
       projectId: revenue.projectId,
       projectName: project?.projectName || "",
       milestoneName: revenue.type,
@@ -678,7 +666,7 @@ export class DatabaseStorage implements IStorage {
       sourceSheet: revenue.sourceSheet,
       sourceRow: revenue.rowLocator,
       importRunId: 1,
-    } as any).returning();
+    }, this.dbInstance);
     return this.mapRevenueLineToLegacyRevenue(created, revenue.projectId);
   }
 
@@ -695,8 +683,7 @@ export class DatabaseStorage implements IStorage {
   async deleteRevenuesByProject(projectId: number): Promise<void> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return;
-    // Temporal: soft-close instead of hard delete (Prompt 10)
-    await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", project.projectName);
+    await _softCloseRevenueLinesByProject(projectId, project.projectName, this.dbInstance);
   }
 
   // Tasks (legacy)
@@ -811,18 +798,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined> {
-    const [updated] = await this.dbInstance
-      .update(projectInfo)
-      .set({ ...fields, updatedAt: new Date() })
-      .where(eq(projectInfo.id, id))
-      .returning();
-    if (updated) {
-      await syncProjectSplitTables(id, fields, this.dbInstance);
-      // Phase 2 bridge write: mirror to core.projects (best-effort)
-      syncProject(updated as any).catch(() => {});
-      snapshotProjectState(id, fields, "bridge_write").catch(() => {});
-    }
-    return updated;
+    return _updateProjectInfo(id, fields, this.dbInstance);
   }
 
   async getAllProjectInfo(): Promise<any[]> {
@@ -1024,28 +1000,13 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getProjectInfo(info.projectName);
     if (existing) {
       const { executionEnabled, ...updateFields } = info as any;
-      const [updated] = await this.dbInstance
-        .update(projectInfo)
-        .set({ ...updateFields, updatedAt: new Date() })
-        .where(eq(projectInfo.projectName, info.projectName))
-        .returning();
-      await syncProjectSplitTables(updated.id, updateFields, this.dbInstance);
-      // Phase 2 bridge write
-      syncProject(updated as any).catch(() => {});
-      snapshotProjectState(updated.id, updateFields, "bridge_write").catch(() => {});
-      return updated;
+      return _updateProjectInfo(existing.id, updateFields, this.dbInstance);
     }
-    const insertFields = { ...info, executionEnabled: false, updatedAt: new Date() };
-    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields).returning();
-    await syncProjectSplitTablesAfterInsert(created.id, insertFields as any, this.dbInstance);
-    // Phase 2 bridge write
-    syncProject(created as any).catch(() => {});
-    snapshotProjectState(created.id, insertFields as any, "bridge_write").catch(() => {});
-    return created;
+    return _createProjectInfo({ ...info, executionEnabled: false }, this.dbInstance);
   }
 
   async deleteProjectInfo(projectName: string): Promise<void> {
-    await this.dbInstance.delete(projectInfo).where(eq(projectInfo.projectName, projectName));
+    await _hardDeleteProjectInfo(projectName, this.dbInstance);
   }
 
   async markProjectsActive(activeNames: string[]): Promise<void> {
@@ -1203,8 +1164,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProgramExpensesByProject(projectName: string): Promise<void> {
-    // Temporal: soft-close instead of hard delete (Prompt 10)
-    await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", projectName);
+    await _softCloseCostLinesByProject(null, projectName, this.dbInstance);
   }
 
   async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<ProgramExpense | undefined> {
@@ -1399,8 +1359,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProgramInflowsByProject(projectName: string): Promise<void> {
-    // Temporal: soft-close instead of hard delete (Prompt 10)
-    await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", projectName);
+    await _softCloseRevenueLinesByProject(null, projectName, this.dbInstance);
   }
 
   // Project Plan — reads from work_items (PM workstream, SMART_IMPORT source)
@@ -1895,9 +1854,9 @@ export class DatabaseStorage implements IStorage {
       counterpartyName: data.supplierName || null,
       sourceRow: data.rowNumber || null,
     };
-    const inserted = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
+    const created = await _createCostLine(mapped, this.dbInstance);
     const { adaptCostToExpense } = await import("./lib/data-merge");
-    return adaptCostToExpense(inserted[0], inserted[0].projectName) as any;
+    return adaptCostToExpense(created, created.projectName) as any;
   }
 
   // Home Notes

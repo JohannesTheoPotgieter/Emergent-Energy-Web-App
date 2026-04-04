@@ -1,7 +1,7 @@
 # Phase G Migration Manifest
 
 > **Phase:** G — External Resources + Activity/Audit Logs  
-> **Status:** Complete  
+> **Status:** Schema DDL + backfill complete. Runtime write/read cutover outstanding (see docs/schema-migration-status.md).  
 > **Total migrations:** 7 (2 DDL + 3 backfill + 2 rollback)
 
 ---

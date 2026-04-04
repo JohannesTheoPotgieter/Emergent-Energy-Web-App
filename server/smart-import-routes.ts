@@ -1623,6 +1623,10 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         };
         const [newProject] = await db.insert(projectInfo).values(newProjectFields as any).returning();
         await syncProjectSplitTablesAfterInsert(newProject.id, newProjectFields);
+        // Phase 2 bridge write: mirror new project to core.projects
+        import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
+          syncProjectInsert(newProject as any)
+        ).catch(() => {});
         projectId = newProject.id;
         await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
       }
@@ -1778,6 +1782,11 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         await softCloseByProjectName(tx, "normalized_cost_lines", projectName);
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
       }
+      // Phase 2 bridge write: soft-close promoted finance lines to match legacy
+      import("./bridge/bridge-writer").then(({ softClosePromotedCostLines, softClosePromotedRevenueLines }) => {
+        softClosePromotedCostLines(projectId ?? null, projectName ?? null).catch(() => {});
+        softClosePromotedRevenueLines(projectId ?? null, projectName ?? null).catch(() => {});
+      }).catch(() => {});
       const commitTimestamp = new Date();
       const scenarioIds = await tx
         .select({ id: workingPlanScenario.id })
@@ -2663,6 +2672,13 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
 
     // Prompt 12: Refresh materialized dashboard metrics after import commit
     if (projectId) refreshProjectMetricsAsync(projectId);
+
+    // Phase 2 bridge write: batch-sync cost/revenue lines to promoted schema (post-commit, non-blocking)
+    if ((counts.costLines || 0) + (counts.revenueLines || 0) > 0) {
+      import("./bridge/batch-bridge-sync").then(({ batchSyncFinanceByProject }) =>
+        batchSyncFinanceByProject(projectId ?? null, projectName ?? null)
+      ).catch(() => {});
+    }
   } catch (err: unknown) {
     console.error("[smart-import] POST commit error:", err);
 
@@ -3264,10 +3280,12 @@ export function registerSmartImportRoutes(app: Express) {
 
   // Ensure program_expense and program_inflows have all required columns.
   // These are additive ALTER TABLE statements (safe to re-run).
+  // Production: blocked — schema must come from versioned migrations.
   schemaReadyPromise = (async () => {
     try {
       const { getDbMode } = await import("./db");
       if (getDbMode() === "sqlite") return;
+      if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
       const { sql: rawSql } = await import("drizzle-orm");
       await db.execute(rawSql.raw(`
         ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT;

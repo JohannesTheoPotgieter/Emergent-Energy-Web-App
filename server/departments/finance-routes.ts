@@ -3248,19 +3248,27 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
           const paidDateConfirmed = isInBank;
           const paidDateFontColor = isInBank ? 'black' : 'red';
           const paidDate = isInBank ? (r.paymentReceivedDate || r.plannedPaymentDate || null) : null;
-          await db.update(normalizedRevenueLines)
-            .set({
-              paidDateConfirmed,
-              paidDateFontColor,
-              paidDate: paidDate,
-              inBankDate: isInBank ? (paidDate || null) : null,
-            })
+          const revenueTrackingFields = {
+            paidDateConfirmed,
+            paidDateFontColor,
+            paidDate: paidDate,
+            inBankDate: isInBank ? (paidDate || null) : null,
+          };
+          const updated = await db.update(normalizedRevenueLines)
+            .set(revenueTrackingFields)
             .where(
               and(
                 eq(normalizedRevenueLines.projectName, projectName),
                 eq(normalizedRevenueLines.sourceRow, rowNum),
               )
-            );
+            )
+            .returning();
+          // Phase 2 bridge write: sync revenue tracking fields to promoted revenue_lines
+          if (updated?.[0]) {
+            import("../bridge/bridge-writer").then(({ syncRevenueLineFieldUpdate }) =>
+              syncRevenueLineFieldUpdate(updated[0].id, revenueTrackingFields)
+            ).catch(() => {});
+          }
         }
       }
     } catch (syncErr: any) {
