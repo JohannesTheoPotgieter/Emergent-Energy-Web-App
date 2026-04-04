@@ -76,4 +76,12 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Home Summary routes:", (err instanceof Error ? err.message : String(err)));
   }
+
+  // Wave 1: Admin migration status
+  try {
+    const { registerMigrationStatusRoutes } = await import("./migration-status.routes");
+    registerMigrationStatusRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Migration Status routes:", (err instanceof Error ? err.message : String(err)));
+  }
 }

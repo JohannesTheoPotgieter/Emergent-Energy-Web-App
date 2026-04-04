@@ -195,6 +195,7 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       { label: "Processes & SOPs", path: "/ee-info" },
       { label: "Templates", path: "/admin/phase-templates" },
       { label: "Recovery", path: "/admin/recovery" },
+      { label: "Migration Control", path: "/admin/migration-control" },
       { label: "Report Center", path: "/reports/center" },
     ],
   },
