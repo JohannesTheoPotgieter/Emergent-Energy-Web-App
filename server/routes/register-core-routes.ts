@@ -68,4 +68,12 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Parties routes:", (err instanceof Error ? err.message : String(err)));
   }
+
+  // Wave 1: Home summary dashboard
+  try {
+    const { registerHomeSummaryRoutes } = await import("./home-summary.routes");
+    registerHomeSummaryRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Home Summary routes:", (err instanceof Error ? err.message : String(err)));
+  }
 }
