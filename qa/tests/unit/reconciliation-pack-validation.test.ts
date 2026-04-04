@@ -158,10 +158,10 @@ describe("Warning Checks", () => {
     expect(f.slice(cidx, cidx + 200)).toContain("WARNING");
   });
 
-  it("null FK checks are WARNING severity", () => {
+  it("native promoted row checks are INFO severity", () => {
     const f = readFile("server/services/reconciliation-pack.ts");
-    const idx = f.indexOf("cost_lines_null_legacy_fk");
-    expect(f.slice(idx, idx + 200)).toContain("WARNING");
+    const idx = f.indexOf("cost_lines_native_promoted");
+    expect(f.slice(idx, idx + 200)).toContain("INFO");
   });
 });
 
