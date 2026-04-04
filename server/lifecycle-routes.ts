@@ -18,6 +18,7 @@ import { evaluateRevenueArStatus } from "./lib/finance/revenue-ar-status";
 import { projectStageInstances, STAGE_CODES } from "@shared/schema";
 import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../shared/utils/phase-to-stage-map";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { bridgeCatch } from "./bridge/bridge-writer";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -1537,7 +1538,7 @@ export function registerLifecycleRoutes(app: Express) {
       // Phase 2 bridge write: mirror new project to core.projects
       import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
         syncProjectInsert(created as any)
-      ).catch(() => {});
+      ).catch(bridgeCatch);
 
       const targetPhase = phase || "First Assessment";
       const stageNames = PHASE_TO_ENG_STAGES[targetPhase];
@@ -1786,7 +1787,7 @@ export function registerLifecycleRoutes(app: Express) {
         // Phase 2 bridge write: sync execution state to core.projects
         import("./bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
           syncProjectExecutionState(id, boardSyncFields)
-        ).catch(() => {});
+        ).catch(bridgeCatch);
       } catch (stageErr: any) {
         console.warn("[lifecycle-board] Stage lifecycle sync error (non-fatal):", stageErr.message);
       }
@@ -2222,7 +2223,7 @@ export function registerLifecycleRoutes(app: Express) {
         // Phase 2 bridge write: cascade delete promoted finance lines
         import("./bridge/bridge-writer").then(({ cascadeDeletePromotedFinanceLines }) =>
           cascadeDeletePromotedFinanceLines(pId, pN)
-        ).catch(() => {});
+        ).catch(bridgeCatch);
         await safeDel(sql`DELETE FROM normalized_execution_phases WHERE project_id = ${pId} OR project_name = ${pN}`);
         await safeDel(sql`DELETE FROM pm_site_visits WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM pm_on_the_go_actions WHERE project_id = ${pId}`);
@@ -2271,7 +2272,7 @@ export function registerLifecycleRoutes(app: Express) {
       // Phase 2 bridge write: mark promoted project as deleted
       import("./bridge/bridge-writer").then(({ syncProjectDelete }) =>
         syncProjectDelete(pId)
-      ).catch(() => {});
+      ).catch(bridgeCatch);
 
       console.log(`[lifecycle-board] Project ${projectId} (${pName}) HARD DELETED by ${deletedBy} — all related data removed`);
 
