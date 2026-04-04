@@ -111,8 +111,12 @@ function buildCheck(
   if (isError) {
     status = "SKIP";
   } else if (category === "finance_amounts") {
-    // Finance: allow 0.01 tolerance
-    status = Math.abs(delta) < 0.01 ? "PASS" : severity === "HARD_FAIL" ? "FAIL" : "WARN";
+    // Finance amounts: use relative tolerance (0.001% of larger value) to handle
+    // systematic TEXT→NUMERIC rounding (e.g. 3-decimal TEXT → 2-decimal NUMERIC).
+    // Fallback to absolute 0.01 for small amounts.
+    const larger = Math.max(Math.abs(legacyCount), Math.abs(promotedCount), 1);
+    const tolerance = Math.max(0.01, larger * 0.00001); // 0.001%
+    status = Math.abs(delta) < tolerance ? "PASS" : severity === "HARD_FAIL" ? "FAIL" : "WARN";
   } else if (delta === 0) {
     status = "PASS";
   } else {
