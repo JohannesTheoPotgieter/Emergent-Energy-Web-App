@@ -29,6 +29,7 @@ import {
   softClosePromotedCostLines,
   softClosePromotedRevenueLines,
   syncCostLineCounterpartyBulk,
+  bridgeCatch,
 } from "../bridge/bridge-writer";
 import { batchSyncFinanceByProject } from "../bridge/batch-bridge-sync";
 import { softCloseByProjectName, softCloseByProjectId } from "../lib/temporal-helpers";
@@ -47,7 +48,7 @@ export async function createCostLine(
   txOrDb: DbOrTx = db,
 ): Promise<any> {
   const [created] = await (txOrDb as any).insert(normalizedCostLines).values(values).returning();
-  syncCostLine(created).catch(() => {});
+  syncCostLine(created).catch(bridgeCatch);
   return created;
 }
 
@@ -62,7 +63,7 @@ export async function createCostLines(
   const created = await (txOrDb as any).insert(normalizedCostLines).values(values).returning();
   // Bridge sync in background — don't block the bulk insert
   for (const row of created) {
-    syncCostLine(row).catch(() => {});
+    syncCostLine(row).catch(bridgeCatch);
   }
   return created;
 }
@@ -82,7 +83,7 @@ export async function updateCostLineFields(
     .where(eq(normalizedCostLines.id, id))
     .returning();
   if (updated) {
-    syncCostLineFieldUpdate(id, fields).catch(() => {});
+    syncCostLineFieldUpdate(id, fields).catch(bridgeCatch);
   }
   return updated;
 }
@@ -100,7 +101,7 @@ export async function softCloseCostLinesByProject(
   } else if (projectName) {
     await softCloseByProjectName(txOrDb, "normalized_cost_lines", projectName);
   }
-  softClosePromotedCostLines(projectId, projectName).catch(() => {});
+  softClosePromotedCostLines(projectId, projectName).catch(bridgeCatch);
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +116,7 @@ export async function createRevenueLine(
   txOrDb: DbOrTx = db,
 ): Promise<any> {
   const [created] = await (txOrDb as any).insert(normalizedRevenueLines).values(values).returning();
-  syncRevenueLine(created).catch(() => {});
+  syncRevenueLine(created).catch(bridgeCatch);
   return created;
 }
 
@@ -129,7 +130,7 @@ export async function createRevenueLines(
   if (values.length === 0) return [];
   const created = await (txOrDb as any).insert(normalizedRevenueLines).values(values).returning();
   for (const row of created) {
-    syncRevenueLine(row).catch(() => {});
+    syncRevenueLine(row).catch(bridgeCatch);
   }
   return created;
 }
@@ -149,7 +150,7 @@ export async function updateRevenueLineFields(
     .where(eq(normalizedRevenueLines.id, id))
     .returning();
   if (updated) {
-    syncRevenueLineFieldUpdate(id, fields).catch(() => {});
+    syncRevenueLineFieldUpdate(id, fields).catch(bridgeCatch);
   }
   return updated;
 }
@@ -167,7 +168,7 @@ export async function softCloseRevenueLinesByProject(
   } else if (projectName) {
     await softCloseByProjectName(txOrDb, "normalized_revenue_lines", projectName);
   }
-  softClosePromotedRevenueLines(projectId, projectName).catch(() => {});
+  softClosePromotedRevenueLines(projectId, projectName).catch(bridgeCatch);
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +186,7 @@ export async function renameCostLineCounterparty(
   await (txOrDb as any).execute(
     sql`UPDATE normalized_cost_lines SET counterparty_name = ${newName} WHERE counterparty_name = ${oldName} AND effective_to IS NULL`,
   );
-  syncCostLineCounterpartyBulk(oldName, newName).catch(() => {});
+  syncCostLineCounterpartyBulk(oldName, newName).catch(bridgeCatch);
 }
 
 /**
@@ -195,5 +196,5 @@ export async function batchSyncFinanceLines(
   projectId: number | null,
   projectName: string | null,
 ): Promise<void> {
-  batchSyncFinanceByProject(projectId, projectName).catch(() => {});
+  batchSyncFinanceByProject(projectId, projectName).catch(bridgeCatch);
 }

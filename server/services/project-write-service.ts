@@ -14,7 +14,7 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { projectInfo, projectExecutionState } from "../../shared/schema";
-import { syncProject, syncProjectInsert, syncProjectExecutionState, syncProjectDelete, snapshotProjectState } from "../bridge/bridge-writer";
+import { syncProject, syncProjectInsert, syncProjectExecutionState, syncProjectDelete, snapshotProjectState, bridgeCatch } from "../bridge/bridge-writer";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "../lib/project-info-sync";
 
 type DbOrTx = typeof db;
@@ -33,7 +33,7 @@ export async function createProjectInfo(
   const insertFields = { ...fields, updatedAt: new Date() };
   const [created] = await (txOrDb as any).insert(projectInfo).values(insertFields).returning();
   await syncProjectSplitTablesAfterInsert(created.id, insertFields, txOrDb);
-  syncProjectInsert(created as any).catch(() => {});
+  syncProjectInsert(created as any).catch(bridgeCatch);
   return created;
 }
 
@@ -53,8 +53,8 @@ export async function updateProjectInfo(
     .returning();
   if (updated) {
     await syncProjectSplitTables(id, updateFields, txOrDb);
-    syncProject(updated as any).catch(() => {});
-    snapshotProjectState(id, updateFields, "write_service").catch(() => {});
+    syncProject(updated as any).catch(bridgeCatch);
+    snapshotProjectState(id, updateFields, "write_service").catch(bridgeCatch);
   }
   return updated;
 }
@@ -74,7 +74,7 @@ export async function softDeleteProject(
     .returning();
   if (result.length > 0) {
     await syncProjectSplitTables(id, fields, txOrDb);
-    syncProject(result[0] as any).catch(() => {});
+    syncProject(result[0] as any).catch(bridgeCatch);
   }
   return result.length > 0;
 }
@@ -93,7 +93,7 @@ export async function hardDeleteProjectInfo(
     .where(eq(projectInfo.projectName, projectName));
   await (txOrDb as any).delete(projectInfo).where(eq(projectInfo.projectName, projectName));
   if (row?.id) {
-    syncProjectDelete(row.id).catch(() => {});
+    syncProjectDelete(row.id).catch(bridgeCatch);
   }
 }
 
@@ -115,5 +115,5 @@ export async function updateExecutionState(
     .set({ ...fields, updatedAt: new Date() })
     .where(eq(projectExecutionState.projectId, projectId));
   // Bridge sync to core.projects
-  syncProjectExecutionState(projectId, fields).catch(() => {});
+  syncProjectExecutionState(projectId, fields).catch(bridgeCatch);
 }

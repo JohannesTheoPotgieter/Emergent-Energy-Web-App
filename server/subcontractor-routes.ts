@@ -10,6 +10,7 @@ import { extractSupplierName } from "./lib/calculations/supplierExtractor";
 import { requirePermission } from "./permission-middleware";
 import { logAuditFromReq } from "./audit-logger";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { bridgeCatch } from "./bridge/bridge-writer";
 const router = Router();
 
 function toPositiveInt(value: unknown): number | null {
@@ -482,9 +483,9 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
       if (costValues.length > 0) {
         import("./bridge/batch-bridge-sync").then(({ batchSyncCostLinesByProject }) => {
           for (const pn of projectsProcessed) {
-            batchSyncCostLinesByProject(null, pn).catch(() => {});
+            batchSyncCostLinesByProject(null, pn).catch(bridgeCatch);
           }
-        }).catch(() => {});
+        }).catch(bridgeCatch);
       }
     });
   } catch (err: any) {
@@ -544,7 +545,7 @@ router.patch("/api/subcontractor-dashboard/rename", requireAuth, requirePermissi
     // Phase 2 bridge write: sync counterparty rename to promoted cost_lines
     import("./bridge/bridge-writer").then(({ syncCostLineCounterpartyBulk }) =>
       syncCostLineCounterpartyBulk(oldName.trim(), trimmedNew)
-    ).catch(() => {});
+    ).catch(bridgeCatch);
 
     console.log(`[subcontractor] Renamed "${oldName}" → "${trimmedNew}"`);
     res.json({ success: true, oldName, newName: trimmedNew });
@@ -581,7 +582,7 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, re
     // Phase 2 bridge write: soft-close promoted cost lines for deleted counterparty
     import("./bridge/bridge-writer").then(({ softClosePromotedCostLines }) =>
       softClosePromotedCostLines(null, null) // Counterparty-based soft-close handled by reconciliation
-    ).catch(() => {});
+    ).catch(bridgeCatch);
 
     console.log(`[subcontractor] Deleted counterparty "${name}" and associated cost lines`);
     res.json({ success: true, deleted: name });
@@ -731,7 +732,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
     for (const src of sourceNames) {
       import("./bridge/bridge-writer").then(({ syncCostLineCounterpartyBulk }) =>
         syncCostLineCounterpartyBulk(src.trim(), trimmedTarget)
-      ).catch(() => {});
+      ).catch(bridgeCatch);
     }
 
     console.log(`[subcontractor] Merged [${sourceNames.join(", ")}] → "${trimmedTarget}" with ${mergedAliasCount} alias patterns`);

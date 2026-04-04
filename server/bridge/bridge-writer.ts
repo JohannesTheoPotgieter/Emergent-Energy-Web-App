@@ -867,6 +867,35 @@ export async function syncCostLineCounterpartyBulk(
 /**
  * Mark promoted project as deleted/archived.
  */
+// ---------------------------------------------------------------------------
+// Bridge catch handler — replaces bare .catch(() => {}) at call sites
+// ---------------------------------------------------------------------------
+
+let _bridgeFailureCount = 0;
+
+/**
+ * Drop-in replacement for `.catch(() => {})` on bridge calls.
+ * Logs a console warning (visible in dev and server logs) and increments
+ * a counter queryable via `getBridgeFailureCount()`.
+ *
+ * Usage:  syncProject(row).catch(bridgeCatch);
+ */
+export function bridgeCatch(err: unknown): void {
+  _bridgeFailureCount++;
+  const msg = err instanceof Error ? err.message : String(err);
+  console.warn(`[bridge-write] catch: ${msg}`);
+}
+
+/** Returns the number of bridge write failures since process start. */
+export function getBridgeFailureCount(): number {
+  return _bridgeFailureCount;
+}
+
+/** Resets the failure counter (useful for tests). */
+export function resetBridgeFailureCount(): void {
+  _bridgeFailureCount = 0;
+}
+
 export async function syncProjectDelete(projectId: number): Promise<BridgeResult> {
   return withRetry("project_delete", projectId, async () => {
   try {
