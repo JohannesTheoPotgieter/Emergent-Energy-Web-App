@@ -1,6 +1,8 @@
 import { useMemo, useState, lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { HomeDashboardV2 } from "@/components/home/HomeDashboardV2";
+import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -362,6 +364,14 @@ export default function HomePage() {
     return map;
   }, [dashData, myWorkData]);
 
+  // Department shell feature flag (Wave 1)
+  const { data: homeRolloutFlags } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: fetchRolloutFeatureFlags,
+    staleTime: 60_000,
+  });
+  const departmentShellEnabled = homeRolloutFlags?.find((f: { key: string }) => f.key === "department_shell")?.value ?? false;
+
   const visiblePriorities = companyPriorities?.slice(0, 3) || [];
   const hiddenPriorities = companyPriorities?.slice(3) || [];
 
@@ -457,6 +467,9 @@ export default function HomePage() {
 
   return (
     <PageShell data-testid="home-page">
+      {/* Wave 1: New Home Dashboard (shown when department shell is on) */}
+      {departmentShellEnabled && <HomeDashboardV2 />}
+
       {(dashIsError || prioritiesIsError || myWorkIsError) && (
         <div className="mb-4 space-y-2">
           {dashIsError && <QueryErrorBanner error={dashError} />}
