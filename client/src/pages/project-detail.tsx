@@ -50,6 +50,8 @@ import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
+import { ProjectWorkspaceHeader } from "@/components/project/ProjectWorkspaceHeader";
+import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { CriticalControlPanel } from "@/components/stage-lifecycle/CriticalControlPanel";
 import { StageTimeline } from "@/components/stage-lifecycle/StageTimeline";
 import { useProjectStages } from "@/hooks/use-stage-lifecycle";
@@ -1012,6 +1014,14 @@ export default function ProjectDetailPage() {
   // Stage lifecycle data for CriticalControlPanel and Lifecycle tab
   const { data: stageData } = useProjectStages(projectInfoId);
 
+  // Department shell feature flag (Wave 1)
+  const { data: pdRolloutFlags } = useQuery({
+    queryKey: ["rollout-feature-flags"],
+    queryFn: fetchRolloutFeatureFlags,
+    staleTime: 60_000,
+  });
+  const departmentShellEnabled = pdRolloutFlags?.find((f: { key: string }) => f.key === "department_shell")?.value ?? false;
+
   // ─── V2 Consolidated project query ─────────────────────────────
   const { data: v2Detail } = useProjectDetail(projectInfoId);
   const v2Perms: ProjectPermissions | null = v2Detail?.permissions ?? null;
@@ -1409,6 +1419,11 @@ export default function ProjectDetailPage() {
 
   return (
     <PageShell className="p-3 md:p-4">
+      {/* Wave 1: Project Workspace Header (shown when department shell is on) */}
+      {departmentShellEnabled && projectInfoId && (
+        <ProjectWorkspaceHeader projectId={projectInfoId} />
+      )}
+
       {/* Cockpit dual-mode: executive summary → execution drill-down */}
       <div data-testid="cockpit-command-header">
       <div data-testid="cockpit-mode-toggle" className="hidden" />
