@@ -503,7 +503,7 @@ export async function syncCurrentStage(projectId: number): Promise<void> {
   // Phase 2 bridge write: sync gate/stage fields to core.projects
   import("../bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
     syncProjectExecutionState(projectId, syncFields)
-  ).catch(() => {});
+  ).catch(bridgeCatch);
 }
 
 // ── Evidence ────────────────────────────────────────────────
@@ -651,7 +651,7 @@ export async function advanceToStage(params: {
   // Phase 2 bridge write: sync stage advance to core.projects
   import("../bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
     syncProjectExecutionState(projectId, { currentStageCode: targetStageCode })
-  ).catch(() => {});
+  ).catch(bridgeCatch);
 
   await syncCurrentStage(projectId);
 
