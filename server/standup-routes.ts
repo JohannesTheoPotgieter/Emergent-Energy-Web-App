@@ -73,15 +73,26 @@ async function notifyStandupParticipants(
   }
 }
 
+/**
+ * Dev-only table bootstrap for SQLite mode.
+ * In production/staging, this table is created by migrations/20260404_create_standup_entries_v2.sql.
+ */
 async function ensureStandupV2Table() {
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
+
   const isPostgres = getDbMode() === "postgres";
   const idCol = isPostgres ? "id SERIAL PRIMARY KEY" : "id INTEGER PRIMARY KEY AUTOINCREMENT";
   const tsDefault = isPostgres ? "DEFAULT NOW()" : "DEFAULT CURRENT_TIMESTAMP";
   await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (${sql.raw(idCol)}, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TIMESTAMP NOT NULL ${sql.raw(tsDefault)})`);
 }
 
-/** Ensure deleted_at/deleted_by columns exist on standup_schedules (mirrors migration 20260372) */
+/**
+ * Dev-only column repair for SQLite mode.
+ * In production/staging, these columns are added by migrations/20260372_standup_schedules_add_deleted_columns.sql.
+ */
 async function ensureStandupScheduleColumns() {
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
+
   try {
     if (getDbMode() === "postgres") {
       await db.execute(sql`ALTER TABLE standup_schedules ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);

@@ -1836,7 +1836,7 @@ export function registerQualityRoutes(app: Express) {
       const allProjectRows = projectIds.length > 0
         ? await db.select().from(projectInfo)
             .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-            .where(inArray(projectInfo.id, checklistProjectIds))
+            .where(inArray(projectInfo.id, projectIds))
         : [];
       const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
@@ -1899,6 +1899,7 @@ export function registerQualityRoutes(app: Express) {
       const projectSummaries = dedupedChecklists.map((checklist: any) => {
         const projectItems = allItems.filter((item: any) => item.checklistId === checklist.id);
         const project = projectMap.get(checklist.projectId);
+        const resolvedProjectName = project?.projectName || checklist.projectName;
         const handover = handoverMap.get(checklist.projectId);
         const warningInputs = allWarnings.filter((warning: any) => warning.projectName === checklist.projectName);
         const projectRiskAnswers = allRiskAnswers.filter((answer: any) => answer.checklistId === checklist.id);
