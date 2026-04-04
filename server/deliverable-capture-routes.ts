@@ -11,6 +11,7 @@ import { getEffectiveUser, jwtAuth, requireAuth, type AuthenticatedUser } from "
 import { requirePermission } from "./permission-middleware";
 import { getAssignmentsForEntity, getAssignmentsForEntities, setEntityAssignment } from "./services/assignment-service";
 import { allowedMimeFilter, validateMagicBytes } from "./lib/file-validation";
+import { bridgeCatch } from "./bridge/bridge-writer";
 
 const uploadDir = path.join(process.cwd(), "uploads", "_private_deliverables");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -182,10 +183,18 @@ export function registerDeliverableCaptureRoutes(app: Express) {
           await db.update(normalizedCostLines)
             .set({ invoiceNumber: fileNameWithoutExt })
             .where(eq(normalizedCostLines.id, lId));
+          // Phase 2 bridge write: sync invoice number to promoted cost_lines
+          import("./bridge/bridge-writer").then(({ syncCostLineFieldUpdate }) =>
+            syncCostLineFieldUpdate(lId, { invoiceNumber: fileNameWithoutExt })
+          ).catch(bridgeCatch);
         } else if (linkType === "revenue_line") {
           await db.update(normalizedRevenueLines)
             .set({ invoiceNumber: fileNameWithoutExt })
             .where(eq(normalizedRevenueLines.id, lId));
+          // Phase 2 bridge write: sync invoice number to promoted revenue_lines
+          import("./bridge/bridge-writer").then(({ syncRevenueLineFieldUpdate }) =>
+            syncRevenueLineFieldUpdate(lId, { invoiceNumber: fileNameWithoutExt })
+          ).catch(bridgeCatch);
         }
       }
 

@@ -337,7 +337,7 @@ Phase H: priorities + import + cleanup       [Week 14-15]   Final cleanup
 
 1. **Additive first** — Every new table is created alongside legacy. No drops until fully validated.
 
-2. **View compatibility** — When a new table replaces a legacy table, create a view with the legacy name that reads from the new table. This is the pattern we already proved with approvals/deliverables/work_items.
+2. **View compatibility** — When a new table replaces a legacy table, create a view with the legacy name that reads from the new table. This is the pattern we already proved with approvals/deliverables/work_items. **Note:** Compatibility views created in Phase H.5 are read-only. They do not include INSTEAD OF triggers and cannot accept writes. Write-path migration requires separate bridge writers or INSTEAD OF triggers (as done for work_items/approvals/deliverables in spine_view_swap.sql).
 
 3. **Party-first** — The unified party model (Phase A) is the foundation everything else depends on. `project_party_link` replaces inline `client_id`, `pm_user_id`, etc. `assigned_to_party_id` replaces `owner_user_id`.
 
