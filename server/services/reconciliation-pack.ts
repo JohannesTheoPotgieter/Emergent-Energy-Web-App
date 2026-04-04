@@ -208,24 +208,26 @@ async function userChecks(): Promise<ReconciliationCheck[]> {
 async function costLineChecks(): Promise<ReconciliationCheck[]> {
   const checks: ReconciliationCheck[] = [];
 
-  // Row parity (active lines only)
-  const [legacyCount, promotedCount] = await Promise.all([
+  // Row parity: active legacy rows vs promoted rows with a legacy FK pointing to an active legacy row
+  // This is the correct apples-to-apples migration completeness check.
+  // Promoted tables may also contain natively-created rows (no legacy FK) which are tracked separately.
+  const [legacyCount, promotedMigratedCount] = await Promise.all([
     queryCount(`SELECT count(*) AS cnt FROM normalized_cost_lines WHERE effective_to IS NULL`),
-    queryCount(`SELECT count(*) AS cnt FROM finance.cost_lines`),
+    queryCount(`SELECT count(*) AS cnt FROM finance.cost_lines fcl WHERE fcl.legacy_normalized_cost_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_cost_lines ncl WHERE ncl.id = fcl.legacy_normalized_cost_line_id AND ncl.effective_to IS NULL)`),
   ]);
   checks.push(buildCheck(
     "cost_lines_row_parity", "finance", "row_parity", "HARD_FAIL",
-    legacyCount, promotedCount,
-    `${legacyCount - promotedCount} active cost lines missing from finance.cost_lines`,
+    legacyCount, promotedMigratedCount,
+    `${legacyCount - promotedMigratedCount} active cost lines missing from finance.cost_lines (migrated rows only)`,
   ));
 
-  // Null legacy FK
-  const nullLegacyFk = await queryCount(
+  // Native promoted rows (no legacy FK) — informational
+  const nativeCount = await queryCount(
     `SELECT count(*) AS cnt FROM finance.cost_lines WHERE legacy_normalized_cost_line_id IS NULL`,
   );
   checks.push(buildCheck(
-    "cost_lines_null_legacy_fk", "finance", "fk_integrity", "WARNING",
-    nullLegacyFk, 0, `${nullLegacyFk} finance.cost_lines rows have NULL legacy FK`,
+    "cost_lines_native_promoted", "finance", "row_parity", "INFO",
+    nativeCount, 0, `${nativeCount} finance.cost_lines rows created natively (no legacy FK)`,
   ));
 
   // Broken legacy FK
@@ -237,15 +239,15 @@ async function costLineChecks(): Promise<ReconciliationCheck[]> {
     brokenFk, 0, `${brokenFk} finance.cost_lines reference non-existent legacy rows`,
   ));
 
-  // Amount comparison
-  const [legacySum, promotedSum] = await Promise.all([
+  // Amount comparison: active legacy vs migrated promoted (rows with active legacy FK)
+  const [legacySum, promotedMigratedSum] = await Promise.all([
     querySum(`SELECT COALESCE(SUM(amount_ex_vat::numeric), 0) AS total FROM normalized_cost_lines WHERE effective_to IS NULL`),
-    querySum(`SELECT COALESCE(SUM(amount_ex_vat), 0) AS total FROM finance.cost_lines`),
+    querySum(`SELECT COALESCE(SUM(fcl.amount_ex_vat), 0) AS total FROM finance.cost_lines fcl WHERE fcl.legacy_normalized_cost_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_cost_lines ncl WHERE ncl.id = fcl.legacy_normalized_cost_line_id AND ncl.effective_to IS NULL)`),
   ]);
   checks.push(buildCheck(
     "cost_lines_amount_parity", "finance", "finance_amounts", "HARD_FAIL",
-    legacySum, promotedSum,
-    `Cost line amount delta: legacy=${legacySum}, promoted=${promotedSum}, diff=${(legacySum - promotedSum).toFixed(2)}`,
+    legacySum, promotedMigratedSum,
+    `Cost line amount delta: legacy=${legacySum}, promoted(migrated)=${promotedMigratedSum}, diff=${(legacySum - promotedMigratedSum).toFixed(2)}`,
   ));
 
   return checks;
@@ -254,24 +256,27 @@ async function costLineChecks(): Promise<ReconciliationCheck[]> {
 async function revenueLineChecks(): Promise<ReconciliationCheck[]> {
   const checks: ReconciliationCheck[] = [];
 
-  const [legacyCount, promotedCount] = await Promise.all([
+  // Row parity: active legacy rows vs promoted rows with a legacy FK pointing to an active legacy row
+  const [legacyCount, promotedMigratedCount] = await Promise.all([
     queryCount(`SELECT count(*) AS cnt FROM normalized_revenue_lines WHERE effective_to IS NULL`),
-    queryCount(`SELECT count(*) AS cnt FROM finance.revenue_lines`),
+    queryCount(`SELECT count(*) AS cnt FROM finance.revenue_lines frl WHERE frl.legacy_normalized_revenue_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_revenue_lines nrl WHERE nrl.id = frl.legacy_normalized_revenue_line_id AND nrl.effective_to IS NULL)`),
   ]);
   checks.push(buildCheck(
     "revenue_lines_row_parity", "finance", "row_parity", "HARD_FAIL",
-    legacyCount, promotedCount,
-    `${legacyCount - promotedCount} active revenue lines missing from finance.revenue_lines`,
+    legacyCount, promotedMigratedCount,
+    `${legacyCount - promotedMigratedCount} active revenue lines missing from finance.revenue_lines (migrated rows only)`,
   ));
 
-  const nullLegacyFk = await queryCount(
+  // Native promoted rows (no legacy FK) — informational
+  const nativeCount = await queryCount(
     `SELECT count(*) AS cnt FROM finance.revenue_lines WHERE legacy_normalized_revenue_line_id IS NULL`,
   );
   checks.push(buildCheck(
-    "revenue_lines_null_legacy_fk", "finance", "fk_integrity", "WARNING",
-    nullLegacyFk, 0, `${nullLegacyFk} finance.revenue_lines rows have NULL legacy FK`,
+    "revenue_lines_native_promoted", "finance", "row_parity", "INFO",
+    nativeCount, 0, `${nativeCount} finance.revenue_lines rows created natively (no legacy FK)`,
   ));
 
+  // Broken legacy FK
   const brokenFk = await queryCount(
     `SELECT count(*) AS cnt FROM finance.revenue_lines frl WHERE frl.legacy_normalized_revenue_line_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM normalized_revenue_lines nrl WHERE nrl.id = frl.legacy_normalized_revenue_line_id)`,
   );
@@ -280,14 +285,15 @@ async function revenueLineChecks(): Promise<ReconciliationCheck[]> {
     brokenFk, 0, `${brokenFk} finance.revenue_lines reference non-existent legacy rows`,
   ));
 
-  const [legacySum, promotedSum] = await Promise.all([
+  // Amount comparison: active legacy vs migrated promoted (rows with active legacy FK)
+  const [legacySum, promotedMigratedSum] = await Promise.all([
     querySum(`SELECT COALESCE(SUM(amount_ex_vat::numeric), 0) AS total FROM normalized_revenue_lines WHERE effective_to IS NULL`),
-    querySum(`SELECT COALESCE(SUM(amount_ex_vat), 0) AS total FROM finance.revenue_lines`),
+    querySum(`SELECT COALESCE(SUM(frl.amount_ex_vat), 0) AS total FROM finance.revenue_lines frl WHERE frl.legacy_normalized_revenue_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_revenue_lines nrl WHERE nrl.id = frl.legacy_normalized_revenue_line_id AND nrl.effective_to IS NULL)`),
   ]);
   checks.push(buildCheck(
     "revenue_lines_amount_parity", "finance", "finance_amounts", "HARD_FAIL",
-    legacySum, promotedSum,
-    `Revenue line amount delta: legacy=${legacySum}, promoted=${promotedSum}, diff=${(legacySum - promotedSum).toFixed(2)}`,
+    legacySum, promotedMigratedSum,
+    `Revenue line amount delta: legacy=${legacySum}, promoted(migrated)=${promotedMigratedSum}, diff=${(legacySum - promotedMigratedSum).toFixed(2)}`,
   ));
 
   return checks;
@@ -420,12 +426,12 @@ async function bridgeHealthChecks(): Promise<ReconciliationCheck[]> {
 async function financeProjectLevelChecks(): Promise<ReconciliationCheck[]> {
   const checks: ReconciliationCheck[] = [];
 
-  // Per-project cost line count mismatches
+  // Per-project cost line count mismatches (migrated rows only)
   const projectCostMismatches = await queryCount(
     `SELECT count(*) AS cnt FROM (
       SELECT pi.id,
         (SELECT count(*) FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name AND ncl.effective_to IS NULL) AS legacy_cnt,
-        (SELECT count(*) FROM finance.cost_lines fcl WHERE fcl.project_id = pi.id) AS promoted_cnt
+        (SELECT count(*) FROM finance.cost_lines fcl WHERE fcl.project_id = pi.id AND fcl.legacy_normalized_cost_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_cost_lines ncl2 WHERE ncl2.id = fcl.legacy_normalized_cost_line_id AND ncl2.effective_to IS NULL)) AS promoted_cnt
       FROM project_info pi
     ) sub WHERE sub.legacy_cnt != sub.promoted_cnt AND sub.legacy_cnt > 0`,
   );
@@ -434,12 +440,12 @@ async function financeProjectLevelChecks(): Promise<ReconciliationCheck[]> {
     projectCostMismatches, 0, `${projectCostMismatches} projects have cost line count mismatches`,
   ));
 
-  // Per-project revenue line count mismatches
+  // Per-project revenue line count mismatches (migrated rows only)
   const projectRevenueMismatches = await queryCount(
     `SELECT count(*) AS cnt FROM (
       SELECT pi.id,
         (SELECT count(*) FROM normalized_revenue_lines nrl WHERE nrl.project_name = pi.project_name AND nrl.effective_to IS NULL) AS legacy_cnt,
-        (SELECT count(*) FROM finance.revenue_lines frl WHERE frl.project_id = pi.id) AS promoted_cnt
+        (SELECT count(*) FROM finance.revenue_lines frl WHERE frl.project_id = pi.id AND frl.legacy_normalized_revenue_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_revenue_lines nrl2 WHERE nrl2.id = frl.legacy_normalized_revenue_line_id AND nrl2.effective_to IS NULL)) AS promoted_cnt
       FROM project_info pi
     ) sub WHERE sub.legacy_cnt != sub.promoted_cnt AND sub.legacy_cnt > 0`,
   );
@@ -454,43 +460,43 @@ async function financeProjectLevelChecks(): Promise<ReconciliationCheck[]> {
 async function openingBalanceChecks(): Promise<ReconciliationCheck[]> {
   const checks: ReconciliationCheck[] = [];
 
-  // Cost lines: opening-balance count parity (legacy vs promoted)
+  // Cost lines: opening-balance count parity (legacy vs migrated promoted)
   const [legacyObCost, promotedObCost] = await Promise.all([
     queryCount(`SELECT count(*) AS cnt FROM normalized_cost_lines WHERE is_opening_balance = true AND effective_to IS NULL`),
-    queryCount(`SELECT count(*) AS cnt FROM finance.cost_lines WHERE is_opening_balance = true`),
+    queryCount(`SELECT count(*) AS cnt FROM finance.cost_lines fcl WHERE fcl.is_opening_balance = true AND fcl.legacy_normalized_cost_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_cost_lines ncl WHERE ncl.id = fcl.legacy_normalized_cost_line_id AND ncl.effective_to IS NULL)`),
   ]);
   checks.push(buildCheck(
     "opening_balance_cost_count", "finance", "row_parity", "HARD_FAIL",
     legacyObCost, promotedObCost,
-    `Opening-balance cost line count: legacy=${legacyObCost}, promoted=${promotedObCost}`,
+    `Opening-balance cost line count: legacy=${legacyObCost}, promoted(migrated)=${promotedObCost}`,
   ));
 
-  // Revenue lines: opening-balance count parity
+  // Revenue lines: opening-balance count parity (legacy vs migrated promoted)
   const [legacyObRev, promotedObRev] = await Promise.all([
     queryCount(`SELECT count(*) AS cnt FROM normalized_revenue_lines WHERE is_opening_balance = true AND effective_to IS NULL`),
-    queryCount(`SELECT count(*) AS cnt FROM finance.revenue_lines WHERE is_opening_balance = true`),
+    queryCount(`SELECT count(*) AS cnt FROM finance.revenue_lines frl WHERE frl.is_opening_balance = true AND frl.legacy_normalized_revenue_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_revenue_lines nrl WHERE nrl.id = frl.legacy_normalized_revenue_line_id AND nrl.effective_to IS NULL)`),
   ]);
   checks.push(buildCheck(
     "opening_balance_revenue_count", "finance", "row_parity", "HARD_FAIL",
     legacyObRev, promotedObRev,
-    `Opening-balance revenue line count: legacy=${legacyObRev}, promoted=${promotedObRev}`,
+    `Opening-balance revenue line count: legacy=${legacyObRev}, promoted(migrated)=${promotedObRev}`,
   ));
 
-  // Opening-balance cost amount parity
+  // Opening-balance cost amount parity (migrated rows only)
   const [legacyObCostAmt, promotedObCostAmt] = await Promise.all([
     querySum(`SELECT COALESCE(SUM(amount_ex_vat::numeric), 0) AS total FROM normalized_cost_lines WHERE is_opening_balance = true AND effective_to IS NULL`),
-    querySum(`SELECT COALESCE(SUM(amount_ex_vat), 0) AS total FROM finance.cost_lines WHERE is_opening_balance = true`),
+    querySum(`SELECT COALESCE(SUM(fcl.amount_ex_vat), 0) AS total FROM finance.cost_lines fcl WHERE fcl.is_opening_balance = true AND fcl.legacy_normalized_cost_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_cost_lines ncl WHERE ncl.id = fcl.legacy_normalized_cost_line_id AND ncl.effective_to IS NULL)`),
   ]);
   checks.push(buildCheck(
     "opening_balance_cost_amount", "finance", "finance_amounts", "HARD_FAIL",
     legacyObCostAmt, promotedObCostAmt,
-    `Opening-balance cost amount: legacy=${legacyObCostAmt}, promoted=${promotedObCostAmt}, diff=${(legacyObCostAmt - promotedObCostAmt).toFixed(2)}`,
+    `Opening-balance cost amount: legacy=${legacyObCostAmt}, promoted(migrated)=${promotedObCostAmt}, diff=${(legacyObCostAmt - promotedObCostAmt).toFixed(2)}`,
   ));
 
-  // Opening-balance revenue amount parity
+  // Opening-balance revenue amount parity (migrated rows only)
   const [legacyObRevAmt, promotedObRevAmt] = await Promise.all([
     querySum(`SELECT COALESCE(SUM(amount_ex_vat::numeric), 0) AS total FROM normalized_revenue_lines WHERE is_opening_balance = true AND effective_to IS NULL`),
-    querySum(`SELECT COALESCE(SUM(amount_ex_vat), 0) AS total FROM finance.revenue_lines WHERE is_opening_balance = true`),
+    querySum(`SELECT COALESCE(SUM(frl.amount_ex_vat), 0) AS total FROM finance.revenue_lines frl WHERE frl.is_opening_balance = true AND frl.legacy_normalized_revenue_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_revenue_lines nrl WHERE nrl.id = frl.legacy_normalized_revenue_line_id AND nrl.effective_to IS NULL)`),
   ]);
   checks.push(buildCheck(
     "opening_balance_revenue_amount", "finance", "finance_amounts", "HARD_FAIL",
@@ -513,12 +519,12 @@ async function openingBalanceChecks(): Promise<ReconciliationCheck[]> {
 async function financeProjectAmountDriftChecks(): Promise<ReconciliationCheck[]> {
   const checks: ReconciliationCheck[] = [];
 
-  // Per-project cost amount drift (SUM mismatch)
+  // Per-project cost amount drift (SUM mismatch, migrated rows only)
   const costAmountDrift = await queryCount(
     `SELECT count(*) AS cnt FROM (
       SELECT pi.id,
         (SELECT COALESCE(SUM(ncl.amount_ex_vat::numeric), 0) FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name AND ncl.effective_to IS NULL) AS legacy_sum,
-        (SELECT COALESCE(SUM(fcl.amount_ex_vat), 0) FROM finance.cost_lines fcl WHERE fcl.project_id = pi.id) AS promoted_sum
+        (SELECT COALESCE(SUM(fcl.amount_ex_vat), 0) FROM finance.cost_lines fcl WHERE fcl.project_id = pi.id AND fcl.legacy_normalized_cost_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_cost_lines ncl2 WHERE ncl2.id = fcl.legacy_normalized_cost_line_id AND ncl2.effective_to IS NULL)) AS promoted_sum
       FROM project_info pi
     ) sub WHERE ABS(sub.legacy_sum - sub.promoted_sum) >= 0.01 AND sub.legacy_sum > 0`,
   );
@@ -527,12 +533,12 @@ async function financeProjectAmountDriftChecks(): Promise<ReconciliationCheck[]>
     costAmountDrift, 0, `${costAmountDrift} projects have cost amount SUM mismatches`,
   ));
 
-  // Per-project revenue amount drift
+  // Per-project revenue amount drift (migrated rows only)
   const revenueAmountDrift = await queryCount(
     `SELECT count(*) AS cnt FROM (
       SELECT pi.id,
         (SELECT COALESCE(SUM(nrl.amount_ex_vat::numeric), 0) FROM normalized_revenue_lines nrl WHERE nrl.project_name = pi.project_name AND nrl.effective_to IS NULL) AS legacy_sum,
-        (SELECT COALESCE(SUM(frl.amount_ex_vat), 0) FROM finance.revenue_lines frl WHERE frl.project_id = pi.id) AS promoted_sum
+        (SELECT COALESCE(SUM(frl.amount_ex_vat), 0) FROM finance.revenue_lines frl WHERE frl.project_id = pi.id AND frl.legacy_normalized_revenue_line_id IS NOT NULL AND EXISTS (SELECT 1 FROM normalized_revenue_lines nrl2 WHERE nrl2.id = frl.legacy_normalized_revenue_line_id AND nrl2.effective_to IS NULL)) AS promoted_sum
       FROM project_info pi
     ) sub WHERE ABS(sub.legacy_sum - sub.promoted_sum) >= 0.01 AND sub.legacy_sum > 0`,
   );
