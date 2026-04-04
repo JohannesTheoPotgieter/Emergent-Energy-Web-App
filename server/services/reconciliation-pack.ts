@@ -327,6 +327,15 @@ async function changeRequestChecks(): Promise<ReconciliationCheck[]> {
     `VO cost_impact sum: legacy=${legacyCrSum}, promoted=${promotedCrSum}, diff=${(legacyCrSum - promotedCrSum).toFixed(2)}`,
   ));
 
+  // VO party_id coverage: active VO finance_records should have party_id
+  const nullPartyCount = await queryCount(
+    `SELECT count(*) AS cnt FROM finance.finance_records WHERE legacy_entity_table = 'public.change_requests' AND status != 'cancelled' AND party_id IS NULL`,
+  );
+  checks.push(buildCheck(
+    "change_requests_null_party_id", "finance", "fk_integrity", "WARNING",
+    nullPartyCount, 0, `${nullPartyCount} VO finance_records have NULL party_id (missing client party)`,
+  ));
+
   return checks;
 }
 
