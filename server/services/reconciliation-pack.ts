@@ -119,6 +119,8 @@ function buildCheck(
     status = Math.abs(delta) < tolerance ? "PASS" : severity === "HARD_FAIL" ? "FAIL" : "WARN";
   } else if (delta === 0) {
     status = "PASS";
+  } else if (severity === "INFO") {
+    status = "PASS"; // INFO checks never trigger WARN — they are purely informational
   } else {
     status = severity === "HARD_FAIL" ? "FAIL" : "WARN";
   }

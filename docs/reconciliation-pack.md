@@ -88,8 +88,6 @@ Tolerable for cutover but should be investigated. Do not block deployment.
 | `projects_field_drift` | project_name or phase differ |
 | `clients_field_drift` | client name differs |
 | `projects_null_client_fk` | Promoted project missing client_id that legacy has |
-| `cost_lines_null_legacy_fk` | _(removed — replaced by `cost_lines_native_promoted` INFO check)_ |
-| `revenue_lines_null_legacy_fk` | _(removed — replaced by `revenue_lines_native_promoted` INFO check)_ |
 | `work_items_orphaned_legacy_refs` | work_items reference deleted legacy tasks |
 | `work_items_no_project` | Non-personal work items without project_id |
 | `work_items_pm_task_parity` | PM plan task count mismatch |
