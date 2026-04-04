@@ -1,7 +1,7 @@
 # Phase E Migration Manifest
 
 > **Phase:** E — Deliverables + Approvals  
-> **Status:** Complete  
+> **Status:** Schema DDL + backfill complete. Runtime write/read cutover outstanding (see docs/schema-migration-status.md).  
 > **Total migrations:** 8 (2 DDL + 3 backfill/seed + 1 backfill + 2 rollback)
 
 ---

@@ -182,10 +182,18 @@ export function registerDeliverableCaptureRoutes(app: Express) {
           await db.update(normalizedCostLines)
             .set({ invoiceNumber: fileNameWithoutExt })
             .where(eq(normalizedCostLines.id, lId));
+          // Phase 2 bridge write: sync invoice number to promoted cost_lines
+          import("./bridge/bridge-writer").then(({ syncCostLineFieldUpdate }) =>
+            syncCostLineFieldUpdate(lId, { invoiceNumber: fileNameWithoutExt })
+          ).catch(() => {});
         } else if (linkType === "revenue_line") {
           await db.update(normalizedRevenueLines)
             .set({ invoiceNumber: fileNameWithoutExt })
             .where(eq(normalizedRevenueLines.id, lId));
+          // Phase 2 bridge write: sync invoice number to promoted revenue_lines
+          import("./bridge/bridge-writer").then(({ syncRevenueLineFieldUpdate }) =>
+            syncRevenueLineFieldUpdate(lId, { invoiceNumber: fileNameWithoutExt })
+          ).catch(() => {});
         }
       }
 

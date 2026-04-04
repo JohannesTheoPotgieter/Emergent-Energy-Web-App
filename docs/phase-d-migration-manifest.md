@@ -1,7 +1,7 @@
 # Phase D Migration Manifest
 
 > **Phase:** D — Governed Processes  
-> **Status:** Complete  
+> **Status:** Schema DDL + backfill complete. Runtime write/read cutover outstanding (see docs/schema-migration-status.md).  
 > **Total migrations:** 4 (1 DDL + 2 backfill + 1 rollback)
 
 ---

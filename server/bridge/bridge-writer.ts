@@ -2,9 +2,9 @@
  * Bridge Writer — Phase 2 dual-write module
  *
  * Propagates legacy table writes to promoted schema tables.
- * All bridge writes are best-effort: failures are logged but never
- * block the legacy write. Staleness is detected by reconciliation
- * via the last_synced_at column.
+ * Bridge writes retry once on transient failures and log persistent
+ * failures to internal.bridge_sync_failures for reconciliation pickup.
+ * Staleness is detected by reconciliation via the last_synced_at column.
  *
  * Each sync method:
  *  1. Maps legacy columns → promoted columns
@@ -24,6 +24,7 @@ import { db } from "../db";
 export interface BridgeResult {
   success: boolean;
   error?: string;
+  retried?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -33,15 +34,60 @@ export interface BridgeResult {
 function safeDate(val: string | null | undefined): string | null {
   if (!val || val.trim() === "") return null;
   if (!/^\d{4}-\d{2}-\d{2}/.test(val)) return null;
-  // Validate by attempting parse — reject dates like 2026-04-31
   const d = new Date(val.slice(0, 10));
   if (isNaN(d.getTime())) return null;
   return val.slice(0, 10);
 }
 
+function isTransientError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /connection|ECONNREFUSED|timeout|deadlock|could not serialize/i.test(msg);
+}
+
 async function logBridgeError(domain: string, entityId: number | string, error: unknown): Promise<void> {
   const msg = error instanceof Error ? error.message : String(error);
   console.error(`[bridge-write][${domain}] failed`, { entityId, error: msg });
+
+  // Persist failure for reconciliation pickup (best-effort, never throw)
+  try {
+    await db.execute(sql`
+      INSERT INTO internal.bridge_sync_failures (
+        domain, entity_id, error_message, created_at
+      ) VALUES (
+        ${domain}, ${String(entityId)}, ${msg.slice(0, 1000)}, NOW()
+      )
+      ON CONFLICT DO NOTHING
+    `);
+  } catch {
+    // Table may not exist yet — swallow silently
+  }
+}
+
+/**
+ * Retry wrapper: attempts the bridge operation, retries once after 200ms
+ * on transient errors (connection, timeout, deadlock).
+ */
+async function withRetry(
+  domain: string,
+  entityId: number | string,
+  operation: () => Promise<BridgeResult>,
+): Promise<BridgeResult> {
+  const first = await operation();
+  if (first.success) return first;
+
+  // Only retry transient errors
+  if (!first.error || !isTransientError(new Error(first.error))) {
+    await logBridgeError(domain, entityId, new Error(first.error));
+    return first;
+  }
+
+  // Wait 200ms then retry once
+  await new Promise(r => setTimeout(r, 200));
+  const second = await operation();
+  if (!second.success) {
+    await logBridgeError(domain, entityId, new Error(second.error));
+  }
+  return { ...second, retried: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -49,6 +95,7 @@ async function logBridgeError(domain: string, entityId: number | string, error: 
 // ---------------------------------------------------------------------------
 
 export async function syncProject(p: Record<string, any> & { id: number }): Promise<BridgeResult> {
+  return withRetry("project", p.id, async () => {
   try {
     // Full-spine sync: pass through all columns the app writes.
     // Uses a generic UPDATE SET approach to avoid maintaining a huge INSERT.
@@ -91,9 +138,9 @@ export async function syncProject(p: Record<string, any> & { id: number }): Prom
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("project", p.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +216,7 @@ export async function syncClient(client: {
   primaryContactEmail?: string | null;
   primaryContactPhone?: string | null;
 }): Promise<BridgeResult> {
+  return withRetry("client", client.id, async () => {
   try {
     await db.execute(sql`
       INSERT INTO core.clients (
@@ -198,9 +246,9 @@ export async function syncClient(client: {
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("client", client.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +256,7 @@ export async function syncClient(client: {
 // ---------------------------------------------------------------------------
 
 export async function syncCostLine(costLine: Record<string, any> & { id: number }): Promise<BridgeResult> {
+  return withRetry("cost_line", costLine.id, async () => {
   try {
     const invoiceDateTyped = safeDate(costLine.invoiceDate);
     const approvedDateTyped = safeDate(costLine.approvedDate);
@@ -285,9 +334,9 @@ export async function syncCostLine(costLine: Record<string, any> & { id: number 
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("cost_line", costLine.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -295,6 +344,7 @@ export async function syncCostLine(costLine: Record<string, any> & { id: number 
 // ---------------------------------------------------------------------------
 
 export async function syncRevenueLine(revenueLine: Record<string, any> & { id: number }): Promise<BridgeResult> {
+  return withRetry("revenue_line", revenueLine.id, async () => {
   try {
     const invoiceDateTyped = safeDate(revenueLine.invoiceDate);
     const expectedDateTyped = safeDate(revenueLine.expectedPaymentDate);
@@ -364,9 +414,170 @@ export async function syncRevenueLine(revenueLine: Record<string, any> & { id: n
     `);
     return { success: true };
   } catch (err) {
-    await logBridgeError("revenue_line", revenueLine.id, err);
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Project INSERT bridge: project_info INSERT → core.projects INSERT
+// ---------------------------------------------------------------------------
+
+export async function syncProjectInsert(p: Record<string, any> & { id: number }): Promise<BridgeResult> {
+  return withRetry("project_insert", p.id, async () => {
+  try {
+    await db.execute(sql`
+      INSERT INTO core.projects (
+        id, project_name, client_id, phase,
+        rag_status, rag_comment,
+        execution_gate_status, execution_gate_reason,
+        archived_status, pm_user_id, pd_user_id,
+        current_stage_code, gate_status,
+        signed_status, execution_phase,
+        size_kwp, contract_value,
+        is_active, execution_enabled,
+        signed_date, signed_document_link, excel_tracker_link,
+        cp_signed, cp_signed_date, cp_signed_by_user_id,
+        cp_evidence_type, cp_evidence_ref,
+        pm_task_pack_created, eng_post_cp_task_pack_created,
+        site_id, opportunity_id, delivery_model,
+        last_synced_at, created_at, updated_at
+      ) VALUES (
+        ${p.id}, ${p.projectName ?? null}, ${p.clientId ?? null}, ${p.phase ?? null},
+        ${p.ragStatus ?? null}, ${p.ragComment ?? null},
+        ${p.executionGateStatus ?? null}, ${p.executionGateReason ?? null},
+        ${p.archivedStatus ?? null}, ${p.pmUserId ?? null}, ${p.pdUserId ?? null},
+        ${p.currentStageCode ?? null}, ${p.gateStatus ?? null},
+        ${p.signedStatus ?? null}, ${p.executionPhase ?? null},
+        ${p.sizeKwp ?? null}, ${p.contractValue ?? null},
+        ${p.isActive ?? true}, ${p.executionEnabled ?? false},
+        ${p.signedDate ?? null}, ${p.signedDocumentLink ?? null}, ${p.excelTrackerLink ?? null},
+        ${p.cpSigned ?? null}, ${p.cpSignedDate ?? null}, ${p.cpSignedByUserId ?? null},
+        ${p.cpEvidenceType ?? null}, ${p.cpEvidenceRef ?? null},
+        ${p.pmTaskPackCreated ?? null}, ${p.engPostCpTaskPackCreated ?? null},
+        ${p.siteId ?? null}, ${p.opportunityId ?? null}, ${p.deliveryModel ?? null},
+        NOW(), NOW(), NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        project_name = EXCLUDED.project_name,
+        last_synced_at = NOW(),
+        updated_at = NOW()
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// User bridge: users → core.user_accounts
+// ---------------------------------------------------------------------------
+
+export async function syncUser(user: {
+  id: number;
+  username: string;
+  name: string;
+  email: string;
+  role?: string | null;
+  department?: string | null;
+}): Promise<BridgeResult> {
+  return withRetry("user", user.id, async () => {
+  try {
+    await db.execute(sql`
+      INSERT INTO core.user_accounts (
+        id, legacy_id, username, display_name, email,
+        role_code, department,
+        last_synced_at, source_table, created_at, updated_at
+      ) VALUES (
+        ${user.id}, ${user.id}, ${user.username}, ${user.name}, ${user.email},
+        ${user.role ?? null}, ${user.department ?? null},
+        NOW(), 'public.users', NOW(), NOW()
+      )
+      ON CONFLICT (id) DO UPDATE SET
+        username = EXCLUDED.username,
+        display_name = EXCLUDED.display_name,
+        email = EXCLUDED.email,
+        role_code = EXCLUDED.role_code,
+        department = EXCLUDED.department,
+        last_synced_at = NOW(),
+        updated_at = NOW()
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Soft-close bridge: mark promoted finance lines as closed
+// ---------------------------------------------------------------------------
+
+export async function softClosePromotedCostLines(
+  projectId: number | null,
+  projectName: string | null,
+): Promise<BridgeResult> {
+  return withRetry("soft_close_cost_lines", projectId ?? 0, async () => {
+  try {
+    const condition = projectId
+      ? sql`project_id = ${projectId}`
+      : sql`project_name_snapshot = ${projectName}`;
+    await db.execute(sql`
+      UPDATE finance.cost_lines
+      SET effective_to = NOW(), updated_at = NOW()
+      WHERE ${condition} AND effective_to IS NULL
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+export async function softClosePromotedRevenueLines(
+  projectId: number | null,
+  projectName: string | null,
+): Promise<BridgeResult> {
+  return withRetry("soft_close_revenue_lines", projectId ?? 0, async () => {
+  try {
+    const condition = projectId
+      ? sql`project_id = ${projectId}`
+      : sql`project_name_snapshot = ${projectName}`;
+    await db.execute(sql`
+      UPDATE finance.revenue_lines
+      SET effective_to = NOW(), updated_at = NOW()
+      WHERE ${condition} AND effective_to IS NULL
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Hard-delete cascade: remove promoted finance lines when legacy rows deleted
+// ---------------------------------------------------------------------------
+
+export async function cascadeDeletePromotedFinanceLines(
+  projectId: number | null,
+  projectName: string | null,
+): Promise<BridgeResult> {
+  return withRetry("cascade_delete_finance", projectId ?? 0, async () => {
+  try {
+    const costCondition = projectId
+      ? sql`project_id = ${projectId}`
+      : sql`project_name_snapshot = ${projectName}`;
+    const revCondition = costCondition;
+
+    await db.execute(sql`DELETE FROM finance.cost_lines WHERE ${costCondition}`);
+    await db.execute(sql`DELETE FROM finance.revenue_lines WHERE ${revCondition}`);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -379,4 +590,297 @@ export async function syncCostLines(costLines: Parameters<typeof syncCostLine>[0
 
 export async function syncRevenueLines(revenueLines: Parameters<typeof syncRevenueLine>[0][]): Promise<BridgeResult[]> {
   return Promise.all(revenueLines.map(syncRevenueLine));
+}
+
+// ---------------------------------------------------------------------------
+// Change Request / Variation Order bridge → finance.finance_records
+// ---------------------------------------------------------------------------
+
+export async function syncChangeRequest(cr: {
+  id: number;
+  projectId: number;
+  title: string;
+  changeType?: string | null;
+  status?: string | null;
+  costImpact?: string | number | null;
+  revenueImpact?: string | number | null;
+  cosImpact?: string | number | null;
+  marginImpact?: string | number | null;
+  cause?: string | null;
+  clientLinked?: boolean | null;
+  impactSummary?: string | null;
+  evidenceLink?: string | null;
+}): Promise<BridgeResult> {
+  return withRetry("change_request", cr.id, async () => {
+  try {
+    // Resolve project_instance_id and client party_id from legacy project_id
+    const piResult = await db.execute(sql`
+      SELECT id, client_party_id FROM core.project_instances
+      WHERE legacy_project_id = ${cr.projectId}
+      LIMIT 1
+    `);
+    const projectInstanceId = (piResult.rows[0] as any)?.id ?? null;
+    const clientPartyId = (piResult.rows[0] as any)?.client_party_id ?? null;
+
+    const costAmount = cr.costImpact != null ? Number(cr.costImpact) : null;
+    const direction = costAmount != null && costAmount < 0 ? 'inflow' : 'outflow';
+
+    await db.execute(sql`
+      INSERT INTO finance.finance_records (
+        legacy_entity_id, legacy_entity_table,
+        project_instance_id, party_id,
+        financial_type, direction, title,
+        amount_ex_vat, status,
+        record_data, import_source,
+        created_at, updated_at
+      ) VALUES (
+        ${cr.id}, 'public.change_requests',
+        ${projectInstanceId}, ${clientPartyId},
+        'variation_order', ${direction}, ${cr.title},
+        ${costAmount}, ${cr.status ?? 'draft'},
+        ${sql`${JSON.stringify({
+          change_type: cr.changeType,
+          cause: cr.cause,
+          client_linked: cr.clientLinked,
+          revenue_impact: cr.revenueImpact,
+          cos_impact: cr.cosImpact,
+          margin_impact: cr.marginImpact,
+          impact_summary: cr.impactSummary,
+          evidence_link: cr.evidenceLink,
+        })}::jsonb`},
+        'bridge_writer',
+        NOW(), NOW()
+      )
+      ON CONFLICT (legacy_entity_table, legacy_entity_id) DO UPDATE SET
+        title = EXCLUDED.title,
+        amount_ex_vat = EXCLUDED.amount_ex_vat,
+        status = EXCLUDED.status,
+        direction = EXCLUDED.direction,
+        party_id = COALESCE(EXCLUDED.party_id, finance.finance_records.party_id),
+        record_data = EXCLUDED.record_data,
+        updated_at = NOW()
+    `);
+    // Create lifecycle event for the sync
+    try {
+      await db.execute(sql`
+        INSERT INTO finance.finance_record_events (
+          finance_record_id, event_type, event_date,
+          from_status, to_status, amount, event_data, created_at
+        )
+        SELECT fr.id, 'bridge_synced', NOW(), NULL, ${cr.status ?? 'draft'},
+          ${costAmount}, ${sql`${JSON.stringify({ source: 'bridge_writer', change_type: cr.changeType })}::jsonb`}, NOW()
+        FROM finance.finance_records fr
+        WHERE fr.legacy_entity_table = 'public.change_requests'
+          AND fr.legacy_entity_id = ${cr.id}
+      `);
+    } catch { /* lifecycle event is best-effort */ }
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+export async function softDeleteChangeRequestFinanceRecord(
+  changeRequestId: number,
+  deletedByUserId?: number | null,
+  deleteReason?: string | null,
+): Promise<BridgeResult> {
+  return withRetry("change_request", changeRequestId, async () => {
+    try {
+      // Mark the finance_record as cancelled
+      await db.execute(sql`
+        UPDATE finance.finance_records
+        SET status = 'cancelled',
+            record_data = record_data || ${sql`${JSON.stringify({
+              deleted_at: new Date().toISOString(),
+              deleted_by: deletedByUserId ?? null,
+              delete_reason: deleteReason ?? null,
+            })}::jsonb`},
+            updated_at = NOW()
+        WHERE legacy_entity_table = 'public.change_requests'
+          AND legacy_entity_id = ${changeRequestId}
+      `);
+
+      // Create lifecycle event for the soft-delete
+      try {
+        await db.execute(sql`
+          INSERT INTO finance.finance_record_events (
+            finance_record_id, event_type, event_date,
+            to_status, event_data, created_at
+          )
+          SELECT fr.id, 'soft_deleted', NOW(), 'cancelled',
+            ${sql`${JSON.stringify({
+              source: 'bridge_writer',
+              deleted_by: deletedByUserId ?? null,
+              delete_reason: deleteReason ?? null,
+            })}::jsonb`}, NOW()
+          FROM finance.finance_records fr
+          WHERE fr.legacy_entity_table = 'public.change_requests'
+            AND fr.legacy_entity_id = ${changeRequestId}
+        `);
+      } catch { /* lifecycle event is best-effort */ }
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Project execution state bridge → core.project_state_history
+// ---------------------------------------------------------------------------
+
+export async function syncProjectExecutionState(
+  projectId: number,
+  fields: Record<string, any>,
+): Promise<BridgeResult> {
+  return withRetry("project_execution_state", projectId, async () => {
+  try {
+    await db.execute(sql`
+      UPDATE core.projects SET
+        phase = COALESCE(${fields.phase ?? null}, phase),
+        rag_status = COALESCE(${fields.ragStatus ?? null}, rag_status),
+        rag_comment = COALESCE(${fields.ragComment ?? null}, rag_comment),
+        execution_gate_status = COALESCE(${fields.executionGateStatus ?? null}, execution_gate_status),
+        execution_gate_reason = COALESCE(${fields.executionGateReason ?? null}, execution_gate_reason),
+        execution_phase = COALESCE(${fields.executionPhase ?? null}, execution_phase),
+        signed_status = COALESCE(${fields.signedStatus ?? null}, signed_status),
+        signed_date = COALESCE(${fields.signedDate ?? null}, signed_date),
+        is_active = COALESCE(${fields.isActive ?? null}, is_active),
+        execution_enabled = COALESCE(${fields.executionEnabled ?? null}, execution_enabled),
+        archived_status = COALESCE(${fields.archivedStatus ?? null}, archived_status),
+        current_stage_code = COALESCE(${fields.currentStageCode ?? null}, current_stage_code),
+        gate_status = COALESCE(${fields.gateStatus ?? null}, gate_status),
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE id = ${projectId}
+    `);
+
+    // Also snapshot to state history for audit
+    await snapshotProjectState(projectId, fields, "execution_state_bridge");
+
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Targeted field-update bridges: update specific promoted columns without
+// re-reading the full row. Used for metadata updates that touch a few fields.
+// ---------------------------------------------------------------------------
+
+/**
+ * Update specific fields on a promoted cost line without a full re-read.
+ * Fields not in the promoted schema are silently skipped.
+ */
+export async function syncCostLineFieldUpdate(
+  legacyId: number,
+  fields: Record<string, any>,
+): Promise<BridgeResult> {
+  return withRetry("cost_line_field_update", legacyId, async () => {
+  try {
+    await db.execute(sql`
+      UPDATE finance.cost_lines SET
+        counterparty_name = COALESCE(${fields.counterpartyName !== undefined ? fields.counterpartyName : null}, counterparty_name),
+        description = COALESCE(${fields.description !== undefined ? fields.description : null}, description),
+        invoice_number = COALESCE(${fields.invoiceNumber !== undefined ? fields.invoiceNumber : null}, invoice_number),
+        paid_date = COALESCE(${fields.paidDate !== undefined ? fields.paidDate : null}, paid_date),
+        cost_category = COALESCE(${fields.costCategory !== undefined ? fields.costCategory : null}, cost_category),
+        po_number = COALESCE(${fields.poNumber !== undefined ? fields.poNumber : null}, po_number),
+        cost_line_status = COALESCE(${fields.costLineStatus !== undefined ? fields.costLineStatus : null}, cost_line_status),
+        invoice_date_font_color = COALESCE(${fields.invoiceDateFontColor !== undefined ? fields.invoiceDateFontColor : null}, invoice_date_font_color),
+        invoice_date_confirmed = COALESCE(${fields.invoiceDateConfirmed !== undefined ? fields.invoiceDateConfirmed : null}, invoice_date_confirmed),
+        paid_date_font_color = COALESCE(${fields.paidDateFontColor !== undefined ? fields.paidDateFontColor : null}, paid_date_font_color),
+        paid_date_confirmed = COALESCE(${fields.paidDateConfirmed !== undefined ? fields.paidDateConfirmed : null}, paid_date_confirmed),
+        sub_project_name = COALESCE(${fields.subProjectName !== undefined ? fields.subProjectName : null}, sub_project_name),
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE legacy_normalized_cost_line_id = ${legacyId}
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+/**
+ * Update specific fields on a promoted revenue line without a full re-read.
+ */
+export async function syncRevenueLineFieldUpdate(
+  legacyId: number,
+  fields: Record<string, any>,
+): Promise<BridgeResult> {
+  return withRetry("revenue_line_field_update", legacyId, async () => {
+  try {
+    await db.execute(sql`
+      UPDATE finance.revenue_lines SET
+        description = COALESCE(${fields.description !== undefined ? fields.description : null}, description),
+        invoice_number = COALESCE(${fields.invoiceNumber !== undefined ? fields.invoiceNumber : null}, invoice_number),
+        paid_date = COALESCE(${fields.paidDate !== undefined ? fields.paidDate : null}, paid_date),
+        invoice_date_font_color = COALESCE(${fields.invoiceDateFontColor !== undefined ? fields.invoiceDateFontColor : null}, invoice_date_font_color),
+        invoice_date_confirmed = COALESCE(${fields.invoiceDateConfirmed !== undefined ? fields.invoiceDateConfirmed : null}, invoice_date_confirmed),
+        paid_date_font_color = COALESCE(${fields.paidDateFontColor !== undefined ? fields.paidDateFontColor : null}, paid_date_font_color),
+        paid_date_confirmed = COALESCE(${fields.paidDateConfirmed !== undefined ? fields.paidDateConfirmed : null}, paid_date_confirmed),
+        in_bank_date = COALESCE(${fields.inBankDate !== undefined ? fields.inBankDate : null}, in_bank_date),
+        sub_project_name = COALESCE(${fields.subProjectName !== undefined ? fields.subProjectName : null}, sub_project_name),
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE legacy_normalized_revenue_line_id = ${legacyId}
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+/**
+ * Bulk update counterparty_name on promoted cost lines matching a condition.
+ * Used after subcontractor rename/merge operations.
+ */
+export async function syncCostLineCounterpartyBulk(
+  oldName: string,
+  newName: string,
+): Promise<BridgeResult> {
+  return withRetry("cost_line_counterparty_bulk", 0, async () => {
+  try {
+    await db.execute(sql`
+      UPDATE finance.cost_lines SET
+        counterparty_name = ${newName},
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE LOWER(TRIM(counterparty_name)) = LOWER(TRIM(${oldName}))
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
+}
+
+/**
+ * Mark promoted project as deleted/archived.
+ */
+export async function syncProjectDelete(projectId: number): Promise<BridgeResult> {
+  return withRetry("project_delete", projectId, async () => {
+  try {
+    await db.execute(sql`
+      UPDATE core.projects SET
+        is_active = false,
+        archived_status = 'DELETED',
+        last_synced_at = NOW(),
+        updated_at = NOW()
+      WHERE id = ${projectId}
+    `);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : String(err) };
+  }
+  });
 }

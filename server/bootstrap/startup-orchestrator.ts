@@ -21,6 +21,12 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
   if (mode !== "postgres") return;
   if (!process.env.DATABASE_URL) return;
 
+  // Defense-in-depth: never run in production even if called directly
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") {
+    log("runDrizzleSchemaSync blocked in production/staging — use versioned migrations", "Startup:Schema");
+    return;
+  }
+
   // Wait for PostgreSQL to be fully ready before running schema sync
   const ready = await waitForDbReady();
   if (!ready) {
@@ -130,6 +136,27 @@ function extractAlterStatements(sqlContent: string): string[] {
   return statements;
 }
 
+/**
+ * Check if the promoted schema from versioned migrations (PR523+) is present.
+ * If core.projects exists, the versioned migrations are the schema authority
+ * and the legacy startup schema sync should be skipped.
+ */
+async function isPromotedSchemaPresent(): Promise<boolean> {
+  const mode = getDbMode();
+  if (mode !== "postgres") return false;
+  try {
+    const result = await db.execute(sql.raw(`
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'core' AND table_name = 'projects'
+      LIMIT 1
+    `));
+    const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
+    return rows.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function waitForDbReady(maxRetries = 5, baseDelayMs = 1000): Promise<boolean> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -151,6 +178,12 @@ async function runAdditiveSchemaAlignments() {
 
   if (mode === "sqlite") {
     console.log("[Schema] Additive alignments skipped for SQLite (handled by SQLite bootstrap)");
+    return;
+  }
+
+  // Defense-in-depth: never run in production even if called directly
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") {
+    console.log("[Schema] Additive alignments blocked in production/staging — use versioned migrations");
     return;
   }
 
@@ -2289,8 +2322,50 @@ export async function runStartupOrchestrator(options: {
     log,
   } = options;
 
-  await runDrizzleSchemaSync(log);
-  await runAdditiveSchemaAlignments();
+  // ── Schema Authority Gate ──────────────────────────────────────────────
+  // Versioned migrations (migrations/*.sql) are the SINGLE schema authority.
+  // Runtime DDL (runDrizzleSchemaSync, runAdditiveSchemaAlignments) is a
+  // LEGACY SAFETY NET for local-dev first-boot only.
+  //
+  // Production/staging: DDL is ALWAYS blocked. Migrations must be run
+  // before the app starts (CI/CD pipeline or manual db:push).
+  //
+  // Development: DDL runs only when the promoted schema is absent AND the
+  // ENABLE_STARTUP_SCHEMA_REPAIR flag is set. Once migrations have been
+  // applied (core.projects exists), DDL is skipped even in dev.
+  //
+  // See docs/schema-authority.md for the canonical model.
+  // ──────────────────────────────────────────────────────────────────────
+  const isProduction = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
+  const schemaGuardActive = await isPromotedSchemaPresent();
+
+  if (isProduction) {
+    // HARD BLOCK: production never runs startup DDL. Period.
+    log("Production environment — startup schema DDL blocked (versioned migrations are the sole authority)", "Startup:Schema");
+    if (!schemaGuardActive) {
+      log("WARNING: promoted schema (core.projects) not found in production — run versioned migrations before starting the app", "Startup:Schema");
+    }
+  } else if (schemaGuardActive) {
+    log("Promoted schema detected (core.projects exists) — skipping legacy schema sync to avoid dual authority", "Startup:Schema");
+  } else {
+    // Development-only: legacy safety net for first-boot environments
+    log("Development mode, no promoted schema — running legacy schema sync (first-boot safety net)", "Startup:Schema");
+    await runDrizzleSchemaSync(log);
+    await runAdditiveSchemaAlignments();
+  }
+
+  // Start automated reconciliation scheduler (Phase 2 health monitoring)
+  if (schemaGuardActive) {
+    try {
+      const { startReconciliationScheduler } = await import("../bridge/reconciliation-runner");
+      startReconciliationScheduler(15 * 60 * 1000, (result) => {
+        console.warn(`[startup] Reconciliation FAIL detected: ${result.summary}`);
+      });
+      log("Reconciliation scheduler started (15-minute interval)", "Startup:Reconciliation");
+    } catch {
+      // Module may not be available — non-critical
+    }
+  }
 
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });
   report.maintenance.push(runtimeMaintenanceEnabled && startupSchemaRepairEnabled ? "completed" : "skipped");
