@@ -317,6 +317,12 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     description: "Enables the enhanced multi-tab PD→PM handover form with readiness gating, dual sign-off, lessons learnt, and COO health scoring.",
     defaultValue: false,
   },
+  {
+    key: "department_shell",
+    label: "9-Department Navigation Shell",
+    description: "Switches navigation from 11-section model to 9-department model (Migration Control Pack Wave 1). HSE folds into PM, Reports distributed per department, Parties added.",
+    defaultValue: false,
+  },
 ];
 
 export const ROLLOUT_FEATURE_FLAG_MAP: Record<RolloutFeatureFlagKey, FeatureFlagDefinition> =
