@@ -12,6 +12,7 @@ import {
   type IntakeRequest, type InsertIntakeRequest,
 } from "@shared/schema";
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
+import { bridgeCatch } from "./bridge/bridge-writer";
 import {
   discoverSites, discoverSiteByUrl, discoverLists,
   getListColumns, getListItems, updateListItemFields,
@@ -244,7 +245,7 @@ export function registerSyncRoutes(app: Express) {
               // Phase 2 bridge write: mirror new project to core.projects
               import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
                 syncProjectInsert(newProj as any)
-              ).catch(() => {});
+              ).catch(bridgeCatch);
               projectId = newProj.id;
               newProjects++;
             }

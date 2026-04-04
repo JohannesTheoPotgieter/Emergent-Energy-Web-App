@@ -125,7 +125,7 @@ export function registerChangeControlRoutes(app: Express): void {
       });
 
       // Phase 2 bridge write: mirror to finance.finance_records
-      const { syncChangeRequest } = await import("./bridge/bridge-writer");
+      const { syncChangeRequest, bridgeCatch } = await import("./bridge/bridge-writer");
       syncChangeRequest({
         id: result[0].id,
         projectId: result[0].projectId,
@@ -140,7 +140,7 @@ export function registerChangeControlRoutes(app: Express): void {
         clientLinked: result[0].clientLinked ?? null,
         impactSummary: result[0].impactSummary ?? null,
         evidenceLink: result[0].evidenceLink ?? null,
-      }).catch(() => {});
+      }).catch(bridgeCatch);
 
       res.status(201).json(result[0]);
     } catch (err: unknown) {
@@ -232,7 +232,7 @@ export function registerChangeControlRoutes(app: Express): void {
       }
 
       // Phase 2 bridge write: mirror update to finance.finance_records
-      const { syncChangeRequest } = await import("./bridge/bridge-writer");
+      const { syncChangeRequest, bridgeCatch } = await import("./bridge/bridge-writer");
       syncChangeRequest({
         id: result[0].id,
         projectId: result[0].projectId,
@@ -247,7 +247,7 @@ export function registerChangeControlRoutes(app: Express): void {
         clientLinked: result[0].clientLinked ?? null,
         impactSummary: result[0].impactSummary ?? null,
         evidenceLink: result[0].evidenceLink ?? null,
-      }).catch(() => {});
+      }).catch(bridgeCatch);
 
       res.json(result[0]);
     } catch (err: unknown) {
@@ -282,8 +282,8 @@ export function registerChangeControlRoutes(app: Express): void {
       });
 
       // Phase 2 bridge write: mark finance_record as cancelled
-      const { softDeleteChangeRequestFinanceRecord } = await import("./bridge/bridge-writer");
-      softDeleteChangeRequestFinanceRecord(id, user?.id ?? null, deleteReason).catch(() => {});
+      const { softDeleteChangeRequestFinanceRecord, bridgeCatch: bridgeCatch2 } = await import("./bridge/bridge-writer");
+      softDeleteChangeRequestFinanceRecord(id, user?.id ?? null, deleteReason).catch(bridgeCatch2);
 
       res.json({ success: true, deleted });
     } catch (err: unknown) {

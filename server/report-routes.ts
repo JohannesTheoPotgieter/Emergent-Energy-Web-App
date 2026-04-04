@@ -157,7 +157,44 @@ async function calculateKPIs(month: string): Promise<KPIPayload> {
   };
 }
 
+/**
+ * Dev-only table bootstrap for SQLite mode.
+ * In production/staging, these tables are created by migrations/20260404_create_report_tables.sql.
+ */
+async function ensureReportTables() {
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS report_history (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      report_type TEXT NOT NULL,
+      format TEXT NOT NULL,
+      status TEXT NOT NULL,
+      parameters TEXT,
+      download_url TEXT,
+      created_at TEXT NOT NULL,
+      schedule_cron TEXT
+    )
+  `);
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS scheduled_reports (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      report_type TEXT NOT NULL,
+      format TEXT NOT NULL,
+      cron_expression TEXT NOT NULL,
+      parameters TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
+}
+
 export function registerReportRoutes(app: Express) {
+  // Bootstrap report tables once at registration (dev/SQLite only)
+  ensureReportTables().catch(err =>
+    console.error("[Reports] Table bootstrap failed:", err),
+  );
   app.get("/api/reports/catalog", requireAuth, async (_req, res) => {
     res.json({
       reportTypes: ADVANCED_REPORT_TYPES,
@@ -184,35 +221,11 @@ export function registerReportRoutes(app: Express) {
       const payload = JSON.stringify(parameters || {});
 
       await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS report_history (
-          id TEXT PRIMARY KEY,
-          user_id INTEGER NOT NULL,
-          report_type TEXT NOT NULL,
-          format TEXT NOT NULL,
-          status TEXT NOT NULL,
-          parameters TEXT,
-          download_url TEXT,
-          created_at TEXT NOT NULL,
-          schedule_cron TEXT
-        )
-      `);
-      await db.execute(sql`
         INSERT INTO report_history (id, user_id, report_type, format, status, parameters, download_url, created_at, schedule_cron)
         VALUES (${id}, ${userId}, ${reportType}, ${format}, ${status}, ${payload}, ${downloadUrl}, ${now}, ${schedule ?? null})
       `);
 
       if (schedule) {
-        await db.execute(sql`
-          CREATE TABLE IF NOT EXISTS scheduled_reports (
-            id TEXT PRIMARY KEY,
-            user_id INTEGER NOT NULL,
-            report_type TEXT NOT NULL,
-            format TEXT NOT NULL,
-            cron_expression TEXT NOT NULL,
-            parameters TEXT,
-            created_at TEXT NOT NULL
-          )
-        `);
         await db.execute(sql`
           INSERT INTO scheduled_reports (id, user_id, report_type, format, cron_expression, parameters, created_at)
           VALUES (${randomUUID()}, ${userId}, ${reportType}, ${format}, ${schedule}, ${payload}, ${now})
@@ -229,17 +242,6 @@ export function registerReportRoutes(app: Express) {
   app.get("/api/reports/scheduled", requireAuth, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS scheduled_reports (
-          id TEXT PRIMARY KEY,
-          user_id INTEGER NOT NULL,
-          report_type TEXT NOT NULL,
-          format TEXT NOT NULL,
-          cron_expression TEXT NOT NULL,
-          parameters TEXT,
-          created_at TEXT NOT NULL
-        )
-      `);
       const rows = await db.execute(sql`
         SELECT id, report_type, format, cron_expression, parameters, created_at
         FROM scheduled_reports
@@ -255,19 +257,6 @@ export function registerReportRoutes(app: Express) {
   app.get("/api/reports/history", requireAuth, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS report_history (
-          id TEXT PRIMARY KEY,
-          user_id INTEGER NOT NULL,
-          report_type TEXT NOT NULL,
-          format TEXT NOT NULL,
-          status TEXT NOT NULL,
-          parameters TEXT,
-          download_url TEXT,
-          created_at TEXT NOT NULL,
-          schedule_cron TEXT
-        )
-      `);
       const rows = await db.execute(sql`
         SELECT id, report_type, format, status, parameters, download_url, created_at, schedule_cron
         FROM report_history

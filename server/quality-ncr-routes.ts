@@ -12,7 +12,13 @@ function canTransition(from: string, to: string) {
   return toIdx <= fromIdx + 1;
 }
 
+/**
+ * Dev-only table bootstrap for SQLite mode.
+ * In production/staging, these tables are created by migrations/20260404_create_ncr_tables.sql.
+ */
 async function ensureNcrTables() {
+  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
+
   const isPostgres = getDbMode() === "postgres";
   const idCol = isPostgres ? "id SERIAL PRIMARY KEY" : "id INTEGER PRIMARY KEY AUTOINCREMENT";
   const timestampDefault = isPostgres ? "DEFAULT NOW()" : "DEFAULT CURRENT_TIMESTAMP";

@@ -2,35 +2,54 @@
 
 ## Overview
 
-This document describes the write authority model for the five core domains that bridge legacy and promoted schemas. The pattern is **legacy-first dual-write**: every mutation hits the legacy table first, then a fire-and-forget bridge call syncs the change to the promoted schema.
+This document describes the write authority model for the eight core domains that bridge legacy and promoted schemas.
+
+The primary mechanism is **view-swap (INSTEAD OF triggers):** The legacy table is renamed to `_<table>_legacy`, replaced by a view reading from the promoted table, and all writes are transparently routed to both promoted AND legacy tables at the database level. This provides **100% write coverage** with zero application code changes.
+
+A secondary **application-layer bridge** provides complementary sync for existing call sites. These are now redundant with the DB-level triggers but retained as a safety net during the transition period.
 
 ## Domains
 
-| Domain | Legacy Table | Promoted Table | Write Service |
-|---|---|---|---|
-| Projects | `project_info` | `projects` | `project-write-service.ts` |
-| Execution State | `project_execution_state` | `projects` (subset of columns) | `project-write-service.ts` |
-| Clients | `clients` | `clients` (promoted) | `client-write-service.ts` |
-| Cost Lines | `normalized_cost_lines` | `cost_lines` | `finance-line-write-service.ts` |
-| Revenue Lines | `normalized_revenue_lines` | `revenue_lines` | `finance-line-write-service.ts` |
+| Domain | Legacy Table | Promoted Table | Mechanism | Coverage |
+|---|---|---|---|---|
+| Projects | `project_info` | `core.projects` | **View-swap** | **100%** |
+| Execution State | `project_execution_state` | `core.projects` + `core.project_state_history` | **View-swap** | **100%** |
+| Clients | `clients` | `core.clients` | **View-swap** | **100%** |
+| Cost Lines | `normalized_cost_lines` | `finance.cost_lines` | **View-swap** | **100%** |
+| Revenue Lines | `normalized_revenue_lines` | `finance.revenue_lines` | **View-swap** | **100%** |
+| Work Items | `work_items` | `core.work_items` | **View-swap** | **100%** |
+| Approvals | `approvals` | `documentation.document_approvals` | **View-swap** | **100%** |
+| Deliverables | `deliverables` | `documentation.documents` | **View-swap** | **100%** |
 
-## Write Flow
+## Write Flow (All Domains — View-Swap)
 
-1. **Caller** invokes a write-service function (e.g. `createProjectInfo`)
-2. **Write service** performs the legacy INSERT/UPDATE/DELETE via Drizzle ORM
-3. **Write service** calls the appropriate bridge-writer function (e.g. `syncProjectInsert`)
-4. **Bridge writer** maps legacy columns to promoted columns and issues a SQL upsert/update
-5. Bridge calls are best-effort (`.catch(() => {})`) and never block the legacy write
+1. **Caller** issues INSERT/UPDATE/DELETE to the legacy table name (e.g. `public.normalized_cost_lines`)
+2. These are now **views** backed by promoted tables
+3. **INSTEAD OF triggers** intercept the DML and:
+   - Write to the promoted table (e.g. `finance.cost_lines`)
+   - Also write to `_<table>_legacy` for rollback safety
+4. **No application code changes required.** Every legacy write path is automatically covered.
 
-All write services accept a `txOrDb` parameter so they can participate in existing transactions.
+### Special Behaviors by Domain
 
-## Bridge Writer Functions
+**project_execution_state:** The UPDATE trigger also creates a snapshot in `core.project_state_history` (matching the existing `syncProjectExecutionState()` + `snapshotProjectState()` behavior). Previous snapshots are marked `is_current = false`.
+
+**normalized_cost_lines / normalized_revenue_lines:** The INSERT and UPDATE triggers derive:
+- `invoice_date_typed`, `approved_date_typed`, `paid_date_typed` — parsed from TEXT date columns via `_safe_parse_date()` helper
+- `fiscal_period_id` — looked up from `finance.fiscal_periods` matching the typed invoice date
+- `project_id` — resolved from `project_name` via `core.projects` when not provided directly
+
+**normalized_cost_lines / normalized_revenue_lines DELETE:** Performs soft-close (sets `effective_to = NOW()`) in the promoted table rather than hard-delete, preserving audit trail.
+
+## Application-Layer Bridge Writers (Complementary)
+
+Bridge writers in `server/bridge/bridge-writer.ts` provide a secondary sync path. With DB-level triggers now handling all writes, these are retained during transition but are no longer the primary sync mechanism.
 
 ### Project
 - `syncProjectInsert(row)` — full upsert after INSERT
 - `syncProject(partialRow)` — partial UPDATE after field changes
 - `syncProjectDelete(projectId)` — marks promoted project deleted/archived
-- `syncProjectExecutionState(projectId, fields)` — syncs current_stage_code, gate_status, financial review status
+- `syncProjectExecutionState(projectId, fields)` — syncs execution state columns + creates snapshot
 - `snapshotProjectState(projectId)` — full re-read and sync
 
 ### Client
@@ -46,41 +65,47 @@ All write services accept a `txOrDb` parameter so they can participate in existi
 - `softClosePromotedRevenueLines(projectId, projectName)` — soft-close promoted revenue lines
 - `batchSyncFinanceByProject(projectId, projectName)` — full re-sync after legacy bulk import
 
-## Legacy-Only Fields
+### Bridge Catch Handler
+All bridge calls use `.catch(bridgeCatch)` instead of bare `.catch(() => {})`. The `bridgeCatch` handler:
+- Logs a `console.warn` message for visibility
+- Increments `_bridgeFailureCount` counter queryable via `getBridgeFailureCount()`
 
-The following fields exist only in the legacy schema and are **not** synced to promoted tables. They require no bridge calls:
+## Legacy-Only Fields (Now Promoted)
 
-### Cost Lines
-- `patternRuleId` — pattern matching rule reference
-- `patternClassifiedAt` — classification timestamp
-- `patternInferredType` — inferred cost type
-- `adminDateOverride` — admin-overridden date
-- `adminDateOverrideReason` — reason for override
-- `adminDateOverrideBy` — user who applied override
-- `adminDateOverrideAt` — timestamp of override
-- `counterpartyId` — legacy FK to counterparties
-- `counterpartyType` — legacy counterparty type enum
+With the view-swap approach, all legacy columns are now present in the promoted tables. The following were added specifically for view-swap completeness:
 
-### Revenue Lines
-- `patternRuleId`, `patternClassifiedAt`, `patternInferredType` — same as cost lines
-- `adminDateOverride`, `adminDateOverrideReason`, `adminDateOverrideBy`, `adminDateOverrideAt` — same as cost lines
+### Cost Lines (added to `finance.cost_lines`)
+- `pattern_rule_id` — pattern matching rule reference
+- `pattern_classified_at` — classification timestamp
+- `pattern_inferred_type` — inferred cost type
+- `admin_date_override`, `admin_date_override_reason`, `admin_date_override_by`, `admin_date_override_at`
+- `amount_ex_vat_legacy` — original TEXT column preserved for rollback
 
-## Deferred Paths
+### Revenue Lines (added to `finance.revenue_lines`)
+- `admin_date_override`, `admin_date_override_reason`, `admin_date_override_by`, `admin_date_override_at`
+- `amount_ex_vat_legacy`, `vat_legacy` — original TEXT columns preserved for rollback
 
-The following write paths are deferred to a future backfill phase:
+### Project Execution State (added to `core.projects`)
+- `legacy_execution_state_id` — preserves the PK mapping from the legacy table
 
-### Template Instantiation
-- `template-routes.ts` creates projects from templates. These use `INSERT INTO project_info` followed by `syncProjectInsert`, but template-specific metadata columns are not yet part of the promoted schema.
+## Rollback Strategy
 
-### Bulk Data Migration
-- Historical data backfill from CSV/Excel imports is handled by `batchSyncFinanceByProject` which does a full re-read and sync after bulk insert. This is a reconciliation approach rather than per-row bridging.
+Each view-swap migration has a corresponding rollback script:
 
-### Soft-Delete Reconciliation
-- When legacy soft-deletes (setting `effective_to`) are performed in bulk, the promoted side uses `softClosePromoted*Lines` functions. A periodic backfill job should verify consistency between legacy and promoted soft-close states.
+| Migration | Rollback |
+|-----------|----------|
+| `20260403_spine_view_swap.sql` | Drop triggers/views, rename `_legacy` back |
+| `20260404_view_swap_clients.sql` | `20260404_view_swap_clients_rollback.sql` |
+| `20260404_view_swap_project_info.sql` | `20260404_view_swap_project_info_rollback.sql` |
+| `20260404_view_swap_project_execution_state.sql` | `20260404_view_swap_project_execution_state_rollback.sql` |
+| `20260404_view_swap_normalized_cost_lines.sql` | `20260404_view_swap_normalized_cost_lines_rollback.sql` |
+| `20260404_view_swap_normalized_revenue_lines.sql` | `20260404_view_swap_normalized_revenue_lines_rollback.sql` |
+
+Rollback procedure: Run the rollback SQL, which drops triggers/functions/views and renames `_<table>_legacy` back to the original name. The legacy table has been kept in sync by the INSTEAD OF triggers, so it contains all data.
 
 ## Cutover Roadmap
 
-1. **Current (Phase 2)**: Legacy-first with bridge sync. All reads still come from legacy tables.
-2. **Phase 3**: Shadow reads — read from both legacy and promoted, compare results, log discrepancies.
-3. **Phase 4**: Promoted-first reads — switch reads to promoted tables, keep legacy writes as backup.
-4. **Phase 5**: Full cutover — promoted tables become sole authority, legacy tables archived.
+1. **Current (Phase 2)**: All 5 legacy base tables use view-swap triggers for 100% transparent dual-write. Reads still come from legacy table names (which are now views).
+2. **Phase 3**: Shadow reads — read from both legacy views and promoted tables directly, compare results, log discrepancies.
+3. **Phase 4**: Promoted-first reads — switch reads to promoted tables, keep legacy backup.
+4. **Phase 5**: Full cutover — promoted tables become sole authority, legacy `_legacy` tables and views removed.

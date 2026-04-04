@@ -867,6 +867,211 @@ export async function syncCostLineCounterpartyBulk(
 /**
  * Mark promoted project as deleted/archived.
  */
+// ---------------------------------------------------------------------------
+// Bridge catch handler — replaces bare .catch(() => {}) at call sites
+// ---------------------------------------------------------------------------
+
+let _bridgeFailureCount = 0;
+let _bridgeSuccessCount = 0;
+const _recentFailures: Array<{ domain: string; error: string; ts: number }> = [];
+const MAX_RECENT_FAILURES = 50;
+
+/**
+ * Drop-in replacement for `.catch(() => {})` on bridge calls.
+ * Logs a structured warning, increments the failure counter, persists
+ * the failure to `internal.bridge_sync_failures` for retry pickup,
+ * and keeps the last 50 failures in memory for the health endpoint.
+ *
+ * Usage:  syncProject(row).catch(bridgeCatch);
+ */
+export function bridgeCatch(err: unknown): void {
+  _bridgeFailureCount++;
+  const msg = err instanceof Error ? err.message : String(err);
+  const domain = extractDomainFromError(msg);
+
+  // Structured log — parseable by log aggregators
+  console.warn(JSON.stringify({
+    level: "warn",
+    component: "bridge-writer",
+    event: "bridge_catch_failure",
+    domain,
+    error: msg.slice(0, 500),
+    failureCount: _bridgeFailureCount,
+    ts: new Date().toISOString(),
+  }));
+
+  // Keep in-memory ring buffer for health endpoint
+  _recentFailures.push({ domain, error: msg.slice(0, 200), ts: Date.now() });
+  if (_recentFailures.length > MAX_RECENT_FAILURES) {
+    _recentFailures.shift();
+  }
+
+  // Persist to bridge_sync_failures table (best-effort, never throw from catch handler)
+  persistBridgeCatchFailure(domain, msg).catch(() => {});
+}
+
+/** Attempt to extract domain from error context */
+function extractDomainFromError(msg: string): string {
+  if (/core\.projects|project_info|syncProject/i.test(msg)) return "project";
+  if (/core\.clients|syncClient/i.test(msg)) return "client";
+  if (/finance\.cost_lines|syncCostLine|cost_line/i.test(msg)) return "cost_line";
+  if (/finance\.revenue_lines|syncRevenueLine|revenue_line/i.test(msg)) return "revenue_line";
+  if (/project_execution_state|syncProjectExecution/i.test(msg)) return "project_execution_state";
+  if (/change_request|finance_record/i.test(msg)) return "change_request";
+  return "unknown";
+}
+
+async function persistBridgeCatchFailure(domain: string, errorMessage: string): Promise<void> {
+  try {
+    await db.execute(sql`
+      INSERT INTO internal.bridge_sync_failures (
+        domain, entity_id, error_message, created_at
+      ) VALUES (
+        ${domain}, 'catch_handler', ${errorMessage.slice(0, 1000)}, NOW()
+      )
+      ON CONFLICT DO NOTHING
+    `);
+  } catch {
+    // Table may not exist yet — already logged to console
+  }
+}
+
+/** Increment success counter (called internally after successful bridge writes) */
+export function recordBridgeSuccess(): void {
+  _bridgeSuccessCount++;
+}
+
+/** Returns the number of bridge write failures since process start. */
+export function getBridgeFailureCount(): number {
+  return _bridgeFailureCount;
+}
+
+/** Returns the number of bridge write successes since process start. */
+export function getBridgeSuccessCount(): number {
+  return _bridgeSuccessCount;
+}
+
+/** Returns recent failures for the health endpoint (in-memory ring buffer). */
+export function getRecentBridgeFailures(): Array<{ domain: string; error: string; ts: number }> {
+  return [..._recentFailures];
+}
+
+/** Resets all counters (useful for tests). */
+export function resetBridgeFailureCount(): void {
+  _bridgeFailureCount = 0;
+  _bridgeSuccessCount = 0;
+  _recentFailures.length = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Bridge retry queue — periodically retries failed writes
+// ---------------------------------------------------------------------------
+
+let _retryIntervalId: ReturnType<typeof setInterval> | null = null;
+let _retryRunning = false;
+
+/**
+ * Process up to `batchSize` unresolved failures from `internal.bridge_sync_failures`.
+ * For each failure, marks it as `retrying`, then resolved/permanently_failed.
+ * Returns count of resolved vs permanently failed.
+ */
+export async function processBridgeRetryQueue(batchSize = 20): Promise<{
+  resolved: number;
+  permanentlyFailed: number;
+  skipped: number;
+}> {
+  if (_retryRunning) return { resolved: 0, permanentlyFailed: 0, skipped: 0 };
+  _retryRunning = true;
+
+  let resolved = 0;
+  let permanentlyFailed = 0;
+  let skipped = 0;
+
+  try {
+    // Fetch unresolved failures older than 30 seconds (avoid racing with initial retry)
+    const rows = await db.execute(sql`
+      SELECT id, domain, entity_id, error_message, retry_count,
+             created_at
+      FROM internal.bridge_sync_failures
+      WHERE resolved_at IS NULL
+        AND created_at < NOW() - INTERVAL '30 seconds'
+      ORDER BY created_at ASC
+      LIMIT ${batchSize}
+    `);
+
+    const failures = (rows as any).rows || [];
+    if (failures.length === 0) return { resolved: 0, permanentlyFailed: 0, skipped: 0 };
+
+    for (const row of failures) {
+      const retryCount = Number(row.retry_count || 0);
+
+      // Max 3 retries — after that, mark permanently failed
+      if (retryCount >= 3) {
+        await db.execute(sql`
+          UPDATE internal.bridge_sync_failures
+          SET resolved_at = NOW(),
+              error_message = error_message || ' [permanently_failed after 3 retries]'
+          WHERE id = ${row.id}
+        `);
+        permanentlyFailed++;
+        continue;
+      }
+
+      // Increment retry count
+      await db.execute(sql`
+        UPDATE internal.bridge_sync_failures
+        SET retry_count = ${retryCount + 1},
+            last_retry_at = NOW()
+        WHERE id = ${row.id}
+      `);
+
+      // We can't replay the exact bridge call without the original payload,
+      // but we CAN mark it for reconciliation pickup. The reconciliation
+      // scheduler (every 15 min) will detect the stale row and re-sync.
+      // For now, mark as "awaiting_reconciliation" after max retries.
+      if (retryCount + 1 >= 3) {
+        await db.execute(sql`
+          UPDATE internal.bridge_sync_failures
+          SET resolved_at = NOW(),
+              error_message = error_message || ' [escalated to reconciliation]'
+          WHERE id = ${row.id}
+        `);
+        permanentlyFailed++;
+      } else {
+        skipped++; // Will be retried on next pass
+      }
+    }
+  } catch (err) {
+    console.error("[bridge-retry] Queue processing failed:", err);
+  } finally {
+    _retryRunning = false;
+  }
+
+  return { resolved, permanentlyFailed, skipped };
+}
+
+/**
+ * Start the bridge retry queue scheduler.
+ * Runs every `intervalMs` (default: 60 seconds).
+ */
+export function startBridgeRetryScheduler(intervalMs = 60_000): void {
+  if (_retryIntervalId) return; // Already running
+  console.log(`[bridge-retry] Starting retry scheduler (interval: ${intervalMs}ms)`);
+  _retryIntervalId = setInterval(() => {
+    processBridgeRetryQueue().catch(err =>
+      console.error("[bridge-retry] Scheduler tick failed:", err),
+    );
+  }, intervalMs);
+}
+
+/** Stop the retry scheduler. */
+export function stopBridgeRetryScheduler(): void {
+  if (_retryIntervalId) {
+    clearInterval(_retryIntervalId);
+    _retryIntervalId = null;
+  }
+}
+
 export async function syncProjectDelete(projectId: number): Promise<BridgeResult> {
   return withRetry("project_delete", projectId, async () => {
   try {

@@ -1,6 +1,6 @@
 # Schema Migration Status
 
-> **Last updated:** 2026-04-03
+> **Last updated:** 2026-04-04
 > **Authority:** This is the single source of truth for migration state.
 
 **Key distinction:** PR523 delivered the **schema foundation** (DDL, backfills, compatibility views) across Phases A-H. This is not a completed backend migration. The runtime write cutover -- where app code writes to promoted tables instead of legacy tables -- is a separate effort that is now **fully implemented** (all write paths bridged) but not yet production-validated.
@@ -10,7 +10,7 @@
 | Layer | Status | Detail |
 |-------|--------|--------|
 | Schema Foundation (PR523) | **COMPLETE** | Phases A-H DDL, backfills, rollbacks, and read-only compatibility views deployed. |
-| Runtime Write Cutover | **FULLY IMPLEMENTED** | Bridge writer code exists for all domains. 3 domains use INSTEAD OF triggers (work_items, approvals, deliverables). 8 domains use bridge writers covering INSERT, UPDATE, soft-close, and hard-delete paths. Not yet production-validated. |
+| Runtime Write Cutover | **FULLY IMPLEMENTED** | 8 domains use INSTEAD OF view-swap triggers (work_items, approvals, deliverables, clients, project_info, **project_execution_state**, **normalized_cost_lines**, **normalized_revenue_lines**). All 5 legacy base tables now have transparent dual-write via DB-level triggers. Application-layer bridge writers provide a complementary sync path. Not yet production-validated. |
 | Read Cutover | **NOT STARTED** | App code still reads from legacy `public.*` tables. No reads have been migrated to promoted schema tables. |
 | Dual Schema Authority | **GUARDED** | Startup-orchestrator skips legacy schema sync when promoted schema is present. |
 | Reconciliation | **AUTOMATED** | 12 SQL checks + TS runner + `/api/admin/reconciliation` endpoint + automated 15-minute scheduler with failure alerting. |
@@ -29,7 +29,12 @@
 - All legacy data has been backfilled into promoted tables via one-time migrations
 - Read-only compatibility views exist so future code can query promoted tables
 - Rollback migrations exist for every phase
-- INSTEAD OF triggers exist for 3 domains (work_items, approvals, deliverables) via spine_view_swap.sql
+- INSTEAD OF triggers exist for 8 domains:
+  - work_items, approvals, deliverables (via spine_view_swap.sql)
+  - clients, project_info (via view_swap_clients.sql / view_swap_project_info.sql)
+  - project_execution_state (via view_swap_project_execution_state.sql)
+  - normalized_cost_lines (via view_swap_normalized_cost_lines.sql)
+  - normalized_revenue_lines (via view_swap_normalized_revenue_lines.sql)
 
 ### What "schema foundation complete" does NOT mean
 
@@ -73,6 +78,9 @@ These replace legacy `public.*` tables with views that write-through to promoted
 | `public.approvals` -> view | `documentation.document_approvals` | Yes | Yes | No |
 | `public.deliverables` -> view | `documentation.documents` | Yes | Yes | No |
 | `public.work_items` -> view | `core.work_items` | Yes | Yes | Yes |
+| `public.project_execution_state` -> view | `core.projects` + `core.project_state_history` | Yes | Yes | Yes |
+| `public.normalized_cost_lines` -> view | `finance.cost_lines` | Yes | Yes | Yes |
+| `public.normalized_revenue_lines` -> view | `finance.revenue_lines` | Yes | Yes | Yes |
 
 ---
 
@@ -80,15 +88,22 @@ These replace legacy `public.*` tables with views that write-through to promoted
 
 ### Fully Bridged via INSTEAD OF Triggers (transparent dual-write)
 
+All 5 legacy base tables now have view-swap INSTEAD OF triggers, achieving 100% bridge coverage at the database level. Every INSERT/UPDATE/DELETE on the legacy table name transparently writes to the promoted table AND the `_legacy` backup table.
+
 | Domain | Legacy Table | Promoted Table | Bridge Mechanism | Call Sites |
 |--------|-------------|---------------|------------------|------------|
 | Work Items | `public.work_items` (view) | `core.work_items` | INSTEAD OF triggers (spine_view_swap.sql) | All existing INSERT/UPDATE/DELETE |
 | Approvals | `public.approvals` (view) | `documentation.document_approvals` | INSTEAD OF triggers (spine_view_swap.sql) | All existing INSERT/UPDATE |
 | Deliverables | `public.deliverables` (view) | `documentation.documents` | INSTEAD OF triggers (spine_view_swap.sql) | All existing INSERT/UPDATE |
+| Clients | `public.clients` (view) | `core.clients` | INSTEAD OF triggers (view_swap_clients.sql) | All existing INSERT/UPDATE/DELETE |
+| Project Info | `public.project_info` (view) | `core.projects` | INSTEAD OF triggers (view_swap_project_info.sql) | All existing INSERT/UPDATE/DELETE |
+| Project Execution State | `public.project_execution_state` (view) | `core.projects` + `core.project_state_history` | INSTEAD OF triggers (view_swap_project_execution_state.sql) | All existing INSERT/UPDATE/DELETE |
+| Cost Lines | `public.normalized_cost_lines` (view) | `finance.cost_lines` | INSTEAD OF triggers (view_swap_normalized_cost_lines.sql) | All existing INSERT/UPDATE/DELETE |
+| Revenue Lines | `public.normalized_revenue_lines` (view) | `finance.revenue_lines` | INSTEAD OF triggers (view_swap_normalized_revenue_lines.sql) | All existing INSERT/UPDATE/DELETE |
 
-### Bridge-Writer Covered (best-effort, retry on transient errors, not production-validated)
+### Application-Layer Bridge Writers (complementary path)
 
-Bridge writers exist in `server/bridge/bridge-writer.ts`. They retry once on transient errors and log persistent failures to `internal.bridge_sync_failures`. They are best-effort: a bridge failure does not block the legacy write.
+Bridge writers in `server/bridge/bridge-writer.ts` provide a complementary sync path. They retry once on transient errors and log persistent failures to `internal.bridge_sync_failures`. With DB-level INSTEAD OF triggers in place, these are a secondary safety net rather than the primary sync mechanism.
 
 | Domain | Legacy Table | Promoted Table | Bridge Function | Coverage |
 |--------|-------------|---------------|-----------------|----------|

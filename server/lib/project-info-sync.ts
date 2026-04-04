@@ -16,7 +16,7 @@ import {
   projectExecutionState,
   projectSettings,
 } from "@shared/schema";
-import { syncProjectExecutionState } from "../bridge/bridge-writer";
+import { syncProjectExecutionState, bridgeCatch } from "../bridge/bridge-writer";
 
 // Columns that belong to project_execution_state
 const EXECUTION_STATE_COLUMNS = new Set([
@@ -124,7 +124,7 @@ export async function syncProjectSplitTables(
       });
 
     // Phase 2 bridge write: propagate execution state to core.projects
-    syncProjectExecutionState(projectId, execFields).catch(() => {});
+    syncProjectExecutionState(projectId, execFields).catch(bridgeCatch);
   }
 
   if (settingsFields) {

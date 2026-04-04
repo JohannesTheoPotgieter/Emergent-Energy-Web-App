@@ -172,5 +172,8 @@ This pack complements existing reconciliation tools:
 |------|------|
 | `server/services/reconciliation-pack.ts` | Core logic, types, and formatter |
 | `scripts/reconciliation-pack.ts` | CLI runner (npx tsx entry point) |
+| `scripts/release-gate.ts` | Release-gate wrapper with pre-flight checks and GO/NO-GO verdict |
 | `qa/tests/unit/reconciliation-pack-validation.test.ts` | Structural validation tests |
+| `qa/tests/unit/release-gate-validation.test.ts` | Release-gate script validation tests |
 | `docs/reconciliation-pack.md` | This documentation |
+| `docs/cutover-runbook.md` | Operator runbook for running the release gate |
