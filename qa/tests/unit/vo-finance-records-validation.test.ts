@@ -37,6 +37,12 @@ describe("VO/Change Request Finance Backfill Migration", () => {
     expect(sql).toContain("legacy_project_id");
   });
 
+  it("resolves party_id from project_instances.client_party_id", () => {
+    const f = readFile(migrationPath);
+    expect(f).toContain("party_id");
+    expect(f).toContain("client_party_id");
+  });
+
   it("determines direction from cost_impact sign", () => {
     const sql = readFile(migrationPath);
     expect(sql).toContain("'inflow'");
@@ -100,6 +106,13 @@ describe("Bridge Writer: syncChangeRequest", () => {
     expect(section).toContain("legacy_project_id");
   });
 
+  it("resolves party_id from client_party_id", () => {
+    const idx = bridgeFile.indexOf("syncChangeRequest");
+    const section = bridgeFile.slice(idx, idx + 2500);
+    expect(section).toContain("client_party_id");
+    expect(section).toContain("party_id");
+  });
+
   it("determines direction from costImpact sign", () => {
     const idx = bridgeFile.indexOf("syncChangeRequest");
     const section = bridgeFile.slice(idx, idx + 2500);
@@ -124,7 +137,7 @@ describe("Bridge Writer: syncChangeRequest", () => {
 
   it("creates lifecycle event after sync", () => {
     const idx = bridgeFile.indexOf("syncChangeRequest");
-    const section = bridgeFile.slice(idx, idx + 2500);
+    const section = bridgeFile.slice(idx, idx + 3000);
     expect(section).toContain("finance.finance_record_events");
     expect(section).toContain("'bridge_synced'");
   });
@@ -261,6 +274,11 @@ describe("Reconciliation Pack: VO/Change Request Checks", () => {
     const idx = packFile.indexOf("change_requests_amount_parity");
     const section = packFile.slice(idx, idx + 200);
     expect(section).toContain("HARD_FAIL");
+  });
+
+  it("checks change_requests_null_party_id", () => {
+    expect(packFile).toContain("change_requests_null_party_id");
+    expect(packFile).toContain("party_id IS NULL");
   });
 });
 

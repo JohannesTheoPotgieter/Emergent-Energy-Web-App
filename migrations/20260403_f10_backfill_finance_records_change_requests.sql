@@ -8,6 +8,7 @@ INSERT INTO finance.finance_records (
   legacy_entity_id,
   legacy_entity_table,
   project_instance_id,
+  party_id,
   financial_type,
   direction,
   title,
@@ -22,6 +23,7 @@ SELECT
   cr.id,
   'public.change_requests',
   pi.id,  -- project_instance_id from core.project_instances
+  pi.client_party_id,  -- party_id: project's client
   'variation_order',
   CASE
     WHEN cr.cost_impact IS NOT NULL AND cr.cost_impact::numeric < 0 THEN 'inflow'
@@ -56,6 +58,7 @@ ON CONFLICT (legacy_entity_table, legacy_entity_id) DO UPDATE SET
   amount_ex_vat = EXCLUDED.amount_ex_vat,
   status = EXCLUDED.status,
   direction = EXCLUDED.direction,
+  party_id = COALESCE(EXCLUDED.party_id, finance.finance_records.party_id),
   record_data = EXCLUDED.record_data,
   updated_at = EXCLUDED.updated_at;
 

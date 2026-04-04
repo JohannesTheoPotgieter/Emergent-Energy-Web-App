@@ -613,13 +613,14 @@ export async function syncChangeRequest(cr: {
 }): Promise<BridgeResult> {
   return withRetry("change_request", cr.id, async () => {
   try {
-    // Resolve project_instance_id from legacy project_id
+    // Resolve project_instance_id and client party_id from legacy project_id
     const piResult = await db.execute(sql`
-      SELECT id FROM core.project_instances
+      SELECT id, client_party_id FROM core.project_instances
       WHERE legacy_project_id = ${cr.projectId}
       LIMIT 1
     `);
     const projectInstanceId = (piResult.rows[0] as any)?.id ?? null;
+    const clientPartyId = (piResult.rows[0] as any)?.client_party_id ?? null;
 
     const costAmount = cr.costImpact != null ? Number(cr.costImpact) : null;
     const direction = costAmount != null && costAmount < 0 ? 'inflow' : 'outflow';
@@ -627,14 +628,14 @@ export async function syncChangeRequest(cr: {
     await db.execute(sql`
       INSERT INTO finance.finance_records (
         legacy_entity_id, legacy_entity_table,
-        project_instance_id,
+        project_instance_id, party_id,
         financial_type, direction, title,
         amount_ex_vat, status,
         record_data, import_source,
         created_at, updated_at
       ) VALUES (
         ${cr.id}, 'public.change_requests',
-        ${projectInstanceId},
+        ${projectInstanceId}, ${clientPartyId},
         'variation_order', ${direction}, ${cr.title},
         ${costAmount}, ${cr.status ?? 'draft'},
         ${sql`${JSON.stringify({
@@ -655,6 +656,7 @@ export async function syncChangeRequest(cr: {
         amount_ex_vat = EXCLUDED.amount_ex_vat,
         status = EXCLUDED.status,
         direction = EXCLUDED.direction,
+        party_id = COALESCE(EXCLUDED.party_id, finance.finance_records.party_id),
         record_data = EXCLUDED.record_data,
         updated_at = NOW()
     `);
