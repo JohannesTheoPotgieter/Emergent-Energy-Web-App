@@ -12,6 +12,7 @@ data/
 server/data-seed/.migrated
 server/.pd-seed-done
 backups/
+reports/
 .claude/
 combined.log
 error.log
