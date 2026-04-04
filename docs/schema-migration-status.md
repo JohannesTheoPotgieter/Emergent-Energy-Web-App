@@ -1,6 +1,6 @@
 # Schema Migration Status
 
-> **Last updated:** 2026-04-03
+> **Last updated:** 2026-04-04
 > **Authority:** This is the single source of truth for migration state.
 
 **Key distinction:** PR523 delivered the **schema foundation** (DDL, backfills, compatibility views) across Phases A-H. This is not a completed backend migration. The runtime write cutover -- where app code writes to promoted tables instead of legacy tables -- is a separate effort that is now **fully implemented** (all write paths bridged) but not yet production-validated.
@@ -10,7 +10,7 @@
 | Layer | Status | Detail |
 |-------|--------|--------|
 | Schema Foundation (PR523) | **COMPLETE** | Phases A-H DDL, backfills, rollbacks, and read-only compatibility views deployed. |
-| Runtime Write Cutover | **FULLY IMPLEMENTED** | Bridge writer code exists for all domains. 3 domains use INSTEAD OF triggers (work_items, approvals, deliverables). 8 domains use bridge writers covering INSERT, UPDATE, soft-close, and hard-delete paths. Not yet production-validated. |
+| Runtime Write Cutover | **FULLY IMPLEMENTED** | 5 domains use INSTEAD OF view-swap triggers (work_items, approvals, deliverables, **clients**, **project_info**). Remaining domains (cost_lines, revenue_lines, project_execution_state) use application-layer bridge writers. Not yet production-validated. |
 | Read Cutover | **NOT STARTED** | App code still reads from legacy `public.*` tables. No reads have been migrated to promoted schema tables. |
 | Dual Schema Authority | **GUARDED** | Startup-orchestrator skips legacy schema sync when promoted schema is present. |
 | Reconciliation | **AUTOMATED** | 12 SQL checks + TS runner + `/api/admin/reconciliation` endpoint + automated 15-minute scheduler with failure alerting. |
@@ -29,7 +29,9 @@
 - All legacy data has been backfilled into promoted tables via one-time migrations
 - Read-only compatibility views exist so future code can query promoted tables
 - Rollback migrations exist for every phase
-- INSTEAD OF triggers exist for 3 domains (work_items, approvals, deliverables) via spine_view_swap.sql
+- INSTEAD OF triggers exist for 5 domains:
+  - work_items, approvals, deliverables (via spine_view_swap.sql)
+  - clients, project_info (via view_swap_clients.sql / view_swap_project_info.sql)
 
 ### What "schema foundation complete" does NOT mean
 
