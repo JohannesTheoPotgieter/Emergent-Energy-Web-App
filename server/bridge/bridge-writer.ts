@@ -658,10 +658,72 @@ export async function syncChangeRequest(cr: {
         record_data = EXCLUDED.record_data,
         updated_at = NOW()
     `);
+    // Create lifecycle event for the sync
+    try {
+      await db.execute(sql`
+        INSERT INTO finance.finance_record_events (
+          finance_record_id, event_type, event_date,
+          from_status, to_status, amount, event_data, created_at
+        )
+        SELECT fr.id, 'bridge_synced', NOW(), NULL, ${cr.status ?? 'draft'},
+          ${costAmount}, ${sql`${JSON.stringify({ source: 'bridge_writer', change_type: cr.changeType })}::jsonb`}, NOW()
+        FROM finance.finance_records fr
+        WHERE fr.legacy_entity_table = 'public.change_requests'
+          AND fr.legacy_entity_id = ${cr.id}
+      `);
+    } catch { /* lifecycle event is best-effort */ }
+
     return { success: true };
   } catch (err) {
     return { success: false, error: err instanceof Error ? err.message : String(err) };
   }
+  });
+}
+
+export async function softDeleteChangeRequestFinanceRecord(
+  changeRequestId: number,
+  deletedByUserId?: number | null,
+  deleteReason?: string | null,
+): Promise<BridgeResult> {
+  return withRetry("change_request", changeRequestId, async () => {
+    try {
+      // Mark the finance_record as cancelled
+      await db.execute(sql`
+        UPDATE finance.finance_records
+        SET status = 'cancelled',
+            record_data = record_data || ${sql`${JSON.stringify({
+              deleted_at: new Date().toISOString(),
+              deleted_by: deletedByUserId ?? null,
+              delete_reason: deleteReason ?? null,
+            })}::jsonb`},
+            updated_at = NOW()
+        WHERE legacy_entity_table = 'public.change_requests'
+          AND legacy_entity_id = ${changeRequestId}
+      `);
+
+      // Create lifecycle event for the soft-delete
+      try {
+        await db.execute(sql`
+          INSERT INTO finance.finance_record_events (
+            finance_record_id, event_type, event_date,
+            to_status, event_data, created_at
+          )
+          SELECT fr.id, 'soft_deleted', NOW(), 'cancelled',
+            ${sql`${JSON.stringify({
+              source: 'bridge_writer',
+              deleted_by: deletedByUserId ?? null,
+              delete_reason: deleteReason ?? null,
+            })}::jsonb`}, NOW()
+          FROM finance.finance_records fr
+          WHERE fr.legacy_entity_table = 'public.change_requests'
+            AND fr.legacy_entity_id = ${changeRequestId}
+        `);
+      } catch { /* lifecycle event is best-effort */ }
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
   });
 }
 

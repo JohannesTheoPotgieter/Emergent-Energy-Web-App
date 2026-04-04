@@ -296,14 +296,35 @@ async function revenueLineChecks(): Promise<ReconciliationCheck[]> {
 async function changeRequestChecks(): Promise<ReconciliationCheck[]> {
   const checks: ReconciliationCheck[] = [];
 
+  // Row parity: active CRs vs non-cancelled finance_records
   const [legacyCount, promotedCount] = await Promise.all([
     queryCount(`SELECT count(*) AS cnt FROM change_requests WHERE deleted_at IS NULL`),
-    queryCount(`SELECT count(*) AS cnt FROM finance.finance_records WHERE legacy_entity_table = 'public.change_requests'`),
+    queryCount(`SELECT count(*) AS cnt FROM finance.finance_records WHERE legacy_entity_table = 'public.change_requests' AND status != 'cancelled'`),
   ]);
   checks.push(buildCheck(
     "change_requests_row_parity", "finance", "row_parity", "HARD_FAIL",
     legacyCount, promotedCount,
     `${legacyCount - promotedCount} change requests missing from finance.finance_records`,
+  ));
+
+  // Soft-deleted CRs still active in finance_records (should be cancelled)
+  const staleCancelledCount = await queryCount(
+    `SELECT count(*) AS cnt FROM change_requests cr JOIN finance.finance_records fr ON fr.legacy_entity_table = 'public.change_requests' AND fr.legacy_entity_id = cr.id WHERE cr.deleted_at IS NOT NULL AND fr.status != 'cancelled'`,
+  );
+  checks.push(buildCheck(
+    "change_requests_stale_cancelled", "finance", "field_drift", "WARNING",
+    staleCancelledCount, 0, `${staleCancelledCount} soft-deleted CRs still active in finance_records (should be cancelled)`,
+  ));
+
+  // VO amount parity: SUM of cost_impact for active CRs vs finance_records
+  const [legacyCrSum, promotedCrSum] = await Promise.all([
+    querySum(`SELECT COALESCE(SUM(cost_impact::numeric), 0) AS total FROM change_requests WHERE deleted_at IS NULL AND cost_impact IS NOT NULL`),
+    querySum(`SELECT COALESCE(SUM(amount_ex_vat), 0) AS total FROM finance.finance_records WHERE legacy_entity_table = 'public.change_requests' AND status != 'cancelled'`),
+  ]);
+  checks.push(buildCheck(
+    "change_requests_amount_parity", "finance", "finance_amounts", "HARD_FAIL",
+    legacyCrSum, promotedCrSum,
+    `VO cost_impact sum: legacy=${legacyCrSum}, promoted=${promotedCrSum}, diff=${(legacyCrSum - promotedCrSum).toFixed(2)}`,
   ));
 
   return checks;

@@ -281,6 +281,10 @@ export function registerChangeControlRoutes(app: Express): void {
         changesJson: { title: existing[0].title, status: existing[0].status, deleteReason },
       });
 
+      // Phase 2 bridge write: mark finance_record as cancelled
+      const { softDeleteChangeRequestFinanceRecord } = await import("./bridge/bridge-writer");
+      softDeleteChangeRequestFinanceRecord(id, user?.id ?? null, deleteReason).catch(() => {});
+
       res.json({ success: true, deleted });
     } catch (err: unknown) {
       res.status(500).json({ error: "Failed to delete change request" });
