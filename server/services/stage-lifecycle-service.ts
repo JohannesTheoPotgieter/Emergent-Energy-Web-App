@@ -21,6 +21,7 @@ import {
   type ProjectStageRequirement,
 } from "@shared/schema";
 import { db } from "../db";
+import { bridgeCatch } from "../bridge/bridge-writer";
 import {
   canTransition,
   computeReadinessPct,
@@ -108,7 +109,7 @@ export async function initializeProjectStages(projectId: number): Promise<Projec
       // Phase 2 bridge write: sync stage code to core.projects
       import("../bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
         syncProjectExecutionState(projectId, { currentStageCode: definitions[0].stageCode })
-      ).catch(() => {});
+      ).catch(bridgeCatch);
     } else if (!execState) {
       await db.insert(projectExecutionState).values({
         projectId,
@@ -116,7 +117,7 @@ export async function initializeProjectStages(projectId: number): Promise<Projec
       }).onConflictDoNothing();
       import("../bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
         syncProjectExecutionState(projectId, { currentStageCode: definitions[0].stageCode })
-      ).catch(() => {});
+      ).catch(bridgeCatch);
     }
   }
 
@@ -502,7 +503,7 @@ export async function syncCurrentStage(projectId: number): Promise<void> {
   // Phase 2 bridge write: sync gate/stage fields to core.projects
   import("../bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
     syncProjectExecutionState(projectId, syncFields)
-  ).catch(() => {});
+  ).catch(bridgeCatch);
 }
 
 // ── Evidence ────────────────────────────────────────────────
@@ -650,7 +651,7 @@ export async function advanceToStage(params: {
   // Phase 2 bridge write: sync stage advance to core.projects
   import("../bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
     syncProjectExecutionState(projectId, { currentStageCode: targetStageCode })
-  ).catch(() => {});
+  ).catch(bridgeCatch);
 
   await syncCurrentStage(projectId);
 

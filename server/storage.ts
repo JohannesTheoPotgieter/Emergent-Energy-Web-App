@@ -7,7 +7,7 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
-import { syncProject, syncProjectInsert, snapshotProjectState, syncCostLine, syncRevenueLine } from "./bridge/bridge-writer";
+import { syncProject, syncProjectInsert, snapshotProjectState, syncCostLine, syncRevenueLine, bridgeCatch } from "./bridge/bridge-writer";
 import { createProjectInfo as _createProjectInfo, updateProjectInfo as _updateProjectInfo, softDeleteProject as _softDeleteProject, hardDeleteProjectInfo as _hardDeleteProjectInfo } from "./services/project-write-service";
 import { createCostLine as _createCostLine, softCloseCostLinesByProject as _softCloseCostLinesByProject, createRevenueLine as _createRevenueLine, softCloseRevenueLinesByProject as _softCloseRevenueLinesByProject } from "./services/finance-line-write-service";
 import { listCostLinesFromPromotedCompat, listRevenueLinesFromPromotedCompat } from "./services/promoted-read-compat";
@@ -1157,7 +1157,7 @@ export class DatabaseStorage implements IStorage {
         description: r.description, amountExVat: r.amountExVat, invoiceNumber: r.invoiceNumber,
         invoiceDate: r.invoiceDate, approvedDate: r.approvedDate, paidDate: r.paidDate,
         status: r.costLineStatus, importRunId: r.importRunId,
-      }).catch(() => {});
+      }).catch(bridgeCatch);
     }
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return results.map(r => adaptCostToExpense(r, r.projectName)) as any;
@@ -1239,7 +1239,7 @@ export class DatabaseStorage implements IStorage {
       paidDate: result[0].paidDate,
       status: result[0].costLineStatus,
       importRunId: result[0].importRunId,
-    }).catch(() => {});
+    }).catch(bridgeCatch);
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return adaptCostToExpense(result[0], result[0].projectName) as any;
   }
@@ -1284,7 +1284,7 @@ export class DatabaseStorage implements IStorage {
       paidDate: result[0].paidDate,
       status: result[0].revenueLineStatus,
       importRunId: result[0].importRunId,
-    }).catch(() => {});
+    }).catch(bridgeCatch);
     const { adaptRevenueToInflow } = await import("./lib/data-merge");
     return adaptRevenueToInflow(result[0], result[0].projectName);
   }
@@ -1352,7 +1352,7 @@ export class DatabaseStorage implements IStorage {
         amountExVat: r.amountExVat, invoiceNumber: r.invoiceNumber,
         invoiceDate: r.invoiceDate, expectedPaymentDate: r.expectedPaymentDate,
         paidDate: r.paidDate, status: r.revenueLineStatus, importRunId: r.importRunId,
-      }).catch(() => {});
+      }).catch(bridgeCatch);
     }
     const { adaptRevenueToInflow } = await import("./lib/data-merge");
     return results.map(r => adaptRevenueToInflow(r, r.projectName)) as any;

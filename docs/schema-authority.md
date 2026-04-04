@@ -67,6 +67,15 @@ Module-load-time DDL for `program_expense`/`program_inflows` columns. Blocked in
 ### `lifecycle-routes.ts` DDL (guarded)
 Module-load-time DDL for `project_rag_audit` table and `project_info` columns. Blocked in production/staging via `NODE_ENV` check. Dev-only safety net.
 
+### `quality-ncr-routes.ts` DDL (guarded)
+Per-request DDL for `ncr_reports`, `ncr_attachments`, `ncr_comments` tables. Blocked in production/staging via `NODE_ENV` check. Tables formalized in `migrations/20260404_create_ncr_tables.sql`.
+
+### `report-routes.ts` DDL (guarded)
+Registration-time DDL for `report_history`, `scheduled_reports` tables. Blocked in production/staging via `NODE_ENV` check. Tables formalized in `migrations/20260404_create_report_tables.sql`.
+
+### `standup-routes.ts` DDL (guarded)
+Per-request DDL for `standup_entries_v2` table and `standup_schedules` columns. Blocked in production/staging via `NODE_ENV` check. Tables formalized in `migrations/20260404_create_standup_entries_v2.sql` and `migrations/20260372_standup_schedules_add_deleted_columns.sql`.
+
 ## Migration Workflow
 
 ### Adding a New Table or Column
@@ -96,3 +105,6 @@ Module-load-time DDL for `project_rag_audit` table and `project_info` columns. B
 | `server/bootstrap/maintenance.ts` | Neutered — no DDL |
 | `server/smart-import-routes.ts` | Module-load DDL (blocked in production) |
 | `server/lifecycle-routes.ts` | Module-load DDL (blocked in production) |
+| `server/quality-ncr-routes.ts` | Request-time DDL (blocked in production) |
+| `server/report-routes.ts` | Registration-time DDL (blocked in production) |
+| `server/standup-routes.ts` | Request-time DDL (blocked in production) |

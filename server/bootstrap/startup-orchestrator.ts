@@ -2365,6 +2365,15 @@ export async function runStartupOrchestrator(options: {
     } catch {
       // Module may not be available — non-critical
     }
+
+    // Start bridge retry queue scheduler (processes failed bridge writes every 60s)
+    try {
+      const { startBridgeRetryScheduler } = await import("../bridge/bridge-writer");
+      startBridgeRetryScheduler(60_000);
+      log("Bridge retry scheduler started (60-second interval)", "Startup:BridgeRetry");
+    } catch {
+      // Module may not be available — non-critical
+    }
   }
 
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });

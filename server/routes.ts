@@ -40,6 +40,7 @@ import { computeMonthlyBuckets } from "./lib/calculations/scenarioResolver";
 import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { getCosEffectiveDateAndSource } from "./lib/expense-row-selector";
+import { bridgeCatch } from "./bridge/bridge-writer";
 
 /** Record a manual edit flag for conflict detection during smart import */
 async function recordManualEditFlag(opts: {
@@ -2799,9 +2800,9 @@ export async function registerRoutes(
             await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, resolvedProjectName));
             // Phase 2 bridge write: cascade soft-close to promoted finance lines
             import("./bridge/bridge-writer").then(({ softClosePromotedCostLines, softClosePromotedRevenueLines }) => {
-              softClosePromotedCostLines(pId ?? null, resolvedProjectName).catch(() => {});
-              softClosePromotedRevenueLines(pId ?? null, resolvedProjectName).catch(() => {});
-            }).catch(() => {});
+              softClosePromotedCostLines(pId ?? null, resolvedProjectName).catch(bridgeCatch);
+              softClosePromotedRevenueLines(pId ?? null, resolvedProjectName).catch(bridgeCatch);
+            }).catch(bridgeCatch);
 
             const dummyRun = await db.insert(smartImportRuns).values({
               fileName: file.originalname,
@@ -2879,7 +2880,7 @@ export async function registerRoutes(
             if (norm.revenueLines.length > 0 || norm.costLines.length > 0) {
               import("./bridge/batch-bridge-sync").then(({ batchSyncFinanceByProject }) =>
                 batchSyncFinanceByProject(pId ?? null, resolvedProjectName)
-              ).catch(() => {});
+              ).catch(bridgeCatch);
             }
             if (norm.costedSummary) {
               try {

@@ -44,6 +44,7 @@ import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib
 import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns } from "./lib/temporal-helpers";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
+import { bridgeCatch } from "./bridge/bridge-writer";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
 
 function normalizeForComparison(name: string): string {
@@ -1626,7 +1627,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         // Phase 2 bridge write: mirror new project to core.projects
         import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
           syncProjectInsert(newProject as any)
-        ).catch(() => {});
+        ).catch(bridgeCatch);
         projectId = newProject.id;
         await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
       }
@@ -1784,9 +1785,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
       // Phase 2 bridge write: soft-close promoted finance lines to match legacy
       import("./bridge/bridge-writer").then(({ softClosePromotedCostLines, softClosePromotedRevenueLines }) => {
-        softClosePromotedCostLines(projectId ?? null, projectName ?? null).catch(() => {});
-        softClosePromotedRevenueLines(projectId ?? null, projectName ?? null).catch(() => {});
-      }).catch(() => {});
+        softClosePromotedCostLines(projectId ?? null, projectName ?? null).catch(bridgeCatch);
+        softClosePromotedRevenueLines(projectId ?? null, projectName ?? null).catch(bridgeCatch);
+      }).catch(bridgeCatch);
       const commitTimestamp = new Date();
       const scenarioIds = await tx
         .select({ id: workingPlanScenario.id })
@@ -2677,7 +2678,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     if ((counts.costLines || 0) + (counts.revenueLines || 0) > 0) {
       import("./bridge/batch-bridge-sync").then(({ batchSyncFinanceByProject }) =>
         batchSyncFinanceByProject(projectId ?? null, projectName ?? null)
-      ).catch(() => {});
+      ).catch(bridgeCatch);
     }
   } catch (err: unknown) {
     console.error("[smart-import] POST commit error:", err);

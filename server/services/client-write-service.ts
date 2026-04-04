@@ -12,7 +12,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { clients } from "../../shared/schema";
-import { syncClient } from "../bridge/bridge-writer";
+import { syncClient, bridgeCatch } from "../bridge/bridge-writer";
 
 type DbOrTx = typeof db;
 
@@ -47,7 +47,7 @@ export async function createClient(
     primaryContactName: fields.primaryContactName ?? null,
     primaryContactEmail: fields.primaryContactEmail ?? null,
     primaryContactPhone: fields.primaryContactPhone ?? null,
-  }).catch(() => {});
+  }).catch(bridgeCatch);
   return created;
 }
 
@@ -70,7 +70,7 @@ export async function updateClient(
       name: updated.name,
       clientId: updated.clientId,
       updatedBy: fields.updatedBy ?? null,
-    }).catch(() => {});
+    }).catch(bridgeCatch);
   }
   return updated;
 }
