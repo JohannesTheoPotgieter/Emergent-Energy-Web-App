@@ -421,6 +421,141 @@ async function financeProjectLevelChecks(): Promise<ReconciliationCheck[]> {
   return checks;
 }
 
+async function openingBalanceChecks(): Promise<ReconciliationCheck[]> {
+  const checks: ReconciliationCheck[] = [];
+
+  // Cost lines: opening-balance count parity (legacy vs promoted)
+  const [legacyObCost, promotedObCost] = await Promise.all([
+    queryCount(`SELECT count(*) AS cnt FROM normalized_cost_lines WHERE is_opening_balance = true AND effective_to IS NULL`),
+    queryCount(`SELECT count(*) AS cnt FROM finance.cost_lines WHERE is_opening_balance = true`),
+  ]);
+  checks.push(buildCheck(
+    "opening_balance_cost_count", "finance", "row_parity", "HARD_FAIL",
+    legacyObCost, promotedObCost,
+    `Opening-balance cost line count: legacy=${legacyObCost}, promoted=${promotedObCost}`,
+  ));
+
+  // Revenue lines: opening-balance count parity
+  const [legacyObRev, promotedObRev] = await Promise.all([
+    queryCount(`SELECT count(*) AS cnt FROM normalized_revenue_lines WHERE is_opening_balance = true AND effective_to IS NULL`),
+    queryCount(`SELECT count(*) AS cnt FROM finance.revenue_lines WHERE is_opening_balance = true`),
+  ]);
+  checks.push(buildCheck(
+    "opening_balance_revenue_count", "finance", "row_parity", "HARD_FAIL",
+    legacyObRev, promotedObRev,
+    `Opening-balance revenue line count: legacy=${legacyObRev}, promoted=${promotedObRev}`,
+  ));
+
+  // Opening-balance cost amount parity
+  const [legacyObCostAmt, promotedObCostAmt] = await Promise.all([
+    querySum(`SELECT COALESCE(SUM(amount_ex_vat::numeric), 0) AS total FROM normalized_cost_lines WHERE is_opening_balance = true AND effective_to IS NULL`),
+    querySum(`SELECT COALESCE(SUM(amount_ex_vat), 0) AS total FROM finance.cost_lines WHERE is_opening_balance = true`),
+  ]);
+  checks.push(buildCheck(
+    "opening_balance_cost_amount", "finance", "finance_amounts", "HARD_FAIL",
+    legacyObCostAmt, promotedObCostAmt,
+    `Opening-balance cost amount: legacy=${legacyObCostAmt}, promoted=${promotedObCostAmt}, diff=${(legacyObCostAmt - promotedObCostAmt).toFixed(2)}`,
+  ));
+
+  // Opening-balance revenue amount parity
+  const [legacyObRevAmt, promotedObRevAmt] = await Promise.all([
+    querySum(`SELECT COALESCE(SUM(amount_ex_vat::numeric), 0) AS total FROM normalized_revenue_lines WHERE is_opening_balance = true AND effective_to IS NULL`),
+    querySum(`SELECT COALESCE(SUM(amount_ex_vat), 0) AS total FROM finance.revenue_lines WHERE is_opening_balance = true`),
+  ]);
+  checks.push(buildCheck(
+    "opening_balance_revenue_amount", "finance", "finance_amounts", "HARD_FAIL",
+    legacyObRevAmt, promotedObRevAmt,
+    `Opening-balance revenue amount: legacy=${legacyObRevAmt}, promoted=${promotedObRevAmt}, diff=${(legacyObRevAmt - promotedObRevAmt).toFixed(2)}`,
+  ));
+
+  // Opening-balance rows preserved in finance_records.record_data
+  const obNotInRecords = await queryCount(
+    `SELECT count(*) AS cnt FROM finance.cost_lines cl WHERE cl.is_opening_balance = true AND NOT EXISTS (SELECT 1 FROM finance.finance_records fr WHERE fr.legacy_entity_table = 'cost_lines' AND fr.legacy_entity_id = cl.id AND (fr.record_data->>'is_opening_balance')::boolean = true)`,
+  );
+  checks.push(buildCheck(
+    "opening_balance_cost_in_records", "finance", "fk_integrity", "WARNING",
+    obNotInRecords, 0, `${obNotInRecords} opening-balance cost lines missing or unflagged in finance_records`,
+  ));
+
+  return checks;
+}
+
+async function financeProjectAmountDriftChecks(): Promise<ReconciliationCheck[]> {
+  const checks: ReconciliationCheck[] = [];
+
+  // Per-project cost amount drift (SUM mismatch)
+  const costAmountDrift = await queryCount(
+    `SELECT count(*) AS cnt FROM (
+      SELECT pi.id,
+        (SELECT COALESCE(SUM(ncl.amount_ex_vat::numeric), 0) FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name AND ncl.effective_to IS NULL) AS legacy_sum,
+        (SELECT COALESCE(SUM(fcl.amount_ex_vat), 0) FROM finance.cost_lines fcl WHERE fcl.project_id = pi.id) AS promoted_sum
+      FROM project_info pi
+    ) sub WHERE ABS(sub.legacy_sum - sub.promoted_sum) >= 0.01 AND sub.legacy_sum > 0`,
+  );
+  checks.push(buildCheck(
+    "finance_project_cost_amount_drift", "finance", "finance_amounts", "WARNING",
+    costAmountDrift, 0, `${costAmountDrift} projects have cost amount SUM mismatches`,
+  ));
+
+  // Per-project revenue amount drift
+  const revenueAmountDrift = await queryCount(
+    `SELECT count(*) AS cnt FROM (
+      SELECT pi.id,
+        (SELECT COALESCE(SUM(nrl.amount_ex_vat::numeric), 0) FROM normalized_revenue_lines nrl WHERE nrl.project_name = pi.project_name AND nrl.effective_to IS NULL) AS legacy_sum,
+        (SELECT COALESCE(SUM(frl.amount_ex_vat), 0) FROM finance.revenue_lines frl WHERE frl.project_id = pi.id) AS promoted_sum
+      FROM project_info pi
+    ) sub WHERE ABS(sub.legacy_sum - sub.promoted_sum) >= 0.01 AND sub.legacy_sum > 0`,
+  );
+  checks.push(buildCheck(
+    "finance_project_revenue_amount_drift", "finance", "finance_amounts", "WARNING",
+    revenueAmountDrift, 0, `${revenueAmountDrift} projects have revenue amount SUM mismatches`,
+  ));
+
+  return checks;
+}
+
+async function unresolvedRowChecks(): Promise<ReconciliationCheck[]> {
+  const checks: ReconciliationCheck[] = [];
+
+  // Projects: missing from promoted AND not in bridge_sync_failures (truly lost)
+  const lostProjects = await queryCount(
+    `SELECT count(*) AS cnt FROM project_info pi WHERE pi.id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM core.projects cp WHERE cp.id = pi.id) AND NOT EXISTS (SELECT 1 FROM internal.bridge_sync_failures bsf WHERE bsf.entity_id = pi.id::text AND bsf.domain = 'project' AND bsf.resolved_at IS NULL)`,
+  );
+  checks.push(buildCheck(
+    "unresolved_projects", "projects", "unresolved", "HARD_FAIL",
+    lostProjects, 0, `${lostProjects} legacy projects missing from promoted with no tracked sync failure`,
+  ));
+
+  // Cost lines: missing from promoted AND not in bridge_sync_failures
+  const lostCostLines = await queryCount(
+    `SELECT count(*) AS cnt FROM normalized_cost_lines ncl WHERE ncl.effective_to IS NULL AND NOT EXISTS (SELECT 1 FROM finance.cost_lines fcl WHERE fcl.legacy_normalized_cost_line_id = ncl.id) AND NOT EXISTS (SELECT 1 FROM internal.bridge_sync_failures bsf WHERE bsf.entity_id = ncl.id::text AND bsf.domain = 'cost_line' AND bsf.resolved_at IS NULL)`,
+  );
+  checks.push(buildCheck(
+    "unresolved_cost_lines", "finance", "unresolved", "HARD_FAIL",
+    lostCostLines, 0, `${lostCostLines} active cost lines missing from promoted with no tracked sync failure`,
+  ));
+
+  // Revenue lines: missing from promoted AND not in bridge_sync_failures
+  const lostRevenueLines = await queryCount(
+    `SELECT count(*) AS cnt FROM normalized_revenue_lines nrl WHERE nrl.effective_to IS NULL AND NOT EXISTS (SELECT 1 FROM finance.revenue_lines frl WHERE frl.legacy_normalized_revenue_line_id = nrl.id) AND NOT EXISTS (SELECT 1 FROM internal.bridge_sync_failures bsf WHERE bsf.entity_id = nrl.id::text AND bsf.domain = 'revenue_line' AND bsf.resolved_at IS NULL)`,
+  );
+  checks.push(buildCheck(
+    "unresolved_revenue_lines", "finance", "unresolved", "HARD_FAIL",
+    lostRevenueLines, 0, `${lostRevenueLines} active revenue lines missing from promoted with no tracked sync failure`,
+  ));
+
+  // Users: missing from promoted AND not tracked
+  const lostUsers = await queryCount(
+    `SELECT count(*) AS cnt FROM users u WHERE u.id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM core.user_accounts ua WHERE ua.id = u.id) AND NOT EXISTS (SELECT 1 FROM internal.bridge_sync_failures bsf WHERE bsf.entity_id = u.id::text AND bsf.domain = 'user' AND bsf.resolved_at IS NULL)`,
+  );
+  checks.push(buildCheck(
+    "unresolved_users", "users", "unresolved", "HARD_FAIL",
+    lostUsers, 0, `${lostUsers} users missing from promoted with no tracked sync failure`,
+  ));
+
+  return checks;
+}
+
 // ---------------------------------------------------------------------------
 // Domain Summary Builder
 // ---------------------------------------------------------------------------
@@ -538,6 +673,9 @@ export async function runReconciliationPack(): Promise<ReconciliationPackReport>
     workItemChecks(),
     bridgeHealthChecks(),
     financeProjectLevelChecks(),
+    openingBalanceChecks(),
+    financeProjectAmountDriftChecks(),
+    unresolvedRowChecks(),
   ]);
 
   const checks = allChecks.flat();
