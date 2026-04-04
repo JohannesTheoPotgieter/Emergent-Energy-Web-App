@@ -114,6 +114,34 @@ describe("Hard Fail Checks", () => {
     const section = f.slice(idx, idx + 200);
     expect(section).toContain("HARD_FAIL");
   });
+
+  it("opening_balance_cost_count is HARD_FAIL", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    const idx = f.indexOf("opening_balance_cost_count");
+    const section = f.slice(idx, idx + 200);
+    expect(section).toContain("HARD_FAIL");
+  });
+
+  it("opening_balance_cost_amount is HARD_FAIL", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    const idx = f.indexOf("opening_balance_cost_amount");
+    const section = f.slice(idx, idx + 300);
+    expect(section).toContain("HARD_FAIL");
+  });
+
+  it("unresolved_projects is HARD_FAIL", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    const idx = f.indexOf("unresolved_projects");
+    const section = f.slice(idx, idx + 200);
+    expect(section).toContain("HARD_FAIL");
+  });
+
+  it("unresolved_cost_lines is HARD_FAIL", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    const idx = f.indexOf("unresolved_cost_lines");
+    const section = f.slice(idx, idx + 200);
+    expect(section).toContain("HARD_FAIL");
+  });
 });
 
 // ===========================================================================
@@ -187,6 +215,91 @@ describe("FK Integrity Checks", () => {
   it("checks for orphaned work item legacy references", () => {
     const f = readFile("server/services/reconciliation-pack.ts");
     expect(f).toContain("work_items_orphaned_legacy_refs");
+  });
+});
+
+// ===========================================================================
+// 7b. Opening Balance Checks
+// ===========================================================================
+describe("Opening Balance Checks", () => {
+  it("checks opening-balance cost line count parity", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("opening_balance_cost_count");
+    expect(f).toContain("is_opening_balance = true");
+  });
+
+  it("checks opening-balance revenue line count parity", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("opening_balance_revenue_count");
+  });
+
+  it("checks opening-balance cost amount parity", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("opening_balance_cost_amount");
+  });
+
+  it("checks opening-balance revenue amount parity", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("opening_balance_revenue_amount");
+  });
+
+  it("verifies opening-balance rows preserved in finance_records", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("opening_balance_cost_in_records");
+    expect(f).toContain("record_data");
+  });
+});
+
+// ===========================================================================
+// 7c. Unresolved Row Checks
+// ===========================================================================
+describe("Unresolved Row Checks", () => {
+  it("detects lost projects (missing from promoted + no sync failure)", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("unresolved_projects");
+    expect(f).toContain("bridge_sync_failures");
+  });
+
+  it("detects lost cost lines", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("unresolved_cost_lines");
+  });
+
+  it("detects lost revenue lines", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("unresolved_revenue_lines");
+  });
+
+  it("detects lost users", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("unresolved_users");
+  });
+
+  it("uses unresolved category", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    const idx = f.indexOf("unresolved_projects");
+    expect(f.slice(idx, idx + 300)).toContain('"unresolved"');
+  });
+});
+
+// ===========================================================================
+// 7d. Per-Project Amount Drift Checks
+// ===========================================================================
+describe("Per-Project Amount Drift", () => {
+  it("checks per-project cost amount SUM drift", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("finance_project_cost_amount_drift");
+  });
+
+  it("checks per-project revenue amount SUM drift", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    expect(f).toContain("finance_project_revenue_amount_drift");
+  });
+
+  it("uses 0.01 tolerance for amount comparisons", () => {
+    const f = readFile("server/services/reconciliation-pack.ts");
+    // Per-project drift uses ABS >= 0.01
+    expect(f).toContain("ABS(sub.legacy_sum - sub.promoted_sum) >= 0.01");
   });
 });
 

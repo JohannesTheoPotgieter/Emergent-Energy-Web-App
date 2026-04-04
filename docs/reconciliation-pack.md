@@ -70,6 +70,14 @@ These must be resolved before cutover. The overall result is FAIL if any HARD_FA
 | `cost_lines_amount_parity` | SUM(amount_ex_vat) differs between legacy and promoted cost lines |
 | `revenue_lines_amount_parity` | SUM(amount_ex_vat) differs between legacy and promoted revenue lines |
 | `bridge_failures_unresolved` | Unresolved entries in internal.bridge_sync_failures |
+| `opening_balance_cost_count` | Opening-balance cost line count differs |
+| `opening_balance_revenue_count` | Opening-balance revenue line count differs |
+| `opening_balance_cost_amount` | Opening-balance cost SUM(amount_ex_vat) differs |
+| `opening_balance_revenue_amount` | Opening-balance revenue SUM(amount_ex_vat) differs |
+| `unresolved_projects` | Legacy projects missing from promoted with no tracked sync failure |
+| `unresolved_cost_lines` | Active cost lines missing from promoted with no tracked sync failure |
+| `unresolved_revenue_lines` | Active revenue lines missing from promoted with no tracked sync failure |
+| `unresolved_users` | Users missing from promoted with no tracked sync failure |
 
 ### WARNING
 
@@ -88,6 +96,9 @@ Tolerable for cutover but should be investigated. Do not block deployment.
 | `finance_project_cost_count_drift` | Per-project cost line count mismatch |
 | `finance_project_revenue_count_drift` | Per-project revenue line count mismatch |
 | `sync_watermarks_stale` | Sync watermarks >1 hour behind |
+| `opening_balance_cost_in_records` | Opening-balance cost lines missing or unflagged in finance_records |
+| `finance_project_cost_amount_drift` | Per-project cost amount SUM mismatch |
+| `finance_project_revenue_amount_drift` | Per-project revenue amount SUM mismatch |
 
 ### INFO
 
