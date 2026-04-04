@@ -88,8 +88,6 @@ Tolerable for cutover but should be investigated. Do not block deployment.
 | `projects_field_drift` | project_name or phase differ |
 | `clients_field_drift` | client name differs |
 | `projects_null_client_fk` | Promoted project missing client_id that legacy has |
-| `cost_lines_null_legacy_fk` | finance.cost_lines rows with NULL legacy FK |
-| `revenue_lines_null_legacy_fk` | finance.revenue_lines rows with NULL legacy FK |
 | `work_items_orphaned_legacy_refs` | work_items reference deleted legacy tasks |
 | `work_items_no_project` | Non-personal work items without project_id |
 | `work_items_pm_task_parity` | PM plan task count mismatch |
@@ -107,6 +105,8 @@ Informational only. Never triggers a failure.
 | Check | Condition |
 |-------|-----------|
 | `bridge_failures_by_domain` | Breakdown of unresolved failures by domain |
+| `cost_lines_native_promoted` | Count of finance.cost_lines rows created natively (no legacy FK) |
+| `revenue_lines_native_promoted` | Count of finance.revenue_lines rows created natively (no legacy FK) |
 
 ## JSON Report Schema
 
