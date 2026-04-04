@@ -79,6 +79,7 @@ const InboxPage = lazy(() => import("@/pages/inbox"));
 const ApprovalsPage = lazy(() => import("@/pages/admin-approvals"));
 const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
 const PartiesRegistryPage = lazy(() => import("@/pages/parties-registry"));
+const AdminMigrationControlPage = lazy(() => import("@/pages/admin-migration-control"));
 const ClientsPage = lazy(() => import("@/pages/clients"));
 const ClientDetailPage = lazy(() => import("@/pages/client-detail"));
 const ClientProjectDepartmentsPage = lazy(() => import("@/pages/client-project-departments"));
@@ -259,6 +260,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   GatesCommitmentsPage,
   CommissioningDashboardPage,
   PartiesRegistryPage,
+  AdminMigrationControlPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
