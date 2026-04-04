@@ -818,6 +818,63 @@ router.get("/api/admin/reconciliation", requireAuth, requireAdmin, async (req: R
   }
 });
 
+// ---------------------------------------------------------------------------
+// Bridge health — exposes failure counts, recent failures, and queue status
+// ---------------------------------------------------------------------------
+router.get("/api/admin/bridge-health", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const {
+      getBridgeFailureCount, getBridgeSuccessCount,
+      getRecentBridgeFailures, processBridgeRetryQueue,
+    } = await import("./bridge/bridge-writer");
+
+    // Fetch unresolved count from DB
+    let unresolvedCount = 0;
+    let oldestUnresolved: string | null = null;
+    try {
+      const { db } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const countResult = await db.execute(sql`
+        SELECT COUNT(*) as cnt,
+               MIN(created_at) as oldest
+        FROM internal.bridge_sync_failures
+        WHERE resolved_at IS NULL
+      `);
+      const row = (countResult as any).rows?.[0];
+      unresolvedCount = Number(row?.cnt || 0);
+      oldestUnresolved = row?.oldest || null;
+    } catch {
+      // Table may not exist
+    }
+
+    res.json({
+      inMemory: {
+        failureCount: getBridgeFailureCount(),
+        successCount: getBridgeSuccessCount(),
+        recentFailures: getRecentBridgeFailures(),
+      },
+      persistent: {
+        unresolvedCount,
+        oldestUnresolved,
+      },
+      status: unresolvedCount === 0 && getBridgeFailureCount() === 0 ? "healthy" : "degraded",
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: "Bridge health check failed", detail: err.message });
+  }
+});
+
+// Manual trigger for bridge retry queue processing
+router.post("/api/admin/bridge-retry", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  try {
+    const { processBridgeRetryQueue } = await import("./bridge/bridge-writer");
+    const result = await processBridgeRetryQueue();
+    res.json({ ...result, triggered: "manual" });
+  } catch (err: any) {
+    res.status(500).json({ error: "Bridge retry failed", detail: err.message });
+  }
+});
+
 export function registerAdminControlRoutes(app: Express) {
   app.use(router);
 }
