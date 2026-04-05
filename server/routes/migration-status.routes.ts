@@ -10,6 +10,7 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { checkPermission, requireAuth } from "../middleware/check-permission";
 
 const router = Router();
 
@@ -28,12 +29,8 @@ interface DomainStatus {
  *
  * Returns per-domain migration progress showing promoted vs legacy row counts.
  */
-router.get("/api/admin/migration-status", async (req: Request, res: Response) => {
+router.get("/api/admin/migration-status", requireAuth, checkPermission("admin", "view"), async (req: Request, res: Response) => {
   try {
-    const user = (req as any).user;
-    if (!user?.role || !["COO_ADMIN", "CEO_ADMIN"].includes(user.role)) {
-      return res.status(403).json({ error: "Admin access required" });
-    }
 
     // Count rows in promoted vs legacy tables for each domain
     const domains: DomainStatus[] = [];

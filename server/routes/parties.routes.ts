@@ -13,6 +13,7 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { checkPermission, requireAuth } from "../middleware/check-permission";
 
 const router = Router();
 
@@ -22,7 +23,7 @@ const router = Router();
  * Returns unified party list from core.parties.
  * Supports filtering by party_kind and search by name.
  */
-router.get("/api/parties", async (req: Request, res: Response) => {
+router.get("/api/parties", requireAuth, checkPermission("counterparties", "view"), async (req: Request, res: Response) => {
   try {
     const kind = req.query.kind as string | undefined;
     const search = req.query.search as string | undefined;
@@ -87,7 +88,7 @@ router.get("/api/parties", async (req: Request, res: Response) => {
  *
  * Returns detail for a specific party, including linked projects.
  */
-router.get("/api/parties/:id", async (req: Request, res: Response) => {
+router.get("/api/parties/:id", requireAuth, checkPermission("counterparties", "view"), async (req: Request, res: Response) => {
   try {
     const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     const id = parseInt(rawId);
@@ -149,7 +150,7 @@ router.get("/api/parties/:id", async (req: Request, res: Response) => {
  *
  * Returns distinct party_kind values for filter dropdowns.
  */
-router.get("/api/parties/kinds", async (_req: Request, res: Response) => {
+router.get("/api/parties/kinds", requireAuth, checkPermission("counterparties", "view"), async (_req: Request, res: Response) => {
   try {
     const result = await db.execute(sql`
       SELECT DISTINCT party_kind, COUNT(*)::int AS count

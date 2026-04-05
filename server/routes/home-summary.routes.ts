@@ -11,6 +11,7 @@
 import { Router, type Request, type Response } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { checkPermission, requireAuth } from "../middleware/check-permission";
 
 const router = Router();
 
@@ -19,7 +20,7 @@ const router = Router();
  *
  * Returns personalized dashboard counts for the authenticated user.
  */
-router.get("/api/home/summary", async (req: Request, res: Response) => {
+router.get("/api/home/summary", requireAuth, checkPermission("home", "view"), async (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     if (!user?.id) {
