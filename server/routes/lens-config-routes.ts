@@ -10,6 +10,7 @@
 
 import type { Express, Request, Response } from "express";
 import { jwtAuth, requireAuth } from "../auth-context";
+import { requireAdmin } from "../middleware/requireAdmin";
 import { db } from "../db";
 import { eq, and, isNull, sql } from "drizzle-orm";
 import {
@@ -224,7 +225,7 @@ export function registerLensConfigRoutes(app: Express) {
    * GET /api/admin/migration-report
    * Returns the last role-lens migration report from app_settings.
    */
-  app.get("/api/admin/migration-report", jwtAuth, requireAuth, async (_req: Request, res: Response) => {
+  app.get("/api/admin/migration-report", jwtAuth, requireAuth, requireAdmin, async (_req: Request, res: Response) => {
     try {
       const result = await db.execute(
         sql`SELECT value, updated_at FROM app_settings WHERE key = 'role_lens_migration_report' LIMIT 1`
