@@ -96,6 +96,7 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       // Core PM
       { label: "Execution Dashboard", path: "/execution-board" },
       { label: "PM Dashboard", path: "/pm-dashboard" },
+      { label: "Workboard", path: "/pm/workboard" },
       { label: "All Projects", path: "/projects" },
       { label: "Milestone Tracker", path: "/milestone-tracker" },
       { label: "Weekly Reviews", path: "/weekly-reviews" },

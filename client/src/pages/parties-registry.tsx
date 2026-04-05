@@ -1,14 +1,12 @@
 /**
- * Parties Registry — Wave 1 Step 3
+ * Parties Registry — Wave 1 (read) + Wave 2 (CRUD)
  *
  * Unified view of all business relationships (clients, suppliers, subcontractors, internal staff).
- * Reads from GET /api/parties (core.parties promoted schema).
- *
- * Read-only in Wave 1. Write capabilities added in Wave 2.
+ * Reads from GET /api/parties, writes via POST/PATCH /api/parties.
  */
 
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -30,8 +28,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { PageShell } from "@/components/layout/page-shell";
-import { Search, Building2, User, Users, ChevronRight } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Search, Building2, User, Users, ChevronRight, Plus } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 interface Party {
@@ -79,6 +80,26 @@ export default function PartiesRegistryPage() {
   const [kindFilter, setKindFilter] = useState<string>("all");
   const [page, setPage] = useState(0);
   const pageSize = 50;
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newParty, setNewParty] = useState({ name: "", partyKind: "organisation", contactPerson: "", contactEmail: "", contactPhone: "" });
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof newParty) => {
+      const res = await apiRequest("POST", "/api/parties", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["parties-registry"] });
+      setCreateOpen(false);
+      setNewParty({ name: "", partyKind: "organisation", contactPerson: "", contactEmail: "", contactPhone: "" });
+      toast({ title: "Party created", description: "New party added to the registry." });
+    },
+    onError: () => {
+      toast({ title: "Failed to create party", variant: "destructive" });
+    },
+  });
 
   const queryParams = useMemo(() => {
     const params = new URLSearchParams();
@@ -109,9 +130,15 @@ export default function PartiesRegistryPage() {
               <Users className="h-5 w-5" />
               Parties Registry
             </CardTitle>
-            <Badge variant="secondary" className="text-xs">
-              {data ? `${data.total} total` : "Loading..."}
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="text-xs">
+                {data ? `${data.total} total` : "Loading..."}
+              </Badge>
+              <Button size="sm" onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add Party
+              </Button>
+            </div>
           </div>
 
           {/* Filters */}
@@ -256,6 +283,49 @@ export default function PartiesRegistryPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Create Party Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Party</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label>Name *</Label>
+              <Input value={newParty.name} onChange={(e) => setNewParty((p) => ({ ...p, name: e.target.value }))} placeholder="Organisation or person name" />
+            </div>
+            <div>
+              <Label>Kind</Label>
+              <Select value={newParty.partyKind} onValueChange={(v) => setNewParty((p) => ({ ...p, partyKind: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="organisation">Organisation</SelectItem>
+                  <SelectItem value="person">Person</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Contact Person</Label>
+              <Input value={newParty.contactPerson} onChange={(e) => setNewParty((p) => ({ ...p, contactPerson: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Email</Label>
+              <Input type="email" value={newParty.contactEmail} onChange={(e) => setNewParty((p) => ({ ...p, contactEmail: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Phone</Label>
+              <Input value={newParty.contactPhone} onChange={(e) => setNewParty((p) => ({ ...p, contactPhone: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
+            <Button onClick={() => createMutation.mutate(newParty)} disabled={!newParty.name || createMutation.isPending}>
+              {createMutation.isPending ? "Creating..." : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageShell>
   );
 }
