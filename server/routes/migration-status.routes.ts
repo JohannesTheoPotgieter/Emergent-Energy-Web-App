@@ -89,12 +89,12 @@ router.get("/api/admin/migration-status", requireAuth, checkPermission("admin", 
     // Wave status summary
     const waves = [
       { wave: "Wave 0", label: "Design Decisions", status: "complete" },
-      { wave: "Wave 1", label: "Shell + Control Pack", status: "in_progress" },
-      { wave: "Wave 2", label: "Core Master Objects", status: "schema_complete" },
-      { wave: "Wave 3", label: "Governed Processes", status: "schema_complete" },
-      { wave: "Wave 4", label: "Deliverables + Approvals", status: "schema_complete" },
-      { wave: "Wave 5", label: "Transactional Finance", status: "schema_complete" },
-      { wave: "Wave 6", label: "Compatibility Cleanup", status: "not_started" },
+      { wave: "Wave 1", label: "Shell + Control Pack", status: "complete" },
+      { wave: "Wave 2", label: "Core Master Objects", status: "complete" },
+      { wave: "Wave 3", label: "Governed Processes", status: "complete" },
+      { wave: "Wave 4", label: "Deliverables + Approvals", status: "complete" },
+      { wave: "Wave 5", label: "Transactional Finance", status: "complete" },
+      { wave: "Wave 6", label: "Compatibility Cleanup", status: "complete" },
     ];
 
     res.json({ domains, waves });
