@@ -80,6 +80,10 @@ const ApprovalsPage = lazy(() => import("@/pages/admin-approvals"));
 const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
 const PartiesRegistryPage = lazy(() => import("@/pages/parties-registry"));
 const AdminMigrationControlPage = lazy(() => import("@/pages/admin-migration-control"));
+const PmWorkboardPage = lazy(() => import("@/pages/pm-workboard"));
+const GovernedProcessesPage = lazy(() => import("@/pages/governed-processes"));
+const EngineeringDeliverablesV2Page = lazy(() => import("@/pages/engineering-deliverables-v2"));
+const ApprovalsBoardV2Page = lazy(() => import("@/pages/approvals-board-v2"));
 const ClientsPage = lazy(() => import("@/pages/clients"));
 const ClientDetailPage = lazy(() => import("@/pages/client-detail"));
 const ClientProjectDepartmentsPage = lazy(() => import("@/pages/client-project-departments"));
@@ -261,6 +265,10 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   CommissioningDashboardPage,
   PartiesRegistryPage,
   AdminMigrationControlPage,
+  PmWorkboardPage,
+  GovernedProcessesPage,
+  EngineeringDeliverablesV2Page,
+  ApprovalsBoardV2Page,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {

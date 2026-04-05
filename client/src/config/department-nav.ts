@@ -79,6 +79,7 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       "/handover",
       "/pm", "/sites",
       "/governance/financial-reviews",
+      "/governance/processes",
       "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
       "/gates",
       "/milestone-tracker",
@@ -96,6 +97,7 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       // Core PM
       { label: "Execution Dashboard", path: "/execution-board" },
       { label: "PM Dashboard", path: "/pm-dashboard" },
+      { label: "Workboard", path: "/pm/workboard" },
       { label: "All Projects", path: "/projects" },
       { label: "Milestone Tracker", path: "/milestone-tracker" },
       { label: "Weekly Reviews", path: "/weekly-reviews" },
@@ -107,6 +109,9 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       { label: "Payment Requests", path: "/payment-request-board" },
       { label: "Payment Batches", path: "/payment-batch-manager" },
       { label: "Financial Reviews", path: "/governance/financial-reviews" },
+      // Governed processes & approvals
+      { label: "Governed Processes", path: "/governance/processes" },
+      { label: "Approvals Board", path: "/governance/approvals" },
       // Handover & closeout
       { label: "Handover & Closeout", path: "/handover" },
       { label: "Sites", path: "/sites" },
@@ -133,6 +138,7 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
     secondary: [
       { label: "Engineering Dashboard", path: "/engineering" },
       { label: "Task Board", path: "/engineering/tasks" },
+      { label: "Deliverables", path: "/engineering/deliverables-v2" },
       { label: "Standup", path: "/engineering/standup" },
       // Engineering Reports (distributed from Reports section)
       { label: "Engineering Monthly Report", path: "/reports/engineering/monthly" },
