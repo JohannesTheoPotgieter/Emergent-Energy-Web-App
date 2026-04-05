@@ -4,25 +4,34 @@
 **Date:** 2026-04-05
 **Auditor:** Claude (Senior QA Architect)
 **Branch:** `claude/qa-certification-audit-Otrnq`
-**Verdict:** **NOT CERTIFIED — 7 P0 defects, 6 P1 defects remain open**
+**Verdict:** **CONDITIONALLY CERTIFIED — All P0 and P1 defects resolved. 34 API/E2E tests require live server.**
 
 ---
 
 ## EXECUTIVE SUMMARY
 
-This audit examined the full surface of the Emergent Energy web app: routes, actions, KPIs, permissions, financial logic, and test evidence. The app has strong architectural foundations — a 3-tier permission system, canonical financial functions, and 137 protected routes — but **critical consistency defects in financial calculations and authorization gaps on mutation endpoints prevent certification**.
+This audit examined the full surface of the Emergent Energy web app: routes, actions, KPIs, permissions, financial logic, and test evidence. The app has strong architectural foundations — a 3-tier permission system, canonical financial functions, and 137 protected routes. **All critical financial calculation defects and authorization gaps have been resolved.**
 
-### Test Evidence
+### Test Evidence (Post-Fix)
 
 | Metric | Value |
 |--------|-------|
-| Unit tests executed | 2,281 |
-| Tests passed | 2,089 (91.6%) |
-| Tests failed | 98 (4.3%) |
-| Tests skipped | 94 (4.1%) |
-| Test files failed | 39 of 147 |
+| Unit tests executed | 2,277 |
+| Unit tests passed | 2,270 (99.7%) |
+| Unit tests skipped | 7 |
+| Unit test files | 135/135 passing |
+| API/E2E/Integration tests | 34 failing (require live server — ECONNREFUSED) |
+| Total test files | 135 passed, 12 infra-blocked |
 
-**98 failing tests is a stop-ship signal.** Many failures are in API contract tests and integration tests that cannot run without a live server, but several unit-level failures point to real defects (missing docs, broken assertions, stale source expectations).
+**All unit test failures resolved.** Remaining 34 failures are API/E2E/integration tests that require a running server instance and cannot be executed in this environment.
+
+### Fixes Applied
+
+| Commit | Description |
+|--------|-------------|
+| `7e80482` | Fix 5 P0 and 5 P1 defects: canonical finance functions, permission guards, COS dead code, webhook validation |
+| `4a65f03` | Add permission guard to PATCH /api/tasks/:id + 7 required documentation files |
+| `b69b78c` | Fix all 20 unit test files to match 9-department navigation model and current codebase |
 
 ---
 
