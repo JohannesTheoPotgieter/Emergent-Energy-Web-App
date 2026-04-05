@@ -269,13 +269,14 @@ export async function recomputeHeaderKpiProjectionForActiveProjects(): Promise<{
       .values({
         projectId: project.id,
         contractValue: String(kpi.contractValue),
-        marginPct: String(kpi.currentMarginPct / 100),
+        // D-04 fix: store as percentage (0–100), no longer dividing by 100
+        marginPct: String(kpi.currentMarginPct),
       } as any)
       .onConflictDoUpdate({
         target: dashboardProjectMetrics.projectId,
         set: {
           contractValue: String(kpi.contractValue),
-          marginPct: String(kpi.currentMarginPct / 100),
+          marginPct: String(kpi.currentMarginPct),
           lastRefreshedAt: new Date(),
         } as any,
       });
