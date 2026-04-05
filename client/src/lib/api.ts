@@ -13,6 +13,12 @@ import { runAsyncAction } from "./async-action";
 
 const API_BASE = "/api";
 
+/**
+ * Auth token retrieval — reads from localStorage for backward compatibility with
+ * existing JWTs. New logins set httpOnly session cookies (see server/bootstrap/session.ts),
+ * so the Bearer token is only needed during the migration window.
+ * Once all active sessions have rotated, getAuthToken can be removed entirely.
+ */
 function getAuthToken(): string | null {
   return localStorage.getItem('auth_token');
 }
@@ -26,9 +32,11 @@ function getCsrfToken(): string | undefined {
 }
 
 export function setAuthToken(token: string | null) {
-  if (token) {
-    localStorage.setItem('auth_token', token);
-  } else {
+  // Phase 1: Stop persisting new tokens to localStorage.
+  // The server sets an httpOnly session cookie on login (secure, sameSite=lax),
+  // so credentials: "include" on fetch handles auth automatically.
+  // We still clear localStorage on logout to clean up stale tokens.
+  if (!token) {
     localStorage.removeItem('auth_token');
   }
 }

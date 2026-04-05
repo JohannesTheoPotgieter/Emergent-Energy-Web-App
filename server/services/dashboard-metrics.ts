@@ -188,11 +188,12 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
   }
 
   // Health score: simple composite (margin 40%, task completion 30%, QC 30%)
-  // All inputs normalized to 0–1 range for weighting
+  // All inputs normalized to 0–1 range for weighting. Guards against NaN/Infinity.
   const taskCompletionRate = taskCount > 0 ? tasksCompleted / taskCount : 0;
-  const qcRate = qcProgressPct ? parseFloat(qcProgressPct) : 0;
-  const marginRate = marginPct ? Math.max(0, Math.min(1, parseFloat(marginPct) / 100)) : 0;
-  const healthScore = (marginRate * 40 + taskCompletionRate * 30 + qcRate * 30).toFixed(2);
+  const qcRate = qcProgressPct ? parseFloat(qcProgressPct) || 0 : 0;
+  const marginRate = marginPct ? Math.max(0, Math.min(1, (parseFloat(marginPct) || 0) / 100)) : 0;
+  const rawHealthScore = marginRate * 40 + taskCompletionRate * 30 + qcRate * 30;
+  const healthScore = Number.isFinite(rawHealthScore) ? rawHealthScore.toFixed(2) : "0.00";
 
   // Execution-state snapshot
   const phase = project.phase ?? null;

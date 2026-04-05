@@ -74,8 +74,8 @@ function parseRouteComponentMap(appFile: string): Map<string, string> {
   for (const match of source.matchAll(importRegex)) {
     importMap.set(match[1], resolvePageFile(path.join("client", "src", "pages", `${match[2]}.tsx`)));
   }
-  // Match lazy imports: const X = lazy(() => import("@/pages/..."))
-  const lazyRegex = /const\s+(\w+)\s*=\s*lazy\(\(\)\s*=>\s*import\("@\/pages\/([^"]+)"\)\)/g;
+  // Match lazy imports: const X = lazy(() => import("@/pages/...")) or lazyWithRetry(() => import("@/pages/..."))
+  const lazyRegex = /const\s+(\w+)\s*=\s*(?:lazy|lazyWithRetry)\(\(\)\s*=>\s*import\("@\/pages\/([^"]+)"\)\)/g;
   for (const match of source.matchAll(lazyRegex)) {
     importMap.set(match[1], resolvePageFile(path.join("client", "src", "pages", `${match[2]}.tsx`)));
   }

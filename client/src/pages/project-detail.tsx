@@ -1332,10 +1332,27 @@ export default function ProjectDetailPage() {
     return paymentDateConfirmed;
   };
 
+  // COS realisation — prefer server-computed canonical value; fallback mirrors
+  // isCanonicalCosRealised() from server/lib/finance/cos-realisation.ts.
   const isCosRealised = (e: any): boolean => {
+    const status = String(e.status ?? e.line_status ?? "").trim().toUpperCase();
+    const override = String(e.cosStatusOverride ?? e._cosOverrideStatus ?? "").trim().toUpperCase();
+
+    if (override === "COS REALISED" || override === "REALISED" || override === "INVOICED" || override === "PAID") return true;
+    if (override === "PLANNED" || override === "APPROVED") return false;
+
+    if (status === "COS REALISED" || status === "REALISED" || status === "INVOICED" || status === "PAID") return true;
+    if (e.cosRealised === true) return true;
+
     const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
-    const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
-    return hasInvoice && hasInvDate;
+    const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
+    const hasCommittedSignal = status === "COMMITTED" || hasPO || hasInvoice;
+    if (!hasCommittedSignal) return false;
+
+    const invDate = e.expenseInvoicedDate || e.paymentDate || e.expensePaymentDate || "";
+    const dateStr = String(invDate).trim().slice(0, 7);
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    return dateStr.length === 7 && dateStr < currentMonth;
   };
 
   // COS realisation
