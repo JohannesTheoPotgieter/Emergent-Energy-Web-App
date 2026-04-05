@@ -229,9 +229,12 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 - All `disabled` states are conditional (loading, validation, permissions).
 - All form submissions connect to real API mutations.
 
-### ONE EXCEPTION
+### OBSERVATIONS (not defects, but noted)
 
 - Construction Dashboard "activities" tab — see D-05.
+- **No success toasts on mutations.** When a user submits a form or clicks an action button, there is no explicit success feedback (toast/snackbar). The user must infer success from the UI updating via React Query cache invalidation. This is a UX gap, not a functional defect.
+- **DecisionLog `handleAdd()`** has a try/catch block but only logs errors to console — does not surface to user. Classified as informational since the global React Query error handler provides fallback.
+- **Collaboration workflow mutations** (`useCreateAcceptance`, `useCreateEvidenceRequest`, `useCreateQuery`, etc.) have no `onError` callbacks — rely entirely on the global `queryClient` error handler. This is architecturally consistent but means error context is generic.
 
 ---
 
@@ -345,11 +348,31 @@ Returns TRUE if ANY of (STRICTER):
 | Smart import | PROVEN | Route + admin endpoint exist | Import recovery not verified |
 | Weekly reviews | PROVEN | Route + API exist | |
 | Approvals workflow | PROVEN | Multiple approval routes + board | |
-| Export functionality | NOT VERIFIED | Export endpoints referenced but not audited | |
+| Export functionality | PARTIAL | 5 CSV export endpoints exist (`/api/export/projects`, `/expenses`, `/revenues`, `/tasks`, `/projects-summary`). Triggered via direct URL download. | Content correctness not verified |
+| Approval action | PROVEN | `PATCH /api/approvals/:type/:id/action` with action = approve/reject/delegate | |
+| Stage transitions | PROVEN | `POST /api/projects/:id/stages/:code/transition` with server-side requirement checks, ChangeSet audit logging | |
+| Audit rollback | PROVEN | `POST /api/audit/rollback` requires `requireAdmin` | E2E not run |
 
 ---
 
-## 10. OPEN QUESTIONS (UNKNOWN)
+## 10. ACTION-TO-API COVERAGE SUMMARY
+
+| Domain | Mutation Endpoints | All Wired | Auth | Permission | Audit |
+|--------|-------------------|-----------|------|------------|-------|
+| Collaboration (acceptances, evidence, queries, commitments, updates) | 13 | YES | YES | requireAuth only | Query invalidation |
+| Stage management (data, charter, decisions, transitions) | 9 | YES | YES | requirePermission on transitions | ChangeSet logging |
+| Approvals & governance | 3 | YES | YES | requireAuth | Query invalidation |
+| Team access management | 3 | YES | YES | requireAuth | Query invalidation |
+| Export | 5 (GET) | YES | YES | requireAuth only | None |
+| Audit | 3 | YES | YES | requireAdmin on rollback | Self-auditing |
+
+**Total mutation endpoints audited: 45+**
+**Endpoints with empty/broken handlers: 0**
+**Endpoints with no authentication: 0**
+
+---
+
+## 11. OPEN QUESTIONS (UNKNOWN)
 
 1. **FYE Revenue Tracking routes (21)** — only `requireAuth`, no `requirePermission`. Intentional or gap?
 2. **Database-level security** — no RLS policies detected. Is this acceptable for this deployment model?
