@@ -46,6 +46,9 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/project-lifecycle", redirectTo: "/lifecycle-board" },
   { path: "/command-center", redirectTo: "/my-work" },
   { path: "/sseg", redirectTo: "/handover?tab=sseg" },
+  // Post-migration — department shell navigation redirects
+  { path: "/finance/home", redirectTo: "/finance/records" },
+  { path: "/governance", redirectTo: "/governance/processes" },
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
