@@ -123,7 +123,7 @@ function getKpiCards(
 ) {
   const kpiKeyMap: Record<string, { label: string; value: string | number; icon: React.ReactNode }> = {
     revenue_vs_target: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    gp_margin: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
+    gp_margin: { label: "Gross Margin (FY Plan)", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
     projects_off_track: { label: "Red RAG", value: stats.redProjects, icon: <AlertTriangle className="w-4 h-4" /> },
     open_vos: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
     projects_on_track: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
@@ -142,7 +142,7 @@ function getKpiCards(
     pd_tickets_open: { label: "Planned Revenue (FY)", value: money(kpis.plannedRevenueFy), icon: <DollarSign className="w-4 h-4" /> },
     proposals_pending: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
     revenue_this_month: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    cos_this_month: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
+    cos_this_month: { label: "Gross Margin (FY Plan)", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
     cash_position: { label: "Gross Profit (FY)", value: money(kpis.grossProfitFy), icon: <DollarSign className="w-4 h-4" /> },
     margin_drift: { label: "Open Expenditure (FY)", value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
     open_ncrs: { label: "Quality Warnings", value: kpis.openQualityWarnings ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },

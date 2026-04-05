@@ -169,7 +169,7 @@ export function PortfolioFinanceRow({
             </div>
             <StatLine
               icon={<span />}
-              label="Gross Margin %"
+              label="Gross Margin % (FYTD)"
               value={`${finance.grossMarginPct}%`}
               color={finance.grossMarginPct >= 15 ? "text-emerald-600" : finance.grossMarginPct >= 10 ? "text-amber-600" : "text-red-600"}
             />

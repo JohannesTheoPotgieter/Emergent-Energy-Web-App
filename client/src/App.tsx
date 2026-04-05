@@ -285,7 +285,9 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
   const effectiveRole = normalizeRoleForPermissions(userRole || companyRole);
-  return ROLE_LANDING_PAGE[effectiveRole] || "/dashboard";
+  // Fallback to "/" (home) instead of "/dashboard" (→ /gates) since /gates requires
+  // lifecycle view permission that not all roles have (ENGINEER, ACCOUNTANT).
+  return ROLE_LANDING_PAGE[effectiveRole] || "/";
 }
 
 function HomeRedirect() {
@@ -354,6 +356,19 @@ function RoleGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Redirect that preserves query parameters from the current URL */
+function RedirectPreserveQuery({ to }: { to: string }) {
+  const targetHasQuery = to.includes("?");
+  const currentSearch = typeof window !== "undefined" ? window.location.search : "";
+  // If target already has query params, append current ones with &; otherwise use ?
+  const dest = currentSearch && !targetHasQuery
+    ? `${to}${currentSearch}`
+    : currentSearch && targetHasQuery
+      ? `${to}${currentSearch.replace("?", "&")}`
+      : to;
+  return <Redirect to={dest} />;
+}
+
 function usePageTitle(location: string) {
   useEffect(() => {
     const page = PAGE_REGISTRY.find((p) => p.path === location);
@@ -380,7 +395,7 @@ function ProtectedPages() {
           <Route path="/commissioning-dashboard" component={CommissioningDashboardPage} />
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
-              return <Route key={route.path} path={route.path}>{() => <Redirect to={route.redirectTo!} />}</Route>;
+              return <Route key={route.path} path={route.path}>{() => <RedirectPreserveQuery to={route.redirectTo!} />}</Route>;
             }
             return <Route key={route.path} path={route.path} component={route.component!} />;
           })}

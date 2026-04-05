@@ -15,7 +15,7 @@ describe("my-work routing consolidation", () => {
 
   it("routes the root home path into the restored dashboard landing", () => {
     const appSource = fs.readFileSync(path.join(process.cwd(), "client/src/App.tsx"), "utf8");
-    expect(appSource).toContain("return ROLE_LANDING_PAGE[effectiveRole] || \"/dashboard\";");
+    expect(appSource).toContain("return ROLE_LANDING_PAGE[effectiveRole] || \"/\";");
     expect(appSource).toContain('<Route path="/" component={HomePage} />');
   });
 });
