@@ -100,4 +100,20 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Governed Process routes:", (err instanceof Error ? err.message : String(err)));
   }
+
+  // Wave 4: Deliverables v2 (promoted schema)
+  try {
+    const { registerDeliverablesV2Routes } = await import("./deliverables-v2.routes");
+    registerDeliverablesV2Routes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Deliverables V2 routes:", (err instanceof Error ? err.message : String(err)));
+  }
+
+  // Wave 4: Approvals v2 (promoted schema)
+  try {
+    const { registerApprovalsV2Routes } = await import("./approvals-v2.routes");
+    registerApprovalsV2Routes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Approvals V2 routes:", (err instanceof Error ? err.message : String(err)));
+  }
 }
