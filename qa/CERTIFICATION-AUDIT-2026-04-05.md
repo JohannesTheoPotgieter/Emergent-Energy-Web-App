@@ -87,7 +87,16 @@ Both frontend (`useAccessMatrix` -> `evaluatePathAccess`) and backend (`requireP
 
 ### 2.4 Backend Permission Enforcement
 
-**Status: SUSPECTED GAPS - requires further validation.**
+**Status: CONFIRMED GAPS - validated by full API scan.**
+
+Full backend scan: **1,409 endpoints** across 127 route files.
+
+| Auth Level | Count | % |
+|-----------|-------|---|
+| ADMIN only (COO_ADMIN/CEO_ADMIN) | 299 | 21.2% |
+| AUTH + entity permission | 360 | 25.5% |
+| AUTH only (no granular check) | 587 | 41.6% |
+| PUBLIC (no auth) | 163 | 11.6% |
 
 **DEFECT D-03 (P0):** Webhook endpoints lack authentication.
 
@@ -97,12 +106,19 @@ Both frontend (`useAccessMatrix` -> `evaluatePathAccess`) and backend (`requireP
 - **Impact:** External attackers could POST arbitrary data to these endpoints.
 - **Next action:** Add webhook signature validation or IP allowlist.
 
-**DEFECT D-04 (P1):** Some legacy GET endpoints return financial data with only `requireAuth` but no entity-level permission check.
+**DEFECT D-04 (P1):** 587 endpoints (41.6%) use AUTH only with no entity-level permission check.
 
-- Example: `/api/cos-tracker` returns all project COS data for any authenticated user regardless of role.
-- The frontend hides the COS page from unauthorized roles, but the API is callable directly.
+- Includes financial GET endpoints (`/api/cos-tracker`, `/api/gp-tracker`, `/api/revenue-tracker`).
+- The frontend hides pages from unauthorized roles, but the APIs are callable directly by any authenticated user.
 - **Impact:** Any authenticated user can read financial data by calling APIs directly.
-- **Next action:** Add `requirePermission("cos", "view")` to financial endpoints.
+- **Next action:** Add `requirePermission()` to all sensitive data endpoints.
+
+**DEFECT D-11 (P1):** 163 endpoints (11.6%) are PUBLIC with no authentication.
+
+- Includes stage lifecycle GET endpoints, V2 project listing/detail endpoints.
+- Some may be protected by parent middleware chain (needs verification).
+- **Impact:** If not protected by parent middleware, unauthenticated access to project data.
+- **Next action:** Verify all PUBLIC endpoints are intentionally public or protected by parent middleware.
 
 ### 2.5 Permission Entity Coverage
 
@@ -277,6 +293,7 @@ This is comprehensive and well-structured.
 | D-08 | P1 | KPI Logic | Active project filtering inconsistent across views | Multiple files (see section 3.2) | OPEN |
 | D-09 | P1 | KPI Logic | Revenue vs Cash Collected feed 45% of Finance scorecard with same data | kpi-registry.ts:317-331 | OPEN |
 | D-10 | P1 | Testing | No frozen test dataset exists for financial KPI verification | N/A | OPEN |
+| D-11 | P1 | Security | 163 PUBLIC endpoints (11.6%) need auth verification | server/routes/ (multiple) | OPEN |
 
 ---
 
