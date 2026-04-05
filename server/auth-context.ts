@@ -10,6 +10,9 @@ export type AuthenticatedUser = {
   name: string;
   role: string;
   tokenVersion?: number;
+  // Post-migration: enriched from core.user_accounts + core.parties
+  partyId?: number | null;
+  userAccountId?: number | null;
 };
 
 const TOKEN_VERSION_COLUMN_CACHE_MS = 5 * 60_000;
