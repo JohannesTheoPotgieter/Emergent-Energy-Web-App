@@ -74,21 +74,8 @@ describe("my-work-calendar.tsx is fully canonical", () => {
   });
 });
 
-describe("task-management.tsx is fully canonical", () => {
-  const src = readFile("client/src/pages/task-management.tsx");
-
-  it("reads from /api/tasks (canonical)", () => {
-    expect(src).toContain('"/api/tasks');
-  });
-
-  it("creates via /api/tasks (canonical)", () => {
-    expect(src).toContain('"/api/tasks"');
-  });
-
-  it("updates via /api/tasks/:id (canonical)", () => {
-    expect(src).toMatch(/\/api\/tasks\/\$\{/);
-  });
-});
+// task-management.tsx has been removed; its functionality was consolidated elsewhere.
+// The canonical /api/tasks endpoints are now consumed from other pages.
 
 describe("EngineeringTasksPage.tsx uses canonical adapter endpoints", () => {
   const src = readFile("client/src/pages/EngineeringTasksPage.tsx");
@@ -138,7 +125,6 @@ describe("no frontend code references stale or dropped endpoints", () => {
   const FRONTEND_FILES = [
     "client/src/pages/my-work-tasks.tsx",
     "client/src/pages/my-work-calendar.tsx",
-    "client/src/pages/task-management.tsx",
     "client/src/pages/EngineeringTasksPage.tsx",
     "client/src/components/tabs/UnifiedPlanTab.tsx",
     "client/src/components/BoardView.tsx",
