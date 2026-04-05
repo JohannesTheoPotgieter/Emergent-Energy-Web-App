@@ -116,7 +116,7 @@ export function ExecutiveSummaryRow({
                 {data.revenueVsTarget.pct}% of target
               </span>
               <Badge variant="secondary" className="text-[10px]">
-                GM {data.revenueVsTarget.grossMarginPct}%
+                GM (FYTD) {data.revenueVsTarget.grossMarginPct}%
               </Badge>
             </div>
           </CardContent>
