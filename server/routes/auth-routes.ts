@@ -221,7 +221,31 @@ export async function registerAuthRoutes(app: Express): Promise<void> {
       return sendError(res, unauthorized("Not authenticated"));
     }
 
-    return res.json({ user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+    // Post-migration: enrich with party identity from promoted schema
+    let partyIdentity: { partyId: number | null; userAccountId: number | null; partyName: string | null } | null = null;
+    try {
+      const { resolveUserPartyIdentity } = await import("../services/auth-party-resolver");
+      const identity = await resolveUserPartyIdentity(user.id);
+      if (identity) {
+        partyIdentity = {
+          partyId: identity.partyId,
+          userAccountId: identity.userAccountId,
+          partyName: identity.partyName,
+        };
+      }
+    } catch {
+      // Promoted schema may not be available — fail silently
+    }
+
+    return res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        ...partyIdentity && { partyId: partyIdentity.partyId, userAccountId: partyIdentity.userAccountId, partyName: partyIdentity.partyName },
+      },
+    });
   });
 
   if (process.env.NODE_ENV === "development") {

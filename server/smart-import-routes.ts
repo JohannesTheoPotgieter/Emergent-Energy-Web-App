@@ -2569,6 +2569,26 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       console.warn("[smart-import] Audit logging failed (non-blocking):", auditErr.message);
     }
 
+    // Post-migration: sync imported PO/invoice lines to finance.finance_records
+    try {
+      if (projectId && (counts.costLines > 0 || counts.revenueLines > 0)) {
+        // Look up project_instance_id from legacy project_id
+        const piResult = await db.execute(sql`
+          SELECT id FROM core.project_instances WHERE legacy_project_id = ${projectId} LIMIT 1
+        `);
+        const projectInstanceId = (piResult.rows[0] as { id: number } | undefined)?.id ?? null;
+        if (projectInstanceId) {
+          const { syncImportedLinesToFinanceRecords } = await import("./services/smart-import-finance-bridge");
+          const syncResult = await syncImportedLinesToFinanceRecords(projectInstanceId);
+          if (syncResult.created > 0) {
+            console.log(`[smart-import] Synced ${syncResult.created} lines to finance_records (${syncResult.skipped} skipped)`);
+          }
+        }
+      }
+    } catch (bridgeErr: any) {
+      console.warn("[smart-import] Finance records bridge failed (non-blocking):", bridgeErr.message);
+    }
+
     // Step 4.5: Log conflict resolution decisions and manage protected fields
     if (hasConflictResolutions && conflictResolutions) {
       try {

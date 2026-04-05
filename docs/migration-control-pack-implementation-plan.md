@@ -1,8 +1,26 @@
 # Migration Control Pack — Implementation Plan
 
 **Generated from:** Migration Control Pack (6-map operating system)
-**Repo state as of:** 2026-04-03
+**Repo state as of:** 2026-04-05
 **Branch:** `claude/migration-control-pack-Bd5uu`
+**Status:** ALL 7 WAVES COMPLETE + POST-MIGRATION ACTIVE
+
+## Post-Migration Status (2026-04-05)
+
+| Item | Status |
+|------|--------|
+| Department shell enabled (default on) | **DONE** |
+| All 7 waves implemented | **DONE** |
+| Schema foundation (Phases A-H) | **DONE** (PR #526) |
+| View-swap INSTEAD OF triggers (8 domains) | **DONE** — transparent dual-write |
+| Reconciliation automated | **DONE** — 12 SQL checks + scheduler |
+| Parity audit | **DONE** — 13 domains, 0 gaps |
+| Bridge exit plan documented | **DONE** |
+| Legacy consumers | **BRIDGE_ACTIVE** — view-swap triggers make reads transparent |
+| Smart import migration | **FUTURE** — writes to finance_records with change detection |
+| Auth migration to user_accounts | **FUTURE** |
+
+---
 
 ---
 

@@ -104,6 +104,31 @@ router.get("/api/admin/migration-status", requireAuth, checkPermission("admin", 
   }
 });
 
+/**
+ * GET /api/admin/deprecation-stats
+ *
+ * Returns usage stats for deprecated legacy routes.
+ * Used by admin migration control page for bridge retirement decisions.
+ */
+router.get("/api/admin/deprecation-stats", requireAuth, checkPermission("admin", "view"), async (_req: Request, res: Response) => {
+  try {
+    const { getDeprecationStats, DEPRECATED_ROUTES } = await import("../middleware/deprecation-tracker");
+    const stats = getDeprecationStats();
+    res.json({
+      stats,
+      registeredRoutes: DEPRECATED_ROUTES,
+      summary: {
+        totalDeprecatedRoutes: DEPRECATED_ROUTES.length,
+        routesWithUsage: stats.filter((s) => s.count > 0).length,
+        routesWithZeroUsage: stats.length === 0 ? DEPRECATED_ROUTES.length : DEPRECATED_ROUTES.length - stats.filter((s) => s.count > 0).length,
+      },
+    });
+  } catch (err) {
+    console.error("[MigrationStatus] Failed to fetch deprecation stats:", err);
+    res.status(500).json({ error: "Failed to fetch deprecation stats" });
+  }
+});
+
 export function registerMigrationStatusRoutes(app: import("express").Express) {
   app.use(router);
 }
