@@ -11,7 +11,7 @@
  *   - Company: merged into Project Management (lifecycle board, gates, etc.)
  *   - Priorities: stays as top-level
  *
- * Feature-flagged behind DEPARTMENT_SHELL_ENABLED.
+ * This is the active navigation model.
  */
 
 import type { TopSection } from "./app-navigation";
