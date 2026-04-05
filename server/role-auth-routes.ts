@@ -204,22 +204,10 @@ export function registerRoleAuthRoutes(app: Express) {
     return res.json(roles);
   });
 
-  app.patch("/api/role-auth/password", async (req: Request, res: Response) => {
+  // R-02 fix: Use standard requireCompanyRole middleware instead of manual token parsing
+  app.patch("/api/role-auth/password", requireCompanyRole("COO_ADMIN" as CompanyRole), async (req: Request, res: Response) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return sendError(res, unauthorized("Authorization header required"));
-      }
-      const token = authHeader.substring(7);
-      const payload = verifyToken(token);
-      if (!payload) {
-        return sendError(res, new ApiError(401, "INVALID_TOKEN", "Invalid or expired token"));
-      }
-
-      const currentRole = (payload as any).role as string;
-      if (currentRole !== "COO_ADMIN") {
-        return sendError(res, forbidden("Only COO_ADMIN can change passwords"));
-      }
+      const currentRole = (req as any).companyRole as string;
 
       const { targetRole, newPassword } = req.body;
       if (!targetRole || !newPassword) {
@@ -258,17 +246,9 @@ export function registerRoleAuthRoutes(app: Express) {
     }
   });
 
-  app.get("/api/role-auth/passwords", async (req: Request, res: Response) => {
+  // R-02 fix: Use standard requireCompanyRole middleware instead of manual token parsing
+  app.get("/api/role-auth/passwords", requireCompanyRole("COO_ADMIN" as CompanyRole), async (req: Request, res: Response) => {
     try {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        return sendError(res, unauthorized("Authorization header required"));
-      }
-      const payload = verifyToken(authHeader.substring(7));
-      if (!payload || (payload as any).role !== "COO_ADMIN") {
-        return sendError(res, forbidden("Only COO_ADMIN can view passwords"));
-      }
-
       const creds = await db.select({
         role: roleCredentials.role,
         updatedBy: roleCredentials.updatedBy,

@@ -202,7 +202,7 @@ export function registerReportRoutes(app: Express) {
     });
   });
 
-  app.post("/api/reports/generate", requireAuth, async (req, res) => {
+  app.post("/api/reports/generate", requireAuth, requirePermission("reports", "create"), async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       const { reportType, format, parameters, schedule } = req.body || {};

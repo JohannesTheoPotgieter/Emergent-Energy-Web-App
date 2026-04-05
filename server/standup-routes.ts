@@ -365,7 +365,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Submit a standup entry */
-  app.post("/api/standups/entries", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/standups/entries", requireAuth, requirePermission("standups", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { scheduleId, standupDate, whatIDid, whatImDoing, blockers, mood } = req.body;
@@ -440,7 +440,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Update a standup entry */
-  app.patch("/api/standups/entries/:id", requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/standups/entries/:id", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const { whatIDid, whatImDoing, blockers, mood } = req.body;
