@@ -68,6 +68,25 @@ export function isRevenueSettled(input: RevenueSettlementInput): boolean {
   return statusSettled || hasReceiptDate || hasInBankDate || manualInBank || confirmedPaid;
 }
 
+/**
+ * Stricter check: cash confirmed in bank.
+ * Uses only hard evidence of money received — inBankDate, manualInBank flag,
+ * or status explicitly containing "in_bank" / "in bank".
+ * This is the canonical source for the "Cash Collected" KPI.
+ */
+export function isCashInBank(input: RevenueSettlementInput): boolean {
+  const hasInBankDate = hasIsoDate(input.inBankDate);
+  const manualInBank = isTruthyFlag(input.manualInBank);
+
+  const status = normalizeStatus(input.status);
+  const statusInBank = status.length > 0 && (status.includes("in_bank") || status.includes("in bank"));
+
+  // paidDateConfirmed with a paidDate is also strong evidence of cash receipt.
+  const confirmedPaid = Boolean(input.paidDateConfirmed) || (hasIsoDate(input.paidDate) && isBlack(input.paidDateFontColor));
+
+  return hasInBankDate || manualInBank || statusInBank || confirmedPaid;
+}
+
 export function evaluateRevenueArStatus(input: RevenueArEvaluationInput): {
   isSettled: boolean;
   isOverdue: boolean;
