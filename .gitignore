@@ -8,11 +8,23 @@ server/public
 vite.config.ts.*
 *.tar.gz
 uploads/
-data/
 server/data-seed/.migrated
 server/.pd-seed-done
 backups/
 reports/
 .claude/
-combined.log
-error.log
+
+# Logs
+*.log
+*.out.log
+*.err.log
+
+# Build artifacts
+tsc-all.txt
+tsc-errors.txt
+smoke-log.txt
+
+# Test artifacts
+test-results/
+qa/artifacts/
+qa/reports/
