@@ -328,6 +328,7 @@ The builder's audit mentions a 60-second permission cache TTL. If an admin revok
 | ADV-09 | KPI | COS override dead code path may undercount realised COS | PROVEN |
 | ADV-10 | Code Quality | 29 files with @ts-nocheck including critical finance route files | PROVEN |
 | ADV-11 | Security | Route shadowing: unprotected collaboration-workflow handlers registered BEFORE protected stage-collaboration handlers for overlapping paths | HIGH-RISK SUSPECTED |
+| ADV-12a | Security | Project delete button checks wrong permission entity (`create_project/edit` instead of `projects/delete`) — frontend/backend permission drift | PROVEN |
 
 ### P2 — Can Defer
 
