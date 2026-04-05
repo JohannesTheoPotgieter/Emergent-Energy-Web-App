@@ -16,7 +16,24 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 import { LensProvider } from "@/hooks/use-lens-context";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, ComponentType } from "react";
+
+/**
+ * Retry wrapper for dynamic imports — handles ChunkLoadError on deployment
+ * race conditions or CDN failures. Retries up to 3 times with cache-busting
+ * query parameter before giving up.
+ */
+function lazyWithRetry(importFn: () => Promise<{ default: ComponentType<any> }>, retries = 3): ReturnType<typeof lazy> {
+  return lazy(() =>
+    importFn().catch((error: Error) => {
+      if (retries <= 0) throw error;
+      // Cache-bust and retry after a short delay
+      return new Promise<{ default: ComponentType<any> }>((resolve) =>
+        setTimeout(resolve, 1000)
+      ).then(() => lazyWithRetry(importFn, retries - 1) as unknown as Promise<{ default: ComponentType<any> }>);
+    })
+  );
+}
 
 // Eagerly loaded pages (critical path — login, home, not-found)
 import LoginPage from "@/pages/login";
@@ -25,123 +42,123 @@ import NotFound from "@/pages/not-found";
 import MsCallbackPage from "@/pages/ms-callback";
 
 // Lazy-loaded pages (code-split into separate chunks)
-const CompanyOverviewPage = lazy(() => import("@/pages/company-overview"));
+const CompanyOverviewPage = lazyWithRetry(() => import("@/pages/company-overview"));
 
-const ProjectLifecyclePage = lazy(() => import("@/pages/project-lifecycle"));
-const ProjectsSummary = lazy(() => import("@/pages/projects"));
-const CashflowPage = lazy(() => import("@/pages/cashflow"));
-const RevenueTrackerPage = lazy(() => import("@/pages/revenue-tracker"));
-const CostTracker = lazy(() => import("@/pages/cos"));
-const GpTrackerPage = lazy(() => import("@/pages/gp-tracker"));
-const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
-const ProjectStageGatePage = lazy(() => import("@/pages/project-stage-gate"));
-const MyWorkAdminSettingsPage = lazy(() => import("@/pages/my-work-admin-settings"));
-const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
-const MyWorkSettingsPage = lazy(() => import("@/pages/my-work-settings"));
-const QmDashboardPage = lazy(() => import("@/pages/qm-dashboard"));
-const EngineeringDashboardPage = lazy(() => import("@/pages/engineering-dashboard"));
-const EngineeringTasksPage = lazy(() => import("@/pages/engineering-tasks"));
-const EngineeringAuditPage = lazy(() => import("@/pages/engineering-audit"));
-const RoleSettingsPage = lazy(() => import("@/pages/role-settings"));
-const LifecycleBoardPage = lazy(() => import("@/pages/lifecycle-board"));
-const ExecutionBoardPage = lazy(() => import("@/pages/execution-board"));
-const SmartImportPage = lazy(() => import("@/pages/smart-import"));
-const SharePointIntakePage = lazy(() => import("@/pages/SharePointIntakePage"));
-const InvoicePatternsPage = lazy(() => import("@/pages/invoice-patterns"));
-const SubcontractorDashboardPage = lazy(() => import("@/pages/subcontractor-dashboard"));
-const CounterpartiesPage = lazy(() => import("@/pages/counterparties"));
-const SystemActivityLogPage = lazy(() => import("@/pages/system-activity-log"));
-const WeeklyReviewsPage = lazy(() => import("@/pages/weekly-reviews"));
-const AdminRolesPage = lazy(() => import("@/pages/admin-roles"));
-const LeaderboardPage = lazy(() => import("@/pages/leaderboard"));
-const FeedbackPage = lazy(() => import("@/pages/feedback"));
-const EeInfoPage = lazy(() => import("@/pages/ee-info"));
-const TrainingPage = lazy(() => import("@/pages/training"));
-const PMDashboard = lazy(() => import("@/pages/pm-dashboard"));
-const PortfoliosPage = lazy(() => import("@/pages/portfolios"));
-const PortfolioDetailPage = lazy(() => import("@/pages/portfolio-detail"));
-const PdDashboardPage = lazy(() => import("@/pages/pd-dashboard"));
-const PdTicketsPage = lazy(() => import("@/pages/pd-tickets"));
-const PdTicketCreatePage = lazy(() => import("@/pages/pd-ticket-create"));
-const PdTicketDetailPage = lazy(() => import("@/pages/pd-ticket-detail"));
-const PdReportsPage = lazy(() => import("@/pages/pd-reports"));
-const TeamsChatsPage = lazy(() => import("@/pages/teams-chats"));
-const CollabEmailPage = lazy(() => import("@/pages/collab-email"));
-const FinancialLinkingPage = lazy(() => import("@/pages/financial-linking"));
-const PMOnTheGoHome = lazy(() => import("@/pages/pm-on-the-go-home"));
-const PMOnTheGoProject = lazy(() => import("@/pages/pm-on-the-go-project"));
-const MyWorkHomePage = lazy(() => import("@/pages/my-work-home"));
-const MyWorkTasksPage = lazy(() => import("@/pages/my-work-tasks"));
-const MyWorkCalendarPage = lazy(() => import("@/pages/my-work-calendar"));
-const InboxPage = lazy(() => import("@/pages/inbox"));
-const ApprovalsPage = lazy(() => import("@/pages/admin-approvals"));
-const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
-const PartiesRegistryPage = lazy(() => import("@/pages/parties-registry"));
-const AdminMigrationControlPage = lazy(() => import("@/pages/admin-migration-control"));
-const PmWorkboardPage = lazy(() => import("@/pages/pm-workboard"));
-const GovernedProcessesPage = lazy(() => import("@/pages/governed-processes"));
-const EngineeringDeliverablesV2Page = lazy(() => import("@/pages/engineering-deliverables-v2"));
-const ApprovalsBoardV2Page = lazy(() => import("@/pages/approvals-board-v2"));
-const FinanceWorkspacePage = lazy(() => import("@/pages/finance-workspace"));
-const FinanceRecordsPage = lazy(() => import("@/pages/finance-records"));
-const ClientsPage = lazy(() => import("@/pages/clients"));
-const ClientDetailPage = lazy(() => import("@/pages/client-detail"));
-const ClientProjectDepartmentsPage = lazy(() => import("@/pages/client-project-departments"));
-const ImportControlTowerPage = lazy(() => import("@/pages/import-control-tower"));
-const ProgrammeReportsPage = lazy(() => import("@/pages/programme-reports"));
-const KpiTraceabilityPage = lazy(() => import("@/pages/kpi-traceability"));
-const AdminRecoveryPage = lazy(() => import("@/pages/admin-recovery"));
-const StageAdminPage = lazy(() => import("@/components/stage-lifecycle/StageAdminPanel"));
-const AdminControlCenterPage = lazy(() => import("@/pages/admin-control-center"));
-const ActionLaunchpadPage = lazy(() => import("@/pages/action-launchpad"));
-const PdPmHandoverPage = lazy(() => import("@/pages/pd-pm-handover-v2"));
-const PmHandoverReviewPage = lazy(() => import("@/pages/pm-handover-review"));
-const FinancialReviewQueuePage = lazy(() => import("@/pages/financial-review-queue"));
-const HandoverControlPage = lazy(() => import("@/pages/handover-control"));
-const FyeRevenueTrackingPage = lazy(() => import("@/pages/fye-revenue-tracking"));
-const PhaseTemplatesPage = lazy(() => import("@/pages/phase-templates"));
-const ProjectCreatePage = lazy(() => import("@/pages/project-create"));
-const DepartmentScoresPage = lazy(() => import("@/pages/department-scores"));
-const EngTemplateAdminPage = lazy(() => import("@/pages/eng-template-admin"));
-const PrioritiesPage = lazy(() => import("@/pages/priorities"));
-const PriorityDetailPage = lazy(() => import("@/pages/priority-detail"));
-const PmMonthlyReportPage = lazy(() => import("@/pages/pm-monthly-report"));
-const PmMonthlyReportHistoryPage = lazy(() => import("@/pages/pm-monthly-report-history"));
-const PmMonthlyReportComparePage = lazy(() => import("@/pages/pm-monthly-report-compare"));
-const PmMonthlyReportProjectPage = lazy(() => import("@/pages/pm-monthly-report-project"));
-const EngMonthlyReportPage = lazy(() => import("@/pages/engineering-monthly-report"));
-const EngMonthlyReportHistoryPage = lazy(() => import("@/pages/engineering-monthly-report-history"));
-const EngMonthlyReportComparePage = lazy(() => import("@/pages/engineering-monthly-report-compare"));
-const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-monthly-report-project"));
-const ReportCenterPage = lazy(() => import("@/pages/reports/report-center"));
-const PerformancePage = lazy(() => import("@/pages/reports/performance"));
-const EngineeringStandupPage = lazy(() => import("@/pages/engineering/standup"));
-const POApprovalBoardPage = lazy(() => import("@/pages/po-approval-board"));
-const PaymentRequestBoardPage = lazy(() => import("@/pages/payment-request-board"));
-const PaymentBatchManagerPage = lazy(() => import("@/pages/payment-batch-manager"));
-const HseDashboardPage = lazy(() => import("@/pages/hse-dashboard"));
-const HandoverDashboardPage = lazy(() => import("@/pages/handover-dashboard"));
-const LessonsLearntPage = lazy(() => import("@/pages/lessons-learnt"));
-const SitesPage = lazy(() => import("@/pages/sites"));
-const OpportunitiesPage = lazy(() => import("@/pages/opportunities"));
-const AdminPipedrivePage = lazy(() => import("@/pages/admin-pipedrive"));
-const AdminBackfillPage = lazy(() => import("@/pages/admin-backfill"));
-const AdminWorkflowConfigPage = lazy(() => import("@/pages/admin-workflow-config"));
+const ProjectLifecyclePage = lazyWithRetry(() => import("@/pages/project-lifecycle"));
+const ProjectsSummary = lazyWithRetry(() => import("@/pages/projects"));
+const CashflowPage = lazyWithRetry(() => import("@/pages/cashflow"));
+const RevenueTrackerPage = lazyWithRetry(() => import("@/pages/revenue-tracker"));
+const CostTracker = lazyWithRetry(() => import("@/pages/cos"));
+const GpTrackerPage = lazyWithRetry(() => import("@/pages/gp-tracker"));
+const ProjectDetailPage = lazyWithRetry(() => import("@/pages/project-detail"));
+const ProjectStageGatePage = lazyWithRetry(() => import("@/pages/project-stage-gate"));
+const MyWorkAdminSettingsPage = lazyWithRetry(() => import("@/pages/my-work-admin-settings"));
+const MyWorkMeetingsPage = lazyWithRetry(() => import("@/pages/my-work-meetings"));
+const MyWorkSettingsPage = lazyWithRetry(() => import("@/pages/my-work-settings"));
+const QmDashboardPage = lazyWithRetry(() => import("@/pages/qm-dashboard"));
+const EngineeringDashboardPage = lazyWithRetry(() => import("@/pages/engineering-dashboard"));
+const EngineeringTasksPage = lazyWithRetry(() => import("@/pages/engineering-tasks"));
+const EngineeringAuditPage = lazyWithRetry(() => import("@/pages/engineering-audit"));
+const RoleSettingsPage = lazyWithRetry(() => import("@/pages/role-settings"));
+const LifecycleBoardPage = lazyWithRetry(() => import("@/pages/lifecycle-board"));
+const ExecutionBoardPage = lazyWithRetry(() => import("@/pages/execution-board"));
+const SmartImportPage = lazyWithRetry(() => import("@/pages/smart-import"));
+const SharePointIntakePage = lazyWithRetry(() => import("@/pages/SharePointIntakePage"));
+const InvoicePatternsPage = lazyWithRetry(() => import("@/pages/invoice-patterns"));
+const SubcontractorDashboardPage = lazyWithRetry(() => import("@/pages/subcontractor-dashboard"));
+const CounterpartiesPage = lazyWithRetry(() => import("@/pages/counterparties"));
+const SystemActivityLogPage = lazyWithRetry(() => import("@/pages/system-activity-log"));
+const WeeklyReviewsPage = lazyWithRetry(() => import("@/pages/weekly-reviews"));
+const AdminRolesPage = lazyWithRetry(() => import("@/pages/admin-roles"));
+const LeaderboardPage = lazyWithRetry(() => import("@/pages/leaderboard"));
+const FeedbackPage = lazyWithRetry(() => import("@/pages/feedback"));
+const EeInfoPage = lazyWithRetry(() => import("@/pages/ee-info"));
+const TrainingPage = lazyWithRetry(() => import("@/pages/training"));
+const PMDashboard = lazyWithRetry(() => import("@/pages/pm-dashboard"));
+const PortfoliosPage = lazyWithRetry(() => import("@/pages/portfolios"));
+const PortfolioDetailPage = lazyWithRetry(() => import("@/pages/portfolio-detail"));
+const PdDashboardPage = lazyWithRetry(() => import("@/pages/pd-dashboard"));
+const PdTicketsPage = lazyWithRetry(() => import("@/pages/pd-tickets"));
+const PdTicketCreatePage = lazyWithRetry(() => import("@/pages/pd-ticket-create"));
+const PdTicketDetailPage = lazyWithRetry(() => import("@/pages/pd-ticket-detail"));
+const PdReportsPage = lazyWithRetry(() => import("@/pages/pd-reports"));
+const TeamsChatsPage = lazyWithRetry(() => import("@/pages/teams-chats"));
+const CollabEmailPage = lazyWithRetry(() => import("@/pages/collab-email"));
+const FinancialLinkingPage = lazyWithRetry(() => import("@/pages/financial-linking"));
+const PMOnTheGoHome = lazyWithRetry(() => import("@/pages/pm-on-the-go-home"));
+const PMOnTheGoProject = lazyWithRetry(() => import("@/pages/pm-on-the-go-project"));
+const MyWorkHomePage = lazyWithRetry(() => import("@/pages/my-work-home"));
+const MyWorkTasksPage = lazyWithRetry(() => import("@/pages/my-work-tasks"));
+const MyWorkCalendarPage = lazyWithRetry(() => import("@/pages/my-work-calendar"));
+const InboxPage = lazyWithRetry(() => import("@/pages/inbox"));
+const ApprovalsPage = lazyWithRetry(() => import("@/pages/admin-approvals"));
+const DatabaseMigrationPage = lazyWithRetry(() => import("@/pages/database-migration"));
+const PartiesRegistryPage = lazyWithRetry(() => import("@/pages/parties-registry"));
+const AdminMigrationControlPage = lazyWithRetry(() => import("@/pages/admin-migration-control"));
+const PmWorkboardPage = lazyWithRetry(() => import("@/pages/pm-workboard"));
+const GovernedProcessesPage = lazyWithRetry(() => import("@/pages/governed-processes"));
+const EngineeringDeliverablesV2Page = lazyWithRetry(() => import("@/pages/engineering-deliverables-v2"));
+const ApprovalsBoardV2Page = lazyWithRetry(() => import("@/pages/approvals-board-v2"));
+const FinanceWorkspacePage = lazyWithRetry(() => import("@/pages/finance-workspace"));
+const FinanceRecordsPage = lazyWithRetry(() => import("@/pages/finance-records"));
+const ClientsPage = lazyWithRetry(() => import("@/pages/clients"));
+const ClientDetailPage = lazyWithRetry(() => import("@/pages/client-detail"));
+const ClientProjectDepartmentsPage = lazyWithRetry(() => import("@/pages/client-project-departments"));
+const ImportControlTowerPage = lazyWithRetry(() => import("@/pages/import-control-tower"));
+const ProgrammeReportsPage = lazyWithRetry(() => import("@/pages/programme-reports"));
+const KpiTraceabilityPage = lazyWithRetry(() => import("@/pages/kpi-traceability"));
+const AdminRecoveryPage = lazyWithRetry(() => import("@/pages/admin-recovery"));
+const StageAdminPage = lazyWithRetry(() => import("@/components/stage-lifecycle/StageAdminPanel"));
+const AdminControlCenterPage = lazyWithRetry(() => import("@/pages/admin-control-center"));
+const ActionLaunchpadPage = lazyWithRetry(() => import("@/pages/action-launchpad"));
+const PdPmHandoverPage = lazyWithRetry(() => import("@/pages/pd-pm-handover-v2"));
+const PmHandoverReviewPage = lazyWithRetry(() => import("@/pages/pm-handover-review"));
+const FinancialReviewQueuePage = lazyWithRetry(() => import("@/pages/financial-review-queue"));
+const HandoverControlPage = lazyWithRetry(() => import("@/pages/handover-control"));
+const FyeRevenueTrackingPage = lazyWithRetry(() => import("@/pages/fye-revenue-tracking"));
+const PhaseTemplatesPage = lazyWithRetry(() => import("@/pages/phase-templates"));
+const ProjectCreatePage = lazyWithRetry(() => import("@/pages/project-create"));
+const DepartmentScoresPage = lazyWithRetry(() => import("@/pages/department-scores"));
+const EngTemplateAdminPage = lazyWithRetry(() => import("@/pages/eng-template-admin"));
+const PrioritiesPage = lazyWithRetry(() => import("@/pages/priorities"));
+const PriorityDetailPage = lazyWithRetry(() => import("@/pages/priority-detail"));
+const PmMonthlyReportPage = lazyWithRetry(() => import("@/pages/pm-monthly-report"));
+const PmMonthlyReportHistoryPage = lazyWithRetry(() => import("@/pages/pm-monthly-report-history"));
+const PmMonthlyReportComparePage = lazyWithRetry(() => import("@/pages/pm-monthly-report-compare"));
+const PmMonthlyReportProjectPage = lazyWithRetry(() => import("@/pages/pm-monthly-report-project"));
+const EngMonthlyReportPage = lazyWithRetry(() => import("@/pages/engineering-monthly-report"));
+const EngMonthlyReportHistoryPage = lazyWithRetry(() => import("@/pages/engineering-monthly-report-history"));
+const EngMonthlyReportComparePage = lazyWithRetry(() => import("@/pages/engineering-monthly-report-compare"));
+const EngMonthlyReportProjectPage = lazyWithRetry(() => import("@/pages/engineering-monthly-report-project"));
+const ReportCenterPage = lazyWithRetry(() => import("@/pages/reports/report-center"));
+const PerformancePage = lazyWithRetry(() => import("@/pages/reports/performance"));
+const EngineeringStandupPage = lazyWithRetry(() => import("@/pages/engineering/standup"));
+const POApprovalBoardPage = lazyWithRetry(() => import("@/pages/po-approval-board"));
+const PaymentRequestBoardPage = lazyWithRetry(() => import("@/pages/payment-request-board"));
+const PaymentBatchManagerPage = lazyWithRetry(() => import("@/pages/payment-batch-manager"));
+const HseDashboardPage = lazyWithRetry(() => import("@/pages/hse-dashboard"));
+const HandoverDashboardPage = lazyWithRetry(() => import("@/pages/handover-dashboard"));
+const LessonsLearntPage = lazyWithRetry(() => import("@/pages/lessons-learnt"));
+const SitesPage = lazyWithRetry(() => import("@/pages/sites"));
+const OpportunitiesPage = lazyWithRetry(() => import("@/pages/opportunities"));
+const AdminPipedrivePage = lazyWithRetry(() => import("@/pages/admin-pipedrive"));
+const AdminBackfillPage = lazyWithRetry(() => import("@/pages/admin-backfill"));
+const AdminWorkflowConfigPage = lazyWithRetry(() => import("@/pages/admin-workflow-config"));
 
 // Commissioning Control Tower
-const CommissioningDashboardPage = lazy(() => import("@/pages/commissioning-dashboard"));
+const CommissioningDashboardPage = lazyWithRetry(() => import("@/pages/commissioning-dashboard"));
 
 // Gates workspace (Prompt 2)
-const MilestoneTrackerPage = lazy(() => import("@/pages/milestone-tracker"));
+const MilestoneTrackerPage = lazyWithRetry(() => import("@/pages/milestone-tracker"));
 
-const GatesPipelinePage = lazy(() => import("@/pages/gates/gates-pipeline"));
-const GatesBlockedPage = lazy(() => import("@/pages/gates/gates-blocked"));
-const GatesReadyPage = lazy(() => import("@/pages/gates/gates-ready"));
-const GatesExceptionsPage = lazy(() => import("@/pages/gates/gates-exceptions"));
-const GatesClientUpdatesPage = lazy(() => import("@/pages/gates/gates-client-updates"));
-const GatesHandoversPage = lazy(() => import("@/pages/gates/gates-handovers"));
-const GatesQueriesPage = lazy(() => import("@/pages/gates/gates-queries"));
-const GatesCommitmentsPage = lazy(() => import("@/pages/gates/gates-commitments"));
+const GatesPipelinePage = lazyWithRetry(() => import("@/pages/gates/gates-pipeline"));
+const GatesBlockedPage = lazyWithRetry(() => import("@/pages/gates/gates-blocked"));
+const GatesReadyPage = lazyWithRetry(() => import("@/pages/gates/gates-ready"));
+const GatesExceptionsPage = lazyWithRetry(() => import("@/pages/gates/gates-exceptions"));
+const GatesClientUpdatesPage = lazyWithRetry(() => import("@/pages/gates/gates-client-updates"));
+const GatesHandoversPage = lazyWithRetry(() => import("@/pages/gates/gates-handovers"));
+const GatesQueriesPage = lazyWithRetry(() => import("@/pages/gates/gates-queries"));
+const GatesCommitmentsPage = lazyWithRetry(() => import("@/pages/gates/gates-commitments"));
 
 
 type RouteConfig = { path: string; component?: React.ComponentType<any>; redirectTo?: string };

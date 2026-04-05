@@ -36,6 +36,7 @@ import {
   currentMonthKey as getCurrentMonthKey,
   parseExpenseAmount,
 } from "../lib/calculations/financeUtils";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
@@ -119,13 +120,21 @@ function isCosRealised(exp: any): boolean {
   return isCosRealisedShared(exp);
 }
 
-// Unified realisation check: returns true if cost is effectively realised for a given month.
-// Past-month committed costs are treated as realised (the cost has been incurred).
+// Unified realisation check: delegates to canonical isCanonicalCosRealised().
+// This ensures GP Tracker, COS Tracker, Company Overview, and PM Report all
+// agree on whether a cost line is realised.
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  const cosStatus = classifyCosStatusFull(exp);
-  if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
-  if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
-  return false;
+  const today = `${currentMonthKey}-28`; // End-of-month approximation for canonical check
+  return isCanonicalCosRealised({
+    status: exp.status ?? exp.line_status ?? null,
+    cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
+    cosRealised: exp.cosRealised ?? null,
+    expenseInvoiceNumber: exp.expenseInvoiceNumber ?? exp.invoiceNumber ?? null,
+    expenseInvoicedDate: exp.expenseInvoicedDate ?? exp.invoiceDate ?? null,
+    expensePoNumber: exp.expensePoNumber ?? exp.poNumber ?? null,
+    paymentDate: exp.expensePaymentDate ?? exp.paymentDate ?? exp.paidDate ?? null,
+    today,
+  });
 }
 
 // Returns true if a cost is still actively committed (current/future month only).

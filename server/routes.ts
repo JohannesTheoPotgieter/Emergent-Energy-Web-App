@@ -2596,7 +2596,7 @@ export async function registerRoutes(
     { name: 'trackers', maxCount: 20 }
   ]);
 
-  app.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
+  app.post("/api/upload", requireAuth, requirePermission('projects', 'edit'), multiUpload, async (req, res) => {
     try {
       // Normalize files from multiple possible field names
       const filesObj = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
@@ -4472,17 +4472,8 @@ export async function registerRoutes(
 
   // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-  app.patch("/api/expenditure/font-color-toggle", requireAuth, async (req, res) => {
-    try {
-      const { projectName } = req.query;
-      if (!projectName || typeof projectName !== 'string') {
-        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
-      }
-      res.json([]);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
-    }
-  });
+  // NOTE: font-color-toggle handler is registered below (line ~4893) with proper auth.
+  // Duplicate stub removed during audit remediation.
 
   app.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
@@ -4890,7 +4881,7 @@ export async function registerRoutes(
 
   // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-  app.patch("/api/expenditure/font-color-toggle", requireAuth, async (req, res) => {
+  app.patch("/api/expenditure/font-color-toggle", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const { projectName, rowNumber, field, color } = req.body;
       if (!projectName || rowNumber == null || !field || !color) {
@@ -4941,7 +4932,7 @@ export async function registerRoutes(
 
   // ==================== COS STATUS OVERRIDE API ====================
 
-  app.post("/api/cos-status-override", requireAuth, async (req, res) => {
+  app.post("/api/cos-status-override", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const { expenseId, projectName, rowNumber, originalStatus, overrideStatus, reason } = req.body;
       if (!expenseId || !projectName || !overrideStatus || !reason) {
@@ -4968,7 +4959,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cos-status-override/:expenseId", requireAuth, async (req, res) => {
+  app.delete("/api/cos-status-override/:expenseId", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
       const expenseId = parseInt(req.params.expenseId);
 
@@ -7796,7 +7787,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ms-teams/chats/:chatId/messages", requireAuth, async (req, res) => {
+  app.post("/api/ms-teams/chats/:chatId/messages", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
     try {
       const ssoToken = await getUserSsoToken(req);
       if (!ssoToken) {
@@ -7815,7 +7806,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ms-teams/channels/:teamId/:channelId/messages", requireAuth, async (req, res) => {
+  app.post("/api/ms-teams/channels/:teamId/:channelId/messages", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
     try {
       const ssoToken = await getUserSsoToken(req);
       if (!ssoToken) {
@@ -7865,7 +7856,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/send", requireAuth, async (req, res) => {
+  app.post("/api/outlook/send", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
     try {
       const { to, cc, subject, body, bodyType } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0 || !subject) {
@@ -7884,7 +7875,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/reply", requireAuth, async (req, res) => {
+  app.post("/api/outlook/messages/:id/reply", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
     try {
       const { comment, replyAll } = req.body;
       if (!comment) {
@@ -7903,7 +7894,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/forward", requireAuth, async (req, res) => {
+  app.post("/api/outlook/messages/:id/forward", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
     try {
       const { comment, to } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0) {
