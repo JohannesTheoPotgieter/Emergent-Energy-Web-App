@@ -36,6 +36,8 @@ export interface KpiDefinition {
   higherIsBetter: boolean;
   /** Whether this KPI has provisional/incomplete data */
   provisional?: boolean;
+  /** D-07 fix: Documents the calculation method to prevent cross-view confusion */
+  calculationNote?: string;
 }
 
 // ── Department Weights for Company Score ─────────────────────────────
@@ -321,6 +323,7 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     normalization: "percentage_vs_target",
     unit: "R",
     higherIsBetter: true,
+    calculationNote: "Settled revenue (isRevenueSettled) in FYTD vs total planned revenue. Includes status-based, receipt-date, and confirmed-paid signals.",
   },
   {
     kpiKey: "fin_cash_collected_vs_target",
@@ -330,6 +333,7 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     normalization: "percentage_vs_target",
     unit: "R",
     higherIsBetter: true,
+    calculationNote: "Cash confirmed in bank (isCashInBank) in FYTD vs total planned revenue. Stricter than revenue — requires inBankDate, manualInBank, confirmedPaid, or in_bank status.",
   },
   {
     kpiKey: "fin_cos_vs_target",
@@ -339,6 +343,7 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     normalization: "percentage_vs_target",
     unit: "R",
     higherIsBetter: false,
+    calculationNote: "Canonical COS realised (isCanonicalCosRealised) in FYTD vs total planned cost. Aligned across Company Overview, COS Tracker, and Project Detail.",
   },
   {
     kpiKey: "fin_gross_margin_vs_target",
@@ -348,6 +353,7 @@ export const KPI_REGISTRY: KpiDefinition[] = [
     normalization: "percentage_vs_target",
     unit: "%",
     higherIsBetter: true,
+    calculationNote: "Company Overview: (FYTD revenue - FYTD cost) / FYTD revenue. GP Tracker: COS-ratio allocated revenue per line item. Execution Board: received vs paid actuals.",
   },
   {
     kpiKey: "fin_overdue_debtors",

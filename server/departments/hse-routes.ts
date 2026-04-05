@@ -4,6 +4,7 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
+import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { hseIncidents, correctiveActions } from "@shared/schema/hse";
@@ -31,7 +32,7 @@ router.get("/api/hse/incidents", requireAuth, async (req: Request, res: Response
   }
 });
 
-router.post("/api/hse/incidents", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/hse/incidents", requireAuth, requirePermission("hse", "create"), async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(hseIncidents).values(req.body).returning();
     res.status(201).json(row);
@@ -41,7 +42,7 @@ router.post("/api/hse/incidents", requireAuth, async (req: Request, res: Respons
   }
 });
 
-router.patch("/api/hse/incidents/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/hse/incidents/:id", requireAuth, requirePermission("hse", "edit"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(hseIncidents)
@@ -78,7 +79,7 @@ router.get("/api/hse/corrective-actions", requireAuth, async (req: Request, res:
   }
 });
 
-router.post("/api/hse/corrective-actions", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/hse/corrective-actions", requireAuth, requirePermission("hse", "create"), async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(correctiveActions).values(req.body).returning();
     res.status(201).json(row);
@@ -88,7 +89,7 @@ router.post("/api/hse/corrective-actions", requireAuth, async (req: Request, res
   }
 });
 
-router.patch("/api/hse/corrective-actions/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/hse/corrective-actions/:id", requireAuth, requirePermission("hse", "edit"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(correctiveActions)

@@ -3,7 +3,7 @@
  * Trigger sync, view sync log, show last sync status
  */
 import { Router, type Express, type Request, type Response } from "express";
-import { requireAuth } from "./shared-middleware";
+import { requireAuth, requireAdmin } from "./shared-middleware";
 import { db } from "../db";
 import { desc, sql } from "drizzle-orm";
 import { syncPipedriveDeals } from "../services/pipedrive-sync-service";
@@ -26,7 +26,7 @@ router.get("/api/admin/pipedrive/sync-log", requireAuth, async (_req: Request, r
 });
 
 // Trigger manual sync
-router.post("/api/admin/pipedrive/sync", requireAuth, async (_req: Request, res: Response) => {
+router.post("/api/admin/pipedrive/sync", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
   try {
     // Log the sync start
     await db.execute(sql`

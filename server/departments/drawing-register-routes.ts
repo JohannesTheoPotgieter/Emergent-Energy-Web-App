@@ -3,6 +3,7 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
+import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { drawingRegister, drawingRevisions } from "@shared/schema/engineering";
@@ -28,7 +29,7 @@ router.get("/api/drawings", requireAuth, async (req: Request, res: Response) => 
   }
 });
 
-router.post("/api/drawings", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/drawings", requireAuth, requirePermission("engineering", "create"), async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(drawingRegister).values(req.body).returning();
     res.status(201).json(row);
@@ -38,7 +39,7 @@ router.post("/api/drawings", requireAuth, async (req: Request, res: Response) =>
   }
 });
 
-router.patch("/api/drawings/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/drawings/:id", requireAuth, requirePermission("engineering", "edit"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(drawingRegister)
@@ -67,7 +68,7 @@ router.get("/api/drawings/:drawingId/revisions", requireAuth, async (req: Reques
   }
 });
 
-router.post("/api/drawings/:drawingId/revisions", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/drawings/:drawingId/revisions", requireAuth, requirePermission("engineering", "create"), async (req: Request, res: Response) => {
   try {
     const drawingId = Number(req.params.drawingId);
     const [rev] = await db.insert(drawingRevisions).values({ ...req.body, drawingId }).returning();
