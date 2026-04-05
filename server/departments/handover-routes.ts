@@ -3,6 +3,7 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
+import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import {
@@ -36,7 +37,7 @@ router.get("/api/handover/packs", requireAuth, async (req: Request, res: Respons
   }
 });
 
-router.post("/api/handover/packs", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/handover/packs", requireAuth, requirePermission("handover", "create"), async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(handoverPacks).values(req.body).returning();
     res.status(201).json(row);
@@ -46,7 +47,7 @@ router.post("/api/handover/packs", requireAuth, async (req: Request, res: Respon
   }
 });
 
-router.patch("/api/handover/packs/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/handover/packs/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(handoverPacks)
@@ -76,7 +77,7 @@ router.get("/api/handover/packs/:packId/items", requireAuth, async (req: Request
   }
 });
 
-router.post("/api/handover/packs/:packId/items", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/handover/packs/:packId/items", requireAuth, requirePermission("handover", "create"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .insert(handoverChecklistItems)
@@ -89,7 +90,7 @@ router.post("/api/handover/packs/:packId/items", requireAuth, async (req: Reques
   }
 });
 
-router.patch("/api/handover/checklist-items/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/handover/checklist-items/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(handoverChecklistItems)
@@ -124,7 +125,7 @@ router.get("/api/handover/sseg", requireAuth, async (req: Request, res: Response
   }
 });
 
-router.post("/api/handover/sseg", requireAuth, async (req: Request, res: Response) => {
+router.post("/api/handover/sseg", requireAuth, requirePermission("handover", "create"), async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(ssegItems).values(req.body).returning();
     res.status(201).json(row);
@@ -134,7 +135,7 @@ router.post("/api/handover/sseg", requireAuth, async (req: Request, res: Respons
   }
 });
 
-router.patch("/api/handover/sseg/:id", requireAuth, async (req: Request, res: Response) => {
+router.patch("/api/handover/sseg/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(ssegItems)

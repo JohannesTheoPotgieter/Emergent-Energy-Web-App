@@ -1497,6 +1497,15 @@ router.get("/api/rev-tracker", requireAuth, requirePermission("revenue_tracker",
 
 router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
+    // D-08 fix: Support ?activeOnly=true to filter by tracker-linked active projects
+    const activeOnlyParam = req.query.activeOnly === "true";
+    let activeProjectNames: Set<string> | null = null;
+    if (activeOnlyParam) {
+      const { getTrackerLinkedActiveProjects } = await import("../services/kpi-active-project-scope");
+      const activeProjects = await getTrackerLinkedActiveProjects();
+      activeProjectNames = new Set(activeProjects.map(p => p.projectName));
+    }
+
     const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getTrackerMonthlyManual('COS'),
@@ -1536,6 +1545,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     for (const exp of allProgramExpenses) {
       if (exp.rowType !== 'item') continue;
+      // D-08 fix: Skip non-active projects when activeOnly filter is set
+      if (activeProjectNames && !activeProjectNames.has((exp as any).projectName ?? "")) continue;
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
@@ -2183,6 +2194,15 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
 
 router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   try {
+    // D-08 fix: Support ?activeOnly=true to filter by tracker-linked active projects
+    const activeOnlyParam = req.query.activeOnly === "true";
+    let activeProjectNames: Set<string> | null = null;
+    if (activeOnlyParam) {
+      const { getTrackerLinkedActiveProjects } = await import("../services/kpi-active-project-scope");
+      const activeProjects = await getTrackerLinkedActiveProjects();
+      activeProjectNames = new Set(activeProjects.map(p => p.projectName));
+    }
+
     const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
       storage.getAllProgramExpenses(),
       storage.getAllProgramInflows(),
@@ -2212,6 +2232,8 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
     const cosByProject = new Map<string, number>();
     for (const exp of allExpenses) {
       if (exp.rowType !== 'item') continue;
+      // D-08 fix: Skip non-active projects when activeOnly filter is set
+      if (activeProjectNames && !activeProjectNames.has((exp as any).projectName ?? "")) continue;
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
       const pName = (exp.projectName || "").replace(/_Tracker$/i, "");
