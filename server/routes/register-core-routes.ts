@@ -92,4 +92,12 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Work Items V2 routes:", (err instanceof Error ? err.message : String(err)));
   }
+
+  // Wave 3: Governed processes (formal workflows)
+  try {
+    const { registerGovernedProcessRoutes } = await import("./governed-processes.routes");
+    registerGovernedProcessRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Governed Process routes:", (err instanceof Error ? err.message : String(err)));
+  }
 }
