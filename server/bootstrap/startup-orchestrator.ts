@@ -537,6 +537,7 @@ async function runAdditiveSchemaAlignments() {
   await safeExec("dashboard_project_metrics columns", `
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS total_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS paid_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
+    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS realised_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS outstanding_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS margin_pct DECIMAL(8,4);
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS task_count INTEGER NOT NULL DEFAULT 0;

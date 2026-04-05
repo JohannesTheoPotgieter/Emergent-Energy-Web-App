@@ -7,9 +7,22 @@
 
 ---
 
-## RELEASE GATE RESULT: NOT CERTIFIED
+## RELEASE GATE RESULT: CONDITIONALLY CERTIFIED
 
-**Reason:** 7 confirmed defects (2x P0, 4x P1, 1x P2) must be resolved before release.
+**Previous status:** NOT CERTIFIED (7 defects: 2x P0, 4x P1, 1x P2)
+**Current status:** All code defects FIXED. Remaining gate blockers are process items (frozen test dataset, E2E tests).
+
+### Defect Resolution Summary
+
+| ID | Sev | Status | Fix Applied |
+|----|-----|--------|-------------|
+| D-01 | P0 | **FIXED** | `dashboard-metrics.ts:72` — replaced inline `paidDate \|\| inBankDate` with canonical `isRevenueSettled()` |
+| D-02 | P0 | **FIXED** | `dashboard-metrics.ts:85` — added `realisedCost` field using `isCanonicalCosRealised()` with full input mapping |
+| D-03 | P1 | **FIXED** | Added comment documenting lifetime vs FYTD scope distinction |
+| D-04 | P1 | **FIXED** | `marginPct` now stored as percentage (0–100). Updated `dashboard-metrics.ts`, `project-header-kpi-service.ts`, health score normalization |
+| D-05 | P1 | **FIXED** | Removed "activities" tab and placeholder from `construction-dashboard.tsx` |
+| D-06 | P1 | **RECLASSIFIED** | False positive — payment batch routes already use `requirePermission("procurement", ...)`. MANCO_ROLES check is an additional business rule, not a bypass |
+| D-07 | P2 | **FIXED** | Added `requirePermission()` to 8 read endpoints in `routes.ts`: `/api/overview`, `/api/home/summary`, `/api/program/cos`, `/api/financial-headline`, `/api/realisation-kpis`, `/api/projects`, `/api/tasks`, `/api/program-expenses` |
 
 ---
 
@@ -56,7 +69,7 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 
 ## 2. DEFECT LOG
 
-### D-01 — P0: Dashboard metrics use inline revenue logic instead of canonical `isRevenueSettled()`
+### D-01 — P0: FIXED — Dashboard metrics use inline revenue logic instead of canonical `isRevenueSettled()`
 
 | Field | Value |
 |-------|-------|
@@ -67,7 +80,7 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 | **Evidence** | `dashboard-metrics.ts:72`: `if (row.paidDate \|\| row.inBankDate)` vs `company-overview-service.ts:156`: `if (isRevenueSettled(settlementInput))` |
 | **Fix** | Replace inline check at line 72 with `isRevenueSettled()` call using the same input shape as company-overview-service.ts. |
 
-### D-02 — P0: Dashboard metrics have no COS realisation logic
+### D-02 — P0: FIXED — Dashboard metrics have no COS realisation logic
 
 | Field | Value |
 |-------|-------|
@@ -78,7 +91,7 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 | **Evidence** | `dashboard-metrics.ts:85`: `if (row.paidDate)` — no reference to `isCanonicalCosRealised`. Compare with `company-overview-service.ts:173` which uses `isCanonicalCosRealised()`. |
 | **Fix** | Either: (a) add a `realisedCost` field using `isCanonicalCosRealised()`, or (b) rename `paidCost` to be unambiguous AND ensure no consumer displays it as "COS Realised". |
 
-### D-03 — P1: Revenue date reference scope differs between dashboard-metrics and company-overview
+### D-03 — P1: FIXED — Revenue date reference scope differs between dashboard-metrics and company-overview
 
 | Field | Value |
 |-------|-------|
@@ -88,7 +101,7 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 | **Severity** | **P1** — Misleading if anyone assumes dashboard totals = FYTD totals. |
 | **Fix** | Document explicitly that `dashboardProjectMetrics` stores lifetime values, not FYTD. Or add FYTD fields. |
 
-### D-04 — P1: Margin format inconsistency (decimal vs percentage)
+### D-04 — P1: FIXED — Margin format inconsistency (decimal vs percentage)
 
 | Field | Value |
 |-------|-------|
@@ -98,7 +111,7 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 | **Severity** | **P1** — Latent trap. Currently no user-visible bug, but naming convention is misleading. |
 | **Fix** | Either multiply by 100 before storing, or rename the field to `marginDecimal` / `marginFraction`. |
 
-### D-05 — P1: Construction Dashboard "Activities" tab is a placeholder
+### D-05 — P1: FIXED — Construction Dashboard "Activities" tab is a placeholder
 
 | Field | Value |
 |-------|-------|
@@ -108,17 +121,17 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 | **Severity** | **P1** — Visible non-functional UI element in certified scope. |
 | **Fix** | Either implement the activity log or remove the tab from the tab strip before release. |
 
-### D-06 — P1: Payment Batch routes use ad-hoc role checks instead of permission middleware
+### D-06 — P1: RECLASSIFIED (False Positive) — Payment Batch routes use ad-hoc role checks
 
 | Field | Value |
 |-------|-------|
 | **File** | `server/payment-batch-routes.ts` |
-| **What** | Payment batch routes use inline `MANCO_ROLES.includes(user.role)` checks instead of `requirePermission()` middleware. No audit logging via the permission middleware. |
-| **Impact** | Payment batch operations bypass the 3-tier permission resolution (user overrides > DB role permissions > defaults). If a user override is granted/denied for the payment entity, it is ignored. Permission denials are not audit-logged. |
-| **Severity** | **P1** — Permission bypass for financial operations. |
-| **Fix** | Replace inline role checks with `requirePermission("financials", "edit")` or equivalent entity/action middleware. |
+| **What** | Initial audit flagged `MANCO_ROLES.includes(user.role)` as bypassing the permission system. On closer inspection, ALL payment batch routes already use `requirePermission("procurement", ...)` middleware. The MANCO_ROLES check at line 239 is an **additional** business rule (only ManCo members can approve batches) layered on top of the permission middleware — this is defense-in-depth, not a bypass. |
+| **Impact** | None — this was a false positive. |
+| **Severity** | **Reclassified — Not a defect.** |
+| **Fix** | No fix needed. |
 
-### D-07 — P2: Multiple read endpoints lack granular permission checks (auth-only)
+### D-07 — P2: FIXED — Multiple read endpoints lack granular permission checks (auth-only)
 
 | Field | Value |
 |-------|-------|
@@ -170,7 +183,7 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 ### SUSPECTED GAPS
 
 - **FYE Revenue Tracking routes (21 routes):** Use `requireAuth` only, no `requirePermission`. Any authenticated user can call these endpoints. UNCERTAIN if this is intentional or a gap.
-- **Payment Batch routes:** Use ad-hoc `MANCO_ROLES.includes()` instead of permission middleware (see D-06).
+- ~~**Payment Batch routes:**~~ Reclassified — routes already use `requirePermission("procurement", ...)`. MANCO_ROLES check is additional business logic (D-06 false positive).
 - **Project Linking Service:** Uses `ADMIN_ROLES.includes(user.role)` service-layer checks instead of middleware.
 - **Invoice Pattern routes:** No explicit permission entity checks; relies on implicit role assumptions.
 - **Workstream Visibility Config:** Used by frontend navigation but NOT enforced by backend API routes. Users can fetch data for hidden workstreams via direct API calls.
@@ -394,19 +407,21 @@ Returns TRUE if ANY of (STRICTER):
 - Route-to-component mapping: All 111 lazy imports resolve correctly.
 - Navigation integrity: All sidebar links point to registered routes.
 - Backend auth coverage: 98.9% of API routes require authentication; 100% of mutation endpoints protected.
-- Financial canonical functions: `isRevenueSettled()`, `isCashInBank()`, `isCanonicalCosRealised()` are well-defined and consistent across Company Overview, COS Tracker, and Project Header KPIs.
+- Financial canonical functions: `isRevenueSettled()`, `isCashInBank()`, `isCanonicalCosRealised()` are well-defined and consistent across Company Overview, COS Tracker, Project Header KPIs, **and now Dashboard Materialized Metrics** (D-01, D-02 fixed).
 - D-05 fix (Cash Collected vs Revenue Settled distinction): Applied and consistent.
 - D-06 fix (COS Realised canonical alignment): Applied and consistent.
-- Button/action integrity: No empty handlers, no broken buttons (except D-05).
+- Dashboard materialized metrics: Now uses canonical `isRevenueSettled()` for revenue and `isCanonicalCosRealised()` for costs (D-01, D-02 fixed).
+- Margin format: Now consistently stored as percentage 0–100 across all views (D-04 fixed).
+- Button/action integrity: No empty handlers, no broken buttons. Placeholder tab removed (D-05 fixed).
+- Read endpoint permissions: 8 previously auth-only read endpoints now enforce entity-level `requirePermission()` (D-07 fixed).
+- Payment batch permissions: Correctly uses `requirePermission("procurement", ...)` on all routes; MANCO_ROLES is additional business logic (D-06 reclassified).
 
-### NOT CERTIFIED
+### NOT YET CERTIFIED (process items remaining)
 
-- **Dashboard materialized metrics** — uses different revenue/cost classification than canonical functions (D-01, D-02).
 - **Exact KPI values** — cannot validate against business truths without frozen test dataset.
-- **FYE revenue tracking permission scope** — ambiguous.
-- **Payment batch permission enforcement** — bypasses 3-tier permission system (D-06).
+- **FYE revenue tracking permission scope** — ambiguous (21 routes, auth-only).
 - **E2E workflow completion** — no automated test evidence for critical workflows.
-- **Export functionality** — not audited.
+- **Export functionality** — partially audited (5 endpoints exist, content correctness not verified).
 - **Audit log completeness** — not proven for all critical mutations.
 - **Workstream visibility backend enforcement** — frontend-only control.
 
@@ -416,17 +431,17 @@ Returns TRUE if ANY of (STRICTER):
 
 | Priority | Action | Owner |
 |----------|--------|-------|
-| P0 | Fix D-01: Replace inline revenue check in `dashboard-metrics.ts:72` with `isRevenueSettled()` | Backend |
-| P0 | Fix D-02: Add `realisedCost` field using `isCanonicalCosRealised()` or clarify `paidCost` semantics | Backend |
-| P1 | Fix D-03: Document scope difference OR add FYTD fields to dashboard metrics | Backend |
-| P1 | Fix D-04: Rename `marginPct` to `marginDecimal` or convert to percentage | Backend |
-| P1 | Fix D-05: Remove or implement Construction Dashboard "activities" tab | Frontend |
-| P1 | Fix D-06: Replace ad-hoc role checks in payment-batch-routes with `requirePermission()` | Backend |
+| ~~P0~~ | ~~D-01: Replace inline revenue check~~ | **DONE** |
+| ~~P0~~ | ~~D-02: Add realisedCost field~~ | **DONE** |
+| ~~P1~~ | ~~D-03: Document scope difference~~ | **DONE** |
+| ~~P1~~ | ~~D-04: Convert margin to percentage~~ | **DONE** |
+| ~~P1~~ | ~~D-05: Remove activities tab~~ | **DONE** |
+| ~~P1~~ | ~~D-06: Payment batch permissions~~ | **FALSE POSITIVE** |
+| ~~P2~~ | ~~D-07: Add requirePermission to read endpoints~~ | **DONE** |
 | P1 | Audit FYE revenue tracking routes for permission gaps | Backend |
 | P1 | Create frozen test dataset for KPI certification | QA |
-| P2 | Fix D-07: Add `requirePermission()` to auth-only read endpoints | Backend |
 | P2 | Add 404 fallback route | Frontend |
 | P2 | Verify production build chunk loading | DevOps |
-| P2 | Audit export endpoints | QA |
+| P2 | Audit export endpoint content correctness | QA |
 | P2 | Audit logging completeness for all critical mutations | Backend |
 | P2 | Enforce workstream visibility at backend API layer | Backend |
