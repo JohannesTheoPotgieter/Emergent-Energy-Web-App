@@ -9,7 +9,7 @@
 
 ## RELEASE GATE RESULT: NOT CERTIFIED
 
-**Reason:** 5 confirmed defects (2x P0, 2x P1, 1x P1) must be resolved before release.
+**Reason:** 7 confirmed defects (2x P0, 4x P1, 1x P2) must be resolved before release.
 
 ---
 
@@ -108,6 +108,26 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 | **Severity** | **P1** — Visible non-functional UI element in certified scope. |
 | **Fix** | Either implement the activity log or remove the tab from the tab strip before release. |
 
+### D-06 — P1: Payment Batch routes use ad-hoc role checks instead of permission middleware
+
+| Field | Value |
+|-------|-------|
+| **File** | `server/payment-batch-routes.ts` |
+| **What** | Payment batch routes use inline `MANCO_ROLES.includes(user.role)` checks instead of `requirePermission()` middleware. No audit logging via the permission middleware. |
+| **Impact** | Payment batch operations bypass the 3-tier permission resolution (user overrides > DB role permissions > defaults). If a user override is granted/denied for the payment entity, it is ignored. Permission denials are not audit-logged. |
+| **Severity** | **P1** — Permission bypass for financial operations. |
+| **Fix** | Replace inline role checks with `requirePermission("financials", "edit")` or equivalent entity/action middleware. |
+
+### D-07 — P2: Multiple read endpoints lack granular permission checks (auth-only)
+
+| Field | Value |
+|-------|-------|
+| **File** | `server/routes.ts` — multiple GET endpoints |
+| **What** | Several data-returning endpoints use only `requireAuth` without entity-level `requirePermission`: `/api/projects`, `/api/tasks`, `/api/overview`, `/api/home/summary`, `/api/program/cos`, `/api/financial-headline`, `/api/realisation-kpis`, `/api/program-expenses`. |
+| **Impact** | Any authenticated user can call these endpoints regardless of role. Data filtering relies on service-layer logic, which may be inconsistent. For example, an ENGINEER role could call `/api/program/cos` directly even if the UI hides the Finance section. |
+| **Severity** | **P2** — Mitigated by service-layer filtering, but violates defense-in-depth. Can defer if explicitly accepted. |
+| **Fix** | Add `requirePermission()` middleware to each endpoint matching the entity it serves (e.g., `cos` for program COS, `financials` for financial-headline). |
+
 ---
 
 ## 3. PERMISSION & SECURITY AUDIT
@@ -118,28 +138,50 @@ All navigation items in `department-nav.ts` point to registered routes in `PAGE_
 |--------|-------|
 | Total API routes | ~538 |
 | Routes with `requireAuth` | 532+ (98.9%) |
-| Routes with granular `requirePermission` | Varies by domain (see below) |
+| Routes with granular `requirePermission` | ~80% of write endpoints, ~30% of read endpoints |
 | Mutation endpoints (POST/PUT/DELETE) without auth | **0** |
 | Public routes (intentional) | 2 (health check, version) |
+
+### Permission Resolution Architecture (3-Tier)
+
+| Priority | Source | Location |
+|----------|--------|----------|
+| 1 (highest) | User-specific overrides | `user_permission_overrides` table (supports expiration) |
+| 2 | Database role permissions | `role_permissions.entityPermissions` JSONB |
+| 3 (lowest) | Code defaults | `ENTITY_PERMISSION_DEFAULTS` in `shared/schema/users.ts` |
+
+**Caching:** 60-second TTL in-memory cache for entity permissions and user overrides. Changes take up to 60s to propagate.
+
+### Permission Entities: 75+ entities across 6 actions (view, create, edit, approve, override, delete)
 
 ### PROVEN
 
 - All 125+ mutation endpoints require authentication.
 - V2 API routes (49) use `requireAuth` + `requireProjectAccess`.
 - Domain routes (39) use `requireAuth` + `checkPermission(entity, action)`.
-- Admin routes require `requireAdmin`.
+- Admin routes require `requireAdmin` (COO_ADMIN, CEO_ADMIN only).
 - Permission system is 3-tier: user overrides > role permissions > code defaults.
-- Permission denials are audit-logged.
+- Permission denials are audit-logged via `logPermissionFailure()` and `logAuditFromReq()`.
+- 16 roles defined with granular entity permission matrix (75+ entities x 6 actions).
+- Frontend uses `usePermission()` hook (53+ conditional renders) aligned with backend resolution.
+- `canManageUsers` and `canManageRoles` restricted to COO_ADMIN and CEO_ADMIN.
+- User permission overrides support expiration dates.
 
 ### SUSPECTED GAPS
 
 - **FYE Revenue Tracking routes (21 routes):** Use `requireAuth` only, no `requirePermission`. Any authenticated user can call these endpoints. UNCERTAIN if this is intentional or a gap.
-- **Some legacy department routes:** Use `requireAuth` but not granular permission checks. Rely on frontend visibility to limit access.
+- **Payment Batch routes:** Use ad-hoc `MANCO_ROLES.includes()` instead of permission middleware (see D-06).
+- **Project Linking Service:** Uses `ADMIN_ROLES.includes(user.role)` service-layer checks instead of middleware.
+- **Invoice Pattern routes:** No explicit permission entity checks; relies on implicit role assumptions.
+- **Workstream Visibility Config:** Used by frontend navigation but NOT enforced by backend API routes. Users can fetch data for hidden workstreams via direct API calls.
+- **PD Visibility Config:** `pdVisibilityConfig` controls "all" vs "own" ticket scope but enforcement is inconsistent across PD endpoints.
 
 ### NOT PROVEN
 
-- **No Supabase RLS policies detected.** All security is enforced at the API middleware layer. If a direct database connection is exposed (e.g., through Supabase client), there is no database-level protection.
+- **No Supabase RLS policies detected** in 142 migration files. All security is enforced at the API middleware layer. If a direct database connection is exposed, there is no database-level protection.
 - **Row-level data isolation between organizations** was not audited. The app appears single-tenant.
+- **Authority model enforcement:** Authority rules (delegated authority, approval thresholds, scopes) are defined in schema but `evaluateAuthorityForRole()` is only used in a few routes. Most routes use simple binary `requirePermission()`.
+- **Deprecated role arrays still in use:** Legacy `FINANCE_VIEW_ROLES`, `ENG_VIEW_ROLES`, `QUALITY_HSE_VIEW_ROLES` arrays coexist with the entity permission system. UNKNOWN if any route still references them instead of the canonical permission resolver.
 
 ---
 
@@ -316,6 +358,9 @@ Returns TRUE if ANY of (STRICTER):
 5. **404 fallback route** — what happens when user navigates to unregistered path?
 6. **Import recovery flow** — admin recovery page exists but workflow not traced end-to-end.
 7. **Audit logging completeness** — permission denials are logged, but are all critical mutations (financial edits, status changes) logged?
+8. **Deprecated role arrays** — `FINANCE_VIEW_ROLES`, `ENG_VIEW_ROLES`, `QUALITY_HSE_VIEW_ROLES` coexist with entity permission system. Are any routes still using the old arrays?
+9. **Workstream visibility** — config table exists but backend doesn't enforce it. Can users fetch hidden workstream data via API?
+10. **Authority model gaps** — delegation rules, approval thresholds, and scopes are defined but `evaluateAuthorityForRole()` is rarely used.
 
 ---
 
@@ -336,9 +381,11 @@ Returns TRUE if ANY of (STRICTER):
 - **Dashboard materialized metrics** — uses different revenue/cost classification than canonical functions (D-01, D-02).
 - **Exact KPI values** — cannot validate against business truths without frozen test dataset.
 - **FYE revenue tracking permission scope** — ambiguous.
+- **Payment batch permission enforcement** — bypasses 3-tier permission system (D-06).
 - **E2E workflow completion** — no automated test evidence for critical workflows.
 - **Export functionality** — not audited.
 - **Audit log completeness** — not proven for all critical mutations.
+- **Workstream visibility backend enforcement** — frontend-only control.
 
 ---
 
@@ -351,9 +398,12 @@ Returns TRUE if ANY of (STRICTER):
 | P1 | Fix D-03: Document scope difference OR add FYTD fields to dashboard metrics | Backend |
 | P1 | Fix D-04: Rename `marginPct` to `marginDecimal` or convert to percentage | Backend |
 | P1 | Fix D-05: Remove or implement Construction Dashboard "activities" tab | Frontend |
+| P1 | Fix D-06: Replace ad-hoc role checks in payment-batch-routes with `requirePermission()` | Backend |
 | P1 | Audit FYE revenue tracking routes for permission gaps | Backend |
 | P1 | Create frozen test dataset for KPI certification | QA |
+| P2 | Fix D-07: Add `requirePermission()` to auth-only read endpoints | Backend |
 | P2 | Add 404 fallback route | Frontend |
 | P2 | Verify production build chunk loading | DevOps |
 | P2 | Audit export endpoints | QA |
 | P2 | Audit logging completeness for all critical mutations | Backend |
+| P2 | Enforce workstream visibility at backend API layer | Backend |
