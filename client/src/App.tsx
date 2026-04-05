@@ -84,6 +84,8 @@ const PmWorkboardPage = lazy(() => import("@/pages/pm-workboard"));
 const GovernedProcessesPage = lazy(() => import("@/pages/governed-processes"));
 const EngineeringDeliverablesV2Page = lazy(() => import("@/pages/engineering-deliverables-v2"));
 const ApprovalsBoardV2Page = lazy(() => import("@/pages/approvals-board-v2"));
+const FinanceWorkspacePage = lazy(() => import("@/pages/finance-workspace"));
+const FinanceRecordsPage = lazy(() => import("@/pages/finance-records"));
 const ClientsPage = lazy(() => import("@/pages/clients"));
 const ClientDetailPage = lazy(() => import("@/pages/client-detail"));
 const ClientProjectDepartmentsPage = lazy(() => import("@/pages/client-project-departments"));
@@ -269,6 +271,8 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   GovernedProcessesPage,
   EngineeringDeliverablesV2Page,
   ApprovalsBoardV2Page,
+  FinanceWorkspacePage,
+  FinanceRecordsPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
