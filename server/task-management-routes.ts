@@ -406,7 +406,7 @@ export function registerTaskManagementRoutes(app: Express) {
   });
 
   /** Update a task */
-  app.patch("/api/tasks/:id", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+  app.patch("/api/tasks/:id", requireAuth, requirePermission("my_tool", "edit"), async (req: Request, res: Response, next: NextFunction) => {
     try {
       const user = getUser(req);
       const id = parseInt(req.params.id as string);
