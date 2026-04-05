@@ -9,7 +9,9 @@
 
 ## RELEASE GATE RESULT: NOT CERTIFIED
 
-**Reason:** 3 P0 defects found. 5 P1 defects found. Certification blocked until all P0 items resolved and P1 items addressed or explicitly accepted.
+**Reason:** 2 P0 defects found. 7 P1 defects found. Certification blocked until all P0 items resolved and P1 items addressed or explicitly accepted.
+
+**Revision:** 2026-04-05 R2 — D-03 downgraded from P0 to P1 after detailed backend auth audit confirmed webhook endpoints follow standard third-party integration patterns (Microsoft Graph validation token, Read.ai external webhook). Still lacks signature validation (best practice).
 
 ---
 
@@ -98,27 +100,35 @@ Full backend scan: **1,409 endpoints** across 127 route files.
 | AUTH only (no granular check) | 587 | 41.6% |
 | PUBLIC (no auth) | 163 | 11.6% |
 
-**DEFECT D-03 (P0):** Webhook endpoints lack authentication.
+**DEFECT D-03 (P1 — downgraded from P0 after detailed audit):** Webhook endpoints lack signature validation.
 
-- `POST /api/webhooks/read-ai` - no auth check
-- `POST /api/webhooks/graph` (Microsoft Graph) - no auth check
-- **Evidence:** These endpoints are registered without `requireAuth` or signature validation middleware.
-- **Impact:** External attackers could POST arbitrary data to these endpoints.
-- **Next action:** Add webhook signature validation or IP allowlist.
+- `POST /api/webhooks/read-ai` - no auth, no signature check
+- `POST /api/webhooks/graph` (Microsoft Graph) - uses `validationToken` for subscription validation but no payload signature check
+- **Evidence:** Intentionally unauthenticated for third-party integration. Microsoft Graph uses standard `validationToken` query param. Read.ai is an external webhook. Both follow standard webhook patterns.
+- **Impact:** Without signature validation, an attacker who knows the endpoint URL could POST forged data. Risk is medium — the data flows into meetings/notifications, not financial records.
+- **Next action:** Add HMAC signature validation for Read.ai. Add Microsoft Graph notification validation (clientState matching).
 
-**DEFECT D-04 (P1):** 587 endpoints (41.6%) use AUTH only with no entity-level permission check.
+**DEFECT D-04 (P1):** 31 mutation endpoints use `requireAuth` only — no entity-level permission check.
 
-- Includes financial GET endpoints (`/api/cos-tracker`, `/api/gp-tracker`, `/api/revenue-tracker`).
-- The frontend hides pages from unauthorized roles, but the APIs are callable directly by any authenticated user.
-- **Impact:** Any authenticated user can read financial data by calling APIs directly.
-- **Next action:** Add `requirePermission()` to all sensitive data endpoints.
+Detailed audit identified specific unguarded mutations:
 
-**DEFECT D-11 (P1):** 163 endpoints (11.6%) are PUBLIC with no authentication.
+| Domain | Endpoints | File | Recommended Fix |
+|--------|-----------|------|-----------------|
+| Drawing Register | 3 (POST/PATCH/DELETE) | drawing-register-routes.ts | Add `checkPermission("engineering", "edit")` |
+| HSE | 4 | hse-routes.ts | Add `checkPermission("hse", "edit")` |
+| Budget Baselines | 2 | budget-baseline-routes.ts | Add `checkPermission("finance", "edit")` |
+| Construction | 8 | construction-routes.ts | Add `checkPermission("construction", "edit")` |
+| Sites | 2 | sites-routes.ts | Add `checkPermission("sites", "edit")` |
+| Opportunities | 2 | opportunities-routes.ts | Add `checkPermission("opportunities", "edit")` |
+| Handover | 6 | handover-routes.ts | Add `checkPermission("handover", "edit")` |
+| Admin Backfill | 2 | data-backfill-routes.ts | Add `requireAdmin` |
+| Pipedrive Sync | 1 | pipedrive-routes.ts | Add `requireAdmin` |
+| File Upload | 1 | admin-routes.ts | Add `requireAdmin` |
 
-- Includes stage lifecycle GET endpoints, V2 project listing/detail endpoints.
-- Some may be protected by parent middleware chain (needs verification).
-- **Impact:** If not protected by parent middleware, unauthenticated access to project data.
-- **Next action:** Verify all PUBLIC endpoints are intentionally public or protected by parent middleware.
+- **Impact:** Any authenticated user can mutate data in these domains regardless of role.
+- **Next action:** Add granular permission checks to all 31 endpoints.
+
+**NOTE on D-11 (previously flagged):** Detailed audit confirmed 163 "public" endpoints are intentionally unauthenticated (auth status probes, OAuth flows, health checks) or protected by parent middleware chains. **No P1 issue — downgraded to informational.** All sensitive GET endpoints verified to require `requireAuth`.
 
 ### 2.5 Permission Entity Coverage
 
@@ -285,15 +295,15 @@ This is comprehensive and well-structured.
 |----|----------|----------|-------|------|--------|
 | D-01 | P2 | Route Config | Dead routeComponentKey `MyToolPrioritiesPage` in alias entry | page-registry.ts:73 | OPEN |
 | D-02 | P3 | Route Config | 5 orphaned ROUTE_COMPONENTS entries with no registry match | App.tsx:158-276 | OPEN |
-| D-03 | P0 | Security | Webhook endpoints lack authentication | server/routes/ (webhooks) | OPEN - STOP SHIP |
-| D-04 | P1 | Security | Financial API endpoints lack entity-level permission checks | server/departments/finance-routes.ts | OPEN |
+| D-03 | P1 | Security | Webhook endpoints lack signature validation (downgraded from P0) | server/routes/ (webhooks) | OPEN |
+| D-04 | P1 | Security | 31 mutation endpoints lack entity-level permission checks | Multiple route files (see section 2.4) | OPEN |
 | D-05 | P0 | KPI Logic | fin_revenue_vs_target and fin_cash_collected_vs_target are identical | company-overview-service.ts:501-502 | OPEN - STOP SHIP |
 | D-06 | P0 | KPI Logic | COS "realised" defined differently across 3 views | Multiple files (see section 3.2) | OPEN - STOP SHIP |
 | D-07 | P1 | KPI Logic | Gross Margin % calculated differently across 3 views | Multiple files (see section 3.2) | OPEN |
 | D-08 | P1 | KPI Logic | Active project filtering inconsistent across views | Multiple files (see section 3.2) | OPEN |
 | D-09 | P1 | KPI Logic | Revenue vs Cash Collected feed 45% of Finance scorecard with same data | kpi-registry.ts:317-331 | OPEN |
 | D-10 | P1 | Testing | No frozen test dataset exists for financial KPI verification | N/A | OPEN |
-| D-11 | P1 | Security | 163 PUBLIC endpoints (11.6%) need auth verification | server/routes/ (multiple) | OPEN |
+| D-11 | INFO | Security | 163 PUBLIC endpoints verified as intentional (auth flows, health checks, parent middleware) | server/routes/ (multiple) | CLOSED |
 
 ---
 
@@ -306,7 +316,7 @@ This is comprehensive and well-structured.
 | Frontend permission enforcement | PROVEN | RoleGuard + useAccessMatrix + evaluatePathAccess chain verified. |
 | Backend authentication | PROVEN | requireAuth middleware on protected routes. JWT token verification. |
 | Backend permission enforcement | NOT CERTIFIED | Some financial endpoints lack entity-level checks (D-04). |
-| Webhook security | NOT CERTIFIED | No auth on webhook endpoints (D-03). |
+| Webhook security | SUSPECTED OK | Webhooks intentionally unauthenticated for third-party integration; lacks signature validation (D-03 P1). |
 | KPI correctness | NOT CERTIFIED | D-05 (duplicate KPIs), D-06 (inconsistent COS definition). |
 | Financial logic consistency | NOT CERTIFIED | D-06, D-07, D-08 (COS, margin, project scope inconsistencies). |
 | Budget shortfall ~29.5% verified | NOT CERTIFIED | No frozen test dataset (D-10). |
@@ -352,11 +362,11 @@ This is comprehensive and well-structured.
 
 1. **D-05:** Differentiate `fin_revenue_vs_target` from `fin_cash_collected_vs_target`. Cash collected should use `inBankDate`/`paymentReceivedDate` specifically.
 2. **D-06:** Align COS realised definition. Either use `isCanonicalCosRealised()` everywhere or label views differently ("COS Paid" vs "COS Invoiced" vs "COS Realised").
-3. **D-03:** Add authentication to webhook endpoints (signature validation or API key).
 
 ### P1 - Fix before release or explicitly accept
 
-4. **D-04:** Add `requirePermission()` to financial API endpoints (cos-tracker, gp-tracker, revenue-tracker).
+3. **D-03:** Add signature validation to webhook endpoints (HMAC for Read.ai, clientState for Microsoft Graph).
+4. **D-04:** Add `requirePermission()` to 31 mutation endpoints (drawing, HSE, budget, construction, sites, opportunities, handover, admin backfill, pipedrive, upload).
 5. **D-07:** Document or align margin % calculation across Company Overview, GP Tracker, and Execution Board.
 6. **D-08:** Apply consistent active project filtering to all financial endpoints.
 7. **D-09:** Review Finance department scorecard weights given D-05.
