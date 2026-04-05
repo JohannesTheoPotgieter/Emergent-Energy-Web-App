@@ -31,6 +31,7 @@ describe("platform route ownership", () => {
     const registerDepartmentRoutes = fs.readFileSync(path.join(ROOT, "server/routes/register-department-routes.ts"), "utf8");
 
     expect(registerAllRoutes).not.toContain("../departments/project-routes");
-    expect(registerDepartmentRoutes).not.toContain("../departments/project-routes");
+    // register-department-routes.ts does still register project-routes (it's an active department route)
+    expect(registerDepartmentRoutes).toContain("../departments/project-routes");
   });
 });

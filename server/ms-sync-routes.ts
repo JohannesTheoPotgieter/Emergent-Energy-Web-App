@@ -1245,25 +1245,36 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  // D-03 fix: Added clientState validation for Microsoft Graph webhook notifications.
-  // When GRAPH_WEBHOOK_CLIENT_STATE is set, each notification's clientState must match.
+  // P-01 fix: Webhook authentication — clientState is REQUIRED (not optional).
+  // Microsoft Graph subscription validation handshake must pass through unauthenticated,
+  // but actual notifications MUST have a valid clientState that matches the server secret.
   app.post("/api/webhooks/graph", async (req: Request, res: Response) => {
-    // Microsoft Graph subscription validation handshake
+    // Microsoft Graph subscription validation handshake — must respond with the token
     if (req.query.validationToken) {
       return res.status(200).contentType("text/plain").send(req.query.validationToken as string);
     }
     try {
       const expectedClientState = process.env.GRAPH_WEBHOOK_CLIENT_STATE;
+      if (!expectedClientState) {
+        console.error("[Graph Webhook] GRAPH_WEBHOOK_CLIENT_STATE not configured — rejecting all notifications");
+        return res.status(403).json({ error: "Webhook secret not configured" });
+      }
       const notifications = req.body?.value || [];
+      if (!Array.isArray(notifications) || notifications.length === 0) {
+        return res.status(400).json({ error: "No notifications in payload" });
+      }
       const validNotifications = [];
       for (const notification of notifications) {
-        // Validate clientState if configured (Microsoft Graph best practice)
-        if (expectedClientState && notification.clientState !== expectedClientState) {
+        // P-01 fix: clientState validation is MANDATORY — reject if missing or wrong
+        if (notification.clientState !== expectedClientState) {
           console.warn("[Graph Webhook] Rejected notification with invalid clientState");
           continue;
         }
         console.log("[Graph Webhook] Received:", notification.changeType, notification.resource);
         validNotifications.push(notification);
+      }
+      if (validNotifications.length === 0) {
+        return res.status(403).json({ error: "All notifications failed clientState validation" });
       }
       res.status(202).json({ status: "accepted", processed: validNotifications.length });
     } catch (err: unknown) {

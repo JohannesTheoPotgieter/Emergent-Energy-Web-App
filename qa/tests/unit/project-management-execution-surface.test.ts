@@ -17,16 +17,11 @@ describe("project management execution surfaces", () => {
     expect(source).toContain("Latest Update stays app-managed, text only, and visible for execution scanning.");
   });
 
-  it("keeps the PM deliverables surface tied to existing deliverable, approval, and Microsoft routes", () => {
-    const source = read("client/src/pages/pm-deliverables.tsx");
-
-    expect(source).toContain('title="Deliverables"');
-    expect(source).toContain("/api/projects-summary");
-    expect(source).toContain("/api/deliverable-capture/list/");
-    expect(source).toContain("/api/approvals/pending?showAll=true");
-    expect(source).toContain("/api/ms-objects/project/");
-    expect(source).toContain("Tracker-linked execution truth");
-    expect(source).toContain("Latest Update remains the canonical text-only app update with history retained.");
+  it("keeps the PM deliverables surface retired and redirecting to approvals", () => {
+    // pm-deliverables.tsx has been removed; the route now redirects to /pm/approvals
+    const registrySource = read("client/src/config/page-registry.ts");
+    expect(registrySource).toContain('id: "pmDeliverables"');
+    expect(registrySource).toContain('redirectTo: "/pm/approvals"');
   });
 
   it("keeps execution workflow toggles and assignment controls in the board and task drawer", () => {

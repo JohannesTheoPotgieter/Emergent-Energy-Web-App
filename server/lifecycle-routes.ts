@@ -14,7 +14,7 @@ import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle
 import { buildProjectLifecycleWorkspace } from "./services/project-lifecycle-workspace-service";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { initializeProjectStages } from "./services/stage-lifecycle-service";
-import { evaluateRevenueArStatus } from "./lib/finance/revenue-ar-status";
+import { evaluateRevenueArStatus, isRevenueSettled } from "./lib/finance/revenue-ar-status";
 import { projectStageInstances, STAGE_CODES } from "@shared/schema";
 import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../shared/utils/phase-to-stage-map";
 import { jwtAuth, requireAuth } from "./auth-context";
@@ -507,6 +507,11 @@ export function registerLifecycleRoutes(app: Express) {
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
+        // F-01 fix: Include fields needed for canonical isRevenueSettled()
+        status: normalizedRevenueLines.status,
+        paidDate: normalizedRevenueLines.paidDate,
+        inBankDate: normalizedRevenueLines.inBankDate,
+        paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
       }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       const allCostLines = await db.select({
@@ -526,12 +531,20 @@ export function registerLifecycleRoutes(app: Express) {
       const finByNorm = new Map<string, ReturnType<typeof emptyFin>>();
       for (const r of allRevLines) {
         const amt = parseFloat(r.amountExVat || "0") || 0;
+        // F-01 fix: Use canonical isRevenueSettled() instead of just paidDateConfirmed
+        const settled = isRevenueSettled({
+          status: r.status,
+          paidDate: r.paidDate,
+          inBankDate: r.inBankDate,
+          paidDateConfirmed: r.paidDateConfirmed,
+          paidDateFontColor: r.paidDateFontColor,
+        });
         if (r.projectId) {
           if (!finByProjectId.has(r.projectId)) finByProjectId.set(r.projectId, emptyFin());
           const entry = finByProjectId.get(r.projectId)!;
           entry.totalRevenue += amt;
           if (r.invoiceNumber) entry.invoicedRevenue += amt;
-          if (r.paidDateConfirmed) entry.receivedRevenue += amt;
+          if (settled) entry.receivedRevenue += amt;
           continue;
         }
         const name = r.projectName;
@@ -541,7 +554,7 @@ export function registerLifecycleRoutes(app: Express) {
         const entry = finByNorm.get(norm)!;
         entry.totalRevenue += amt;
         if (r.invoiceNumber) entry.invoicedRevenue += amt;
-        if (r.paidDateConfirmed) entry.receivedRevenue += amt;
+        if (settled) entry.receivedRevenue += amt;
       }
       for (const c of allCostLines) {
         const amt = parseFloat(c.amountExVat || "0") || 0;

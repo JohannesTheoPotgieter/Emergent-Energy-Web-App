@@ -510,8 +510,11 @@ export async function getCompanyOverviewData() {
     (sum, r) => sum + toNum(r.amountExVat), 0
   );
 
-  const targetMarginPct = totalPlannedRevenue > 0
-    ? ((totalPlannedRevenue - totalPlannedCost) / totalPlannedRevenue) * 100
+  // F-03 fix: Use FYTD-scoped totals for target margin so it's comparable to the FYTD actual margin.
+  // totalPlannedRevenue/totalPlannedCost are lifetime totals (correct for revenue/COS vs target KPIs),
+  // but the margin target must use the same scope as the actual margin (FYTD).
+  const targetMarginPct = totalRevenueFytd > 0
+    ? ((totalRevenueFytd - totalCostFytd) / totalRevenueFytd) * 100
     : 0;
 
   const finKpis = new Map<string, { actual: number | null; target?: number | null }>([
@@ -734,7 +737,10 @@ export async function getCompanyOverviewData() {
       revenueTarget: totalPlannedRevenue,
       cosFytd: realisedCostFytd,
       cosTarget: totalPlannedCost,
+      // F-05 fix: This is FYTD invoiced margin (totalRevenueFytd - totalCostFytd) / totalRevenueFytd.
+      // It uses all FYTD line items (not just settled/realised), so it reflects planned FYTD margin.
       grossMarginPct: Math.round(grossMarginPct * 10) / 10,
+      grossMarginLabel: "FYTD Invoiced Margin %",
       collectionRate: totalRevenueFytd > 0 ? Math.round((receivedRevenueFytd / totalRevenueFytd) * 100) : 0,
       overdueDebtors: overdueDebtorValue,
       overdueDebtorCount: overdueDebtors.length,

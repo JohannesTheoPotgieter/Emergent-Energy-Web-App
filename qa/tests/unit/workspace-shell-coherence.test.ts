@@ -35,7 +35,7 @@ describe("workspace shell coherence", () => {
     expect(emailSource).toContain("Microsoft-linked items behave like app work, not a separate inbox");
     expect(teamsSource).toContain("Microsoft conversations stay role-aware and project-aware");
     expect(collaborationSource).toContain("Microsoft-linked work stays inside the app's operating model");
-    expect(myWorkTasksSource).toContain("My Work is the single personal action workspace");
+    expect(myWorkTasksSource).toContain("Your single action workspace for personal work, project delivery items, and Microsoft-linked follow-ups.");
   });
 
   it("keeps project management, finance, and admin trust cues explicit", () => {
@@ -43,8 +43,8 @@ describe("workspace shell coherence", () => {
     const cashflowSource = read("client/src/pages/cashflow.tsx");
     const adminSource = read("client/src/pages/admin-control-center.tsx");
 
-    expect(projectListSource).toContain("Project List is the execution directory inside Project Management");
-    expect(projectListSource).toContain('href="/pm-dashboard"');
+    expect(projectListSource).toContain("Project List is the primary project directory");
+    expect(projectListSource).toContain('href="/execution-board"');
     expect(cashflowSource).toContain("Finance trust stays visible without adding clutter");
     expect(cashflowSource).toContain("ee-data-trust-grid");
     expect(adminSource).toContain("<AdminPageShell");

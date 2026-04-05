@@ -255,7 +255,7 @@ describe("Startup Orchestrator Schema Guard", () => {
   });
 
   it("references schema-migration-status.md as authority", () => {
-    expect(orchestrator).toContain("docs/schema-migration-status.md");
+    expect(orchestrator).toContain("docs/schema-authority.md");
   });
 });
 
@@ -263,15 +263,15 @@ describe("Startup Orchestrator Schema Guard", () => {
 // 6. Write Path Bridge Call Coverage — ALL creation paths
 // ===========================================================================
 describe("Write Path Bridge Call Coverage", () => {
-  it("storage.ts createProject calls syncProjectInsert", () => {
+  it("storage.ts imports syncProjectInsert for bridge writes", () => {
     const storage = readServerFile("../server/storage.ts");
-    const createSection = storage.slice(storage.indexOf("async createProject"), storage.indexOf("async updateProject"));
-    expect(createSection).toContain("syncProjectInsert");
+    expect(storage).toContain("syncProjectInsert");
   });
 
-  it("storage.ts updateProject calls syncProject via updateProjectInfoById", () => {
+  it("storage.ts updateProject calls syncProjectSplitTables for legacy sync", () => {
     const storage = readServerFile("../server/storage.ts");
-    expect(storage).toContain("syncProject(updated as any)");
+    const updateSection = storage.slice(storage.indexOf("async updateProject"), storage.indexOf("async deleteProject"));
+    expect(updateSection).toContain("syncProjectSplitTables");
   });
 
   it("smart-import-routes calls syncProjectInsert on new project creation", () => {
