@@ -882,7 +882,7 @@ export async function registerRoutes(
 
   // ==================== OVERVIEW API ====================
 
-  app.get("/api/overview", requireAuth, async (req, res) => {
+  app.get("/api/overview", requireAuth, requirePermission("execution_board", "view"), async (req, res) => {
     try {
       const useCanonicalOv = await isWorkItemsEnabled();
       const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks, allNormCostsOv, allNormRevOv, allNormPlansOv] = await Promise.all([
@@ -1138,7 +1138,7 @@ export async function registerRoutes(
     };
   }
 
-  app.get("/api/home/summary", requireAuth, async (req, res) => {
+  app.get("/api/home/summary", requireAuth, requirePermission("home", "view"), async (req, res) => {
     try {
       const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks, allPlanOverrides, allPlanTasks] = await Promise.all([
         storage.getAllProjectInfo(),
@@ -1496,7 +1496,7 @@ export async function registerRoutes(
 
   // ==================== PROGRAM COS API (fixed) ====================
 
-  app.get("/api/program/cos", requireAuth, async (req, res) => {
+  app.get("/api/program/cos", requireAuth, requirePermission("cos", "view"), async (req, res) => {
     try {
       const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
       const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
@@ -1784,7 +1784,7 @@ export async function registerRoutes(
   }
 
 
-  app.get("/api/financial-headline", requireAuth, async (_req, res) => {
+  app.get("/api/financial-headline", requireAuth, requirePermission("financials", "view"), async (_req, res) => {
     try {
       const today = new Date();
       const fyStartMonth = 9;
@@ -2085,7 +2085,7 @@ export async function registerRoutes(
 
   // ==================== REALISATION KPIs (Weekly / Monthly / Yearly) ====================
 
-  app.get("/api/realisation-kpis", requireAuth, async (req, res) => {
+  app.get("/api/realisation-kpis", requireAuth, requirePermission("financials", "view"), async (req, res) => {
     try {
       const legacyExpenses = await storage.getAllProgramExpenses();
       const { expenses: allExpenses } = await getMergedExpensesAndInflows(
@@ -2520,7 +2520,7 @@ export async function registerRoutes(
 
   // ==================== PROJECTS ROUTES ====================
 
-  app.get("/api/projects", requireAuth, async (req, res) => {
+  app.get("/api/projects", requireAuth, requirePermission("projects", "view"), async (req, res) => {
     try {
       const projects = await storage.getAllProjects();
       // Strip internal fields before responding
@@ -2551,7 +2551,7 @@ export async function registerRoutes(
 
   // ==================== TASKS ROUTES ====================
 
-  app.get("/api/tasks", requireAuth, async (req, res) => {
+  app.get("/api/tasks", requireAuth, requirePermission("work_items", "view"), async (req, res) => {
     try {
       // Strip internal fields from task responses
       const stripTask = ({ sourceSheet, rowLocator, ...rest }: any) => rest;
@@ -3075,7 +3075,7 @@ export async function registerRoutes(
 
   // ==================== PROGRAM DATA ROUTES ====================
 
-  app.get("/api/program-expenses", requireAuth, async (req, res) => {
+  app.get("/api/program-expenses", requireAuth, requirePermission("financials", "view"), async (req, res) => {
     try {
       const { projectName, startDate, endDate, applyOverrides } = req.query;
       let expenses;

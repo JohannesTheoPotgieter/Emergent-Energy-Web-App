@@ -1087,7 +1087,9 @@ export const dashboardProjectMetrics = pgTable("dashboard_project_metrics", {
   outstandingRevenue: decimal("outstanding_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
   totalCost: decimal("total_cost", { precision: 15, scale: 2 }).notNull().default("0"),
   paidCost: decimal("paid_cost", { precision: 15, scale: 2 }).notNull().default("0"),
+  realisedCost: decimal("realised_cost", { precision: 15, scale: 2 }).notNull().default("0"),
   outstandingCost: decimal("outstanding_cost", { precision: 15, scale: 2 }).notNull().default("0"),
+  // Stored as percentage 0–100 (e.g., 25.50 means 25.50%)
   marginPct: decimal("margin_pct", { precision: 8, scale: 4 }),
   // Task aggregates
   taskCount: integer("task_count").notNull().default(0),
