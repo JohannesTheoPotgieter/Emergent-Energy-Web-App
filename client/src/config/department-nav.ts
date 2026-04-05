@@ -162,8 +162,10 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       "/cashflow", "/cos", "/revenue-tracker", "/gp-tracker",
       "/invoice-patterns",
       "/fye-revenue-tracking",
+      "/finance/records", "/finance/workspace",
     ]),
     secondary: [
+      { label: "Finance Records", path: "/finance/records" },
       { label: "Cashflow", path: "/cashflow" },
       { label: "Revenue", path: "/revenue-tracker" },
       { label: "COS", path: "/cos" },
