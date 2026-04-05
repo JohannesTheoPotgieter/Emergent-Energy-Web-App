@@ -81,6 +81,7 @@ const DatabaseMigrationPage = lazy(() => import("@/pages/database-migration"));
 const PartiesRegistryPage = lazy(() => import("@/pages/parties-registry"));
 const AdminMigrationControlPage = lazy(() => import("@/pages/admin-migration-control"));
 const PmWorkboardPage = lazy(() => import("@/pages/pm-workboard"));
+const GovernedProcessesPage = lazy(() => import("@/pages/governed-processes"));
 const ClientsPage = lazy(() => import("@/pages/clients"));
 const ClientDetailPage = lazy(() => import("@/pages/client-detail"));
 const ClientProjectDepartmentsPage = lazy(() => import("@/pages/client-project-departments"));
@@ -263,6 +264,7 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   PartiesRegistryPage,
   AdminMigrationControlPage,
   PmWorkboardPage,
+  GovernedProcessesPage,
 };
 
 function resolveHomePath(userRole?: string | null, companyRole?: string | null) {
