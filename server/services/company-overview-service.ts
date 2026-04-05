@@ -39,7 +39,8 @@ import {
   type DepartmentScore,
   type KpiScore,
 } from "@shared/config/kpi-registry";
-import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
+import { evaluateRevenueArStatus, isRevenueSettled, isCashInBank } from "../lib/finance/revenue-ar-status";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { getTrackerLinkedActiveProjectIdSet } from "./kpi-active-project-scope";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -135,8 +136,9 @@ export async function getCompanyOverviewData() {
 
   let totalRevenueFytd = 0;
   let receivedRevenueFytd = 0;
+  let cashCollectedFytd = 0;
   let totalCostFytd = 0;
-  let paidCostFytd = 0;
+  let realisedCostFytd = 0;
 
   for (const row of revenueRows) {
     if (!activeProjectIds.has(row.projectId)) continue;
@@ -144,14 +146,19 @@ export async function getCompanyOverviewData() {
     const dateRef = (row as any).paidDate || (row as any).inBankDate || (row as any).expectedPaymentDate || (row as any).invoiceDate;
     if (isInFy(dateRef)) {
       totalRevenueFytd += amount;
-      if (isRevenueSettled({
+      const settlementInput = {
         status: (row as any).status,
         paidDate: (row as any).paidDate,
         inBankDate: (row as any).inBankDate,
         paidDateConfirmed: (row as any).paidDateConfirmed,
         paidDateFontColor: (row as any).paidDateFontColor,
-      })) {
+      };
+      if (isRevenueSettled(settlementInput)) {
         receivedRevenueFytd += amount;
+      }
+      // D-05 fix: Cash collected uses stricter in-bank check
+      if (isCashInBank(settlementInput)) {
+        cashCollectedFytd += amount;
       }
     }
   }
@@ -162,8 +169,18 @@ export async function getCompanyOverviewData() {
     const dateRef = (row as any).paidDate || (row as any).invoiceDate || (row as any).approvedDate;
     if (isInFy(dateRef)) {
       totalCostFytd += amount;
-      if ((row as any).paidDate) {
-        paidCostFytd += amount;
+      // D-06 fix: Use canonical COS realised logic (aligned with COS Tracker and Project Detail)
+      if (isCanonicalCosRealised({
+        status: (row as any).status,
+        cosStatusOverride: (row as any).cosStatusOverride ?? null,
+        cosRealised: (row as any).cosRealised ?? null,
+        expenseInvoiceNumber: (row as any).invoiceNumber ?? null,
+        expenseInvoicedDate: (row as any).invoiceDate ?? null,
+        expensePoNumber: (row as any).poNumber ?? null,
+        paymentDate: (row as any).paidDate ?? null,
+        today,
+      })) {
+        realisedCostFytd += amount;
       }
     }
   }
@@ -499,8 +516,10 @@ export async function getCompanyOverviewData() {
 
   const finKpis = new Map<string, { actual: number | null; target?: number | null }>([
     ["fin_revenue_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue }],
-    ["fin_cash_collected_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue }],
-    ["fin_cos_vs_target", { actual: paidCostFytd, target: totalPlannedCost }],
+    // D-05 fix: Cash collected now uses stricter isCashInBank() instead of isRevenueSettled()
+    ["fin_cash_collected_vs_target", { actual: cashCollectedFytd, target: totalPlannedRevenue }],
+    // D-06 fix: COS now uses isCanonicalCosRealised() aligned with COS Tracker and Project Detail
+    ["fin_cos_vs_target", { actual: realisedCostFytd, target: totalPlannedCost }],
     ["fin_gross_margin_vs_target", { actual: grossMarginPct, target: targetMarginPct }],
     ["fin_overdue_debtors", { actual: overdueDebtorValue }],
   ]);
@@ -711,8 +730,9 @@ export async function getCompanyOverviewData() {
     },
     financeSnapshot: {
       revenueFytd: receivedRevenueFytd,
+      cashCollectedFytd,
       revenueTarget: totalPlannedRevenue,
-      cosFytd: paidCostFytd,
+      cosFytd: realisedCostFytd,
       cosTarget: totalPlannedCost,
       grossMarginPct: Math.round(grossMarginPct * 10) / 10,
       collectionRate: totalRevenueFytd > 0 ? Math.round((receivedRevenueFytd / totalRevenueFytd) * 100) : 0,

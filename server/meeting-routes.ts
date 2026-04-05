@@ -11,14 +11,49 @@ import {
 } from "@shared/schema";
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { z } from "zod";
+import { createHmac, timingSafeEqual } from "crypto";
 import { requirePermission } from "./permission-middleware";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 
+/**
+ * D-03 fix: Validate Read.ai webhook signature when READAI_WEBHOOK_SECRET is set.
+ * When the secret is not configured, logs a warning and allows the request
+ * (graceful degradation for development environments).
+ */
+function validateReadAiSignature(req: Request, res: Response, next: NextFunction): void {
+  const secret = process.env.READAI_WEBHOOK_SECRET;
+  if (!secret) {
+    console.warn("[Read.ai Webhook] READAI_WEBHOOK_SECRET not set — skipping signature validation");
+    next();
+    return;
+  }
+  const signature = req.headers["x-readai-signature"] || req.headers["x-webhook-signature"];
+  if (!signature || typeof signature !== "string") {
+    res.status(401).json({ error: "missing_webhook_signature" });
+    return;
+  }
+  const rawBody = typeof req.body === "string" ? req.body : JSON.stringify(req.body);
+  const expected = createHmac("sha256", secret).update(rawBody).digest("hex");
+  const sigHex = signature.replace(/^sha256=/, "");
+  try {
+    const valid = timingSafeEqual(Buffer.from(sigHex, "hex"), Buffer.from(expected, "hex"));
+    if (!valid) {
+      res.status(401).json({ error: "invalid_webhook_signature" });
+      return;
+    }
+  } catch {
+    res.status(401).json({ error: "invalid_webhook_signature" });
+    return;
+  }
+  next();
+}
+
 export function registerMeetingRoutes(app: Express) {
 
   // ==================== WEBHOOK - Read.ai ====================
-  app.post("/api/webhooks/read-ai", async (req: Request, res: Response) => {
+  // D-03 fix: Added HMAC signature validation middleware
+  app.post("/api/webhooks/read-ai", validateReadAiSignature, async (req: Request, res: Response) => {
     try {
       const body = req.body;
 

@@ -26,7 +26,7 @@ import MsCallbackPage from "@/pages/ms-callback";
 
 // Lazy-loaded pages (code-split into separate chunks)
 const CompanyOverviewPage = lazy(() => import("@/pages/company-overview"));
-const Dashboard = lazy(() => import("@/pages/dashboard"));
+
 const ProjectLifecyclePage = lazy(() => import("@/pages/project-lifecycle"));
 const ProjectsSummary = lazy(() => import("@/pages/projects"));
 const CashflowPage = lazy(() => import("@/pages/cashflow"));
@@ -36,7 +36,6 @@ const GpTrackerPage = lazy(() => import("@/pages/gp-tracker"));
 const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
 const ProjectStageGatePage = lazy(() => import("@/pages/project-stage-gate"));
 const MyWorkAdminSettingsPage = lazy(() => import("@/pages/my-work-admin-settings"));
-const MyWorkPrioritiesPage = lazy(() => import("@/pages/my-work-priorities"));
 const MyWorkMeetingsPage = lazy(() => import("@/pages/my-work-meetings"));
 const MyWorkSettingsPage = lazy(() => import("@/pages/my-work-settings"));
 const QmDashboardPage = lazy(() => import("@/pages/qm-dashboard"));
@@ -54,7 +53,6 @@ const CounterpartiesPage = lazy(() => import("@/pages/counterparties"));
 const SystemActivityLogPage = lazy(() => import("@/pages/system-activity-log"));
 const WeeklyReviewsPage = lazy(() => import("@/pages/weekly-reviews"));
 const AdminRolesPage = lazy(() => import("@/pages/admin-roles"));
-const AdminSettingsPage = lazy(() => import("@/pages/admin-settings"));
 const LeaderboardPage = lazy(() => import("@/pages/leaderboard"));
 const FeedbackPage = lazy(() => import("@/pages/feedback"));
 const EeInfoPage = lazy(() => import("@/pages/ee-info"));
@@ -101,7 +99,6 @@ const PmHandoverReviewPage = lazy(() => import("@/pages/pm-handover-review"));
 const FinancialReviewQueuePage = lazy(() => import("@/pages/financial-review-queue"));
 const HandoverControlPage = lazy(() => import("@/pages/handover-control"));
 const FyeRevenueTrackingPage = lazy(() => import("@/pages/fye-revenue-tracking"));
-const ExceptionsPage = lazy(() => import("@/pages/exceptions"));
 const PhaseTemplatesPage = lazy(() => import("@/pages/phase-templates"));
 const ProjectCreatePage = lazy(() => import("@/pages/project-create"));
 const DepartmentScoresPage = lazy(() => import("@/pages/department-scores"));
@@ -119,7 +116,6 @@ const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-month
 const ReportCenterPage = lazy(() => import("@/pages/reports/report-center"));
 const PerformancePage = lazy(() => import("@/pages/reports/performance"));
 const EngineeringStandupPage = lazy(() => import("@/pages/engineering/standup"));
-const ConstructionDashboardPage = lazy(() => import("@/pages/construction-dashboard"));
 const POApprovalBoardPage = lazy(() => import("@/pages/po-approval-board"));
 const PaymentRequestBoardPage = lazy(() => import("@/pages/payment-request-board"));
 const PaymentBatchManagerPage = lazy(() => import("@/pages/payment-batch-manager"));
@@ -157,7 +153,6 @@ const NAVIGATION_MODE = {
 
 const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   CompanyOverviewPage,
-  Dashboard,
   ProjectLifecyclePage,
   ProjectsSummary,
   FinancialLinkingPage,
@@ -167,7 +162,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   CostTracker,
   RevenueTrackerPage,
   GpTrackerPage,
-  MyWorkPrioritiesPage,
   MyWorkAdminSettingsPage,
   QmDashboardPage,
   EngineeringDashboardPage,
@@ -186,7 +180,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   SystemActivityLogPage,
   WeeklyReviewsPage,
   AdminRolesPage,
-  AdminSettingsPage,
   LeaderboardPage,
   FeedbackPage,
   EeInfoPage,
@@ -224,7 +217,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   FinancialReviewQueuePage,
   HandoverControlPage,
   FyeRevenueTrackingPage,
-  ExceptionsPage,
   PhaseTemplatesPage,
   ProjectCreatePage,
   DepartmentScoresPage,
@@ -242,7 +234,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   ReportCenterPage,
   PerformancePage,
   EngineeringStandupPage,
-  ConstructionDashboardPage,
   POApprovalBoardPage,
   PaymentRequestBoardPage,
   PaymentBatchManagerPage,
