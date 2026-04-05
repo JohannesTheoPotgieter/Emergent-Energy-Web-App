@@ -25,7 +25,7 @@ describe("priority page registry", () => {
   it("keeps /company-priorities mapped to the management page", () => {
     const page = PAGES.find((p) => p.path === "/company-priorities");
     expect(page).toBeDefined();
-    expect(page!.routeComponentKey).toBe("MyToolPrioritiesPage");
+    expect(page!.redirectTo).toBe("/priorities");
   });
 
   it("does not duplicate priority page IDs", () => {

@@ -20,7 +20,7 @@ describe("project management structure", () => {
     const pmOnTheGoPage = PAGE_REGISTRY.find((page) => page.id === "pmOnTheGo");
 
     expect(executionDashboardPage?.label).toBe("Execution Dashboard");
-    expect(dashboardPage?.label).toBe("Per Project Manager Dashboard");
+    expect(dashboardPage?.label).toBe("PM Dashboard");
     expect(pmOnTheGoPage?.label).toBe("PM On-The-Go");
     expect(approvalsPage?.path).toBe("/pm/approvals");
     expect(deliverablesPage?.path).toBe("/pm/deliverables");
