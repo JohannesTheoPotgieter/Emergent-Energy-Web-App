@@ -79,6 +79,7 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       "/handover",
       "/pm", "/sites",
       "/governance/financial-reviews",
+      "/governance/processes",
       "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
       "/gates",
       "/milestone-tracker",
@@ -108,6 +109,8 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       { label: "Payment Requests", path: "/payment-request-board" },
       { label: "Payment Batches", path: "/payment-batch-manager" },
       { label: "Financial Reviews", path: "/governance/financial-reviews" },
+      // Governed processes
+      { label: "Governed Processes", path: "/governance/processes" },
       // Handover & closeout
       { label: "Handover & Closeout", path: "/handover" },
       { label: "Sites", path: "/sites" },
