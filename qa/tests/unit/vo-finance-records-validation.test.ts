@@ -212,18 +212,18 @@ describe("Change Control Routes Bridge Wiring", () => {
   });
 
   it("bridge calls are fire-and-forget (.catch)", () => {
-    // All three bridge calls should use .catch(() => {})
+    // All three bridge calls should use .catch(bridgeCatch) / .catch(bridgeCatch2)
     const postIdx = routeFile.indexOf('app.post("/api/change-requests"');
     const postSection = routeFile.slice(postIdx, routeFile.indexOf("app.patch", postIdx));
-    expect(postSection).toContain(".catch(() => {})");
+    expect(postSection).toContain(".catch(bridgeCatch)");
 
     const patchIdx = routeFile.indexOf('app.patch("/api/change-requests/:id"');
     const patchSection = routeFile.slice(patchIdx, routeFile.indexOf("app.delete", patchIdx));
-    expect(patchSection).toContain(".catch(() => {})");
+    expect(patchSection).toContain(".catch(bridgeCatch)");
 
     const deleteIdx = routeFile.indexOf('app.delete("/api/change-requests/:id"');
     const deleteSection = routeFile.slice(deleteIdx, deleteIdx + 1500);
-    expect(deleteSection).toContain(".catch(() => {})");
+    expect(deleteSection).toContain(".catch(bridgeCatch2)");
   });
 });
 

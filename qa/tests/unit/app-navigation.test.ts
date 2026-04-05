@@ -27,8 +27,8 @@ describe("app navigation visibility", () => {
     expect(sections.some((section) => section.label === "Admin")).toBe(false);
     expect(sections.some((section) => section.label === "Finance")).toBe(false);
 
-    const delivery = sections.find((section) => section.label === "Project Delivery");
-    expect(delivery?.secondary.map((item) => item.label)).toEqual(["All Projects"]);
+    const management = sections.find((section) => section.label === "Project Management");
+    expect(management?.secondary.map((item) => item.label)).toEqual(["All Projects"]);
   });
 
   it("retargets a section link to the first visible child when the root page is not permitted", () => {
@@ -50,12 +50,12 @@ describe("app navigation visibility", () => {
     expect(homeSection?.secondary.map((item) => item.label)).toEqual(["My Dashboard"]);
   });
 
-  it("exposes the Project Delivery section with correct secondary items", () => {
+  it("exposes the Project Management section with correct secondary items", () => {
     const sections = buildVisibleTopSections({ canViewPath: () => true });
-    const delivery = sections.find((section) => section.label === "Project Delivery");
+    const management = sections.find((section) => section.label === "Project Management");
 
-    expect(delivery).toBeDefined();
-    const labels = delivery!.secondary.map((item) => item.label);
+    expect(management).toBeDefined();
+    const labels = management!.secondary.map((item) => item.label);
     expect(labels).toContain("Execution Dashboard");
     expect(labels).toContain("All Projects");
     expect(labels).toContain("PO Approvals");
@@ -63,19 +63,17 @@ describe("app navigation visibility", () => {
     expect(labels).toContain("Sites");
   });
 
-  it("has eleven top-level sections", () => {
+  it("has nine top-level sections (9-department model)", () => {
     const sections = buildVisibleTopSections({ canViewPath: () => true });
     expect(sections.map((s) => s.label)).toEqual([
       "Home",
-      "Company",
       "Priorities",
       "Project Development",
-      "Project Delivery",
-      "Finance",
+      "Project Management",
       "Engineering",
-      "HSE",
       "Quality",
-      "Reports",
+      "Finance",
+      "Parties",
       "Admin",
     ]);
   });
@@ -83,23 +81,23 @@ describe("app navigation visibility", () => {
   it("hides disabled sub-pages from section secondary navigation", () => {
     const disabled = parseDisabledSubPages([
       "HOME",
-      "PROJECT_DELIVERY",
+      "PROJECT_MANAGEMENT",
       "ADMIN",
       "!HOME:/my-work/calendar",
-      "!PROJECT_DELIVERY:/weekly-reviews",
+      "!PROJECT_MANAGEMENT:/weekly-reviews",
       "!ADMIN:/admin/smart-import",
     ]);
     const sections = buildVisibleTopSections({
       canViewPath: () => true,
-      allowedSectionKeys: ["HOME", "PROJECT_DELIVERY", "ADMIN"],
+      allowedSectionKeys: ["HOME", "PROJECT_MANAGEMENT", "ADMIN"],
       disabledSubPages: disabled,
     });
 
     const home = sections.find((section) => section.key === "HOME");
     expect(home?.secondary.some((item) => item.path === "/my-work/calendar")).toBe(false);
 
-    const delivery = sections.find((section) => section.key === "PROJECT_DELIVERY");
-    expect(delivery?.secondary.some((item) => item.path === "/weekly-reviews")).toBe(false);
+    const management = sections.find((section) => section.key === "PROJECT_MANAGEMENT");
+    expect(management?.secondary.some((item) => item.path === "/weekly-reviews")).toBe(false);
 
     const admin = sections.find((section) => section.key === "ADMIN");
     expect(admin?.secondary.some((item) => item.path === "/admin/smart-import")).toBe(false);
@@ -112,15 +110,13 @@ describe("app navigation visibility", () => {
     });
     expect(sections.map((s) => s.label)).toEqual([
       "Home",
-      "Company",
       "Priorities",
       "Project Development",
-      "Project Delivery",
-      "Finance",
+      "Project Management",
       "Engineering",
-      "HSE",
       "Quality",
-      "Reports",
+      "Finance",
+      "Parties",
       "Admin",
     ]);
   });
@@ -134,15 +130,16 @@ describe("app navigation visibility", () => {
     expect(labels).toEqual(["Home", "Priorities", "Engineering", "Quality"]);
     expect(labels).not.toContain("Finance");
     expect(labels).not.toContain("Admin");
+    expect(labels).not.toContain("Parties");
   });
 
-  it("keeps PM/Construction delivery sub-pages aligned with app navigation", () => {
+  it("keeps PM/Construction management sub-pages aligned with app navigation", () => {
     const pmSections = buildVisibleTopSections({
       canViewPath: () => true,
       companyRole: "PROJECT_MANAGER_SITE",
     });
-    const pmDelivery = pmSections.find((section) => section.label === "Project Delivery");
-    const pmLabels = pmDelivery?.secondary.map((item) => item.label) ?? [];
+    const pmManagement = pmSections.find((section) => section.label === "Project Management");
+    const pmLabels = pmManagement?.secondary.map((item) => item.label) ?? [];
     expect(pmLabels).toContain("Weekly Reviews");
     expect(pmLabels).toContain("Milestone Tracker");
     expect(pmLabels).toContain("PM On-The-Go");
@@ -152,7 +149,7 @@ describe("app navigation visibility", () => {
       canViewPath: () => true,
       companyRole: "CONSTRUCTION_MANAGER",
     });
-    expect(constructionSections.some((section) => section.label === "Project Delivery")).toBe(true);
+    expect(constructionSections.some((section) => section.label === "Project Management")).toBe(true);
   });
 
   it("keeps Accountant scoped to Home/Priorities/Finance section set", () => {
@@ -163,13 +160,12 @@ describe("app navigation visibility", () => {
     expect(sections.map((s) => s.label)).toEqual(["Home", "Priorities", "Finance"]);
     const finance = sections.find((s) => s.label === "Finance");
     expect(finance?.secondary.map((item) => item.label)).toEqual([
+      "Finance Records",
       "Cashflow",
       "Revenue",
       "COS",
       "GP / Margin",
       "FYE Revenue",
-      "Counterparties",
-      "Subcontractors",
       "Invoice Patterns",
     ]);
   });
@@ -180,7 +176,7 @@ describe("app navigation visibility", () => {
       allowedSectionKeys: ["HOME", "FINANCE"],
       disabledSubPages: parseDisabledSubPages(["HOME", "FINANCE", "!FINANCE:/cashflow"]),
     });
-    expect(sections.some((section) => section.key === "PROJECT_DELIVERY")).toBe(false);
+    expect(sections.some((section) => section.key === "PROJECT_MANAGEMENT")).toBe(false);
     expect(sections.some((section) => section.key === "ADMIN")).toBe(false);
   });
 
@@ -237,27 +233,27 @@ describe("breadcrumb generation", () => {
     ]);
   });
 
-  it("maps project detail breadcrumbs to Project Delivery > project name", () => {
-    const crumbs = getBreadcrumbs("/project/Alpha_Site", findSection("Project Delivery"));
+  it("maps project detail breadcrumbs to Project Management > project name", () => {
+    const crumbs = getBreadcrumbs("/project/Alpha_Site", findSection("Project Management"));
     expect(crumbs).toEqual([
-      { label: "Project Delivery", path: "/projects" },
+      { label: "Project Management", path: "/projects" },
       { label: "Alpha_Site" },
     ]);
   });
 
   it("maps project financial linking with full trail", () => {
-    const crumbs = getBreadcrumbs("/project/Alpha_Site/financial-linking", findSection("Project Delivery"));
+    const crumbs = getBreadcrumbs("/project/Alpha_Site/financial-linking", findSection("Project Management"));
     expect(crumbs).toEqual([
-      { label: "Project Delivery", path: "/projects" },
+      { label: "Project Management", path: "/projects" },
       { label: "Alpha_Site", path: "/project/Alpha_Site" },
       { label: "Financial Linking" },
     ]);
   });
 
-  it("maps portfolio detail with Company parent", () => {
-    const crumbs = getBreadcrumbs("/portfolios/solar-portfolio", findSection("Company"));
+  it("maps portfolio detail with Project Management parent", () => {
+    const crumbs = getBreadcrumbs("/portfolios/solar-portfolio", findSection("Project Management"));
     expect(crumbs).toEqual([
-      { label: "Company", path: "/lifecycle-board" },
+      { label: "Project Management", path: "/execution-board" },
       { label: "solar-portfolio" },
     ]);
   });
@@ -300,63 +296,63 @@ describe("breadcrumb generation", () => {
   });
 
   it("maps PM on-the-go project with mobile view parent", () => {
-    const crumbs = getBreadcrumbs("/pm/on-the-go/project/proj-1", findSection("Project Delivery"));
+    const crumbs = getBreadcrumbs("/pm/on-the-go/project/proj-1", findSection("Project Management"));
     expect(crumbs).toEqual([
-      { label: "Project Delivery", path: "/execution-board" },
+      { label: "Project Management", path: "/execution-board" },
       { label: "Mobile View", path: "/pm/on-the-go" },
       { label: "proj-1" },
     ]);
   });
 
   it("maps PM report history sub-page", () => {
-    const crumbs = getBreadcrumbs("/reports/pm/monthly/history", findSection("Reports"));
+    const crumbs = getBreadcrumbs("/reports/pm/monthly/history", findSection("Project Management"));
     expect(crumbs).toEqual([
-      { label: "Reports", path: "/reports/center" },
+      { label: "Project Management", path: "/execution-board" },
       { label: "PM Monthly", path: "/reports/pm/monthly" },
       { label: "History" },
     ]);
   });
 
   it("maps PM report compare sub-page", () => {
-    const crumbs = getBreadcrumbs("/reports/pm/monthly/compare", findSection("Reports"));
+    const crumbs = getBreadcrumbs("/reports/pm/monthly/compare", findSection("Project Management"));
     expect(crumbs).toEqual([
-      { label: "Reports", path: "/reports/center" },
+      { label: "Project Management", path: "/execution-board" },
       { label: "PM Monthly", path: "/reports/pm/monthly" },
       { label: "Compare" },
     ]);
   });
 
   it("maps engineering report history sub-page", () => {
-    const crumbs = getBreadcrumbs("/reports/engineering/monthly/history", findSection("Reports"));
+    const crumbs = getBreadcrumbs("/reports/engineering/monthly/history", findSection("Engineering"));
     expect(crumbs).toEqual([
-      { label: "Reports", path: "/reports/center" },
+      { label: "Engineering", path: "/engineering" },
       { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
       { label: "History" },
     ]);
   });
 
   it("maps PM monthly report project detail", () => {
-    const crumbs = getBreadcrumbs("/reports/pm/monthly/2026-03/project/Alpha_Site", findSection("Reports"));
+    const crumbs = getBreadcrumbs("/reports/pm/monthly/2026-03/project/Alpha_Site", findSection("Project Management"));
     expect(crumbs).toEqual([
-      { label: "Reports", path: "/reports/center" },
+      { label: "Project Management", path: "/execution-board" },
       { label: "PM Monthly", path: "/reports/pm/monthly" },
       { label: "Alpha_Site" },
     ]);
   });
 
   it("maps engineering monthly report project detail", () => {
-    const crumbs = getBreadcrumbs("/reports/engineering/monthly/2026-03/project/Alpha_Site", findSection("Reports"));
+    const crumbs = getBreadcrumbs("/reports/engineering/monthly/2026-03/project/Alpha_Site", findSection("Engineering"));
     expect(crumbs).toEqual([
-      { label: "Reports", path: "/reports/center" },
+      { label: "Engineering", path: "/engineering" },
       { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
       { label: "Alpha_Site" },
     ]);
   });
 
-  it("maps gates sub-pages under Company section", () => {
-    const crumbs = getBreadcrumbs("/gates/blocked", findSection("Company"));
+  it("maps gates sub-pages under Project Management section", () => {
+    const crumbs = getBreadcrumbs("/gates/blocked", findSection("Project Management"));
     expect(crumbs).toEqual([
-      { label: "Company", path: "/lifecycle-board" },
+      { label: "Project Management", path: "/execution-board" },
       { label: "Gate Tracker", path: "/gates" },
       { label: "Blocked Gates" },
     ]);
@@ -388,11 +384,11 @@ describe("breadcrumb generation", () => {
     ]);
   });
 
-  it("gates/commitments resolves under Project Delivery section", () => {
-    const delivery = findSection("Project Delivery");
-    expect(delivery.match("/gates/commitments")).toBe(true);
+  it("gates/commitments resolves under Project Management section", () => {
+    const management = findSection("Project Management");
+    expect(management.match("/gates/commitments")).toBe(true);
 
-    const company = findSection("Company");
-    expect(company.match("/gates/commitments")).toBe(false);
+    const finance = findSection("Finance");
+    expect(finance.match("/gates/commitments")).toBe(false);
   });
 });

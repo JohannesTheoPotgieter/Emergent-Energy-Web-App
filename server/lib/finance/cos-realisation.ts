@@ -40,9 +40,13 @@ export function isCanonicalCosRealised(input: CosLineInput): boolean {
   const currentMonth = toMonth(today);
 
   if (override === "COS REALISED" || override === "REALISED") return true;
-  if (override && ["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"].includes(override)) {
-    if (override !== "COMMITTED") return false;
-  }
+  // F-04 fix: When an explicit override is set, it takes precedence over status-based checks.
+  // "INVOICED" and "PAID" overrides are treated as realised (matching status-based logic).
+  // "COMMITTED" falls through to the committed-past-month check below.
+  // "PLANNED" and "APPROVED" are explicitly not yet realised.
+  if (override === "INVOICED" || override === "PAID") return true;
+  if (override === "PLANNED" || override === "APPROVED") return false;
+  // "COMMITTED" override falls through to committed-past-month logic below
 
   if (status === "COS REALISED" || status === "REALISED" || status === "INVOICED" || status === "PAID") {
     return true;

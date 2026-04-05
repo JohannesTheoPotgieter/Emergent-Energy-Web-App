@@ -8,9 +8,9 @@ describe("project header kpi query guards", () => {
     expect(source).toContain("isNull(normalizedRevenueLines.effectiveTo)");
     expect(source).toContain("eq(normalizedCostLines.projectId, projectId)");
     expect(source).toContain("isNull(normalizedCostLines.effectiveTo)");
-    expect(source).toContain("eq(programInflows.projectId, projectId)");
-    expect(source).toContain("isNull(programInflows.effectiveTo)");
-    expect(source).toContain("eq(programExpense.projectId, projectId)");
-    expect(source).toContain("isNull(programExpense.deletedAt)");
+    expect(source).toContain("eq(derivedProjectKpis.projectId, projectId)");
+    expect(source).toContain("isNull(derivedProjectKpis.deletedAt)");
+    expect(source).toContain("eq(projectExecutionState.projectId, projectId)");
+    expect(source).toContain("isNull(projectExecutionState.deletedAt)");
   });
 });
