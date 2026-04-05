@@ -1,13 +1,8 @@
 /**
- * Master Navigation Structure
+ * Master Navigation Structure — 9-Department Model
  *
- * Two models available (feature-flagged via "department_shell"):
- *
- * Legacy 11-section model:
- *   Home | Company | Priorities | Project Development | Project Delivery | Finance | Engineering | HSE | Quality | Reports | Admin
- *
- * New 9-department model (Migration Control Pack Wave 1):
  *   Home | Priorities | Project Development | Project Management | Engineering | Quality | Finance | Parties | Admin
+ *
  *   - HSE folded into Project Management
  *   - Portfolio/Company folded into Project Management
  *   - Reports distributed into each department
@@ -28,237 +23,13 @@ export type TopSection = {
   secondary: SecondaryItem[];
 };
 
-function matchesPathPrefix(pathname: string, prefix: string) {
-  return pathname === prefix || pathname.startsWith(`${prefix}/`);
-}
-
-function startsWithAny(pathname: string, prefixes: string[]) {
-  return prefixes.some((prefix) => matchesPathPrefix(pathname, prefix));
-}
-
-export const TOP_SECTIONS: TopSection[] = [
-  {
-    label: "Home",
-    key: "HOME",
-    path: "/",
-    match: (pathname) => pathname === "/" || startsWithAny(pathname, ["/my-work", "/inbox"]),
-    secondary: [
-      { label: "My Dashboard", path: "/" },
-      { label: "My Tasks", path: "/my-work/tasks" },
-      { label: "Approvals", path: "/my-work/approvals" },
-      { label: "Calendar", path: "/my-work/calendar" },
-      { label: "Meetings", path: "/my-work/meetings" },
-      { label: "Inbox", path: "/inbox" },
-    ],
-  },
-  {
-    label: "Company",
-    key: "PORTFOLIO",
-    path: "/lifecycle-board",
-    match: (pathname) => startsWithAny(pathname, [
-      "/company-overview",
-      "/lifecycle-board",
-      "/gates", "/exceptions",
-      "/project-lifecycle",
-    ]) && !matchesPathPrefix(pathname, "/gates/commitments"),
-    secondary: [
-      { label: "Company Overview", path: "/company-overview" },
-      { label: "Lifecycle Board", path: "/lifecycle-board" },
-      { label: "Gate Tracker", path: "/gates" },
-      { label: "Blocked Gates", path: "/gates/blocked" },
-      { label: "Exceptions", path: "/gates/exceptions" },
-    ],
-  },
-  {
-    label: "Priorities",
-    key: "PRIORITIES",
-    path: "/priorities",
-    match: (pathname) => startsWithAny(pathname, ["/priorities"]),
-    secondary: [
-      { label: "My Priorities", path: "/priorities?tab=mine" },
-      { label: "Department", path: "/priorities?tab=department" },
-      { label: "Company", path: "/priorities?tab=company" },
-    ],
-  },
-  {
-    label: "Project Development",
-    key: "PROJECT_DEVELOPMENT",
-    path: "/pd",
-    match: (pathname) => startsWithAny(pathname, [
-      "/pd", "/opportunities", "/clients",
-      "/handover-control",
-    ]),
-    secondary: [
-      { label: "PD Dashboard", path: "/pd" },
-      { label: "Pipeline / Opportunities", path: "/opportunities" },
-      { label: "PD Tickets", path: "/pd/tickets" },
-      { label: "Clients", path: "/clients" },
-      { label: "Handover Queue", path: "/handover-control" },
-      { label: "PD Reports", path: "/pd/reports" },
-    ],
-  },
-  {
-    label: "Project Delivery",
-    key: "PROJECT_DELIVERY",
-    path: "/execution-board",
-    match: (pathname) => startsWithAny(pathname, [
-      "/execution-board",
-      "/portfolios",
-      "/projects", "/project", "/project-create",
-      "/procurement",
-      "/handover",
-      "/pm", "/sites",
-      "/governance/financial-reviews",
-      "/po-approval-board", "/payment-request-board", "/payment-batch-manager",
-      "/gates/commitments",
-      "/milestone-tracker",
-      "/weekly-reviews",
-      "/pm-dashboard",
-    ]),
-    secondary: [
-      { label: "Execution Dashboard", path: "/execution-board" },
-      { label: "PM Dashboard", path: "/pm-dashboard" },
-      { label: "Portfolio Dashboard", path: "/portfolios" },
-      { label: "All Projects", path: "/projects" },
-      { label: "PO Approvals", path: "/po-approval-board" },
-      { label: "Payment Requests", path: "/payment-request-board" },
-      { label: "Payment Batches", path: "/payment-batch-manager" },
-      { label: "Milestone Tracker", path: "/milestone-tracker" },
-      { label: "Weekly Reviews", path: "/weekly-reviews" },
-      { label: "Standups", path: "/standups" },
-      { label: "PM Approvals", path: "/pm/approvals" },
-      { label: "PM On-The-Go", path: "/pm/on-the-go" },
-      { label: "Handover & Closeout", path: "/handover" },
-      { label: "Financial Reviews", path: "/governance/financial-reviews" },
-      { label: "Sites", path: "/sites" },
-    ],
-  },
-  {
-    label: "Finance",
-    key: "FINANCE",
-    path: "/cashflow",
-    match: (pathname) => startsWithAny(pathname, [
-      "/cashflow", "/cos", "/revenue-tracker", "/gp-tracker",
-      "/invoice-patterns", "/counterparties", "/subcontractor-dashboard",
-      "/fye-revenue-tracking",
-    ]),
-    secondary: [
-      { label: "Cashflow", path: "/cashflow" },
-      { label: "Revenue", path: "/revenue-tracker" },
-      { label: "COS", path: "/cos" },
-      { label: "GP / Margin", path: "/gp-tracker" },
-      { label: "FYE Revenue", path: "/fye-revenue-tracking" },
-      { label: "Counterparties", path: "/counterparties" },
-      { label: "Subcontractors", path: "/subcontractor-dashboard" },
-      { label: "Invoice Patterns", path: "/invoice-patterns" },
-    ],
-  },
-  {
-    label: "Engineering",
-    key: "ENGINEERING",
-    path: "/engineering",
-    match: (pathname) => startsWithAny(pathname, ["/engineering"]),
-    secondary: [
-      { label: "Engineering Dashboard", path: "/engineering" },
-      { label: "Task Board", path: "/engineering/tasks" },
-      { label: "Standup", path: "/engineering/standup" },
-    ],
-  },
-  {
-    label: "HSE",
-    key: "HSE",
-    path: "/hse",
-    match: (pathname) => startsWithAny(pathname, ["/hse"]),
-    secondary: [
-      { label: "HSE Dashboard", path: "/hse" },
-    ],
-  },
-  {
-    label: "Quality",
-    key: "QUALITY",
-    path: "/quality",
-    match: (pathname) => startsWithAny(pathname, ["/quality", "/commissioning-dashboard"]),
-    secondary: [
-      { label: "Quality Dashboard", path: "/quality" },
-      { label: "Commissioning", path: "/commissioning-dashboard" },
-    ],
-  },
-  {
-    label: "Reports",
-    key: "REPORTS",
-    path: "/reports/center",
-    match: (pathname) => startsWithAny(pathname, ["/reports"]),
-    secondary: [
-      { label: "Report Center", path: "/reports/center" },
-      { label: "Programme Reports", path: "/reports/programme" },
-      { label: "PM Monthly", path: "/reports/pm/monthly" },
-      { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
-      { label: "Performance", path: "/reports/performance" },
-    ],
-  },
-  {
-    label: "Admin",
-    key: "ADMIN",
-    path: "/admin/control-center",
-    match: (pathname) => startsWithAny(pathname, [
-      "/admin", "/settings", "/ee-info", "/feedback", "/training",
-      "/leaderboard", "/department-scores",
-    ]),
-    secondary: [
-      { label: "Control Center", path: "/admin/control-center" },
-      { label: "Roles & Permissions", path: "/admin/roles" },
-      { label: "Smart Import", path: "/admin/smart-import" },
-      { label: "Audit Log", path: "/admin/activity-log" },
-      { label: "Processes & SOPs", path: "/ee-info" },
-      { label: "Templates", path: "/admin/phase-templates" },
-      { label: "Recovery", path: "/admin/recovery" },
-    ],
-  },
-];
-
-/**
- * Role-based section visibility.
- * Keys match TopSection.key values.
- * Each role sees only the sections listed here.
- */
-export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = {
-  COO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "ENGINEERING", "QUALITY", "HSE", "FINANCE", "REPORTS", "PRIORITIES", "ADMIN"],
-  CEO_ADMIN:              ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "PROJECT_DELIVERY", "FINANCE", "REPORTS", "PRIORITIES", "ADMIN"],
-  CCO:                    ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "REPORTS", "PRIORITIES"],
-  KEY_ACCOUNTS_MANAGER:   ["HOME", "PORTFOLIO", "PROJECT_DEVELOPMENT", "FINANCE", "PRIORITIES"],
-  PROGRAM_MANAGER:        ["HOME", "PORTFOLIO", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS", "PRIORITIES"],
-  PROJECT_MANAGER_SITE:   ["HOME", "PROJECT_DELIVERY", "QUALITY", "HSE", "FINANCE", "REPORTS", "PRIORITIES"],
-  CONSTRUCTION_MANAGER:   ["HOME", "PROJECT_DELIVERY", "FINANCE", "QUALITY", "HSE", "REPORTS", "PRIORITIES"],
-  ENGINEER:               ["HOME", "ENGINEERING", "QUALITY", "PRIORITIES"],
-  ENGINEERING_MANAGER:    ["HOME", "ENGINEERING", "QUALITY", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
-  QUALITY_MANAGER:        ["HOME", "QUALITY", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
-  HSE_MANAGER:            ["HOME", "HSE", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
-  SSEG_MANAGER:           ["HOME", "PROJECT_DELIVERY", "HSE", "QUALITY", "ENGINEERING", "PRIORITIES"],
-  CFO:                    ["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
-  PROGRAM_FINANCE_MANAGER:["HOME", "PORTFOLIO", "FINANCE", "PROJECT_DELIVERY", "REPORTS", "PRIORITIES"],
-  ACCOUNTANT:             ["HOME", "FINANCE", "PRIORITIES"],
-  PROJECT_DEVELOPER:      ["HOME", "PROJECT_DEVELOPMENT", "FINANCE", "PRIORITIES"],
-};
+export const TOP_SECTIONS: TopSection[] = DEPARTMENT_SECTIONS;
+export const ROLE_VISIBLE_SECTIONS: Record<string, string[]> = DEPARTMENT_ROLE_VISIBLE_SECTIONS;
 
 /**
  * Maps canonical module names (from lens profiles) to TopSection.key values.
- * Used to translate lens profile `allowedModules` into nav section visibility.
  */
-const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, string[]> = {
-  HOME:        ["HOME"],
-  EXECUTIVE:   ["PORTFOLIO"],
-  PORTFOLIO:   ["PORTFOLIO"],
-  PIPELINE:    ["PROJECT_DEVELOPMENT"],
-  PROJECTS:    ["PROJECT_DELIVERY"],
-  DELIVERY:    ["PROJECT_DELIVERY"],
-  FINANCE:     ["FINANCE"],
-  ENGINEERING: ["ENGINEERING"],
-  COMPLIANCE:  ["QUALITY", "HSE"],
-  DOCUMENTS:   [],
-  REPORTS:     ["REPORTS"],
-  PRIORITIES:  ["PRIORITIES"],
-  ADMIN:       ["ADMIN"],
-};
+const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, string[]> = DEPARTMENT_MODULE_TO_SECTION_KEYS;
 
 /**
  * Converts a lens profile's allowedModules into TopSection key values.
@@ -296,9 +67,7 @@ export function buildVisibleTopSections(options: {
   companyRole?: string | null;
   allowedSectionKeys?: string[] | null;
   disabledSubPages?: Map<string, Set<string>> | null;
-  /** Override sections array (used by department shell) */
   sections?: TopSection[];
-  /** Override role visibility map (used by department shell) */
   roleVisibleSections?: Record<string, string[]>;
 }) {
   const { canViewPath, companyRole, allowedSectionKeys, disabledSubPages } = options;
@@ -338,6 +107,10 @@ export function buildVisibleTopSections(options: {
       };
     })
     .filter(Boolean) as TopSection[];
+}
+
+function matchesPathPrefix(pathname: string, prefix: string) {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
 export function linkIsActive(current: string, target: string) {
@@ -387,21 +160,21 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   if (projectFinancialMatch) {
     const name = decodeURIComponent(projectFinancialMatch[1]);
     return [
-      { label: "Project Delivery", path: "/projects" },
+      { label: "Project Management", path: "/projects" },
       { label: name, path: `/project/${projectFinancialMatch[1]}` },
       { label: "Financial Linking" },
     ];
   }
   const projectMatch = pathname.match(/^\/project\/([^/]+)$/);
   if (projectMatch) return [
-    { label: "Project Delivery", path: "/projects" },
+    { label: "Project Management", path: "/projects" },
     { label: decodeURIComponent(projectMatch[1]) },
   ];
 
   // --- Portfolio detail ---
   const portfolioMatch = pathname.match(/^\/portfolios\/([^/]+)$/);
   if (portfolioMatch) return [
-    { label: "Company", path: "/lifecycle-board" },
+    { label: "Project Management", path: "/execution-board" },
     { label: decodeURIComponent(portfolioMatch[1]) },
   ];
 
@@ -444,48 +217,48 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   // --- PM On-The-Go project ---
   const pmOtgMatch = pathname.match(/^\/pm\/on-the-go\/project\/([^/]+)$/);
   if (pmOtgMatch) return [
-    { label: "Project Delivery", path: "/execution-board" },
+    { label: "Project Management", path: "/execution-board" },
     { label: "Mobile View", path: "/pm/on-the-go" },
     { label: decodeURIComponent(pmOtgMatch[1]) },
   ];
 
   // --- Report sub-pages ---
   if (pathname === "/reports/pm/monthly/history") return [
-    { label: "Reports", path: "/reports/center" },
+    { label: "Project Management", path: "/execution-board" },
     { label: "PM Monthly", path: "/reports/pm/monthly" },
     { label: "History" },
   ];
   if (pathname === "/reports/pm/monthly/compare") return [
-    { label: "Reports", path: "/reports/center" },
+    { label: "Project Management", path: "/execution-board" },
     { label: "PM Monthly", path: "/reports/pm/monthly" },
     { label: "Compare" },
   ];
   if (pathname === "/reports/engineering/monthly/history") return [
-    { label: "Reports", path: "/reports/center" },
+    { label: "Engineering", path: "/engineering" },
     { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
     { label: "History" },
   ];
   if (pathname === "/reports/engineering/monthly/compare") return [
-    { label: "Reports", path: "/reports/center" },
+    { label: "Engineering", path: "/engineering" },
     { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
     { label: "Compare" },
   ];
   const pmReportProjectMatch = pathname.match(/^\/reports\/pm\/monthly\/([^/]+)\/project\/([^/]+)$/);
   if (pmReportProjectMatch) return [
-    { label: "Reports", path: "/reports/center" },
+    { label: "Project Management", path: "/execution-board" },
     { label: "PM Monthly", path: "/reports/pm/monthly" },
     { label: decodeURIComponent(pmReportProjectMatch[2]) },
   ];
   const engReportProjectMatch = pathname.match(/^\/reports\/engineering\/monthly\/([^/]+)\/project\/([^/]+)$/);
   if (engReportProjectMatch) return [
-    { label: "Reports", path: "/reports/center" },
+    { label: "Engineering", path: "/engineering" },
     { label: "Engineering Monthly", path: "/reports/engineering/monthly" },
     { label: decodeURIComponent(engReportProjectMatch[2]) },
   ];
 
   // --- Gates workspace ---
   if (pathname.startsWith("/gates")) return [
-    { label: "Company", path: "/lifecycle-board" },
+    { label: "Project Management", path: "/execution-board" },
     { label: "Gate Tracker", path: "/gates" },
     ...(pathname !== "/gates" ? [{
       label: activeSection.secondary.filter((item) => linkIsActive(pathname, item.path)).sort((a, b) => b.path.length - a.path.length)[0]?.label || pathname.split("/").pop() || "",
@@ -499,7 +272,6 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
   const items: BreadcrumbItem[] = [{ label: activeSection.label, path: activeSection.path }];
   if (leaf && leaf.label !== activeSection.label) {
     if (pathname !== leaf.path) {
-      // Sub-page of a secondary item — make the secondary item a clickable middle crumb
       items.push({ label: leaf.label, path: leaf.path });
       const segment = pathname.split("/").pop() || "";
       items.push({ label: decodeURIComponent(segment) });
@@ -507,32 +279,8 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
       items.push({ label: leaf.label });
     }
   } else if (!leaf && pathname !== activeSection.path) {
-    // No secondary match — use last path segment as label
     const segment = pathname.split("/").pop() || "";
     if (segment) items.push({ label: decodeURIComponent(segment) });
   }
   return items;
-}
-
-// ===================== DEPARTMENT SHELL (Wave 1) =====================
-
-/**
- * Returns the appropriate sections array based on department_shell feature flag.
- */
-export function getActiveSections(departmentShellEnabled: boolean): TopSection[] {
-  return departmentShellEnabled ? DEPARTMENT_SECTIONS : TOP_SECTIONS;
-}
-
-/**
- * Returns the appropriate role visibility map based on department_shell feature flag.
- */
-export function getActiveRoleVisibleSections(departmentShellEnabled: boolean): Record<string, string[]> {
-  return departmentShellEnabled ? DEPARTMENT_ROLE_VISIBLE_SECTIONS : ROLE_VISIBLE_SECTIONS;
-}
-
-/**
- * Returns the appropriate module-to-section-key map based on department_shell feature flag.
- */
-export function getActiveModuleToSectionKeys(departmentShellEnabled: boolean): Record<string, string[]> {
-  return departmentShellEnabled ? DEPARTMENT_MODULE_TO_SECTION_KEYS : CANONICAL_MODULE_TO_SECTION_KEYS;
 }

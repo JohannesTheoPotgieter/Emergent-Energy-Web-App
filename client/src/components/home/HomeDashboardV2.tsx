@@ -5,7 +5,7 @@
  * Reads from GET /api/home/summary.
  * Shows: my tasks, pending approvals, alerts, recent activity.
  *
- * Shown when department_shell feature flag is on.
+ * Always shown on home page.
  */
 
 import { useQuery } from "@tanstack/react-query";

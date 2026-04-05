@@ -13,11 +13,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Menu, Search, Plus, Calendar, Mail, MessageSquare, CalendarClock, ChevronRight, ChevronDown, Building2, UserCircle2, LogOut, X, Sun, Moon, Monitor, Home, MoreHorizontal } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { buildVisibleTopSections, getAllowedSectionKeysForLens, getBreadcrumbs, linkIsActive, getActiveSections, getActiveRoleVisibleSections, getActiveModuleToSectionKeys } from "@/config/app-navigation";
+import { buildVisibleTopSections, getAllowedSectionKeysForLens, getBreadcrumbs, linkIsActive } from "@/config/app-navigation";
 import { getAvailableQuickCreateActions } from "@/lib/action-access";
 import { useAccessMatrix } from "@/hooks/use-access-matrix";
 import { useNavPreferences } from "@/hooks/use-nav-preferences";
-import { fetchRolloutFeatureFlags } from "@/lib/feature-flags";
 import { NotificationBell } from "@/components/NotificationBell";
 import { LensSwitcher } from "@/components/layout/LensSwitcher";
 import { useLensContext } from "@/hooks/use-lens-context";
@@ -84,21 +83,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const companyRole = typeof window !== "undefined" ? localStorage.getItem("company_role") : null;
   const effectiveCompanyRole = companyRole || user?.role || null;
 
-  // Department shell feature flag (Wave 1 — Migration Control Pack)
-  const { data: rolloutFlags } = useQuery({
-    queryKey: ["rollout-feature-flags"],
-    queryFn: fetchRolloutFeatureFlags,
-    staleTime: 60_000,
-  });
-  const departmentShellEnabled = rolloutFlags?.find((f) => f.key === "department_shell")?.value ?? false;
-
   // Derive allowed section keys from lens profile when simulating
   const lensAllowedSectionKeys = useMemo(() => {
     if (!lens.simulation) return null;
     const profile = lens.getActiveLensProfile();
-    const moduleMap = getActiveModuleToSectionKeys(departmentShellEnabled);
-    return getAllowedSectionKeysForLens(profile.allowedModules, moduleMap);
-  }, [lens.simulation, lens.activeLens, lens.getActiveLensProfile, departmentShellEnabled]);
+    return getAllowedSectionKeysForLens(profile.allowedModules);
+  }, [lens.simulation, lens.activeLens, lens.getActiveLensProfile]);
 
   const visibleSections = useMemo(() => {
     const sections = buildVisibleTopSections({
@@ -106,8 +96,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       companyRole: lens.simulation ? null : effectiveCompanyRole,
       allowedSectionKeys: lensAllowedSectionKeys,
       disabledSubPages: disabledSubPages,
-      sections: getActiveSections(departmentShellEnabled),
-      roleVisibleSections: getActiveRoleVisibleSections(departmentShellEnabled),
     });
     // Apply user's custom section order if set
     if (sectionOrder.length > 0) {
@@ -121,7 +109,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
     }
     return sections;
-  }, [canViewPath, sectionOrder, effectiveCompanyRole, lensAllowedSectionKeys, lens.simulation, disabledSubPages, departmentShellEnabled]);
+  }, [canViewPath, sectionOrder, effectiveCompanyRole, lensAllowedSectionKeys, lens.simulation, disabledSubPages]);
 
   // Redirect to the active lens's landing page on lens switch
   const prevLensRef = useRef(lens.activeLens);
