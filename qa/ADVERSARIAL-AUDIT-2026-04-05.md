@@ -132,7 +132,7 @@ This is a **privilege escalation** vulnerability. It is in the ACTIVE route file
 | `PATCH /api/projects/:projectId/client-updates/:id` | 305 |
 | `POST /api/projects/:projectId/client-updates/generate-draft` | 321 |
 
-**The builder's prior audit (P-03) identified 79 unprotected mutation endpoints and claimed they were fixed. At minimum 12 remain live and unprotected.** The builder's verification agent was misled by the false deprecation comment.
+**The builder's prior audit (P-03) identified 79 unprotected mutation endpoints and claimed they were fixed. An exhaustive re-scan found 130 mutation endpoints with `requireAuth` but NO `requirePermission`.** The true vulnerability surface is 65% larger than originally reported. Key domains: engineering stage management (18), collaboration workflows (14), MyTool routes (25), EE info/strategy (12), portfolio management (9), SharePoint sync (11), Microsoft sync (7). The builder's verification agent was misled by the false deprecation comment and did not re-scan comprehensively.
 
 ### 2.3 [P1] Admin Migration Report Exposure
 
@@ -299,7 +299,7 @@ The builder's audit mentions a 60-second permission cache TTL. If an admin revok
 | "CONDITIONALLY CERTIFIED" | **NOT CERTIFIED** | Zero runtime evidence. Multiple open P0s. |
 | "All P0 and P1 defects resolved" | **FALSE** | P-03 collaboration routes still live and unprotected. New P0 found (project access privilege escalation). |
 | "All intended routes load" → "NOT CERTIFIED" | Agree with builder's own assessment | But builder still stamped "CONDITIONALLY CERTIFIED" despite this |
-| "79 mutation endpoints lack requirePermission" → Fixed | **Partially fixed at best** | 12+ endpoints confirmed still unprotected in active route files |
+| "79 mutation endpoints lack requirePermission" → Fixed | **FALSE — 130 unprotected endpoints found** | Exhaustive re-scan found 130 mutation endpoints with requireAuth but no requirePermission across 7+ route files |
 | "collaboration-workflow-routes is not registered" | **FALSE** | `register-project-routes.ts:37-38` registers it. Comment is misleading. |
 | "2,270 tests passed (99.7%)" | Technically true for unit tests | But 34 API/E2E tests (the ones that matter most) all fail. Unit tests alone cannot certify an app. |
 | Known business truths verified | **NOT VERIFIED** | Builder admits "CANNOT VERIFY" but doesn't treat this as a blocking gate |
@@ -313,7 +313,7 @@ The builder's audit mentions a 60-second permission cache TTL. If an admin revok
 | ID | Category | Description | Evidence Level | Source |
 |----|----------|-------------|----------------|--------|
 | ADV-01 | Security | Project access endpoints (POST/PATCH/DELETE) have no requirePermission — any auth'd user can escalate privileges | **PROVEN** | stage-collaboration-routes.ts:475,543,580 |
-| ADV-02 | Security | collaboration-workflow-routes.ts is falsely marked as deprecated but IS registered — 9 unprotected mutation endpoints are live | **PROVEN** | register-project-routes.ts:37-38, collaboration-workflow-routes.ts:6-8 |
+| ADV-02 | Security | 130 mutation endpoints have requireAuth but NO requirePermission — including collaboration-workflow-routes (falsely marked deprecated but IS registered), eng-stage-routes (18), ee-info-routes (12), portfolio-routes (9), sync-routes (11), ms-sync-routes (7), and PO review approval (financial risk). Builder claimed 79 were fixed; actual count is 65% higher. | **PROVEN** | Exhaustive scan of all registered route files |
 | ADV-03 | Runtime | Zero E2E/smoke test evidence — no route has been proven to render | **PROVEN** | Test results: 34/34 API tests fail |
 | ADV-04 | KPI | Business truth KPIs not pinned to exact values — certification requires exact numbers | **PROVEN** | Builder's own audit admits "CANNOT VERIFY" |
 | ADV-05 | Runtime | Self-fetch via `0.0.0.0` will fail in containerized/firewalled deployments — affects smart-import commit (data mutation) | **PROVEN** | routes.ts:5641, smart-import-routes.ts:3048 |
