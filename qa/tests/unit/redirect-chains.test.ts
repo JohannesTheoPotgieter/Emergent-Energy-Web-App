@@ -25,7 +25,7 @@ describe("redirect chain elimination", () => {
   });
 
   it("PM role fallback resolves home path via ROLE_LANDING_PAGE", () => {
-    expect(appSource).toContain('ROLE_LANDING_PAGE[effectiveRole] || "/dashboard"');
+    expect(appSource).toContain('ROLE_LANDING_PAGE[effectiveRole] || "/"');
   });
 
   it("collapse comments document the original chain", () => {
