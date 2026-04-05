@@ -9,7 +9,7 @@
 
 ## EXECUTIVE SUMMARY
 
-This audit found **7 P0 (stop-ship) defects**, **11 P1 defects**, and numerous P2/P3 issues. The most critical findings are:
+This audit found **8 P0 (stop-ship) defects**, **10 P1 defects**, and numerous P2/P3 issues. The most critical findings are:
 
 1. **Financial KPI inconsistency**: PM Monthly Report uses non-canonical COS realisation logic, producing different numbers than Company Overview and Dashboard for the same data.
 2. **Permission bypass**: COS Status Override endpoints (`POST /api/cos-status-override`, `DELETE /api/cos-status-override/:expenseId`) have no authorization check — any authenticated user can override financial cost status.
@@ -246,6 +246,25 @@ Uses inline `if (!COO_ROLES.includes(userRole))` instead of centralized middlewa
 
 Group creation, deletion, member management, and message sending all use inline role checks instead of the `checkPermission()` middleware. Inconsistent authorization pattern.
 
+### 3.7 Verified: Backend Backs Up Most UI-Only Checks (PROVEN — NO DEFECT)
+
+The permissions agent flagged `UnifiedPlanTab.tsx`, `ExpenditureEditableTab.tsx`, and `RevenueTrackingEditableTab.tsx` as having UI-only `isAdmin` checks. **Verified**: the corresponding backend endpoints (`POST /api/project-plan/structure`, `POST /api/expenditure/overrides`, `POST /api/revenue-tracking/overrides`) all use `requireAdmin` and/or `requirePermission('financials', 'edit')`. These are defense-in-depth, not bypasses.
+
+**Exception**: The font-color-toggle (`PATCH /api/expenditure/font-color-toggle`) and COS status override endpoints remain unprotected (see 3.1, 3.2 above).
+
+### 3.8 Permission System Architecture — Summary (PROVEN)
+
+The app uses a 3-tier permission system:
+1. **User-specific overrides** (highest priority) — `userPermissionOverrides` table
+2. **DB role permissions** — `rolePermissions.entityPermissions` JSONB
+3. **Code defaults** (lowest) — `ENTITY_PERMISSION_DEFAULTS` in `shared/schema/users.ts:289-400+`
+
+**16 permission entities** are defined (projects, financials, cos, cashflow, revenue_tracker, gp_tracker, quality, engineering, eng_stages, eng_tasks, procurement, etc.)
+
+**Strengths**: V2 API routes (`server/api/v2/routes/v2-routes.ts`) all use `authScoped`/`authProject` middleware consistently. Role management routes all use `requireAdmin`. Permission denial is audit-logged.
+
+**Weaknesses**: Legacy routes in `server/routes.ts` have inconsistent middleware. 38+ mutation endpoints use only `requireAuth`. Permission cache has 60s TTL — a revoked permission takes up to 60s to take effect.
+
 ---
 
 ## SECTION 4: RUNTIME / DEPLOYMENT RISKS
@@ -326,24 +345,32 @@ SharePoint and Outlook integrations depend on `REPLIT_CONNECTORS_HOSTNAME` and `
 
 ## SECTION 5: SUSPECTED HIDDEN DEFECTS
 
-### 5.1 [P0] GP Tracker May Diverge from Company Overview (HIGH-RISK SUSPECTED)
+### 5.1 [P0] THREE Different COS Realisation Implementations Exist (PROVEN)
 
-The GP Tracker (`server/departments/finance-routes.ts:2195+`) uses its own `isEffectivelyRealised()` function:
+There are three separate COS realisation algorithms in the codebase, each producing different results:
 
-```
-cosStatus = 'COS Realised' AND monthKey <= currentMonthKey
-OR cosStatus = 'Committed' AND monthKey < currentMonthKey
-```
+**Implementation 1: `isCanonicalCosRealised()`** (`server/lib/finance/cos-realisation.ts:36`)
+- Used by: Company Overview, Dashboard Metrics, Project Header KPIs
+- Checks: `cosStatusOverride` → `status` field keywords → `cosRealised` boolean → committed past-month logic
+- Accepts overrides: "COS REALISED", "REALISED", "INVOICED", "PAID"
 
-This is NOT the same as `isCanonicalCosRealised()` which also checks:
-- `cosStatusOverride` field
-- `cosRealised` boolean
-- `expensePoNumber` as committed signal
-- `expenseInvoiceNumber` as committed signal
+**Implementation 2: `classifyCosStatusFull()` → `classifyCosStatus()`** (`server/lib/calculations/financeUtils.ts:62` → `stateClassifier.ts:45`)
+- Used by: GP Tracker, COS Tracker, Finance routes via `isEffectivelyRealised()` (`finance-routes.ts:124`)
+- Checks: `_cosOverrideStatus` → then invoiceNumber + invoiceDate + invoiceDateConfirmed/black
+- Does **NOT** check `cosRealised` boolean
+- Does **NOT** check `status` field for "PAID"/"INVOICED"/"REALISED" keywords
+- Only accepts override = exact string "COS Realised" (not "INVOICED" or "PAID")
 
-**If any expense line is realised by override or boolean flag but has a non-matching cosStatus, the GP Tracker will miss it.**
+**Implementation 3: PM Report inline** (`pm-monthly-report-service.ts:246`)
+- Checks: `invoiceNumber + invoiceDate + isDateBlack()` only
+- Ignores all overrides, booleans, and status fields
 
-I was unable to confirm whether the GP Tracker imports or calls `isCanonicalCosRealised()` directly — a targeted code read is needed. But the inline logic described above strongly suggests divergence.
+**Concrete divergence scenarios**:
+- A line with `cosRealised: true` but no invoice → Impl 1 says REALISED, Impl 2 and 3 say NOT REALISED
+- A line with `cosStatusOverride: "PAID"` → Impl 1 says REALISED, Impl 2 says NOT REALISED (only checks "COS Realised")
+- A line with `status: "PAID"` but no invoice number → Impl 1 says REALISED, Impl 2 and 3 say NOT REALISED
+
+This means **the GP Tracker, Company Overview, and PM Report can show three different COS realised totals for the same project in the same period**.
 
 ### 5.2 [P1] Excel Export Inherits PM Report Errors (HIGH-RISK SUSPECTED)
 
@@ -415,19 +442,20 @@ Until all consumers use the canonical function, this claim is false.
 
 ## PRIORITY SUMMARY
 
-### P0 — Stop Ship (7 findings)
+### P0 — Stop Ship (8 findings)
 
 | # | Finding | Evidence Level |
 |---|---------|---------------|
 | 1 | PM Report COS Realised uses wrong formula | PROVEN |
 | 2 | PM Report Revenue Settlement uses wrong formula | PROVEN |
-| 3 | COS Status Override has no authorization | PROVEN |
-| 4 | Font Color Toggle has no authorization (financial signal) | PROVEN |
-| 5 | No ChunkLoadError recovery for 70+ lazy routes | PROVEN |
-| 6 | Critical jspdf vulnerability (PDF Object Injection) | PROVEN |
-| 7 | Client-side COS fallback uses wrong formula | PROVEN (if fallback path is reachable) |
+| 3 | THREE different COS realisation implementations produce different results | PROVEN |
+| 4 | COS Status Override has no authorization | PROVEN |
+| 5 | Font Color Toggle has no authorization (financial signal) | PROVEN |
+| 6 | No ChunkLoadError recovery for 70+ lazy routes | PROVEN |
+| 7 | Critical jspdf vulnerability (PDF Object Injection) | PROVEN |
+| 8 | Client-side COS fallback uses wrong formula | PROVEN (if fallback path is reachable) |
 
-### P1 — Fix Before Release (11 findings)
+### P1 — Fix Before Release (10 findings)
 
 | # | Finding | Evidence Level |
 |---|---------|---------------|
@@ -440,8 +468,7 @@ Until all consumers use the canonical function, this claim is false.
 | 7 | Missing favicon.png (404 on every page) | PROVEN |
 | 8 | Incomplete .env.example | PROVEN |
 | 9 | Duplicate route handler | PROVEN |
-| 10 | GP Tracker may diverge from Company Overview | HIGH-RISK SUSPECTED |
-| 11 | Excel export inherits PM report errors | HIGH-RISK SUSPECTED |
+| 10 | Excel export inherits PM report errors | HIGH-RISK SUSPECTED |
 
 ### P2/P3 — Secondary (5+ findings)
 
