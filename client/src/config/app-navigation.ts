@@ -1,13 +1,23 @@
 /**
  * Master Navigation Structure
  *
- * 11-section model reflecting the real business system:
+ * Two models available (feature-flagged via "department_shell"):
+ *
+ * Legacy 11-section model:
  *   Home | Company | Priorities | Project Development | Project Delivery | Finance | Engineering | HSE | Quality | Reports | Admin
  *
+ * New 9-department model (Migration Control Pack Wave 1):
+ *   Home | Priorities | Project Development | Project Management | Engineering | Quality | Finance | Parties | Admin
+ *   - HSE folded into Project Management
+ *   - Portfolio/Company folded into Project Management
+ *   - Reports distributed into each department
+ *   - Parties added as new top-level department
+ *
  * Role-based visibility determines which sections each role sees.
- * "Gates" is not a top-level section — it lives inside Portfolio and functional areas.
  * Labels are consistent across the company.
  */
+
+import { DEPARTMENT_SECTIONS, DEPARTMENT_ROLE_VISIBLE_SECTIONS, DEPARTMENT_MODULE_TO_SECTION_KEYS } from "./department-nav";
 
 export type SecondaryItem = { label: string; path: string; disabled?: boolean };
 export type TopSection = {
@@ -253,10 +263,11 @@ const CANONICAL_MODULE_TO_SECTION_KEYS: Record<string, string[]> = {
 /**
  * Converts a lens profile's allowedModules into TopSection key values.
  */
-export function getAllowedSectionKeysForLens(allowedModules: string[]): string[] {
+export function getAllowedSectionKeysForLens(allowedModules: string[], moduleToSectionKeys?: Record<string, string[]>): string[] {
+  const mapping = moduleToSectionKeys ?? CANONICAL_MODULE_TO_SECTION_KEYS;
   const keys = new Set<string>();
   for (const mod of allowedModules) {
-    const mapped = CANONICAL_MODULE_TO_SECTION_KEYS[mod];
+    const mapped = mapping[mod];
     if (mapped) {
       for (const k of mapped) keys.add(k);
     }
@@ -285,13 +296,19 @@ export function buildVisibleTopSections(options: {
   companyRole?: string | null;
   allowedSectionKeys?: string[] | null;
   disabledSubPages?: Map<string, Set<string>> | null;
+  /** Override sections array (used by department shell) */
+  sections?: TopSection[];
+  /** Override role visibility map (used by department shell) */
+  roleVisibleSections?: Record<string, string[]>;
 }) {
   const { canViewPath, companyRole, allowedSectionKeys, disabledSubPages } = options;
+  const activeSections = options.sections ?? TOP_SECTIONS;
+  const activeRoleVisibility = options.roleVisibleSections ?? ROLE_VISIBLE_SECTIONS;
 
   const allowedKeys = allowedSectionKeys
-    ?? (companyRole ? ROLE_VISIBLE_SECTIONS[companyRole] : null);
+    ?? (companyRole ? activeRoleVisibility[companyRole] : null);
 
-  return TOP_SECTIONS
+  return activeSections
     .map((section) => {
       if (allowedKeys && !allowedKeys.includes(section.key)) {
         return null;
@@ -495,4 +512,27 @@ export function getBreadcrumbs(pathname: string, activeSection: TopSection): Bre
     if (segment) items.push({ label: decodeURIComponent(segment) });
   }
   return items;
+}
+
+// ===================== DEPARTMENT SHELL (Wave 1) =====================
+
+/**
+ * Returns the appropriate sections array based on department_shell feature flag.
+ */
+export function getActiveSections(departmentShellEnabled: boolean): TopSection[] {
+  return departmentShellEnabled ? DEPARTMENT_SECTIONS : TOP_SECTIONS;
+}
+
+/**
+ * Returns the appropriate role visibility map based on department_shell feature flag.
+ */
+export function getActiveRoleVisibleSections(departmentShellEnabled: boolean): Record<string, string[]> {
+  return departmentShellEnabled ? DEPARTMENT_ROLE_VISIBLE_SECTIONS : ROLE_VISIBLE_SECTIONS;
+}
+
+/**
+ * Returns the appropriate module-to-section-key map based on department_shell feature flag.
+ */
+export function getActiveModuleToSectionKeys(departmentShellEnabled: boolean): Record<string, string[]> {
+  return departmentShellEnabled ? DEPARTMENT_MODULE_TO_SECTION_KEYS : CANONICAL_MODULE_TO_SECTION_KEYS;
 }

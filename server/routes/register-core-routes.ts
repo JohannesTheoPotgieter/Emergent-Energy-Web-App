@@ -60,4 +60,28 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Company Overview routes:", (err instanceof Error ? err.message : String(err)));
   }
+
+  // Wave 1: Parties registry (reads from core.parties)
+  try {
+    const { registerPartiesRoutes } = await import("./parties.routes");
+    registerPartiesRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Parties routes:", (err instanceof Error ? err.message : String(err)));
+  }
+
+  // Wave 1: Home summary dashboard
+  try {
+    const { registerHomeSummaryRoutes } = await import("./home-summary.routes");
+    registerHomeSummaryRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Home Summary routes:", (err instanceof Error ? err.message : String(err)));
+  }
+
+  // Wave 1: Admin migration status
+  try {
+    const { registerMigrationStatusRoutes } = await import("./migration-status.routes");
+    registerMigrationStatusRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Migration Status routes:", (err instanceof Error ? err.message : String(err)));
+  }
 }
