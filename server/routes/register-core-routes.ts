@@ -84,4 +84,12 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Migration Status routes:", (err instanceof Error ? err.message : String(err)));
   }
+
+  // Wave 2: Work items v2 (promoted schema)
+  try {
+    const { registerWorkItemsV2Routes } = await import("./work-items-v2.routes");
+    registerWorkItemsV2Routes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Work Items V2 routes:", (err instanceof Error ? err.message : String(err)));
+  }
 }
