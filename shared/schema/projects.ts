@@ -123,7 +123,12 @@ export type InsertProjectInfo = z.infer<typeof insertProjectInfoSchema>;
 export type ProjectInfo = typeof projectInfo.$inferSelect;
 
 // ===================== PROJECT EXECUTION STATE =====================
-// Split from project_info — contains all execution/lifecycle/status columns
+// COMPATIBILITY LAYER — Wave 6: Authority transferred to core.project_instances
+// via view-swap INSTEAD OF triggers (20260404_view_swap_project_execution_state.sql).
+// Phase is authoritative in core.project_instances.current_phase_definition_id.
+// Key dates will migrate to core.project_instances in a future sprint.
+// Exit condition: All legacy consumers migrated to promoted schema reads.
+// DO NOT add new fields here — add them to core.project_instances instead.
 
 export const projectExecutionState = pgTable("project_execution_state", {
   id: serial("id").primaryKey(),

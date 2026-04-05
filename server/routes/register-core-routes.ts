@@ -124,4 +124,12 @@ export async function registerCoreRoutes(app: Express) {
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Finance Records V2 routes:", (err instanceof Error ? err.message : String(err)));
   }
+
+  // Wave 6: Phase history + gate compatibility endpoints
+  try {
+    const { registerPhaseHistoryRoutes } = await import("./phase-history.routes");
+    registerPhaseHistoryRoutes(app);
+  } catch (err: unknown) {
+    console.error("[Startup:Routes] Failed to register Phase History routes:", (err instanceof Error ? err.message : String(err)));
+  }
 }
