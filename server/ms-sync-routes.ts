@@ -86,7 +86,7 @@ export function registerMsSyncRoutes(app: Express) {
       }
     });
 
-  app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -105,7 +105,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -159,7 +159,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -178,7 +178,7 @@ export function registerMsSyncRoutes(app: Express) {
 
 
 
-  app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -260,7 +260,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/ms-objects/:id/dismiss", jwtAuth, requireAuth, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.patch("/api/ms-objects/:id/dismiss", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -284,7 +284,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ms-sync/trigger", jwtAuth, requireAuth, requireMicrosoftSyncSurfaceAccess(), async (req: Request, res: Response) => {
+  app.post("/api/ms-sync/trigger", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireMicrosoftSyncSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
@@ -370,7 +370,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/tasks/reassign", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/tasks/reassign", jwtAuth, requireAuth, requirePermission("admin", "edit"), async (req: Request, res: Response) => {
     try {
       const parsed = assignmentPayloadSchema.safeParse(req.body);
       if (!parsed.success) {

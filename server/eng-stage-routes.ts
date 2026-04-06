@@ -25,6 +25,7 @@ import { logAuditFromReq } from "./audit-logger";
 import { sendError } from "./lib/api-error";
 import { createEngineeringWorkItem, updateEngineeringWorkItem } from "./work-items-adapter";
 import { jwtAuth, requireAuth } from "./auth-context";
+import { requirePermission } from "./permission-middleware";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "eng-deliverables");
 if (!fs.existsSync(UPLOADS_DIR)) {
@@ -322,7 +323,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/projects/:projectId/eng-stages/generate", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/projects/:projectId/eng-stages/generate", jwtAuth, requireAuth, requirePermission("eng_tasks", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const projectId = parseInt(req.params.projectId);
@@ -545,7 +546,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/tasks/:taskId", jwtAuth, requireAuth, requirePermission("eng_tasks", "edit"), async (req: Request, res: Response) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const user = getUser(req);
@@ -646,7 +647,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/tasks/:taskId/deliverables", jwtAuth, requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+  app.post("/api/eng-stages/tasks/:taskId/deliverables", jwtAuth, requireAuth, requirePermission("eng_tasks", "edit"), upload.single("file"), async (req: Request, res: Response) => {
     try {
       const taskId = parseInt(req.params.taskId);
       const user = getUser(req);
@@ -680,7 +681,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/deliverables/:id/approve", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/deliverables/:id/approve", jwtAuth, requireAuth, requirePermission("eng_tasks", "approve"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const user = getUser(req);
@@ -715,7 +716,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/stages/:stageId/deliverables", jwtAuth, requireAuth, upload.single("file"), async (req: Request, res: Response) => {
+  app.post("/api/eng-stages/stages/:stageId/deliverables", jwtAuth, requireAuth, requirePermission("eng_tasks", "edit"), upload.single("file"), async (req: Request, res: Response) => {
     try {
       const stageId = parseInt(req.params.stageId);
       const user = getUser(req);
@@ -766,7 +767,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/eng-stages/deliverables/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.delete("/api/eng-stages/deliverables/:id", jwtAuth, requireAuth, requirePermission("eng_tasks", "delete"), async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
       const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
@@ -784,7 +785,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/approvals/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/approvals/:id", jwtAuth, requireAuth, requirePermission("eng_tasks", "approve"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const id = parseInt(req.params.id);
@@ -837,7 +838,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, requirePermission("eng_tasks", "edit"), async (req: Request, res: Response) => {
     try {
       const stageId = parseInt(req.params.stageId);
 
@@ -978,7 +979,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.post("/api/eng-stages/stages/:stageId/override-complete", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/eng-stages/stages/:stageId/override-complete", jwtAuth, requireAuth, requirePermission("eng_tasks", "approve"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required for override" });
@@ -1031,7 +1032,7 @@ export function registerEngStageRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/eng-stages/stages/:stageId/status", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.patch("/api/eng-stages/stages/:stageId/status", jwtAuth, requireAuth, requirePermission("eng_tasks", "edit"), async (req: Request, res: Response) => {
     try {
       const stageId = parseInt(req.params.stageId);
       const { status } = req.body;
