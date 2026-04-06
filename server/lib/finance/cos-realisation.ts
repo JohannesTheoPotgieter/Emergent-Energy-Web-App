@@ -54,8 +54,11 @@ export function isCanonicalCosRealised(input: CosLineInput): boolean {
 
   if (input.cosRealised === true) return true;
 
+  // ADV-09 fix: also check override === "COMMITTED" so that a COMMITTED override
+  // with a past-month date correctly resolves to realised even without PO/invoice number.
   const hasCommittedSignal =
     status === "COMMITTED" ||
+    override === "COMMITTED" ||
     hasText(input.expensePoNumber) ||
     hasText(input.expenseInvoiceNumber);
 
