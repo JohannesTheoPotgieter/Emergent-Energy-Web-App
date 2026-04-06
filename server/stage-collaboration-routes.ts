@@ -451,6 +451,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/access",
     jwtAuth,
     requireAuth,
+    requirePermission("projects", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -476,6 +477,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/access",
     jwtAuth,
     requireAuth,
+    requirePermission("admin", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -544,6 +546,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/access/:id",
     jwtAuth,
     requireAuth,
+    requirePermission("admin", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req, res);
@@ -581,6 +584,7 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/access/:id",
     jwtAuth,
     requireAuth,
+    requirePermission("admin", "delete"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req, res);

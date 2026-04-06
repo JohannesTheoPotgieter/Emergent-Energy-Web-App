@@ -5638,7 +5638,7 @@ export async function registerRoutes(
   app.get("/api/export/projects-summary", requireAuth, async (req, res) => {
     try {
       const authHeader = req.headers.authorization || "";
-      const response = await fetch(`http://0.0.0.0:${process.env.PORT || 5000}/api/projects-summary`, {
+      const response = await fetch(`http://127.0.0.1:${process.env.PORT || 5000}/api/projects-summary`, {
         headers: { Authorization: authHeader },
       });
       const summary = await response.json();
