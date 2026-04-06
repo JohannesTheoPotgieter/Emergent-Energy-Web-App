@@ -1346,7 +1346,7 @@ export default function ProjectDetailPage() {
 
     const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
     const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
-    const hasCommittedSignal = status === "COMMITTED" || hasPO || hasInvoice;
+    const hasCommittedSignal = status === "COMMITTED" || override === "COMMITTED" || hasPO || hasInvoice;
     if (!hasCommittedSignal) return false;
 
     const invDate = e.expenseInvoicedDate || e.paymentDate || e.expensePaymentDate || "";
