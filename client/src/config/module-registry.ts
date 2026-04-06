@@ -39,7 +39,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     label: 'Executive',
     iconKey: 'LayoutDashboard',
     description: 'Executive overview — KPIs, strategic risk, decisions',
-    pageIds: ['executionBoard', 'executionBoardProgram', 'executionBoardConstruction', 'executionBoardFinance', 'priorities', 'priorityDetail'],
+    pageIds: ['executionBoard', 'executionBoardProgram', 'executionBoardFinance', 'priorities', 'priorityDetail'],
     primaryPath: '/gates',
   },
   {
@@ -71,7 +71,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     label: 'Delivery',
     iconKey: 'Milestone',
     description: 'Delivery management — gates, construction, handovers, weekly reviews',
-    pageIds: ['gatesPipeline', 'gatesBlocked', 'gatesReady', 'gatesExceptions', 'gatesClientUpdates', 'gatesHandovers', 'gatesQueries', 'gatesCommitments', 'constructionDashboard', 'handoverControl', 'handoverDashboard', 'weeklyReviews', 'taskManagement', 'standups', 'exceptions', 'pmApprovals', 'pmHandoverReview', 'pmOnTheGo', 'pmOnTheGoProject', 'financialReviewQueue'],
+    pageIds: ['gatesPipeline', 'gatesBlocked', 'gatesReady', 'gatesExceptions', 'gatesClientUpdates', 'gatesHandovers', 'gatesQueries', 'gatesCommitments', 'constructionDashboard', 'handoverControl', 'handoverDashboard', 'weeklyReviews', 'standups', 'pmHandoverReview', 'pmOnTheGo', 'pmOnTheGoProject', 'financialReviewQueue'],
     primaryPath: '/gates',
   },
   {
@@ -111,7 +111,7 @@ export const MODULE_DEFINITIONS: ModuleDefinition[] = [
     label: 'Reports',
     iconKey: 'BarChart3',
     description: 'Reports — programme, PM, engineering, performance',
-    pageIds: ['reportCenter', 'programmeReports', 'performanceDashboard', 'pmMonthlyReport', 'pmMonthlyReportHistory', 'pmMonthlyReportCompare', 'pmMonthlyReportProject', 'engMonthlyReport', 'engMonthlyReportHistory', 'engMonthlyReportCompare', 'engMonthlyReportProject', 'leaderboard', 'feedback', 'eeInfo', 'training', 'departmentScores'],
+    pageIds: ['reportCenter', 'programmeReports', 'performanceDashboard', 'pmMonthlyReport', 'pmMonthlyReportHistory', 'pmMonthlyReportCompare', 'pmMonthlyReportProject', 'engMonthlyReport', 'engMonthlyReportHistory', 'engMonthlyReportCompare', 'engMonthlyReportProject', 'leaderboard', 'feedback', 'eeInfo', 'training'],
     primaryPath: '/reports/center',
   },
   {

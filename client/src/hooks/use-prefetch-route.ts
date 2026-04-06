@@ -7,7 +7,6 @@ import { useCallback, useRef } from "react";
  */
 const PREFETCH_MAP: Record<string, () => Promise<unknown>> = {
   "/company-overview": () => import("@/pages/company-overview"),
-  "/dashboard": () => import("@/pages/dashboard"),
   "/project-lifecycle": () => import("@/pages/project-lifecycle"),
   "/projects": () => import("@/pages/projects"),
   "/cashflow": () => import("@/pages/cashflow"),
@@ -24,9 +23,9 @@ const PREFETCH_MAP: Record<string, () => Promise<unknown>> = {
   "/my-work/calendar": () => import("@/pages/my-work-calendar"),
   "/my-work/meetings": () => import("@/pages/my-work-meetings"),
   "/inbox": () => import("@/pages/inbox"),
-  "/approvals": () => import("@/pages/admin-approvals"),
+  "/governance/approvals": () => import("@/pages/approvals-board-v2"),
   "/portfolios": () => import("@/pages/portfolios"),
-  "/admin-settings": () => import("@/pages/admin-settings"),
+  "/admin/control-center": () => import("@/pages/admin-control-center"),
   "/leaderboard": () => import("@/pages/leaderboard"),
   "/report-center": () => import("@/pages/reports/report-center"),
   "/gates": () => import("@/pages/gates/gates-pipeline"),
