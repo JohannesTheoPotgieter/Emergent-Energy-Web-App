@@ -37,7 +37,8 @@ const FROZEN_EXPENSE_LINES: Array<CosLineInput & { amount: number; expectedReali
   { description: "Invoice number + payment date in past month → realised", expenseInvoiceNumber: "INV-500", paymentDate: "2026-03-10", amount: 160000, today: TODAY, expectedRealised: true },
   { description: "Committed + invoice date in CURRENT month → NOT realised", status: "COMMITTED", expenseInvoicedDate: "2026-04-02", amount: 100000, today: TODAY, expectedRealised: false },
   { description: "Committed + invoice date in FUTURE month → NOT realised", status: "COMMITTED", expenseInvoicedDate: "2026-05-01", amount: 50000, today: TODAY, expectedRealised: false },
-  { description: "Override COMMITTED + past-month date but no committed signal → not realised", cosStatusOverride: "COMMITTED", expenseInvoicedDate: "2026-02-15", amount: 85000, today: TODAY, expectedRealised: false },
+  // ADV-09 fix: COMMITTED override is now itself a committed signal, so past-month date → realised
+  { description: "Override COMMITTED + past-month date → realised (override IS committed signal)", cosStatusOverride: "COMMITTED", expenseInvoicedDate: "2026-02-15", amount: 85000, today: TODAY, expectedRealised: true },
 
   // === NO SIGNALS ===
   { description: "No signals at all → planned", amount: 25000, today: TODAY, expectedRealised: false },
@@ -65,16 +66,16 @@ describe("canonical COS realisation — frozen dataset", () => {
     const realisedTotal = FROZEN_EXPENSE_LINES
       .filter((l) => isCanonicalCosRealised(l))
       .reduce((sum, l) => sum + l.amount, 0);
-    expect(realisedTotal).toBe(1_570_000);
-    expect(EXPECTED_REALISED_TOTAL).toBe(1_570_000);
+    expect(realisedTotal).toBe(1_655_000);
+    expect(EXPECTED_REALISED_TOTAL).toBe(1_655_000);
   });
 
   it("pins the exact unrealised total at 365,000", () => {
     const unrealisedTotal = FROZEN_EXPENSE_LINES
       .filter((l) => !isCanonicalCosRealised(l))
       .reduce((sum, l) => sum + l.amount, 0);
-    expect(unrealisedTotal).toBe(450_000);
-    expect(EXPECTED_UNREALISED_TOTAL).toBe(450_000);
+    expect(unrealisedTotal).toBe(365_000);
+    expect(EXPECTED_UNREALISED_TOTAL).toBe(365_000);
   });
 
   it("is deterministic: same input always produces same output", () => {
@@ -82,7 +83,7 @@ describe("canonical COS realisation — frozen dataset", () => {
       const total = FROZEN_EXPENSE_LINES
         .filter((l) => isCanonicalCosRealised(l))
         .reduce((sum, l) => sum + l.amount, 0);
-      expect(total).toBe(1_570_000);
+      expect(total).toBe(1_655_000);
     }
   });
 
