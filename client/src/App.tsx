@@ -26,11 +26,29 @@ import { lazy, Suspense, useEffect, ComponentType } from "react";
 function lazyWithRetry(importFn: () => Promise<{ default: ComponentType<any> }>, retries = 3): ReturnType<typeof lazy> {
   return lazy(() =>
     importFn().catch((error: Error) => {
-      if (retries <= 0) throw error;
-      // Cache-bust and retry after a short delay
-      return new Promise<{ default: ComponentType<any> }>((resolve) =>
-        setTimeout(resolve, 1000)
-      ).then(() => lazyWithRetry(importFn, retries - 1) as unknown as Promise<{ default: ComponentType<any> }>);
+      // Detect ChunkLoadError (stale deployment, CDN cache miss)
+      const isChunkError = error.name === "ChunkLoadError" ||
+        error.message?.includes("Failed to fetch dynamically imported module") ||
+        error.message?.includes("Loading chunk") ||
+        error.message?.includes("Loading CSS chunk");
+
+      if (isChunkError && retries > 0) {
+        return new Promise<{ default: ComponentType<any> }>((resolve) =>
+          setTimeout(resolve, 1000)
+        ).then(() => lazyWithRetry(importFn, retries - 1) as unknown as Promise<{ default: ComponentType<any> }>);
+      }
+
+      // After retries exhausted for chunk errors, force a full page reload
+      // so the browser fetches fresh HTML with updated chunk hashes.
+      if (isChunkError) {
+        const reloadKey = `chunk-reload-${window.location.pathname}`;
+        if (!sessionStorage.getItem(reloadKey)) {
+          sessionStorage.setItem(reloadKey, "1");
+          window.location.reload();
+        }
+      }
+
+      throw error;
     })
   );
 }
