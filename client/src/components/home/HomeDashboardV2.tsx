@@ -106,7 +106,7 @@ export function HomeDashboardV2() {
         </Link>
 
         {/* Approvals Card */}
-        <Link href="/my-work/approvals">
+        <Link href="/governance/approvals">
           <Card className="cursor-pointer hover:shadow-md transition-shadow">
             <CardContent className="py-4">
               <div className="flex items-center justify-between mb-1">

@@ -1,0 +1,10 @@
+{
+  "dataset_owner": "",
+  "approval_date": "YYYY-MM-DD",
+  "approval_ticket": "",
+  "notes": "Optional context for approvals",
+  "kpis": {
+    "planned_outcome_vs_budget_pct": 0,
+    "actual_cos_realised": 0
+  }
+}

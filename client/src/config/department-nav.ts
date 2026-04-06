@@ -33,7 +33,7 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
     secondary: [
       { label: "My Dashboard", path: "/" },
       { label: "My Tasks", path: "/my-work/tasks" },
-      { label: "Approvals", path: "/my-work/approvals" },
+      { label: "Approvals", path: "/governance/approvals" },
       { label: "Calendar", path: "/my-work/calendar" },
       { label: "Meetings", path: "/my-work/meetings" },
       { label: "Inbox", path: "/inbox" },
@@ -75,8 +75,7 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       "/execution-board",
       "/portfolios",
       "/projects", "/project", "/project-create",
-      "/procurement",
-      "/handover",
+            "/handover",
       "/pm", "/sites",
       "/governance/financial-reviews",
       "/governance/processes",
@@ -90,8 +89,7 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       "/exceptions",
       "/project-lifecycle",
       "/hse",
-      "/standups",
-    ]),
+          ]),
     secondary: [
       // Core PM
       { label: "Execution Dashboard", path: "/execution-board" },
@@ -100,8 +98,8 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       { label: "All Projects", path: "/projects" },
       { label: "Milestone Tracker", path: "/milestone-tracker" },
       { label: "Weekly Reviews", path: "/weekly-reviews" },
-      { label: "Standups", path: "/standups" },
-      { label: "PM Approvals", path: "/pm/approvals" },
+      { label: "Standups", path: "/engineering/standup" },
+      { label: "PM Approvals", path: "/governance/approvals" },
       { label: "PM On-The-Go", path: "/pm/on-the-go" },
       // Financial processes under PM
       { label: "PO Approvals", path: "/po-approval-board" },
