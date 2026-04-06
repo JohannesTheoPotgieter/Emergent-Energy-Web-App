@@ -1,3 +1,5 @@
+> Superseded on 2026-04-06 by docs/qa/current-audit-summary.md.
+
 # QA Certification Audit Report — Emergent Energy Web App
 
 **Date:** 2026-04-05

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Frozen KPI Approval Dataset",
+  "type": "object",
+  "required": [
+    "dataset_owner",
+    "approval_date",
+    "approval_ticket",
+    "kpis"
+  ],
+  "properties": {
+    "dataset_owner": { "type": "string", "minLength": 3 },
+    "approval_date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "approval_ticket": { "type": "string", "minLength": 2 },
+    "notes": { "type": "string" },
+    "kpis": {
+      "type": "object",
+      "required": ["planned_outcome_vs_budget_pct", "actual_cos_realised"],
+      "properties": {
+        "planned_outcome_vs_budget_pct": { "type": "number" },
+        "actual_cos_realised": { "type": "number" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}
