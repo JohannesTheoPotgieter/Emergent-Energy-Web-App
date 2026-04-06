@@ -49,13 +49,13 @@ export function ImportHealthWidget({ data }: { data?: ImportHealthResponse }) {
         )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Link href="/smart-import?tab=errors">
+          <Link href="/admin/smart-import?tab=errors">
             <Button variant="outline" className="w-full justify-between" role="link" aria-label="Open import errors">
               <span className="flex items-center gap-2 text-sm"><XCircle className="h-4 w-4 text-red-500" />Errors</span>
               <span className="font-semibold">{data?.errorCount ?? 0}</span>
             </Button>
           </Link>
-          <Link href="/smart-import?tab=validation">
+          <Link href="/admin/smart-import?tab=validation">
             <Button variant="outline" className="w-full justify-between" role="link" aria-label="Open pending validations">
               <span className="flex items-center gap-2 text-sm"><CheckCircle2 className="h-4 w-4 text-amber-500" />Pending validations</span>
               <span className="font-semibold">{data?.pendingValidations ?? 0}</span>

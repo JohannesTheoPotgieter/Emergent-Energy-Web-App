@@ -427,7 +427,7 @@ export const DEFAULT_LENS_PROFILES: LensProfileSeed[] = [
     navPriority: ['HOME', 'COMPLIANCE', 'PROJECTS', 'DELIVERY', 'ENGINEERING', 'REPORTS'],
     quickActions: [
       { label: "Quality Dashboard", path: "/quality", iconKey: "ShieldCheck" },
-      { label: "NCR List", path: "/quality/ncrs", iconKey: "ListTodo" },
+      { label: "Commissioning", path: "/commissioning-dashboard", iconKey: "ListTodo" },
       { label: "Projects", path: "/projects", iconKey: "FileSpreadsheet" },
     ],
   },
@@ -453,8 +453,8 @@ export const DEFAULT_LENS_PROFILES: LensProfileSeed[] = [
     navPriority: ['HOME', 'DELIVERY', 'PROJECTS', 'FINANCE', 'ENGINEERING', 'COMPLIANCE'],
     quickActions: [
       { label: "My Tasks", path: "/my-work/tasks", iconKey: "ListChecks" },
-      { label: "Approvals", path: "/pm/approvals", iconKey: "ClipboardCheck" },
-      { label: "Deliverables", path: "/pm/deliverables", iconKey: "Package" },
+      { label: "Approvals", path: "/governance/approvals", iconKey: "ClipboardCheck" },
+      { label: "Weekly Reviews", path: "/weekly-reviews", iconKey: "CalendarCheck" },
     ],
   },
   {
