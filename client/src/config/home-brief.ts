@@ -23,18 +23,17 @@ const roleAlias: Record<string, string> = {
 const roleQuickActions: Record<string, QuickAction[]> = {
   pm: [
     { label: "Project Board", description: "Review portfolio execution and status.", path: "/projects" },
-    { label: "Approvals", description: "Clear pending approvals and unblock delivery.", path: "/my-work/approvals" },
+    { label: "Approvals", description: "Clear pending approvals and unblock delivery.", path: "/governance/approvals" },
     { label: "PM Handover Review", description: "Progress handover decisions.", path: "/pm/handover-review" },
     { label: "Execution Board", description: "Prioritize tasks and risks for today.", path: "/execution-board" },
   ],
   engineering: [
     { label: "Engineering Requests", description: "Triage new requests and assignments.", path: "/engineering/tasks" },
     { label: "Engineering Dashboard", description: "Monitor throughput and constraints.", path: "/engineering" },
-    { label: "Review Queue", description: "Complete assigned technical reviews.", path: "/engineering/inbox" },
-    { label: "PD Handover", description: "Coordinate technical handover items.", path: "/pd/pm-handover" },
+    { label: "Standup", description: "Run daily standup and review blockers.", path: "/engineering/standup" },
   ],
   finance: [
-    { label: "PO Approvals", description: "Approve pending procurement requests.", path: "/my-work/approvals" },
+    { label: "PO Approvals", description: "Approve pending procurement requests.", path: "/governance/approvals" },
     { label: "Invoice Matching", description: "Resolve invoice linking and gaps.", path: "/actions/launchpad?action=link-invoice" },
     { label: "COS Tracker", description: "Check budget vs actual exceptions.", path: "/cos" },
     { label: "Cashflow", description: "Review near-term cashflow posture.", path: "/cashflow" },
@@ -42,18 +41,18 @@ const roleQuickActions: Record<string, QuickAction[]> = {
   quality: [
     { label: "Quality Dashboard", description: "Track QA status and compliance issues.", path: "/quality" },
     { label: "Inspections", description: "Review inspections and close-outs.", path: "/quality" },
-    { label: "My Approvals", description: "Resolve quality sign-off dependencies.", path: "/my-work/approvals" },
+    { label: "My Approvals", description: "Resolve quality sign-off dependencies.", path: "/governance/approvals" },
   ],
   admin: [
     { label: "Admin Control Center", description: "Monitor system governance and health.", path: "/admin/control-center" },
     { label: "Roles & Permissions", description: "Manage access and permissions.", path: "/admin/roles" },
-    { label: "Company Priorities", description: "Manage company-wide priorities.", path: "/company-priorities" },
+    { label: "Company Priorities", description: "Manage company-wide priorities.", path: "/priorities" },
   ],
 };
 
 const defaultQuickActions: QuickAction[] = [
   { label: "My Tasks", description: "Start with your active tasks.", path: "/my-work/tasks" },
-  { label: "Approvals", description: "Resolve pending approvals.", path: "/my-work/approvals" },
+  { label: "Approvals", description: "Resolve pending approvals.", path: "/governance/approvals" },
   { label: "Projects", description: "Check live project context.", path: "/projects" },
 ];
 
