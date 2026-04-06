@@ -1203,7 +1203,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   // ── Advanced daily standup workflow ───────────────────────────────────────
-  app.post("/api/standups/entry", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/standups/entry", requireAuth, requirePermission("standups", "create"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { yesterday, today: todayPlan, blockers, project_id, team_id } = req.body || {};
@@ -1263,7 +1263,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   // ── Auto-seed default standup schedule (Mon/Wed/Fri) ──────────────────────
-  app.post("/api/standups/seed-default", requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/standups/seed-default", requireAuth, requirePermission("admin", "edit"), async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       // Check if a default project standup already exists (ignore soft-deleted)

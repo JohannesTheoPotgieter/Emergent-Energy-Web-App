@@ -637,7 +637,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ux/role-aware-interaction", requireAuth, async (req, res) => {
+  app.post("/api/ux/role-aware-interaction", requireAuth, requirePermission("admin", "edit"), async (req, res) => {
     try {
       const action = String(req.body?.action || "");
       const suggestion = String(req.body?.suggestion || "");
@@ -4405,7 +4405,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/work-items/:id/viewers", requireAuth, async (req, res) => {
+  app.post("/api/work-items/:id/viewers", requireAuth, requirePermission("projects", "edit"), async (req, res) => {
     try {
       const workItemId = parseInt(req.params.id);
       const { userId: viewerUserId } = req.body;
@@ -4439,7 +4439,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/work-items/:id/viewers/:userId", requireAuth, async (req, res) => {
+  app.delete("/api/work-items/:id/viewers/:userId", requireAuth, requirePermission("projects", "edit"), async (req, res) => {
     try {
       const workItemId = parseInt(req.params.id);
       const viewerUserId = parseInt(req.params.userId);
@@ -5638,7 +5638,7 @@ export async function registerRoutes(
   app.get("/api/export/projects-summary", requireAuth, async (req, res) => {
     try {
       const authHeader = req.headers.authorization || "";
-      const response = await fetch(`http://0.0.0.0:${process.env.PORT || 5000}/api/projects-summary`, {
+      const response = await fetch(`http://127.0.0.1:${process.env.PORT || 5000}/api/projects-summary`, {
         headers: { Authorization: authHeader },
       });
       const summary = await response.json();
@@ -6201,7 +6201,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/mytool/settings", requireAuth, async (req, res) => {
+  app.put("/api/mytool/settings", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const updated = await storage.updateMytoolSettings(req.body);
       logAuditFromReq(req, { entityType: "mytool_settings", action: "update", changesJson: { description: "MyTool settings updated" } });
@@ -6361,7 +6361,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/calendar/schedule-task", requireAuth, async (req, res) => {
+  app.patch("/api/calendar/schedule-task", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const userName = (req.user as any).username;
@@ -6602,7 +6602,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks", requireAuth, async (req, res) => {
+  app.post("/api/mytool/tasks", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     const userId = (req.user as any).id;
     const rawRequestId = req.header("x-idempotency-key") || req.body?.clientRequestId;
     const requestId = typeof rawRequestId === "string" ? rawRequestId.trim() : "";
@@ -6678,7 +6678,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
+  app.patch("/api/mytool/tasks/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
@@ -6773,7 +6773,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
+  app.delete("/api/mytool/tasks/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
@@ -6820,7 +6820,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
+  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const successorTaskId = Number(req.params.id);
@@ -6858,7 +6858,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, async (req, res) => {
+  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const taskId = Number(req.params.id);
@@ -6887,7 +6887,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/recurrence-templates", requireAuth, async (req, res) => {
+  app.post("/api/mytool/recurrence-templates", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const [template] = await db.insert(mytoolRecurrenceTemplates).values({ ...req.body, ownerUserId: userId }).returning();
@@ -6913,7 +6913,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/timeblocks", requireAuth, async (req, res) => {
+  app.post("/api/mytool/timeblocks", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const block = await storage.createMytoolTimeblock({ ...req.body, ownerUserId: userId });
@@ -6924,7 +6924,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
+  app.patch("/api/mytool/timeblocks/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const block = await storage.updateMytoolTimeblock(parseInt(req.params.id), req.body);
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "update", entityId: req.params.id, changesJson: { description: "Timeblock updated" } });
@@ -6934,7 +6934,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
+  app.delete("/api/mytool/timeblocks/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       await storage.deleteMytoolTimeblock(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "delete", entityId: req.params.id, changesJson: { description: "Timeblock deleted" } });
@@ -6960,7 +6960,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/mytool/daily-review", requireAuth, async (req, res) => {
+  app.put("/api/mytool/daily-review", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const review = await storage.upsertMytoolDailyReview({ ...req.body, ownerUserId: userId });
@@ -7047,7 +7047,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/mytool/preferences", requireAuth, async (req, res) => {
+  app.put("/api/mytool/preferences", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const prefs = await storage.upsertMytoolUserPreferences({ ...req.body, ownerUserId: userId });
@@ -7081,7 +7081,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/email-links", requireAuth, async (req, res) => {
+  app.post("/api/mytool/email-links", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any)?.id || null;
       const link = await storage.createEmailLink({ ...req.body, createdBy: userId });
@@ -7092,7 +7092,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/email-links/:id", requireAuth, async (req, res) => {
+  app.delete("/api/mytool/email-links/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       await storage.deleteEmailLink(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "email_link", action: "delete", entityId: req.params.id, changesJson: { description: "Email link deleted" } });
@@ -7112,7 +7112,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/dod-templates", requireAuth, async (req, res) => {
+  app.post("/api/mytool/dod-templates", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const template = await storage.createMytoolDodTemplate({ ...req.body, createdBy: userId });
@@ -7123,7 +7123,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/dod-templates/:id", requireAuth, async (req, res) => {
+  app.delete("/api/mytool/dod-templates/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       await storage.deleteMytoolDodTemplate(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "dod_template", action: "delete", entityId: req.params.id, changesJson: { description: "DoD template deleted" } });
@@ -7134,7 +7134,7 @@ export async function registerRoutes(
   });
 
   // Support Tickets
-  app.post("/api/mytool/support-ticket", requireAuth, async (req, res) => {
+  app.post("/api/mytool/support-ticket", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const { summary, stepsToReproduce, currentRoute, userAgent } = req.body;
       if (!summary || !stepsToReproduce) {
@@ -7169,7 +7169,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/error-log", requireAuth, async (req, res) => {
+  app.post("/api/error-log", requireAuth, requirePermission("admin", "edit"), async (req, res) => {
     try {
       const { route, action, errorMessage, errorStack, payloadShape } = req.body;
       const correlationId = `ERR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -7201,7 +7201,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/refresh", requireAuth, async (req, res) => {
+  app.post("/api/outlook/refresh", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       outlook.clearCachedToken();
       const status = await outlook.getConnectionStatus();
@@ -8057,7 +8057,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/triage-rules", requireAuth, async (req, res) => {
+  app.post("/api/mytool/triage-rules", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const { ruleType, value } = req.body;
@@ -8076,7 +8076,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
+  app.patch("/api/mytool/triage-rules/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const ruleId = parseInt(req.params.id);
@@ -8096,7 +8096,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
+  app.delete("/api/mytool/triage-rules/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const ruleId = parseInt(req.params.id);
@@ -8260,7 +8260,7 @@ function registerFeedbackRoutes(app: Express) {
     }
   });
 
-  app.post("/api/feedback", requireAuth, async (req, res) => {
+  app.post("/api/feedback", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
     try {
       const user = req.user as any;
       const { type, title, description, priority } = req.body;
@@ -8332,7 +8332,7 @@ function registerUserFolderRoutes(app: Express) {
     }
   });
 
-  app.put("/api/user-project-folder/:projectName", requireAuth, async (req, res) => {
+  app.put("/api/user-project-folder/:projectName", requireAuth, requirePermission("projects", "edit"), async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -8366,7 +8366,7 @@ function registerUserFolderRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/user-project-folder/:projectName", requireAuth, async (req, res) => {
+  app.delete("/api/user-project-folder/:projectName", requireAuth, requirePermission("projects", "edit"), async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });

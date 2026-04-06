@@ -450,6 +450,8 @@ export default function LifecycleBoardPage() {
   const [addProjectResult, setAddProjectResult] = useState<any>(null);
   const [phaseConstants, setPhaseConstants] = useState<{ projectPhases: string[]; projectPhaseLabels: Record<string, string> } | null>(null);
   const { allowed: canCreateProject } = usePermission('create_project', 'edit');
+  // ADV-12a fix: use permission-based check for project deletion instead of hardcoded role list
+  const { allowed: canDeleteProject } = usePermission('projects', 'delete');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -1618,7 +1620,7 @@ export default function LifecycleBoardPage() {
                     </div>
                   </div>
                   <DialogFooter className="flex justify-between sm:justify-between">
-                    {isExec && selectedProject?.id && selectedProject.id > 0 ? (
+                    {canDeleteProject && selectedProject?.id && selectedProject.id > 0 ? (
                       <Button
                         variant="ghost"
                         size="sm"

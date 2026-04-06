@@ -850,7 +850,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requireAdminOrQm, qmApprovalUpload.single("file"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requireAdminOrQm, requirePermission("quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const file = req.file;
@@ -916,7 +916,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requireAdminOrQm, qmApprovalUpload.single("file"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requireAdminOrQm, requirePermission("quality", "approve"), qmApprovalUpload.single("file"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const projectName = decodeURIComponent(String(req.params.projectName));
@@ -2181,7 +2181,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/quality/users/:userId/role", requireAuth, async (req, res) => {
+  app.patch("/api/quality/users/:userId/role", requireAuth, requirePermission("admin", "edit"), async (req, res) => {
     try {
       const role = getUserRole(req);
       if (!isAdminRole(role)) {
@@ -2200,7 +2200,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/admin/bulk-create-checklists", requireAuth, async (req, res) => {
+  app.post("/api/quality/admin/bulk-create-checklists", requireAuth, requirePermission("admin", "create"), async (req, res) => {
     try {
       const role = getUserRole(req);
       if (!isAdminRole(role)) {

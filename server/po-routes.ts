@@ -447,7 +447,7 @@ export function registerPoRoutes(app: Express) {
 
   // ===================== REVIEW PO =====================
 
-  app.post("/api/po/:poId/review", jwtAuth, requireAuth, async (req: Request, res: Response) => {
+  app.post("/api/po/:poId/review", jwtAuth, requireAuth, requirePermission("procurement", "approve"), async (req: Request, res: Response) => {
     try {
       const user = getEffectiveUser(req);
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
