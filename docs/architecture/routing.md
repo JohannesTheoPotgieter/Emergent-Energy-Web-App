@@ -3,12 +3,13 @@
 ## Canonical source of truth
 
 - `client/src/config/page-registry.ts` is the canonical client route inventory.
-- `client/src/App.tsx` is a renderer/wiring layer only.
+- `client/src/config/route-components.tsx` is the canonical routeComponentKey → lazy component registry.
+- `client/src/App.tsx` is a renderer layer only.
 - `client/src/config/app-route-plan.ts` is the route-plan compiler used by `App.tsx` and parity tests.
 
 ## Contracts
 
-1. Every route with `routeComponentKey` must resolve to a key in `ROUTE_COMPONENTS`.
+1. Every route with `routeComponentKey` must resolve to a key in `ROUTE_COMPONENTS` from `client/src/config/route-components.tsx`.
 2. Redirect sources must be unique across `LEGACY_REDIRECTS` and registry alias entries.
 3. Any new route/alias must be added in `PAGE_REGISTRY`; do not hand-wire route truth in `App.tsx`.
 
