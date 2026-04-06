@@ -150,7 +150,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "pmHandoverReview", path: "/pm/handover-review", label: "PM Handover Review", permissionEntity: "handover", routeComponentKey: "PmHandoverReviewPage" },
   { id: "financialReviewQueue", path: "/governance/financial-reviews", label: "Financial Review Queue", iconKey: "DollarSign", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "approvals", showInSidebar: true, routeComponentKey: "FinancialReviewQueuePage" },
   { id: "pmApprovals", path: "/pm/approvals", label: "Approvals (Legacy)", iconKey: "ClipboardCheck", navGroup: "PROJECT_MANAGEMENT", type: "alias", permissionEntity: "approvals", showInSidebar: false, redirectTo: "/governance/approvals" },
-  { id: "pmDeliverables", path: "/pm/deliverables", label: "PM Deliverables (Retired)", type: "alias", permissionEntity: "deliverables", redirectTo: "/governance/approvals" },
   { id: "handoverControl", path: "/handover-control", label: "PD to PM Handover", iconKey: "Handshake", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "handover", showInSidebar: true, routeComponentKey: "HandoverControlPage" },
   // Task Management removed from Project Delivery navigation
   { id: "fyeRevenueTracking", path: "/fye-revenue-tracking", label: "FYE Revenue Tracking", iconKey: "BarChart3", navGroup: "FINANCE", permissionEntity: "fye_revenue_tracking", showInSidebar: true, routeComponentKey: "FyeRevenueTrackingPage" },

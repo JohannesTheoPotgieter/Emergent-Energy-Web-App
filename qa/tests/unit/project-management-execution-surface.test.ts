@@ -17,11 +17,10 @@ describe("project management execution surfaces", () => {
     expect(source).toContain("Latest Update stays app-managed, text only, and visible for execution scanning.");
   });
 
-  it("keeps the PM deliverables surface retired and redirecting to approvals", () => {
-    // pm-deliverables.tsx has been removed; the route now redirects to /pm/approvals
+  it("removes the PM deliverables legacy alias route", () => {
     const registrySource = read("client/src/config/page-registry.ts");
-    expect(registrySource).toContain('id: "pmDeliverables"');
-    expect(registrySource).toContain('redirectTo: "/pm/approvals"');
+    expect(registrySource).not.toContain('id: "pmDeliverables"');
+    expect(registrySource).toContain('id: "pmApprovals"');
   });
 
   it("keeps execution workflow toggles and assignment controls in the board and task drawer", () => {
@@ -38,13 +37,13 @@ describe("project management execution surfaces", () => {
     expect(taskDrawer).toContain("Deliverable-required work must use Send Deliverable.");
   });
 
-  it("keeps the PM approvals, board, and site controls pages execution-oriented", () => {
-    const approvals = read("client/src/pages/admin-approvals.tsx");
+  it("keeps the governance approvals surface, board, and site controls execution-oriented", () => {
+    const approvalsBoard = read("client/src/pages/approvals-board-v2.tsx");
     const board = read("client/src/pages/execution-board.tsx");
     const controls = read("client/src/pages/handover-control.tsx");
 
-    expect(approvals).toContain("Execution approvals queue for post-handover delivery work.");
-    expect(approvals).toContain("Approval-required items must use Send for Approval only.");
+    expect(approvalsBoard).toContain("Approvals Board");
+    expect(approvalsBoard).toContain("pending");
     expect(board).toContain("Work Plan / Board");
     expect(board).toContain("Post-handover execution view");
     expect(controls).toContain("Site / Execution Controls");
