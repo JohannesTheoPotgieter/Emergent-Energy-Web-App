@@ -10,11 +10,11 @@ This summary supersedes prior conflicting audit reports and records the current 
 
 ## Active conclusions
 
-- Route truth is centralized in `PAGE_REGISTRY` and compiled through `buildRoutePlan`.
+- Route truth is centralized in `PAGE_REGISTRY`, compiled through `buildRoutePlan`, and wired through `client/src/config/route-components.tsx`.
 - Contradictory collaboration-route deprecation claims were removed; only `stage-collaboration-routes.ts` is registered.
 - Legacy dead page `client/src/pages/admin-approvals.tsx` was removed from active code.
-- Release gate now requires route parity, redirect checks, and KPI dataset validation command.
-- KPI frozen dataset process is enforced structurally, but business-owned values are still an external dependency.
+- Release gate now requires type/parity/redirect/route-proof/KPI/smoke/workflow checks plus reconciliation + role-audit evidence.
+- KPI frozen dataset process now has a template + owner guide, but business-approved values are still an external dependency.
 
 ## Audit ledger
 

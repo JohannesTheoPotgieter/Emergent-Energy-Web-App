@@ -8,7 +8,7 @@ This directory is the canonical documentation entry point for the repository.
   - `docs/architecture.md` (platform overview)
   - `docs/architecture/routing.md` (canonical route ownership + parity contract)
 - QA / release
-  - `docs/qa/route-truth-baseline-2026-04-06.md` (Phase 0 discovery evidence)
+  - `docs/qa/route-truth-baseline-2026-04-06.md` (current route baseline)
   - `docs/qa/current-audit-summary.md` (single active audit truth)
   - `docs/qa/release-gate.md` (required release evidence and command checklist)
 - Operations

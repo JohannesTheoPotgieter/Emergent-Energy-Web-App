@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PAGE_REGISTRY, LEGACY_REDIRECTS } from "../../../client/src/config/page-registry";
 import { buildRoutePlan } from "../../../client/src/config/app-route-plan";
+import { ROUTE_COMPONENT_KEYS } from "../../../client/src/config/route-components";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -10,17 +11,13 @@ function read(relPath: string) {
 
 describe("route registry ↔ router parity", () => {
   it("contains no unresolved routeComponentKey references", () => {
-    const appSource = read("client/src/App.tsx");
-    const routeMapBlock = appSource.split("const ROUTE_COMPONENTS")[1]?.split("};")[0] ?? "";
-    const routeComponentKeys = [...routeMapBlock.matchAll(/\n\s*([A-Za-z0-9_]+),/g)].map((m) => m[1]);
-
-    const { unresolvedComponentKeys } = buildRoutePlan(routeComponentKeys);
+    const { unresolvedComponentKeys } = buildRoutePlan(ROUTE_COMPONENT_KEYS);
     expect(unresolvedComponentKeys).toEqual([]);
   });
 
   it("keeps one canonical source for route plan generation", () => {
     const appSource = read("client/src/App.tsx");
-    expect(appSource).toContain('buildRoutePlan(Object.keys(ROUTE_COMPONENTS))');
+    expect(appSource).toContain("buildRoutePlan(ROUTE_COMPONENT_KEYS)");
     expect(appSource).not.toContain("LEGACY_REDIRECTS.map");
     expect(appSource).not.toContain("PAGE_REGISTRY.filter((page)");
   });

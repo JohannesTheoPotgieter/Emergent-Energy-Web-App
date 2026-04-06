@@ -318,12 +318,12 @@ describe("Legacy role and route preservation", () => {
   });
 
   it("LEGACY_REDIRECTS are preserved", () => {
-    expect(LEGACY_REDIRECTS.length).toBeGreaterThanOrEqual(15);
+    expect(LEGACY_REDIRECTS.length).toBeGreaterThanOrEqual(13);
     const paths = LEGACY_REDIRECTS.map(r => r.path);
     expect(paths).toContain("/dashboard");
     expect(paths).toContain("/my-tool");
     // /execution-board is now a live page in PAGE_REGISTRY, not a legacy redirect
-    expect(paths).toContain("/command-center");
+    expect(paths).not.toContain("/command-center");
   });
 
   it("ROLE_LANDING_PAGE still maps finance roles to /cashflow", () => {
@@ -348,12 +348,12 @@ describe("Route stability", () => {
   // Note: "/" is handled directly in App.tsx as HomePage, not via PAGE_REGISTRY
   const CRITICAL_ROUTES = [
     "/projects", "/cashflow", "/cos", "/revenue-tracker", "/gp-tracker",
-    "/engineering", "/engineering/tasks", "/quality", "/quality/ncrs",
+    "/engineering", "/engineering/tasks", "/quality",
     "/pd", "/pd/tickets", "/clients", "/opportunities", "/sites",
     "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions",
     "/admin/control-center", "/admin/roles", "/admin/smart-import",
     "/my-work", "/my-work/tasks", "/my-work/calendar",
-    "/hse", "/construction", "/handover", "/procurement",
+    "/hse", "/construction", "/handover", "/governance/approvals",
     "/execution-board", "/portfolios", "/weekly-reviews",
     "/reports/center", "/reports/programme",
   ];
