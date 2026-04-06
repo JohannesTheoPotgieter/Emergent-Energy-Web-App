@@ -13,7 +13,8 @@ import { normalizeRoleForPermissions } from "@shared/schema";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 import { LoadingState } from "@/components/ui/loading-state";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE } from "@/config/page-registry";
+import { PAGE_REGISTRY, ROLE_LANDING_PAGE } from "@/config/page-registry";
+import { buildRoutePlan } from "@/config/app-route-plan";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 import { LensProvider } from "@/hooks/use-lens-context";
 import { lazy, Suspense, useEffect, ComponentType } from "react";
@@ -292,25 +293,17 @@ function HomeRedirect() {
   return <Redirect to={resolveHomePath(user?.role, companyRole)} />;
 }
 
-const APP_ROUTES: RouteConfig[] = [
-  // Legacy redirects (old bookmarks / deep links)
-  ...LEGACY_REDIRECTS.map((r) => ({ path: r.path, redirectTo: r.redirectTo })),
-  // Active pages + registry-level redirects
-  ...PAGE_REGISTRY.filter((page) => page.routeComponentKey || page.redirectTo).flatMap((page) => {
-    const routes: RouteConfig[] = [];
-    if (page.redirectTo) {
-      routes.push({ path: page.path, redirectTo: page.redirectTo });
-    } else if (page.routeComponentKey && ROUTE_COMPONENTS[page.routeComponentKey]) {
-      routes.push({ path: page.path, component: ROUTE_COMPONENTS[page.routeComponentKey] });
-    }
+const { entries: APP_ROUTE_PLAN, unresolvedComponentKeys } = buildRoutePlan(Object.keys(ROUTE_COMPONENTS));
 
-    for (const alias of page.aliases ?? []) {
-      routes.push({ path: alias, redirectTo: page.path });
-    }
+if (unresolvedComponentKeys.length > 0) {
+  throw new Error(`Unresolved route component keys: ${unresolvedComponentKeys.join(", ")}`);
+}
 
-    return routes;
-  }),
-];
+const APP_ROUTES: RouteConfig[] = APP_ROUTE_PLAN.map((route) => ({
+  path: route.path,
+  redirectTo: route.redirectTo,
+  component: route.routeComponentKey ? ROUTE_COMPONENTS[route.routeComponentKey] : undefined,
+}));
 
 
 function AccessDenied() {

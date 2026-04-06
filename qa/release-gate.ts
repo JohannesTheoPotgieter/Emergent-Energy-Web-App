@@ -30,9 +30,11 @@ const CRITICAL_ROUTES = ["/projects", "/project/:projectName", "/cashflow", "/qu
 
 const REQUIRED_COMMAND_CHECKS = [
   { name: "Type check", command: "npm run check" },
-  { name: "API tests", command: "npm run test:api" },
+  { name: "Route parity test", command: "vitest run -c qa/vitest.config.ts qa/tests/unit/route-registry-parity.test.ts" },
+  { name: "Redirect chain check", command: "npm run check:redirects" },
+  { name: "Route proof", command: "npm run test:route-proof" },
+  { name: "KPI frozen dataset validation", command: "npm run validate:kpi-dataset" },
   { name: "Smoke tests", command: "npm run test:smoke" },
-  { name: "Routes tests", command: "npm run test:routes" },
   { name: "Workflow tests", command: WORKFLOW_TEST_COMMAND },
 ] as const;
 
