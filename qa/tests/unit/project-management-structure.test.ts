@@ -13,23 +13,17 @@ describe("project management structure", () => {
   });
 
   it("registers the approved PM execution sub-routes", () => {
-    const approvalsPage = PAGE_REGISTRY.find((page) => page.id === "pmApprovals");
-    const deliverablesPage = PAGE_REGISTRY.find((page) => page.id === "pmDeliverables");
     const dashboardPage = PAGE_REGISTRY.find((page) => page.id === "pmDashboard");
-    const executionDashboardPage = PAGE_REGISTRY.find((page) => page.id === "dashboard");
+    const executionDashboardPage = PAGE_REGISTRY.find((page) => page.id === "executionBoard");
     const pmOnTheGoPage = PAGE_REGISTRY.find((page) => page.id === "pmOnTheGo");
 
-    expect(executionDashboardPage?.label).toBe("Execution Dashboard");
+    expect(executionDashboardPage?.label).toBe("Execution Board");
     expect(dashboardPage?.label).toBe("PM Dashboard");
     expect(pmOnTheGoPage?.label).toBe("PM On-The-Go");
-    expect(approvalsPage?.path).toBe("/pm/approvals");
-    expect(deliverablesPage?.path).toBe("/pm/deliverables");
+    expect(PAGE_REGISTRY.some((page) => page.path === "/governance/approvals")).toBe(true);
   });
 
-  it("keeps the removed command-center route as a redirect instead of a live workspace", () => {
-    const commandCenterPage = PAGE_REGISTRY.find((page) => page.id === "commandCenter");
-
-    expect(commandCenterPage?.redirectTo).toBe("/my-work");
-    expect(commandCenterPage?.routeComponentKey).toBeUndefined();
+  it("removes command-center from active route inventory", () => {
+    expect(PAGE_REGISTRY.some((page) => page.path === "/command-center")).toBe(false);
   });
 });
