@@ -91,7 +91,6 @@ const MyWorkHomePage = lazyWithRetry(() => import("@/pages/my-work-home"));
 const MyWorkTasksPage = lazyWithRetry(() => import("@/pages/my-work-tasks"));
 const MyWorkCalendarPage = lazyWithRetry(() => import("@/pages/my-work-calendar"));
 const InboxPage = lazyWithRetry(() => import("@/pages/inbox"));
-const ApprovalsPage = lazyWithRetry(() => import("@/pages/admin-approvals"));
 const DatabaseMigrationPage = lazyWithRetry(() => import("@/pages/database-migration"));
 const PartiesRegistryPage = lazyWithRetry(() => import("@/pages/parties-registry"));
 const AdminMigrationControlPage = lazyWithRetry(() => import("@/pages/admin-migration-control"));
@@ -118,7 +117,6 @@ const HandoverControlPage = lazyWithRetry(() => import("@/pages/handover-control
 const FyeRevenueTrackingPage = lazyWithRetry(() => import("@/pages/fye-revenue-tracking"));
 const PhaseTemplatesPage = lazyWithRetry(() => import("@/pages/phase-templates"));
 const ProjectCreatePage = lazyWithRetry(() => import("@/pages/project-create"));
-const DepartmentScoresPage = lazyWithRetry(() => import("@/pages/department-scores"));
 const EngTemplateAdminPage = lazyWithRetry(() => import("@/pages/eng-template-admin"));
 const PrioritiesPage = lazyWithRetry(() => import("@/pages/priorities"));
 const PriorityDetailPage = lazyWithRetry(() => import("@/pages/priority-detail"));
@@ -217,7 +215,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   MyWorkCalendarPage,
   MyWorkTasksPage,
   InboxPage,
-  ApprovalsPage,
   DatabaseMigrationPage,
   KpiTraceabilityPage,
   ImportControlTowerPage,
@@ -236,7 +233,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   FyeRevenueTrackingPage,
   PhaseTemplatesPage,
   ProjectCreatePage,
-  DepartmentScoresPage,
   EngTemplateAdminPage,
   PrioritiesPage,
   PriorityDetailPage,
@@ -391,8 +387,6 @@ function ProtectedPages() {
       <div className="page-enter">
         <Switch>
           <Route path="/" component={HomePage} />
-          {/* Explicit selector route — canonical parameterized path is in PAGE_REGISTRY */}
-          <Route path="/commissioning-dashboard" component={CommissioningDashboardPage} />
           {APP_ROUTES.map((route) => {
             if (route.redirectTo) {
               return <Route key={route.path} path={route.path}>{() => <RedirectPreserveQuery to={route.redirectTo!} />}</Route>;
