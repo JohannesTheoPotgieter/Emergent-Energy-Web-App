@@ -90,7 +90,6 @@ export const DEPARTMENT_SECTIONS: TopSection[] = [
       "/exceptions",
       "/project-lifecycle",
       "/hse",
-      "/construction-dashboard",
       "/standups",
     ]),
     secondary: [

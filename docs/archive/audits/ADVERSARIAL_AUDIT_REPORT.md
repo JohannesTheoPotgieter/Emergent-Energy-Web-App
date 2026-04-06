@@ -1,3 +1,5 @@
+> Superseded on 2026-04-06 by docs/qa/current-audit-summary.md.
+
 # Adversarial Audit Report — Emergent Energy Web App
 
 **Auditor**: Independent Adversarial Checker  
