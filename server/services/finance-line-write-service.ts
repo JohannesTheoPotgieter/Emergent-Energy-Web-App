@@ -30,6 +30,7 @@ import {
   softClosePromotedRevenueLines,
   syncCostLineCounterpartyBulk,
   bridgeCatch,
+  bridgeCatchFor,
 } from "../bridge/bridge-writer";
 import { batchSyncFinanceByProject } from "../bridge/batch-bridge-sync";
 import { softCloseByProjectName, softCloseByProjectId } from "../lib/temporal-helpers";
@@ -65,7 +66,7 @@ export async function createCostLine(
   }
 
   const [created] = await (txOrDb as any).insert(normalizedCostLines).values(values).returning();
-  syncCostLine(created).catch(bridgeCatch);
+  syncCostLine(created).catch(bridgeCatchFor("cost_line", created.id));
   return created;
 }
 
@@ -80,7 +81,7 @@ export async function createCostLines(
   const created = await (txOrDb as any).insert(normalizedCostLines).values(values).returning();
   // Bridge sync in background — don't block the bulk insert
   for (const row of created) {
-    syncCostLine(row).catch(bridgeCatch);
+    syncCostLine(row).catch(bridgeCatchFor("cost_line", row.id));
   }
   return created;
 }
@@ -133,7 +134,7 @@ export async function createRevenueLine(
   txOrDb: DbOrTx = db,
 ): Promise<any> {
   const [created] = await (txOrDb as any).insert(normalizedRevenueLines).values(values).returning();
-  syncRevenueLine(created).catch(bridgeCatch);
+  syncRevenueLine(created).catch(bridgeCatchFor("revenue_line", created.id));
   return created;
 }
 
@@ -147,7 +148,7 @@ export async function createRevenueLines(
   if (values.length === 0) return [];
   const created = await (txOrDb as any).insert(normalizedRevenueLines).values(values).returning();
   for (const row of created) {
-    syncRevenueLine(row).catch(bridgeCatch);
+    syncRevenueLine(row).catch(bridgeCatchFor("revenue_line", row.id));
   }
   return created;
 }
