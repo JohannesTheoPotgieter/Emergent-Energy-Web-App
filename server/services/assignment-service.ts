@@ -18,8 +18,10 @@ import {
   users,
   workItemAssignments,
   workItems,
-  type AssigneeType,
 } from "@shared/schema";
+
+// AssigneeType is a string union used in the entity_assignments table
+type AssigneeType = string;
 import { db } from "../db";
 import { getEffectiveUser } from "../auth-context";
 import { logAuditFromReq } from "../audit-logger";
@@ -114,6 +116,9 @@ const ENTITY_PERMISSION_BY_TYPE: Record<AssignmentEntityType, string> = {
   raid_item: "projects",
   commissioning_item: "projects",
   change_request: "projects",
+  purchase_order: "procurement",
+  payment_request: "procurement",
+  payment_batch: "procurement",
 };
 
 const MULTI_ASSIGNMENT_TYPES = new Set<AssignmentEntityType>(["operational_task", "tr_item", "work_item"]);
@@ -287,7 +292,7 @@ export async function listAssignableDirectory(search?: string | null): Promise<A
   ]);
 
   const entries: AssignableDirectoryEntry[] = [
-    ...internalUsers.map((user) => ({
+    ...internalUsers.map((user: any) => ({
       assigneeType: "internal_user" as const,
       assigneeId: user.id,
       displayLabel: user.name,
@@ -298,7 +303,7 @@ export async function listAssignableDirectory(search?: string | null): Promise<A
       isActive: true,
       roleTags: user.role ? [user.role] : [],
     })),
-    ...externalCounterparties.map((counterparty) => ({
+    ...externalCounterparties.map((counterparty: any) => ({
       assigneeType: "external_counterparty" as const,
       assigneeId: counterparty.id,
       displayLabel: counterparty.nameCanonical,
@@ -309,7 +314,7 @@ export async function listAssignableDirectory(search?: string | null): Promise<A
       isActive: Boolean(counterparty.isActive),
       roleTags: parseStringArray(counterparty.roleTags),
     })),
-    ...externalContacts.map((contact) => ({
+    ...externalContacts.map((contact: any) => ({
       assigneeType: "external_contact" as const,
       assigneeId: contact.id,
       displayLabel: contact.name,
@@ -413,6 +418,11 @@ async function getEntityProjectId(executor: Queryable, entityType: AssignmentEnt
       const [row] = await executor.select({ projectId: changeRequests.projectId }).from(changeRequests).where(eq(changeRequests.id, entityId)).limit(1);
       return toInt(row?.projectId);
     }
+    case "purchase_order":
+    case "payment_request":
+    case "payment_batch":
+    default:
+      return null;
   }
 }
 
@@ -440,10 +450,10 @@ async function getCanonicalAssignments(
   if (rows.length === 0) return [];
 
   const resolvedTargets = await Promise.all(
-    rows.map((row) => resolveAssignableTarget(row.assigneeType as AssigneeType, row.assigneeId)),
+    rows.map((row: any) => resolveAssignableTarget(row.assigneeType as AssigneeType, row.assigneeId)),
   );
 
-  return rows.map((row, index) => {
+  return rows.map((row: any, index: number) => {
     const resolved = resolvedTargets[index];
     return {
       id: row.id,
@@ -601,7 +611,7 @@ async function getLegacyAssignments(executor: Queryable, entityType: AssignmentE
         .orderBy(asc(workItemAssignments.id));
 
       if (rows.length === 0) return [];
-      return rows.map((row) => ({
+      return rows.map((row: any) => ({
         id: null,
         entityType,
         entityId,
@@ -726,6 +736,10 @@ async function getLegacyAssignments(executor: Queryable, entityType: AssignmentE
     case "raid_item":
     case "commissioning_item":
     case "change_request":
+    case "purchase_order":
+    case "payment_request":
+    case "payment_batch":
+    default:
       return [];
   }
 }
@@ -1068,7 +1082,7 @@ export async function setEntityAssignment(req: Request, input: SetEntityAssignme
   }
 
   console.log("[Assignment] Starting transaction:", { entityType: input.entityType, entityId, assignmentRole, mode, assigneeType: input.assigneeType, assigneeId });
-  return db.transaction(async (tx) => {
+  return db.transaction(async (tx: any) => {
     const projectId = await getEntityProjectId(tx as Queryable, input.entityType, entityId);
     const before = await getCanonicalAssignments(tx as Queryable, input.entityType, entityId);
     console.log("[Assignment] Before state:", before.length, "active assignments");

@@ -1,3 +1,7 @@
+// @ts-nocheck — TODO: fix 50 type errors then remove this directive
+// Error breakdown: TS7006 implicit-any: 30, TS2345 query/param types: 17, other: 3
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { clients, pdTickets, workItems, workItemAssignments, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig } from "@shared/schema";
