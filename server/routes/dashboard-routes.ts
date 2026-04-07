@@ -2,6 +2,7 @@
 // @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
+import { computeMarginPct } from "../lib/finance/margin";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -398,7 +399,7 @@ export function registerDashboardRoutes(app: Express) {
         }
         row.openInflowFy = row.plannedRevenueFy - row.receivedInflowFy;
         row.openExpenditureFy = row.plannedExpenditureFy - row.paidExpenditureFy;
-        row.grossMarginPctFy = row.plannedRevenueFy > 0 ? Number((((row.plannedRevenueFy - row.plannedExpenditureFy) / row.plannedRevenueFy) * 100).toFixed(1)) : null;
+        row.grossMarginPctFy = computeMarginPct(row.plannedRevenueFy, row.plannedExpenditureFy, { precision: 1 });
         row.engineeringStatus = row._engOpen >= 5 ? 'Blocked' : row._engOpen > 0 ? 'At Risk' : 'On Track';
         row.qualityStatus = row._qualityOpen >= 5 ? 'Blocked' : row._qualityOpen > 0 ? 'At Risk' : 'On Track';
         const latest = latestImportByProject.get(row.projectId);
@@ -935,7 +936,7 @@ export function registerDashboardRoutes(app: Express) {
           paidExpenditureFy: sum('paidExpenditureFy'),
           openExpenditureFy: sum('openExpenditureFy'),
           grossProfitFy: sum('plannedRevenueFy') - sum('plannedExpenditureFy'),
-          grossMarginPctFy: sum('plannedRevenueFy') > 0 ? Number((((sum('plannedRevenueFy') - sum('plannedExpenditureFy')) / sum('plannedRevenueFy')) * 100).toFixed(1)) : null,
+          grossMarginPctFy: computeMarginPct(sum('plannedRevenueFy'), sum('plannedExpenditureFy'), { precision: 1 }),
           openEngineeringBlockers: sum('_engOpen'),
           openQualityWarnings: sum('_qualityOpen'),
           pendingApprovals: sum('_approvalsPending'),

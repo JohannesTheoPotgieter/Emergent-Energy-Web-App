@@ -14,6 +14,7 @@ import {
 import { db } from "../db";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
+import { computeMarginPct } from "../lib/finance/margin";
 
 const STAGE_ORDER = new Map([
   ["S01_FIRST_ASSESSMENT", 1],
@@ -141,7 +142,7 @@ export function computeProjectHeaderKpis(input: {
   const inflowsRealisedPct = round(safePct(revenueRealised, revenueTotal));
   const cosRealisedPct = round(safePct(costRealised, costTotal));
 
-  const computedCurrentMarginPct = revenueTotal > 0 ? ((revenueTotal - costTotal) / revenueTotal) * 100 : 0;
+  const computedCurrentMarginPct = computeMarginPct(revenueTotal, costTotal, { precision: 1, zeroRevenueValue: 0 }) ?? 0;
   const derivedMarginPct = toPercent(toNumber(input.derivedGrossMarginPct));
   const currentMarginPct = round(revenueTotal > 0 ? computedCurrentMarginPct : derivedMarginPct);
 
