@@ -1658,6 +1658,24 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     let preservedManualEditsCount = 0;
 
     await db.transaction(async (tx: any) => {
+      // ── Atomic commit guard ──
+      // Claim this run for commit by atomically transitioning from a committable
+      // status. If another request already committed (or the status is no longer
+      // committable), the UPDATE matches 0 rows and we abort.
+      // This prevents the race condition where two concurrent requests both read
+      // status=PREVIEW outside the transaction and both proceed to commit.
+      const claimResult = await tx.execute(sql`
+        UPDATE smart_import_runs
+        SET status = 'AWAITING_REVIEW'
+        WHERE id = ${runId}
+          AND status IN ('PREVIEW', 'AWAITING_REVIEW')
+        RETURNING id
+      `);
+      const claimed = (claimResult.rows ?? claimResult);
+      if (!claimed || claimed.length === 0) {
+        throw Object.assign(new Error("Import run is no longer committable (already committed, rolled back, or superseded)"), { status: 409 });
+      }
+
       const existingTaskOwners = new Map<string, string>();
       {
         const existingWiTasks = projectId
@@ -2722,7 +2740,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     } catch (_) { /* non-blocking */ }
 
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    const statusCode = (err as any)?.status === 409 ? 409 : 500;
+    res.status(statusCode).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
 
