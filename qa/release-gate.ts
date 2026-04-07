@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { spawnSync } from "child_process";
+import { FINANCE_MODEL_PATHS } from "../server/policies/finance-policy";
 
 type GateStatus = "pass" | "warning" | "fail";
 
@@ -126,6 +127,24 @@ function collapseStatus(checks: GateCheck[]): GateStatus {
   return "pass";
 }
 
+function detectFinanceModelChanges(): boolean {
+  // Check if any finance model files changed compared to main branch
+  const result = spawnSync("git", ["diff", "--name-only", "origin/main...HEAD"], {
+    encoding: "utf8",
+    cwd: process.cwd(),
+  });
+
+  if (result.status !== 0) {
+    // If git diff fails (e.g., no origin/main), fall back to requiring reconciliation
+    return true;
+  }
+
+  const changedFiles = (result.stdout || "").split("\n").filter(Boolean);
+  return changedFiles.some(file =>
+    FINANCE_MODEL_PATHS.some(fp => file.includes(fp))
+  );
+}
+
 function main() {
   console.log("╔══════════════════════════════════════════╗");
   console.log("║         RELEASE GATE ENFORCEMENT        ║");
@@ -147,22 +166,27 @@ function main() {
     });
   }
 
+  // Finance-model release detection: reconciliation-status.json is only required
+  // when finance-model files have changed in this branch.
+  const financeModelChanged = detectFinanceModelChanges();
   const reconciliation = readReconciliationEvidence(RECONCILIATION_FILE);
   if (!reconciliation) {
     checks.push({
       name: "Reconciliation status",
-      required: true,
-      category: "proof",
-      status: "fail",
-      details: `Missing or invalid reconciliation evidence: ${RECONCILIATION_FILE}`,
+      required: financeModelChanged,
+      category: financeModelChanged ? "proof" : "optional",
+      status: financeModelChanged ? "fail" : "warning",
+      details: financeModelChanged
+        ? `Missing or invalid reconciliation evidence: ${RECONCILIATION_FILE} (required because finance model files changed)`
+        : `Reconciliation evidence not found (not required — no finance model changes detected).`,
     });
   } else {
     const reconStatus = reconciliation.status || "fail";
     const normalizedStatus: GateStatus = reconStatus === "pass" ? "pass" : reconStatus === "warning" ? "warning" : "fail";
     checks.push({
       name: "Reconciliation status",
-      required: true,
-      category: "proof",
+      required: financeModelChanged,
+      category: financeModelChanged ? "proof" : "optional",
       status: normalizedStatus,
       details: `Reconciliation status=${reconStatus}${reconciliation.generated_at ? ` (generated ${reconciliation.generated_at})` : ""}${reconciliation.explanation ? `. ${reconciliation.explanation}` : ""}`,
     });

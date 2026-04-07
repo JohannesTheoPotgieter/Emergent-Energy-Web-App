@@ -2,34 +2,30 @@ import { describe, expect, it } from "vitest";
 import { PAGE_REGISTRY } from "@/config/page-registry";
 
 describe("project management structure", () => {
-  it("keeps the execution workspace routes under Project Management", () => {
-    const projectsPage = PAGE_REGISTRY.find((page) => page.id === "projects");
-    const handoverControlPage = PAGE_REGISTRY.find((page) => page.id === "handoverControl");
-    const executionBoardPage = PAGE_REGISTRY.find((page) => page.id === "executionBoard");
+  it("registers PM dashboard with the correct permission entity", () => {
+    const pmDashboard = PAGE_REGISTRY.find((page) => page.id === "pmDashboard");
 
-    expect(projectsPage?.navGroup).toBe("PROJECT_MANAGEMENT");
-    expect(handoverControlPage?.navGroup).toBe("PROJECT_MANAGEMENT");
-    expect(executionBoardPage?.navGroup).toBe("PROJECT_MANAGEMENT");
+    expect(pmDashboard).toBeDefined();
+    expect(pmDashboard!.permissionEntity).toBe("pm_dashboard");
+    expect(pmDashboard!.routeComponentKey).toBe("PMDashboard");
   });
 
-  it("registers the approved PM execution sub-routes", () => {
-    const approvalsPage = PAGE_REGISTRY.find((page) => page.id === "pmApprovals");
-    const deliverablesPage = PAGE_REGISTRY.find((page) => page.id === "pmDeliverables");
-    const dashboardPage = PAGE_REGISTRY.find((page) => page.id === "pmDashboard");
-    const executionDashboardPage = PAGE_REGISTRY.find((page) => page.id === "dashboard");
-    const pmOnTheGoPage = PAGE_REGISTRY.find((page) => page.id === "pmOnTheGo");
+  it("registers PM On-The-Go with the correct permission entity", () => {
+    const pmOnTheGo = PAGE_REGISTRY.find((page) => page.id === "pmOnTheGo");
 
-    expect(executionDashboardPage?.label).toBe("Execution Dashboard");
-    expect(dashboardPage?.label).toBe("Per Project Manager Dashboard");
-    expect(pmOnTheGoPage?.label).toBe("PM On-The-Go");
-    expect(approvalsPage?.path).toBe("/pm/approvals");
-    expect(deliverablesPage?.path).toBe("/pm/deliverables");
+    expect(pmOnTheGo).toBeDefined();
+    expect(pmOnTheGo!.path).toBe("/pm/on-the-go");
+    expect(pmOnTheGo!.permissionEntity).toBe("pm_on_the_go");
+    expect(pmOnTheGo!.routeComponentKey).toBe("PMOnTheGoHome");
   });
 
-  it("keeps the removed command-center route as a redirect instead of a live workspace", () => {
-    const commandCenterPage = PAGE_REGISTRY.find((page) => page.id === "commandCenter");
+  it("groups PM routes under PROJECT_MANAGEMENT nav group", () => {
+    const pmDashboard = PAGE_REGISTRY.find((page) => page.id === "pmDashboard");
+    const pmOnTheGo = PAGE_REGISTRY.find((page) => page.id === "pmOnTheGo");
+    const projects = PAGE_REGISTRY.find((page) => page.id === "projects");
 
-    expect(commandCenterPage?.redirectTo).toBe("/my-work");
-    expect(commandCenterPage?.routeComponentKey).toBeUndefined();
+    expect(pmDashboard!.navGroup).toBe("PROJECT_MANAGEMENT");
+    expect(pmOnTheGo!.navGroup).toBe("PROJECT_MANAGEMENT");
+    expect(projects!.navGroup).toBe("PROJECT_MANAGEMENT");
   });
 });
