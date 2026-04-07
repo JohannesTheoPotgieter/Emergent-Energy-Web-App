@@ -112,56 +112,6 @@ app.get("/api/approvals", jwtAuth, requireAuth, requirePermission("stage_gate", 
   }
 });
 
-// ── Approval count for badges ──────────────────────────────
-
-app.get("/api/approvals/count", jwtAuth, requireAuth, async (req, res) => {
-  try {
-    const userId = (req as any).user?.id || 0;
-
-    let gateCount = 0;
-    let exceptionCount = 0;
-    let handoverCount = 0;
-
-    try {
-      const r = await db.execute(sql`
-        SELECT COUNT(*) AS cnt FROM project_stage_instances
-        WHERE stage_status = 'READY_FOR_REVIEW'
-          AND (approver_user_id = ${userId} OR ${userId} = 0)
-      `);
-      gateCount = Number(((r as any).rows ?? [])[0]?.cnt || 0);
-    } catch (e: any) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
-
-    try {
-      const r = await db.execute(sql`
-        SELECT COUNT(*) AS cnt FROM project_stage_exceptions
-        WHERE status = 'REQUESTED'
-          AND (approver_user_id = ${userId} OR ${userId} = 0)
-      `);
-      exceptionCount = Number(((r as any).rows ?? [])[0]?.cnt || 0);
-    } catch (e: any) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
-
-    try {
-      const r = await db.execute(sql`
-        SELECT COUNT(*) AS cnt FROM handover_packs
-        WHERE checklist_status = 'pending_review'
-      `);
-      handoverCount = Number(((r as any).rows ?? [])[0]?.cnt || 0);
-    } catch (e: any) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
-
-    const total = gateCount + exceptionCount + handoverCount;
-
-    res.json({
-      total,
-      gate: gateCount,
-      exception: exceptionCount,
-      handover: handoverCount,
-    });
-  } catch (err: any) {
-    console.error("Approval count error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ── Approval action ────────────────────────────────────────
 
 app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, requirePermission("stage_gate", "approve"), async (req, res) => {
