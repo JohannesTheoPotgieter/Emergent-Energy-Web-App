@@ -1,3 +1,14 @@
+> **⛔ SUPERSEDED** — This document and its sections (01–07) contain stale metrics as of 2026-04-07.
+> The canonical baseline is now [`docs/architecture-baseline-2026-04-07.md`](../../../architecture-baseline-2026-04-07.md).
+>
+> **Key stale claims in this series:**
+> - "200+ tables" → actual: 282
+> - "43 API route files" → actual: 122
+> - "288+ endpoints" → actual: ~2,304 route registrations
+> - "33 SQL migrations" → actual: 145
+> - "5,936 lines in schema.ts" → schema is now domain-split: 9,021 lines total, barrel is 30 lines
+> - "99 pages / 147 components / 11 hooks" → actual: 154 pages / 215 components / 25 hooks
+
 # Full-Stack Architecture Audit — Emergent Energy Web App
 
 > **Audit date**: 2026-03-20
