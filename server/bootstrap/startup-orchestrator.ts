@@ -352,9 +352,11 @@ async function runAdditiveSchemaAlignments() {
     END $$;
   `);
 
-  const wiViewResult = await db.execute(sql.raw("SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items'"));
-  if (wiViewResult.rows.length > 0) {
-    console.log("[DB] work_items exists as a VIEW — skipping table creation");
+  const wiExists = await db.execute(sql.raw(
+    "SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items' UNION ALL SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"
+  ));
+  if (wiExists.rows.length > 0) {
+    console.log("[DB] work_items already exists (table or view) — skipping creation");
   } else {
     await safeExec("work_items table", `
       CREATE TABLE IF NOT EXISTS work_items (
@@ -814,23 +816,31 @@ async function runAdditiveSchemaAlignments() {
       created_by INTEGER REFERENCES users(id),
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
-    CREATE TABLE IF NOT EXISTS work_item_tags (
-      id SERIAL PRIMARY KEY,
-      work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
-      tag_id INTEGER NOT NULL REFERENCES task_tags(id) ON DELETE CASCADE,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      CONSTRAINT work_item_tags_unique UNIQUE (work_item_id, tag_id)
-    );
-    CREATE TABLE IF NOT EXISTS task_time_entries (
-      id SERIAL PRIMARY KEY,
-      work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
-      user_id INTEGER NOT NULL REFERENCES users(id),
-      duration_minutes INTEGER NOT NULL,
-      description TEXT,
-      date TEXT NOT NULL,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW()
-    );
   `);
+
+  const wiTableForTags = await db.execute(sql.raw("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"));
+  if (wiTableForTags.rows.length > 0) {
+    await safeExec("work_item_tags table", `
+      CREATE TABLE IF NOT EXISTS work_item_tags (
+        id SERIAL PRIMARY KEY,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        tag_id INTEGER NOT NULL REFERENCES task_tags(id) ON DELETE CASCADE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT work_item_tags_unique UNIQUE (work_item_id, tag_id)
+      );
+      CREATE TABLE IF NOT EXISTS task_time_entries (
+        id SERIAL PRIMARY KEY,
+        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        duration_minutes INTEGER NOT NULL,
+        description TEXT,
+        date TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+  } else {
+    console.log("[DB] work_items is not a BASE TABLE — skipping work_item_tags/task_time_entries creation");
+  }
 
   // ── Permission system ──
   await safeExec("permission system", `
@@ -1022,10 +1032,17 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE writeback_mappings ADD COLUMN IF NOT EXISTS project_id INTEGER;
   `);
 
-  // ── engineering task columns ──
-  await safeExec("engineering task columns", `
-    ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS work_item_id INTEGER REFERENCES work_items(id);
-  `);
+  // ── engineering task columns (skip FK to work_items if it's a VIEW) ──
+  const wiTableForEng = await db.execute(sql.raw("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"));
+  if (wiTableForEng.rows.length > 0) {
+    await safeExec("engineering task columns", `
+      ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS work_item_id INTEGER REFERENCES work_items(id);
+    `);
+  } else {
+    await safeExec("engineering task columns (no FK)", `
+      ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS work_item_id INTEGER;
+    `);
+  }
 
   // ── Drop FK constraints on task supporting tables (legacy operational_tasks cleanup) ──
   await safeExec("task FK cleanup", `
@@ -1197,9 +1214,11 @@ async function runAdditiveSchemaAlignments() {
   `);
 
   // ── Deliverables table (required by execution dashboard / platform summary) ──
-  const delViewResult = await db.execute(sql.raw("SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='deliverables'"));
-  if (delViewResult.rows.length > 0) {
-    console.log("[DB] deliverables exists as a VIEW — skipping table creation");
+  const delExists = await db.execute(sql.raw(
+    "SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='deliverables' UNION ALL SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables'"
+  ));
+  if (delExists.rows.length > 0) {
+    console.log("[DB] deliverables already exists (table or view) — skipping creation");
   } else {
     await safeExec("deliverables table", `
       CREATE TABLE IF NOT EXISTS deliverables (
