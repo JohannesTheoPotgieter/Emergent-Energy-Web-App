@@ -1,5 +1,9 @@
 // ============================================================
-// APPROVALS ROUTES — Unified approval queue API (Prompt 6)
+// LIFECYCLE APPROVALS ROUTES — Gate, exception & handover
+// approval queue (stage lifecycle domain).
+//
+// NOT the same as server/approvals-routes.ts which handles
+// general-purpose CRUD approvals on the `approvals` table.
 // ============================================================
 
 import type { Express } from "express";
@@ -19,7 +23,7 @@ async function safeQuery(query: ReturnType<typeof sql>) {
   }
 }
 
-export function registerApprovalsRoutes(app: Express) {
+export function registerLifecycleApprovalsRoutes(app: Express) {
 
 // ── Unified approvals queue ────────────────────────────────
 
@@ -203,4 +207,4 @@ app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, async (req, r
   }
 });
 
-} // end registerApprovalsRoutes
+} // end registerLifecycleApprovalsRoutes
