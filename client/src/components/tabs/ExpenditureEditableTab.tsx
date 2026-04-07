@@ -637,7 +637,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
 
   const noRevLinkedMutation = useMutation({
     mutationFn: async ({ id, noRevenueLinked }: { id: number; noRevenueLinked: boolean }) => {
-      const canonicalId = id >= 900000 ? id - 900000 : id;
+      const canonicalId = id < 0 ? -id : (id >= 900000 ? id - 900000 : id);
       const res = await authFetch(`/api/cost-lines/${canonicalId}/no-revenue-linked`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },

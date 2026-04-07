@@ -25,7 +25,7 @@ import {
   isApprovedExpenseRow,
   type SelectorDiagnostics,
 } from "../../../server/lib/expense-row-selector";
-import { adaptCostToExpense, mapCostToExpenseInput } from "../../../server/lib/data-merge";
+import { adaptCostToExpense, adaptRevenueToInflow, mapCostToExpenseInput } from "../../../server/lib/data-merge";
 
 // ---------------------------------------------------------------------------
 // A. BUSINESS KEY GENERATION — verifies dedup keying logic
@@ -171,9 +171,9 @@ describe("adaptCostToExpense — shape transformation baseline", () => {
     cosRealised: null,
   };
 
-  it("BASELINE: adds 900000 to ID (ID namespacing)", () => {
+  it("BASELINE: uses negative ID (collision-safe namespacing)", () => {
     const result = adaptCostToExpense(baseCostLine, "TestProject");
-    expect(result.id).toBe(42 + 900000);
+    expect(result.id).toBe(-42);
   });
 
   it("BASELINE: maps amountExVat to both expenseActualTotal and actualCosTotal", () => {
@@ -390,25 +390,54 @@ describe("mapCostToExpenseInput baseline", () => {
 });
 
 // ---------------------------------------------------------------------------
-// H. ID COLLISION RISK — documents the 900000 offset behavior
+// H. ID COLLISION SAFETY — proves negative IDs can never collide with serial IDs
 // ---------------------------------------------------------------------------
 
-describe("ID namespace collision risk documentation", () => {
-  it("BASELINE: adaptCostToExpense uses id+900000, documenting collision threshold", () => {
-    // If program_expense ever has IDs >= 900001, collisions begin.
-    // This test documents the threshold.
+describe("ID namespace collision safety", () => {
+  it("adapted IDs are always negative", () => {
     const cost: any = { id: 1, projectName: "X", sourceRow: 1 };
     const adapted = adaptCostToExpense(cost, "X");
-    expect(adapted.id).toBe(900001);
-
-    // The collision would occur with a program_expense row with id=900001
-    // This is a structural risk, not a bug — documenting for future reference.
+    expect(adapted.id).toBe(-1);
+    expect(adapted.id).toBeLessThan(0);
   });
 
-  it("BASELINE: high cost IDs push adapted IDs into dangerous territory", () => {
+  it("high cost IDs produce high-magnitude negative IDs (no collision with positive serials)", () => {
     const cost: any = { id: 100000, projectName: "X", sourceRow: 1 };
     const adapted = adaptCostToExpense(cost, "X");
-    expect(adapted.id).toBe(1000000);
-    // Above 1M — any program_expense table with auto-increment past 1M would collide
+    expect(adapted.id).toBe(-100000);
+    expect(adapted.id).toBeLessThan(0);
+  });
+
+  it("negative IDs can never equal any positive program_expense serial ID", () => {
+    // PostgreSQL serial IDs are always positive. Negative adapted IDs
+    // occupy a completely separate namespace with zero overlap.
+    for (const costId of [1, 100, 1000, 10000, 100000, 999999]) {
+      const adapted = adaptCostToExpense({ id: costId, projectName: "X", sourceRow: costId } as any, "X");
+      expect(adapted.id).toBeLessThan(0);
+      // No positive serial ID can equal this
+      expect(adapted.id).not.toBe(costId);
+    }
+  });
+
+  it("reverse transform recovers the original normalizedCostLines ID", () => {
+    const cost: any = { id: 42, projectName: "X", sourceRow: 1 };
+    const adapted = adaptCostToExpense(cost, "X");
+    // New negative-ID reverse
+    const recovered = adapted.id < 0 ? -adapted.id : adapted.id;
+    expect(recovered).toBe(42);
+  });
+
+  it("reverse transform is backward-compatible with legacy 900000 offset", () => {
+    // For any persisted expense_task_links with old 900000-offset IDs
+    const legacyId = 900042; // old format: cost.id=42 + 900000
+    const recovered = legacyId < 0 ? -legacyId : (legacyId >= 900000 ? legacyId - 900000 : legacyId);
+    expect(recovered).toBe(42);
+  });
+
+  it("adaptRevenueToInflow also uses negative IDs", () => {
+    const rev: any = { id: 7, projectName: "X", sourceRow: 1, invoiceNumber: null, paidDate: null, inBankDate: null };
+    const adapted = adaptRevenueToInflow(rev, "X");
+    expect(adapted.id).toBe(-7);
+    expect(adapted.id).toBeLessThan(0);
   });
 });

@@ -1198,7 +1198,7 @@ export class DatabaseStorage implements IStorage {
     if (Object.keys(mappedFields).length === 0) {
       return undefined;
     }
-    const canonicalId = id >= 900000 ? id - 900000 : id;
+    const canonicalId = id < 0 ? -id : (id >= 900000 ? id - 900000 : id);
 
     // Optimistic locking: if caller provides expectedUpdatedAt, verify row hasn't changed
     if (expectedUpdatedAt) {
@@ -1265,7 +1265,7 @@ export class DatabaseStorage implements IStorage {
       mappedFields[mapped] = value;
     }
     if (Object.keys(mappedFields).length === 0) return undefined;
-    const canonicalId = id >= 900000 ? id - 900000 : id;
+    const canonicalId = id < 0 ? -id : (id >= 900000 ? id - 900000 : id);
     const result = await this.dbInstance
       .update(normalizedRevenueLines)
       .set(mappedFields)
