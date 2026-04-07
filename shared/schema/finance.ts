@@ -1069,6 +1069,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   sentAt: timestamp("sent_at"),
   pdfData: text("pdf_data"),  // BYTEA in DB, handled as Buffer in routes
+  // Client-generated idempotency key to prevent duplicate POs from
+  // double-clicks, browser resends, and network retries.
+  idempotencyKey: text("idempotency_key"),
 }, (table) => ({
   projectIdx: index("idx_po_project").on(table.projectName),
   statusIdx: index("idx_po_status").on(table.status),
