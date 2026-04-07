@@ -999,8 +999,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         const originalDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         const effectiveDate = (e as any).adminDateOverride || originalDate;
         const amountBreakdown = getOutflowAmountBreakdown(e);
-        // adaptCostToExpense adds 900000 to normalizedCostLines IDs; reverse that offset
-        const realId = e.id >= 900000 ? e.id - 900000 : e.id;
+        // adaptCostToExpense uses negative IDs for normalizedCostLines rows; reverse to canonical
+        const realId = e.id < 0 ? -e.id : (e.id >= 900000 ? e.id - 900000 : e.id);
         return {
           expenseId: realId,
           projectName: e.projectName,
@@ -1036,8 +1036,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           const pay = new Date(inf.paymentReceivedDate);
           daysToReceipt = Math.round((pay.getTime() - inv.getTime()) / (1000 * 60 * 60 * 24));
         }
-        // adaptRevenueToInflow adds 900000 to normalizedRevenueLines IDs; reverse that offset
-        const realInflowId = inf.id >= 900000 ? inf.id - 900000 : inf.id;
+        // adaptRevenueToInflow uses negative IDs for normalizedRevenueLines rows; reverse to canonical
+        const realInflowId = inf.id < 0 ? -inf.id : (inf.id >= 900000 ? inf.id - 900000 : inf.id);
         return {
           inflowId: realInflowId,
           projectName: inf.projectName,
@@ -1944,7 +1944,7 @@ async function updateExpenseFieldsDualTable(
   expectedUpdatedAt?: string,
   editorUserId?: number | null,
 ): Promise<any> {
-  const isNormalized = id >= 900000;
+  const isNormalized = id < 0 || id >= 900000;
   if (isNormalized) {
     return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
   }
