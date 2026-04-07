@@ -21,7 +21,7 @@ import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { fileTypeFromBuffer } from "file-type";
 import { storage } from "./storage";
 import { parseTrackerFile, applyFontColors } from "./excelParser";
-import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, workItemDependencies, clients, projectClientHistory, trItems, deliverables, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, programExpense, financialEditRequests, projectEngApprovals, approvals } from "@shared/schema";
+import { projectInfo, normalizedCostLines, normalizedRevenueLines, normalizedExecutionPhases, smartImportRuns, users, notifications, notificationThrottle, qcItemInstance, qcChecklist, qcTemplateItem, planEditNotifications, workItems, workItemAssignments, workItemDependencies, projectClientHistory, trItems, deliverables, cashflowPoints, financeRevenueMonthly, financeCosMonthly, manualEditFlags, programExpense, financialEditRequests, projectEngApprovals, approvals } from "@shared/schema";
 import { inlineEdit } from "./lib/inline-edit-helper";
 import { db } from "./db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -88,11 +88,9 @@ import { getFeatureFlag, getFeatureFlags } from "./lib/feature-flags";
 import { requireTrackerPermission } from "./lib/finance-route-access";
 import { registerAuthRoutes } from "./routes/auth-routes";
 import {
-  compareCoreClientsReadiness,
   compareCoreProjectsReadiness,
   getCoreMasterDataReadinessReport,
   listProjectInfoFromPromotedCoreCompat,
-  listClientsFromPromotedCoreCompat,
   listProjectDetailFromPromotedCoreCompat,
   buildWorkItemSummaryDiagnostics,
   compareProjectDetailMasterReadiness,
@@ -3301,83 +3299,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Core master data readiness report error:", error);
       res.status(500).json({ error: "Failed to generate core master data readiness report" });
-    }
-  });
-
-  app.get("/api/clients", requireAuth, async (req, res) => {
-    try {
-      const usePromotedRead = await getFeatureFlag("promoted_core_clients_read");
-      const compareMode = req.query.compare === "1" || req.query.compare === "true";
-
-      const allClients = usePromotedRead
-        ? await listClientsFromPromotedCoreCompat()
-        : await db.select().from(clients).orderBy(asc(clients.name));
-
-      if (compareMode || usePromotedRead) {
-        const comparison = await compareCoreClientsReadiness();
-        if (comparison.status !== "ready") {
-          console.warn("[promoted-read][clients] mismatch detected", comparison);
-        }
-        res.setHeader("X-Promoted-Clients-Read", usePromotedRead ? "enabled" : "disabled");
-        res.setHeader("X-Promoted-Clients-Comparison-Status", comparison.status);
-      }
-
-      res.json(allClients);
-    } catch (error) {
-      console.error("Clients fetch error:", error);
-      res.status(500).json({ error: "Failed to fetch clients" });
-    }
-  });
-
-  app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
-    try {
-      const schema = z.object({
-        name: z.string().min(1),
-        clientId: z.string().optional(),
-      });
-      const parsed = schema.parse(req.body);
-      const maxIdResult = await db.execute(sql`SELECT COALESCE(MAX(CAST(SUBSTRING(client_id FROM 5) AS INTEGER)), 0) as max_num FROM clients WHERE client_id LIKE 'EE-C%'`);
-      const nextNum = ((maxIdResult.rows[0] as any)?.max_num || 0) + 1;
-      const generatedClientId = parsed.clientId || `EE-C${String(nextNum).padStart(4, '0')}`;
-      const [created] = await db.insert(clients).values({
-        name: parsed.name,
-        clientId: generatedClientId,
-        createdBy: req.user?.id,
-        updatedBy: req.user?.id,
-      }).returning();
-
-      const dualWriteEnabled = await getFeatureFlag("promoted_core_clients_dual_write");
-      let promotedMirror: { attempted: boolean; success: boolean; error: string | null } = { attempted: false, success: false, error: null };
-      if (dualWriteEnabled) {
-        promotedMirror.attempted = true;
-        try {
-          await db.execute(sql`
-            INSERT INTO core.clients (id, legacy_id, client_code, name, created_by, updated_by, created_at, updated_at, source_table)
-            VALUES (${created.id}, ${created.id}, ${generatedClientId}, ${parsed.name}, ${req.user?.id ?? null}, ${req.user?.id ?? null}, NOW(), NOW(), 'public.clients')
-            ON CONFLICT (id) DO UPDATE
-            SET name = EXCLUDED.name,
-                client_code = EXCLUDED.client_code,
-                updated_by = EXCLUDED.updated_by,
-                updated_at = NOW()
-          `);
-          promotedMirror.success = true;
-        } catch (mirrorError: any) {
-          promotedMirror.error = mirrorError?.message || "unknown_error";
-          console.error("[dual-write][clients] promoted mirror write failed", {
-            clientId: created.id,
-            error: mirrorError,
-          });
-        }
-      }
-
-      logAuditFromReq(req, { entityType: "client", entityId: String(created.id), action: "create", changesJson: { name: parsed.name, clientId: generatedClientId, promotedMirror } });
-      if (promotedMirror.attempted) {
-        res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
-      }
-      res.json({ ...created, _promotedMirror: promotedMirror });
-    } catch (error) {
-      console.error("Client create error:", error);
-      res.status(500).json({ error: "Failed to create client" });
     }
   });
 
