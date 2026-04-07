@@ -15,8 +15,8 @@ export async function registerCoreRoutes(app: Express) {
   registerLifecycleRoutes(app);
   const { registerGatesRoutes } = await import("./gates-routes");
   registerGatesRoutes(app);
-  const { registerApprovalsRoutes } = await import("./approvals-routes");
-  registerApprovalsRoutes(app);
+  const { registerLifecycleApprovalsRoutes } = await import("./lifecycle-approvals-routes");
+  registerLifecycleApprovalsRoutes(app);
   const { registerGovernanceViewsRoutes } = await import("./governance-views-routes");
   registerGovernanceViewsRoutes(app);
   const { registerPerformanceRoutes } = await import("./performance-routes");

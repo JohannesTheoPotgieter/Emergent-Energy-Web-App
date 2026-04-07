@@ -1,3 +1,13 @@
+> **⚠️ STALE METRICS** — This document contains metrics from a March 2026 audit that are no longer accurate.
+> The canonical baseline is now [`docs/architecture-baseline-2026-04-07.md`](./architecture-baseline-2026-04-07.md).
+>
+> **Known stale claims carried into prompts below:**
+> - "~223 tables" → actual: 282
+> - "680KB monolithic routes.ts" → actual: 361.5 KB
+> - "TypeScript strict mode disabled" / "strict: false" → actual: `strict: true`
+> - "830+ route handlers" → actual: ~2,304 registrations across 122 files
+> - "178+ `any` usages" → actual: ~4,996
+
 # Emergent Energy Web App — Claude Code Super Prompts
 
 > **Purpose:** Six self-contained prompts designed to be copy-pasted into Claude Code sessions. Each prompt addresses a distinct slice of findings from the Full Repository Audit (968-line, 86.6 KB report covering 10 phases) and the UX/QA Dashboard Assessment (rated 7.5/10). Work them in order — Prompt 1 is the most urgent.

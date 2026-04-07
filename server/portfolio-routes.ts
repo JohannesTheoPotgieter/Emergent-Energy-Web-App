@@ -1,5 +1,7 @@
-// TODO: remove @ts-nocheck — large file needs systematic type fixes
-// @ts-nocheck
+// @ts-nocheck — TODO: fix 72 type errors then remove this directive
+// Error breakdown: TS7006 implicit-any: 43, TS2345 query/param types: 22, other: 7
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, and, inArray, desc, isNull } from "drizzle-orm";

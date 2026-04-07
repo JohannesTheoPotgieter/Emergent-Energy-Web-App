@@ -1080,7 +1080,35 @@ export class DatabaseStorage implements IStorage {
     return { active, historical: total - active, total };
   }
 
+  // Short-TTL cache for getAllProgramExpenses to reduce repeated full-table
+  // scans across COS dashboard endpoints (17 calls in cos-control-routes alone).
+  // 30s TTL: short enough to surface writes promptly, long enough to coalesce
+  // the parallel API calls from a single dashboard page load.
+  private _expenseCache: { data: any[]; expiresAt: number } | null = null;
+  private _expenseCachePromise: Promise<any[]> | null = null;
+  private static readonly EXPENSE_CACHE_TTL_MS = 30_000;
+
   async getAllProgramExpenses(): Promise<any[]> {
+    const now = Date.now();
+    if (this._expenseCache && now < this._expenseCache.expiresAt) {
+      return this._expenseCache.data;
+    }
+    // Coalesce concurrent callers: if a fetch is already in-flight, reuse it
+    if (this._expenseCachePromise) {
+      return this._expenseCachePromise;
+    }
+    this._expenseCachePromise = this._fetchAllProgramExpenses().then(data => {
+      this._expenseCache = { data, expiresAt: Date.now() + DatabaseStorage.EXPENSE_CACHE_TTL_MS };
+      this._expenseCachePromise = null;
+      return data;
+    }).catch(err => {
+      this._expenseCachePromise = null;
+      throw err;
+    });
+    return this._expenseCachePromise;
+  }
+
+  private async _fetchAllProgramExpenses(): Promise<any[]> {
     const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
     const [costLines, piRows, peRows] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),

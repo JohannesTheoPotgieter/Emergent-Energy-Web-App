@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import ExcelJS from "exceljs";
 import type { 
   InsertProjectInfo, 
@@ -658,7 +656,7 @@ export async function parseTrackerFile(buffer: Buffer, fileName: string): Promis
           budgetRateUnit: budgetRateCol >= 0 ? parseNumber(row[budgetRateCol]) : null,
           budgetTotal: budgetTotalCol >= 0 ? parseNumber(row[budgetTotalCol]) : (
             budgetQtyCol >= 0 && budgetRateCol >= 0 && parseNumber(row[budgetQtyCol]) != null && parseNumber(row[budgetRateCol]) != null
-              ? (parseNumber(row[budgetQtyCol])! * parseNumber(row[budgetRateCol])!)
+              ? String(Number(parseNumber(row[budgetQtyCol])!) * Number(parseNumber(row[budgetRateCol])!))
               : null
           ),
           forecastPaymentDate: forecastPayDateCol >= 0 ? parseDate(row[forecastPayDateCol]) : null,
@@ -1151,14 +1149,14 @@ export async function applyFontColors(expenses: InsertProgramExpense[], buffer: 
   const colorMap = await extractFontColors(buffer);
   
   for (const exp of expenses) {
-    const rowKey = String(exp.rowNumber);
+    const rowKey = String((exp as any).rowNumber);
     const colors = colorMap.get(rowKey);
     if (colors) {
-      if (colors.invoiceColor && exp.expenseInvoicedDate) {
+      if (colors.invoiceColor && (exp as any).expenseInvoicedDate) {
         (exp as any).invoiceDateFontColor = colors.invoiceColor;
         (exp as any).invoiceDateConfirmed = colors.invoiceColor !== "red";
       }
-      if (colors.paymentColor && (exp.expensePaymentDate || (exp as any).forecastPaymentDate)) {
+      if (colors.paymentColor && ((exp as any).expensePaymentDate || (exp as any).forecastPaymentDate)) {
         (exp as any).paymentDateFontColor = colors.paymentColor;
         (exp as any).paymentDateConfirmed = colors.paymentColor !== "red";
       }

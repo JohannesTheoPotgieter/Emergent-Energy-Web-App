@@ -1,11 +1,17 @@
 // ============================================================
-// APPROVALS ROUTES — Unified approval queue API (Prompt 6)
+// LIFECYCLE APPROVALS ROUTES — Gate, exception & handover
+// approval queue (stage lifecycle domain).
+//
+// NOT the same as server/approvals-routes.ts which handles
+// general-purpose CRUD approvals on the `approvals` table.
 // ============================================================
 
 import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { jwtAuth, requireAuth } from "../auth-context";
+import { jwtAuth, requireAuth, getEffectiveUser } from "../auth-context";
+import { requirePermission } from "../permission-middleware";
+import { logAuditFromReq } from "../audit-logger";
 
 // Helper: execute a query, returning empty array if a referenced table/column doesn't exist
 async function safeQuery(query: ReturnType<typeof sql>) {
@@ -19,11 +25,11 @@ async function safeQuery(query: ReturnType<typeof sql>) {
   }
 }
 
-export function registerApprovalsRoutes(app: Express) {
+export function registerLifecycleApprovalsRoutes(app: Express) {
 
 // ── Unified approvals queue ────────────────────────────────
 
-app.get("/api/approvals", jwtAuth, requireAuth, async (req, res) => {
+app.get("/api/approvals", jwtAuth, requireAuth, requirePermission("stage_gate", "view"), async (req, res) => {
   try {
     const userId = (req as any).user?.id || 0;
     const typeFilter = req.query.type as string | undefined;
@@ -106,63 +112,14 @@ app.get("/api/approvals", jwtAuth, requireAuth, async (req, res) => {
   }
 });
 
-// ── Approval count for badges ──────────────────────────────
-
-app.get("/api/approvals/count", jwtAuth, requireAuth, async (req, res) => {
-  try {
-    const userId = (req as any).user?.id || 0;
-
-    let gateCount = 0;
-    let exceptionCount = 0;
-    let handoverCount = 0;
-
-    try {
-      const r = await db.execute(sql`
-        SELECT COUNT(*) AS cnt FROM project_stage_instances
-        WHERE stage_status = 'READY_FOR_REVIEW'
-          AND (approver_user_id = ${userId} OR ${userId} = 0)
-      `);
-      gateCount = Number(((r as any).rows ?? [])[0]?.cnt || 0);
-    } catch (e: any) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
-
-    try {
-      const r = await db.execute(sql`
-        SELECT COUNT(*) AS cnt FROM project_stage_exceptions
-        WHERE status = 'REQUESTED'
-          AND (approver_user_id = ${userId} OR ${userId} = 0)
-      `);
-      exceptionCount = Number(((r as any).rows ?? [])[0]?.cnt || 0);
-    } catch (e: any) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
-
-    try {
-      const r = await db.execute(sql`
-        SELECT COUNT(*) AS cnt FROM handover_packs
-        WHERE checklist_status = 'pending_review'
-      `);
-      handoverCount = Number(((r as any).rows ?? [])[0]?.cnt || 0);
-    } catch (e: any) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
-
-    const total = gateCount + exceptionCount + handoverCount;
-
-    res.json({
-      total,
-      gate: gateCount,
-      exception: exceptionCount,
-      handover: handoverCount,
-    });
-  } catch (err: any) {
-    console.error("Approval count error:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // ── Approval action ────────────────────────────────────────
 
-app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, async (req, res) => {
+app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, requirePermission("stage_gate", "approve"), async (req, res) => {
   try {
     const { type, id } = req.params;
     const { action, comment, delegateToUserId } = req.body;
     const itemId = Number(id);
+    const actor = getEffectiveUser(req);
 
     if (action === "delegate" && delegateToUserId) {
       if (type === "gate") {
@@ -170,6 +127,12 @@ app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, async (req, r
       } else if (type === "exception") {
         await db.execute(sql`UPDATE project_stage_exceptions SET approver_user_id = ${delegateToUserId} WHERE id = ${itemId}`);
       }
+      logAuditFromReq(req, {
+        entityType: `lifecycle_${type}`,
+        entityId: String(itemId),
+        action: "delegated",
+        changesJson: { type, delegateToUserId },
+      });
       return res.json({ success: true, action: "delegated" });
     }
 
@@ -196,6 +159,13 @@ app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, async (req, r
       `);
     }
 
+    logAuditFromReq(req, {
+      entityType: `lifecycle_${type}`,
+      entityId: String(itemId),
+      action: `lifecycle_approval_${action}`,
+      changesJson: { type, action, comment: comment || null },
+    });
+
     res.json({ success: true, action });
   } catch (err: any) {
     console.error("Approval action error:", err);
@@ -203,4 +173,4 @@ app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, async (req, r
   }
 });
 
-} // end registerApprovalsRoutes
+} // end registerLifecycleApprovalsRoutes
