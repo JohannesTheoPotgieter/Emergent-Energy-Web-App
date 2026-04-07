@@ -1,5 +1,40 @@
 -- Auto-generated full schema alignment SQL
 -- Adds all missing columns to existing tables
+
+-- ═══════════════════════════════════════════════════════════
+-- LEGACY TABLE CLEANUP: Fix renamed tables from prior migration
+-- Renames _work_items_legacy → work_items, _deliverables_legacy → deliverables
+-- Only runs if the legacy table exists and the target does NOT exist.
+-- ═══════════════════════════════════════════════════════════
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_work_items_legacy')
+     AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items')
+  THEN
+    ALTER TABLE _work_items_legacy RENAME TO work_items;
+    RAISE NOTICE 'Renamed _work_items_legacy → work_items';
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_deliverables_legacy')
+     AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables')
+  THEN
+    ALTER TABLE _deliverables_legacy RENAME TO deliverables;
+    RAISE NOTICE 'Renamed _deliverables_legacy → deliverables';
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_approvals_legacy')
+     AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='approvals')
+  THEN
+    ALTER TABLE _approvals_legacy RENAME TO approvals;
+    RAISE NOTICE 'Renamed _approvals_legacy → approvals';
+  END IF;
+END $$;
+
+-- ═══════════════════════════════════════════════════════════
+
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='app_settings') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='app_settings' AND column_name='key') THEN
     ALTER TABLE "app_settings" ADD COLUMN "key" TEXT;
