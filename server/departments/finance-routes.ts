@@ -1094,36 +1094,11 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
     let row: any;
     if (updated.length > 0) {
       row = updated[0];
-      // Also sync override to programExpense if a matching legacy row exists
-      if (row.projectName && row.sourceRow != null) {
-        await db.update(programExpense)
-          .set({
-            adminDateOverride: dateOverride || null,
-            adminDateOverrideReason: reason || null,
-            adminDateOverrideBy: userId || null,
-            adminDateOverrideAt: dateOverride ? now : null,
-          })
-          .where(and(
-            eq(programExpense.projectName, row.projectName),
-            eq(programExpense.rowNumber, row.sourceRow),
-            isNull(programExpense.effectiveTo),
-          ));
-      }
+      // PE sync removed — normalizedCostLines is the canonical source.
+      // program_expense is deprecated for writes; reads are being migrated.
     } else {
-      // Fallback: try updating programExpense directly (legacy rows not in normalizedCostLines)
-      const peUpdated = await db.update(programExpense)
-        .set({
-          adminDateOverride: dateOverride || null,
-          adminDateOverrideReason: reason || null,
-          adminDateOverrideBy: userId || null,
-          adminDateOverrideAt: dateOverride ? now : null,
-        })
-        .where(and(eq(programExpense.id, expenseId), isNull(programExpense.effectiveTo)))
-        .returning();
-      if (peUpdated.length === 0) {
-        return res.status(404).json({ error: "Expense line not found" });
-      }
-      row = peUpdated[0];
+      // No matching NCL row — this expense line is not in the canonical source
+      return res.status(404).json({ error: "Expense line not found in canonical cost lines" });
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
@@ -1944,18 +1919,17 @@ async function updateExpenseFieldsDualTable(
   expectedUpdatedAt?: string,
   editorUserId?: number | null,
 ): Promise<any> {
+  // All expense IDs now route through normalized_cost_lines (canonical source).
+  // Negative IDs (from adaptCostToExpense) and legacy 900000-offset IDs are
+  // both handled by storage.updateProgramExpenseFields which reverses the offset.
+  // Positive PE-only IDs are no longer supported for writes — PE is deprecated for writes.
   const isNormalized = id < 0 || id >= 900000;
   if (isNormalized) {
     return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
   }
-  const { programExpense: peTable } = await import("@shared/schema");
-  const legacyFields = {
-    ...fields,
-    lastEditedAt: new Date(),
-    ...(editorUserId ? { lastEditedBy: editorUserId } : {}),
-  };
-  const result = await db.update(peTable).set(legacyFields).where(eq(peTable.id, id)).returning();
-  return result[0] || null;
+  // Legacy PE-only row: log deprecation warning and attempt NCL lookup by ID
+  console.warn(`[deprecation] updateExpenseFieldsDualTable called with legacy PE id=${id}. PE writes are deprecated.`);
+  return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
 }
 
 router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, async (req, res) => {
