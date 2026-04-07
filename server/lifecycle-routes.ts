@@ -1019,16 +1019,16 @@ export function registerLifecycleRoutes(app: Express) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
         const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
         if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
-        // Canonical "paid/realised" logic (matching project-header-kpi-service isCosRealisedLine):
-        // cosStatusOverride takes priority, then fallback to cosRealised boolean
+        const costPaidDateIsPast = !!row.paidDate && row.paidDate <= today;
+        const costPaidConfirmed = costPaidDateIsPast && (row.paidDateConfirmed === true || row.paidDateFontColor === 'black');
         const cosOverride = String(row.cosStatusOverride ?? "").trim().toUpperCase();
         let paid: boolean;
         if (COS_REALISED_OVERRIDES.has(cosOverride)) {
-          paid = true;
+          paid = costPaidDateIsPast;
         } else if (COS_NOT_REALISED_OVERRIDES.has(cosOverride)) {
           paid = false;
         } else {
-          paid = row.cosRealised === true;
+          paid = costPaidConfirmed;
         }
 
         const addTo = (entry: ReturnType<typeof emptyFin>) => {
