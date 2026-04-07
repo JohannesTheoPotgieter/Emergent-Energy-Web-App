@@ -39,14 +39,8 @@ import {
   type DepartmentScore,
   type KpiScore,
 } from "@shared/config/kpi-registry";
-<<<<<<< HEAD
-import { evaluateRevenueArStatus, isRevenueSettled, isCashInBank } from "../lib/finance/revenue-ar-status";
-import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
-import { computeMarginPct } from "../lib/finance/margin";
-import { getTrackerLinkedActiveProjectIdSet } from "./kpi-active-project-scope";
-=======
 import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
->>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
+import { computeMarginPct } from "../lib/finance/margin";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 

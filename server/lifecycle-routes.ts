@@ -18,11 +18,8 @@ import { evaluateRevenueArStatus } from "./lib/finance/revenue-ar-status";
 import { projectStageInstances, STAGE_CODES } from "@shared/schema";
 import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../shared/utils/phase-to-stage-map";
 import { jwtAuth, requireAuth } from "./auth-context";
-<<<<<<< HEAD
 import { bridgeCatch } from "./bridge/bridge-writer";
 import { computeMarginPct } from "./lib/finance/margin";
-=======
->>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];

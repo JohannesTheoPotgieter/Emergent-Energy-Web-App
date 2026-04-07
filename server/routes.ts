@@ -3059,88 +3059,8 @@ export async function registerRoutes(
     }
   });
 
-<<<<<<< HEAD
   // REMOVED: /api/program-expenses and /api/program-expenses/:projectName
   // Canonical routes now in server/departments/finance-routes.ts (registered first via registerDepartmentRoutes).
-=======
-  // ==================== PROGRAM DATA ROUTES ====================
-
-  app.get("/api/program-expenses", requireAuth, async (req, res) => {
-    try {
-      const { projectName, startDate, endDate, applyOverrides } = req.query;
-      let expenses;
-
-      if (projectName && typeof projectName === 'string') {
-        // RLS: verify user has access to this project by name
-        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
-        const expUser = (req as any).user;
-        const expScope = await resolveProjectScope(expUser?.id || 0, expUser?.role || "", expUser?.name || "");
-        if (!isProjectAccessibleByName(expScope, projectName)) {
-          return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
-        }
-        expenses = await storage.getProgramExpensesByProject(projectName);
-
-        // Apply overrides if requested
-        if (applyOverrides === 'true') {
-          // Override data now baked into base rows
-        }
-      } else {
-        expenses = await storage.getAllProgramExpenses();
-        // RLS: filter to accessible projects
-        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
-        const expUser = (req as any).user;
-        const expScope = await resolveProjectScope(expUser?.id || 0, expUser?.role || "", expUser?.name || "");
-        if (expScope.kind === "scoped") {
-          expenses = expenses.filter((e: any) => isProjectAccessibleByName(expScope, e.projectName || ""));
-        }
-      }
-
-      if (startDate && typeof startDate === 'string') {
-        expenses = expenses.filter(e => e.expensePaymentDate && e.expensePaymentDate >= startDate);
-      }
-      if (endDate && typeof endDate === 'string') {
-        expenses = expenses.filter(e => e.expensePaymentDate && e.expensePaymentDate <= endDate);
-      }
-
-      res.json(expenses);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
-    }
-  });
-
-  // Parameterized route for fetching expenses by project name in URL path
-  app.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
-    try {
-      const { projectName } = req.params;
-      const { applyOverrides } = req.query;
-
-      // RLS: verify user has access to this project
-      const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
-      const expPUser = (req as any).user;
-      const expPScope = await resolveProjectScope(expPUser?.id || 0, expPUser?.role || "", expPUser?.name || "");
-      if (!isProjectAccessibleByName(expPScope, projectName)) {
-        return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
-      }
-
-      let expenses = await storage.getProgramExpensesByProject(projectName);
-
-      // Apply overrides if requested
-      if (applyOverrides === 'true') {
-        // Override data now baked into base rows
-      }
-
-      // Sub-project filter (for multi-project/Ad Hoc trackers)
-      const subProject = req.query.subProject as string | undefined;
-      if (subProject) {
-        expenses = expenses.filter((e: any) => e.subProjectName === subProject);
-      }
-
-      res.json(expenses);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
-    }
-  });
->>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 
   app.get("/api/program-inflows", requireAuth, async (req, res) => {
     try {

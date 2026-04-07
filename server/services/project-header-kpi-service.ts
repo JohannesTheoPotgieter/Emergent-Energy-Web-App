@@ -14,12 +14,8 @@ import {
   stageDefinitions,
 } from "@shared/schema";
 import { db } from "../db";
-<<<<<<< HEAD
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
-import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { computeMarginPct } from "../lib/finance/margin";
-=======
->>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 
 const REVENUE_REALISED_STATUSES = new Set(["PAID", "IN_BANK", "REALISED"]);
 const COS_REALISED_OVERRIDES = new Set(["COS REALISED", "REALISED"]);

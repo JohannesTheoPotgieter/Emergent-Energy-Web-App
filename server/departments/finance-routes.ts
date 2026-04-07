@@ -122,24 +122,10 @@ function isCosRealised(exp: any): boolean {
 // Unified realisation check: returns true if cost is effectively realised for a given month.
 // Past-month committed costs are treated as realised (the cost has been incurred).
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-<<<<<<< HEAD
-  const today = new Date().toISOString().slice(0, 10);
-  return isCanonicalCosRealised({
-    status: exp.status ?? exp.line_status ?? null,
-    cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
-    cosRealised: exp.cosRealised ?? null,
-    expenseInvoiceNumber: exp.expenseInvoiceNumber ?? exp.invoiceNumber ?? null,
-    expenseInvoicedDate: exp.expenseInvoicedDate ?? exp.invoiceDate ?? null,
-    expensePoNumber: exp.expensePoNumber ?? exp.poNumber ?? null,
-    paymentDate: exp.expensePaymentDate ?? exp.paymentDate ?? exp.paidDate ?? null,
-    today,
-  });
-=======
   const cosStatus = classifyCosStatusFull(exp);
   if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
   if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
   return false;
->>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 }
 
 // Returns true if a cost is still actively committed (current/future month only).
