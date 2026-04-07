@@ -1837,9 +1837,22 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(expenseTaskLinks.projectName, projectName), eq(expenseTaskLinks.expenseId, expenseId)));
   }
 
-  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string }): Promise<ProgramExpense> {
+  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number }): Promise<ProgramExpense> {
+    // Resolve projectId from projectName if not explicitly provided.
+    // Without projectId, manual expenses are invisible to dashboard queries
+    // that filter by projectId (dashboard-metrics, header-kpis, etc.).
+    let resolvedProjectId = data.projectId ?? null;
+    if (!resolvedProjectId && data.projectName) {
+      const [pi] = await this.dbInstance.select({ id: projectInfo.id })
+        .from(projectInfo)
+        .where(eq(projectInfo.projectName, data.projectName))
+        .limit(1);
+      if (pi) resolvedProjectId = pi.id;
+    }
+
     const mapped: Record<string, any> = {
       projectName: data.projectName,
+      projectId: resolvedProjectId,
       costCategory: data.expenseCategory || null,
       description: data.expenseLineItem || null,
       amountExVat: data.expenseActualTotal?.toString() || null,
