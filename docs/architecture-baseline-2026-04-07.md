@@ -19,7 +19,7 @@ All counts below were measured on 2026-04-07 against the working tree. Each row 
 | Schema barrel file | **30 lines** | `wc -l shared/schema.ts` | Re-export only; no table definitions |
 | Schema domain files total | **9,021 lines** | `wc -l shared/schema/*.ts \| tail -1` | Largest: `users.ts` (1,466), `projects.ts` (1,342), `finance.ts` (1,191) |
 | SQL migration files | **145** | `ls migrations/*.sql \| wc -l` | |
-| Code-orphaned tables | **24** | See [Appendix A](#appendix-a-code-orphaned-tables) | Defined in schema, zero references in `server/` or `client/` |
+| Code-orphaned tables | **13** | See [Appendix A](#appendix-a-code-orphaned-tables) | Defined in schema, zero references in `server/` or `client/` (including raw SQL) |
 
 > **Note on prior schema-size claims**: Earlier audits reference `shared/schema.ts — 5,936 lines`. This likely referred to an older monolithic schema layout. The current repo uses domain-split schema files (`shared/schema/*.ts`) totaling 9,021 lines, with the barrel file (`shared/schema.ts`) at 30 lines.
 
@@ -85,65 +85,65 @@ The following documents contain stale metrics from March 2026. They are preserve
 
 ## Appendix A: Code-Orphaned Tables
 
-These 24 tables are defined in the Drizzle schema (`shared/schema/*.ts`) but have **zero references** in any `server/` or `client/` source file. Status: **code-orphaned, live-data status unverified** (requires `SELECT count(*) FROM <table>` against production DB).
+> **Correction (2026-04-07, updated same day)**: The original version of this appendix listed 24 tables as code-orphaned. That count was wrong. The orphan analysis searched only for Drizzle ORM variable imports (`import { tableName } from "@shared/schema"`) and **missed 11 tables that are actively consumed via raw SQL strings** in route files and services. The corrected count is **13 truly code-orphaned tables**.
 
-Methodology: For each exported `pgTable` constant, searched for any import or usage in `server/` and `client/` directories. Only tables with zero hits outside `shared/schema/` are listed.
+### Methodology (corrected)
 
-### collaboration.ts
+For each exported `pgTable` constant in `shared/schema/*.ts`:
+1. Searched for Drizzle ORM variable imports in `server/` and `client/`
+2. **Also searched for the SQL snake_case table name** in raw SQL queries across `server/`, `client/`, `shared/`, `migrations/`, `server/bootstrap/`, `qa/`
+3. Separated migration-only references (CREATE TABLE in `migrations/*.sql`) from runtime references (SELECT/INSERT/UPDATE/DELETE in route files, services, bootstrap scripts)
+4. Only tables with zero runtime references AND zero bootstrap references are classified as code-orphaned
 
-| Variable Name | Line | SQL Table (approx) |
-|--------------|------|---------------------|
-| `approvalWorkflows` | ~915 | `approval_workflows` |
-| `auditTrail` | ~868 | `audit_trail` |
-| `dashboardWidgetConfig` | ~475 | `dashboard_widget_config` |
-| `domainEvents` | ~831 | `domain_events` |
-| `eventProcessingLog` | ~855 | `event_processing_log` |
-| `eventSubscriptions` | ~845 | `event_subscriptions` |
-| `fileVersions` | ~892 | `file_versions` |
-| `notificationPreferences` | ~882 | `notification_preferences` |
-| `pmComplianceTracking` | ~658 | `pm_compliance_tracking` |
+### Corrected false positives (11 tables — NOT orphaned)
 
-### collaboration-workflow.ts
+These tables were originally listed as orphaned but are **actively used via raw SQL** (not Drizzle ORM imports). They must NOT be dropped.
 
-| Variable Name | Line | SQL Table (approx) |
-|--------------|------|---------------------|
-| `clientCommitments` | ~118 | `client_commitments` |
+| Variable Name | SQL Table | Active Runtime Consumer(s) |
+|--------------|-----------|---------------------------|
+| `paymentBatches` | `payment_batches` | `server/payment-batch-routes.ts` (10+ raw SQL queries) |
+| `paymentBatchItems` | `payment_batch_items` | `server/payment-batch-routes.ts` (4 raw SQL queries) |
+| `paymentRequests` | `payment_requests` | `server/payment-request-routes.ts`, `server/payment-batch-routes.ts`, `server/proof-of-payment-routes.ts` |
+| `projectHandoverGates` | `project_handover_gates` | `server/handover-routes.ts` (8 raw SQL queries) |
+| `projectSubcontractorAssignments` | `project_subcontractor_assignments` | `server/subcontractor-routes.ts` (4 raw SQL queries) |
+| `pmComplianceTracking` | `pm_compliance_tracking` | `server/pm-on-the-go-routes.ts`, `server/lifecycle-routes.ts` |
+| `evidenceCollectedItems` | `evidence_collected_items` | `server/services/evidence-evaluation-service.ts` |
+| `evidenceEvaluations` | `evidence_evaluations` | `server/services/evidence-evaluation-service.ts` |
+| `evidenceRequirementDefinitions` | `evidence_requirement_definitions` | `server/services/evidence-evaluation-service.ts` |
+| `clientCommitments` | `client_commitments` | `server/services/collaboration-workflow-service.ts` (explicitly deprecated with legacy guard, but still referenced) |
+| `fiscalPeriods` | `fiscal_periods` | `server/bridge/bridge-writer.ts` (queried via `finance.fiscal_periods`) |
 
-> Note: Marked `@deprecated` in source with migration plan.
+### Truly code-orphaned tables (13 tables)
 
-### finance.ts
+Status: **code-orphaned, live-data status unverified** (requires `SELECT count(*) FROM <table>` against production DB before any drop).
 
-| Variable Name | Line | SQL Table (approx) |
-|--------------|------|---------------------|
-| `fiscalPeriods` | ~926 | `fiscal_periods` |
-| `fiscalYears` | ~915 | `fiscal_years` |
-| `paymentBatchItems` | ~1159 | `payment_batch_items` |
-| `paymentBatches` | ~1132 | `payment_batches` |
-| `paymentRequests` | ~1105 | `payment_requests` |
+#### Safe to drop if verified empty (11 tables)
 
-### projects.ts
+| Variable Name | Schema File | SQL Table | Likely Purpose | Notes |
+|--------------|------------|-----------|---------------|-------|
+| `approvalWorkflows` | collaboration.ts | `approval_workflows` | Abandoned feature (workflow engine) | Zero references anywhere |
+| `auditTrail` | collaboration.ts | `audit_trail` | Abandoned feature (custom audit trail) | String `audit_trail` in UI is a permission entity name, not a table reference. Actual audit uses `audit_events` table. |
+| `dashboardWidgetConfig` | collaboration.ts | `dashboard_widget_config` | Abandoned feature (custom dashboards) | Zero references anywhere |
+| `eventProcessingLog` | collaboration.ts | `event_processing_log` | Event infrastructure (never wired) | Created by `20260336_event_architecture.sql` migration but never consumed at runtime |
+| `eventSubscriptions` | collaboration.ts | `event_subscriptions` | Event infrastructure (never wired) | Same migration origin as above |
+| `fileVersions` | collaboration.ts | `file_versions` | Abandoned feature (file versioning) | Zero references anywhere |
+| `notificationPreferences` | collaboration.ts | `notification_preferences` | Abandoned feature | Zero references anywhere |
+| `domainEvents` | collaboration.ts | `domain_events` | Event infrastructure (never wired) | Same migration origin as above |
+| `derivedPortfolioKpis` | projects.ts | `derived_portfolio_kpis` | Derived/materialized (never populated) | No read or write path exists |
+| `derivedRagSummary` | projects.ts | `derived_rag_summary` | Derived/materialized (never populated) | No read or write path exists |
+| `fiscalYears` | finance.ts | `fiscal_years` | Finance infrastructure (unused) | Created by `20260364_epc_workflow_phase1.sql` migration, never queried at runtime |
 
-| Variable Name | Line | SQL Table (approx) |
-|--------------|------|---------------------|
-| `derivedPortfolioKpis` | ~986 | `derived_portfolio_kpis` |
-| `derivedRagSummary` | ~1009 | `derived_rag_summary` |
-| `projectHandoverGates` | ~1127 | `project_handover_gates` |
-| `projectLinkageReviewQueue` | ~1224 | `project_linkage_review_queue` |
-| `projectSubcontractorAssignments` | ~1206 | `project_subcontractor_assignments` |
+#### DO NOT DROP (1 table)
 
-### quality.ts
+| Variable Name | Schema File | SQL Table | Reason |
+|--------------|------------|-----------|--------|
+| `organizations` | users.ts | `organizations` | **FK target**: `users.organization_id` references `organizations(id)`. Migration `20260334_organizations_multi_tenancy.sql` creates the table, seeds 1 row, and adds the FK. Dropping would break the users table constraint. |
 
-| Variable Name | Line | SQL Table (approx) |
-|--------------|------|---------------------|
-| `evidenceCollectedItems` | ~295 | `evidence_collected_items` |
-| `evidenceEvaluations` | ~313 | `evidence_evaluations` |
-| `evidenceRequirementDefinitions` | ~275 | `evidence_requirement_definitions` |
+#### Investigate further (1 table)
 
-### users.ts
-
-| Variable Name | Line | SQL Table (approx) |
-|--------------|------|---------------------|
-| `organizations` | ~6 | `organizations` |
+| Variable Name | Schema File | SQL Table | Reason |
+|--------------|------------|-----------|--------|
+| `projectLinkageReviewQueue` | projects.ts | `project_linkage_review_queue` | Migration artifact: `20260323_project_spine_backfill.sql` creates the table and populates it with backfill review items. May contain unresolved rows (`resolved_at IS NULL`). Need live DB query before any drop decision. |
 
 ---
 
