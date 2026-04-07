@@ -9,6 +9,7 @@
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_work_items_legacy')
      AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items')
+     AND NOT EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items')
   THEN
     ALTER TABLE _work_items_legacy RENAME TO work_items;
     RAISE NOTICE 'Renamed _work_items_legacy → work_items';
@@ -18,6 +19,7 @@ END $$;
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_deliverables_legacy')
      AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables')
+     AND NOT EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='deliverables')
   THEN
     ALTER TABLE _deliverables_legacy RENAME TO deliverables;
     RAISE NOTICE 'Renamed _deliverables_legacy → deliverables';
