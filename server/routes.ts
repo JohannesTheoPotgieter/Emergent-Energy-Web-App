@@ -4867,14 +4867,7 @@ export async function registerRoutes(
       const userName = (req.user as any)?.username || (req.user as any)?.fullName || 'Unknown';
 
       // DEPRECATED: cosStatusOverrides table removed — override data baked into base rows
-
-      // Dual-write: apply COS status override to base program_expense row
-      try {
-        const userId = (req.user as any)?.id || null;
-        await inlineEdit('program_expense', expenseId, { line_status: overrideStatus }, userId);
-      } catch (dualWriteErr) {
-        console.warn("[COS override] Dual-write to program_expense failed (non-fatal):", dualWriteErr);
-      }
+      // PE dual-write removed — normalized_cost_lines is canonical source
 
       logAuditFromReq(req, { entityType: "cos_override", action: "update", entityId: String(expenseId), projectName, changesJson: { description: "COS status overridden", overrideStatus, originalStatus, reason } });
       res.json({ success: true });
@@ -4888,14 +4881,7 @@ export async function registerRoutes(
     try {
       const expenseId = parseInt(req.params.expenseId);
 
-      // Dual-write: revert COS status on base program_expense row
-      try {
-        const { revertToImported } = await import("./lib/inline-edit-helper");
-        await revertToImported('program_expense', expenseId);
-      } catch (dualWriteErr) {
-        console.warn("[COS override delete] Dual-write revert failed (non-fatal):", dualWriteErr);
-      }
-
+      // PE dual-write removed — normalized_cost_lines is canonical source
       // DEPRECATED: cosStatusOverrides table removed — override data baked into base rows
 
       logAuditFromReq(req, { entityType: "cos_override", action: "delete", entityId: String(expenseId), changesJson: { description: "COS status override removed" } });
