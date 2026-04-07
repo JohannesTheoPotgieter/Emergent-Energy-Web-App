@@ -124,7 +124,7 @@ function isCosRealised(exp: any): boolean {
 // This ensures GP Tracker, COS Tracker, Company Overview, and PM Report all
 // agree on whether a cost line is realised.
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  const today = `${currentMonthKey}-28`; // End-of-month approximation for canonical check
+  const today = new Date().toISOString().slice(0, 10);
   return isCanonicalCosRealised({
     status: exp.status ?? exp.line_status ?? null,
     cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
