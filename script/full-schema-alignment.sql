@@ -3508,6 +3508,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='snapshot_run_id') THEN
     ALTER TABLE "normalized_cost_lines" ADD COLUMN "snapshot_run_id" INTEGER;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='idempotency_key') THEN
+    ALTER TABLE "normalized_cost_lines" ADD COLUMN "idempotency_key" TEXT;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_execution_phases') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_execution_phases' AND column_name='project_id') THEN
     ALTER TABLE "normalized_execution_phases" ADD COLUMN "project_id" INTEGER;
   END IF;
