@@ -15,8 +15,9 @@ export async function registerExtractedRoutes(app: Express) {
   const { registerMytoolRoutes } = await import("./mytool-routes");
   registerMytoolRoutes(app);
 
-  // Future phases will add more domain modules here:
-  // Phase 2: const { registerAdminExtractedRoutes } = await import("./admin-extracted-routes");
-  // Phase 3: const { registerOutlookRoutes } = await import("./outlook-routes");
-  // etc.
+  // Phase 2: MS Integration routes (23 handlers, extracted from routes.ts)
+  const { registerMsIntegrationRoutes } = await import("./ms-integration-extracted-routes");
+  await registerMsIntegrationRoutes(app);
+
+  // Future phases will add more domain modules here.
 }
