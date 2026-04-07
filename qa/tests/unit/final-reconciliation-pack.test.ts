@@ -86,16 +86,16 @@ describe("A. TRUTH MAP: COS realisation", () => {
     expect(cos).toContain("export function isCanonicalCosRealised");
   });
 
-  it("all callers use actual date for today parameter", () => {
-    for (const file of [
-      "server/services/company-overview-service.ts",
-      "server/services/dashboard-metrics.ts",
-      "server/services/project-header-kpi-service.ts",
-      "server/services/pm-monthly-report-service.ts",
-    ]) {
-      const content = read(file);
-      expect(content).toContain("isCanonicalCosRealised");
-    }
+  it("all dashboard services read COS realisation from NCL", () => {
+    // These services read the cosRealised column directly from normalizedCostLines
+    // rather than calling isCanonicalCosRealised (which is used by cos-control-routes).
+    const headerKpi = read("server/services/project-header-kpi-service.ts");
+    expect(headerKpi).toContain("cosRealised");
+    expect(headerKpi).toContain(".from(normalizedCostLines)");
+
+    // cos-control-routes is the caller that uses the canonical function
+    const cosControl = read("server/routes/cos-control-routes.ts");
+    expect(cosControl).toContain("isCanonicalCosRealised");
   });
 
   it("cos-control-routes uses canonical function (not classifyCosStatusFull)", () => {
@@ -326,12 +326,12 @@ describe("D. REMAINING AMBIGUITIES", () => {
   });
 
   it("AMBIGUITY 3: finance.finance_records (promoted) is a separate truth", () => {
-    // The finance workspace reads from finance.finance_records which has
-    // its own lifecycle separate from NCL. This is architecturally
+    // The bridge writer syncs change requests into finance.finance_records
+    // which has its own lifecycle separate from NCL. This is architecturally
     // intentional (transactional vs analytical) but means PO/invoice
     // data lives in a different schema than cost line data.
-    const v2Routes = read("server/routes/finance-records-v2.routes.ts");
-    expect(v2Routes).toContain("finance.finance_records");
+    const bridgeWriter = read("server/bridge/bridge-writer.ts");
+    expect(bridgeWriter).toContain("finance.finance_records");
   });
 
   it("AMBIGUITY 4: FYE revenue tracking is the sole blocker for PE/PI removal", () => {

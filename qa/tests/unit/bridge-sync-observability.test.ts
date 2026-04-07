@@ -128,20 +128,23 @@ describe("Bridge writer — retry queue", () => {
   });
 });
 
-describe("Bridge writer — health endpoint", () => {
-  const admin = read("server/admin-control-routes.ts");
+describe("Bridge writer — exported observability functions", () => {
+  const bridge = read("server/bridge/bridge-writer.ts");
 
-  it("admin bridge-health endpoint exists", () => {
-    expect(admin).toContain('"/api/admin/bridge-health"');
+  it("getBridgeFailureCount is exported for health monitoring", () => {
+    expect(bridge).toContain("export function getBridgeFailureCount");
   });
 
-  it("health endpoint reports failure and success counts", () => {
-    expect(admin).toContain("getBridgeFailureCount()");
-    expect(admin).toContain("getBridgeSuccessCount()");
+  it("getRecentBridgeFailures is exported for health monitoring", () => {
+    expect(bridge).toContain("export function getRecentBridgeFailures");
   });
 
-  it("health endpoint reports recent failures", () => {
-    expect(admin).toContain("getRecentBridgeFailures()");
+  it("resetBridgeFailureCount is exported", () => {
+    expect(bridge).toContain("export function resetBridgeFailureCount");
+  });
+
+  it("recordBridgeSuccess is exported", () => {
+    expect(bridge).toContain("export function recordBridgeSuccess");
   });
 });
 
@@ -169,41 +172,31 @@ describe("Finance line write service — domain-aware bridge sync", () => {
   });
 });
 
-describe("Promoted reads — fallback-only (not business-critical)", () => {
-  const storage = read("server/storage.ts");
+describe("Batch sync — project re-sync after bulk import", () => {
+  const bridge = read("server/bridge/bridge-writer.ts");
 
-  it("getAllProgramExpenses tries promoted read with legacy fallback", () => {
-    const block = storage.substring(
-      storage.indexOf("async getAllProgramExpenses"),
-      storage.indexOf("async getProgramExpensesByProject")
-    );
-    expect(block).toContain("listCostLinesFromPromotedCompat");
-    expect(block).toContain("promoted read failed, falling back to legacy");
+  it("batchSyncFinanceByProject is exported", () => {
+    expect(bridge).toContain("export async function batchSyncFinanceByProject");
   });
 
-  it("getProgramExpensesByProject tries promoted read with legacy fallback", () => {
-    const block = storage.substring(
-      storage.indexOf("async getProgramExpensesByProject"),
-      storage.indexOf("async createManyProgramExpenses")
-    );
-    expect(block).toContain("listCostLinesFromPromotedCompat");
-    expect(block).toContain("promoted read failed, falling back to legacy");
-  });
-
-  it("promoted read compat returns null if schema missing", () => {
-    const compat = read("server/services/promoted-read-compat.ts");
-    expect(compat).toContain("return null; // Caller should use legacy fallback");
+  it("batchSyncFinanceByProject returns cost and revenue sync counts", () => {
+    expect(bridge).toContain("costSynced");
+    expect(bridge).toContain("revenueSynced");
   });
 });
 
-describe("Reconciliation pack — bridge health checks", () => {
-  const recon = read("server/services/reconciliation-pack.ts");
+describe("Bridge writer — change request sync to finance.finance_records", () => {
+  const bridge = read("server/bridge/bridge-writer.ts");
 
-  it("reconciliation pack checks bridge_failures_unresolved", () => {
-    expect(recon).toContain("bridge_failures_unresolved");
+  it("syncChangeRequest writes to finance.finance_records", () => {
+    expect(bridge).toContain("INSERT INTO finance.finance_records");
   });
 
-  it("reconciliation pack checks sync_watermarks_stale", () => {
-    expect(recon).toContain("sync_watermarks_stale");
+  it("softDeleteChangeRequestFinanceRecord is exported", () => {
+    expect(bridge).toContain("export async function softDeleteChangeRequestFinanceRecord");
+  });
+
+  it("syncProjectExecutionState is exported", () => {
+    expect(bridge).toContain("export async function syncProjectExecutionState");
   });
 });

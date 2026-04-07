@@ -1896,8 +1896,6 @@ export class DatabaseStorage implements IStorage {
 
   async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number }): Promise<ProgramExpense> {
     // Resolve projectId from projectName if not explicitly provided.
-    // Without projectId, manual expenses are invisible to dashboard queries
-    // that filter by projectId (dashboard-metrics, header-kpis, etc.).
     let resolvedProjectId = data.projectId ?? null;
     if (!resolvedProjectId && data.projectName) {
       const [pi] = await this.dbInstance.select({ id: projectInfo.id })
@@ -1905,6 +1903,12 @@ export class DatabaseStorage implements IStorage {
         .where(eq(projectInfo.projectName, data.projectName))
         .limit(1);
       if (pi) resolvedProjectId = pi.id;
+    }
+
+    // POLICY: Manual expenses MUST have a valid project assignment.
+    // Without projectId, expenses are invisible to dashboards and break finance integrity.
+    if (!resolvedProjectId) {
+      throw new Error("Manual expense requires a valid projectId. Cannot save an expense without a project assignment.");
     }
 
     const mapped: Record<string, any> = {

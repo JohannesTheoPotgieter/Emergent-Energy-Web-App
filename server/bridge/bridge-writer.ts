@@ -1108,6 +1108,59 @@ export function stopBridgeRetryScheduler(): void {
   }
 }
 
+/**
+ * Batch re-sync all active finance lines for a project.
+ * Used after bulk imports to ensure promoted schema is up-to-date.
+ */
+export async function batchSyncFinanceByProject(
+  projectId: number | null,
+  projectName: string | null,
+): Promise<{ costSynced: number; revenueSynced: number }> {
+  let costSynced = 0;
+  let revenueSynced = 0;
+
+  try {
+    // Re-sync cost lines
+    if (projectId) {
+      const costRows = await db.execute(
+        sql`SELECT * FROM normalized_cost_lines WHERE project_id = ${projectId} AND effective_to IS NULL`
+      );
+      if (costRows.rows?.length) {
+        await syncCostLines(costRows.rows as any[]);
+        costSynced = costRows.rows.length;
+      }
+
+      const revRows = await db.execute(
+        sql`SELECT * FROM normalized_revenue_lines WHERE project_id = ${projectId} AND effective_to IS NULL`
+      );
+      if (revRows.rows?.length) {
+        await syncRevenueLines(revRows.rows as any[]);
+        revenueSynced = revRows.rows.length;
+      }
+    } else if (projectName) {
+      const costRows = await db.execute(
+        sql`SELECT * FROM normalized_cost_lines WHERE project_name = ${projectName} AND effective_to IS NULL`
+      );
+      if (costRows.rows?.length) {
+        await syncCostLines(costRows.rows as any[]);
+        costSynced = costRows.rows.length;
+      }
+
+      const revRows = await db.execute(
+        sql`SELECT * FROM normalized_revenue_lines WHERE project_name = ${projectName} AND effective_to IS NULL`
+      );
+      if (revRows.rows?.length) {
+        await syncRevenueLines(revRows.rows as any[]);
+        revenueSynced = revRows.rows.length;
+      }
+    }
+  } catch (err) {
+    bridgeCatch(err);
+  }
+
+  return { costSynced, revenueSynced };
+}
+
 export async function syncProjectDelete(projectId: number): Promise<BridgeResult> {
   return withRetry("project_delete", projectId, async () => {
   try {

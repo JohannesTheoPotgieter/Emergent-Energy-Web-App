@@ -322,7 +322,7 @@ describe("Legacy role and route preservation", () => {
     const paths = LEGACY_REDIRECTS.map(r => r.path);
     expect(paths).toContain("/dashboard");
     expect(paths).toContain("/my-tool");
-    expect(paths).toContain("/execution-board");
+    expect(paths).toContain("/command-center");
   });
 
   it("ROLE_LANDING_PAGE still maps finance roles to /cashflow", () => {

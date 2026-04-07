@@ -29,10 +29,10 @@ import {
   softClosePromotedCostLines,
   softClosePromotedRevenueLines,
   syncCostLineCounterpartyBulk,
+  batchSyncFinanceByProject,
   bridgeCatch,
   bridgeCatchFor,
 } from "../bridge/bridge-writer";
-import { batchSyncFinanceByProject } from "../bridge/batch-bridge-sync";
 import { softCloseByProjectName, softCloseByProjectId } from "../lib/temporal-helpers";
 
 type DbOrTx = typeof db;

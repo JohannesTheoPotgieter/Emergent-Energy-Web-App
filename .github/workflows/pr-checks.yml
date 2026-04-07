@@ -27,6 +27,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -35,6 +37,6 @@ jobs:
       - run: npm run lint
       - run: npm run check
       - run: npm run build
-      - run: npm run test
+      - run: npm test
         if: hashFiles('**/*.test.ts') != ''
       - run: npm run release:gate
