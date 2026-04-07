@@ -30,6 +30,7 @@ import {
   softClosePromotedRevenueLines,
   syncCostLineCounterpartyBulk,
   bridgeCatch,
+  bridgeCatchFor,
 } from "../bridge/bridge-writer";
 import { batchSyncFinanceByProject } from "../bridge/batch-bridge-sync";
 import { softCloseByProjectName, softCloseByProjectId } from "../lib/temporal-helpers";
@@ -42,13 +43,30 @@ type DbOrTx = typeof db;
 
 /**
  * Create a single cost line and sync to promoted schema.
+ *
+ * If `values.idempotencyKey` is provided, checks for an existing row with
+ * that key first. If found, returns the existing row without inserting
+ * (idempotent retry). This prevents duplicates from double-clicks,
+ * browser resends, and network retries for manual expense creation.
  */
 export async function createCostLine(
   values: Record<string, any>,
   txOrDb: DbOrTx = db,
 ): Promise<any> {
+  // Idempotency guard: if a key is provided, check for existing row first
+  if (values.idempotencyKey) {
+    const existing = await (txOrDb as any)
+      .select()
+      .from(normalizedCostLines)
+      .where(eq(normalizedCostLines.idempotencyKey, values.idempotencyKey))
+      .limit(1);
+    if (existing.length > 0) {
+      return existing[0];
+    }
+  }
+
   const [created] = await (txOrDb as any).insert(normalizedCostLines).values(values).returning();
-  syncCostLine(created).catch(bridgeCatch);
+  syncCostLine(created).catch(bridgeCatchFor("cost_line", created.id));
   return created;
 }
 
@@ -63,7 +81,7 @@ export async function createCostLines(
   const created = await (txOrDb as any).insert(normalizedCostLines).values(values).returning();
   // Bridge sync in background — don't block the bulk insert
   for (const row of created) {
-    syncCostLine(row).catch(bridgeCatch);
+    syncCostLine(row).catch(bridgeCatchFor("cost_line", row.id));
   }
   return created;
 }
@@ -116,7 +134,7 @@ export async function createRevenueLine(
   txOrDb: DbOrTx = db,
 ): Promise<any> {
   const [created] = await (txOrDb as any).insert(normalizedRevenueLines).values(values).returning();
-  syncRevenueLine(created).catch(bridgeCatch);
+  syncRevenueLine(created).catch(bridgeCatchFor("revenue_line", created.id));
   return created;
 }
 
@@ -130,7 +148,7 @@ export async function createRevenueLines(
   if (values.length === 0) return [];
   const created = await (txOrDb as any).insert(normalizedRevenueLines).values(values).returning();
   for (const row of created) {
-    syncRevenueLine(row).catch(bridgeCatch);
+    syncRevenueLine(row).catch(bridgeCatchFor("revenue_line", row.id));
   }
   return created;
 }

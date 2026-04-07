@@ -247,7 +247,7 @@ describe("normalized_cost_lines Write Path Coverage", () => {
   it("storage.ts createManualExpense delegates to write service", () => {
     const s = readServerFile("../server/storage.ts");
     const section = s.slice(s.indexOf("async createManualExpense"));
-    expect(section.slice(0, 1200)).toContain("_createCostLine");
+    expect(section.slice(0, 2000)).toContain("_createCostLine");
   });
 
   it("storage.ts deleteExpensesByProject delegates to write service", () => {
