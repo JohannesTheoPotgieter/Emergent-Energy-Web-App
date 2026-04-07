@@ -624,7 +624,7 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
     const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
 
     const [allExpenses, latestRefresh, cosOverrideMapCos] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      storage.getAllCostLinesForCashflow(),
       storage.getLatestRefresh(),
       Promise.resolve(new Map()),
     ]);
@@ -1467,9 +1467,9 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     }
 
     const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      storage.getAllCostLinesForCashflow(),
       storage.getTrackerMonthlyManual('COS'),
-      storage.getAllProgramInflows(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
@@ -1761,7 +1761,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
     const [allExpenses, cosOverrideMapMD] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      storage.getAllCostLinesForCashflow(),
       Promise.resolve(new Map()),
     ]);
 
@@ -1916,7 +1916,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     const { realised, expectedUpdatedAt } = req.body as { realised: boolean; expectedUpdatedAt?: string };
     if (typeof realised !== 'boolean') return res.status(400).json({ error: "realised (boolean) required" });
 
-    const allExpenses = await storage.getAllProgramExpenses();
+    const allExpenses = await storage.getAllCostLinesForCashflow();
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
 
@@ -1969,7 +1969,7 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "A reason is required when setting an override" });
     }
 
-    const allExpenses = await storage.getAllProgramExpenses();
+    const allExpenses = await storage.getAllCostLinesForCashflow();
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
 
@@ -2163,8 +2163,8 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
     }
 
     const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getTrackerMonthlyManual('REV'),
       storage.getTrackerMonthlyManual('COS'),
       Promise.resolve(new Map()),
@@ -2477,8 +2477,8 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
     if (!keyMatch) return res.status(400).json({ error: "Invalid monthKey format" });
 
     const [allExpenses, allInflowsRaw, cosOverrideMapGPD] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       Promise.resolve(new Map()),
     ]);
 
@@ -2567,8 +2567,8 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
 async function revenueTrackerHandler(req: Request, res: Response) {
   try {
     const [allExpenses, allInflowsRaw, manualEntries, cosOverrideMap] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getTrackerMonthlyManual('REV'),
       Promise.resolve(new Map()),
     ]);
@@ -2716,7 +2716,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
     const [allExpenses, cosOverrideMapRMD] = await Promise.all([
-      project ? storage.getProgramExpensesByProject(project) : storage.getAllProgramExpenses(),
+      project ? storage.getProgramExpensesByProject(project) : storage.getAllCostLinesForCashflow(),
       Promise.resolve(new Map()),
     ]);
 
