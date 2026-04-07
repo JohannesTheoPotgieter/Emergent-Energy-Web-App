@@ -73,7 +73,10 @@ async function withRetry(
   operation: () => Promise<BridgeResult>,
 ): Promise<BridgeResult> {
   const first = await operation();
-  if (first.success) return first;
+  if (first.success) {
+    _bridgeSuccessCount++;
+    return first;
+  }
 
   // Only retry transient errors
   if (!first.error || !isTransientError(new Error(first.error))) {
@@ -84,7 +87,9 @@ async function withRetry(
   // Wait 200ms then retry once
   await new Promise(r => setTimeout(r, 200));
   const second = await operation();
-  if (!second.success) {
+  if (second.success) {
+    _bridgeSuccessCount++;
+  } else {
     await logBridgeError(domain, entityId, new Error(second.error));
   }
   return { ...second, retried: true };
@@ -939,6 +944,37 @@ async function persistBridgeCatchFailure(domain: string, errorMessage: string): 
 /** Increment success counter (called internally after successful bridge writes) */
 export function recordBridgeSuccess(): void {
   _bridgeSuccessCount++;
+}
+
+/**
+ * Create a domain-scoped catch handler for bridge sync calls.
+ * Provides better error context than the generic bridgeCatch.
+ *
+ * Usage: syncCostLine(row).catch(bridgeCatchFor("cost_line", row.id));
+ */
+export function bridgeCatchFor(domain: string, entityId: number | string): (err: unknown) => void {
+  return (err: unknown) => {
+    _bridgeFailureCount++;
+    const msg = err instanceof Error ? err.message : String(err);
+
+    console.warn(JSON.stringify({
+      level: "warn",
+      component: "bridge-writer",
+      event: "bridge_catch_failure",
+      domain,
+      entityId: String(entityId),
+      error: msg.slice(0, 500),
+      failureCount: _bridgeFailureCount,
+      ts: new Date().toISOString(),
+    }));
+
+    _recentFailures.push({ domain, error: msg.slice(0, 200), ts: Date.now() });
+    if (_recentFailures.length > MAX_RECENT_FAILURES) {
+      _recentFailures.shift();
+    }
+
+    persistBridgeCatchFailure(domain, msg).catch(() => {});
+  };
 }
 
 /** Returns the number of bridge write failures since process start. */
