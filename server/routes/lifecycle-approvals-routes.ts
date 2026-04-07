@@ -9,7 +9,9 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { jwtAuth, requireAuth } from "../auth-context";
+import { jwtAuth, requireAuth, getEffectiveUser } from "../auth-context";
+import { requirePermission } from "../permission-middleware";
+import { logAuditFromReq } from "../audit-logger";
 
 // Helper: execute a query, returning empty array if a referenced table/column doesn't exist
 async function safeQuery(query: ReturnType<typeof sql>) {
@@ -27,7 +29,7 @@ export function registerLifecycleApprovalsRoutes(app: Express) {
 
 // ── Unified approvals queue ────────────────────────────────
 
-app.get("/api/approvals", jwtAuth, requireAuth, async (req, res) => {
+app.get("/api/approvals", jwtAuth, requireAuth, requirePermission("stage_gate", "view"), async (req, res) => {
   try {
     const userId = (req as any).user?.id || 0;
     const typeFilter = req.query.type as string | undefined;
@@ -162,11 +164,12 @@ app.get("/api/approvals/count", jwtAuth, requireAuth, async (req, res) => {
 
 // ── Approval action ────────────────────────────────────────
 
-app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, async (req, res) => {
+app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, requirePermission("stage_gate", "approve"), async (req, res) => {
   try {
     const { type, id } = req.params;
     const { action, comment, delegateToUserId } = req.body;
     const itemId = Number(id);
+    const actor = getEffectiveUser(req);
 
     if (action === "delegate" && delegateToUserId) {
       if (type === "gate") {
@@ -174,6 +177,12 @@ app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, async (req, r
       } else if (type === "exception") {
         await db.execute(sql`UPDATE project_stage_exceptions SET approver_user_id = ${delegateToUserId} WHERE id = ${itemId}`);
       }
+      logAuditFromReq(req, {
+        entityType: `lifecycle_${type}`,
+        entityId: String(itemId),
+        action: "delegated",
+        changesJson: { type, delegateToUserId },
+      });
       return res.json({ success: true, action: "delegated" });
     }
 
@@ -199,6 +208,13 @@ app.patch("/api/approvals/:type/:id/action", jwtAuth, requireAuth, async (req, r
         WHERE id = ${itemId}
       `);
     }
+
+    logAuditFromReq(req, {
+      entityType: `lifecycle_${type}`,
+      entityId: String(itemId),
+      action: `lifecycle_approval_${action}`,
+      changesJson: { type, action, comment: comment || null },
+    });
 
     res.json({ success: true, action });
   } catch (err: any) {
