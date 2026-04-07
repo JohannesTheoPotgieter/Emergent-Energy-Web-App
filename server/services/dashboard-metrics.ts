@@ -21,6 +21,7 @@ import { cacheGet, cacheSet, cacheDelete, cacheClear } from "../lib/cache";
 import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
+import { computeMarginPct } from "../lib/finance/margin";
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000; // Skip projects refreshed within 5 minutes
 const CONCURRENCY_LIMIT = 5; // Max parallel project refreshes
@@ -117,10 +118,8 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
   }
 
   // D-04 fix: store margin as percentage (0–100) consistent with all other views
-  const marginPct =
-    totalRevenue > 0
-      ? (((totalRevenue - totalCost) / totalRevenue) * 100).toFixed(2)
-      : null;
+  const marginResult = computeMarginPct(totalRevenue, totalCost, { precision: 2 });
+  const marginPct = marginResult !== null ? marginResult.toFixed(2) : null;
 
   // Task aggregates from work_items
   const taskRows = await db

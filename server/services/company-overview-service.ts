@@ -41,6 +41,7 @@ import {
 } from "@shared/config/kpi-registry";
 import { evaluateRevenueArStatus, isRevenueSettled, isCashInBank } from "../lib/finance/revenue-ar-status";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
+import { computeMarginPct } from "../lib/finance/margin";
 import { getTrackerLinkedActiveProjectIdSet } from "./kpi-active-project-scope";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -185,9 +186,7 @@ export async function getCompanyOverviewData() {
     }
   }
 
-  const grossMarginPct = totalRevenueFytd > 0
-    ? ((totalRevenueFytd - totalCostFytd) / totalRevenueFytd) * 100
-    : 0;
+  const grossMarginPct = computeMarginPct(totalRevenueFytd, totalCostFytd, { precision: 1, zeroRevenueValue: 0 }) ?? 0;
 
   // ── Portfolio delivery stats ───────────────────────────────────────
   let onTrack = 0, atRisk = 0, offTrack = 0;
