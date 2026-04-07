@@ -75,7 +75,7 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
   const effectivePaidDateConfirmed = cost.paidDate ? (rawPaidDateConfirmed ?? false) : ((cost as any).forecastPaymentDate ? (rawPaidDateConfirmed ?? false) : false);
 
   return {
-    id: cost.id + 900000,
+    id: -cost.id,
     projectName: resolvedName,
     projectId: (cost as any).projectId ?? null,
     rowNumber: (cost as any).sourceRow || cost.id,
@@ -132,7 +132,7 @@ export function adaptRevenueToInflow(rev: NormalizedRevenueLine, resolvedName: s
   const inBank = manualInBank || (hasPaymentReceived && hasInvoice) ? 1 : 0;
 
   return {
-    id: rev.id + 900000,
+    id: -rev.id,
     projectName: resolvedName,
     rowNumber: (rev as any).sourceRow || rev.id,
     milestoneNo: (rev as any).sourceRow || null,

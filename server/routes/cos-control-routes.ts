@@ -13,20 +13,37 @@ import { scoreExpenseConfidence, scoreInflowConfidence, getAssumptionDriver } fr
 import { aggregateCOS, aggregateCOSByProject } from "../lib/calculations/cosAggregator";
 import { computeWeeklyCashflow, getLinesForWeek, type CashflowLineItem } from "../lib/calculations/cashflow";
 import { runDataQualityChecks } from "../lib/calculations/dataQuality";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { computeMonthlyBuckets } from "../lib/calculations/scenarioResolver";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
 
-// Unified realisation check: past-month committed costs are treated as realised.
+// Unified realisation check: delegates to canonical isCanonicalCosRealised()
+// to stay aligned with COS Tracker, Company Overview, Dashboard Metrics, etc.
 function isCosRealisedCheck(exp: any): boolean {
-  return classifyCosStatusFull(exp) === 'COS Realised';
+  return isCanonicalCosRealised({
+    status: exp.status ?? exp.line_status ?? null,
+    cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
+    cosRealised: exp.cosRealised ?? null,
+    expenseInvoiceNumber: exp.expenseInvoiceNumber ?? exp.invoiceNumber ?? null,
+    expenseInvoicedDate: exp.expenseInvoicedDate ?? exp.invoiceDate ?? null,
+    expensePoNumber: exp.expensePoNumber ?? exp.poNumber ?? null,
+    paymentDate: exp.expensePaymentDate ?? exp.paymentDate ?? exp.paidDate ?? null,
+    today: new Date().toISOString().slice(0, 10),
+  });
 }
 
 function isEffectivelyRealisedLocal(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  const cosStatus = classifyCosStatusFull(exp);
-  if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
-  if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
-  return false;
+  return isCanonicalCosRealised({
+    status: exp.status ?? exp.line_status ?? null,
+    cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
+    cosRealised: exp.cosRealised ?? null,
+    expenseInvoiceNumber: exp.expenseInvoiceNumber ?? exp.invoiceNumber ?? null,
+    expenseInvoicedDate: exp.expenseInvoicedDate ?? exp.invoiceDate ?? null,
+    expensePoNumber: exp.expensePoNumber ?? exp.poNumber ?? null,
+    paymentDate: exp.expensePaymentDate ?? exp.paymentDate ?? exp.paidDate ?? null,
+    today: new Date().toISOString().slice(0, 10),
+  });
 }
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {

@@ -148,6 +148,9 @@ export interface IStorage {
   // Program Expense (new)
   getAllProgramExpenses(): Promise<ProgramExpense[]>;
   getProgramExpensesByProject(projectName: string): Promise<ProgramExpense[]>;
+  // Canonical cost-line read for cashflow — reads normalized_cost_lines only,
+  // bypassing the program_expense merge. Returns adapted expense-shaped rows.
+  getAllCostLinesForCashflow(): Promise<any[]>;
   createManyProgramExpenses(expenses: InsertProgramExpense[]): Promise<ProgramExpense[]>;
   deleteProgramExpensesByProject(projectName: string): Promise<void>;
   updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined>;
@@ -156,6 +159,8 @@ export interface IStorage {
   // Program Inflows (new)
   getAllProgramInflows(): Promise<ProgramInflows[]>;
   getProgramInflowsByProject(projectName: string): Promise<ProgramInflows[]>;
+  // Canonical revenue-line read for cashflow — reads normalized_revenue_lines only.
+  getAllRevenueLinesForCashflow(): Promise<any[]>;
   createManyProgramInflows(inflows: InsertProgramInflows[]): Promise<ProgramInflows[]>;
   deleteProgramInflowsByProject(projectName: string): Promise<void>;
 
@@ -1099,6 +1104,18 @@ export class DatabaseStorage implements IStorage {
     return selected.winners;
   }
 
+  async getAllCostLinesForCashflow(): Promise<any[]> {
+    // Canonical read: normalized_cost_lines only, no program_expense merge.
+    // Aligns cashflow with dashboards that read normalizedCostLines directly.
+    const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
+    const [costLines, piRows] = await Promise.all([
+      this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+    ]);
+    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
+    return costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+  }
+
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
     // Full spine: read from finance.cost_lines (promoted) with legacy fallback
     try {
@@ -1198,7 +1215,7 @@ export class DatabaseStorage implements IStorage {
     if (Object.keys(mappedFields).length === 0) {
       return undefined;
     }
-    const canonicalId = id >= 900000 ? id - 900000 : id;
+    const canonicalId = id < 0 ? -id : (id >= 900000 ? id - 900000 : id);
 
     // Optimistic locking: if caller provides expectedUpdatedAt, verify row hasn't changed
     if (expectedUpdatedAt) {
@@ -1265,7 +1282,7 @@ export class DatabaseStorage implements IStorage {
       mappedFields[mapped] = value;
     }
     if (Object.keys(mappedFields).length === 0) return undefined;
-    const canonicalId = id >= 900000 ? id - 900000 : id;
+    const canonicalId = id < 0 ? -id : (id >= 900000 ? id - 900000 : id);
     const result = await this.dbInstance
       .update(normalizedRevenueLines)
       .set(mappedFields)
@@ -1302,6 +1319,18 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Legacy fallback
+    const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
+    const [revLines, piRows] = await Promise.all([
+      this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+    ]);
+    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
+    return revLines.map(r => adaptRevenueToInflow(r, resolve(r.projectName)));
+  }
+
+  async getAllRevenueLinesForCashflow(): Promise<any[]> {
+    // Canonical read: normalized_revenue_lines only, no promoted fallback complexity.
+    // Aligns cashflow inflow reads with the canonical source.
     const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
     const [revLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
@@ -1837,9 +1866,22 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(expenseTaskLinks.projectName, projectName), eq(expenseTaskLinks.expenseId, expenseId)));
   }
 
-  async createManualExpense(data: InsertProgramExpense): Promise<ProgramExpense> {
-    const mapped = {
+  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number }): Promise<ProgramExpense> {
+    // Resolve projectId from projectName if not explicitly provided.
+    // Without projectId, manual expenses are invisible to dashboard queries
+    // that filter by projectId (dashboard-metrics, header-kpis, etc.).
+    let resolvedProjectId = data.projectId ?? null;
+    if (!resolvedProjectId && data.projectName) {
+      const [pi] = await this.dbInstance.select({ id: projectInfo.id })
+        .from(projectInfo)
+        .where(eq(projectInfo.projectName, data.projectName))
+        .limit(1);
+      if (pi) resolvedProjectId = pi.id;
+    }
+
+    const mapped: Record<string, any> = {
       projectName: data.projectName,
+      projectId: resolvedProjectId,
       costCategory: data.expenseCategory || null,
       description: data.expenseLineItem || null,
       amountExVat: data.expenseActualTotal?.toString() || null,
@@ -1854,6 +1896,9 @@ export class DatabaseStorage implements IStorage {
       counterpartyName: data.supplierName || null,
       sourceRow: data.rowNumber || null,
     };
+    if (data.idempotencyKey) {
+      mapped.idempotencyKey = data.idempotencyKey;
+    }
     const created = await _createCostLine(mapped, this.dbInstance);
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return adaptCostToExpense(created, created.projectName) as any;

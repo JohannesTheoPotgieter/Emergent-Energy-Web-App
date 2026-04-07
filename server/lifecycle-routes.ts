@@ -19,6 +19,7 @@ import { projectStageInstances, STAGE_CODES } from "@shared/schema";
 import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../shared/utils/phase-to-stage-map";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { bridgeCatch } from "./bridge/bridge-writer";
+import { computeMarginPct } from "./lib/finance/margin";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -1134,7 +1135,7 @@ export function registerLifecycleRoutes(app: Express) {
         const paidExpenditureFy = fin.paidExpenditure;
         const openExpenditureFy = plannedExpenditureFy - paidExpenditureFy;
         const grossProfitFy = plannedRevenueFy - plannedExpenditureFy;
-        const grossMarginPctFy = plannedRevenueFy > 0 ? Number((((plannedRevenueFy - plannedExpenditureFy) / plannedRevenueFy) * 100).toFixed(1)) : null;
+        const grossMarginPctFy = computeMarginPct(plannedRevenueFy, plannedExpenditureFy, { precision: 1 });
 
         const projectEng = engTasks.filter((t) => (t.projectId && t.projectId === project.id) || (!t.projectId && normalizeName(t.projectName || "") === norm));
         const openEng = projectEng.filter((t) => !["done", "completed", "qc approved", "cancelled", "canceled"].includes((t.status || "").toLowerCase()));
@@ -1226,7 +1227,7 @@ export function registerLifecycleRoutes(app: Express) {
           paidExpenditureFy: paidExpenditure,
           openExpenditureFy: plannedExpenditure - paidExpenditure,
           grossProfitFy: plannedRevenue - plannedExpenditure,
-          grossMarginPctFy: plannedRevenue > 0 ? Number((((plannedRevenue - plannedExpenditure) / plannedRevenue) * 100).toFixed(1)) : null,
+          grossMarginPctFy: computeMarginPct(plannedRevenue, plannedExpenditure, { precision: 1 }),
           overdueInflowFy: overdueLedger.ar.totalAmount,
           overdueOutflowFy: overdueLedger.ap.totalAmount,
           openEngineeringBlockers: projectRows.reduce((s, p) => s + p.engineeringBlockerCount, 0),

@@ -124,7 +124,7 @@ function isCosRealised(exp: any): boolean {
 // This ensures GP Tracker, COS Tracker, Company Overview, and PM Report all
 // agree on whether a cost line is realised.
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  const today = `${currentMonthKey}-28`; // End-of-month approximation for canonical check
+  const today = new Date().toISOString().slice(0, 10);
   return isCanonicalCosRealised({
     status: exp.status ?? exp.line_status ?? null,
     cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
@@ -624,7 +624,7 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
     const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
 
     const [allExpenses, latestRefresh, cosOverrideMapCos] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      storage.getAllCostLinesForCashflow(),
       storage.getLatestRefresh(),
       Promise.resolve(new Map()),
     ]);
@@ -774,8 +774,8 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     const isFiltered = projectFilters !== null && projectFilters.size > 0;
 
     const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllCashflowWeeklyManual(),
       storage.getAllOpexBudgetMonthly(),
       storage.getAllOpexWeeklyManual(),
@@ -976,8 +976,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
     const weekEnd = wsDate.toISOString().split('T')[0];
 
     const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
@@ -999,8 +999,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         const originalDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         const effectiveDate = (e as any).adminDateOverride || originalDate;
         const amountBreakdown = getOutflowAmountBreakdown(e);
-        // adaptCostToExpense adds 900000 to normalizedCostLines IDs; reverse that offset
-        const realId = e.id >= 900000 ? e.id - 900000 : e.id;
+        // adaptCostToExpense uses negative IDs for normalizedCostLines rows; reverse to canonical
+        const realId = e.id < 0 ? -e.id : (e.id >= 900000 ? e.id - 900000 : e.id);
         return {
           expenseId: realId,
           projectName: e.projectName,
@@ -1036,8 +1036,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           const pay = new Date(inf.paymentReceivedDate);
           daysToReceipt = Math.round((pay.getTime() - inv.getTime()) / (1000 * 60 * 60 * 24));
         }
-        // adaptRevenueToInflow adds 900000 to normalizedRevenueLines IDs; reverse that offset
-        const realInflowId = inf.id >= 900000 ? inf.id - 900000 : inf.id;
+        // adaptRevenueToInflow uses negative IDs for normalizedRevenueLines rows; reverse to canonical
+        const realInflowId = inf.id < 0 ? -inf.id : (inf.id >= 900000 ? inf.id - 900000 : inf.id);
         return {
           inflowId: realInflowId,
           projectName: inf.projectName,
@@ -1094,36 +1094,11 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
     let row: any;
     if (updated.length > 0) {
       row = updated[0];
-      // Also sync override to programExpense if a matching legacy row exists
-      if (row.projectName && row.sourceRow != null) {
-        await db.update(programExpense)
-          .set({
-            adminDateOverride: dateOverride || null,
-            adminDateOverrideReason: reason || null,
-            adminDateOverrideBy: userId || null,
-            adminDateOverrideAt: dateOverride ? now : null,
-          })
-          .where(and(
-            eq(programExpense.projectName, row.projectName),
-            eq(programExpense.rowNumber, row.sourceRow),
-            isNull(programExpense.effectiveTo),
-          ));
-      }
+      // PE sync removed — normalizedCostLines is the canonical source.
+      // program_expense is deprecated for writes; reads are being migrated.
     } else {
-      // Fallback: try updating programExpense directly (legacy rows not in normalizedCostLines)
-      const peUpdated = await db.update(programExpense)
-        .set({
-          adminDateOverride: dateOverride || null,
-          adminDateOverrideReason: reason || null,
-          adminDateOverrideBy: userId || null,
-          adminDateOverrideAt: dateOverride ? now : null,
-        })
-        .where(and(eq(programExpense.id, expenseId), isNull(programExpense.effectiveTo)))
-        .returning();
-      if (peUpdated.length === 0) {
-        return res.status(404).json({ error: "Expense line not found" });
-      }
-      row = peUpdated[0];
+      // No matching NCL row — this expense line is not in the canonical source
+      return res.status(404).json({ error: "Expense line not found in canonical cost lines" });
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
@@ -1214,35 +1189,11 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     let row: any;
     if (updated.length > 0) {
       row = updated[0];
-      // Also sync override to programInflows if a matching legacy row exists
-      if (row.projectName && row.sourceRow != null) {
-        await db.update(programInflows)
-          .set({
-            adminDateOverride: dateOverride || null,
-            adminDateOverrideReason: reason || null,
-            adminDateOverrideBy: userId || null,
-            adminDateOverrideAt: dateOverride ? now : null,
-          })
-          .where(and(
-            eq(programInflows.projectName, row.projectName),
-            eq(programInflows.rowNumber, row.sourceRow),
-          ));
-      }
+      // PI sync removed — normalizedRevenueLines is the canonical source.
+      // program_inflows is deprecated for writes; reads are being migrated.
     } else {
-      // Fallback: try updating programInflows directly (legacy rows not in normalizedRevenueLines)
-      const piUpdated = await db.update(programInflows)
-        .set({
-          adminDateOverride: dateOverride || null,
-          adminDateOverrideReason: reason || null,
-          adminDateOverrideBy: userId || null,
-          adminDateOverrideAt: dateOverride ? now : null,
-        })
-        .where(eq(programInflows.id, inflowId))
-        .returning();
-      if (piUpdated.length === 0) {
-        return res.status(404).json({ error: "Inflow line not found" });
-      }
-      row = piUpdated[0];
+      // No matching NRL row — this inflow line is not in the canonical source
+      return res.status(404).json({ error: "Inflow line not found in canonical revenue lines" });
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
@@ -1516,9 +1467,9 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
     }
 
     const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      storage.getAllCostLinesForCashflow(),
       storage.getTrackerMonthlyManual('COS'),
-      storage.getAllProgramInflows(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
@@ -1810,7 +1761,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
     const [allExpenses, cosOverrideMapMD] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      storage.getAllCostLinesForCashflow(),
       Promise.resolve(new Map()),
     ]);
 
@@ -1944,18 +1895,17 @@ async function updateExpenseFieldsDualTable(
   expectedUpdatedAt?: string,
   editorUserId?: number | null,
 ): Promise<any> {
-  const isNormalized = id >= 900000;
+  // All expense IDs now route through normalized_cost_lines (canonical source).
+  // Negative IDs (from adaptCostToExpense) and legacy 900000-offset IDs are
+  // both handled by storage.updateProgramExpenseFields which reverses the offset.
+  // Positive PE-only IDs are no longer supported for writes — PE is deprecated for writes.
+  const isNormalized = id < 0 || id >= 900000;
   if (isNormalized) {
     return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
   }
-  const { programExpense: peTable } = await import("@shared/schema");
-  const legacyFields = {
-    ...fields,
-    lastEditedAt: new Date(),
-    ...(editorUserId ? { lastEditedBy: editorUserId } : {}),
-  };
-  const result = await db.update(peTable).set(legacyFields).where(eq(peTable.id, id)).returning();
-  return result[0] || null;
+  // Legacy PE-only row: log deprecation warning and attempt NCL lookup by ID
+  console.warn(`[deprecation] updateExpenseFieldsDualTable called with legacy PE id=${id}. PE writes are deprecated.`);
+  return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
 }
 
 router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, async (req, res) => {
@@ -1966,7 +1916,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     const { realised, expectedUpdatedAt } = req.body as { realised: boolean; expectedUpdatedAt?: string };
     if (typeof realised !== 'boolean') return res.status(400).json({ error: "realised (boolean) required" });
 
-    const allExpenses = await storage.getAllProgramExpenses();
+    const allExpenses = await storage.getAllCostLinesForCashflow();
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
 
@@ -2019,7 +1969,7 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "A reason is required when setting an override" });
     }
 
-    const allExpenses = await storage.getAllProgramExpenses();
+    const allExpenses = await storage.getAllCostLinesForCashflow();
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
 
@@ -2213,8 +2163,8 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
     }
 
     const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getTrackerMonthlyManual('REV'),
       storage.getTrackerMonthlyManual('COS'),
       Promise.resolve(new Map()),
@@ -2527,8 +2477,8 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
     if (!keyMatch) return res.status(400).json({ error: "Invalid monthKey format" });
 
     const [allExpenses, allInflowsRaw, cosOverrideMapGPD] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       Promise.resolve(new Map()),
     ]);
 
@@ -2617,8 +2567,8 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
 async function revenueTrackerHandler(req: Request, res: Response) {
   try {
     const [allExpenses, allInflowsRaw, manualEntries, cosOverrideMap] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getTrackerMonthlyManual('REV'),
       Promise.resolve(new Map()),
     ]);
@@ -2766,7 +2716,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
     const [allExpenses, cosOverrideMapRMD] = await Promise.all([
-      project ? storage.getProgramExpensesByProject(project) : storage.getAllProgramExpenses(),
+      project ? storage.getProgramExpensesByProject(project) : storage.getAllCostLinesForCashflow(),
       Promise.resolve(new Map()),
     ]);
 
@@ -4322,7 +4272,7 @@ router.post("/api/expense-task-links/:projectName/:expenseId/date-override", req
 
 router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate } = req.body;
+    const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate, idempotencyKey } = req.body;
     if (!projectName || !expenseCategory) {
       return res.status(400).json({ error: "projectName and expenseCategory are required" });
     }
@@ -4340,6 +4290,7 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
       expenseInvoicedDate: expenseInvoicedDate || null,
       expensePaymentDate: expensePaymentDate || null,
       lineStatus: 'Planned',
+      idempotencyKey: idempotencyKey || undefined,
     });
 
     res.json(newExpense);
@@ -4351,7 +4302,7 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
 
 router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { projectName, categoryName } = req.body;
+    const { projectName, categoryName, idempotencyKey } = req.body;
     if (!projectName || !categoryName) {
       return res.status(400).json({ error: "projectName and categoryName are required" });
     }
@@ -4363,6 +4314,7 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
       rowType: 'category',
       expenseCategory: categoryName,
       expenseLineItem: categoryName,
+      idempotencyKey: idempotencyKey || undefined,
     });
 
     res.json(newCategory);
@@ -4374,7 +4326,7 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
 
 router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { projectName, taskId, expenseCategory } = req.body;
+    const { projectName, taskId, expenseCategory, idempotencyKey } = req.body;
     if (!projectName || !taskId || !expenseCategory) {
       return res.status(400).json({ error: "projectName, taskId, and expenseCategory are required" });
     }
@@ -4401,6 +4353,7 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
       expenseLineItem: taskTitle,
       expensePaymentDate: taskEndDate,
       lineStatus: 'Planned',
+      idempotencyKey: idempotencyKey || undefined,
     });
     await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
 
