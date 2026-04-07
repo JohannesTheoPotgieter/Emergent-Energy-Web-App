@@ -4,9 +4,7 @@ on:
     branches: [main, develop]
 
 jobs:
-  # ──────────────────────────────────────────────────────────────
-  # Stage 1: Compile Integrity (fast, no DB needed)
-  # ──────────────────────────────────────────────────────────────
+  # Stage 1: Compile Integrity
   compile-integrity:
     name: Compile Integrity
     runs-on: ubuntu-latest
@@ -40,9 +38,7 @@ jobs:
       - run: npm run check
       - run: npm run build
 
-  # ──────────────────────────────────────────────────────────────
   # Stage 2: Architecture Contracts
-  # ──────────────────────────────────────────────────────────────
   architecture-contracts:
     name: Architecture Contracts
     runs-on: ubuntu-latest
@@ -76,9 +72,7 @@ jobs:
       - run: npm test
         if: hashFiles('**/*.test.ts') != ''
 
-  # ──────────────────────────────────────────────────────────────
   # Stage 3: Release Gate
-  # ──────────────────────────────────────────────────────────────
   release-gate:
     name: Release Gate
     runs-on: ubuntu-latest
