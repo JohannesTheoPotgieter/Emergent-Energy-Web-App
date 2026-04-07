@@ -27,5 +27,9 @@ export async function registerExtractedRoutes(app: Express) {
   const { registerClientsExtractedRoutes } = await import("./clients-extracted-routes");
   registerClientsExtractedRoutes(app);
 
+  // Phase 4a: Work Items routes (7 handlers, extracted from routes.ts)
+  const { registerWorkItemsExtractedRoutes } = await import("./work-items-extracted-routes");
+  registerWorkItemsExtractedRoutes(app);
+
   // Future phases will add more domain modules here.
 }
