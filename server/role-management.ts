@@ -1,4 +1,3 @@
-// @ts-nocheck removed — this file is now fully type-checked
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, inArray, desc, and, or, isNull, gte } from "drizzle-orm";

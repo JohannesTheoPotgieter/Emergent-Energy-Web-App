@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck — needs transaction types and classification types
-// @ts-nocheck
 import { Router, Request, Response } from "express";
 import { db } from "./db";
 import {

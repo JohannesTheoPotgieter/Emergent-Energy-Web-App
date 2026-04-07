@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";

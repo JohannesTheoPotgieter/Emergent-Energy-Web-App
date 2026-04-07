@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { clients, pdTickets, workItems, workItemAssignments, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig } from "@shared/schema";

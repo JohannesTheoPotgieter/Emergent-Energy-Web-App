@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
