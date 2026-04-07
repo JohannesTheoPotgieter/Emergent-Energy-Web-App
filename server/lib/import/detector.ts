@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck — complex ExcelJS typing needs careful attention
-// @ts-nocheck
 import ExcelJS from "exceljs";
 import { SECTION_ANCHORS, getSynonymsForSection } from "./synonyms";
 import { normalizeHeader, getCellRawValue, worksheetToArray, parseDate, parseNumber } from "./utils";

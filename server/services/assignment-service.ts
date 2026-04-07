@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import type { Request } from "express";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {

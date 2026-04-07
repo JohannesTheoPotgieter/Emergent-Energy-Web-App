@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck — large file needs systematic type fixes
-// @ts-nocheck
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, and, inArray, desc, isNull } from "drizzle-orm";

@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck — implicit any in callback params
-// @ts-nocheck
 import { Express, Request, Response } from "express";
 import { db } from "./db";
 import { eq, and, sql, inArray, desc, isNull } from "drizzle-orm";

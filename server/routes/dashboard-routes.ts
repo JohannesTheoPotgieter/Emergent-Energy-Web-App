@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
 import { computeMarginPct } from "../lib/finance/margin";
