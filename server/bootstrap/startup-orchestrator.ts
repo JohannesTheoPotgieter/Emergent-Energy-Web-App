@@ -352,31 +352,36 @@ async function runAdditiveSchemaAlignments() {
     END $$;
   `);
 
-  await safeExec("work_items table", `
-    CREATE TABLE IF NOT EXISTS work_items (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER REFERENCES project_info(id),
-      title TEXT NOT NULL,
-      description TEXT,
-      type TEXT,
-      status TEXT NOT NULL DEFAULT 'NOT_STARTED',
-      priority TEXT NOT NULL DEFAULT 'MEDIUM',
-      workstream TEXT,
-      source TEXT,
-      wbs_code TEXT,
-      start_date TEXT,
-      end_date TEXT,
-      duration INTEGER,
-      actual_start TEXT,
-      actual_end TEXT,
-      actual_duration INTEGER,
-      percent_complete INTEGER DEFAULT 0,
-      owner_user_id INTEGER REFERENCES users(id),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      deleted_at TIMESTAMP
-    );
-  `);
+  const wiViewResult = await db.execute(sql.raw("SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items'"));
+  if (wiViewResult.rows.length > 0) {
+    console.log("[DB] work_items exists as a VIEW — skipping table creation");
+  } else {
+    await safeExec("work_items table", `
+      CREATE TABLE IF NOT EXISTS work_items (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES project_info(id),
+        title TEXT NOT NULL,
+        description TEXT,
+        type TEXT,
+        status TEXT NOT NULL DEFAULT 'NOT_STARTED',
+        priority TEXT NOT NULL DEFAULT 'MEDIUM',
+        workstream TEXT,
+        source TEXT,
+        wbs_code TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        duration INTEGER,
+        actual_start TEXT,
+        actual_end TEXT,
+        actual_duration INTEGER,
+        percent_complete INTEGER DEFAULT 0,
+        owner_user_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        deleted_at TIMESTAMP
+      );
+    `);
+  }
 
   // ── Financial tables ──
   await safeExec("program_expense table", `
@@ -860,28 +865,33 @@ async function runAdditiveSchemaAlignments() {
     CREATE INDEX IF NOT EXISTS idx_pal_target_role ON permission_audit_log(target_role);
   `);
 
-  // ── work_items columns ──
-  await safeExec("work_items columns", `
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_category TEXT;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT false;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_frequency TEXT;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_interval INTEGER DEFAULT 1;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_days_of_week TEXT;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_end_date TEXT;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_parent_id INTEGER;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS hold_reason TEXT;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocked_type TEXT;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS approval_required BOOLEAN NOT NULL DEFAULT false;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_plan_item_id INTEGER;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_deliverable_id INTEGER;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_quality_item_instance_id INTEGER;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS tracking_rag TEXT;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_type_tag TEXT;
-    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocker_reason TEXT;
-  `);
+  // ── work_items columns (skip if work_items is a VIEW in production) ──
+  const wiTableResult = await db.execute(sql.raw("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"));
+  if (wiTableResult.rows.length > 0) {
+    await safeExec("work_items columns", `
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_category TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT false;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_frequency TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_interval INTEGER DEFAULT 1;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_days_of_week TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_end_date TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_parent_id INTEGER;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS hold_reason TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocked_type TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS approval_required BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_plan_item_id INTEGER;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_deliverable_id INTEGER;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_quality_item_instance_id INTEGER;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS tracking_rag TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_type_tag TEXT;
+      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocker_reason TEXT;
+    `);
+  } else {
+    console.log("[DB] work_items is not a BASE TABLE — skipping column additions");
+  }
 
   // ── program_expense / inflows / revenue columns ──
   await safeExec("financial table columns", `
@@ -1187,33 +1197,38 @@ async function runAdditiveSchemaAlignments() {
   `);
 
   // ── Deliverables table (required by execution dashboard / platform summary) ──
-  await safeExec("deliverables table", `
-    CREATE TABLE IF NOT EXISTS deliverables (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER NOT NULL REFERENCES project_info(id),
-      project_name TEXT NOT NULL,
-      deliverable_type TEXT NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT,
-      phase TEXT,
-      owner_user_id INTEGER REFERENCES users(id),
-      reviewer_user_id INTEGER REFERENCES users(id),
-      qc_reviewer_user_id INTEGER REFERENCES users(id),
-      status TEXT NOT NULL DEFAULT 'TO DO',
-      current_version INTEGER NOT NULL DEFAULT 1,
-      sharepoint_folder_site_id TEXT,
-      sharepoint_folder_drive_id TEXT,
-      sharepoint_folder_item_id TEXT,
-      linked_plan_item_id INTEGER,
-      linked_quality_item_instance_id INTEGER,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      scheduled_date TEXT,
-      scheduled_start_time TEXT,
-      scheduled_end_time TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_deliverables_project_status ON deliverables(project_id, status);
-  `);
+  const delViewResult = await db.execute(sql.raw("SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='deliverables'"));
+  if (delViewResult.rows.length > 0) {
+    console.log("[DB] deliverables exists as a VIEW — skipping table creation");
+  } else {
+    await safeExec("deliverables table", `
+      CREATE TABLE IF NOT EXISTS deliverables (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project_info(id),
+        project_name TEXT NOT NULL,
+        deliverable_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        phase TEXT,
+        owner_user_id INTEGER REFERENCES users(id),
+        reviewer_user_id INTEGER REFERENCES users(id),
+        qc_reviewer_user_id INTEGER REFERENCES users(id),
+        status TEXT NOT NULL DEFAULT 'TO DO',
+        current_version INTEGER NOT NULL DEFAULT 1,
+        sharepoint_folder_site_id TEXT,
+        sharepoint_folder_drive_id TEXT,
+        sharepoint_folder_item_id TEXT,
+        linked_plan_item_id INTEGER,
+        linked_quality_item_instance_id INTEGER,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        scheduled_date TEXT,
+        scheduled_start_time TEXT,
+        scheduled_end_time TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_deliverables_project_status ON deliverables(project_id, status);
+    `);
+  }
 
   // ── Audit events table ──
   await safeExec("audit_events table", `
