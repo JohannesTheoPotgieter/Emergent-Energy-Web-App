@@ -1896,14 +1896,10 @@ export class DatabaseStorage implements IStorage {
       counterpartyName: data.supplierName || null,
       sourceRow: data.rowNumber || null,
     };
-<<<<<<< HEAD
     if (data.idempotencyKey) {
       mapped.idempotencyKey = data.idempotencyKey;
     }
-    const created = await _createCostLine(mapped, this.dbInstance);
-=======
     const inserted = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
->>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return adaptCostToExpense(inserted[0], inserted[0].projectName) as any;
   }
