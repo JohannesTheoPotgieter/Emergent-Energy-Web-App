@@ -1,3 +1,67 @@
+-- Legacy table cleanup: rename sequences and indexes owned by renamed tables
+-- so that new CREATE TABLE statements don't conflict
+DO $$ BEGIN
+  -- Handle _work_items_legacy owning work_items_id_seq
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_work_items_legacy')
+     AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items')
+  THEN
+    -- Detach sequence from legacy table
+    IF EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname='public' AND sequencename='work_items_id_seq') THEN
+      ALTER SEQUENCE work_items_id_seq OWNED BY NONE;
+      DROP SEQUENCE work_items_id_seq;
+    END IF;
+    -- Rename indexes to avoid conflicts
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='work_items_pkey') THEN
+      ALTER INDEX work_items_pkey RENAME TO _work_items_legacy_pkey;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_work_items_deleted') THEN
+      ALTER INDEX idx_work_items_deleted RENAME TO _idx_work_items_legacy_deleted;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_work_items_external_ref') THEN
+      ALTER INDEX idx_work_items_external_ref RENAME TO _idx_work_items_legacy_external_ref;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_work_items_owner') THEN
+      ALTER INDEX idx_work_items_owner RENAME TO _idx_work_items_legacy_owner;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_work_items_project_id') THEN
+      ALTER INDEX idx_work_items_project_id RENAME TO _idx_work_items_legacy_project_id;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_work_items_workstream') THEN
+      ALTER INDEX idx_work_items_workstream RENAME TO _idx_work_items_legacy_workstream;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='work_items_external_ref_key') THEN
+      ALTER INDEX work_items_external_ref_key RENAME TO _work_items_legacy_external_ref_key;
+    END IF;
+  END IF;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  -- Handle _deliverables_legacy owning deliverables_id_seq
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_deliverables_legacy')
+     AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables')
+  THEN
+    IF EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname='public' AND sequencename='deliverables_id_seq') THEN
+      ALTER SEQUENCE deliverables_id_seq OWNED BY NONE;
+      DROP SEQUENCE deliverables_id_seq;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='deliverables_pkey') THEN
+      ALTER INDEX deliverables_pkey RENAME TO _deliverables_legacy_pkey;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname='public' AND indexname='idx_deliverables_project_status') THEN
+      ALTER INDEX idx_deliverables_project_status RENAME TO _idx_deliverables_legacy_project_status;
+    END IF;
+  END IF;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  -- Handle _approvals_legacy owning approvals_id_seq
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_approvals_legacy')
+     AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='approvals')
+  THEN
+    IF EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname='public' AND sequencename='approvals_id_seq') THEN
+      ALTER SEQUENCE approvals_id_seq OWNED BY NONE;
+      DROP SEQUENCE approvals_id_seq;
+    END IF;
+  END IF;
+END $$;--> statement-breakpoint
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'change_request_status') THEN CREATE TYPE "public"."change_request_status" AS ENUM('draft', 'submitted', 'under_review', 'approved', 'rejected', 'implemented', 'closed'); END IF; END $$;--> statement-breakpoint
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'change_request_type') THEN CREATE TYPE "public"."change_request_type" AS ENUM('scope', 'cost', 'schedule', 'technical', 'commercial'); END IF; END $$;--> statement-breakpoint
 DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'phase_source') THEN CREATE TYPE "public"."phase_source" AS ENUM('EXCEL_IMPORT', 'MANUAL'); END IF; END $$;--> statement-breakpoint
