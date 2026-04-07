@@ -6,9 +6,7 @@ on:
     branches: [main, develop]
 
 jobs:
-  # ──────────────────────────────────────────────────────────────
-  # Stage 1: Compile Integrity (fast, no DB needed)
-  # ──────────────────────────────────────────────────────────────
+  # Stage 1: Compile Integrity
   compile-integrity:
     name: Compile Integrity
     runs-on: ubuntu-latest
@@ -42,10 +40,7 @@ jobs:
       - run: npm run check
       - run: npm run build
 
-  # ──────────────────────────────────────────────────────────────
-  # Stage 2: Architecture Contracts (unit tests that validate
-  #           policy adoption, route integrity, permission matrix)
-  # ──────────────────────────────────────────────────────────────
+  # Stage 2: Architecture Contracts
   architecture-contracts:
     name: Architecture Contracts
     runs-on: ubuntu-latest
@@ -79,9 +74,7 @@ jobs:
       - run: npm test
         if: hashFiles('**/*.test.ts') != ''
 
-  # ──────────────────────────────────────────────────────────────
   # Stage 3: Behaviour Tests (API tests, requires DB)
-  # ──────────────────────────────────────────────────────────────
   behaviour-tests:
     name: Behaviour Tests
     runs-on: ubuntu-latest
@@ -111,9 +104,7 @@ jobs:
       - run: npm ci
       - run: npm run test:api
 
-  # ──────────────────────────────────────────────────────────────
-  # Stage 4: Release Gate (final quality gate)
-  # ──────────────────────────────────────────────────────────────
+  # Stage 4: Release Gate
   release-gate:
     name: Release Gate
     runs-on: ubuntu-latest
