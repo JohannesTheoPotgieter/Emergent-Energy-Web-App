@@ -993,10 +993,9 @@ export function registerLifecycleRoutes(app: Express) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
         const dateKey = pickFirstPopulatedDate(row as any, ["expectedPaymentDate", "invoiceDate", "paidDate", "inBankDate"]);
         if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
-        // Canonical "received" logic (matching project-header-kpi-service isRevenueRealised):
-        // status ∈ [PAID, IN_BANK, REALISED] OR paidDate exists OR inBankDate exists
         const revenueStatus = String(row.status ?? "").trim().toUpperCase();
-        const received = ["PAID", "IN_BANK", "REALISED"].includes(revenueStatus) || !!row.paidDate || !!row.inBankDate;
+        const paidConfirmed = !!row.paidDate && (row.paidDateConfirmed === true || row.paidDateFontColor === 'black');
+        const received = ["PAID", "IN_BANK", "REALISED"].includes(revenueStatus) || paidConfirmed || !!row.inBankDate;
 
         const addTo = (entry: ReturnType<typeof emptyFin>) => {
           entry.plannedRevenue += amount;
