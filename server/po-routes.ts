@@ -260,11 +260,33 @@ export function registerPoRoutes(app: Express) {
         projectName, projectId, counterpartyId,
         supplierName, supplierVat, supplierAddress, supplierContact,
         lineItems, paymentTerms, deliveryDate, deliveryAddress, siteContact,
-        comments, projectManager
+        comments, projectManager, idempotencyKey
       } = req.body;
 
       if (!projectName || !supplierName || !lineItems?.length) {
         return res.status(400).json({ error: "projectName, supplierName, and at least one line item required" });
+      }
+
+      // Idempotency guard: if key provided, check for existing PO before consuming a sequence number
+      if (idempotencyKey) {
+        const existingRows = await db.execute(sql`
+          SELECT id, po_ref, po_number, subtotal, vat_amount, total, pdf_data
+          FROM purchase_orders
+          WHERE idempotency_key = ${idempotencyKey}
+          LIMIT 1
+        `);
+        const existing = existingRows.rows?.[0];
+        if (existing) {
+          return res.json({
+            id: existing.id,
+            poRef: existing.po_ref,
+            poNumber: existing.po_number,
+            subtotal: parseFloat(String(existing.subtotal)) || 0,
+            vatAmount: parseFloat(String(existing.vat_amount)) || 0,
+            total: parseFloat(String(existing.total)) || 0,
+            pdfBase64: existing.pdf_data ? Buffer.from(existing.pdf_data).toString("base64") : null,
+          });
+        }
       }
 
       const seqResult = await db.execute(sql.raw(`SELECT nextval('po_number_seq') as num`));
@@ -316,7 +338,7 @@ export function registerPoRoutes(app: Express) {
           po_ref, po_number, project_name, project_id, supplier_name, supplier_vat,
           supplier_address, supplier_contact, line_items, subtotal, vat_amount,
           total, payment_terms, delivery_date, delivery_address, site_contact,
-          comments, project_manager, status, created_by, pdf_data
+          comments, project_manager, status, created_by, pdf_data, idempotency_key
         ) VALUES (
           ${poRef}, ${poNumber}, ${projectName}, ${projectId || null},
           ${supplierName}, ${supplierVat || null},
@@ -331,7 +353,8 @@ export function registerPoRoutes(app: Express) {
           ${comments || null},
           ${pmName},
           'draft', ${user?.id},
-          ${pdfBuffer}
+          ${pdfBuffer},
+          ${idempotencyKey || null}
         ) RETURNING id
       `);
 
