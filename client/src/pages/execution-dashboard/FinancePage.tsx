@@ -149,19 +149,19 @@ export default function FinancePage() {
     <div className="space-y-5">
       {/* KPI STRIP - Revenue */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard label={`Budget Revenue (${fyLabel})`} value={formatCurrencyCompact(kpis.plannedRevenueFy)} icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" sub={kpis.plannedRevenueFy > 0 ? `${formatCurrencyCompact(kpis.openInflowFy)} outstanding (${Math.round((kpis.openInflowFy / kpis.plannedRevenueFy) * 100)}%)` : undefined} />
+        <KpiCard label={`Budget Revenue (${fyLabel})`} value={formatCurrencyCompact(kpis.plannedRevenueFy)} icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" />
         <KpiCard label={`Actual Revenue (${fyLabel})`} value={formatCurrencyCompact(kpis.receivedInflowFy)} icon={<TrendingUp className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" sub={`${kpis.plannedRevenueFy > 0 ? Math.round((kpis.receivedInflowFy / kpis.plannedRevenueFy) * 100) : 0}% collected`} />
         <KpiCard label="Revenue Outstanding" value={formatCurrencyCompact(kpis.openInflowFy)} icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" valueClass="text-amber-600" />
-        <KpiCard label={`Budget Expenditure (${fyLabel})`} value={formatCurrencyCompact(kpis.plannedExpenditureFy)} icon={<TrendingDown className="w-4 h-4 text-orange-600" />} iconBg="bg-orange-100" sub={kpis.plannedExpenditureFy > 0 ? `${formatCurrencyCompact(kpis.openExpenditureFy)} outstanding (${Math.round((kpis.openExpenditureFy / kpis.plannedExpenditureFy) * 100)}%)` : undefined} />
+        <KpiCard label={`Budget Expenditure (${fyLabel})`} value={formatCurrencyCompact(kpis.plannedExpenditureFy)} icon={<TrendingDown className="w-4 h-4 text-orange-600" />} iconBg="bg-orange-100" />
         <KpiCard label={`Actual Expenditure (${fyLabel})`} value={formatCurrencyCompact(kpis.paidExpenditureFy)} icon={<TrendingDown className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" sub={`${kpis.plannedExpenditureFy > 0 ? Math.round((kpis.paidExpenditureFy / kpis.plannedExpenditureFy) * 100) : 0}% spent`} />
         <KpiCard label="Expense Outstanding" value={formatCurrencyCompact(kpis.openExpenditureFy)} icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" valueClass="text-amber-600" />
       </div>
 
       {/* KPI STRIP - Margin */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        <KpiCard label="Gross Profit (FY Plan)" value={formatCurrencyCompact(kpis.grossProfitFy)} icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" sub="Planned revenue minus planned expenditure" />
-        <KpiCard label="Planned Margin (FY)" value={`${kpis.grossMarginPctFy ?? "—"}%`} icon={<BarChart3 className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" sub="Planned GP as % of planned revenue" />
-        <KpiCard label="Actual Margin (FY)" value={`${kpis.actualMarginPctFy ?? "—"}%`} icon={<BarChart3 className="w-4 h-4 text-violet-600" />} iconBg="bg-violet-100" sub="Actual received minus actual paid" />
+        <KpiCard label="Gross Profit (Planned)" value={formatCurrencyCompact(kpis.grossProfitFy)} icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" sub="Planned revenue minus planned expenditure" />
+        <KpiCard label="Planned Margin" value={`${kpis.grossMarginPctFy ?? "—"}%`} icon={<BarChart3 className="w-4 h-4 text-blue-600" />} iconBg="bg-blue-100" sub="Planned GP as % of planned revenue" />
+        <KpiCard label="Actual Margin" value={`${kpis.actualMarginPctFy ?? "—"}%`} icon={<BarChart3 className="w-4 h-4 text-violet-600" />} iconBg="bg-violet-100" sub="Actual received minus actual paid" />
         <KpiCard
           label="Margin Variance"
           value={kpis.marginVariancePct !== null ? `${kpis.marginVariancePct > 0 ? "+" : ""}${kpis.marginVariancePct}%` : "—"}

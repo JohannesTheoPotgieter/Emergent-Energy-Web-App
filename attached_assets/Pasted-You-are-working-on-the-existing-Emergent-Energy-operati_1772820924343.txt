@@ -1,0 +1,456 @@
+You are working on the existing Emergent Energy operational web application.
+
+This application is already live and has gone through multiple QA and stabilization passes. The architecture is now reasonably clear, but the system is still only partially proven as a fully trustworthy operating platform.
+
+Your job now is to do TWO things in one controlled engineering pass:
+	1.	IMPLEMENT the 7 platform upgrades below
+	2.	RUN a final full-system QA and regression pass after implementation
+
+Do not do shallow fixes.
+Do not redesign randomly.
+Do not break existing working functionality.
+Do not make assumptions about business rules where they are unclear.
+Where uncertainty exists, ask a specific question before implementing that specific ambiguous rule.
+
+Work like a senior systems engineer, product architect, and QA lead.
+
+The standard is not “the app runs.”
+The standard is “the business can trust this system to run operations.”
+
+==================================================
+CONTEXT AND CURRENT STATE
+
+The current app has already established the following:
+	•	project_info is the core project object
+	•	work_items is the canonical task source or is intended to become it
+	•	normalized_cost_lines and normalized_revenue_lines are core financial reporting sources
+	•	there are multiple modules including project management, engineering, quality, My Work, smart import, dashboards, and Microsoft integrations
+	•	prior QA passes found real issues and improved the system
+	•	the current honest maturity level is PARTIALLY PROVEN, not fully trusted yet
+
+Known gaps from the prior analysis include:
+	•	task behavior is not fully standardized across task types
+	•	viewer logic is not fully operational through the UI
+	•	My Work is not yet proven with strong real workflow data
+	•	smart import is only partially proven and needs stronger observability and recovery
+	•	reporting totals exist but drilldown trust and traceability need improvement
+	•	Microsoft integration is partially proven, not fully proven
+	•	admins cannot yet clearly recover all normal operational errors through the front end
+	•	front-end consistency still needs to improve to teach users that the app is the correct place to work
+
+==================================================
+PRIMARY OBJECTIVE
+
+Implement the following 7 platform upgrades in a controlled way, then run a final engineering-grade QA pass across the whole application.
+
+The final outcome must be:
+	•	stable
+	•	consistent
+	•	role-aware
+	•	auditable
+	•	admin-correctable through the UI
+	•	trustworthy enough that users learn to do work through the app, not outside it
+
+==================================================
+THE 7 PLATFORM UPGRADES TO IMPLEMENT
+
+⸻
+
+	1.	CANONICAL TASK ENGINE
+
+⸻
+
+Implement a single canonical task model and rules layer.
+
+Requirements:
+	•	all task types must resolve to one shared task contract
+	•	task types include at minimum:
+	•	personal task
+	•	engineering task
+	•	plan task
+	•	quality task
+	•	standardize task fields where possible:
+	•	task_id
+	•	project_id
+	•	task_type
+	•	title
+	•	description
+	•	status
+	•	owner
+	•	assignee
+	•	viewer
+	•	reviewer if supported
+	•	due_date
+	•	workstream
+	•	priority
+	•	created_by
+	•	updated_by
+	•	timestamps
+
+Implement one canonical status model for all tasks:
+	•	TODO
+	•	IN_PROGRESS
+	•	BLOCKED
+	•	REVIEW
+	•	COMPLETE
+	•	CANCELLED
+
+If legacy values exist such as:
+	•	Done
+	•	COMPLETE
+	•	done
+	•	closed
+	•	finished
+
+map them cleanly to the canonical model.
+
+Requirements:
+	•	all task views must use the canonical status values
+	•	all filters must use the canonical status values
+	•	reporting must use the canonical status values
+	•	task type switching must preserve valid data and not corrupt records
+	•	field visibility may vary by type, but data model must remain coherent
+
+Do not leave inconsistent status logic scattered across screens.
+
+⸻
+
+	2.	ADMIN RECOVERY CENTER
+
+⸻
+
+Create an Admin Recovery Center in the front end.
+
+Purpose:
+Admins must be able to correct normal operational mistakes through the UI without backend intervention.
+
+At minimum support admin correction for:
+	•	wrong project linkage
+	•	wrong task type
+	•	wrong assignee
+	•	wrong viewer
+	•	wrong due date
+	•	wrong status
+	•	wrong workstream
+	•	duplicate task
+	•	bad import-created record
+	•	failed import rerun
+	•	wrong project field values
+	•	wrong financial mapping input if possible through existing model
+	•	orphaned task visibility issues where recoverable through UI
+
+Requirements:
+	•	all actions must be permission-restricted to admins
+	•	all admin changes must be logged
+	•	dangerous actions must show clear confirmation messages
+	•	admin actions must fail gracefully
+	•	no silent destructive actions
+
+If some recovery actions are not possible due to missing architecture, implement as much as safely possible and clearly document the gaps.
+
+⸻
+
+	3.	KPI TRACEABILITY AND TRUST REPORTING
+
+⸻
+
+Implement KPI traceability inside the app where practical, and in code/documentation where needed.
+
+For each key KPI, make it possible to trace:
+	•	KPI name
+	•	source table(s)
+	•	source fields
+	•	transformation logic
+	•	API endpoint
+	•	page/widget consuming the KPI
+	•	last refresh or calculation timestamp if applicable
+
+At minimum support traceability for:
+	•	Revenue
+	•	COS
+	•	GP
+	•	Cashflow
+	•	Project Progress
+	•	Engineering Progress
+	•	Quality Status
+	•	My Work counts
+	•	Portfolio headline totals if available
+
+Requirements:
+	•	expose a clear admin-only view or debug/trace panel where safe
+	•	where UI exposure is not appropriate, document exact code paths and services
+	•	remove ambiguity around “where this number comes from”
+	•	flag any KPI that cannot yet be fully traced
+
+Do not fake trust. Build traceability.
+
+⸻
+
+	4.	SMART IMPORT CONTROL TOWER
+
+⸻
+
+Upgrade Smart Import into an observable and recoverable operational subsystem.
+
+Requirements:
+	•	visible import history
+	•	import run status
+	•	file name
+	•	uploaded by
+	•	upload timestamp
+	•	import type
+	•	records attempted
+	•	records succeeded
+	•	records failed
+	•	row-level errors where possible
+	•	retry or re-run support for admins where safe
+	•	clear validation errors
+	•	proper HTTP/status handling:
+	•	validation issues should not return generic 500 errors
+	•	graceful handling of:
+	•	missing columns
+	•	bad headers
+	•	blank required values
+	•	duplicate rows
+	•	invalid project references
+	•	partial valid / partial invalid rows
+
+At minimum the control tower must improve imports affecting:
+	•	project-related imports
+	•	planning task imports to work_items path
+	•	cost imports to normalized_cost_lines
+	•	revenue imports to normalized_revenue_lines
+
+Requirements:
+	•	no silent corruption
+	•	clear user feedback
+	•	admin recovery path where possible
+	•	downstream reporting impact should be predictable
+
+⸻
+
+	5.	ROLE-BASED COMMAND CENTERS
+
+⸻
+
+Refine the app so each key role has a focused operating command center.
+
+At minimum support useful views for:
+	•	COO / Admin
+	•	Project Developer
+	•	Engineer
+	•	Project Manager
+	•	Quality Manager
+	•	Program Manager
+	•	Program Finance Manager
+
+Each role-based view should prioritize:
+	•	what needs my attention
+	•	my tasks
+	•	my blockers
+	•	my overdue items
+	•	key linked projects
+	•	relevant handovers
+	•	critical metrics for that role
+
+Requirements:
+	•	reduce noise
+	•	remove duplicate pathways
+	•	make ownership obvious
+	•	preserve role permissions
+	•	support trust in the front end as the primary work surface
+
+Do not create decorative dashboards. Create operational work surfaces.
+
+⸻
+
+	6.	WORKFLOW GATES AND HANDOVER CONTROL
+
+⸻
+
+Implement clearer workflow gates and baton-pass controls across departments.
+
+At minimum support explicit handover checkpoints for flows such as:
+	•	Project Development to Engineering
+	•	Engineering to Project Management / Planning
+	•	Project Management to Quality where relevant
+	•	project execution to closeout where relevant
+
+Requirements:
+	•	visible handover status
+	•	required fields/checks before gate completion where safe
+	•	clear next owner
+	•	clear current owner
+	•	no ambiguous “in limbo” state
+	•	gate history or audit markers where practical
+
+This should align with the project-centric system spine.
+The system must make handovers clearer and reduce dropped baton risk.
+
+⸻
+
+	7.	AUDIT, CHANGE, AND DATA GOVERNANCE LAYER
+
+⸻
+
+Strengthen trust by implementing a lightweight but real governance layer.
+
+Requirements:
+	•	log important admin corrections
+	•	log task reassignment changes
+	•	log task type changes
+	•	log status changes where practical
+	•	log import runs and outcomes
+	•	show who changed what and when where feasible
+	•	record source of major changes if possible
+
+Also strengthen data governance rules:
+	•	identify critical missing fields that undermine reporting trust
+	•	enforce required fields where appropriate and safe
+	•	improve validation messages
+	•	reduce inconsistent free-text values where canonical enums should exist
+
+Do not overbuild.
+Implement a practical governance layer that improves reliability and traceability.
+
+==================================================
+IMPLEMENTATION CONSTRAINTS
+
+You must preserve the current working application.
+
+Rules:
+	•	reuse existing models and services where possible
+	•	do not break working routes or modules
+	•	do not replace core structures unless necessary
+	•	trace dependencies before changing shared logic
+	•	respect the existing project-centric architecture
+	•	use the current work_items path as the canonical direction where applicable
+	•	do not create parallel task engines
+	•	do not create hidden logic that bypasses the UI
+
+Users must be able to trust that what they see in the app is how the system actually works.
+
+==================================================
+REQUIRED UX PRINCIPLES
+
+The app must teach users one core habit:
+
+“If something must be done correctly, do it through the app front end.”
+
+Therefore:
+	•	edit paths must be clear
+	•	task behavior must be consistent
+	•	save and error patterns must be consistent
+	•	admin recovery paths must be visible
+	•	status and badge language must be consistent
+	•	handovers must be understandable
+	•	failures must be graceful and readable
+
+This is not cosmetic.
+This is operational trust design.
+
+==================================================
+FINAL QA PASS REQUIRED AFTER IMPLEMENTATION
+
+After implementing the 7 upgrades, run a final full-system QA and regression pass.
+
+This must be a true engineering pass, not a skim.
+
+Test all major modules and workflows including:
+	•	authentication
+	•	navigation
+	•	project creation/edit/load
+	•	project relationships
+	•	task engine
+	•	task type switching
+	•	viewer logic
+	•	My Work
+	•	engineering workflows
+	•	planning workflows
+	•	quality workflows
+	•	project management flows
+	•	smart import
+	•	reporting accuracy
+	•	admin recovery actions
+	•	workflow gates and handovers
+	•	Microsoft integrations
+	•	role-based command centers
+	•	permission checks
+	•	error handling
+	•	regression around all previously fixed defects
+
+==================================================
+FINAL QA METHOD
+
+For every major module and critical workflow:
+	1.	inspect code path and dependencies
+	2.	execute the workflow
+	3.	compare expected vs actual
+	4.	log defects
+	5.	fix root cause
+	6.	rerun the workflow
+	7.	rerun dependent workflows
+	8.	update documentation
+
+Do not stop at one successful click-through.
+
+==================================================
+MANDATORY FINAL DELIVERABLES
+
+Create or update the following files:
+	1.	FINAL_PLATFORM_UPGRADES.md
+	•	what was implemented for each of the 7 upgrades
+	•	design choices
+	•	limitations
+	•	dependencies
+	2.	FINAL_QA_MATRIX.md
+	•	all final tests executed
+	•	expected result
+	•	actual result
+	•	pass/fail
+	•	linked defect if applicable
+	3.	FINAL_DEFECT_REGISTER.md
+	•	all remaining issues
+	•	severity
+	•	root cause
+	•	operational impact
+	•	whether recoverable via UI
+	•	recommended next action
+	4.	FINAL_RELEASE_READINESS.md
+	•	Proven Ready Areas
+	•	Partially Proven Areas
+	•	Not Yet Proven Areas
+	•	Open Risks
+	•	recommendation: release / limited release / pilot / not ready
+	5.	FINAL_TRUST_ASSESSMENT.md
+Answer these directly with evidence:
+	•	Can users do core work reliably through the front end?
+	•	Can admins correct normal operational mistakes through the UI?
+	•	Are core KPIs traceable enough to be trusted?
+	•	Is Smart Import operationally safe enough to use?
+	•	Is task behavior consistent enough to train users?
+	•	Does the app now behave like one coherent platform?
+
+==================================================
+SUCCESS CRITERIA
+
+This pass is only complete when:
+	•	the 7 upgrades are implemented in a meaningful and coherent way
+	•	the task model is standardized
+	•	status values are standardized
+	•	admin recovery exists through the UI for normal operational issues
+	•	KPI traceability is materially improved
+	•	Smart Import is observable and recoverable
+	•	role-based command centers are useful and focused
+	•	workflow gates reduce dropped handovers
+	•	change logging exists for important actions
+	•	the final QA pass is deep and evidence-based
+	•	all important regressions have been tested
+	•	final readiness is stated honestly, not optimistically
+
+Do not optimize for looking finished.
+Optimize for actually being trustworthy.
+
+Work like true engineers.
+Slow is fine.
+Sloppy is not.

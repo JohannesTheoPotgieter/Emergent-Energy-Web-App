@@ -7,10 +7,6 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
-import { syncProject, syncProjectInsert, snapshotProjectState, syncCostLine, syncRevenueLine, bridgeCatch } from "./bridge/bridge-writer";
-import { createProjectInfo as _createProjectInfo, updateProjectInfo as _updateProjectInfo, softDeleteProject as _softDeleteProject, hardDeleteProjectInfo as _hardDeleteProjectInfo } from "./services/project-write-service";
-import { createCostLine as _createCostLine, softCloseCostLinesByProject as _softCloseCostLinesByProject, createRevenueLine as _createRevenueLine, softCloseRevenueLinesByProject as _softCloseRevenueLinesByProject } from "./services/finance-line-write-service";
-import { listCostLinesFromPromotedCompat, listRevenueLinesFromPromotedCompat } from "./services/promoted-read-compat";
 import {
   users, uploadMetadata, refreshLogs,
   projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
@@ -567,8 +563,10 @@ export class DatabaseStorage implements IStorage {
       constructionStartDate: project.startDate,
       clientHandoverDate: project.completionDate,
       contractValue: String(project.budget),
+      updatedAt: new Date(),
     };
-    const created = await _createProjectInfo(insertFields, this.dbInstance);
+    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields as any).returning();
+    await syncProjectSplitTablesAfterInsert(created.id, insertFields, this.dbInstance);
     return this.mapProjectInfoToLegacyProject(created);
   }
 
@@ -594,7 +592,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProject(id: number): Promise<boolean> {
-    return _softDeleteProject(id, this.dbInstance);
+    const fields = { isActive: false, archivedStatus: "ARCHIVED", updatedAt: new Date() };
+    const result = await this.dbInstance
+      .update(projectInfo)
+      .set(fields)
+      .where(eq(projectInfo.id, id))
+      .returning();
+    if (result.length > 0) {
+      await syncProjectSplitTables(id, fields, this.dbInstance);
+    }
+    return result.length > 0;
   }
 
   // Expenses (legacy)
@@ -612,8 +619,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createExpense(expense: InsertExpense): Promise<Expense> {
+    // Explicitly provide timestamp for SQLite compatibility
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, expense.projectId));
-    const created = await _createCostLine({
+    const [created] = await this.dbInstance.insert(normalizedCostLines).values({
       projectId: expense.projectId,
       projectName: project?.projectName || "",
       costCategory: expense.category,
@@ -625,7 +633,7 @@ export class DatabaseStorage implements IStorage {
       status: "PLANNED",
       sourceSheet: expense.sourceSheet,
       sourceRow: expense.rowLocator,
-    }, this.dbInstance);
+    } as any).returning();
     return this.mapCostLineToLegacyExpense(created, expense.projectId);
   }
 
@@ -642,7 +650,8 @@ export class DatabaseStorage implements IStorage {
   async deleteExpensesByProject(projectId: number): Promise<void> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return;
-    await _softCloseCostLinesByProject(projectId, project.projectName, this.dbInstance);
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", project.projectName);
   }
 
   // Revenues (legacy)
@@ -660,8 +669,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createRevenue(revenue: InsertRevenue): Promise<Revenue> {
+    // Explicitly provide timestamp for SQLite compatibility
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, revenue.projectId));
-    const created = await _createRevenueLine({
+    const [created] = await this.dbInstance.insert(normalizedRevenueLines).values({
       projectId: revenue.projectId,
       projectName: project?.projectName || "",
       milestoneName: revenue.type,
@@ -671,7 +681,7 @@ export class DatabaseStorage implements IStorage {
       sourceSheet: revenue.sourceSheet,
       sourceRow: revenue.rowLocator,
       importRunId: 1,
-    }, this.dbInstance);
+    } as any).returning();
     return this.mapRevenueLineToLegacyRevenue(created, revenue.projectId);
   }
 
@@ -688,7 +698,8 @@ export class DatabaseStorage implements IStorage {
   async deleteRevenuesByProject(projectId: number): Promise<void> {
     const [project] = await this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId));
     if (!project?.projectName) return;
-    await _softCloseRevenueLinesByProject(projectId, project.projectName, this.dbInstance);
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", project.projectName);
   }
 
   // Tasks (legacy)
@@ -803,7 +814,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined> {
-    return _updateProjectInfo(id, fields, this.dbInstance);
+    const [updated] = await this.dbInstance
+      .update(projectInfo)
+      .set({ ...fields, updatedAt: new Date() })
+      .where(eq(projectInfo.id, id))
+      .returning();
+    if (updated) {
+      await syncProjectSplitTables(id, fields, this.dbInstance);
+    }
+    return updated;
   }
 
   async getAllProjectInfo(): Promise<any[]> {
@@ -1005,13 +1024,22 @@ export class DatabaseStorage implements IStorage {
     const existing = await this.getProjectInfo(info.projectName);
     if (existing) {
       const { executionEnabled, ...updateFields } = info as any;
-      return _updateProjectInfo(existing.id, updateFields, this.dbInstance);
+      const [updated] = await this.dbInstance
+        .update(projectInfo)
+        .set({ ...updateFields, updatedAt: new Date() })
+        .where(eq(projectInfo.projectName, info.projectName))
+        .returning();
+      await syncProjectSplitTables(updated.id, updateFields, this.dbInstance);
+      return updated;
     }
-    return _createProjectInfo({ ...info, executionEnabled: false }, this.dbInstance);
+    const insertFields = { ...info, executionEnabled: false, updatedAt: new Date() };
+    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields).returning();
+    await syncProjectSplitTablesAfterInsert(created.id, insertFields as any, this.dbInstance);
+    return created;
   }
 
   async deleteProjectInfo(projectName: string): Promise<void> {
-    await _hardDeleteProjectInfo(projectName, this.dbInstance);
+    await this.dbInstance.delete(projectInfo).where(eq(projectInfo.projectName, projectName));
   }
 
   async markProjectsActive(activeNames: string[]): Promise<void> {
@@ -1053,19 +1081,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllProgramExpenses(): Promise<any[]> {
-    // Full spine: read from finance.cost_lines (promoted) with legacy fallback
-    try {
-      const promotedRows = await listCostLinesFromPromotedCompat();
-      if (promotedRows) {
-        const { adaptCostToExpense } = await import("./lib/data-merge");
-        // finance.cost_lines rows have the same column structure as normalizedCostLines
-        return promotedRows.map((row: any) => adaptCostToExpense(row as any, row.projectName ?? ""));
-      }
-    } catch (err) {
-      console.warn("[getAllProgramExpenses] promoted read failed, falling back to legacy", err);
-    }
-
-    // Legacy fallback (original complex merge path)
     const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
     const [costLines, piRows, peRows] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
@@ -1085,6 +1100,7 @@ export class DatabaseStorage implements IStorage {
       _isNormalized: false,
     }));
 
+    // Preserve budget/date override overlays from legacy table where present.
     const legacySelection = selectWinningExpenseRows(legacyAdapted);
     const legacyByKey = new Map<string, any>(
       legacySelection.winners.map((pe: any) => [getExpenseBusinessKey(pe), pe]),
@@ -1098,9 +1114,18 @@ export class DatabaseStorage implements IStorage {
       if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
       if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
       if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
+      if (pe.adminDateOverride != null) item.adminDateOverride = pe.adminDateOverride;
+      if (pe.adminDateOverrideReason != null) item.adminDateOverrideReason = pe.adminDateOverrideReason;
+      if (pe.adminDateOverrideBy != null) item.adminDateOverrideBy = pe.adminDateOverrideBy;
+      if (pe.adminDateOverrideAt != null) item.adminDateOverrideAt = pe.adminDateOverrideAt;
     }
 
+    // One deterministic winner per business line across normalized + legacy rows.
     const selected = selectWinningExpenseRows([...adaptedNormalized, ...legacyAdapted]);
+    console.log(
+      `[getAllProgramExpenses] Selected winners: ${selected.diagnostics.totalInput} → ${selected.diagnostics.winners}` +
+      ` (removed ${selected.diagnostics.duplicatesRemoved} duplicates, normalized winners ${selected.diagnostics.normalizedWinners}, legacy winners ${selected.diagnostics.legacyWinners})`,
+    );
     return selected.winners;
   }
 
@@ -1117,25 +1142,50 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
-    // Full spine: read from finance.cost_lines (promoted) with legacy fallback
-    try {
-      const promotedRows = await listCostLinesFromPromotedCompat(projectName);
-      if (promotedRows) {
-        const { adaptCostToExpense } = await import("./lib/data-merge");
-        return promotedRows.map((row: any) => adaptCostToExpense(row as any, projectName));
-      }
-    } catch (err) {
-      console.warn("[getProgramExpensesByProject] promoted read failed, falling back to legacy", err);
-    }
-
-    // Legacy fallback
     const { adaptCostToExpense } = await import("./lib/data-merge");
     const costLines = await this.dbInstance.select().from(normalizedCostLines)
       .where(and(eq(normalizedCostLines.projectName, projectName), isNull(normalizedCostLines.effectiveTo)));
+
     const peRows = await this.dbInstance.select().from(programExpense)
       .where(and(eq(programExpense.projectName, projectName), isNull(programExpense.effectiveTo)));
 
     const adapted = costLines.map(c => adaptCostToExpense(c, projectName));
+
+    const needsCarryForward = adapted.some((a: any) => !a.expensePaymentDate && !a.forecastPaymentDate);
+    if (needsCarryForward) {
+      const closedLines = await this.dbInstance.select().from(normalizedCostLines)
+        .where(and(
+          eq(normalizedCostLines.projectName, projectName),
+          isNotNull(normalizedCostLines.effectiveTo),
+        ));
+      const priorByRow = new Map<number, any>();
+      for (const cl of closedLines) {
+        const row = (cl as any).sourceRow;
+        if (row == null) continue;
+        const payDate = cl.paidDate || (cl as any).forecastPaymentDate;
+        if (!payDate) continue;
+        const existing = priorByRow.get(row);
+        if (!existing || (cl.id > existing.id)) {
+          priorByRow.set(row, cl);
+        }
+      }
+      for (const item of adapted) {
+        if (!item.expensePaymentDate && !item.forecastPaymentDate) {
+          const prior = priorByRow.get(item.rowNumber);
+          if (prior) {
+            const priorDate = prior.paidDate || (prior as any).forecastPaymentDate;
+            if (priorDate) {
+              item.expensePaymentDate = priorDate;
+              item.forecastPaymentDate = priorDate;
+              item.paymentDateFontColor = prior.paidDateFontColor || "red";
+              item.paymentDateConfirmed = prior.paidDateConfirmed ?? false;
+              item._carryForward = true;
+            }
+          }
+        }
+      }
+    }
+
     const legacyAdapted = peRows.map(pe => ({
       ...pe,
       _cosOverrideStatus: (pe as any).cosStatusOverride ?? null,
@@ -1144,6 +1194,23 @@ export class DatabaseStorage implements IStorage {
       _cosOverrideReason: (pe as any).cosStatusOverrideReason ?? null,
       _isNormalized: false,
     }));
+    const legacySelection = selectWinningExpenseRows(legacyAdapted);
+    const budgetByKey = new Map<string, any>(
+      legacySelection.winners.map((pe: any) => [getExpenseBusinessKey(pe), pe]),
+    );
+
+    for (const item of adapted) {
+      const pe = budgetByKey.get(getExpenseBusinessKey(item));
+      if (pe) {
+        if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
+        if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
+        if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
+        if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
+        if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+        if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
+      }
+    }
+
     const selected = selectWinningExpenseRows([...adapted, ...legacyAdapted]);
     return selected.winners;
   }
@@ -1167,21 +1234,13 @@ export class DatabaseStorage implements IStorage {
       sourceRow: e.rowNumber || null,
     }));
     const results = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
-    // Phase 2 bridge write: mirror bulk cost lines
-    for (const r of results) {
-      syncCostLine({
-        id: r.id, projectName: r.projectName, counterpartyName: r.counterpartyName,
-        description: r.description, amountExVat: r.amountExVat, invoiceNumber: r.invoiceNumber,
-        invoiceDate: r.invoiceDate, approvedDate: r.approvedDate, paidDate: r.paidDate,
-        status: r.costLineStatus, importRunId: r.importRunId,
-      }).catch(bridgeCatch);
-    }
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return results.map(r => adaptCostToExpense(r, r.projectName)) as any;
   }
 
   async deleteProgramExpensesByProject(projectName: string): Promise<void> {
-    await _softCloseCostLinesByProject(null, projectName, this.dbInstance);
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_cost_lines", projectName);
   }
 
   async updateProgramExpenseFields(id: number, fields: Record<string, any>, expectedUpdatedAt?: string): Promise<ProgramExpense | undefined> {
@@ -1243,20 +1302,6 @@ export class DatabaseStorage implements IStorage {
       .where(eq(normalizedCostLines.id, canonicalId))
       .returning();
     if (!result[0]) return undefined;
-    // Phase 2 bridge write: mirror to finance.cost_lines
-    syncCostLine({
-      id: result[0].id,
-      projectName: result[0].projectName,
-      counterpartyName: result[0].counterpartyName,
-      description: result[0].description,
-      amountExVat: result[0].amountExVat,
-      invoiceNumber: result[0].invoiceNumber,
-      invoiceDate: result[0].invoiceDate,
-      approvedDate: result[0].approvedDate,
-      paidDate: result[0].paidDate,
-      status: result[0].costLineStatus,
-      importRunId: result[0].importRunId,
-    }).catch(bridgeCatch);
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return adaptCostToExpense(result[0], result[0].projectName) as any;
   }
@@ -1289,36 +1334,11 @@ export class DatabaseStorage implements IStorage {
       .where(eq(normalizedRevenueLines.id, canonicalId))
       .returning();
     if (!result[0]) return undefined;
-    // Phase 2 bridge write: mirror to finance.revenue_lines
-    syncRevenueLine({
-      id: result[0].id,
-      projectName: result[0].projectName,
-      milestoneName: result[0].milestoneName,
-      amountExVat: result[0].amountExVat,
-      invoiceNumber: result[0].invoiceNumber,
-      invoiceDate: result[0].invoiceDate,
-      expectedPaymentDate: result[0].expectedPaymentDate,
-      paidDate: result[0].paidDate,
-      status: result[0].revenueLineStatus,
-      importRunId: result[0].importRunId,
-    }).catch(bridgeCatch);
     const { adaptRevenueToInflow } = await import("./lib/data-merge");
     return adaptRevenueToInflow(result[0], result[0].projectName);
   }
 
   async getAllProgramInflows(): Promise<any[]> {
-    // Full spine: read from finance.revenue_lines (promoted) with legacy fallback
-    try {
-      const promotedRows = await listRevenueLinesFromPromotedCompat();
-      if (promotedRows) {
-        const { adaptRevenueToInflow } = await import("./lib/data-merge");
-        return promotedRows.map((row: any) => adaptRevenueToInflow(row as any, row.projectName ?? ""));
-      }
-    } catch (err) {
-      console.warn("[getAllProgramInflows] promoted read failed, falling back to legacy", err);
-    }
-
-    // Legacy fallback
     const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
     const [revLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
@@ -1341,18 +1361,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getProgramInflowsByProject(projectName: string): Promise<any[]> {
-    // Full spine: read from finance.revenue_lines (promoted) with legacy fallback
-    try {
-      const promotedRows = await listRevenueLinesFromPromotedCompat(projectName);
-      if (promotedRows) {
-        const { adaptRevenueToInflow } = await import("./lib/data-merge");
-        return promotedRows.map((row: any) => adaptRevenueToInflow(row as any, projectName));
-      }
-    } catch (err) {
-      console.warn("[getProgramInflowsByProject] promoted read failed, falling back to legacy", err);
-    }
-
-    // Legacy fallback
     const { adaptRevenueToInflow } = await import("./lib/data-merge");
     const revLines = await this.dbInstance.select().from(normalizedRevenueLines)
       .where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo)));
@@ -1374,21 +1382,13 @@ export class DatabaseStorage implements IStorage {
       importRunId: 0,
     }));
     const results = await this.dbInstance.insert(normalizedRevenueLines).values(mapped).returning();
-    // Phase 2 bridge write: mirror bulk revenue lines
-    for (const r of results) {
-      syncRevenueLine({
-        id: r.id, projectName: r.projectName, milestoneName: r.milestoneName,
-        amountExVat: r.amountExVat, invoiceNumber: r.invoiceNumber,
-        invoiceDate: r.invoiceDate, expectedPaymentDate: r.expectedPaymentDate,
-        paidDate: r.paidDate, status: r.revenueLineStatus, importRunId: r.importRunId,
-      }).catch(bridgeCatch);
-    }
     const { adaptRevenueToInflow } = await import("./lib/data-merge");
     return results.map(r => adaptRevenueToInflow(r, r.projectName)) as any;
   }
 
   async deleteProgramInflowsByProject(projectName: string): Promise<void> {
-    await _softCloseRevenueLinesByProject(null, projectName, this.dbInstance);
+    // Temporal: soft-close instead of hard delete (Prompt 10)
+    await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", projectName);
   }
 
   // Project Plan — reads from work_items (PM workstream, SMART_IMPORT source)
@@ -1896,12 +1896,16 @@ export class DatabaseStorage implements IStorage {
       counterpartyName: data.supplierName || null,
       sourceRow: data.rowNumber || null,
     };
+<<<<<<< HEAD
     if (data.idempotencyKey) {
       mapped.idempotencyKey = data.idempotencyKey;
     }
     const created = await _createCostLine(mapped, this.dbInstance);
+=======
+    const inserted = await this.dbInstance.insert(normalizedCostLines).values(mapped).returning();
+>>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
     const { adaptCostToExpense } = await import("./lib/data-merge");
-    return adaptCostToExpense(created, created.projectName) as any;
+    return adaptCostToExpense(inserted[0], inserted[0].projectName) as any;
   }
 
   // Home Notes

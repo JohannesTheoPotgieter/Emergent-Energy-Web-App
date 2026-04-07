@@ -2,7 +2,6 @@ import type { Express, Request, Response } from "express";
 import { db, getDbMode } from "./db";
 import { sql } from "drizzle-orm";
 import { requireAuth, getEffectiveUser } from "./auth-context";
-import { requirePermission } from "./permission-middleware";
 
 const STATUS_ORDER = ["open", "investigating", "corrective_action", "verification", "closed"] as const;
 
@@ -13,13 +12,7 @@ function canTransition(from: string, to: string) {
   return toIdx <= fromIdx + 1;
 }
 
-/**
- * Dev-only table bootstrap for SQLite mode.
- * In production/staging, these tables are created by migrations/20260404_create_ncr_tables.sql.
- */
 async function ensureNcrTables() {
-  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
-
   const isPostgres = getDbMode() === "postgres";
   const idCol = isPostgres ? "id SERIAL PRIMARY KEY" : "id INTEGER PRIMARY KEY AUTOINCREMENT";
   const timestampDefault = isPostgres ? "DEFAULT NOW()" : "DEFAULT CURRENT_TIMESTAMP";
@@ -84,7 +77,7 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/ncrs", requireAuth, requirePermission("quality", "create"), async (req: Request, res: Response) => {
+  app.post("/api/quality/ncrs", requireAuth, async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const user = getEffectiveUser(req);
@@ -117,7 +110,7 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.put("/api/quality/ncrs/:id", requireAuth, requirePermission("quality", "edit"), async (req: Request, res: Response) => {
+  app.put("/api/quality/ncrs/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const id = Number(req.params.id);
@@ -149,7 +142,7 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/quality/ncrs/:id", requireAuth, requirePermission("quality", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/quality/ncrs/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const id = Number(req.params.id);
@@ -163,7 +156,7 @@ export function registerQualityNcrRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/ncrs/:id/comments", requireAuth, requirePermission("quality", "edit"), async (req: Request, res: Response) => {
+  app.post("/api/quality/ncrs/:id/comments", requireAuth, async (req: Request, res: Response) => {
     try {
       await ensureNcrTables();
       const user = getEffectiveUser(req);

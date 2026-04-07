@@ -39,7 +39,5 @@ jobs:
       - run: npm run check
       - run: npm test
         if: hashFiles('**/*.test.ts') != ''
-      - run: npm run test:migrations
-        name: Migration integration tests
       - run: npm run test:api
       - run: npm run release:gate

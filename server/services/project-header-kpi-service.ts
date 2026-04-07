@@ -5,6 +5,8 @@ import {
   derivedProjectKpis,
   normalizedCostLines,
   normalizedRevenueLines,
+  programExpense,
+  programInflows,
   projectExecutionState,
   projectInfo,
   projectRevenueSummary,
@@ -12,10 +14,16 @@ import {
   stageDefinitions,
 } from "@shared/schema";
 import { db } from "../db";
+<<<<<<< HEAD
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { computeMarginPct } from "../lib/finance/margin";
+=======
+>>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 
+const REVENUE_REALISED_STATUSES = new Set(["PAID", "IN_BANK", "REALISED"]);
+const COS_REALISED_OVERRIDES = new Set(["COS REALISED", "REALISED"]);
+const COS_NOT_REALISED_OVERRIDES = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
 const STAGE_ORDER = new Map([
   ["S01_FIRST_ASSESSMENT", 1],
   ["S02_DESIGN_COST_PROPOSAL", 2],
@@ -50,6 +58,18 @@ function safePct(numerator: number, denominator: number): number {
   return (numerator / denominator) * 100;
 }
 
+function isRevenueRealised(line: { status: string | null; paidDate: string | null; inBankDate: string | null }): boolean {
+  const status = String(line.status ?? "").trim().toUpperCase();
+  return REVENUE_REALISED_STATUSES.has(status) || !!line.paidDate || !!line.inBankDate;
+}
+
+function isCosRealisedLine(line: { cosRealised: boolean | null; cosStatusOverride: string | null }): boolean {
+  const override = String(line.cosStatusOverride ?? "").trim().toUpperCase();
+  if (COS_REALISED_OVERRIDES.has(override)) return true;
+  if (COS_NOT_REALISED_OVERRIDES.has(override)) return false;
+  return line.cosRealised === true;
+}
+
 function stageSequenceFor(stageCode: string | null | undefined, explicitSeq?: number | null): number {
   if (explicitSeq && Number.isFinite(explicitSeq)) return explicitSeq;
   return STAGE_ORDER.get(String(stageCode ?? "")) ?? Number.MAX_SAFE_INTEGER;
@@ -76,8 +96,8 @@ export interface ProjectHeaderKpis {
     allPaid: boolean;
   };
   source: {
-    revenue: "normalized_revenue_lines";
-    cost: "normalized_cost_lines";
+    revenue: "normalized_revenue_lines" | "program_inflows";
+    cost: "normalized_cost_lines" | "program_expense";
     baseline: "budget_baselines" | "project_execution_state" | "project_revenue_summary" | "none";
   };
   display: {
@@ -92,8 +112,10 @@ export interface ProjectHeaderKpis {
 export function computeProjectHeaderKpis(input: {
   projectId: number;
   contractValue: number;
-  canonicalRevenueRows: Array<{ amountExVat: unknown; status: string | null; paidDate: string | null; inBankDate: string | null; paidDateConfirmed?: boolean | null; paidDateFontColor?: string | null }>;
-  canonicalCostRows: Array<{ amountExVat: unknown; cosRealised: boolean | null; cosStatusOverride: string | null; status?: string | null; invoiceNumber?: string | null; invoiceDate?: string | null; poNumber?: string | null; paidDate?: string | null }>;
+  canonicalRevenueRows: Array<{ amountExVat: unknown; status: string | null; paidDate: string | null; inBankDate: string | null }>;
+  inflowFallbackRows: Array<{ milestoneAmount: unknown; paymentReceivedDate: string | null; inBank: unknown }>;
+  canonicalCostRows: Array<{ amountExVat: unknown; cosRealised: boolean | null; cosStatusOverride: string | null }>;
+  expenseFallbackRows: Array<{ expenseActualTotal: unknown; actualCosTotal: unknown; expenseInvoiceNumber: string | null; expenseInvoicedDate: string | null; cosStatusOverride: string | null; rowType: string | null }>;
   derivedGrossMarginPct: number;
   budgetBaselineMarginPct?: number | null;
   executionBaselineMarginPct?: number | null;
@@ -105,36 +127,31 @@ export function computeProjectHeaderKpis(input: {
 }): ProjectHeaderKpis {
   const contractValue = toNumber(input.contractValue);
   const canonicalRevenueRows = input.canonicalRevenueRows;
+  const inflowFallbackRows = input.inflowFallbackRows;
   const canonicalCostRows = input.canonicalCostRows;
+  const expenseFallbackRows = input.expenseFallbackRows;
   const stageRows = input.stageRows;
   const stageDefRows = input.stageDefinitions;
-  const revenueRows = canonicalRevenueRows.map((row) => ({
-    amount: toNumber(row.amountExVat),
-    realised: isRevenueSettled({
-      status: row.status,
-      inBankDate: row.inBankDate,
-      paidDate: row.paidDate,
-      paidDateConfirmed: row.paidDateConfirmed ?? null,
-      paidDateFontColor: row.paidDateFontColor ?? null,
-    }),
-  }));
+  const hasCanonicalRevenue = canonicalRevenueRows.length > 0;
+  const revenueRows = hasCanonicalRevenue
+    ? canonicalRevenueRows.map((row) => ({ amount: toNumber(row.amountExVat), realised: isRevenueRealised(row) }))
+    : inflowFallbackRows.map((row) => ({ amount: toNumber(row.milestoneAmount), realised: !!row.paymentReceivedDate || Number(row.inBank || 0) === 1 }));
 
   const revenueTotal = revenueRows.reduce((sum, row) => sum + row.amount, 0);
   const revenueRealised = revenueRows.reduce((sum, row) => sum + (row.realised ? row.amount : 0), 0);
 
-  const costRows = canonicalCostRows.map((row) => ({
-    amount: toNumber(row.amountExVat),
-    realised: isCanonicalCosRealised({
-      status: row.status ?? null,
-      cosStatusOverride: row.cosStatusOverride,
-      cosRealised: row.cosRealised,
-      expenseInvoiceNumber: row.invoiceNumber ?? null,
-      expenseInvoicedDate: row.invoiceDate ?? null,
-      expensePoNumber: row.poNumber ?? null,
-      paymentDate: row.paidDate ?? null,
-      today: new Date().toISOString().slice(0, 10),
-    }),
-  }));
+  const hasCanonicalCost = canonicalCostRows.length > 0;
+  const costRows = hasCanonicalCost
+    ? canonicalCostRows.map((row) => ({ amount: toNumber(row.amountExVat), realised: isCosRealisedLine(row) }))
+    : expenseFallbackRows
+      .filter((row) => String(row.rowType ?? "item").toLowerCase() === "item")
+      .map((row) => {
+        const baseAmount = toNumber(row.actualCosTotal) || toNumber(row.expenseActualTotal);
+        const override = String(row.cosStatusOverride ?? "").trim().toUpperCase();
+        const invoiceBased = !!row.expenseInvoiceNumber && !!row.expenseInvoicedDate;
+        const realised = COS_REALISED_OVERRIDES.has(override) || (!COS_NOT_REALISED_OVERRIDES.has(override) && invoiceBased);
+        return { amount: baseAmount, realised };
+      });
 
   const costTotal = costRows.reduce((sum, row) => sum + row.amount, 0);
   const costRealised = costRows.reduce((sum, row) => sum + (row.realised ? row.amount : 0), 0);
@@ -213,8 +230,8 @@ export function computeProjectHeaderKpis(input: {
       allPaid: false,
     },
     source: {
-      revenue: "normalized_revenue_lines",
-      cost: "normalized_cost_lines",
+      revenue: hasCanonicalRevenue ? "normalized_revenue_lines" : "program_inflows",
+      cost: hasCanonicalCost ? "normalized_cost_lines" : "program_expense",
       baseline: baselineSource,
     },
     display: {
@@ -228,10 +245,12 @@ export function computeProjectHeaderKpis(input: {
 }
 
 export async function getProjectHeaderKpis(projectId: number): Promise<ProjectHeaderKpis> {
-  const [projectRows, canonicalRevenueRows, canonicalCostRows, derivedRows, baselineRows, executionRows, revenueSummaryRows, stageRows, stageDefRows] = await Promise.all([
+  const [projectRows, canonicalRevenueRows, canonicalCostRows, inflowFallbackRows, expenseFallbackRows, derivedRows, baselineRows, executionRows, revenueSummaryRows, stageRows, stageDefRows] = await Promise.all([
     db.select({ contractValue: projectInfo.contractValue }).from(projectInfo).where(and(eq(projectInfo.id, projectId), isNull(projectInfo.deletedAt))).limit(1),
-    db.select({ amountExVat: normalizedRevenueLines.amountExVat, status: normalizedRevenueLines.status, paidDate: normalizedRevenueLines.paidDate, inBankDate: normalizedRevenueLines.inBankDate, paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed, paidDateFontColor: normalizedRevenueLines.paidDateFontColor }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo))),
-    db.select({ amountExVat: normalizedCostLines.amountExVat, cosRealised: normalizedCostLines.cosRealised, cosStatusOverride: normalizedCostLines.cosStatusOverride, status: normalizedCostLines.status, invoiceNumber: normalizedCostLines.invoiceNumber, invoiceDate: normalizedCostLines.invoiceDate, poNumber: normalizedCostLines.poNumber, paidDate: normalizedCostLines.paidDate }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
+    db.select({ amountExVat: normalizedRevenueLines.amountExVat, status: normalizedRevenueLines.status, paidDate: normalizedRevenueLines.paidDate, inBankDate: normalizedRevenueLines.inBankDate }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo))),
+    db.select({ amountExVat: normalizedCostLines.amountExVat, cosRealised: normalizedCostLines.cosRealised, cosStatusOverride: normalizedCostLines.cosStatusOverride }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
+    db.select({ milestoneAmount: programInflows.milestoneAmount, paymentReceivedDate: programInflows.paymentReceivedDate, inBank: programInflows.inBank }).from(programInflows).where(and(eq(programInflows.projectId, projectId), isNull(programInflows.effectiveTo))),
+    db.select({ expenseActualTotal: programExpense.expenseActualTotal, actualCosTotal: programExpense.actualCosTotal, expenseInvoiceNumber: programExpense.expenseInvoiceNumber, expenseInvoicedDate: programExpense.expenseInvoicedDate, cosStatusOverride: programExpense.cosStatusOverride, rowType: programExpense.rowType }).from(programExpense).where(and(eq(programExpense.projectId, projectId), isNull(programExpense.effectiveTo), isNull(programExpense.deletedAt))),
     db.select({ grossMarginPct: derivedProjectKpis.grossMarginPct }).from(derivedProjectKpis).where(and(eq(derivedProjectKpis.projectId, projectId), isNull(derivedProjectKpis.deletedAt))).limit(1),
     db.select({ marginBaseline: budgetBaselines.marginBaseline, approvedDate: budgetBaselines.approvedDate, createdAt: budgetBaselines.createdAt, version: budgetBaselines.version }).from(budgetBaselines).where(eq(budgetBaselines.projectId, projectId)).orderBy(desc(budgetBaselines.approvedDate), desc(budgetBaselines.createdAt), desc(budgetBaselines.version)).limit(1),
     db.select({ marginBaseline: projectExecutionState.marginBaseline, currentStageCode: projectExecutionState.currentStageCode, nextRequiredAction: projectExecutionState.nextRequiredAction }).from(projectExecutionState).where(and(eq(projectExecutionState.projectId, projectId), isNull(projectExecutionState.deletedAt))).limit(1),
@@ -244,7 +263,9 @@ export async function getProjectHeaderKpis(projectId: number): Promise<ProjectHe
     projectId,
     contractValue: toNumber(projectRows[0]?.contractValue),
     canonicalRevenueRows: canonicalRevenueRows as any,
+    inflowFallbackRows: inflowFallbackRows as any,
     canonicalCostRows: canonicalCostRows as any,
+    expenseFallbackRows: expenseFallbackRows as any,
     derivedGrossMarginPct: toPercent(toNumber(derivedRows[0]?.grossMarginPct)),
     budgetBaselineMarginPct: baselineRows[0]?.marginBaseline as any,
     executionBaselineMarginPct: executionRows[0]?.marginBaseline as any,
@@ -270,14 +291,13 @@ export async function recomputeHeaderKpiProjectionForActiveProjects(): Promise<{
       .values({
         projectId: project.id,
         contractValue: String(kpi.contractValue),
-        // D-04 fix: store as percentage (0–100), no longer dividing by 100
-        marginPct: String(kpi.currentMarginPct),
+        marginPct: String(kpi.currentMarginPct / 100),
       } as any)
       .onConflictDoUpdate({
         target: dashboardProjectMetrics.projectId,
         set: {
           contractValue: String(kpi.contractValue),
-          marginPct: String(kpi.currentMarginPct),
+          marginPct: String(kpi.currentMarginPct / 100),
           lastRefreshedAt: new Date(),
         } as any,
       });

@@ -39,10 +39,14 @@ import {
   type DepartmentScore,
   type KpiScore,
 } from "@shared/config/kpi-registry";
+<<<<<<< HEAD
 import { evaluateRevenueArStatus, isRevenueSettled, isCashInBank } from "../lib/finance/revenue-ar-status";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { computeMarginPct } from "../lib/finance/margin";
 import { getTrackerLinkedActiveProjectIdSet } from "./kpi-active-project-scope";
+=======
+import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
+>>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -127,9 +131,13 @@ export async function getCompanyOverviewData() {
   const userMap = new Map(allUsers.map((u) => [u.id, u]));
   const projectMap = new Map(allProjects.map((p) => [p.id, p]));
 
-  // Active projects (canonical KPI scope): Excel tracker linked.
-  const activeProjectIds = await getTrackerLinkedActiveProjectIdSet();
-  const activeProjects = allProjects.filter((p) => activeProjectIds.has(p.id));
+  // Active projects = have execution state and not archived
+  const activeProjects = allProjects.filter((p) => {
+    const exec = execByProjectId.get(p.id);
+    return exec && exec.archivedStatus === "ACTIVE";
+  });
+
+  const activeProjectIds = new Set(activeProjects.map((p) => p.id));
 
   // ── Finance FYTD aggregation ───────────────────────────────────────
   const isInFy = (d: string | null | undefined) =>
@@ -137,9 +145,8 @@ export async function getCompanyOverviewData() {
 
   let totalRevenueFytd = 0;
   let receivedRevenueFytd = 0;
-  let cashCollectedFytd = 0;
   let totalCostFytd = 0;
-  let realisedCostFytd = 0;
+  let paidCostFytd = 0;
 
   for (const row of revenueRows) {
     if (!activeProjectIds.has(row.projectId)) continue;
@@ -147,19 +154,14 @@ export async function getCompanyOverviewData() {
     const dateRef = (row as any).paidDate || (row as any).inBankDate || (row as any).expectedPaymentDate || (row as any).invoiceDate;
     if (isInFy(dateRef)) {
       totalRevenueFytd += amount;
-      const settlementInput = {
+      if (isRevenueSettled({
         status: (row as any).status,
         paidDate: (row as any).paidDate,
         inBankDate: (row as any).inBankDate,
         paidDateConfirmed: (row as any).paidDateConfirmed,
         paidDateFontColor: (row as any).paidDateFontColor,
-      };
-      if (isRevenueSettled(settlementInput)) {
+      })) {
         receivedRevenueFytd += amount;
-      }
-      // D-05 fix: Cash collected uses stricter in-bank check
-      if (isCashInBank(settlementInput)) {
-        cashCollectedFytd += amount;
       }
     }
   }
@@ -170,18 +172,8 @@ export async function getCompanyOverviewData() {
     const dateRef = (row as any).paidDate || (row as any).invoiceDate || (row as any).approvedDate;
     if (isInFy(dateRef)) {
       totalCostFytd += amount;
-      // D-06 fix: Use canonical COS realised logic (aligned with COS Tracker and Project Detail)
-      if (isCanonicalCosRealised({
-        status: (row as any).status,
-        cosStatusOverride: (row as any).cosStatusOverride ?? null,
-        cosRealised: (row as any).cosRealised ?? null,
-        expenseInvoiceNumber: (row as any).invoiceNumber ?? null,
-        expenseInvoicedDate: (row as any).invoiceDate ?? null,
-        expensePoNumber: (row as any).poNumber ?? null,
-        paymentDate: (row as any).paidDate ?? null,
-        today,
-      })) {
-        realisedCostFytd += amount;
+      if ((row as any).paidDate) {
+        paidCostFytd += amount;
       }
     }
   }
@@ -301,7 +293,7 @@ export async function getCompanyOverviewData() {
     : 0;
 
   const pdKpis = new Map<string, { actual: number | null; target?: number | null; trend?: "up" | "down" | "flat" }>([
-    ["pd_signed_pipeline_vs_target", { actual: signedPipelineValue, target: activeOpps.reduce((sum, o) => sum + toNum(o.estimatedValue), 0) }],
+    ["pd_signed_pipeline_vs_target", { actual: signedPipelineValue, target: signedPipelineValue * 1.2 }], // placeholder target
     ["pd_deal_conversion_rate", { actual: conversionRate }],
     ["pd_active_deal_ageing", { actual: Math.round(avgDealAgeing) }],
     ["pd_blocked_deal_count", { actual: blockedDeals.length }],
@@ -482,6 +474,7 @@ export async function getCompanyOverviewData() {
   ]);
 
   // --- Finance ---
+  // Revenue target placeholder (use total planned as target proxy)
   const totalPlannedRevenue = revenueRows
     .filter((r) => activeProjectIds.has(r.projectId))
     .reduce((sum, r) => sum + toNum(r.amountExVat), 0);
@@ -509,19 +502,12 @@ export async function getCompanyOverviewData() {
     (sum, r) => sum + toNum(r.amountExVat), 0
   );
 
-  // F-03 fix: Use FYTD-scoped totals for target margin so it's comparable to the FYTD actual margin.
-  // totalPlannedRevenue/totalPlannedCost are lifetime totals (correct for revenue/COS vs target KPIs),
-  // but the margin target must use the same scope as the actual margin (FYTD).
-  const targetMarginPct = totalRevenueFytd > 0
-    ? ((totalRevenueFytd - totalCostFytd) / totalRevenueFytd) * 100
-    : 0;
+  const targetMarginPct = 20; // Target margin placeholder
 
   const finKpis = new Map<string, { actual: number | null; target?: number | null }>([
-    ["fin_revenue_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue }],
-    // D-05 fix: Cash collected now uses stricter isCashInBank() instead of isRevenueSettled()
-    ["fin_cash_collected_vs_target", { actual: cashCollectedFytd, target: totalPlannedRevenue }],
-    // D-06 fix: COS now uses isCanonicalCosRealised() aligned with COS Tracker and Project Detail
-    ["fin_cos_vs_target", { actual: realisedCostFytd, target: totalPlannedCost }],
+    ["fin_revenue_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue * 0.75 }], // FYTD pro-rata estimate
+    ["fin_cash_collected_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue * 0.7 }],
+    ["fin_cos_vs_target", { actual: paidCostFytd, target: totalPlannedCost * 0.75 }],
     ["fin_gross_margin_vs_target", { actual: grossMarginPct, target: targetMarginPct }],
     ["fin_overdue_debtors", { actual: overdueDebtorValue }],
   ]);
@@ -732,14 +718,10 @@ export async function getCompanyOverviewData() {
     },
     financeSnapshot: {
       revenueFytd: receivedRevenueFytd,
-      cashCollectedFytd,
       revenueTarget: totalPlannedRevenue,
-      cosFytd: realisedCostFytd,
+      cosFytd: paidCostFytd,
       cosTarget: totalPlannedCost,
-      // F-05 fix: This is FYTD invoiced margin (totalRevenueFytd - totalCostFytd) / totalRevenueFytd.
-      // It uses all FYTD line items (not just settled/realised), so it reflects planned FYTD margin.
       grossMarginPct: Math.round(grossMarginPct * 10) / 10,
-      grossMarginLabel: "FYTD Invoiced Margin %",
       collectionRate: totalRevenueFytd > 0 ? Math.round((receivedRevenueFytd / totalRevenueFytd) * 100) : 0,
       overdueDebtors: overdueDebtorValue,
       overdueDebtorCount: overdueDebtors.length,

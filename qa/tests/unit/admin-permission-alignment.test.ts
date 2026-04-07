@@ -10,7 +10,7 @@ describe("admin permission alignment", () => {
   it("guards admin pages through route permission entities instead of a blanket admin-path redirect", () => {
     const appSource = read("client/src/App.tsx");
 
-    expect(appSource).toContain("canViewPath(location)");
+    expect(appSource).toContain("const entity = getPermissionEntityForPath(location);");
     expect(appSource).not.toContain('location.startsWith("/admin")');
   });
 

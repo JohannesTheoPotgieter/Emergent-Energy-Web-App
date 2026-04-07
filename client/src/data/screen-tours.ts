@@ -272,7 +272,7 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
     ],
   },
 
-  "/my-work": {
+  "/collaboration": {
     id: "collaboration-hub",
     title: "Collaboration Hub",
     steps: [
@@ -369,7 +369,7 @@ export const SCREEN_TOURS: Record<string, ScreenTourDef> = {
     ],
   },
 
-  "/my-work/teams": {
+  "/teams/chats": {
     id: "teams-chats",
     title: "Teams Chat",
     steps: [

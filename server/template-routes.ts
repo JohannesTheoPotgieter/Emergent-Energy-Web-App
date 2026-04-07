@@ -760,10 +760,6 @@ export function registerTemplateRoutes(app: Express) {
       };
       const [created] = await db.insert(projectInfo).values(createProjectFields).returning();
       await syncProjectSplitTablesAfterInsert(created.id, createProjectFields);
-      // Phase 2 bridge write: mirror new project to core.projects
-      import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
-        syncProjectInsert(created as any)
-      ).catch(() => {});
 
       await db.insert(projectPhaseHistory).values({
         projectId: created.id,

@@ -3,7 +3,6 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
-import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, and, max } from "drizzle-orm";
 import { budgetBaselines } from "@shared/schema/finance";
@@ -28,7 +27,7 @@ router.get("/api/budget-baselines", requireAuth, async (req: Request, res: Respo
   }
 });
 
-router.post("/api/budget-baselines", requireAuth, requirePermission("financials", "create"), async (req: Request, res: Response) => {
+router.post("/api/budget-baselines", requireAuth, async (req: Request, res: Response) => {
   try {
     const { projectId } = req.body;
     if (!projectId) return res.status(400).json({ error: "projectId is required" });
@@ -53,7 +52,7 @@ router.post("/api/budget-baselines", requireAuth, requirePermission("financials"
   }
 });
 
-router.post("/api/budget-baselines/:id/lock", requireAuth, requirePermission("financials", "approve"), async (req: Request, res: Response) => {
+router.post("/api/budget-baselines/:id/lock", requireAuth, async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     const userId = (req as any).user?.id;

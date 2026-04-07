@@ -18,18 +18,22 @@ describe("redirect chain elimination", () => {
     expect(registrySource).not.toContain('{ path: "/dashboard", redirectTo: "/execution-board" }');
   });
 
-  it("/pm-dashboard is a live page (not a redirect)", () => {
-    // pm-dashboard is now a live page with its own component, not a redirect
-    expect(registrySource).toContain('id: "pmDashboard", path: "/pm-dashboard"');
-    expect(registrySource).toContain('routeComponentKey: "PMDashboard"');
+  it("/pm-dashboard redirects directly to /gates (not /execution-board)", () => {
+    expect(registrySource).toContain('{ path: "/pm-dashboard", redirectTo: "/gates" }');
+    expect(registrySource).not.toContain('{ path: "/pm-dashboard", redirectTo: "/execution-board" }');
   });
 
-  it("PM role fallback resolves home path via ROLE_LANDING_PAGE", () => {
-    expect(appSource).toContain('ROLE_LANDING_PAGE[effectiveRole] || "/"');
+  it("PM role fallback redirects to /gates (not /execution-board)", () => {
+    expect(appSource).toContain('return <Redirect to="/gates" />');
+    // The old intermediate hop should not be the PM fallback destination
+    const pmBlock = appSource.split("PROJECT_MANAGER_SITE")[1]?.substring(0, 500) || "";
+    expect(pmBlock).toContain("/gates");
+    expect(pmBlock).not.toContain('to="/execution-board"');
   });
 
   it("collapse comments document the original chain", () => {
     expect(registrySource).toContain("Legacy: /dashboard → /execution-board → /gates. Collapsed to direct.");
+    expect(registrySource).toContain("Legacy: /pm-dashboard → /execution-board → /gates. Collapsed to direct.");
   });
 
   // ── No remaining multi-hop chains ──

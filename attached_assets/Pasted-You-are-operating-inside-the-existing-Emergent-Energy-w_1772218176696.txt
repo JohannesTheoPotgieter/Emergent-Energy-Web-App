@@ -1,0 +1,289 @@
+You are operating inside the existing Emergent Energy web application repository.
+
+NON-NEGOTIABLE RULES
+
+1. Do NOT refactor or break existing working functionality unless tests prove it is broken.
+2. No assumptions. If structure cannot be discovered from code, generate a discovery report and pause.
+3. Every route, button, role permission, and KPI must be tested or explicitly listed as manual with reason.
+4. Validation must prove FOUNDATION DATA → DERIVED LOGIC → DASHBOARD OUTPUT integrity.
+5. UX recommendations must focus on driving behavior, speed, clarity, and accountability — not aesthetics.
+6. The system must be production-ready and release-gated.
+
+GOAL
+
+1) Build a complete automated QA and regression system.
+2) Validate data integrity from project spine upward.
+3) Enforce role-based permissions.
+4) Produce a behavioral UX & productivity optimization audit that improves:
+   - Project execution discipline
+   - Engineering throughput
+   - Financial visibility
+   - Portfolio control
+   - Decision velocity
+   - Accountability
+
+--------------------------------------------------
+STEP 0 — FULL SYSTEM DISCOVERY (MANDATORY)
+--------------------------------------------------
+
+Automatically enumerate:
+
+A) All frontend routes
+B) All backend routes
+C) All API endpoints
+D) All UI pages/components
+E) All action buttons and mutations
+F) All roles and permission checks
+G) All entities and database relationships
+H) All derived/calculated fields
+I) All dashboards and KPI widgets
+J) All import modules
+
+Generate:
+
+qa/app-map.json
+qa/entity-map.json
+qa/permission-map.json
+qa/kpi-map.json
+qa/discovery-gaps.md (if needed)
+
+Do not proceed until this is complete.
+
+--------------------------------------------------
+STEP 1 — TEST FRAMEWORK SETUP
+--------------------------------------------------
+
+Detect stack and configure:
+
+- Unit testing (Vitest or Jest)
+- API testing (Supertest or equivalent)
+- E2E testing (Playwright – mandatory)
+
+Add scripts:
+
+- test:unit
+- test:api
+- test:e2e
+- test:all
+- qa:release
+
+Must run locally and in CI.
+
+--------------------------------------------------
+STEP 2 — CONTROLLED QA DATA ENVIRONMENT
+--------------------------------------------------
+
+Create deterministic QA seed data including:
+
+1. Projects across lifecycle stages
+2. Portfolio grouping
+3. Revenue and COS scenarios
+4. Engineering workflow scenarios
+5. Role-based users
+
+Constraints:
+
+- Must reset safely
+- Must not use production data
+- Must validate project as spine (no orphan data)
+
+Add invariant tests:
+
+- Foreign key integrity
+- Status gating rules
+- Financial totals consistency
+- Derived table accuracy
+- No project without required core relationships
+
+--------------------------------------------------
+STEP 3 — PERMISSION ENFORCEMENT MATRIX
+--------------------------------------------------
+
+Generate:
+
+qa/permissions-matrix.md
+
+Rows:
+- Pages
+- Buttons
+- API mutations
+
+Columns:
+- Roles
+
+Automated tests must:
+- Attempt page load per role
+- Attempt mutation per role
+- Confirm backend enforcement (not just UI hiding)
+
+--------------------------------------------------
+STEP 4 — API CONTRACT VALIDATION
+--------------------------------------------------
+
+For every endpoint:
+
+- Auth enforced
+- Role enforced
+- Invalid payload rejected
+- Valid payload returns correct schema
+
+Generate:
+
+qa/api-contract-report.json
+qa/api-contract-report.md
+
+--------------------------------------------------
+STEP 5 — FULL E2E UI COVERAGE
+--------------------------------------------------
+
+For every route:
+
+- Page loads
+- No console errors
+- No 500 responses
+- Navigation links valid
+
+For every button:
+
+- Trigger action
+- Validate DB change
+- Validate UI update
+- Validate correct API response
+
+Test CRUD flows where allowed.
+
+Capture artifacts:
+qa/artifacts/e2e/
+
+Fail tests on:
+- console.error
+- 500 responses
+- uncaught backend exceptions
+
+--------------------------------------------------
+STEP 6 — FOUNDATION → KPI → DASHBOARD CASCADE TESTS
+--------------------------------------------------
+
+For each KPI:
+
+1. Seed foundation data
+2. Trigger derive logic
+3. Validate derived table
+4. Validate API value
+5. Validate UI display value
+
+Create minimum 10 golden financial and operational assertions.
+
+If calculation logic is complex, locate and test the calculation code directly.
+
+Generate:
+
+qa/reports/foundation-cascade-covered.md
+
+--------------------------------------------------
+STEP 7 — IMPORT REGRESSION TESTS (IF APPLICABLE)
+--------------------------------------------------
+
+Using local fixtures:
+
+Test:
+- Valid import
+- Missing columns
+- Corrupted formatting
+- Duplicate prevention
+- Dashboard recalculation
+
+Ensure graceful failure handling.
+
+--------------------------------------------------
+STEP 8 — RELEASE GATE
+--------------------------------------------------
+
+Implement:
+
+npm run qa:release
+
+Must generate:
+
+qa/reports/summary.md
+qa/reports/routes-covered.md
+qa/reports/actions-covered.md
+qa/reports/permissions-covered.md
+qa/reports/foundation-cascade-covered.md
+
+System is NOT complete without these artifacts.
+
+--------------------------------------------------
+STEP 9 — BEHAVIOR-DRIVEN UX & PRODUCTIVITY AUDIT
+--------------------------------------------------
+
+After QA completion:
+
+Conduct a structured UX audit focused on BEHAVIOR, not administration.
+
+Core Principle:
+The system must drive execution discipline, not feel like reporting admin.
+
+Analyse:
+
+1. Does each role see what matters first?
+2. Is there friction to execute critical actions?
+3. Does the UI promote forward motion?
+4. Are handovers visible and enforced?
+5. Is escalation obvious?
+6. Is portfolio visibility immediate?
+7. Is financial risk visible early?
+8. Does engineering see priority clearly?
+9. Is the home screen aligned to company priorities?
+
+Evaluate:
+
+- Click depth to complete key actions
+- Cognitive load per screen
+- Signal-to-noise ratio
+- Context switching between modules
+- Visibility of next best action
+- Status clarity
+- Accountability clarity
+
+Generate:
+
+ux/productivity-audit.md
+
+Structure:
+
+A) Observed Behavioral Friction
+B) Where UX Feels Like Admin
+C) Where UX Fails to Drive Action
+D) Hidden Risk Areas
+E) Quick Wins (low dev effort)
+F) Workflow Improvements (medium effort)
+G) Structural Improvements (high leverage)
+H) Role-Based Dashboard Recommendations
+I) Portfolio Oversight Enhancements
+J) Escalation Visibility Improvements
+
+Constraints:
+
+- Use existing infrastructure where possible.
+- Do NOT suggest aesthetic redesign.
+- Focus on speed, clarity, execution.
+- Recommend behavioral nudges (alerts, priorities, gating).
+- Ensure company priorities always visible on home screen for all roles.
+- Ensure PM and Engineer views reduce noise.
+- Suggest how to reduce admin feeling and increase forward momentum.
+
+--------------------------------------------------
+STOP CONDITIONS
+--------------------------------------------------
+
+Do not declare completion until:
+
+- Every route tested or justified.
+- Every button tested or justified.
+- Permissions validated.
+- KPI cascade validated.
+- Release gate works.
+- UX audit delivered.
+
+If any area cannot be discovered, document it in discovery-gaps.md.

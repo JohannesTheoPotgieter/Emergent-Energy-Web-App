@@ -1,0 +1,387 @@
+You have already completed an initial system audit, QA matrix, defect register, and release readiness report for the Emergent Energy Dashboard.
+
+Now perform a SECOND PASS focused only on GAP CLOSURE, TRUST HARDENING, AND PROOF OF READINESS.
+
+Do not repeat shallow broad testing.
+
+Do not restate that the system is ready unless each critical gap below is explicitly proven.
+
+This pass must focus on the areas that are still under-tested, overstated, or not fully evidenced in the current audit.
+
+The goal is to move the app from “improved and promising” to “operationally trustworthy.”
+
+==================================================
+CONTEXT FROM PRIOR AUDIT
+
+The previous audit found:
+	•	~200 database tables
+	•	~285 API endpoints plus ~15 MS integration endpoints
+	•	55+ routed pages
+	•	73 executed tests
+	•	5 defects found and fixed
+	•	release readiness marked as READY FOR RELEASE
+
+The previous audit also concluded:
+	•	project_info is the core project object
+	•	work_items is the canonical task source
+	•	normalized_cost_lines and normalized_revenue_lines are canonical financial sources
+	•	Microsoft integration works gracefully when no account is linked
+	•	task deletion, task detail, and QC migration were fixed
+
+However, the previous evidence is NOT enough to fully prove trustworthiness across the system.
+
+This second pass must explicitly close the remaining proof gaps.
+
+==================================================
+CORE OBJECTIVE
+
+Your task is to produce a focused trust-hardening pass that proves or disproves the following:
+	1.	Smart Import is truly reliable end to end
+	2.	Reporting is traceable and accurate for key business metrics
+	3.	Admins can fix normal operational mistakes through the front end
+	4.	Role-based workflows function correctly end to end
+	5.	Task behavior is consistent across task types
+	6.	Viewer assignment behaves correctly in all practical cases
+	7.	Microsoft integration is accurately classified as proven, partially proven, or not proven
+	8.	Front-end behavior is consistent enough to train users to trust the app as the correct place to work
+
+Do not mark these as complete unless they are tested and evidenced.
+
+==================================================
+REQUIRED DELIVERABLES
+
+Create the following additional files:
+	1.	GAP_CLOSE_REPORT.md
+	2.	ROLE_WORKFLOW_UAT.md
+	3.	KPI_TRACEABILITY_MATRIX.md
+	4.	ADMIN_RECOVERY_MATRIX.md
+	5.	FRONTEND_CONSISTENCY_AUDIT.md
+	6.	SMART_IMPORT_SCENARIO_TESTS.md
+
+Update these existing files as needed:
+	•	QA_TEST_MATRIX.md
+	•	DEFECT_REGISTER.md
+	•	RELEASE_READINESS.md
+
+==================================================
+STEP 1 – RECLASSIFY READINESS HONESTLY
+
+Before new testing, review the previous RELEASE_READINESS.md and reclassify each major module as one of:
+	•	PROVEN READY
+	•	PARTIALLY PROVEN
+	•	NOT PROVEN
+
+Do this for at least:
+	•	Authentication
+	•	Project Management
+	•	Task Engine
+	•	Financial Tracking
+	•	Engineering
+	•	Quality
+	•	My Work
+	•	Microsoft Integration
+	•	Smart Import
+	•	Admin
+	•	Portfolios
+	•	Collaboration
+
+Do not use “Ready” as a blanket statement unless evidence actually supports it.
+
+==================================================
+STEP 2 – SMART IMPORT SCENARIO TESTING
+
+The previous audit only lightly tested Smart Import.
+
+Now perform full scenario testing and document it in SMART_IMPORT_SCENARIO_TESTS.md.
+
+At minimum test:
+	1.	valid import file
+	2.	file with missing required columns
+	3.	file with wrong headers
+	4.	file with blank required values
+	5.	duplicate rows
+	6.	duplicate project references
+	7.	invalid project references
+	8.	partial valid / partial invalid rows
+	9.	overwrite or re-import behavior
+	10.	admin correction flow after import issue
+	11.	downstream reporting after successful import
+	12.	downstream reporting after failed import
+	13.	import of planning tasks into canonical work_items path
+	14.	import of cost data into normalized_cost_lines
+	15.	import of revenue data into normalized_revenue_lines
+
+For each scenario document:
+	•	source file condition
+	•	expected behavior
+	•	actual behavior
+	•	database impact
+	•	reporting impact
+	•	user message quality
+	•	whether admin can recover via front end
+
+Do not state Smart Import is ready unless all major scenarios are proven.
+
+==================================================
+STEP 3 – KPI TRACEABILITY
+
+Create KPI_TRACEABILITY_MATRIX.md.
+
+For each key business metric, trace it fully from source to UI.
+
+At minimum include:
+	•	Revenue
+	•	COS
+	•	GP
+	•	Cashflow
+	•	Project Progress
+	•	Engineering Progress
+	•	Quality Status
+	•	My Work counts
+	•	Portfolio headline totals if available
+
+For each KPI record:
+	•	KPI name
+	•	source table(s)
+	•	transformation/query logic
+	•	API endpoint(s)
+	•	UI component/page
+	•	test sample used
+	•	expected value
+	•	actual value
+	•	status: proven / mismatch / unclear
+
+Do not assert reporting accuracy generally.
+Prove each KPI individually.
+
+==================================================
+STEP 4 – ADMIN RECOVERY MATRIX
+
+A core product rule is that users should learn that if something must be done correctly, it should be done through the front end.
+
+Therefore create ADMIN_RECOVERY_MATRIX.md showing whether admins can fix common mistakes without backend intervention.
+
+Test at minimum whether admin can fix via UI:
+	•	wrong project linkage
+	•	wrong assignee
+	•	wrong viewer
+	•	wrong task type
+	•	wrong due date
+	•	wrong status
+	•	wrong workstream
+	•	duplicate task
+	•	mistaken delete if supported
+	•	failed import run
+	•	bad import-created row
+	•	wrong project field
+	•	wrong reporting input record
+	•	hidden task due to bad filter state
+	•	role/permission mismatch if UI supports correction
+
+For each item record:
+	•	mistake scenario
+	•	whether recoverable via UI
+	•	exact UI path
+	•	limitation or blocker
+	•	recommended fix if not possible
+
+Anything not fixable through UI must be flagged clearly.
+
+==================================================
+STEP 5 – ROLE-BASED END-TO-END UAT
+
+Create ROLE_WORKFLOW_UAT.md.
+
+Test real operational journeys, not isolated components.
+
+At minimum create end-to-end journeys for:
+	•	COO/Admin
+	•	Project Developer
+	•	Engineer
+	•	Project Manager
+	•	Quality Manager
+	•	Program Manager
+	•	Program Finance Manager
+
+For each role, test top real-world workflows that matter operationally.
+
+Examples:
+	•	Project Developer creates or updates project-related information and triggers downstream visibility
+	•	Engineer receives work, updates status, and closes deliverables
+	•	Project Manager sees planning, updates execution, and tracks linked tasks
+	•	Quality Manager sees quality-related tasks/checklists and progresses them
+	•	Program Finance Manager sees financial effect and reporting alignment
+	•	COO/Admin corrects mistakes through UI and verifies reporting continuity
+
+For each journey document:
+	•	role
+	•	business objective
+	•	steps
+	•	expected result
+	•	actual result
+	•	blockers
+	•	cross-module continuity
+	•	status
+
+Do not claim end-to-end workflow success unless full baton-pass continuity is proven.
+
+==================================================
+STEP 6 – TASK MODEL CONSISTENCY AUDIT
+
+Audit task behavior across:
+	•	personal task
+	•	engineering task
+	•	plan task
+	•	quality task
+
+Specifically test and document:
+	•	field consistency
+	•	save behavior
+	•	type switching behavior
+	•	visibility rules
+	•	workstream rules
+	•	viewer rules
+	•	My Work behavior
+	•	delete behavior
+	•	reporting impact
+	•	badge consistency
+	•	status consistency
+	•	filtering consistency
+
+If there are different task rules in different screens, flag them.
+
+The user experience must teach people that the app is trustworthy and internally consistent.
+
+==================================================
+STEP 7 – VIEWER LOGIC PROOF
+
+The previous audit showed viewer badges, but that is not enough.
+
+Now fully test viewer assignment logic:
+	•	assignee only
+	•	viewer only
+	•	assignee + viewer
+	•	multiple viewers
+	•	remove viewer
+	•	switch task type after viewer exists
+	•	viewer visibility in My Work
+	•	viewer visibility in task detail
+	•	viewer visibility in reporting if applicable
+	•	viewer permissions vs edit permissions
+
+Document all of this in GAP_CLOSE_REPORT.md and QA_TEST_MATRIX.md.
+
+==================================================
+STEP 8 – MICROSOFT INTEGRATION HONESTY CHECK
+
+The previous audit marked Microsoft Integration as Ready, but evidence showed some flows were N/A and depended on linked accounts.
+
+Now reclassify Microsoft integration honestly.
+
+Break it into:
+	•	authentication / account connection
+	•	sync status endpoint
+	•	Outlook status
+	•	calendar/events
+	•	Teams data
+	•	SharePoint/file access
+
+For each area classify as:
+	•	proven with real test
+	•	partially proven
+	•	not proven due to unavailable linked account
+	•	broken
+
+Do not use graceful fallback as proof that the feature itself works end to end.
+
+==================================================
+STEP 9 – FRONT-END CONSISTENCY AUDIT
+
+Create FRONTEND_CONSISTENCY_AUDIT.md.
+
+Audit whether the app behaves consistently enough that users can trust it as the right place to work.
+
+Check:
+	•	naming consistency
+	•	badge consistency
+	•	status naming consistency
+	•	same action in same place across screens
+	•	same edit/delete/save patterns
+	•	same filter behavior
+	•	same task detail expectations
+	•	same permission cues
+	•	same loading/error patterns
+
+Flag anything that teaches users the wrong habit or makes the app feel unreliable.
+
+This is not cosmetic only.
+This is core trust behavior.
+
+==================================================
+STEP 10 – GAP-CLOSE DEFECT LOGGING
+
+Add any newly found issues to DEFECT_REGISTER.md with:
+	•	issue ID
+	•	gap area
+	•	severity
+	•	root cause
+	•	operational impact
+	•	UI recoverable yes/no
+	•	fix recommendation
+
+Prioritize defects that undermine trust:
+	•	reporting mismatches
+	•	import inconsistencies
+	•	admin cannot fix through UI
+	•	role baton-pass breaks
+	•	task inconsistency
+	•	Microsoft integration overstated
+
+==================================================
+STEP 11 – UPDATE RELEASE READINESS PROPERLY
+
+Update RELEASE_READINESS.md.
+
+Do not use a single blanket statement like READY FOR RELEASE unless all critical trust areas are proven.
+
+Instead include:
+	•	Proven Ready Areas
+	•	Partially Proven Areas
+	•	Not Yet Proven Areas
+	•	Open Operational Risks
+	•	Recommended Next Fixes
+
+Also state clearly whether the app currently meets this product principle:
+
+“Users should learn that if something must be done correctly, it should be done through the app front end, and admins should be able to correct normal operational mistakes through the UI.”
+
+Answer that principle directly with:
+	•	YES
+	•	PARTIALLY
+	•	NO
+
+Then justify it with evidence.
+
+==================================================
+SUCCESS CRITERIA
+
+This gap-close pass is only complete when:
+	•	Smart Import is scenario-tested thoroughly
+	•	KPI traceability exists for core metrics
+	•	admin recovery capability is explicitly mapped
+	•	role-based end-to-end workflows are proven
+	•	task consistency is audited
+	•	viewer logic is fully tested
+	•	Microsoft integration is honestly classified
+	•	front-end consistency is audited
+	•	release readiness is updated without overstatement
+
+Do not optimize for optimism.
+Optimize for proof.
+
+Do not tell me the system is trustworthy unless you can demonstrate why.
+
+Act like a senior operations systems auditor, product architect, and QA lead.
+
+The standard is not “it runs.”
+The standard is “the business can trust it.”

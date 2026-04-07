@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PD Module Training Guide — Part 4 | Emergent Energy</title>
+<link rel="stylesheet" href="ee-styles.css">
+</head>
+<body>
+<div class="page">
+
+<div class="doc-header">
+  <img src="assets/emergent-logo.png" alt="Emergent Energy">
+  <div class="doc-meta">
+    <strong>Training &amp; SOP Guide</strong>
+    EE-SOP-PD-001 | Version 1.0<br>
+    Part 4 of 4 — Quick Reference &amp; Glossary
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h1 id="quickref">11. Quick Reference Cards</h1>
+<!-- ============================================================ -->
+
+<h2>Card A: PD Ticket Statuses</h2>
+<table>
+  <thead><tr><th>Status</th><th>Meaning</th><th>Next Action</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-violet">Draft</span></td><td>Just created, not started</td><td>Start working on it or spawn tasks</td></tr>
+    <tr><td><span class="badge badge-blue">In Progress</span></td><td>Active work underway</td><td>Complete tasks, update progress</td></tr>
+    <tr><td><span class="badge badge-amber">On Hold</span></td><td>Paused due to blocker</td><td>Resolve blocker, then resume</td></tr>
+    <tr><td><span class="badge badge-green">Completed</span></td><td>All work finished</td><td>Proceed to handover if applicable</td></tr>
+    <tr><td><span class="badge badge-slate">Cancelled</span></td><td>No longer needed</td><td>No action required</td></tr>
+  </tbody>
+</table>
+
+<h2>Card B: Handover Statuses</h2>
+<table>
+  <thead><tr><th>Status</th><th>Who Acts</th><th>What Happens</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-violet">DRAFT</span></td><td>PD</td><td>PD fills in fields, uploads deliverables</td></tr>
+    <tr><td><span class="badge badge-blue">SUBMITTED FOR PM REVIEW</span></td><td>PM</td><td>PM reviews and decides (accept/reject)</td></tr>
+    <tr><td><span class="badge badge-green">ACCEPTED</span></td><td>System</td><td>Project moves to "PM Active", execution enabled</td></tr>
+    <tr><td><span class="badge badge-red">REJECTED</span></td><td>PD</td><td>PD reviews rejection reason, fixes issues, resubmits</td></tr>
+  </tbody>
+</table>
+
+<h2>Card C: Request Types &amp; Engineering Tasks</h2>
+<table>
+  <thead><tr><th>Request Type</th><th>Tasks Auto-Spawned</th></tr></thead>
+  <tbody>
+    <tr><td>Cost Proposal</td><td>Cost Proposal Doc, Site Technical Review, Financial Model, Client Pack</td></tr>
+    <tr><td>IFC Planning</td><td>IFC Design Package, Structural Assessment, SLD, Cable Schedule, Timeline</td></tr>
+    <tr><td>Site Assessment</td><td>Site Visit &amp; Survey, Roof Assessment, Electrical Review, HSE Risk</td></tr>
+    <tr><td>Feasibility Study</td><td>Solar Resource Assessment, Energy Yield, Feasibility Report, Financial Summary</td></tr>
+    <tr><td>Grid Application</td><td>Grid Connection Application, Utility Liaison, Grid Compliance Check</td></tr>
+    <tr><td>Design Review</td><td>Review Existing Design, Revision Notes, Updated Design Package</td></tr>
+    <tr><td>Battery Assessment</td><td>Battery Sizing, Integration Design, Battery Cost Analysis</td></tr>
+    <tr><td>Full EPC</td><td>Full EPC Design, Procurement Schedule, Construction Plan, QA/QC, Commissioning, Handover Docs</td></tr>
+  </tbody>
+</table>
+
+<h2>Card D: Priority Levels</h2>
+<table>
+  <thead><tr><th>Priority</th><th>When to Use</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-red">Critical</span></td><td>Urgent deadline, client-facing risk, or blocking other teams</td></tr>
+    <tr><td><span class="badge badge-amber">High</span></td><td>Important with a tight timeline, needs prompt attention</td></tr>
+    <tr><td><span class="badge badge-blue">Medium</span></td><td>Standard priority, normal timeline (this is the default)</td></tr>
+    <tr><td><span class="badge badge-slate">Low</span></td><td>Nice to have, can be deferred if higher priorities exist</td></tr>
+  </tbody>
+</table>
+
+<h2>Card E: Role Permissions Quick View</h2>
+<table>
+  <thead><tr><th>Action</th><th>PD</th><th>Engineer</th><th>PM</th><th>Admin</th></tr></thead>
+  <tbody>
+    <tr><td>View Dashboard</td><td>&#x2705;</td><td>&#x2705;</td><td>&#x2705;</td><td>&#x2705;</td></tr>
+    <tr><td>View All Tickets</td><td>Own only</td><td>Eng. types</td><td>Submitted</td><td>&#x2705;</td></tr>
+    <tr><td>Create Ticket</td><td>&#x2705;</td><td>&#x274C;</td><td>&#x274C;</td><td>&#x2705;</td></tr>
+    <tr><td>Edit Ticket</td><td>Own only</td><td>&#x274C;</td><td>&#x274C;</td><td>&#x2705;</td></tr>
+    <tr><td>Spawn Tasks</td><td>&#x2705;</td><td>&#x274C;</td><td>&#x274C;</td><td>&#x2705;</td></tr>
+    <tr><td>Save Handover Draft</td><td>&#x2705;</td><td>&#x274C;</td><td>&#x274C;</td><td>&#x2705;</td></tr>
+    <tr><td>Submit Handover</td><td>&#x2705;</td><td>&#x274C;</td><td>&#x274C;</td><td>&#x2705;</td></tr>
+    <tr><td>Accept/Reject Handover</td><td>&#x274C;</td><td>&#x274C;</td><td>&#x2705;</td><td>&#x2705;</td></tr>
+    <tr><td>View Reports</td><td>&#x2705;</td><td>&#x2705;</td><td>&#x2705;</td><td>&#x2705;</td></tr>
+    <tr><td>Copy Metrics</td><td>&#x2705;</td><td>&#x2705;</td><td>&#x2705;</td><td>&#x2705;</td></tr>
+  </tbody>
+</table>
+
+<h2>Card F: Handover Checklist (15+ Items)</h2>
+<p>Before submitting a handover, ALL of these must be completed:</p>
+<table>
+  <thead><tr><th>#</th><th>Item</th><th>Where to Set It</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Handover Charter uploaded</td><td>Deliverables section</td></tr>
+    <tr><td>2</td><td>Site Visit Report uploaded</td><td>Deliverables section</td></tr>
+    <tr><td>3</td><td>Signed Cost Proposal uploaded</td><td>Deliverables section</td></tr>
+    <tr><td>4</td><td>PM assigned</td><td>PM Owner field</td></tr>
+    <tr><td>5</td><td>Scope summary written</td><td>Scope Summary field</td></tr>
+    <tr><td>6</td><td>Client linked to project</td><td>Project spine (project detail)</td></tr>
+    <tr><td>7</td><td>PD owner set</td><td>PD Owner field</td></tr>
+    <tr><td>8</td><td>Engineering status set</td><td>Engineering Status field</td></tr>
+    <tr><td>9</td><td>Risk summary written</td><td>Risk Summary field</td></tr>
+    <tr><td>10</td><td>Assumptions documented</td><td>Assumptions field</td></tr>
+    <tr><td>11</td><td>Feasibility assessed (not "Not Assessed")</td><td>Feasibility Status dropdown</td></tr>
+    <tr><td>12</td><td>Feasibility notes written</td><td>Feasibility Notes field</td></tr>
+    <tr><td>13</td><td>Dependencies documented</td><td>Dependency Summary field</td></tr>
+    <tr><td>14</td><td>Readiness = "Ready for Handover"</td><td>Handover Readiness dropdown</td></tr>
+    <tr><td>15</td><td>Readiness notes written</td><td>Readiness Notes field</td></tr>
+    <tr><td>16</td><td>Latest update saved</td><td>Canonical Latest Update field</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h1 id="glossary">12. Glossary</h1>
+<!-- ============================================================ -->
+
+<table>
+  <thead><tr><th>Term</th><th>Definition</th></tr></thead>
+  <tbody>
+    <tr><td><strong>PD</strong></td><td>Project Development — the team that identifies, scopes, and prepares projects for execution</td></tr>
+    <tr><td><strong>PM</strong></td><td>Project Management — the team that executes projects once handed over from PD</td></tr>
+    <tr><td><strong>PD Ticket</strong></td><td>A work request within PD, linked to a client and project, with a specific request type</td></tr>
+    <tr><td><strong>Request Type</strong></td><td>The category of work (Cost Proposal, Feasibility Study, IFC Planning, etc.)</td></tr>
+    <tr><td><strong>Handover</strong></td><td>The formal process of transferring a project from PD to PM for execution</td></tr>
+    <tr><td><strong>Work Item</strong></td><td>An engineering task spawned from a PD ticket, executed in the Engineering module</td></tr>
+    <tr><td><strong>Spawn Tasks</strong></td><td>Creating engineering work items from pre-built templates based on the ticket's request type</td></tr>
+    <tr><td><strong>Pipeline Value</strong></td><td>The total estimated project value of all active (non-completed) tickets</td></tr>
+    <tr><td><strong>FY (Financial Year)</strong></td><td>September to August. FY2026 = Sep 2025 – Aug 2026.</td></tr>
+    <tr><td><strong>SLA</strong></td><td>Service Level Agreement — the expected turnaround time, tracked via due dates</td></tr>
+    <tr><td><strong>Kanban Board</strong></td><td>A visual board with columns representing stages (New → In Progress → Review → Handover → Done)</td></tr>
+    <tr><td><strong>Blocker</strong></td><td>A missing requirement that prevents handover submission</td></tr>
+    <tr><td><strong>Evidence Score</strong></td><td>A percentage score measuring how much supporting evidence has been uploaded for a handover</td></tr>
+    <tr><td><strong>IFC</strong></td><td>Issued for Construction — the final design package approved for building</td></tr>
+    <tr><td><strong>EPC</strong></td><td>Engineering, Procurement, and Construction — a full-scope project delivery</td></tr>
+    <tr><td><strong>kWp</strong></td><td>Kilowatt-peak — the rated peak power output of a solar installation</td></tr>
+    <tr><td><strong>PPA</strong></td><td>Power Purchase Agreement — a contract to buy power from the solar installation</td></tr>
+    <tr><td><strong>RAG</strong></td><td>Red/Amber/Green — a traffic-light status system used across the app</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h1>13. Frequently Asked Questions</h1>
+<!-- ============================================================ -->
+
+<h3>Q: I'm an Engineer and I see no tickets. Why?</h3>
+<p><strong>A:</strong> Engineers only see tickets that are engineering-related (Feasibility, Design Review, IFC Planning, Grid, Battery, Site Assessment, Full EPC) or tickets where you're assigned to a spawned work item. If you expect to see a ticket, ask the PD owner to assign you as the designer or assign you to a work item.</p>
+
+<h3>Q: Can I edit someone else's ticket?</h3>
+<p><strong>A:</strong> Only the ticket creator, the assigned Project Developer, or an Admin can edit a ticket. If you need a change made, contact the ticket owner.</p>
+
+<h3>Q: What happens after a handover is accepted?</h3>
+<p><strong>A:</strong> The project automatically transitions to "PM Active" phase, execution is enabled on the project spine, and the PM can start managing the project in the PM module. The PM can also add an Excel tracker link.</p>
+
+<h3>Q: Can a rejected handover be resubmitted?</h3>
+<p><strong>A:</strong> Yes. After rejection, the handover goes back to DRAFT status. The PD owner reviews the rejection reason, fixes the issues, and can submit again. There's no limit on resubmissions.</p>
+
+<h3>Q: How do I see metrics for a previous financial year?</h3>
+<p><strong>A:</strong> The Reports page currently defaults to the current FY. Contact your admin if you need historical FY data.</p>
+
+<h3>Q: What is the evidence score threshold?</h3>
+<p><strong>A:</strong> The evidence score measures how much supporting documentation has been attached. If the score is below the threshold, an authorized user (PM/COO/CEO) can override it with a reason.</p>
+
+<!-- ============================================================ -->
+<h1>14. Getting Help</h1>
+<!-- ============================================================ -->
+
+<p>If you need help with the PD module:</p>
+<ul>
+  <li><strong>System issues:</strong> Contact your system administrator</li>
+  <li><strong>Process questions:</strong> Contact the PD team lead</li>
+  <li><strong>Handover questions:</strong> Contact the assigned PM or PD owner</li>
+</ul>
+
+<div class="callout callout-success">
+  <span class="icon">&#x2705;</span>
+  <div><strong>You've completed the PD Module Training Guide!</strong>
+  You now know how to navigate the PD Dashboard, create and manage tickets, complete the handover workflow, read reports, and use notifications. Refer to the Quick Reference Cards when you need a refresher.</div>
+</div>
+
+<!-- DOCUMENT CONTROL -->
+<h1>Document Control</h1>
+<table>
+  <thead><tr><th>Version</th><th>Date</th><th>Author</th><th>Changes</th></tr></thead>
+  <tbody>
+    <tr><td>1.0</td><td>March 2026</td><td>System Team</td><td>Initial release covering full PD module</td></tr>
+  </tbody>
+</table>
+
+<div class="doc-footer">
+  <span>Emergent Energy (Pty) Ltd | Confidential</span>
+  <span>EE-SOP-PD-001 v1.0 — Part 4 of 4</span>
+</div>
+</div>
+</body>
+</html>

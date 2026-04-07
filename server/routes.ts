@@ -40,7 +40,6 @@ import { computeMonthlyBuckets } from "./lib/calculations/scenarioResolver";
 import { recordOverride, recordManualEdit } from "./lib/audit/diff-engine";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { getCosEffectiveDateAndSource } from "./lib/expense-row-selector";
-import { bridgeCatch } from "./bridge/bridge-writer";
 
 /** Record a manual edit flag for conflict detection during smart import */
 async function recordManualEditFlag(opts: {
@@ -96,8 +95,6 @@ import {
   listProjectInfoFromPromotedCoreCompat,
   listClientsFromPromotedCoreCompat,
   listProjectDetailFromPromotedCoreCompat,
-  listCostLinesFromPromotedCompat,
-  listRevenueLinesFromPromotedCompat,
   buildWorkItemSummaryDiagnostics,
   compareProjectDetailMasterReadiness,
   compareImportsGovernanceReadiness,
@@ -637,7 +634,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ux/role-aware-interaction", requireAuth, requirePermission("admin", "edit"), async (req, res) => {
+  app.post("/api/ux/role-aware-interaction", requireAuth, async (req, res) => {
     try {
       const action = String(req.body?.action || "");
       const suggestion = String(req.body?.suggestion || "");
@@ -882,7 +879,7 @@ export async function registerRoutes(
 
   // ==================== OVERVIEW API ====================
 
-  app.get("/api/overview", requireAuth, requirePermission("execution_board", "view"), async (req, res) => {
+  app.get("/api/overview", requireAuth, async (req, res) => {
     try {
       const useCanonicalOv = await isWorkItemsEnabled();
       const [allProjectInfo, allExpenses, rawInflows, allPlans, latestRefresh, allTaskLinks, allOpTasks, allNormCostsOv, allNormRevOv, allNormPlansOv] = await Promise.all([
@@ -1138,7 +1135,7 @@ export async function registerRoutes(
     };
   }
 
-  app.get("/api/home/summary", requireAuth, requirePermission("home", "view"), async (req, res) => {
+  app.get("/api/home/summary", requireAuth, async (req, res) => {
     try {
       const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks, allPlanOverrides, allPlanTasks] = await Promise.all([
         storage.getAllProjectInfo(),
@@ -1496,7 +1493,7 @@ export async function registerRoutes(
 
   // ==================== PROGRAM COS API (fixed) ====================
 
-  app.get("/api/program/cos", requireAuth, requirePermission("cos", "view"), async (req, res) => {
+  app.get("/api/program/cos", requireAuth, async (req, res) => {
     try {
       const { projectName, startDate, endDate, atRiskDays = '30' } = req.query;
       const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
@@ -1784,7 +1781,7 @@ export async function registerRoutes(
   }
 
 
-  app.get("/api/financial-headline", requireAuth, requirePermission("financials", "view"), async (_req, res) => {
+  app.get("/api/financial-headline", requireAuth, async (_req, res) => {
     try {
       const today = new Date();
       const fyStartMonth = 9;
@@ -2085,7 +2082,7 @@ export async function registerRoutes(
 
   // ==================== REALISATION KPIs (Weekly / Monthly / Yearly) ====================
 
-  app.get("/api/realisation-kpis", requireAuth, requirePermission("financials", "view"), async (req, res) => {
+  app.get("/api/realisation-kpis", requireAuth, async (req, res) => {
     try {
       const legacyExpenses = await storage.getAllProgramExpenses();
       const { expenses: allExpenses } = await getMergedExpensesAndInflows(
@@ -2520,7 +2517,7 @@ export async function registerRoutes(
 
   // ==================== PROJECTS ROUTES ====================
 
-  app.get("/api/projects", requireAuth, requirePermission("projects", "view"), async (req, res) => {
+  app.get("/api/projects", requireAuth, async (req, res) => {
     try {
       const projects = await storage.getAllProjects();
       // Strip internal fields before responding
@@ -2551,7 +2548,7 @@ export async function registerRoutes(
 
   // ==================== TASKS ROUTES ====================
 
-  app.get("/api/tasks", requireAuth, requirePermission("work_items", "view"), async (req, res) => {
+  app.get("/api/tasks", requireAuth, async (req, res) => {
     try {
       // Strip internal fields from task responses
       const stripTask = ({ sourceSheet, rowLocator, ...rest }: any) => rest;
@@ -2596,7 +2593,7 @@ export async function registerRoutes(
     { name: 'trackers', maxCount: 20 }
   ]);
 
-  app.post("/api/upload", requireAuth, requirePermission('projects', 'edit'), multiUpload, async (req, res) => {
+  app.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
     try {
       // Normalize files from multiple possible field names
       const filesObj = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
@@ -2798,11 +2795,6 @@ export async function registerRoutes(
             await softCloseByProjectName(db, "normalized_revenue_lines", resolvedProjectName);
             await softCloseByProjectName(db, "normalized_cost_lines", resolvedProjectName);
             await db.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, resolvedProjectName));
-            // Phase 2 bridge write: cascade soft-close to promoted finance lines
-            import("./bridge/bridge-writer").then(({ softClosePromotedCostLines, softClosePromotedRevenueLines }) => {
-              softClosePromotedCostLines(pId ?? null, resolvedProjectName).catch(bridgeCatch);
-              softClosePromotedRevenueLines(pId ?? null, resolvedProjectName).catch(bridgeCatch);
-            }).catch(bridgeCatch);
 
             const dummyRun = await db.insert(smartImportRuns).values({
               fileName: file.originalname,
@@ -2875,12 +2867,6 @@ export async function registerRoutes(
                 importRunId, turnaroundDays: c.turnaroundDays,
               }));
               await db.insert(normalizedCostLines).values(addTemporalColumns(costVals, importRunId, uploadTimestamp) as any);
-            }
-            // Phase 2 bridge write: batch-sync imported finance lines to promoted schema
-            if (norm.revenueLines.length > 0 || norm.costLines.length > 0) {
-              import("./bridge/batch-bridge-sync").then(({ batchSyncFinanceByProject }) =>
-                batchSyncFinanceByProject(pId ?? null, resolvedProjectName)
-              ).catch(bridgeCatch);
             }
             if (norm.costedSummary) {
               try {
@@ -3073,8 +3059,88 @@ export async function registerRoutes(
     }
   });
 
+<<<<<<< HEAD
   // REMOVED: /api/program-expenses and /api/program-expenses/:projectName
   // Canonical routes now in server/departments/finance-routes.ts (registered first via registerDepartmentRoutes).
+=======
+  // ==================== PROGRAM DATA ROUTES ====================
+
+  app.get("/api/program-expenses", requireAuth, async (req, res) => {
+    try {
+      const { projectName, startDate, endDate, applyOverrides } = req.query;
+      let expenses;
+
+      if (projectName && typeof projectName === 'string') {
+        // RLS: verify user has access to this project by name
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const expUser = (req as any).user;
+        const expScope = await resolveProjectScope(expUser?.id || 0, expUser?.role || "", expUser?.name || "");
+        if (!isProjectAccessibleByName(expScope, projectName)) {
+          return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
+        }
+        expenses = await storage.getProgramExpensesByProject(projectName);
+
+        // Apply overrides if requested
+        if (applyOverrides === 'true') {
+          // Override data now baked into base rows
+        }
+      } else {
+        expenses = await storage.getAllProgramExpenses();
+        // RLS: filter to accessible projects
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const expUser = (req as any).user;
+        const expScope = await resolveProjectScope(expUser?.id || 0, expUser?.role || "", expUser?.name || "");
+        if (expScope.kind === "scoped") {
+          expenses = expenses.filter((e: any) => isProjectAccessibleByName(expScope, e.projectName || ""));
+        }
+      }
+
+      if (startDate && typeof startDate === 'string') {
+        expenses = expenses.filter(e => e.expensePaymentDate && e.expensePaymentDate >= startDate);
+      }
+      if (endDate && typeof endDate === 'string') {
+        expenses = expenses.filter(e => e.expensePaymentDate && e.expensePaymentDate <= endDate);
+      }
+
+      res.json(expenses);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
+    }
+  });
+
+  // Parameterized route for fetching expenses by project name in URL path
+  app.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.params;
+      const { applyOverrides } = req.query;
+
+      // RLS: verify user has access to this project
+      const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+      const expPUser = (req as any).user;
+      const expPScope = await resolveProjectScope(expPUser?.id || 0, expPUser?.role || "", expPUser?.name || "");
+      if (!isProjectAccessibleByName(expPScope, projectName)) {
+        return res.status(403).json({ error: "FORBIDDEN", message: "You do not have access to this project" });
+      }
+
+      let expenses = await storage.getProgramExpensesByProject(projectName);
+
+      // Apply overrides if requested
+      if (applyOverrides === 'true') {
+        // Override data now baked into base rows
+      }
+
+      // Sub-project filter (for multi-project/Ad Hoc trackers)
+      const subProject = req.query.subProject as string | undefined;
+      if (subProject) {
+        expenses = expenses.filter((e: any) => e.subProjectName === subProject);
+      }
+
+      res.json(expenses);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
+    }
+  });
+>>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 
   app.get("/api/program-inflows", requireAuth, async (req, res) => {
     try {
@@ -3181,11 +3247,12 @@ export async function registerRoutes(
 
   app.get("/api/project-info", requireAuth, async (req, res) => {
     try {
-      // Full spine: always read from promoted schema (with legacy fallback)
+      const usePromotedRead = await getFeatureFlag("promoted_core_projects_read");
       const compareMode = req.query.compare === "1" || req.query.compare === "true";
-      const usePromotedRead = true;
 
-      const info = await listProjectInfoFromPromotedCoreCompat();
+      const info = usePromotedRead
+        ? await listProjectInfoFromPromotedCoreCompat()
+        : await storage.getAllProjectInfo();
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareCoreProjectsReadiness();
@@ -3213,11 +3280,22 @@ export async function registerRoutes(
 
   app.get("/api/project-detail-master", requireAuth, async (req, res) => {
     try {
-      // Full spine: always read from promoted schema
-      const usePromotedRead = true;
+      const usePromotedRead = await getFeatureFlag("promoted_core_project_detail_read");
       const compareMode = req.query.compare === "1" || req.query.compare === "true";
 
-      const detailRows = await listProjectDetailFromPromotedCoreCompat();
+      const detailRows = usePromotedRead
+        ? await listProjectDetailFromPromotedCoreCompat()
+        : (await storage.getAllProjectInfo()).map((row: any) => ({
+            id: row.id,
+            projectName: row.projectName,
+            phase: row.phase ?? null,
+            ragStatus: row.ragStatus ?? null,
+            ragComment: row.ragComment ?? null,
+            clientId: row.clientId ?? null,
+            clientName: null,
+            portfolioMembership: [],
+            teamMembers: [],
+          }));
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareProjectDetailMasterReadiness();
@@ -3314,10 +3392,37 @@ export async function registerRoutes(
         }
       }
 
-      const importsGovernancePreview = await getFeatureFlag("imports_source_update_governance_preview");
+      const [projectDualWriteEnabled, importsGovernancePreview] = await Promise.all([
+        getFeatureFlag("promoted_core_project_master_dual_write"),
+        getFeatureFlag("imports_source_update_governance_preview"),
+      ]);
 
-      // Phase 2 bridge write is now handled by storage.ts → bridge-writer.ts
-      // (replaces the inline dual-write that was previously here)
+      let projectMirror: { attempted: boolean; success: boolean; error: string | null } = { attempted: false, success: false, error: null };
+      if (projectDualWriteEnabled) {
+        projectMirror.attempted = true;
+        try {
+          await db.execute(sql`
+            INSERT INTO core.projects (
+              id, legacy_project_info_id, project_name, client_id, phase, rag_status, execution_gate_status, execution_gate_reason, updated_at, source_table
+            ) VALUES (
+              ${updated.id}, ${updated.id}, ${updated.projectName}, ${updated.clientId ?? null}, ${updated.phase ?? null}, ${updated.ragStatus ?? null}, ${updated.executionGateStatus ?? null}, ${updated.executionGateReason ?? null}, NOW(), 'public.project_info'
+            )
+            ON CONFLICT (id) DO UPDATE
+            SET
+              project_name = EXCLUDED.project_name,
+              client_id = EXCLUDED.client_id,
+              phase = EXCLUDED.phase,
+              rag_status = EXCLUDED.rag_status,
+              execution_gate_status = EXCLUDED.execution_gate_status,
+              execution_gate_reason = EXCLUDED.execution_gate_reason,
+              updated_at = NOW()
+          `);
+          projectMirror.success = true;
+        } catch (mirrorError: any) {
+          projectMirror.error = mirrorError?.message || "unknown_error";
+          console.error("[dual-write][project-master] promoted mirror write failed", { projectId: updated.id, error: mirrorError });
+        }
+      }
 
       let importsGovernancePreviewRecord: { attempted: boolean; requestId: number | null; error: string | null } = { attempted: false, requestId: null, error: null };
       if (importsGovernancePreview && sourceOfTruth.requiresSourceUpdateGovernance) {
@@ -3484,11 +3589,12 @@ export async function registerRoutes(
 
   app.get("/api/clients", requireAuth, async (req, res) => {
     try {
-      // Full spine: always read from promoted schema (with legacy fallback)
-      const usePromotedRead = true;
+      const usePromotedRead = await getFeatureFlag("promoted_core_clients_read");
       const compareMode = req.query.compare === "1" || req.query.compare === "true";
 
-      const allClients = await listClientsFromPromotedCoreCompat();
+      const allClients = usePromotedRead
+        ? await listClientsFromPromotedCoreCompat()
+        : await db.select().from(clients).orderBy(asc(clients.name));
 
       if (compareMode || usePromotedRead) {
         const comparison = await compareCoreClientsReadiness();
@@ -3523,15 +3629,34 @@ export async function registerRoutes(
         updatedBy: req.user?.id,
       }).returning();
 
-      // Phase 2 bridge write: mirror to core.clients (always-on, best-effort)
-      const { syncClient } = await import("./bridge/bridge-writer");
-      const promotedMirror = await syncClient({
-        id: created.id, name: parsed.name, clientId: generatedClientId,
-        createdBy: req.user?.id ?? null, updatedBy: req.user?.id ?? null,
-      });
-      res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
+      const dualWriteEnabled = await getFeatureFlag("promoted_core_clients_dual_write");
+      let promotedMirror: { attempted: boolean; success: boolean; error: string | null } = { attempted: false, success: false, error: null };
+      if (dualWriteEnabled) {
+        promotedMirror.attempted = true;
+        try {
+          await db.execute(sql`
+            INSERT INTO core.clients (id, legacy_id, client_code, name, created_by, updated_by, created_at, updated_at, source_table)
+            VALUES (${created.id}, ${created.id}, ${generatedClientId}, ${parsed.name}, ${req.user?.id ?? null}, ${req.user?.id ?? null}, NOW(), NOW(), 'public.clients')
+            ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                client_code = EXCLUDED.client_code,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+          `);
+          promotedMirror.success = true;
+        } catch (mirrorError: any) {
+          promotedMirror.error = mirrorError?.message || "unknown_error";
+          console.error("[dual-write][clients] promoted mirror write failed", {
+            clientId: created.id,
+            error: mirrorError,
+          });
+        }
+      }
 
       logAuditFromReq(req, { entityType: "client", entityId: String(created.id), action: "create", changesJson: { name: parsed.name, clientId: generatedClientId, promotedMirror } });
+      if (promotedMirror.attempted) {
+        res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
+      }
       res.json({ ...created, _promotedMirror: promotedMirror });
     } catch (error) {
       console.error("Client create error:", error);
@@ -4330,7 +4455,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/work-items/:id/viewers", requireAuth, requirePermission("projects", "edit"), async (req, res) => {
+  app.post("/api/work-items/:id/viewers", requireAuth, async (req, res) => {
     try {
       const workItemId = parseInt(req.params.id);
       const { userId: viewerUserId } = req.body;
@@ -4364,7 +4489,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/work-items/:id/viewers/:userId", requireAuth, requirePermission("projects", "edit"), async (req, res) => {
+  app.delete("/api/work-items/:id/viewers/:userId", requireAuth, async (req, res) => {
     try {
       const workItemId = parseInt(req.params.id);
       const viewerUserId = parseInt(req.params.userId);
@@ -4397,8 +4522,17 @@ export async function registerRoutes(
 
   // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-  // NOTE: font-color-toggle handler is registered below (line ~4893) with proper auth.
-  // Duplicate stub removed during audit remediation.
+  app.patch("/api/expenditure/font-color-toggle", requireAuth, async (req, res) => {
+    try {
+      const { projectName } = req.query;
+      if (!projectName || typeof projectName !== 'string') {
+        return res.status(400).json({ error: "Project name required", message: "Project name is required" });
+      }
+      res.json([]);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch revenue tracking overrides", message: "Failed to fetch revenue tracking overrides" });
+    }
+  });
 
   app.post("/api/revenue-tracking/overrides", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
     try {
@@ -4806,7 +4940,7 @@ export async function registerRoutes(
 
   // ==================== EXPENDITURE BREAKDOWN COMPOSITE API ====================
 
-  app.patch("/api/expenditure/font-color-toggle", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
+  app.patch("/api/expenditure/font-color-toggle", requireAuth, async (req, res) => {
     try {
       const { projectName, rowNumber, field, color } = req.body;
       if (!projectName || rowNumber == null || !field || !color) {
@@ -4857,7 +4991,7 @@ export async function registerRoutes(
 
   // ==================== COS STATUS OVERRIDE API ====================
 
-  app.post("/api/cos-status-override", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
+  app.post("/api/cos-status-override", requireAuth, async (req, res) => {
     try {
       const { expenseId, projectName, rowNumber, originalStatus, overrideStatus, reason } = req.body;
       if (!expenseId || !projectName || !overrideStatus || !reason) {
@@ -4877,7 +5011,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/cos-status-override/:expenseId", requireAuth, requireAdmin, requirePermission('financials', 'edit'), async (req, res) => {
+  app.delete("/api/cos-status-override/:expenseId", requireAuth, async (req, res) => {
     try {
       const expenseId = parseInt(req.params.expenseId);
 
@@ -5549,7 +5683,7 @@ export async function registerRoutes(
   app.get("/api/export/projects-summary", requireAuth, async (req, res) => {
     try {
       const authHeader = req.headers.authorization || "";
-      const response = await fetch(`http://127.0.0.1:${process.env.PORT || 5000}/api/projects-summary`, {
+      const response = await fetch(`http://0.0.0.0:${process.env.PORT || 5000}/api/projects-summary`, {
         headers: { Authorization: authHeader },
       });
       const summary = await response.json();
@@ -6112,7 +6246,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/mytool/settings", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.put("/api/mytool/settings", requireAuth, async (req, res) => {
     try {
       const updated = await storage.updateMytoolSettings(req.body);
       logAuditFromReq(req, { entityType: "mytool_settings", action: "update", changesJson: { description: "MyTool settings updated" } });
@@ -6272,7 +6406,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/calendar/schedule-task", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.patch("/api/calendar/schedule-task", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const userName = (req.user as any).username;
@@ -6513,7 +6647,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/mytool/tasks", requireAuth, async (req, res) => {
     const userId = (req.user as any).id;
     const rawRequestId = req.header("x-idempotency-key") || req.body?.clientRequestId;
     const requestId = typeof rawRequestId === "string" ? rawRequestId.trim() : "";
@@ -6589,7 +6723,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/tasks/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.patch("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
@@ -6684,7 +6818,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.delete("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
       const taskId = parseInt(req.params.id);
       const userId = (req.user as any).id;
@@ -6731,7 +6865,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/mytool/tasks/:id/dependencies", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const successorTaskId = Number(req.params.id);
@@ -6769,7 +6903,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const taskId = Number(req.params.id);
@@ -6798,7 +6932,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/recurrence-templates", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/mytool/recurrence-templates", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const [template] = await db.insert(mytoolRecurrenceTemplates).values({ ...req.body, ownerUserId: userId }).returning();
@@ -6824,7 +6958,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/timeblocks", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/mytool/timeblocks", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const block = await storage.createMytoolTimeblock({ ...req.body, ownerUserId: userId });
@@ -6835,7 +6969,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/timeblocks/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.patch("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
     try {
       const block = await storage.updateMytoolTimeblock(parseInt(req.params.id), req.body);
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "update", entityId: req.params.id, changesJson: { description: "Timeblock updated" } });
@@ -6845,7 +6979,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/timeblocks/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.delete("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteMytoolTimeblock(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "mytool_timeblock", action: "delete", entityId: req.params.id, changesJson: { description: "Timeblock deleted" } });
@@ -6871,7 +7005,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/mytool/daily-review", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.put("/api/mytool/daily-review", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const review = await storage.upsertMytoolDailyReview({ ...req.body, ownerUserId: userId });
@@ -6958,7 +7092,7 @@ export async function registerRoutes(
     }
   });
 
-  app.put("/api/mytool/preferences", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.put("/api/mytool/preferences", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const prefs = await storage.upsertMytoolUserPreferences({ ...req.body, ownerUserId: userId });
@@ -6992,7 +7126,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/email-links", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/mytool/email-links", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any)?.id || null;
       const link = await storage.createEmailLink({ ...req.body, createdBy: userId });
@@ -7003,7 +7137,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/email-links/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.delete("/api/mytool/email-links/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteEmailLink(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "email_link", action: "delete", entityId: req.params.id, changesJson: { description: "Email link deleted" } });
@@ -7023,7 +7157,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/dod-templates", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/mytool/dod-templates", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const template = await storage.createMytoolDodTemplate({ ...req.body, createdBy: userId });
@@ -7034,7 +7168,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/dod-templates/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.delete("/api/mytool/dod-templates/:id", requireAuth, async (req, res) => {
     try {
       await storage.deleteMytoolDodTemplate(parseInt(req.params.id));
       logAuditFromReq(req, { entityType: "dod_template", action: "delete", entityId: req.params.id, changesJson: { description: "DoD template deleted" } });
@@ -7045,7 +7179,7 @@ export async function registerRoutes(
   });
 
   // Support Tickets
-  app.post("/api/mytool/support-ticket", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/mytool/support-ticket", requireAuth, async (req, res) => {
     try {
       const { summary, stepsToReproduce, currentRoute, userAgent } = req.body;
       if (!summary || !stepsToReproduce) {
@@ -7080,7 +7214,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/error-log", requireAuth, requirePermission("admin", "edit"), async (req, res) => {
+  app.post("/api/error-log", requireAuth, async (req, res) => {
     try {
       const { route, action, errorMessage, errorStack, payloadShape } = req.body;
       const correlationId = `ERR-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -7112,7 +7246,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/refresh", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/outlook/refresh", requireAuth, async (req, res) => {
     try {
       outlook.clearCachedToken();
       const status = await outlook.getConnectionStatus();
@@ -7698,7 +7832,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ms-teams/chats/:chatId/messages", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
+  app.post("/api/ms-teams/chats/:chatId/messages", requireAuth, async (req, res) => {
     try {
       const ssoToken = await getUserSsoToken(req);
       if (!ssoToken) {
@@ -7717,7 +7851,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/ms-teams/channels/:teamId/:channelId/messages", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
+  app.post("/api/ms-teams/channels/:teamId/:channelId/messages", requireAuth, async (req, res) => {
     try {
       const ssoToken = await getUserSsoToken(req);
       if (!ssoToken) {
@@ -7767,7 +7901,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/send", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
+  app.post("/api/outlook/send", requireAuth, async (req, res) => {
     try {
       const { to, cc, subject, body, bodyType } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0 || !subject) {
@@ -7786,7 +7920,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/reply", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
+  app.post("/api/outlook/messages/:id/reply", requireAuth, async (req, res) => {
     try {
       const { comment, replyAll } = req.body;
       if (!comment) {
@@ -7805,7 +7939,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/outlook/messages/:id/forward", requireAuth, requirePermission('projects', 'edit'), async (req, res) => {
+  app.post("/api/outlook/messages/:id/forward", requireAuth, async (req, res) => {
     try {
       const { comment, to } = req.body;
       if (!to || !Array.isArray(to) || to.length === 0) {
@@ -7968,7 +8102,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/mytool/triage-rules", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/mytool/triage-rules", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const { ruleType, value } = req.body;
@@ -7987,7 +8121,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/mytool/triage-rules/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.patch("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const ruleId = parseInt(req.params.id);
@@ -8007,7 +8141,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/mytool/triage-rules/:id", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.delete("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
       const ruleId = parseInt(req.params.id);
@@ -8171,7 +8305,7 @@ function registerFeedbackRoutes(app: Express) {
     }
   });
 
-  app.post("/api/feedback", requireAuth, requirePermission("my_tool", "edit"), async (req, res) => {
+  app.post("/api/feedback", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       const { type, title, description, priority } = req.body;
@@ -8243,7 +8377,7 @@ function registerUserFolderRoutes(app: Express) {
     }
   });
 
-  app.put("/api/user-project-folder/:projectName", requireAuth, requirePermission("projects", "edit"), async (req, res) => {
+  app.put("/api/user-project-folder/:projectName", requireAuth, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -8277,7 +8411,7 @@ function registerUserFolderRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/user-project-folder/:projectName", requireAuth, requirePermission("projects", "edit"), async (req, res) => {
+  app.delete("/api/user-project-folder/:projectName", requireAuth, async (req, res) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });

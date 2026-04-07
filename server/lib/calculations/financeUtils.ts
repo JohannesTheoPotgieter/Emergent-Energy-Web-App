@@ -9,7 +9,6 @@
  */
 
 import { classifyCosStatus, type CosStatus } from './stateClassifier';
-import { isCanonicalCosRealised } from '../finance/cos-realisation';
 
 // ─── Static fallback COS budget (FY2025-2026) ───
 // Used when no manual budget override has been entered for a month.
@@ -83,8 +82,10 @@ export function classifyCosStatusFull(exp: {
 }
 
 // ─── COS realisation check ───
-// Delegates to the canonical isCanonicalCosRealised() from cos-realisation.ts.
-// This ensures all tracker endpoints agree with Company Overview and Dashboard.
+// Determines whether a cost line item should be treated as "realised" for tracker
+// purposes. Uses classifyCosStatusFull() which respects admin overrides and the
+// canonical classifyCosStatus() logic (requires invoice number + invoice date +
+// confirmed/black date).
 export function isCosRealised(exp: {
   expenseInvoiceNumber?: string | null;
   expenseInvoicedDate?: string | null;
@@ -92,23 +93,8 @@ export function isCosRealised(exp: {
   invoiceDateConfirmed?: boolean | null;
   invoiceDateFontColor?: string | null;
   _cosOverrideStatus?: string | null;
-  status?: string | null;
-  cosStatusOverride?: string | null;
-  cosRealised?: boolean | null;
-  paymentDate?: string | null;
-  paidDate?: string | null;
-  expensePaymentDate?: string | null;
 }): boolean {
-  return isCanonicalCosRealised({
-    status: (exp as any).status ?? null,
-    cosStatusOverride: (exp as any)._cosOverrideStatus ?? (exp as any).cosStatusOverride ?? null,
-    cosRealised: (exp as any).cosRealised ?? null,
-    expenseInvoiceNumber: exp.expenseInvoiceNumber ?? null,
-    expenseInvoicedDate: exp.expenseInvoicedDate ?? null,
-    expensePoNumber: exp.expensePoNumber ?? null,
-    paymentDate: (exp as any).expensePaymentDate ?? (exp as any).paymentDate ?? (exp as any).paidDate ?? null,
-    today: new Date().toISOString().slice(0, 10),
-  });
+  return classifyCosStatusFull(exp) === 'COS Realised';
 }
 
 // ─── Project-name normalisation ───

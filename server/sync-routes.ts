@@ -11,9 +11,7 @@ import {
   SP_OWNED_FIELDS, APP_OWNED_FIELDS, SHARED_FIELDS,
   type IntakeRequest, type InsertIntakeRequest,
 } from "@shared/schema";
-import { requirePermission } from "./permission-middleware";
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
-import { bridgeCatch } from "./bridge/bridge-writer";
 import {
   discoverSites, discoverSiteByUrl, discoverLists,
   getListColumns, getListItems, updateListItemFields,
@@ -243,10 +241,6 @@ export function registerSyncRoutes(app: Express) {
               const syncInsertFields = { projectName: clientName, phase: "First Assessment", isActive: true };
               const [newProj] = await db.insert(projectInfo).values(syncInsertFields).returning();
               await syncProjectSplitTablesAfterInsert(newProj.id, syncInsertFields);
-              // Phase 2 bridge write: mirror new project to core.projects
-              import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
-                syncProjectInsert(newProj as any)
-              ).catch(bridgeCatch);
               projectId = newProj.id;
               newProjects++;
             }
@@ -663,7 +657,7 @@ export function registerSyncRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/sp-sync/intake-requests/:id", jwtAuth, requireAuth, requirePermission("admin", "edit"), async (req, res) => {
+  app.patch("/api/sp-sync/intake-requests/:id", jwtAuth, requireAuth, async (req, res) => {
     try {
       const allowedFields = ["appNotes", "appInternalBlockers", "status", "comments", "priority"];
       const updates: any = { lastAppEditAt: new Date(), updatedAt: new Date() };
@@ -698,7 +692,7 @@ export function registerSyncRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/sp-sync/intake-tasks/:taskId", jwtAuth, requireAuth, requirePermission("admin", "edit"), async (req, res) => {
+  app.patch("/api/sp-sync/intake-tasks/:taskId", jwtAuth, requireAuth, async (req, res) => {
     try {
       const { status, dodCompletedJson, assignedTo } = req.body;
       const updates: any = { updatedAt: new Date() };

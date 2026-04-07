@@ -3,7 +3,6 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
-import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, isNull, and } from "drizzle-orm";
 import { sites } from "@shared/schema/projects";
@@ -44,7 +43,7 @@ router.get("/api/sites/:id", requireAuth, async (req: Request, res: Response) =>
   }
 });
 
-router.post("/api/sites", requireAuth, requirePermission("projects", "create"), async (req: Request, res: Response) => {
+router.post("/api/sites", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(sites).values(req.body).returning();
     res.status(201).json(row);
@@ -54,7 +53,7 @@ router.post("/api/sites", requireAuth, requirePermission("projects", "create"), 
   }
 });
 
-router.patch("/api/sites/:id", requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/sites/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(sites)

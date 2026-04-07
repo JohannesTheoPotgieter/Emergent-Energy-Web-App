@@ -216,7 +216,7 @@ export default function OverviewPage() {
         <KpiCard icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label={`Revenue (${fyLabel})`} value={formatCurrencyCompact(kpis.plannedRevenueFy)} sub={`Received: ${formatCurrencyCompact(kpis.receivedInflowFy)}`} />
         <KpiCard icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" label="Revenue Outstanding" value={formatCurrencyCompact(kpis.openInflowFy)} valueClass="text-amber-600" />
         <KpiCard icon={<DollarSign className="w-4 h-4 text-amber-600" />} iconBg="bg-amber-100" label="Expense Outstanding" value={formatCurrencyCompact(kpis.openExpenditureFy)} valueClass="text-amber-600" />
-        <KpiCard icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label="Gross Profit (FY Plan)" value={formatCurrencyCompact(kpis.grossProfitFy)} sub={`Planned Margin: ${kpis.grossMarginPctFy ?? "—"}% · Based on planned revenue vs planned expenditure`} />
+        <KpiCard icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} iconBg="bg-emerald-100" label="Gross Profit (Planned)" value={formatCurrencyCompact(kpis.grossProfitFy)} sub={`Planned Margin: ${kpis.grossMarginPctFy ?? "—"}% · Based on planned revenue vs planned expenditure`} />
       </div>
 
       {/* 3. TOP PROBLEM PROJECTS */}

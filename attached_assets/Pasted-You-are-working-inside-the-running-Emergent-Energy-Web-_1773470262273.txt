@@ -1,0 +1,122 @@
+You are working inside the running Emergent Energy Web App in Replit.
+
+Context:
+- This is an operational multi-role web app for Emergent Energy.
+- Roles include COO admin, project manager, engineer, quality manager, and project development.
+- This app supports live operational workflows and cannot be treated like a demo app.
+- We care about runtime truth, not theoretical code correctness.
+- Do not assume anything works because the code looks correct.
+- Verify behavior in the running application.
+- Do not make random architecture changes.
+- Do not silently alter unrelated functionality.
+- Recent repo changes include:
+  - Smart Import and Excel Updates moved under /admin with legacy redirects
+  - stronger release-gate and reconciliation logic
+  - workflow evidence tests for critical actions
+- Current known risks:
+  - app boot may fail if SESSION_SECRET or other runtime requirements are missing
+  - API/workflow tests require a live app at localhost:5000
+  - release-gate evidence is incomplete
+  - role/permission and admin route behavior may still have gaps
+  - route/static checks do not prove full runtime behavior
+
+Task:
+Boot the application and perform a full runtime QA pass on the most critical repo flows.
+
+Roles to test:
+- COO_ADMIN / admin
+- PROJECT_MANAGER_SITE / PM
+- ENGINEER
+- QUALITY_MANAGER
+- PROJECT_DEVELOPER if credentials or seeded access exist
+
+Critical flows to test:
+1. App boot
+2. Login
+3. Role landing behavior from /
+4. Projects list
+5. Project detail
+6. Engineering dashboard
+7. Engineering tasks
+8. Quality page
+9. PD dashboard
+10. Collaboration
+11. My Work
+12. PM dashboard
+13. Procurement / subcontractor dashboard
+14. Admin root
+15. Admin control center
+16. Admin settings
+17. Admin roles
+18. Smart Import at /admin/smart-import
+19. Excel Updates at /admin/excel-updates
+20. Legacy redirects:
+   - /smart-import -> /admin/smart-import
+   - /excel-updates -> /admin/excel-updates
+21. Handover control
+22. Portfolios
+
+What to do:
+1. Boot the application
+   - identify startup blockers
+   - identify missing env vars
+   - identify migration/seed/runtime issues
+   - report exact boot status
+   - if boot fails, stop broad UI testing and report the exact blocker first
+
+2. For each critical flow above, test:
+   - page load
+   - permission / role behavior
+   - redirect behavior
+   - button/action visibility
+   - obvious interaction path
+   - console errors
+   - network/API failures
+   - 4xx/5xx responses
+   - stale state / duplicate submit behavior where applicable
+
+3. Pay special attention to:
+   - admin-only route access
+   - hidden/discoverability issues from moving Smart Import and Excel Updates under /admin
+   - role landing redirects
+   - permission mismatches between UI and API
+   - broken links from command center, admin control center, EE info, walkthroughs, project normalized view
+   - startup environment blockers such as SESSION_SECRET
+
+4. Do not apply broad fixes yet.
+   - First reproduce and report.
+   - Only apply a fix if the issue is obvious, narrow, and safe.
+
+Return output in exactly this structure:
+
+A. Boot status
+- Did the app start: Yes / No
+- Exact blocker(s)
+- Exact file/config/runtime cause
+
+B. Runtime test coverage
+For each tested flow include:
+- Flow name
+- Role used
+- Steps performed
+- Result: Pass / Fail / Blocked / Not tested
+- Evidence: UI behavior, console error, network issue, API response, redirect, validation result
+
+C. Defects found
+For each defect include:
+- Title
+- Severity: Critical / High / Medium / Low
+- Reproduction steps
+- Likely root cause
+- Files likely involved
+
+D. Recommended next fix order
+- most critical first
+- narrowest safe fix first
+
+Rules:
+- Do not say “fixed” unless re-tested in runtime
+- Do not stop at code inspection; confirm behavior in browser/runtime
+- Keep findings specific
+- Preserve source of truth and role-based behavior
+- Call out fake passes, partial passes, and unproven areas

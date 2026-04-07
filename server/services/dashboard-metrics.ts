@@ -19,9 +19,12 @@ import { workItems } from "@shared/schema";
 import { qcWarning, qcChecklist, qcItemInstance } from "@shared/schema";
 import { cacheGet, cacheSet, cacheDelete, cacheClear } from "../lib/cache";
 import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
+<<<<<<< HEAD
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { computeMarginPct } from "../lib/finance/margin";
+=======
+>>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000; // Skip projects refreshed within 5 minutes
 const CONCURRENCY_LIMIT = 5; // Max parallel project refreshes
@@ -66,33 +69,21 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
       ),
   ]);
 
-  // NOTE: These are LIFETIME totals (all current rows), not FYTD-scoped.
-  // Company Overview uses FYTD-scoped aggregation separately.
   let totalRevenue = 0,
     receivedRevenue = 0,
     outstandingRevenue = 0;
   for (const row of revRows) {
     const amt = toNum(row.amountExVat);
     totalRevenue += amt;
-    // D-01 fix: use canonical isRevenueSettled() instead of inline paidDate/inBankDate check
-    if (isRevenueSettled({
-      status: (row as any).status,
-      paidDate: (row as any).paidDate,
-      inBankDate: (row as any).inBankDate,
-      paidDateConfirmed: (row as any).paidDateConfirmed,
-      paidDateFontColor: (row as any).paidDateFontColor,
-    })) {
+    if (row.paidDate || row.inBankDate) {
       receivedRevenue += amt;
     } else {
       outstandingRevenue += amt;
     }
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-
   let totalCost = 0,
     paidCost = 0,
-    realisedCost = 0,
     outstandingCost = 0;
   for (const row of costRows) {
     const amt = toNum(row.amountExVat);
@@ -102,24 +93,18 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
     } else {
       outstandingCost += amt;
     }
-    // D-02 fix: track COS realised using canonical logic (aligned with Company Overview and COS Tracker)
-    if (isCanonicalCosRealised({
-      status: (row as any).status,
-      cosStatusOverride: (row as any).cosStatusOverride ?? null,
-      cosRealised: (row as any).cosRealised ?? null,
-      expenseInvoiceNumber: (row as any).invoiceNumber ?? null,
-      expenseInvoicedDate: (row as any).invoiceDate ?? null,
-      expensePoNumber: (row as any).poNumber ?? null,
-      paymentDate: (row as any).paidDate ?? null,
-      today,
-    })) {
-      realisedCost += amt;
-    }
   }
 
+<<<<<<< HEAD
   // D-04 fix: store margin as percentage (0–100) consistent with all other views
   const marginResult = computeMarginPct(totalRevenue, totalCost, { precision: 2 });
   const marginPct = marginResult !== null ? marginResult.toFixed(2) : null;
+=======
+  const marginPct =
+    totalRevenue > 0
+      ? ((totalRevenue - totalCost) / totalRevenue).toFixed(4)
+      : null;
+>>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 
   // Task aggregates from work_items
   const taskRows = await db
@@ -127,6 +112,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
     .from(workItems)
     .where(and(eq(workItems.projectId, projectId), isNull(workItems.deletedAt)));
 
+  const today = new Date().toISOString().slice(0, 10);
   let taskCount = 0,
     tasksCompleted = 0,
     tasksInProgress = 0,
@@ -187,12 +173,10 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
   }
 
   // Health score: simple composite (margin 40%, task completion 30%, QC 30%)
-  // All inputs normalized to 0–1 range for weighting. Guards against NaN/Infinity.
   const taskCompletionRate = taskCount > 0 ? tasksCompleted / taskCount : 0;
-  const qcRate = qcProgressPct ? parseFloat(qcProgressPct) || 0 : 0;
-  const marginRate = marginPct ? Math.max(0, Math.min(1, (parseFloat(marginPct) || 0) / 100)) : 0;
-  const rawHealthScore = marginRate * 40 + taskCompletionRate * 30 + qcRate * 30;
-  const healthScore = Number.isFinite(rawHealthScore) ? rawHealthScore.toFixed(2) : "0.00";
+  const qcRate = qcProgressPct ? parseFloat(qcProgressPct) : 0;
+  const marginRate = marginPct ? Math.max(0, Math.min(1, parseFloat(marginPct))) : 0;
+  const healthScore = (marginRate * 40 + taskCompletionRate * 30 + qcRate * 30).toFixed(2);
 
   // Execution-state snapshot
   const phase = project.phase ?? null;
@@ -205,7 +189,6 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
     outstandingRevenue: outstandingRevenue.toFixed(2),
     totalCost: totalCost.toFixed(2),
     paidCost: paidCost.toFixed(2),
-    realisedCost: realisedCost.toFixed(2),
     outstandingCost: outstandingCost.toFixed(2),
     marginPct,
     taskCount,
@@ -246,7 +229,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
       INSERT INTO dashboard_project_metrics (
         project_id,
         total_revenue, received_revenue, outstanding_revenue,
-        total_cost, paid_cost, realised_cost, outstanding_cost, margin_pct,
+        total_cost, paid_cost, outstanding_cost, margin_pct,
         task_count, tasks_completed, tasks_in_progress, tasks_overdue, tasks_active,
         open_warnings, qc_progress_pct,
         health_score, phase, rag_status, contract_value, project_name, pm, pd,
@@ -254,7 +237,7 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
       ) VALUES (
         ${row.projectId},
         ${row.totalRevenue}, ${row.receivedRevenue}, ${row.outstandingRevenue},
-        ${row.totalCost}, ${row.paidCost}, ${row.realisedCost}, ${row.outstandingCost}, ${row.marginPct},
+        ${row.totalCost}, ${row.paidCost}, ${row.outstandingCost}, ${row.marginPct},
         ${row.taskCount}, ${row.tasksCompleted}, ${row.tasksInProgress}, ${row.tasksOverdue}, ${row.tasksActive},
         ${row.openWarnings}, ${row.qcProgressPct},
         ${row.healthScore}, ${row.phase}, ${row.ragStatus}, ${row.contractValue}, ${row.projectName}, ${row.pm}, ${row.pd},
@@ -267,7 +250,6 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
         outstanding_revenue = EXCLUDED.outstanding_revenue,
         total_cost = EXCLUDED.total_cost,
         paid_cost = EXCLUDED.paid_cost,
-        realised_cost = EXCLUDED.realised_cost,
         outstanding_cost = EXCLUDED.outstanding_cost,
         margin_pct = EXCLUDED.margin_pct,
         task_count = EXCLUDED.task_count,
