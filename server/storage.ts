@@ -1837,8 +1837,8 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(expenseTaskLinks.projectName, projectName), eq(expenseTaskLinks.expenseId, expenseId)));
   }
 
-  async createManualExpense(data: InsertProgramExpense): Promise<ProgramExpense> {
-    const mapped = {
+  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string }): Promise<ProgramExpense> {
+    const mapped: Record<string, any> = {
       projectName: data.projectName,
       costCategory: data.expenseCategory || null,
       description: data.expenseLineItem || null,
@@ -1854,6 +1854,9 @@ export class DatabaseStorage implements IStorage {
       counterpartyName: data.supplierName || null,
       sourceRow: data.rowNumber || null,
     };
+    if (data.idempotencyKey) {
+      mapped.idempotencyKey = data.idempotencyKey;
+    }
     const created = await _createCostLine(mapped, this.dbInstance);
     const { adaptCostToExpense } = await import("./lib/data-merge");
     return adaptCostToExpense(created, created.projectName) as any;

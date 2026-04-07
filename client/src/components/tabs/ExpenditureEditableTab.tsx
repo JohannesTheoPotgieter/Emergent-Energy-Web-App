@@ -549,7 +549,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
       const res = await authFetch("/api/expenses/add-line", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, ...data }),
+        body: JSON.stringify({ projectName, ...data, idempotencyKey: crypto.randomUUID() }),
       });
       if (!res.ok) throw new Error("Failed to add line");
       return res.json();
@@ -568,7 +568,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
       const res = await authFetch("/api/expenses/add-category", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, categoryName }),
+        body: JSON.stringify({ projectName, categoryName, idempotencyKey: crypto.randomUUID() }),
       });
       if (!res.ok) throw new Error("Failed to add category");
       return res.json();
@@ -586,7 +586,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
       const res = await authFetch("/api/expenses/insert-task-as-line", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, taskId, expenseCategory }),
+        body: JSON.stringify({ projectName, taskId, expenseCategory, idempotencyKey: crypto.randomUUID() }),
       });
       if (!res.ok) throw new Error("Failed to insert task");
       return res.json();

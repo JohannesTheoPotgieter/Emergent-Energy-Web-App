@@ -4322,7 +4322,7 @@ router.post("/api/expense-task-links/:projectName/:expenseId/date-override", req
 
 router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate } = req.body;
+    const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate, idempotencyKey } = req.body;
     if (!projectName || !expenseCategory) {
       return res.status(400).json({ error: "projectName and expenseCategory are required" });
     }
@@ -4340,6 +4340,7 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
       expenseInvoicedDate: expenseInvoicedDate || null,
       expensePaymentDate: expensePaymentDate || null,
       lineStatus: 'Planned',
+      idempotencyKey: idempotencyKey || undefined,
     });
 
     res.json(newExpense);
@@ -4351,7 +4352,7 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
 
 router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { projectName, categoryName } = req.body;
+    const { projectName, categoryName, idempotencyKey } = req.body;
     if (!projectName || !categoryName) {
       return res.status(400).json({ error: "projectName and categoryName are required" });
     }
@@ -4363,6 +4364,7 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
       rowType: 'category',
       expenseCategory: categoryName,
       expenseLineItem: categoryName,
+      idempotencyKey: idempotencyKey || undefined,
     });
 
     res.json(newCategory);
@@ -4374,7 +4376,7 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
 
 router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { projectName, taskId, expenseCategory } = req.body;
+    const { projectName, taskId, expenseCategory, idempotencyKey } = req.body;
     if (!projectName || !taskId || !expenseCategory) {
       return res.status(400).json({ error: "projectName, taskId, and expenseCategory are required" });
     }
@@ -4401,6 +4403,7 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
       expenseLineItem: taskTitle,
       expensePaymentDate: taskEndDate,
       lineStatus: 'Planned',
+      idempotencyKey: idempotencyKey || undefined,
     });
     await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
 

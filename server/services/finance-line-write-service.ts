@@ -42,11 +42,28 @@ type DbOrTx = typeof db;
 
 /**
  * Create a single cost line and sync to promoted schema.
+ *
+ * If `values.idempotencyKey` is provided, checks for an existing row with
+ * that key first. If found, returns the existing row without inserting
+ * (idempotent retry). This prevents duplicates from double-clicks,
+ * browser resends, and network retries for manual expense creation.
  */
 export async function createCostLine(
   values: Record<string, any>,
   txOrDb: DbOrTx = db,
 ): Promise<any> {
+  // Idempotency guard: if a key is provided, check for existing row first
+  if (values.idempotencyKey) {
+    const existing = await (txOrDb as any)
+      .select()
+      .from(normalizedCostLines)
+      .where(eq(normalizedCostLines.idempotencyKey, values.idempotencyKey))
+      .limit(1);
+    if (existing.length > 0) {
+      return existing[0];
+    }
+  }
+
   const [created] = await (txOrDb as any).insert(normalizedCostLines).values(values).returning();
   syncCostLine(created).catch(bridgeCatch);
   return created;

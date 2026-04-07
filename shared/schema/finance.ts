@@ -542,6 +542,10 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
   snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
+  // Client-generated idempotency key for manual expense creation.
+  // Prevents duplicate rows from double-clicks, browser resends, and network retries.
+  // NULL for imported rows (no dedup needed — imports use soft-close + re-insert).
+  idempotencyKey: text("idempotency_key"),
 });
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
