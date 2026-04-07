@@ -159,6 +159,8 @@ export interface IStorage {
   // Program Inflows (new)
   getAllProgramInflows(): Promise<ProgramInflows[]>;
   getProgramInflowsByProject(projectName: string): Promise<ProgramInflows[]>;
+  // Canonical revenue-line read for cashflow — reads normalized_revenue_lines only.
+  getAllRevenueLinesForCashflow(): Promise<any[]>;
   createManyProgramInflows(inflows: InsertProgramInflows[]): Promise<ProgramInflows[]>;
   deleteProgramInflowsByProject(projectName: string): Promise<void>;
 
@@ -1317,6 +1319,18 @@ export class DatabaseStorage implements IStorage {
     }
 
     // Legacy fallback
+    const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
+    const [revLines, piRows] = await Promise.all([
+      this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
+      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+    ]);
+    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
+    return revLines.map(r => adaptRevenueToInflow(r, resolve(r.projectName)));
+  }
+
+  async getAllRevenueLinesForCashflow(): Promise<any[]> {
+    // Canonical read: normalized_revenue_lines only, no promoted fallback complexity.
+    // Aligns cashflow inflow reads with the canonical source.
     const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
     const [revLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
