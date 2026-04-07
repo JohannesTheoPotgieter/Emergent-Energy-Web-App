@@ -775,7 +775,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
 
     const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
       storage.getAllCostLinesForCashflow(),
-      storage.getAllProgramInflows(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllCashflowWeeklyManual(),
       storage.getAllOpexBudgetMonthly(),
       storage.getAllOpexWeeklyManual(),
@@ -977,7 +977,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
 
     const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
       storage.getAllCostLinesForCashflow(),
-      storage.getAllProgramInflows(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
@@ -1189,35 +1189,11 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     let row: any;
     if (updated.length > 0) {
       row = updated[0];
-      // Also sync override to programInflows if a matching legacy row exists
-      if (row.projectName && row.sourceRow != null) {
-        await db.update(programInflows)
-          .set({
-            adminDateOverride: dateOverride || null,
-            adminDateOverrideReason: reason || null,
-            adminDateOverrideBy: userId || null,
-            adminDateOverrideAt: dateOverride ? now : null,
-          })
-          .where(and(
-            eq(programInflows.projectName, row.projectName),
-            eq(programInflows.rowNumber, row.sourceRow),
-          ));
-      }
+      // PI sync removed — normalizedRevenueLines is the canonical source.
+      // program_inflows is deprecated for writes; reads are being migrated.
     } else {
-      // Fallback: try updating programInflows directly (legacy rows not in normalizedRevenueLines)
-      const piUpdated = await db.update(programInflows)
-        .set({
-          adminDateOverride: dateOverride || null,
-          adminDateOverrideReason: reason || null,
-          adminDateOverrideBy: userId || null,
-          adminDateOverrideAt: dateOverride ? now : null,
-        })
-        .where(eq(programInflows.id, inflowId))
-        .returning();
-      if (piUpdated.length === 0) {
-        return res.status(404).json({ error: "Inflow line not found" });
-      }
-      row = piUpdated[0];
+      // No matching NRL row — this inflow line is not in the canonical source
+      return res.status(404).json({ error: "Inflow line not found in canonical revenue lines" });
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
