@@ -148,6 +148,9 @@ export interface IStorage {
   // Program Expense (new)
   getAllProgramExpenses(): Promise<ProgramExpense[]>;
   getProgramExpensesByProject(projectName: string): Promise<ProgramExpense[]>;
+  // Canonical cost-line read for cashflow — reads normalized_cost_lines only,
+  // bypassing the program_expense merge. Returns adapted expense-shaped rows.
+  getAllCostLinesForCashflow(): Promise<any[]>;
   createManyProgramExpenses(expenses: InsertProgramExpense[]): Promise<ProgramExpense[]>;
   deleteProgramExpensesByProject(projectName: string): Promise<void>;
   updateProgramExpenseFields(id: number, fields: Record<string, any>): Promise<ProgramExpense | undefined>;
@@ -1097,6 +1100,18 @@ export class DatabaseStorage implements IStorage {
 
     const selected = selectWinningExpenseRows([...adaptedNormalized, ...legacyAdapted]);
     return selected.winners;
+  }
+
+  async getAllCostLinesForCashflow(): Promise<any[]> {
+    // Canonical read: normalized_cost_lines only, no program_expense merge.
+    // Aligns cashflow with dashboards that read normalizedCostLines directly.
+    const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
+    const [costLines, piRows] = await Promise.all([
+      this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
+      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
+    ]);
+    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
+    return costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
   }
 
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
