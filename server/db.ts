@@ -127,21 +127,24 @@ async function initializeDatabase(): Promise<void> {
           host: config.dbHost,
         });
 
-        // Ensure engineering columns on work_items (idempotent DDL)
+        // Ensure engineering columns on work_items (skip if it's a VIEW in production)
         try {
-          await pool.query(`
-            ALTER TABLE work_items ADD COLUMN IF NOT EXISTS hold_reason TEXT;
-          `);
-          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocked_type TEXT`);
-          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS approval_required BOOLEAN NOT NULL DEFAULT false`);
-          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_plan_item_id INTEGER`);
-          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_deliverable_id INTEGER`);
-          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_quality_item_instance_id INTEGER`);
-          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP`);
-          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS tracking_rag TEXT`);
-          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_type_tag TEXT`);
-          await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocker_reason TEXT`);
-          console.log('[DB] ✓ work_items engineering columns verified');
+          const wiTableCheck = await pool.query("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'");
+          if (wiTableCheck.rows.length > 0) {
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS hold_reason TEXT`);
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocked_type TEXT`);
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS approval_required BOOLEAN NOT NULL DEFAULT false`);
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_plan_item_id INTEGER`);
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_deliverable_id INTEGER`);
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_quality_item_instance_id INTEGER`);
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP`);
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS tracking_rag TEXT`);
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_type_tag TEXT`);
+            await pool.query(`ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocker_reason TEXT`);
+            console.log('[DB] ✓ work_items engineering columns verified');
+          } else {
+            console.log('[DB] work_items is a VIEW or missing — skipping column DDL');
+          }
         } catch (ddlErr: any) {
           console.warn('[DB] work_items eng columns DDL warning (non-fatal):', ddlErr.message);
         }
