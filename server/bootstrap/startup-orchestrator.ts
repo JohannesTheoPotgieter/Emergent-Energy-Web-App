@@ -292,6 +292,66 @@ async function runAdditiveSchemaAlignments() {
     );
   `);
 
+  // Handle legacy renamed tables — if _work_items_legacy exists but work_items doesn't,
+  // the legacy table owns the sequence. Reassign sequence ownership before creating new table.
+  await safeExec("legacy work_items sequence fix", `
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_work_items_legacy')
+         AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items')
+      THEN
+        IF EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname='public' AND sequencename='work_items_id_seq') THEN
+          ALTER SEQUENCE work_items_id_seq OWNED BY NONE;
+          ALTER TABLE _work_items_legacy ALTER COLUMN id SET DEFAULT nextval('_work_items_legacy_id_seq'::regclass);
+          BEGIN
+            CREATE SEQUENCE _work_items_legacy_id_seq;
+            PERFORM setval('_work_items_legacy_id_seq', (SELECT COALESCE(MAX(id),0) FROM _work_items_legacy));
+            ALTER TABLE _work_items_legacy ALTER COLUMN id SET DEFAULT nextval('_work_items_legacy_id_seq'::regclass);
+          EXCEPTION WHEN duplicate_table THEN NULL;
+          END;
+          DROP SEQUENCE IF EXISTS work_items_id_seq;
+        END IF;
+      END IF;
+    END $$;
+  `);
+
+  await safeExec("legacy deliverables sequence fix", `
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_deliverables_legacy')
+         AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables')
+      THEN
+        IF EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname='public' AND sequencename='deliverables_id_seq') THEN
+          ALTER SEQUENCE deliverables_id_seq OWNED BY NONE;
+          BEGIN
+            CREATE SEQUENCE _deliverables_legacy_id_seq;
+            PERFORM setval('_deliverables_legacy_id_seq', (SELECT COALESCE(MAX(id),0) FROM _deliverables_legacy));
+            ALTER TABLE _deliverables_legacy ALTER COLUMN id SET DEFAULT nextval('_deliverables_legacy_id_seq'::regclass);
+          EXCEPTION WHEN duplicate_table THEN NULL;
+          END;
+          DROP SEQUENCE IF EXISTS deliverables_id_seq;
+        END IF;
+        -- Also handle indexes/constraints with original names
+        ALTER INDEX IF EXISTS deliverables_pkey RENAME TO _deliverables_legacy_pkey;
+        ALTER INDEX IF EXISTS idx_deliverables_project_status RENAME TO _idx_deliverables_legacy_project_status;
+      END IF;
+    END $$;
+  `);
+
+  await safeExec("legacy work_items index fix", `
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_work_items_legacy')
+         AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items')
+      THEN
+        ALTER INDEX IF EXISTS work_items_pkey RENAME TO _work_items_legacy_pkey;
+        ALTER INDEX IF EXISTS idx_work_items_deleted RENAME TO _idx_work_items_legacy_deleted;
+        ALTER INDEX IF EXISTS idx_work_items_external_ref RENAME TO _idx_work_items_legacy_external_ref;
+        ALTER INDEX IF EXISTS idx_work_items_owner RENAME TO _idx_work_items_legacy_owner;
+        ALTER INDEX IF EXISTS idx_work_items_project_id RENAME TO _idx_work_items_legacy_project_id;
+        ALTER INDEX IF EXISTS idx_work_items_workstream RENAME TO _idx_work_items_legacy_workstream;
+        ALTER INDEX IF EXISTS work_items_external_ref_key RENAME TO _work_items_legacy_external_ref_key;
+      END IF;
+    END $$;
+  `);
+
   await safeExec("work_items table", `
     CREATE TABLE IF NOT EXISTS work_items (
       id SERIAL PRIMARY KEY,
