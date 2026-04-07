@@ -1,4 +1,5 @@
 import type { Express, Request, Response, NextFunction } from "express";
+import { format } from "date-fns";
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
 import { computeMarginPct } from "../lib/finance/margin";
 import { storage } from "../storage";
@@ -156,8 +157,8 @@ export function registerDashboardRoutes(app: Express) {
         db.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)),
         db.select().from(financeRevenueMonthly).where(isNull(financeRevenueMonthly.effectiveTo)),
         db.select().from(financeCosMonthly).where(isNull(financeCosMonthly.effectiveTo)),
-        Promise.resolve([]),
-        Promise.resolve([]),
+        Promise.resolve([] as Array<{ projectName: string; rowNumber: string; overrideValue: string }>),
+        Promise.resolve([] as Array<{ projectName: string; rowNumber: string; overrideStatus: string }>),
       ]);
 
       const userNameById = new Map<number, string>((usersResult.rows as any[]).map((u: any) => [Number(u.id), u.name || `User ${u.id}`]));
@@ -184,7 +185,7 @@ export function registerDashboardRoutes(app: Express) {
       }
 
       // RLS: scope project data to user's accessible projects
-      const { resolveProjectScope } = await import("./services/project-access-service");
+      const { resolveProjectScope } = await import("../services/project-access-service");
       const dashUser = (req as any).user;
       const dashScope = await resolveProjectScope(
         dashUser?.id || 0,
@@ -972,10 +973,10 @@ export function registerDashboardRoutes(app: Express) {
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
-        Promise.resolve([]),
+        Promise.resolve([] as any[]),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        Promise.resolve([]),
+        Promise.resolve([] as Array<{ overrideValue: string; projectName: string; rowNumber: string }>),
       ]);
       const allExpenses = legacyExpenses;
       const allPlans = legacyRawPlans;

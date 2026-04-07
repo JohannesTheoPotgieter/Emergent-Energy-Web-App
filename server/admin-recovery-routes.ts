@@ -10,6 +10,7 @@ import {
 import { normalizeStatus } from "./lib/canonical-task-engine";
 import { jwtAuth, requireAuth, getEffectiveUser } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
+import { queryStr, queryInt, paramStr, paramInt } from "./lib/req-parse";
 
 const taskSearchSchema = z.object({
   q: z.string().optional(),
@@ -195,8 +196,8 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
   app.patch("/api/admin/recovery/tasks/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const taskId = parseInt(req.params.id);
-      if (isNaN(taskId)) return res.status(400).json({ error: "Invalid task ID" });
+      const taskId = paramInt(req, "id");
+      if (taskId == null) return res.status(400).json({ error: "Invalid task ID" });
 
       const { taskSource, ...updates } = req.body;
       const parsed = taskPatchSchema.safeParse(updates);
@@ -293,7 +294,7 @@ export function registerAdminRecoveryRoutes(app: Express) {
         .limit(limit)
         .offset(offset);
 
-      const runIds = runs.map(r => r.id);
+      const runIds = runs.map((r: any) => r.id);
       let issues: Record<string, unknown>[] = [];
       if (runIds.length > 0) {
         issues = await db.select().from(importIssues)
@@ -302,12 +303,12 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
       const issuesByRun = new Map<number, Record<string, unknown>[]>();
       for (const issue of issues) {
-        const list = issuesByRun.get(issue.importRunId) || [];
+        const list = issuesByRun.get(issue.importRunId as number) || [];
         list.push(issue);
-        issuesByRun.set(issue.importRunId, list);
+        issuesByRun.set(issue.importRunId as number, list);
       }
 
-      const enriched = runs.map(r => ({
+      const enriched = runs.map((r: any) => ({
         ...r,
         issues: issuesByRun.get(r.id) || [],
         issueCount: (issuesByRun.get(r.id) || []).length,
@@ -363,22 +364,22 @@ export function registerAdminRecoveryRoutes(app: Express) {
         .limit(100);
 
       const items = [
-        ...deletedWorkItems.map(wi => ({
+        ...deletedWorkItems.map((wi: any) => ({
           ...wi,
           type: "work_item" as const,
           deletedDate: wi.deletedAt,
         })),
-        ...deletedEngTasks.map(et => ({
+        ...deletedEngTasks.map((et: any) => ({
           ...et,
           type: "engineering_task" as const,
           deletedDate: et.softDeletedAt,
         })),
-        ...deletedOpTasks.map(ot => ({
+        ...deletedOpTasks.map((ot: any) => ({
           ...ot,
           type: "operational_task" as const,
           deletedDate: ot.deletedAt,
         })),
-        ...deletedMytoolTasks.map(mt => ({
+        ...deletedMytoolTasks.map((mt: any) => ({
           ...mt,
           type: "mytool_task" as const,
           deletedDate: mt.deletedAt,
@@ -435,8 +436,8 @@ export function registerAdminRecoveryRoutes(app: Express) {
 
   app.patch("/api/admin/recovery/project/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.id);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const projectId = paramInt(req, "id");
+      if (projectId == null) return res.status(400).json({ error: "Invalid project ID" });
 
       const parsed = projectPatchSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ error: "Invalid project data", details: parsed.error.issues });

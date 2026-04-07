@@ -144,7 +144,7 @@ export async function cascadeStatusToParent(childTaskId: number): Promise<Cascad
 
   if (siblings.length === 0) return result;
 
-  const allComplete = siblings.every(s => TERMINAL_STATUSES.has(s.status || ""));
+  const allComplete = siblings.every((s: any) => TERMINAL_STATUSES.has(s.status || ""));
 
   if (allComplete) {
     const [parent] = await db.select({ status: workItems.status }).from(workItems).where(eq(workItems.id, child.parentId));
@@ -180,11 +180,11 @@ export async function cascadeStatusToChildren(parentId: number, newStatus: strin
     and(eq(workItems.parentId, parentId), isNull(workItems.deletedAt))
   );
 
-  const childrenToUpdate = children.filter(c => !TERMINAL_STATUSES.has(c.status || "") && c.status !== newStatus);
+  const childrenToUpdate = children.filter((c: any) => !TERMINAL_STATUSES.has(c.status || "") && c.status !== newStatus);
 
   if (childrenToUpdate.length === 0) return result;
 
-  const ids = childrenToUpdate.map(c => c.id);
+  const ids = childrenToUpdate.map((c: any) => c.id);
   const updates: Record<string, any> = {
     status: newStatus,
     updatedAt: new Date(),
@@ -195,7 +195,7 @@ export async function cascadeStatusToChildren(parentId: number, newStatus: strin
   }
 
   await db.update(workItems).set(updates).where(
-    sql`${workItems.id} IN (${sql.join(ids.map(id => sql`${id}`), sql`, `)})`
+    sql`${workItems.id} IN (${sql.join(ids.map((id: any) => sql`${id}`), sql`, `)})`
   );
 
   result.childrenUpdated = ids.length;
@@ -225,10 +225,10 @@ export async function validateParentCompletion(parentId: number): Promise<string
 
   if (children.length === 0) return null; // No children, can complete freely
 
-  const incomplete = children.filter(c => !TERMINAL_STATUSES.has(c.status || ""));
+  const incomplete = children.filter((c: any) => !TERMINAL_STATUSES.has(c.status || ""));
 
   if (incomplete.length > 0) {
-    const names = incomplete.slice(0, 3).map(c => `"${c.title}"`).join(", ");
+    const names = incomplete.slice(0, 3).map((c: any) => `"${c.title}"`).join(", ");
     const more = incomplete.length > 3 ? ` and ${incomplete.length - 3} more` : "";
     return `Cannot complete: ${incomplete.length} subtask${incomplete.length > 1 ? "s" : ""} still open (${names}${more})`;
   }
