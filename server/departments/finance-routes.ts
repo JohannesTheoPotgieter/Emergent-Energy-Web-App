@@ -774,7 +774,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     const isFiltered = projectFilters !== null && projectFilters.size > 0;
 
     const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      storage.getAllCostLinesForCashflow(),
       storage.getAllProgramInflows(),
       storage.getAllCashflowWeeklyManual(),
       storage.getAllOpexBudgetMonthly(),
@@ -976,7 +976,7 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
     const weekEnd = wsDate.toISOString().split('T')[0];
 
     const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      storage.getAllCostLinesForCashflow(),
       storage.getAllProgramInflows(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
