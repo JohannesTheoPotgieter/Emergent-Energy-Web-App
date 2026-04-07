@@ -1,3 +1,17 @@
+> **⛔ SUPERSEDED** — This document's metrics are stale as of 2026-04-07.
+> The canonical baseline is now [`docs/architecture-baseline-2026-04-07.md`](../../architecture-baseline-2026-04-07.md).
+>
+> **Known false claims in this document:**
+> - "TypeScript `strict: false`" → actual: `strict: true` (`tsconfig.json:19`)
+> - "`tsconfig.json` excludes `routes.ts` and `storage.ts`" → actual: no such exclusion; bypass is `@ts-nocheck` in each file
+> - "`routes.ts` is 680KB" → actual: 361.5 KB (370,189 bytes)
+> - "223 tables" → actual: 282
+> - "830+ endpoints" → actual: ~2,304 route registrations across 122 files
+> - "178+ / ~500 `any` usages" → actual: ~4,996
+> - "40 files with `@ts-nocheck`" → actual: 29
+> - "67 SQL migrations" → actual: 145
+> - "98 test files" → actual: 152
+
 # EMERGENT ENERGY — FULL REPOSITORY AUDIT REPORT
 
 **Date:** 2026-03-23
