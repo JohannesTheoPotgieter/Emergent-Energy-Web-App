@@ -149,16 +149,16 @@ describe("FIX C: Font Color Extraction Robustness", () => {
       source.indexOf("}\n\n", source.indexOf("function extractFontColorHex")) + 1
     );
     expect(fn).toContain("fontColor.theme");
-    expect(fn).toContain('"000000"'); // theme 1 = black
-    expect(fn).toContain('"ffffff"'); // theme 0 = white
+    expect(fn).toContain('"000000"'); // both theme 0 and theme 1 resolve to black (matches legacy parser)
   });
 
-  it("accounts for tint on theme colors", () => {
+  it("defaults unresolved theme colors to black", () => {
     const fn = source.substring(
       source.indexOf("function extractFontColorHex"),
       source.indexOf("}\n\n", source.indexOf("function extractFontColorHex")) + 1
     );
-    expect(fn).toContain("tint");
+    // Cannot reliably resolve accent/other theme colors — defaults to black
+    expect(fn).toContain("return \"000000\"");
   });
 
   it("has classifyColorHex function for color classification", () => {
@@ -182,13 +182,13 @@ describe("FIX C: Font Color Extraction Robustness", () => {
     expect(fn).toContain("classifyColorHex(hex)");
   });
 
-  it("returns unconfirmed (isBlack: false) for unresolvable colors", () => {
+  it("defaults unresolvable colors to black/confirmed in getCellFontColor", () => {
     const fn = source.substring(
       source.indexOf("function getCellFontColor("),
       source.indexOf("}\n\n", source.indexOf("function getCellFontColor(")) + 1
     );
-    // When hex is null (unresolvable), return isBlack: false
-    expect(fn).toContain("return { color: null, isBlack: false }");
+    // When hex is null (unresolvable), default to black/confirmed per tracker convention
+    expect(fn).toContain('return { color: "black", isBlack: true }');
   });
 
   it("derives invoiceDateConfirmed from font color during commit", () => {
