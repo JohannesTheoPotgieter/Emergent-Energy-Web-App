@@ -1,3 +1,8 @@
+> **⚠️ STALE METRICS** — This document references audit findings with outdated numbers.
+> The canonical baseline is now [`docs/architecture-baseline-2026-04-07.md`](./docs/architecture-baseline-2026-04-07.md).
+>
+> **Known stale claim:** "~200+ tables" → actual: 282. See baseline for all current counts.
+
 # COMPREHENSIVE CODEBASE AUDIT IMPLEMENTATION PLAN
 
 ## MISSION

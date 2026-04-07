@@ -1,8 +1,7 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
+import { paramInt } from "../lib/req-parse";
 import { eq, and, sql, isNull } from "drizzle-orm";
 import { projectInfo } from "@shared/schema";
 import { logAuditFromReq } from "../audit-logger";
@@ -533,7 +532,7 @@ export function registerCosControlRoutes(app: Express) {
 
   app.post("/api/admin/backfill", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { runBackfill } = await import("./lib/backfill");
+      const { runBackfill } = await import("../lib/backfill");
       await runBackfill();
       logAuditFromReq(req, { entityType: "system", action: "backfill", source: "SYSTEM" });
       res.json({ success: true, message: 'Backfill completed' });
@@ -545,7 +544,7 @@ export function registerCosControlRoutes(app: Express) {
 
   app.post("/api/admin/backfill-invoice-confirmed", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { backfillInvoiceDateConfirmed } = await import("./backfillInvoiceConfirmed");
+      const { backfillInvoiceDateConfirmed } = await import("../backfillInvoiceConfirmed");
       const result = await backfillInvoiceDateConfirmed();
       console.log('[Admin] Invoice date confirmed backfill:', result);
       logAuditFromReq(req, { entityType: "system", action: "backfill_invoice_confirmed", source: "SYSTEM", changesJson: result });
@@ -672,7 +671,7 @@ export function registerCosControlRoutes(app: Express) {
 
   app.get("/api/scenarios", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const all = await storage.getAllScenarios();
+      const all = await (storage as any).getAllScenarios();
       res.json({ scenarios: all });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -684,7 +683,7 @@ export function registerCosControlRoutes(app: Express) {
       const { name, description } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
       const userId = (req.user as any)?.id;
-      const scenario = await storage.createScenario({ name, description, createdBy: userId, isDefault: false });
+      const scenario = await (storage as any).createScenario({ name, description, createdBy: userId, isDefault: false });
       logAuditFromReq(req, { entityType: "scenario", action: "create", entityId: String(scenario.id), changesJson: { description: "Scenario created", name } });
       res.json(scenario);
     } catch (err: any) {
@@ -694,10 +693,10 @@ export function registerCosControlRoutes(app: Express) {
 
   app.post("/api/scenarios/:id/duplicate", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = paramInt(req, "id") ?? 0;
       const { name } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
-      const dup = await storage.duplicateScenario(id, name);
+      const dup = await (storage as any).duplicateScenario(id, name);
       logAuditFromReq(req, { entityType: "scenario", action: "duplicate", entityId: String(id), changesJson: { description: "Scenario duplicated", sourceId: id, newName: name } });
       res.json(dup);
     } catch (err: any) {
@@ -707,8 +706,8 @@ export function registerCosControlRoutes(app: Express) {
 
   app.delete("/api/scenarios/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      await storage.deleteScenario(id);
+      const id = paramInt(req, "id") ?? 0;
+      await (storage as any).deleteScenario(id);
       logAuditFromReq(req, { entityType: "scenario", action: "delete", entityId: String(id), changesJson: { description: "Scenario deleted" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -718,8 +717,8 @@ export function registerCosControlRoutes(app: Express) {
 
   app.post("/api/scenarios/:id/reset", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      await storage.clearDateOverrides(id);
+      const id = paramInt(req, "id") ?? 0;
+      await (storage as any).clearDateOverrides(id);
       logAuditFromReq(req, { entityType: "scenario", action: "reset", entityId: String(id), changesJson: { description: "Scenario date overrides cleared" } });
       res.json({ success: true });
     } catch (err: any) {
@@ -750,7 +749,7 @@ export function registerCosControlRoutes(app: Express) {
         forecastPaymentDate: e.computedForecastPaymentDate || e.forecastPaymentDate,
         supplierName: e.supplierName,
         confidence: scoreExpenseConfidence(e),
-        assumptionDriver: getAssumptionDriver(e),
+        assumptionDriver: getAssumptionDriver(e, 30),
         hash: e.expenseLineHash,
       }));
 
@@ -1222,7 +1221,7 @@ export function registerCosControlRoutes(app: Express) {
             actualDate: paymentDate && !overrideMap[entityKey]?.['payment_date'] ? e.expensePaymentDate : null,
             forecastDate: paymentDate || forecastDate || null,
             confidence: scoreExpenseConfidence(e) as 'High' | 'Medium' | 'Low',
-            assumptionDriver: getAssumptionDriver(e),
+            assumptionDriver: getAssumptionDriver(e, 30),
             description: e.expenseLineItem || e.expenseCategory || 'Expense',
             invoiceNumber: e.expenseInvoiceNumber,
             poNumber: e.expensePoNumber,
@@ -1248,7 +1247,7 @@ export function registerCosControlRoutes(app: Express) {
             actualDate: receiptDate && !scenarioReceiptDate ? inf.paymentReceivedDate : null,
             forecastDate: forecastDate || null,
             confidence: scoreInflowConfidence(inf) as 'High' | 'Medium' | 'Low',
-            assumptionDriver: getAssumptionDriver(inf),
+            assumptionDriver: getAssumptionDriver(inf, 30),
             description: inf.milestoneName || `Milestone ${inf.milestoneNo || ''}`,
             invoiceNumber: inf.milestoneInvoiceNumber,
             poNumber: null,

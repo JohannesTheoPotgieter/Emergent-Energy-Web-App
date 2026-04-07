@@ -21,13 +21,6 @@ export function useUnifiedApprovals(typeFilter?: string) {
   });
 }
 
-export function useApprovalCount() {
-  return useQuery<{ total: number; gate: number; exception: number; handover: number }>({
-    queryKey: ["/api/approvals/count"],
-    queryFn: getQueryFn({ on401: "throw" }),
-  });
-}
-
 export function useApprovalAction() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -39,7 +32,6 @@ export function useApprovalAction() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/approvals"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/approvals/count"] });
     },
   });
 }

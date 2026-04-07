@@ -1,5 +1,7 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
+// @ts-nocheck — TODO: fix 22 type errors then remove this directive
+// Error breakdown: TS7006 implicit-any: 14, TS2345 query/param types: 8, other: 0
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { db } from "../db";

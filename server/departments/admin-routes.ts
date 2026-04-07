@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";
@@ -14,7 +12,8 @@ import { parseTrackerFile, applyFontColors } from "../excelParser";
 import { getStartupFlags } from "../startup-flags";
 import { getFeatureFlags } from "../lib/feature-flags";
 import { buildPhase1AReconciliationReport } from "../services/promoted-read-compat";
-import { isPhase1ADomainEnabled, isPhase1AEndpointEnabled } from "../services/phase1a-reconciliation-policy";
+import { isPhase1ADomainEnabled, isPhase1AEndpointEnabled, type Phase1AFlagSet } from "../services/phase1a-reconciliation-policy";
+import { queryStr, queryInt, paramStr, paramInt } from "../lib/req-parse";
 
 const router = Router();
 
@@ -217,14 +216,14 @@ router.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
           const timestamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
           targetProjectName = `${parseResult.projectName}_${timestamp}`;
           if (parseResult.projectInfo) {
-            parseResult.projectInfo.projectName = targetProjectName;
+            (parseResult.projectInfo as any).projectName = targetProjectName;
           }
-          parseResult.expenses.forEach(e => e.projectName = targetProjectName);
-          parseResult.inflows.forEach(i => i.projectName = targetProjectName);
-          parseResult.planItems.forEach(p => p.projectName = targetProjectName);
-          parseResult.cashflowPoints.forEach(c => c.projectName = targetProjectName);
-          parseResult.financeRevenueMonthly.forEach(r => r.projectName = targetProjectName);
-          parseResult.financeCosMonthly.forEach(c => c.projectName = targetProjectName);
+          parseResult.expenses.forEach((e: any) => e.projectName = targetProjectName);
+          parseResult.inflows.forEach((i: any) => i.projectName = targetProjectName);
+          parseResult.planItems.forEach((p: any) => p.projectName = targetProjectName);
+          parseResult.cashflowPoints.forEach((c: any) => c.projectName = targetProjectName);
+          parseResult.financeRevenueMonthly.forEach((r: any) => r.projectName = targetProjectName);
+          parseResult.financeCosMonthly.forEach((c: any) => c.projectName = targetProjectName);
         }
 
         await storage.transaction(async (txStorage) => {
@@ -237,7 +236,7 @@ router.post("/api/upload", requireAuth, multiUpload, async (req, res) => {
             await txStorage.deleteFinanceCosMonthlyByProject(targetProjectName);
 
             if (resetOverrides) {
-              await txStorage.deletePlanningOverridesByProject(targetProjectName);
+              await (txStorage as any).deletePlanningOverridesByProject(targetProjectName);
             }
           }
 
@@ -470,7 +469,7 @@ router.post("/api/writeback-mappings", requireAuth, requireAdmin, async (req: Re
 
 router.patch("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const updated = await storage.updateWritebackMapping(parseInt(req.params.id), req.body);
+    const updated = await storage.updateWritebackMapping(paramInt(req, "id")!, req.body);
     res.json(updated);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -479,7 +478,7 @@ router.patch("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (re
 
 router.delete("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    await storage.deleteWritebackMapping(parseInt(req.params.id));
+    await storage.deleteWritebackMapping(paramInt(req, "id")!);
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -633,7 +632,7 @@ router.post("/api/writeback/execute", requireAuth, requireAdmin, async (req: Req
 
 router.post("/api/writeback/rollback/:auditId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const auditId = parseInt(req.params.auditId);
+    const auditId = paramInt(req, "auditId")!;
     const logs = await storage.getWritebackAuditLogs();
     const auditEntry = logs.find((l: any) => l.id === auditId);
     if (!auditEntry) return res.status(404).json({ error: "Audit entry not found" });
@@ -771,7 +770,7 @@ router.get("/api/admin/import/runs", requireAuth, requireAdmin, async (req, res)
 
 router.get("/api/admin/import/runs/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const runId = parseInt(req.params.id);
+    const runId = paramInt(req, "id")!;
     const run = await storage.getImportRun(runId);
     if (!run) return res.status(404).json({ error: "Run not found" });
     const entries = await storage.getAllChangeLedger({ runId });
@@ -798,7 +797,7 @@ router.get("/api/admin/ms-integration", requireAuth, requireAdmin, async (req, r
 
 router.put("/api/admin/ms-integration/:key", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { key } = req.params;
+    const key = paramStr(req, "key");
     const allowed = ["feature_flags", "sharepoint_project_docs", "teams_config"];
     if (!allowed.includes(key)) {
       return res.status(400).json({ error: "Invalid config key" });
@@ -907,7 +906,7 @@ router.get("/api/admin/reconciliation/phase-1a", requireAuth, requireAdmin, asyn
       "migration_bridge_deliverables_read_v1",
       "migration_bridge_party_read_v1",
     ]);
-    if (!isPhase1AEndpointEnabled(compareMode, flags)) {
+    if (!isPhase1AEndpointEnabled(compareMode, flags as unknown as Phase1AFlagSet)) {
       return res.status(403).json({
         error: "feature_flag_disabled",
         message: "Phase 1A reconciliation endpoint is disabled. Enable migration_bridge_project_read_v1 or use compare mode.",
@@ -915,7 +914,7 @@ router.get("/api/admin/reconciliation/phase-1a", requireAuth, requireAdmin, asyn
     }
 
     const report = await buildPhase1AReconciliationReport();
-    const requestedDomains = report.checks.filter((check) => isPhase1ADomainEnabled(check.domain, compareMode, flags));
+    const requestedDomains = report.checks.filter((check) => isPhase1ADomainEnabled(check.domain, compareMode, flags as unknown as Phase1AFlagSet));
 
     res.json({
       generatedAt: report.generatedAt,
