@@ -14,12 +14,12 @@ All counts below were measured on 2026-04-07 against the working tree. Each row 
 
 | Metric | Value | Command | Notes |
 |--------|-------|---------|-------|
-| Drizzle tables (`pgTable`) | **282** | `grep -r 'pgTable(' shared/schema/*.ts \| wc -l` | Across 20 domain schema files in `shared/schema/` |
+| Drizzle tables (`pgTable`) | **273** | `grep -r 'pgTable(' shared/schema/*.ts \| wc -l` | Across 20 domain schema files in `shared/schema/`. Reduced from 282 after dropping 9 orphaned tables (2026-04-07). |
 | Drizzle enums (`pgEnum`) | **66** | `grep -rE 'pgEnum\(' shared/schema/*.ts \| wc -l` | |
 | Schema barrel file | **30 lines** | `wc -l shared/schema.ts` | Re-export only; no table definitions |
 | Schema domain files total | **9,021 lines** | `wc -l shared/schema/*.ts \| tail -1` | Largest: `users.ts` (1,466), `projects.ts` (1,342), `finance.ts` (1,191) |
 | SQL migration files | **145** | `ls migrations/*.sql \| wc -l` | |
-| Code-orphaned tables | **13** | See [Appendix A](#appendix-a-code-orphaned-tables) | Defined in schema, zero references in `server/` or `client/` (including raw SQL) |
+| Code-orphaned tables | **4 remaining** | See [Appendix A](#appendix-a-code-orphaned-tables) | 9 of the original 13 were dropped (2026-04-07). 2 retained (have data), 1 DO NOT DROP (FK), 1 investigate further. |
 
 > **Note on prior schema-size claims**: Earlier audits reference `shared/schema.ts — 5,936 lines`. This likely referred to an older monolithic schema layout. The current repo uses domain-split schema files (`shared/schema/*.ts`) totaling 9,021 lines, with the barrel file (`shared/schema.ts`) at 30 lines.
 
@@ -117,21 +117,32 @@ These tables were originally listed as orphaned but are **actively used via raw 
 
 Status: **code-orphaned, live-data status unverified** (requires `SELECT count(*) FROM <table>` against production DB before any drop).
 
-#### Safe to drop if verified empty (11 tables)
+#### Dropped (9 tables — migration `20260407_drop_orphaned_tables.sql`)
 
-| Variable Name | Schema File | SQL Table | Likely Purpose | Notes |
-|--------------|------------|-----------|---------------|-------|
-| `approvalWorkflows` | collaboration.ts | `approval_workflows` | Abandoned feature (workflow engine) | Zero references anywhere |
-| `auditTrail` | collaboration.ts | `audit_trail` | Abandoned feature (custom audit trail) | String `audit_trail` in UI is a permission entity name, not a table reference. Actual audit uses `audit_events` table. |
-| `dashboardWidgetConfig` | collaboration.ts | `dashboard_widget_config` | Abandoned feature (custom dashboards) | Zero references anywhere |
-| `eventProcessingLog` | collaboration.ts | `event_processing_log` | Event infrastructure (never wired) | Created by `20260336_event_architecture.sql` migration but never consumed at runtime |
-| `eventSubscriptions` | collaboration.ts | `event_subscriptions` | Event infrastructure (never wired) | Same migration origin as above |
-| `fileVersions` | collaboration.ts | `file_versions` | Abandoned feature (file versioning) | Zero references anywhere |
-| `notificationPreferences` | collaboration.ts | `notification_preferences` | Abandoned feature | Zero references anywhere |
-| `domainEvents` | collaboration.ts | `domain_events` | Event infrastructure (never wired) | Same migration origin as above |
-| `derivedPortfolioKpis` | projects.ts | `derived_portfolio_kpis` | Derived/materialized (never populated) | No read or write path exists |
-| `derivedRagSummary` | projects.ts | `derived_rag_summary` | Derived/materialized (never populated) | No read or write path exists |
-| `fiscalYears` | finance.ts | `fiscal_years` | Finance infrastructure (unused) | Created by `20260364_epc_workflow_phase1.sql` migration, never queried at runtime |
+The following 9 tables were removed from the Drizzle schema. 5 existed in the live DB with 0 rows and are dropped by the migration. 4 never existed in the live DB (schema-only definitions).
+
+| Variable Name | SQL Table | Live DB Status | Action |
+|--------------|-----------|---------------|--------|
+| `approvalWorkflows` | `approval_workflows` | Never created in DB | Schema removed |
+| `auditTrail` | `audit_trail` | Never created in DB | Schema removed |
+| `fileVersions` | `file_versions` | Never created in DB | Schema removed |
+| `notificationPreferences` | `notification_preferences` | Never created in DB | Schema removed |
+| `domainEvents` | `domain_events` | 0 rows | Dropped by migration |
+| `eventProcessingLog` | `event_processing_log` | 0 rows | Dropped by migration |
+| `eventSubscriptions` | `event_subscriptions` | 0 rows | Dropped by migration |
+| `derivedPortfolioKpis` | `derived_portfolio_kpis` | 0 rows | Dropped by migration |
+| `derivedRagSummary` | `derived_rag_summary` | 0 rows | Dropped by migration |
+
+Also dropped: `event_processing_status` enum (only consumer was `event_processing_log`).
+
+#### Retained — have data, still code-orphaned (2 tables)
+
+These tables have no runtime consumers but contain production data. They remain in the Drizzle schema and live DB until a decision is made to either adopt or archive their data.
+
+| Variable Name | Schema File | SQL Table | Rows | Notes |
+|--------------|------------|-----------|:---:|-------|
+| `dashboardWidgetConfig` | collaboration.ts | `dashboard_widget_config` | 2 | Abandoned custom dashboard feature. Data may be seed/test. |
+| `fiscalYears` | finance.ts | `fiscal_years` | 6 | Finance infrastructure. No runtime queries, but data exists. |
 
 #### DO NOT DROP (1 table)
 

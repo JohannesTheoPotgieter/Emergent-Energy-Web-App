@@ -826,81 +826,6 @@ export type StandupEntry = typeof standupEntries.$inferSelect;
 
 // ===================== DOMAIN EVENTS ARCHITECTURE (Prompt 13) =====================
 
-export const eventProcessingStatusEnum = pgEnum('event_processing_status', ['success', 'failed', 'skipped']);
-
-export const domainEvents = pgTable("domain_events", {
-  id: serial("id").primaryKey(),
-  eventType: text("event_type").notNull(),
-  aggregateType: text("aggregate_type").notNull(),
-  aggregateId: integer("aggregate_id").notNull(),
-  projectId: integer("project_id").references(() => projectInfo.id),
-  triggeredBy: integer("triggered_by").references(() => users.id),
-  payload: jsonb("payload").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  processedAt: timestamp("processed_at"),
-});
-export type DomainEvent = typeof domainEvents.$inferSelect;
-export type InsertDomainEvent = typeof domainEvents.$inferInsert;
-
-export const eventSubscriptions = pgTable("event_subscriptions", {
-  id: serial("id").primaryKey(),
-  eventType: text("event_type").notNull(),
-  handlerName: text("handler_name").notNull(),
-  isActive: boolean("is_active").notNull().default(true), // TODO: migrate to deletedAt pattern
-  deletedAt: timestamp("deleted_at"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-export type EventSubscription = typeof eventSubscriptions.$inferSelect;
-
-export const eventProcessingLog = pgTable("event_processing_log", {
-  id: serial("id").primaryKey(),
-  eventId: integer("event_id").notNull().references(() => domainEvents.id),
-  handlerName: text("handler_name").notNull(),
-  status: eventProcessingStatusEnum("status").notNull(),
-  errorMessage: text("error_message"),
-  processedAt: timestamp("processed_at").notNull().defaultNow(),
-  durationMs: integer("duration_ms"),
-});
-export type EventProcessingLog = typeof eventProcessingLog.$inferSelect;
-
-// ===================== DATA INTEGRITY ADDITIONS =====================
-
-export const auditTrail = pgTable("audit_trail", {
-  id: serial("id").primaryKey(),
-  actorUserId: integer("actor_user_id").references(() => users.id, { onDelete: "set null" }),
-  entityType: text("entity_type").notNull(),
-  entityId: text("entity_id").notNull(),
-  action: text("action").notNull(),
-  beforeValue: jsonb("before_value"),
-  afterValue: jsonb("after_value"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  entityLookupIdx: index("audit_trail_entity_lookup_idx").on(table.entityType, table.entityId),
-  createdAtIdx: index("audit_trail_created_at_idx").on(table.createdAt),
-}));
-
-export const notificationPreferences = pgTable("notification_preferences", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
-  inAppEnabled: boolean("in_app_enabled").notNull().default(true),
-  emailEnabled: boolean("email_enabled").notNull().default(true),
-  dailyDigestEnabled: boolean("daily_digest_enabled").notNull().default(false),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const fileVersions = pgTable("file_versions", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
-  fileKey: text("file_key").notNull(),
-  versionNumber: integer("version_number").notNull(),
-  storagePath: text("storage_path").notNull(),
-  uploadedByUserId: integer("uploaded_by_user_id").references(() => users.id, { onDelete: "set null" }),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-}, (table) => ({
-  projectVersionIdx: index("file_versions_project_version_idx").on(table.projectId, table.versionNumber),
-}));
-
 export const projectMilestones = pgTable("project_milestones", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").notNull().references(() => projectInfo.id, { onDelete: "cascade" }),
@@ -908,18 +833,6 @@ export const projectMilestones = pgTable("project_milestones", {
   dueDate: date("due_date"),
   completedAt: timestamp("completed_at"),
   sortOrder: integer("sort_order").notNull().default(0),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
-
-export const approvalWorkflows = pgTable("approval_workflows", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projectInfo.id, { onDelete: "cascade" }),
-  workflowType: text("workflow_type").notNull(),
-  status: text("status").notNull().default("pending"),
-  requestedByUserId: integer("requested_by_user_id").references(() => users.id, { onDelete: "set null" }),
-  decidedByUserId: integer("decided_by_user_id").references(() => users.id, { onDelete: "set null" }),
-  payload: jsonb("payload"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
