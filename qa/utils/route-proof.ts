@@ -34,7 +34,7 @@ export interface RouteProofResult {
 }
 
 export const PRIORITY_ROUTE_EXPECTATIONS: RouteProofExpectation[] = [
-  { routeId: "myWork", label: "Home / Dashboard", expectedHeadingOrAnchor: /(My Work|Action Hub|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Link\s+href=|Create|Task)/i, todo: "Add workflow assertion for role-aware landing redirects and KPI card drilldowns." },
+  { routeId: "dashboard", label: "Home / Dashboard", expectedHeadingOrAnchor: /(Execution Board|Action Hub|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Link\s+href=|Create|New\s+PD\s+Ticket)/i, todo: "Add workflow assertion for role-aware landing redirects and KPI card drilldowns." },
   { routeId: "projectLifecycle", label: "Project Lifecycle", expectedHeadingOrAnchor: /(Project Lifecycle|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Search|Input|Link\s+href=)/i, todo: "Add workflow tests for section switching, lifecycle watchlist drilldowns, and overview refresh." },
   { routeId: "projects", label: "Projects", expectedHeadingOrAnchor: /(Project List|Project|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|SearchableSelect|input|Link\s+href=)/i, todo: "Add tests for filters, pagination, and project-open interactions." },
   { routeId: "projectDetail", label: "Project Detail", expectedHeadingOrAnchor: /(Project|Phase|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Tabs|Dialog|Textarea|input)/i, todo: "Add route-param + tab navigation workflow tests and save flows." },
@@ -47,6 +47,7 @@ export const PRIORITY_ROUTE_EXPECTATIONS: RouteProofExpectation[] = [
   { routeId: "pmDashboard", label: "PM Dashboard", expectedHeadingOrAnchor: /(Execution Overview|Project Manager|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Project|KPI|input|Link\s+href=)/i, todo: "Add PM-specific prioritisation and escalation workflow tests." },
   { routeId: "executionBoard", label: "Work Plan / Board", expectedHeadingOrAnchor: /(Work Plan \/ Board|Execution Dashboard|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Table|input|Link\s+href=)/i, todo: "Add execution-board workflow tests for filters, drilldowns, and action-center links." },
   { routeId: "pmApprovals", label: "PM Approvals", expectedHeadingOrAnchor: /(Approvals|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Approve|Reject|Link\s+href=)/i, todo: "Add PM approvals workflow tests for approval decisions and project drilldowns." },
+  { routeId: "pmDeliverables", label: "PM Deliverables", expectedHeadingOrAnchor: /(Deliverables|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Capture Deliverable|Download|Link\s+href=)/i, todo: "Add PM deliverables workflow tests for capture, approval routing, and Microsoft link drilldowns." },
   { routeId: "subcontractor", label: "Procurement", expectedHeadingOrAnchor: /(Procurement|Subcontractor|PO|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Table|input|Link\s+href=|Upload)/i, todo: "Add procurement action tests for PO and supplier operations." },
   { routeId: "adminControlCenter", label: "Admin Control Center", expectedHeadingOrAnchor: /(Control Center|Admin|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Card|Link\s+href=|input)/i, allowPermissionBlocked: true, todo: "Add admin-only governance action workflow tests." },
   { routeId: "smartImport", label: "Smart Import", expectedHeadingOrAnchor: /(Smart Import|data-testid)/i, expectedPrimaryActionOrWidget: /(Button|Upload|Tabs|input|Link\s+href=)/i, todo: "Add import wizard workflow tests for upload, issue resolution, and commit paths." },
@@ -73,8 +74,8 @@ function parseRouteComponentMap(appFile: string): Map<string, string> {
   for (const match of source.matchAll(importRegex)) {
     importMap.set(match[1], resolvePageFile(path.join("client", "src", "pages", `${match[2]}.tsx`)));
   }
-  // Match lazy imports: const X = lazy(() => import("@/pages/...")) or lazyWithRetry(() => import("@/pages/..."))
-  const lazyRegex = /const\s+(\w+)\s*=\s*(?:lazy|lazyWithRetry)\(\(\)\s*=>\s*import\("@\/pages\/([^"]+)"\)\)/g;
+  // Match lazy imports: const X = lazy(() => import("@/pages/..."))
+  const lazyRegex = /const\s+(\w+)\s*=\s*lazy\(\(\)\s*=>\s*import\("@\/pages\/([^"]+)"\)\)/g;
   for (const match of source.matchAll(lazyRegex)) {
     importMap.set(match[1], resolvePageFile(path.join("client", "src", "pages", `${match[2]}.tsx`)));
   }

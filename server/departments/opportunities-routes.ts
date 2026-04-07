@@ -3,7 +3,6 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
-import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, isNull, and } from "drizzle-orm";
 import { opportunities } from "@shared/schema/projects";
@@ -46,7 +45,7 @@ router.get("/api/opportunities/:id", requireAuth, async (req: Request, res: Resp
   }
 });
 
-router.post("/api/opportunities", requireAuth, requirePermission("pd_dashboard", "create"), async (req: Request, res: Response) => {
+router.post("/api/opportunities", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(opportunities).values(req.body).returning();
     res.status(201).json(row);
@@ -56,7 +55,7 @@ router.post("/api/opportunities", requireAuth, requirePermission("pd_dashboard",
   }
 });
 
-router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_dashboard", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/opportunities/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(opportunities)

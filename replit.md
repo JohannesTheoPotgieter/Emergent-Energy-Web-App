@@ -1,20 +1,25 @@
-# Emergent Energy Operations Platform
+# Emergent Energy Web App — replit.md
 
 ## Overview
 
-Emergent Energy is a full-stack operations platform for a renewable energy company. It manages the complete project lifecycle including project delivery, financial oversight, engineering operations, quality management, and governance workflows.
+Emergent Energy is an internal operations platform for a South African commercial and industrial (C&I) solar EPC (Engineering, Procurement, and Construction) company. It serves as a project-centric command center that replaces Excel-based "Program Dashboard" and per-project "Tracker" workbooks.
 
-The platform supports multiple roles (CEO, COO, CFO, Project Managers, Engineers, Quality Managers, etc.) with role-specific dashboards and permission-gated access. Core capabilities include:
+**Core purpose:** Give the COO, CFO, Project Managers, Engineers, and other roles a single trusted system to manage the full project lifecycle — from engineering intake and project development through construction, commissioning, finance tracking, and quality management.
 
-- **Project management**: lifecycle tracking, execution boards, Gantt charts, milestone management
-- **Financial management**: cost tracking, revenue tracking, cashflow forecasting, payment requests
-- **Engineering operations**: stage gates, task tracking, deliverable management
-- **Quality management**: QC checklists, NCR tracking, snag management
-- **Smart Import**: Excel tracker file ingestion pipeline that seeds project data
-- **Microsoft 365 integration**: Azure AD authentication, Outlook, Teams, SharePoint
-- **Personal task management (MyTool)**: per-user task boards with today/week/backlog views
+**Key functional modules:**
+- **Home** — Role-specific dashboard (COO gets operational oversight, CFO gets financials, PMs get active projects), My Work cockpit (tasks, calendar, Outlook integration), Inbox
+- **Company** — Company overview, project lifecycle view, lifecycle board, gate tracker, blocked gates, exceptions
+- **Project Development** — PD dashboard, pipeline/opportunities, PD tickets, clients, handover queue, PD reports
+- **Project Delivery** — Execution dashboard, PM dashboard (PM-specific project view), portfolio dashboard, all projects, construction, procurement, PO approvals, payment requests, payment batches, milestone tracker, weekly reviews, standups, PM deliverables, PM approvals, PM on-the-go, handover & closeout, financial reviews, SSEG, sites
+- **HSE** — HSE dashboard
+- **Engineering** — Engineering dashboard, task board, standup
+- **Quality** — Quality dashboard, commissioning dashboard, inspections/NCRs
+- **Finance** — Cashflow, revenue, COS, GP/margin, FYE revenue, counterparties, subcontractors, invoice patterns
+- **Reports** — Report center, programme reports, PM monthly, engineering monthly, performance
+- **Priorities (EXCO)** — Strategic company priorities
+- **Admin** — Control center, users & roles, smart import, audit log, processes & SOPs, templates, recovery
 
-The app is at **version 1.5.0** and is actively migrating from a legacy spreadsheet-based data model to a promoted V2 schema with proper relational integrity.
+**Version:** 1.5.0 (Production Hardening Update)
 
 ---
 
@@ -26,135 +31,141 @@ Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
-### Frontend
+### Monorepo Layout
 
-- **Framework**: React + TypeScript, bundled with Vite
-- **Routing**: `wouter` (lightweight client-side routing)
-- **State/data fetching**: TanStack React Query v5 for server state; local React state for UI state
-- **UI components**: shadcn/ui (Radix UI primitives) with Tailwind CSS
-- **Form handling**: react-hook-form + Zod validation
-- **Charts**: Recharts
-- **Fonts**: Inter (body), Barlow (headings), JetBrains Mono (code)
-- **Theme**: White and emerald (#16A34A) — light theme only, consistent across all pages
-- **Route registry**: Canonical frontend routes live in `client/src/config/page-registry.ts`. This is the source of truth for all client routes — not the docs.
-- **Code splitting**: Vite manual chunks split vendor deps into react, query, ui, charts, forms, date buckets for performance
+```
+/
+├── client/src/         # React frontend (Vite)
+├── server/             # Express API server (TypeScript)
+│   ├── bootstrap/      # Startup orchestrator, migrations, seeding
+│   ├── repositories/   # Data access layer
+│   ├── routes/         # Route files grouped by domain
+│   └── lib/            # Shared server utilities
+├── shared/             # Shared types and Drizzle schema (schema.ts)
+├── migrations/         # Drizzle-generated SQL migrations
+├── qa/                 # Tests (Vitest unit + API, Playwright e2e)
+├── script/             # Build, run, and utility scripts
+└── docs/               # Canonical documentation
+```
 
-### Backend
+### Frontend Architecture
 
-- **Framework**: Express + TypeScript, running as a Node.js server
-- **Entry point**: `server/index.ts`
-- **Route organization**: Routes are being progressively extracted from a monolithic `server/routes.ts` into domain-specific files (`engineering-routes.ts`, `quality-routes.ts`, `payment-request-routes.ts`, etc.) registered via `server/register-all-routes.ts`
-- **Preferred API contract prefix**: `/api/platform/*` for stable, cross-functional APIs
-- **Auth middleware types**: `requireAuth`, `requireAdmin`, `requireCOO`, `requireRole`, `requirePermission` — backend authorization is authoritative; frontend guards are UX-only
-- **Repository pattern**: `server/repositories/` for data access; services in `server/services/`
-- **Audit logging**: `server/audit-logger.ts` — all major state mutations emit audit events
-- **Startup orchestrator**: `server/bootstrap/startup-orchestrator.ts` — handles additive migrations with IF NOT EXISTS guards; completely blocked in production/staging environments
+- **Framework:** React 18 with TypeScript, Vite as bundler
+- **Routing:** Client-side SPA (no RSC), with React Router
+- **Styling:** Tailwind CSS v4 (`@tailwindcss/vite` plugin), shadcn/ui component library (New York style), Lucide icons
+- **State & data fetching:** TanStack React Query v5 for server state; local React state for UI
+- **Forms:** React Hook Form + Zod resolvers
+- **Design system:** CSS variables for theme tokens; white-and-emerald (#16A34A) light theme; Barlow + Inter + JetBrains Mono fonts
+- **Key aliases:** `@/` → `client/src/`, `@shared/` → `shared/`
 
-### Database
+### Backend Architecture
 
-- **Database**: PostgreSQL via Neon serverless (`@neondatabase/serverless`)
-- **ORM**: Drizzle ORM; schema defined in `shared/schema.ts`
-- **Migrations**: SQL files in `migrations/` directory are the **sole schema authority** for all environments. Drizzle schema and SQL migrations must stay in sync.
-- **Schema alignment scripts**: `script/pre-push-enums.sql` and `script/full-schema-alignment.sql` for development bootstrapping
-- **Key canonical tables**:
-  - `project_info` — canonical project identity (all entities attach to this via `project_info.id`)
-  - `work_items` — unified task/work item table (replaces legacy `mytool_tasks` and `operational_tasks`)
-  - `entity_assignments` / `work_item_assignments` — canonical assignment ledger
-  - `approvals` — approval workflow state
-  - `deliverables` — file deliverables with approval workflow
-  - `audit_events` — immutable mutation history
-  - `normalized_cost_lines` / `normalized_revenue_lines` — canonical financial data after Smart Import
-- **Active migrations in progress**:
-  - `project_name` TEXT columns across 43 tables being replaced with `project_id` FK references (90-day dual-write window)
-  - `is_active` boolean columns being replaced with `deleted_at` timestamp columns across 17 tables
-  - Override tables being collapsed into base tables
+- **Runtime:** Node.js with Express, written in TypeScript, run via `tsx` in dev and compiled to CJS for production
+- **API style:** REST with grouped route files per domain (e.g., `approvals-routes.ts`, `commissioning-routes.ts`, `change-control-routes.ts`, `engineering-routes.ts`, etc.)
+- **Session management:** Express session; uses in-memory store for SQLite mode, persistent store for PostgreSQL mode
+- **Error handling:** Centralized API error class (`server/lib/api-error.ts`); all errors return JSON `{ error, message }`
+- **Startup orchestration:** `server/bootstrap/startup-orchestrator.ts` runs all additive migrations with `IF NOT EXISTS` guards; controlled by feature flags (`ENABLE_STARTUP_SCHEMA_REPAIR`, `ENABLE_STARTUP_DATA_SEED`, etc.)
+
+### Database Strategy — Dual-Mode (PostgreSQL + SQLite)
+
+The app supports two database modes selected at runtime:
+
+| Mode | Trigger | Use case |
+|------|---------|----------|
+| **PostgreSQL** | `DATABASE_URL` env var is set and connection succeeds | Production, full feature set |
+| **SQLite** | No `DATABASE_URL` or connection fails | Local dev, Replit without provisioned DB |
+
+- **ORM:** Drizzle ORM; schema defined in `shared/schema.ts`
+- **Migrations:** Drizzle Kit targets PostgreSQL (`drizzle.config.ts`); SQLite compatibility handled via the startup bootstrap scripts
+- **`db:push` / `db:setup`:** Uses raw `psql` scripts (`script/pre-push-enums.sql`, `script/full-schema-alignment.sql`) to handle enum creation and schema alignment before Drizzle push
+- **Known issue:** Some PostgreSQL-specific queries (e.g., `::` cast syntax, certain enum comparisons) fail on SQLite — this is a known limitation when running in SQLite mode
 
 ### Authentication & Authorization
 
-- **Primary auth**: JWT tokens stored in `localStorage` as `auth_token`; session also maintained server-side
-- **Microsoft/Azure AD**: `@azure/msal-node` for OAuth; `@microsoft/microsoft-graph-client` for Graph API access; `@azure/keyvault-secrets` for secret management
-- **Permission model**: Role-permission matrix stored in DB, checked server-side via `requirePermission` middleware; `shared/schema.ts` exports `checkPermission()` for static fallback
-- **Frontend guards**: `ProtectedRoute` (redirects to `/auth/login`), `RoleGuard` (role-based filtering), `usePermission` hook, `PermissionGate` component wrapper
-- **Build version check**: On load, app checks `/build-version.json` and clears auth tokens if build ID changed — forces re-login on deploy
+- **Primary auth:** Microsoft SSO via Azure MSAL (`@azure/msal-node`); single Microsoft tenant, multiple users
+- **Fallback:** Username/password login (`bcryptjs`)
+- **MS identity mapping:** MS account (`ms_user_id` / email) maps to internal user record + role
+- **RBAC:** Role-based access control with roles such as COO, CFO, CEO, CCO, Project Manager, Engineer, QM; enforced server-side on routes
+- **Session:** Express session with role stored; no client-side-only permission checks for sensitive actions
+- **Azure Key Vault:** `@azure/keyvault-secrets` used for secret management in production
 
-### Data Encryption
+### Excel Tracker Import
 
-- Bank account numbers and branch codes encrypted at rest with AES-256-GCM field-level encryption (`server/lib/field-encryption.ts`)
-- Key from `TOKEN_ENCRYPTION_KEY` env var (same key used for Microsoft token encryption)
-- Ciphertext versioned as `v1:<iv>:<authTag>:<ciphertext>` to support future key rotation
+A core workflow — users upload `.xlsx` project tracker workbooks:
+- **Parser:** ExcelJS reads specific sheets: `Cashflow`, `Finance - Revenue`, `Finance - COS`, `Expenditure Breakdown`, `Revenue Tracking`, `Project Plan`, `Tasks`, `Data`
+- **Upsert pattern:** Projects upserted by `projectCode`; uploading never wipes other projects
+- **Stable line IDs:** Hash-based IDs for expense lines (`expense_line_id`) and inflow lines (`inflow_line_id`) to support drilldown and overrides
+- **Override/scenario engine:** User planning edits stored as overrides with audit trail; never overwrites imported baseline data
 
-### Smart Import Pipeline
+### Microsoft 365 Integration
 
-Excel tracker files are the primary data ingestion mechanism:
-1. Upload `.xlsx` file via `/smart-import` page
-2. Parser detects Plan/Revenue/Expenditure sections automatically
-3. Rows normalized into `normalized_cost_lines` / `normalized_revenue_lines`
-4. Project metadata upserted into `project_info`
-5. Legacy compatibility mappings preserved for bridge consumers
+- **MS Graph API:** `@microsoft/microsoft-graph-client` for Outlook calendar sync, Teams mentions, SharePoint document browsing
+- **SharePoint (Engineering):** Engineering intake pulled from SharePoint "Proposals Pipeline" list via Graph API; sync is manual (COO-only Pull/Push buttons); mock connector available for dev/testing
+- **Real-time sync:** MS Graph subscriptions/webhooks + delta catchup for calendar events
+- **Data storage policy:** Only metadata + deep links stored in DB (no full email bodies or attachments persisted)
 
-### Write Authority Model
+### Testing
 
-During V2 migration, entities have designated write authorities:
-- **Legacy (Smart Import owns)**: Revenue lines, cost lines, project financial fields
-- **Promoted (API owns)**: Work items, QC checklists, standup entries, approvals
-- Dual-write continues for entities in transition
+- **Unit + API tests:** Vitest (`qa/vitest.config.ts`), with dedicated configs for API business flows and policy/validation
+- **E2e / smoke tests:** Playwright (`qa/playwright.config.ts`) — 80 smoke tests across all routes for all roles
+- **Release gate:** `qa/release-gate.ts` must pass before release
+- **QA scripts:** `script/run-with-app.ts` starts the server then runs tests against it
 
-### QA & Release Gates
+### Build & Deploy
 
-- **Test stack**: Vitest (unit/API), Playwright (E2E smoke)
-- **Release gate script**: `qa/release-gate.ts` — runs type check, route parity, redirect chain check, route proof, KPI frozen dataset validation, smoke tests, and workflow tests
-- **Reconciliation**: `qa/generate-reconciliation-evidence.ts` validates data parity between legacy and promoted schema before cutover
-- **Route inventory**: `docs/qa/app-route-inventory.md` must document every route in `client/src/config/page-registry.ts` — enforced by `script/test-routes.ts`
+- **Dev:** `tsx server/index.ts` + Vite dev server on port 5000
+- **Build:** `tsx script/build.ts` compiles server to CJS (`dist/index.cjs`) and Vite builds client to `dist/public`
+- **Production start:** `node dist/index.cjs`
+- **Type checking:** Scoped `tsconfig.check.json` (only checks stable server files); full `tsconfig.json` covers client + shared + server
 
 ---
 
 ## External Dependencies
 
-### Cloud & Infrastructure
+### Microsoft Azure / 365
+- **`@azure/msal-node`** — Authentication via Azure AD / MS SSO
+- **`@azure/identity`** — Azure credential management
+- **`@azure/keyvault-secrets`** — Secret retrieval from Azure Key Vault
+- **`@microsoft/microsoft-graph-client`** — MS Graph API for Outlook, Teams, SharePoint integration
+- **SharePoint List (Proposals Pipeline):** Source of truth for Engineering intake; URL: `https://emergy.sharepoint.com/sites/EngineeringSupport/Lists/Proposals Pipeline`
+- **Requires:** Azure AD App Registration with Tenant ID, Client ID, Client Secret and appropriate Graph API permissions
 
-- **Database**: Neon PostgreSQL serverless (`@neondatabase/serverless`) — connection via `DATABASE_URL` env var
-- **Azure Key Vault**: `@azure/keyvault-secrets` — stores secrets for Microsoft integration
-- **Azure AD / MSAL**: `@azure/identity` + `@azure/msal-node` — Microsoft identity platform for SSO and delegated Graph API access
+### Database
+- **PostgreSQL** — Primary production database (via `DATABASE_URL`); required for full feature set including enum types
+- **better-sqlite3** — SQLite fallback for local dev / Replit without provisioned DB
+- **Drizzle ORM + Drizzle Kit** — Schema definition, query builder, migrations
 
-### Microsoft 365 Integration
+### Frontend Libraries
+- **shadcn/ui** — Component library built on Radix UI primitives
+- **Radix UI** — Full suite of accessible primitives (accordion, dialog, dropdown, select, tabs, toast, etc.)
+- **TanStack React Query v5** — Server state management and caching
+- **TanStack Virtual** — Virtualized lists for performance
+- **React Hook Form + Zod** — Form handling and validation
+- **Recharts** — Charting for cashflow, KPI dashboards, financial visualizations
+- **ExcelJS** — Server-side Excel workbook parsing for tracker imports
+- **DOMPurify** — HTML sanitization for rich text content
 
-- **Microsoft Graph API**: `@microsoft/microsoft-graph-client` — Outlook email sync, Teams integration, SharePoint-connected surfaces
-- Integration routes behind explicit auth/permission guards in `server/routes/ms-sync-routes.ts`
-- Credentials managed via Azure Key Vault or env vars
+### Testing & QA
+- **Vitest** — Unit and API integration tests
+- **Playwright** — End-to-end browser tests (Chromium)
 
-### UI & Component Libraries
+### Build & Dev Tools
+- **Vite** — Frontend bundler and dev server
+- **tsx** — TypeScript execution for server dev and scripts
+- **ESLint + Prettier** — Code quality and formatting
+- **`@replit/vite-plugin-runtime-error-modal`** — Dev-time error overlay
+- **`@replit/vite-plugin-cartographer`** + **`@replit/vite-plugin-dev-banner`** — Replit-specific dev tools (dev mode only)
 
-- **shadcn/ui**: Component library built on Radix UI primitives — configured in `components.json` with `new-york` style, `neutral` base color
-- **Radix UI**: Full suite of accessible UI primitives (`@radix-ui/react-*`)
-- **Lucide React**: Icon library
-- **Tailwind CSS v4**: Styling via `@tailwindcss/vite` plugin
-
-### Build & Dev Tooling
-
-- **Vite**: Frontend bundler with custom `metaImagesPlugin` for OpenGraph image injection
-- **esbuild**: Server bundle compilation
-- **tsx**: TypeScript execution for scripts and development server
-- **Drizzle Kit**: Schema diff and migration tooling
-- **ESLint** + **Prettier**: Code quality enforcement
-- **Replit runtime error overlay**: `@replit/vite-plugin-runtime-error-modal` — development error overlay
-
-### Background Jobs
-
-- **BullMQ**: Redis-backed job queues (listed in dependencies) — used for async background processing
-
-### File Processing
-
-- **xlsx**: Excel file parsing for Smart Import pipeline
-- **adm-zip**: ZIP file handling
-- **multer**: Multipart form data / file upload handling
+### Fonts
+- **Google Fonts:** Barlow (headings), Inter (body), JetBrains Mono (code/data)
 
 ### Environment Variables Required
-
 | Variable | Purpose |
-|---|---|
-| `DATABASE_URL` | PostgreSQL connection string (Neon) |
-| `JWT_SECRET` | JWT signing secret |
-| `SESSION_SECRET` | Express session secret |
-| `TOKEN_ENCRYPTION_KEY` | AES-256 key for bank details + MS token encryption |
-| Azure/MSAL credentials | Microsoft 365 integration |
-| `NODE_ENV` | Controls startup DDL behavior (`production` blocks all schema mutations) |
+|----------|---------|
+| `DATABASE_URL` | PostgreSQL connection string; if absent, app falls back to SQLite |
+| `AZURE_TENANT_ID` | Azure AD tenant for MS SSO |
+| `AZURE_CLIENT_ID` | Azure App Registration client ID |
+| `AZURE_CLIENT_SECRET` | Azure App Registration secret (or Key Vault reference) |
+| `SESSION_SECRET` | Express session signing secret |
+| `ENABLE_STARTUP_SCHEMA_REPAIR` | Flag to run schema repair on startup |
+| `ENABLE_STARTUP_DATA_SEED` | Flag to seed initial data on startup |

@@ -1,7 +1,6 @@
 import { useMemo, useState, lazy, Suspense } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { HomeDashboardV2 } from "@/components/home/HomeDashboardV2";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -123,7 +122,7 @@ function getKpiCards(
 ) {
   const kpiKeyMap: Record<string, { label: string; value: string | number; icon: React.ReactNode }> = {
     revenue_vs_target: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    gp_margin: { label: "Gross Margin (FY Plan)", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
+    gp_margin: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
     projects_off_track: { label: "Red RAG", value: stats.redProjects, icon: <AlertTriangle className="w-4 h-4" /> },
     open_vos: { label: "Pending Approvals", value: kpis.pendingApprovals ?? "\u2014", icon: <CheckCircle2 className="w-4 h-4" /> },
     projects_on_track: { label: "Active Projects", value: stats.activeProjects, icon: <FolderOpen className="w-4 h-4" /> },
@@ -142,7 +141,7 @@ function getKpiCards(
     pd_tickets_open: { label: "Planned Revenue (FY)", value: money(kpis.plannedRevenueFy), icon: <DollarSign className="w-4 h-4" /> },
     proposals_pending: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
     revenue_this_month: { label: "Inflow Received (FY)", value: money(kpis.receivedInflowFy), icon: <DollarSign className="w-4 h-4" /> },
-    cos_this_month: { label: "Gross Margin (FY Plan)", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
+    cos_this_month: { label: "Gross Margin", value: kpis.grossMarginPctFy != null ? `${Number(kpis.grossMarginPctFy).toFixed(1)}%` : "\u2014", icon: <TrendingUp className="w-4 h-4" /> },
     cash_position: { label: "Gross Profit (FY)", value: money(kpis.grossProfitFy), icon: <DollarSign className="w-4 h-4" /> },
     margin_drift: { label: "Open Expenditure (FY)", value: money(kpis.openExpenditureFy), icon: <DollarSign className="w-4 h-4" /> },
     open_ncrs: { label: "Quality Warnings", value: kpis.openQualityWarnings ?? "\u2014", icon: <AlertTriangle className="w-4 h-4" /> },
@@ -309,7 +308,7 @@ export default function HomePage() {
     const items: AttentionItem[] = [];
     if (stats.redProjects > 0) items.push({ label: "Red RAG Projects", value: stats.redProjects, color: "text-red-600 bg-red-50 border-red-200", href: "/dashboard?rag=Red" });
     if (Number(kpis.projectsBehindPlan) > 0) items.push({ label: "Behind Plan", value: Number(kpis.projectsBehindPlan), color: "text-amber-700 bg-amber-50 border-amber-200", href: "/dashboard?behindPlanOnly=true" });
-    if (Number(kpis.pendingApprovals) > 0) items.push({ label: "Pending Approvals", value: Number(kpis.pendingApprovals), color: "text-blue-700 bg-blue-50 border-blue-200", href: "/governance/approvals" });
+    if (Number(kpis.pendingApprovals) > 0) items.push({ label: "Pending Approvals", value: Number(kpis.pendingApprovals), color: "text-blue-700 bg-blue-50 border-blue-200", href: "/pm/approvals" });
     if (Number(kpis.openEngineeringBlockers) > 0) items.push({ label: "Eng. Blockers", value: Number(kpis.openEngineeringBlockers), color: "text-violet-700 bg-violet-50 border-violet-200", href: "/dashboard?engineeringBlockersOnly=true" });
     if (Number(kpis.openQualityWarnings) > 0) items.push({ label: "Quality Warnings", value: Number(kpis.openQualityWarnings), color: "text-orange-700 bg-orange-50 border-orange-200", href: "/dashboard?qualityIssuesOnly=true" });
     if (myPendingActions > 0) items.push({ label: "My Overdue Actions", value: myPendingActions, color: "text-rose-700 bg-rose-50 border-rose-200", href: "/my-work/tasks?overdue=1" });
@@ -362,7 +361,6 @@ export default function HomePage() {
 
     return map;
   }, [dashData, myWorkData]);
-
 
   const visiblePriorities = companyPriorities?.slice(0, 3) || [];
   const hiddenPriorities = companyPriorities?.slice(3) || [];
@@ -459,8 +457,6 @@ export default function HomePage() {
 
   return (
     <PageShell data-testid="home-page">
-      <HomeDashboardV2 />
-
       {(dashIsError || prioritiesIsError || myWorkIsError) && (
         <div className="mb-4 space-y-2">
           {dashIsError && <QueryErrorBanner error={dashError} />}
@@ -662,7 +658,7 @@ export default function HomePage() {
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
-                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/governance/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
+                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
               </div>
@@ -695,7 +691,7 @@ export default function HomePage() {
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
-                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/governance/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
+                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
               </div>
@@ -710,7 +706,7 @@ export default function HomePage() {
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
-                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/governance/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
+                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
                 <div className="lg:col-span-3 space-y-5">
@@ -790,7 +786,7 @@ export default function HomePage() {
                   <h2 className="text-[13px] font-semibold text-muted-foreground uppercase tracking-wider mb-2.5">Your Workspace</h2>
                   {workspaceCard([
                     { href: "/my-work/tasks", label: "View My Tasks", icon: <ListChecks className="w-4 h-4 mr-2" /> },
-                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/governance/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
+                    ...(Number(kpis.pendingApprovals) > 0 ? [{ href: "/pm/approvals", label: `Approvals (${kpis.pendingApprovals})`, icon: <ClipboardCheck className="w-4 h-4 mr-2" /> }] : []),
                   ])}
                 </div>
               </div>

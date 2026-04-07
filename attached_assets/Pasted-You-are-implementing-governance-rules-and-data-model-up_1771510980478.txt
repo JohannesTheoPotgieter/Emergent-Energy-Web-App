@@ -1,0 +1,152 @@
+You are implementing governance rules and data-model updates for the Emergent Energy web app.
+
+CONTEXT
+We have TWO boards (views) that must be clearly separated:
+1) Company Lifecycle Board (pre-signing + all projects)
+2) Execution Board (post-signing only)
+
+CRITICAL RULE
+There must be ONE canonical project record in the database.
+Do NOT create separate “lifecycle projects” and “execution projects”.
+A project can be:
+- Lifecycle only (pre-signing)
+- Lifecycle + Execution (post-signing)
+Never execution-only.
+
+IMPORTANT NOTE ABOUT EXECUTION PHASE
+Execution phase is currently imported from an Excel tracker once that Excel exists.
+So “execution phase” is not the gate. The gate is signing/approval to enter execution.
+Execution phase can be null until Excel exists, even if execution is enabled.
+
+IMPLEMENTATION GOALS
+A) Separate the boards using strict filtering rules.
+B) Create an execution gate that controls whether the project shows on Execution Board.
+C) Keep task history across lifecycle and execution without duplicate projects.
+D) Add an Admin-only merge tool to de-duplicate messy existing data into a single canonical record.
+E) Update the Excel import logic so it updates execution_phase safely, without accidentally enabling execution.
+
+DATA MODEL CHANGES
+1) Project table: add/ensure these fields exist
+- lifecycle_phase (enum/string)   // EE Phase 0/1/2 etc. (existing ok)
+- execution_enabled (boolean default false)  // the gate for execution board visibility
+- execution_gate_status (enum: NOT_ELIGIBLE, ELIGIBLE, ENABLED) default NOT_ELIGIBLE
+- execution_gate_reason (text nullable)
+- signed_status (enum: NONE, COST_PROPOSAL_SIGNED, EPC_SIGNED, DEAL_SIGNED) default NONE
+- signed_date (date nullable)
+- signed_document_link (string/url nullable)
+- execution_phase (string/enum nullable)  // IMPORTED FROM EXCEL
+- excel_tracker_link (string/url nullable) // optional but recommended
+- canonical_project_id (uuid nullable) // points to primary record if merged; null means it is primary
+- archived_status (enum: ACTIVE, ARCHIVED_MERGED) default ACTIVE
+
+2) Task table: add/ensure these fields exist
+- project_id (fk)
+- domain (enum: LIFECYCLE, EXECUTION, BOTH) default BOTH
+- status, owner, due_date etc. as per current system
+
+BOARD FILTERING RULES
+1) Lifecycle Board:
+- show projects where archived_status = ACTIVE
+- include all projects regardless of execution_enabled
+- default task view should show tasks with domain in (LIFECYCLE, BOTH)
+- optionally allow toggle to view EXECUTION tasks too (read-only is ok)
+
+2) Execution Board:
+- show projects where archived_status = ACTIVE AND execution_enabled = true
+- show execution_phase prominently (imported from Excel; allow null)
+- default task view should show tasks with domain in (EXECUTION, BOTH)
+
+EXECUTION GATE RULES (GOVERNANCE)
+1) A project becomes ELIGIBLE for execution when:
+- signed_status != NONE
+- signed_date is not null
+- signed_document_link is not null/non-empty
+Optional (only if already part of your governance): lifecycle_phase must be >= Phase 2 (PD -> PM)
+If optional rule is implemented, enforce it consistently and show reason if blocked.
+
+2) A project is ENABLED for execution when:
+- eligibility rules are met
+- AND an Admin explicitly enables it (or auto-enable only if you are instructed; default is Admin enable)
+Admin can enable/disable execution_enabled, but must provide a reason when disabling or overriding.
+
+3) Excel import MUST NOT automatically enable execution unless signed evidence exists.
+Excel import may update execution_phase even if execution is not enabled, but the project must still NOT appear on Execution Board until execution_enabled = true.
+
+UI / UX REQUIREMENTS
+1) Add an Admin-only section on the project detail page:
+- “Execution Gate” panel:
+  - Signed status (dropdown)
+  - Signed date
+  - Signed document link upload/link field
+  - Computed eligibility indicator (Eligible/Not eligible + reason)
+  - Toggle “Enable Execution” (only clickable if eligible, unless Admin override with mandatory reason)
+  - Show execution_phase (read-only if it comes from Excel import)
+
+2) Clear messaging:
+- If user is on Execution Board and execution_phase is null, show: “Execution phase not yet imported (Excel tracker not linked or not imported).”
+- If project is lifecycle-only, show: “Not in execution yet (requires signed evidence + admin enable).”
+
+EXCEL IMPORT INTEGRATION
+1) When importing/updating from Excel:
+- Match project by a stable key (preferably project_code or unique project_id stored in Excel; if not available, use a controlled matching strategy and warn on ambiguity)
+- Update project.execution_phase from Excel field “Execution Phase” (or exact mapped column name)
+- Optionally update excel_tracker_link if provided
+- Do not modify execution_enabled directly
+- If Excel contains signing fields AND they are trustworthy, map them to signed_status/signed_date/signed_document_link, then eligibility can update, but still require Admin enable unless auto-enable is explicitly configured.
+
+2) Validate imported execution_phase:
+- Must match allowed execution phase values OR be stored as a string with a warning flag if unknown
+- Log import results per project (success, warnings, errors)
+
+MERGE / DEDUPE TOOL (ADMIN ONLY)
+1) Add an Admin “Merge Projects” tool:
+- Admin selects Primary Project (survivor) and Secondary Project (to merge)
+- Before merging, show a diff summary:
+  - lifecycle_phase, signed_status/date/link, execution_enabled, execution_phase, excel_tracker_link
+  - task counts
+  - attachments/comments counts if applicable
+
+2) Merge behavior:
+- Re-point ALL tasks from secondary.project_id to primary.project_id
+- Re-point attachments/comments/history similarly (whatever exists in current system)
+- If primary field is null and secondary has value, copy it to primary
+- If both have values and conflict, keep primary and record conflict in merge log
+- Set secondary.archived_status = ARCHIVED_MERGED
+- Set secondary.canonical_project_id = primary.id
+- Create merge audit record: merged_by, merged_at, reason, secondary_id, primary_id, conflicts_json
+
+3) Prevent future duplicates:
+- On project creation, enforce uniqueness on (project_code) or another selected unique key
+- If a user tries to create a project with an existing key, block and suggest linking instead.
+
+TEST PLAN (MUST IMPLEMENT AUTOMATED OR MANUAL TEST CHECKLIST IN CODEBASE)
+Create tests or a test checklist that verifies:
+1) Project created pre-signing:
+- appears on Lifecycle Board
+- does NOT appear on Execution Board
+2) Excel import sets execution_phase but project is not signed:
+- execution_phase updated
+- still does NOT appear on Execution Board
+3) Signed fields set but execution not enabled:
+- eligibility shows ELIGIBLE
+- still does NOT appear on Execution Board
+4) Admin enables execution:
+- project appears on Execution Board
+- appears on Lifecycle Board as always
+5) Merge two duplicate projects:
+- only primary remains active
+- secondary archived
+- all tasks moved to primary
+- history preserved and merge logged
+6) Access control:
+- Non-admin cannot enable execution or merge projects
+- Non-admin can view correct boards based on role visibility rules already in app
+
+NON-NEGOTIABLES
+- Do not remove or break existing ClickUp-linked task functionality.
+- Do not create duplicate project records for lifecycle vs execution.
+- Ensure UI prevents errors: if user cannot fix it via front end, the UI/validation is wrong.
+- Provide clear error messages and logs for import/matching/merge operations.
+
+DELIVERABLE
+Implement the model changes, board filters, execution gate UI, Excel import safeguards, merge tool, and tests/checklist. Ensure it runs end-to-end without placeholder components.

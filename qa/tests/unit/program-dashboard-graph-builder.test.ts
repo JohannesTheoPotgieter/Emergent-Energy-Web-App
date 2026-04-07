@@ -22,8 +22,11 @@ describe("program dashboard graph builder", () => {
   it("keeps the execution dashboard graph builder and workbook preset labels wired in the UI", () => {
     const source = read("client/src/pages/dashboard.tsx");
 
+    expect(source).toContain("Workbook-aligned Program Dashboard");
+    expect(source).toContain("Build graphs from imported execution data");
     expect(source).toContain('data-testid="execution-graph-builder"');
     expect(source).toContain('testId="program-preset-chart"');
     expect(source).toContain('testId="execution-builder-chart"');
+    expect(source).toContain("Load current preset");
   });
 });

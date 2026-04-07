@@ -1102,7 +1102,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.post("/api/lessons-learnt", requireAuth, requirePermission("handover", "create"), async (req: Request, res: Response) => {
+  app.post("/api/lessons-learnt", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = (req as any).user as any;
       const body = req.body || {};
@@ -1125,7 +1125,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/lessons-learnt/:id", requireAuth, requirePermission("handover", "edit"), async (req: Request, res: Response) => {
+  app.patch("/api/lessons-learnt/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
@@ -1145,7 +1145,7 @@ export function registerHandoverRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/lessons-learnt/:id", requireAuth, requirePermission("handover", "delete"), async (req: Request, res: Response) => {
+  app.delete("/api/lessons-learnt/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });

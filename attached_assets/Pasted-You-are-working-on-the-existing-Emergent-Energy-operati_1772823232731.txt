@@ -1,0 +1,431 @@
+You are working on the existing Emergent Energy operational web application.
+
+This application already contains major functional areas including engineering, quality, financial reporting, program reporting, project detail reporting, schedule, finance, and program-level rollups.
+
+The goal of this pass is NOT to invent random new modules.
+
+The goal is to get the application to a point where it is:
+	•	stable
+	•	trustworthy
+	•	role-secure
+	•	admin-manageable
+	•	auditable
+	•	operationally usable
+	•	architected correctly so it can grow into a full-fledged project management platform over time
+
+This means you must do two things together:
+	1.	Stabilize and harden the current application for real use
+	2.	Structure and prioritize the implementation so the app can one day become a complete project management operating system with most business execution happening inside it
+
+Do not make shallow fixes.
+Do not break existing working functionality.
+Do not create disconnected one-off solutions.
+Do not create department-specific logic where a shared platform service should exist.
+Do not make assumptions about business rules where they are unclear. Ask specific questions only when necessary.
+
+Work like a senior systems engineer, platform architect, and QA lead.
+
+The standard is not “it works on one screen.”
+The standard is “this is a stable platform foundation that can scale into a full PM tool.”
+
+==================================================
+PRIMARY OBJECTIVE
+
+Stabilize the existing application and improve it to a release-worthy state by focusing on:
+	•	role and permission integrity
+	•	comprehensive admin settings and controls
+	•	full transactional logging linked to logged-in user
+	•	consistent front-end behavior
+	•	admin recovery capability
+	•	strong shared platform services
+	•	stable project-centric architecture
+	•	final regression and readiness testing
+
+At the same time, structure all changes so the app is future-ready for a full project management platform.
+
+==================================================
+FUTURE-STATE PLATFORM PRINCIPLE
+
+This app must be built in layers so that future PM capability can be added without rework.
+
+Prioritize and structure the application in this order:
+
+LAYER 1 – FOUNDATION
+	•	project master object
+	•	canonical task engine
+	•	role and permission model
+	•	settings framework
+	•	audit and transactional logging
+	•	workflow state model
+	•	reporting source integrity
+
+LAYER 2 – SHARED PLATFORM SERVICES
+	•	comments
+	•	attachments / document linkage
+	•	assignee / owner / viewer model
+	•	activity history
+	•	notifications-ready event hooks
+	•	approval-ready state patterns
+	•	search and filters
+	•	dashboard widget patterns
+	•	handover / gate patterns
+
+LAYER 3 – OPERATIONAL MODULES
+	•	engineering
+	•	planning / schedule
+	•	quality
+	•	project management
+	•	program / portfolio rollup
+	•	finance visibility
+	•	admin operations
+
+LAYER 4 – FUTURE PM EXPANSION READY
+Design the system so these can later be added cleanly:
+	•	dependencies
+	•	Gantt / timeline engine
+	•	critical path
+	•	resource loading
+	•	procurement tracking
+	•	change control
+	•	risk / issue / action / decision logs
+	•	subcontractor workflows
+	•	site execution controls
+	•	commissioning and handover
+	•	O&M handover
+	•	stakeholder views
+	•	mobile field execution
+
+Do not fully build all future features now.
+But ensure current work does not block them later.
+
+==================================================
+CURRENT PASS SCOPE
+
+Your job in this pass is to harden and stabilize the current app and prepare the platform properly.
+
+Focus on the following major workstreams:
+	1.	Role and permission framework
+	2.	Settings and admin control framework
+	3.	Transactional and audit logging
+	4.	Canonical task and workflow consistency
+	5.	Admin recovery and correction capability
+	6.	Shared platform service cleanup
+	7.	Final full QA and regression pass
+
+==================================================
+	1.	ROLE AND PERMISSION FRAMEWORK
+==================================================
+
+Review and harden the role and permission model.
+
+At minimum validate and improve support for roles such as:
+	•	COO / Super Admin
+	•	CEO
+	•	CFO
+	•	Head of Project Development
+	•	Program Manager
+	•	Program Finance Manager
+	•	Construction Manager
+	•	Quality Manager
+	•	Engineer
+	•	Project Manager
+	•	Project Developer
+	•	general viewer if present
+
+Requirements:
+	•	ensure each role has clear visibility rules
+	•	ensure each role has clear create/edit/delete permissions
+	•	ensure admin-only actions are properly restricted
+	•	ensure hidden routes and protected actions are enforced both in UI and backend where applicable
+	•	ensure permissions are consistent across modules
+	•	ensure program-level and project-level visibility behave correctly
+	•	ensure roles are not over-permissive by accident
+	•	ensure role changes are logged
+
+Create a clear permission matrix and use it to verify the app.
+
+==================================================
+2. SETTINGS AND ADMIN CONTROL FRAMEWORK
+
+Build or improve a comprehensive admin settings area so the admin can control and monitor the system from the front end.
+
+Admin settings should aim to support long-term platform control, not just current screens.
+
+At minimum include or strengthen settings/control areas for:
+	•	users
+	•	roles
+	•	permission mappings
+	•	system enums / status lists where appropriate
+	•	task type settings where safe
+	•	import mappings or import controls where appropriate
+	•	workflow gates / lifecycle settings where appropriate
+	•	notification-ready settings placeholders if not fully active yet
+	•	integration status visibility
+	•	logging / audit visibility
+	•	reporting refresh or trace controls where appropriate
+
+Requirements:
+	•	settings must be structured logically
+	•	dangerous changes must require confirmation
+	•	admin must be able to see what affects the system
+	•	admin should not need database access for normal operational control
+	•	settings design must be extensible for future PM capability
+
+Do not create a junk drawer settings page.
+Create a proper control center.
+
+==================================================
+3. FULL TRANSACTIONAL LOGGING LINKED TO LOGGED-IN USER
+
+Implement or strengthen transactional and audit logging across the application.
+
+This is critical.
+
+All important changes must be attributable to the logged-in user.
+
+At minimum log:
+	•	record creation
+	•	record edits
+	•	record deletion where supported
+	•	task reassignment
+	•	task status changes
+	•	task type changes
+	•	viewer assignment changes
+	•	project master data changes
+	•	admin recovery actions
+	•	import runs
+	•	import corrections
+	•	permission changes
+	•	role changes
+	•	major settings changes
+
+For each logged event, capture where feasible:
+	•	event type
+	•	entity type
+	•	entity ID
+	•	before value summary if practical
+	•	after value summary if practical
+	•	user ID
+	•	user name / email if available
+	•	timestamp
+	•	source area / module
+	•	correlation to project if applicable
+
+Requirements:
+	•	logs must be queryable and visible to admins through the UI
+	•	logging must not break performance excessively
+	•	logging design must support future governance and troubleshooting
+	•	avoid logging sensitive payloads recklessly
+	•	make logging consistent across modules
+
+This should become the foundation for future auditability.
+
+==================================================
+4. CANONICAL TASK AND WORKFLOW CONSISTENCY
+
+Strengthen the existing task model so it acts as the long-term execution engine.
+
+Requirements:
+	•	continue converging everything to one canonical task path
+	•	standardize status values
+	•	standardize ownership fields:
+	•	owner
+	•	assignee
+	•	viewer
+	•	reviewer if supported
+	•	make task behavior consistent across:
+	•	personal
+	•	engineering
+	•	plan
+	•	quality
+	•	ensure task switching does not corrupt data
+	•	ensure filters and dashboards read from the same logic
+	•	ensure My Work reflects canonical task visibility
+	•	ensure viewer behavior is operational through the UI, not just theoretical
+
+Workflow state consistency:
+	•	clarify lifecycle states for task and project-related execution where possible
+	•	avoid scattered inconsistent status labels
+	•	ensure handovers have visible ownership
+	•	ensure current state and next step are understandable
+
+Do not build separate task logic inside each department.
+
+==================================================
+5. ADMIN RECOVERY AND CORRECTION CAPABILITY
+
+Admins must be able to correct normal operational mistakes through the UI.
+
+At minimum provide or strengthen admin recovery paths for:
+	•	wrong project linkage
+	•	wrong assignee
+	•	wrong viewer
+	•	wrong task type
+	•	wrong task status
+	•	wrong due date
+	•	wrong workstream
+	•	duplicate or incorrect records where safe to correct
+	•	import-created bad records where recoverable
+	•	role/permission misassignment where applicable
+	•	settings mistakes where recoverable
+
+Requirements:
+	•	all recovery actions must be logged
+	•	dangerous actions must confirm before commit
+	•	recovery paths must be clear and predictable
+	•	do not rely on manual database edits for normal admin support
+
+The app must teach the business that correction happens inside the system.
+
+==================================================
+6. SHARED PLATFORM SERVICE CLEANUP
+
+Review the current app and identify shared behaviors that should be centralized rather than repeated.
+
+Where applicable, clean up and standardize shared services for:
+	•	comments
+	•	attachments / document links
+	•	activity feeds
+	•	assignment components
+	•	status badges
+	•	filters
+	•	search patterns
+	•	error handling
+	•	validation messaging
+	•	save/cancel/delete patterns
+	•	loading states
+	•	empty states
+
+The goal is consistency and future platform readiness.
+
+Do not over-refactor for beauty.
+Refactor for platform coherence.
+
+==================================================
+7. FINAL FULL QA AND REGRESSION PASS
+
+After implementation, run a real engineering-grade QA pass.
+
+Do not skim.
+Do not rely on happy-path only.
+Do not mark ready based on optimism.
+
+Test at minimum:
+	•	authentication and session behavior
+	•	role-based access and protected actions
+	•	admin settings and controls
+	•	project creation/edit/load
+	•	project/program reporting
+	•	engineering workflows
+	•	quality workflows
+	•	schedule/planning workflows
+	•	finance reporting/detail flows
+	•	canonical task behavior
+	•	task switching
+	•	viewer behavior
+	•	My Work
+	•	admin recovery actions
+	•	audit logging
+	•	Smart Import behaviors that currently exist
+	•	reporting integrity
+	•	error handling
+	•	regression around previously fixed issues
+
+For each major test:
+	•	identify expected result
+	•	record actual result
+	•	log defect if applicable
+	•	fix root cause
+	•	retest
+	•	test dependent workflows
+
+==================================================
+REQUIRED DELIVERABLES
+
+Create or update the following files:
+	1.	PLATFORM_STABILIZATION_PLAN.md
+
+	•	what was improved
+	•	what was standardized
+	•	what was centralized
+	•	what was left intentionally for future phases
+	•	how the structure supports future full PM capability
+
+	2.	ROLE_PERMISSION_MATRIX.md
+
+	•	every role
+	•	allowed actions
+	•	visibility scope
+	•	admin-only controls
+	•	gaps or assumptions
+
+	3.	ADMIN_CONTROL_CENTRE.md
+
+	•	all settings/control areas added or improved
+	•	what admin can manage from UI
+	•	what still needs future expansion
+
+	4.	TRANSACTION_LOGGING_SPEC.md
+
+	•	what events are logged
+	•	where they are logged
+	•	how they are linked to users
+	•	how admins can access them
+
+	5.	FINAL_QA_MATRIX.md
+
+	•	all final tests
+	•	expected result
+	•	actual result
+	•	pass/fail
+	•	defect reference
+
+	6.	FINAL_DEFECT_REGISTER.md
+
+	•	remaining defects
+	•	severity
+	•	operational impact
+	•	whether recoverable via UI
+	•	recommended next step
+
+	7.	FINAL_RELEASE_READINESS.md
+Include:
+
+	•	Proven Ready Areas
+	•	Partially Proven Areas
+	•	Not Yet Proven Areas
+	•	Open Risks
+	•	Recommendation: pilot ready / limited release / production ready / not ready
+
+	8.	FUTURE_PM_FOUNDATION_MAP.md
+Show how the current architecture now supports future expansion into:
+
+	•	dependencies
+	•	gantt/timeline
+	•	approvals
+	•	procurement
+	•	change control
+	•	RAID
+	•	commissioning
+	•	closeout
+	•	mobile execution
+without major rework
+
+==================================================
+SUCCESS CRITERIA
+
+This pass is only complete when:
+	•	role and permission behavior is reliable and consistently enforced
+	•	admin settings are comprehensive enough for operational control
+	•	transactional logging is linked to the logged-in user for important actions
+	•	admin recovery exists for normal mistakes through the UI
+	•	task and workflow behavior is more consistent
+	•	shared platform services are more coherent
+	•	final QA is deep and evidence-based
+	•	readiness is stated honestly
+	•	the architecture is measurably better positioned to grow into a full project management platform
+
+Do not optimize for looking complete.
+Optimize for becoming a stable operating system foundation.
+
+Work like true engineers.

@@ -413,7 +413,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
         stepNumber: 1,
         title: "Open the Subcontractor Dashboard",
         description: "Navigate to 'Subcontractors' under the OPERATIONS section. This shows all registered subcontractors with their performance metrics.",
-        targetPage: "/subcontractor-dashboard",
+        targetPage: "/subcontractors",
         tryIt: "Click 'Subcontractors' in the sidebar to see the dashboard.",
       },
       {
@@ -812,6 +812,33 @@ export const WALKTHROUGHS: Walkthrough[] = [
     ],
   },
   {
+    id: "engineering-pipeline-inbox",
+    title: "Engineering Inbox & Email-to-Task",
+    description: "Process incoming engineering requests from the pipeline inbox, converting emails and requests into tracked engineering tasks.",
+    category: "engineering",
+    estimatedMinutes: 5,
+    steps: [
+      {
+        stepNumber: 1,
+        title: "Open the Engineering Inbox",
+        description: "Navigate to 'Eng Inbox' under ENGINEERING. This shows all incoming engineering requests that need to be triaged.",
+        targetPage: "/engineering/inbox",
+        tryIt: "Open the Engineering Inbox to see pending requests.",
+      },
+      {
+        stepNumber: 2,
+        title: "Review Incoming Requests",
+        description: "Each inbox item shows the source (email, manual, SharePoint), subject, date, and current status. Unprocessed items are highlighted.",
+      },
+      {
+        stepNumber: 3,
+        title: "Convert to Engineering Task",
+        description: "Click any inbox item and select 'Create Task' to convert it into a tracked engineering task. The task is pre-filled with details from the inbox item.",
+        tryIt: "Click on any inbox item to see the conversion options.",
+      },
+    ],
+  },
+  {
     id: "cos-control",
     title: "COS Control — Portfolio-Wide Cost Analysis",
     description: "The COS Control page gives you a portfolio-level view of cost management across all projects with drill-down capability.",
@@ -937,8 +964,8 @@ export const WALKTHROUGHS: Walkthrough[] = [
       {
         stepNumber: 1,
         title: "Open SP Admin Settings",
-        description: "Navigate to 'Admin' → 'SharePoint Intake'. This shows the SharePoint connection configuration.",
-        targetPage: "/admin/sharepoint-intake",
+        description: "Navigate to 'Admin' → 'SP Settings'. This shows the SharePoint connection configuration.",
+        targetPage: "/admin/sp-settings",
         tryIt: "Open the SP Settings page to see the current connection status.",
       },
       {
@@ -1066,6 +1093,51 @@ export const WALKTHROUGHS: Walkthrough[] = [
     ],
   },
   {
+    id: "project-gantt-chart",
+    title: "Portfolio Gantt Chart",
+    description: "Visualize all projects on a timeline with two-layer progress bars, commissioning markers, and slippage warnings.",
+    category: "project-management",
+    estimatedMinutes: 7,
+    steps: [
+      {
+        stepNumber: 1,
+        title: "Open the Gantt Chart",
+        description: "Navigate to 'Gantt Chart' under PROJECT MANAGEMENT. This shows all active projects plotted on a timeline.",
+        targetPage: "/gantt",
+        tryIt: "Open the Gantt Chart page to see the visual timeline.",
+      },
+      {
+        stepNumber: 2,
+        title: "Read the Progress Bars",
+        description: "Each project has a two-layer progress bar:\n• Light background bar shows the full project timeline (start to end)\n• Solid fill shows the Act% (actual completion)\n• A tick marker shows Expected% (where the project should be)\nIf the solid fill is well behind the tick marker, the project is behind schedule.",
+        tryIt: "Look at any project bar and find the Expected% tick marker. Compare it to the solid Act% fill to assess schedule health.",
+      },
+      {
+        stepNumber: 3,
+        title: "Spot Slippage Warnings",
+        description: "Projects more than 5% behind their Expected% show a red border and a small triangle warning icon. These need immediate management attention.",
+        tip: "Red borders + triangle = urgent. These are the projects to discuss in management meetings.",
+      },
+      {
+        stepNumber: 4,
+        title: "Use Sort and Filter",
+        description: "Sort by: start date, end date, % complete, slippage, or name. Filter by phase and PM to focus on specific segments of the portfolio.",
+        tryIt: "Try sorting by 'Slippage' to see the most behind-schedule projects at the top.",
+      },
+      {
+        stepNumber: 5,
+        title: "Hover for Details",
+        description: "Hover over any project bar to see a rich tooltip: PM name, phase, system size, start/end dates, Act%, Expected%, delta, and days remaining.",
+        tryIt: "Hover over several project bars to see the detailed tooltips.",
+      },
+      {
+        stepNumber: 6,
+        title: "Check the Summary Footer",
+        description: "The footer shows: total project count, number behind schedule, and projects commissioning within the next 30 days. These are key executive metrics.",
+      },
+    ],
+  },
+  {
     id: "project-key-dates",
     title: "Key Dates & Commissioning Tracking",
     description: "Track important project milestones including planned completion, commissioning dates, and contract deadlines.",
@@ -1150,6 +1222,39 @@ export const WALKTHROUGHS: Walkthrough[] = [
         description: "The Walkthroughs tab (where you are now!) provides step-by-step guides. Each walkthrough has checkable steps, tips, and 'Go to page' buttons to navigate directly to the feature being described.",
         tip: "Your walkthrough progress is saved in your browser. Come back anytime to continue where you left off.",
         tryIt: "Check off this step right now! Click the circle to the left to mark it as complete.",
+      },
+    ],
+  },
+  {
+    id: "email-to-task",
+    title: "Email to Engineering Task Conversion",
+    description: "Convert incoming emails into tracked engineering tasks using the Outlook integration and pipeline inbox.",
+    category: "engineering",
+    estimatedMinutes: 5,
+    steps: [
+      {
+        stepNumber: 1,
+        title: "Access the Email Pipeline",
+        description: "Navigate to 'Eng Inbox' under ENGINEERING. Emails from the configured Outlook mailbox appear here automatically.",
+        targetPage: "/engineering/inbox",
+        tryIt: "Open the Engineering Inbox to see incoming requests.",
+      },
+      {
+        stepNumber: 2,
+        title: "Review an Email",
+        description: "Click any inbox item to see its full content: sender, date, subject, body, and any attachments. Review the request to understand what task needs to be created.",
+        tryIt: "Click on any inbox item to see its full content.",
+      },
+      {
+        stepNumber: 3,
+        title: "Convert to Task",
+        description: "Click 'Create Task' on the email. The system pre-fills the task title and description from the email content. Add project assignment, priority, due date, and assignee, then save.",
+        tryIt: "Try clicking 'Create Task' on an email to see how it pre-fills the task form.",
+      },
+      {
+        stepNumber: 4,
+        title: "Track Conversion Status",
+        description: "Once converted, the inbox item is marked as processed. The resulting engineering task is linked back to the original email for traceability.",
       },
     ],
   },
@@ -1387,7 +1492,7 @@ export const WALKTHROUGHS: Walkthrough[] = [
         stepNumber: 1,
         title: "Open the Approvals Page",
         description: "Navigate to 'Approvals' in the sidebar. This shows a consolidated view of everything waiting for your approval.",
-        targetPage: "/governance/approvals",
+        targetPage: "/approvals",
         tryIt: "Open the Approvals page to see what's pending for you.",
       },
       {

@@ -36,7 +36,6 @@ import {
   currentMonthKey as getCurrentMonthKey,
   parseExpenseAmount,
 } from "../lib/calculations/financeUtils";
-import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
@@ -120,10 +119,10 @@ function isCosRealised(exp: any): boolean {
   return isCosRealisedShared(exp);
 }
 
-// Unified realisation check: delegates to canonical isCanonicalCosRealised().
-// This ensures GP Tracker, COS Tracker, Company Overview, and PM Report all
-// agree on whether a cost line is realised.
+// Unified realisation check: returns true if cost is effectively realised for a given month.
+// Past-month committed costs are treated as realised (the cost has been incurred).
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+<<<<<<< HEAD
   const today = new Date().toISOString().slice(0, 10);
   return isCanonicalCosRealised({
     status: exp.status ?? exp.line_status ?? null,
@@ -135,6 +134,12 @@ function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKe
     paymentDate: exp.expensePaymentDate ?? exp.paymentDate ?? exp.paidDate ?? null,
     today,
   });
+=======
+  const cosStatus = classifyCosStatusFull(exp);
+  if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
+  if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
+  return false;
+>>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 }
 
 // Returns true if a cost is still actively committed (current/future month only).
@@ -1457,15 +1462,6 @@ router.get("/api/rev-tracker", requireAuth, requirePermission("revenue_tracker",
 
 router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
-    // D-08 fix: Support ?activeOnly=true to filter by tracker-linked active projects
-    const activeOnlyParam = req.query.activeOnly === "true";
-    let activeProjectNames: Set<string> | null = null;
-    if (activeOnlyParam) {
-      const { getTrackerLinkedActiveProjects } = await import("../services/kpi-active-project-scope");
-      const activeProjects = await getTrackerLinkedActiveProjects();
-      activeProjectNames = new Set(activeProjects.map(p => p.projectName));
-    }
-
     const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
       storage.getAllCostLinesForCashflow(),
       storage.getTrackerMonthlyManual('COS'),
@@ -1505,8 +1501,6 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     for (const exp of allProgramExpenses) {
       if (exp.rowType !== 'item') continue;
-      // D-08 fix: Skip non-active projects when activeOnly filter is set
-      if (activeProjectNames && !activeProjectNames.has((exp as any).projectName ?? "")) continue;
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
@@ -2153,15 +2147,6 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
 
 router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   try {
-    // D-08 fix: Support ?activeOnly=true to filter by tracker-linked active projects
-    const activeOnlyParam = req.query.activeOnly === "true";
-    let activeProjectNames: Set<string> | null = null;
-    if (activeOnlyParam) {
-      const { getTrackerLinkedActiveProjects } = await import("../services/kpi-active-project-scope");
-      const activeProjects = await getTrackerLinkedActiveProjects();
-      activeProjectNames = new Set(activeProjects.map(p => p.projectName));
-    }
-
     const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
       storage.getAllCostLinesForCashflow(),
       storage.getAllRevenueLinesForCashflow(),
@@ -2191,8 +2176,6 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
     const cosByProject = new Map<string, number>();
     for (const exp of allExpenses) {
       if (exp.rowType !== 'item') continue;
-      // D-08 fix: Skip non-active projects when activeOnly filter is set
-      if (activeProjectNames && !activeProjectNames.has((exp as any).projectName ?? "")) continue;
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
       const pName = (exp.projectName || "").replace(/_Tracker$/i, "");
@@ -3229,27 +3212,19 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
           const paidDateConfirmed = isInBank;
           const paidDateFontColor = isInBank ? 'black' : 'red';
           const paidDate = isInBank ? (r.paymentReceivedDate || r.plannedPaymentDate || null) : null;
-          const revenueTrackingFields = {
-            paidDateConfirmed,
-            paidDateFontColor,
-            paidDate: paidDate,
-            inBankDate: isInBank ? (paidDate || null) : null,
-          };
-          const updated = await db.update(normalizedRevenueLines)
-            .set(revenueTrackingFields)
+          await db.update(normalizedRevenueLines)
+            .set({
+              paidDateConfirmed,
+              paidDateFontColor,
+              paidDate: paidDate,
+              inBankDate: isInBank ? (paidDate || null) : null,
+            })
             .where(
               and(
                 eq(normalizedRevenueLines.projectName, projectName),
                 eq(normalizedRevenueLines.sourceRow, rowNum),
               )
-            )
-            .returning();
-          // Phase 2 bridge write: sync revenue tracking fields to promoted revenue_lines
-          if (updated?.[0]) {
-            import("../bridge/bridge-writer").then(({ syncRevenueLineFieldUpdate }) =>
-              syncRevenueLineFieldUpdate(updated[0].id, revenueTrackingFields)
-            ).catch(() => {});
-          }
+            );
         }
       }
     } catch (syncErr: any) {

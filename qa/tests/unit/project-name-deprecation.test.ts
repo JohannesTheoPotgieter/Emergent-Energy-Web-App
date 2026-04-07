@@ -58,7 +58,7 @@ describe("projectName column deprecation", () => {
   it("mytool.ts: all projectName columns have @deprecated comments", () => {
     const source = read("shared/schema/mytool.ts");
     const deprecatedCount = (source.match(/@deprecated.*projectId.*FK/g) || []).length;
-    expect(deprecatedCount).toBeGreaterThanOrEqual(2);
+    expect(deprecatedCount).toBeGreaterThanOrEqual(3);
   });
 
   it("engineering.ts: projectName column has @deprecated comment", () => {

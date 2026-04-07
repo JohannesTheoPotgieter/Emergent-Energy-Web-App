@@ -46,9 +46,6 @@ export const FEATURE_FLAG_KEYS = [
 
   // Handover V2: structured multi-tab PD→PM handover with readiness gating and dual sign-off
   "pd_pm_handover_v2",
-
-  // Wave 1: 9-department navigation shell (Migration Control Pack)
-  "department_shell",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -316,12 +313,6 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     label: "PD→PM Handover V2",
     description: "Enables the enhanced multi-tab PD→PM handover form with readiness gating, dual sign-off, lessons learnt, and COO health scoring.",
     defaultValue: false,
-  },
-  {
-    key: "department_shell",
-    label: "9-Department Navigation Shell",
-    description: "Switches navigation from 11-section model to 9-department model (Migration Control Pack Wave 1). HSE folds into PM, Reports distributed per department, Parties added.",
-    defaultValue: true,
   },
 ];
 

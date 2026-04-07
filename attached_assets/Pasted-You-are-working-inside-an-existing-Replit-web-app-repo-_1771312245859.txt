@@ -1,0 +1,214 @@
+You are working inside an existing Replit web app repo.
+
+Goal
+Implement Option A: PaySpace → Replit Leave Calendar (read-only for viewers) with a full audit trail.
+We need two roles: ADMIN and VIEWER.
+- VIEWER: can only view the leave calendar + leave list + change ledger (read-only).
+- ADMIN: can configure PaySpace connection, trigger sync, retry failures, manage users/roles (if local), and view everything.
+
+Hard constraints
+- Do not remove or break any existing functionality.
+- No placeholder code. No placeholder buttons. No fake pages. Everything must be wired end-to-end.
+- If repo already has auth/DB/UI patterns, follow them exactly.
+- Implement privacy by default (POPIA-safe): show “OOO – Firstname S” (no leave type) unless admin explicitly enables showing leave types.
+
+Assumptions (only if repo doesn’t already dictate this)
+- Stack: Next.js (or React) + Node backend.
+- DB: Postgres (use Prisma if present).
+- Auth: already implemented (Entra/NextAuth/etc.). If not, implement Microsoft Entra ID login.
+- PaySpace: integration is via PaySpace API / web services. PaySpace commonly exposes SOAP web services for integrations. If the repo can’t do SOAP directly, implement a small SOAP client wrapper or an adapter module.
+If the company’s PaySpace setup does NOT allow API access, do NOT fake it; implement the framework with a clear error and an “Integration not enabled” message. But still ship working admin UI, DB, scheduling, and ledger components.
+
+Deliverables (must all exist and work)
+1) RBAC (ADMIN / VIEWER)
+- Enforce role-based access on both UI routes and API routes.
+- VIEWER can access:
+  - /leave (calendar)
+  - /leave/list
+  - /leave/ledger
+  - /leave/snapshots (optional if implemented)
+- ADMIN can access:
+  - /admin/leave/settings
+  - /admin/leave/runs
+  - /admin/leave/actions
+  - /admin/users (only if local role management exists)
+- Add a clean “Access Denied” page for forbidden access.
+
+2) Database schema + migrations (names can differ, structure must match)
+
+payspace_settings (single row per tenant/company)
+- id (pk)
+- is_enabled (bool)
+- company_code / tenant_id (string)
+- api_base_url (string)
+- auth_mode (enum: oauth|basic|token|soap) [adapt to real PaySpace]
+- api_username (nullable)
+- api_password_encrypted (nullable)
+- api_token_encrypted (nullable)
+- show_leave_type (bool default false)
+- show_full_surname (bool default false)
+- timezone (default Africa/Johannesburg)
+- sync_frequency_minutes (int default 60)
+- created_at, updated_at
+
+leave_runs
+- id (pk)
+- trigger_type (schedule/manual)
+- started_at
+- finished_at
+- status (running/success/partial/fail)
+- triggered_by (user id or “system”)
+- summary_json (nullable)
+- created_at
+
+leave_events (canonical current state)
+- id (pk)
+- external_leave_id (unique)  // PaySpace leave transaction identifier
+- employee_id (nullable if not provided)
+- employee_display_name (string, POPIA-safe)
+- leave_type (nullable; only display if show_leave_type=true)
+- start_date (date)
+- end_date (date)
+- is_all_day (bool default true)
+- status (approved/cancelled/other)
+- approved_at (nullable)
+- approved_by (nullable)
+- last_seen_at (timestamp)
+- source_hash (string) // hash of key fields to detect changes
+- created_at, updated_at
+
+leave_ledger (audit trail like your SharePoint change ledger)
+- id (pk)
+- run_id (fk -> leave_runs)
+- external_leave_id
+- event_type (created/modified/cancelled/unknown)
+- detected_at
+- effective_start_date
+- effective_end_date
+- employee_display_name
+- approved_by (nullable)
+- approved_at (nullable)
+- import_status (pending/applied/failed/skipped)
+- error_message (nullable)
+- old_hash (nullable)
+- new_hash (nullable)
+- leave_event_id (nullable fk -> leave_events)
+- created_at
+
+(optional) leave_snapshots
+- id (pk)
+- run_id (fk)
+- snapshot_hash
+- row_count
+- blob_ref (nullable) // if you store raw payload
+- created_at
+
+3) PaySpace integration module (real, not mocked)
+Implement a module/service: payspaceClient
+- Responsible for fetching APPROVED leave only.
+- Must support date range queries (at least: “from last 90 days to next 365 days” or configurable).
+- Must return normalized leave transactions with stable identifiers.
+
+Notes:
+- If PaySpace exposes SOAP, implement a SOAP client wrapper.
+- Credentials must come from Replit Secrets. Never hardcode.
+- Store only what you need. Don’t store sensitive HR fields unnecessarily.
+
+Required secrets (use Replit Secrets)
+- PAYSPACE_BASE_URL
+- PAYSPACE_COMPANY_CODE (or tenant/company identifier)
+- PAYSPACE_USERNAME (if needed)
+- PAYSPACE_PASSWORD (if needed)
+- PAYSPACE_TOKEN (if needed)
+- APP_ENCRYPTION_KEY (for encrypting stored secrets, if you store them)
+
+4) Sync engine + scheduling
+Implement:
+- A scheduled job (every N minutes from settings) that:
+  A) creates a leave_runs row (status=running)
+  B) fetches approved leave from PaySpace for the configured date window
+  C) for each record:
+     - compute source_hash (sha256 of key fields)
+     - if new external_leave_id: create leave_events row and ledger event_type=created
+     - if existing but hash changed: update leave_events and ledger event_type=modified
+     - if previously present but missing now OR status cancelled: mark cancelled and ledger event_type=cancelled
+  D) update ledger rows to import_status=applied (or failed with error)
+  E) finalize leave_runs with status + summary_json
+- Manual triggers:
+  - POST /api/admin/leave/sync-now (ADMIN)
+  - POST /api/admin/leave/retry-failed (ADMIN)
+
+5) API routes (all enforced RBAC)
+Viewer:
+- GET /api/leave/events?from=YYYY-MM-DD&to=YYYY-MM-DD
+- GET /api/leave/ledger?from=&to=&status=&employee=
+- GET /api/leave/runs (viewer can see runs; admin sees more detail)
+
+Admin:
+- GET/POST /api/admin/leave/settings
+- POST /api/admin/leave/sync-now
+- POST /api/admin/leave/retry-failed
+
+6) UI pages (clean, modern, simple)
+Viewer pages:
+- /leave
+  - Calendar view (monthly/weekly toggle)
+  - Filters: date range, employee search
+  - Events should display as:
+    - Default: “OOO – Firstname S” (surname initial only)
+    - If admin setting show_full_surname=true: “OOO – Firstname Surname”
+    - If show_leave_type=true: “OOO (Annual) – Firstname S”
+- /leave/list
+  - Table list with filters
+- /leave/ledger
+  - Change ledger table:
+    - detected_at
+    - employee
+    - event_type
+    - start/end
+    - approved_by (if available)
+    - import_status
+    - run link
+
+Admin pages:
+- /admin/leave/settings
+  - Form to save settings (enabled, date window, privacy toggles, frequency)
+  - “Test connection” button that calls a real endpoint which attempts a lightweight PaySpace call and returns success/failure
+- /admin/leave/runs
+  - List of runs + statuses + summary
+  - Drill into a run to see ledger entries
+- /admin/leave/actions
+  - Buttons:
+    - “Sync now”
+    - “Retry failed”
+  - Show last run status and counts
+
+UX requirements
+- No clutter. No massive forms.
+- Make it obvious what is happening and whether data is fresh:
+  - Show “Last successful sync: timestamp”
+  - Show “Next scheduled sync: timestamp”
+- Every error must be visible in admin UI with a plain-English message.
+
+Definition of Done (acceptance tests)
+- ADMIN can configure settings and successfully “Test connection” (or gets a truthful, specific failure).
+- Scheduled job runs and creates leave_runs rows.
+- Approved leave records appear on /leave calendar for VIEWER.
+- Ledger shows created/modified/cancelled events.
+- VIEWER cannot access any /admin page or admin API.
+- Existing app functionality still works.
+
+Implementation instructions
+1) Inspect repo. Identify stack, routing, auth, DB patterns.
+2) Implement RBAC guard utilities for UI + API.
+3) Add DB schema + migrations.
+4) Build payspaceClient and normalize data model.
+5) Build sync engine + scheduler + manual triggers.
+6) Build UI pages with a simple calendar component and table views.
+7) Add README section:
+   - required secrets
+   - how to run locally in Replit
+   - how to create/administer roles
+   - how to test sync + viewer behavior
+
+Start with RBAC + DB schema, then PaySpace client + sync, then UI pages.

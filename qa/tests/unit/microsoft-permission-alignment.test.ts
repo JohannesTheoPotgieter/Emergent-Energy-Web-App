@@ -23,7 +23,7 @@ describe("microsoft permission alignment", () => {
 
     expect(msSyncRoutesSource).toContain('app.get("/api/ms-objects/mine", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftSurfaceFromRequest()');
     expect(msSyncRoutesSource).toContain('app.get("/api/ms-objects/project/:projectId", jwtAuth, requireAuth, requirePermission("projects", "view")');
-    expect(msSyncRoutesSource).toContain('app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess()');
+    expect(msSyncRoutesSource).toContain('app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess()');
     expect(msSyncRoutesSource).toContain('app.get("/api/ms-sync/status", jwtAuth, requireAuth, requireMicrosoftSyncSurfaceAccess()');
     expect(msSyncRoutesSource).toContain('app.get("/api/ms-teams/project-chat/:projectId", jwtAuth, requireAuth, requirePermission("teams_chat", "view")');
     expect(msSyncRoutesSource).toContain('app.delete("/api/ms-teams/project-chat/:projectId/unlink", jwtAuth, requireAuth, requirePermission("teams_chat", "delete")');

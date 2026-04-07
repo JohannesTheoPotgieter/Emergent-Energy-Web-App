@@ -13,7 +13,6 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
 import { classifyCosStatus } from "../lib/calculations/stateClassifier";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
-import { getTrackerLinkedActiveProjectIdSet } from "../services/kpi-active-project-scope";
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
@@ -145,7 +144,7 @@ export function registerDashboardRoutes(app: Express) {
       const fyEnd = `${fyStartYear + 1}-08-31`;
       const today = now.toISOString().slice(0, 10);
 
-      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows, revOverrides, cosOverrides, trackerLinkedActiveProjectIds] = await Promise.all([
+      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows, revOverrides, cosOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
         db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
         db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
@@ -161,7 +160,6 @@ export function registerDashboardRoutes(app: Express) {
         db.select().from(financeCosMonthly).where(isNull(financeCosMonthly.effectiveTo)),
         Promise.resolve([]),
         Promise.resolve([]),
-        getTrackerLinkedActiveProjectIdSet(),
       ]);
 
       const userNameById = new Map<number, string>((usersResult.rows as any[]).map((u: any) => [Number(u.id), u.name || `User ${u.id}`]));
@@ -383,7 +381,7 @@ export function registerDashboardRoutes(app: Express) {
       let projects = Array.from(rowsByProject.values()).filter((row: any) => {
         const info = projectById.get(row.projectId);
         if (!info) return false;
-        const isActive = trackerLinkedActiveProjectIds.has(row.projectId);
+        const isActive = info.archivedStatus === 'ACTIVE' && info.isActive !== false;
         const hasImport = committedProjectIds.has(row.projectId) || committedProjectNames.has((row.projectName || '').toLowerCase());
         return isActive && hasImport && !!row.__hasFyItem;
       });

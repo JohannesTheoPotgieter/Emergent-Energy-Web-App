@@ -850,7 +850,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requireAdminOrQm, requirePermission("quality", "edit"), qmApprovalUpload.single("file"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/evidence/upload", requireAuth, requireAdminOrQm, qmApprovalUpload.single("file"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const file = req.file;
@@ -916,7 +916,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requireAdminOrQm, requirePermission("quality", "approve"), qmApprovalUpload.single("file"), async (req, res) => {
+  app.post("/api/quality/project/:projectName/item/:itemInstanceId/send-for-approval", requireAuth, requireAdminOrQm, qmApprovalUpload.single("file"), async (req, res) => {
     try {
       const itemId = parseInt(String(req.params.itemInstanceId), 10);
       const projectName = decodeURIComponent(String(req.params.projectName));
@@ -1836,7 +1836,7 @@ export function registerQualityRoutes(app: Express) {
       const allProjectRows = projectIds.length > 0
         ? await db.select().from(projectInfo)
             .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-            .where(inArray(projectInfo.id, projectIds))
+            .where(inArray(projectInfo.id, checklistProjectIds))
         : [];
       const allProjects: ProjectInfoRow[] = allProjectRows.map((r: any) => ({ ...r.project_info, ...r.project_execution_state, id: r.project_info.id }));
       const projectMap = new Map<number, ProjectInfoRow>(allProjects.map((project: any) => [project.id, project]));
@@ -1899,7 +1899,6 @@ export function registerQualityRoutes(app: Express) {
       const projectSummaries = dedupedChecklists.map((checklist: any) => {
         const projectItems = allItems.filter((item: any) => item.checklistId === checklist.id);
         const project = projectMap.get(checklist.projectId);
-        const resolvedProjectName = project?.projectName || checklist.projectName;
         const handover = handoverMap.get(checklist.projectId);
         const warningInputs = allWarnings.filter((warning: any) => warning.projectName === checklist.projectName);
         const projectRiskAnswers = allRiskAnswers.filter((answer: any) => answer.checklistId === checklist.id);
@@ -2181,7 +2180,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/quality/users/:userId/role", requireAuth, requirePermission("admin", "edit"), async (req, res) => {
+  app.patch("/api/quality/users/:userId/role", requireAuth, async (req, res) => {
     try {
       const role = getUserRole(req);
       if (!isAdminRole(role)) {
@@ -2200,7 +2199,7 @@ export function registerQualityRoutes(app: Express) {
     }
   });
 
-  app.post("/api/quality/admin/bulk-create-checklists", requireAuth, requirePermission("admin", "create"), async (req, res) => {
+  app.post("/api/quality/admin/bulk-create-checklists", requireAuth, async (req, res) => {
     try {
       const role = getUserRole(req);
       if (!isAdminRole(role)) {

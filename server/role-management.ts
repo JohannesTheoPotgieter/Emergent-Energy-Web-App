@@ -647,11 +647,6 @@ export function registerRoleManagementRoutes(app: Express) {
         department,
       }).returning();
 
-      // Phase 2 bridge write: mirror new user to core.user_accounts
-      import("./bridge/bridge-writer").then(({ syncUser }) =>
-        syncUser({ id: created.id, username: created.username, name: created.name, email: created.email, role: created.role, department: created.department })
-      ).catch(() => {});
-
       logAuditFromReq(req, { entityType: "user", action: "create", entityId: String(created.id), changesJson: { description: "New user created", username, name, email, role: assignedRole, department } });
       res.json({ id: created.id, username: created.username, name: created.name, email: created.email, role: created.role, department: created.department ?? null });
     } catch (err: any) {
@@ -676,11 +671,6 @@ export function registerRoleManagementRoutes(app: Express) {
         .set({ department })
         .where(eq(users.id, userId))
         .returning({ id: users.id, name: users.name, email: users.email, role: users.role, department: users.department });
-
-      // Phase 2 bridge write: mirror department change to core.user_accounts
-      import("./bridge/bridge-writer").then(({ syncUser }) =>
-        syncUser({ id: updated.id, username: "", name: updated.name ?? "", email: updated.email ?? "", role: updated.role, department: updated.department })
-      ).catch(() => {});
 
       logAuditFromReq(req, {
         entityType: "user",

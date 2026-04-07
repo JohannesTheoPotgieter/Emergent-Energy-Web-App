@@ -149,7 +149,8 @@ describe("FIX C: Font Color Extraction Robustness", () => {
       source.indexOf("}\n\n", source.indexOf("function extractFontColorHex")) + 1
     );
     expect(fn).toContain("fontColor.theme");
-    expect(fn).toContain('"000000"'); // theme 0 and theme 1 both return black
+    expect(fn).toContain('"000000"'); // theme 1 = black
+    expect(fn).toContain('"ffffff"'); // theme 0 = white
   });
 
   it("accounts for tint on theme colors", () => {

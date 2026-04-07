@@ -1,12 +1,13 @@
 // ============================================================
-// STAGE COLLABORATION ROUTES — CANONICAL
+// STAGE COLLABORATION ROUTES — Client commitments, updates, queries, access, financial close tracks
 //
-// Active registration: server/routes/register-project-routes.ts
-// Scope: client commitments, client updates, project queries, project access,
-// and stage financial close tracks.
-//
-// Historical note: collaboration-workflow-routes.ts was removed on 2026-04-06
-// after route cutover and security hardening.
+// DEPRECATION NOTICE (2026-03-31):
+// The client-commitments and client-updates routes in this file are DEPRECATED.
+// Canonical routes are now served by collaboration-workflow-routes.ts using
+// the client_commitments and client_updates tables.
+// These legacy routes are shadowed (canonical registered first in Express).
+// Legacy tables (project_client_commitments, project_client_updates) will be
+// dropped after 90 days of zero usage.
 // ============================================================
 
 import type { Express, Request, Response } from "express";
@@ -450,7 +451,6 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/access",
     jwtAuth,
     requireAuth,
-    requirePermission("projects", "view"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -476,7 +476,6 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/access",
     jwtAuth,
     requireAuth,
-    requirePermission("admin", "edit"),
     async (req: Request, res: Response) => {
       try {
         const projectId = parseProjectId(req, res);
@@ -545,7 +544,6 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/access/:id",
     jwtAuth,
     requireAuth,
-    requirePermission("admin", "edit"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req, res);
@@ -583,7 +581,6 @@ export function registerStageCollaborationRoutes(app: Express): void {
     "/api/projects/:projectId/access/:id",
     jwtAuth,
     requireAuth,
-    requirePermission("admin", "delete"),
     async (req: Request, res: Response) => {
       try {
         const id = parseId(req, res);

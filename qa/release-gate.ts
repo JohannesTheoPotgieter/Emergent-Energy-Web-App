@@ -25,16 +25,14 @@ const RECONCILIATION_FILE = process.env.RELEASE_RECONCILIATION_FILE || path.join
 const CRITICAL_DEFECT_FILE = process.env.CRITICAL_DEFECT_FILE || path.join(process.cwd(), "docs", "archive", "FINAL_DEFECT_REGISTER.md");
 const REQUIRE_CRITICAL_DEFECT_FILE = process.env.REQUIRE_CRITICAL_DEFECT_FILE === "true";
 const WORKFLOW_TEST_COMMAND = process.env.WORKFLOW_TEST_COMMAND || "npm run test:workflows";
-const ROLE_AUDIT_FILE = process.env.ROLE_AUDIT_FILE || path.join(REPORTS_DIR, "role-permission-audit.md");
+const ROLE_AUDIT_FILE = process.env.ROLE_AUDIT_FILE || path.join(process.cwd(), "docs", "archive", "docs", "qa", "results", "latest", "role-permission-audit.md");
 const CRITICAL_ROUTES = ["/projects", "/project/:projectName", "/cashflow", "/quality", "/engineering/tasks", "/pm-dashboard", "/admin/control-center", "/handover-control"];
 
 const REQUIRED_COMMAND_CHECKS = [
   { name: "Type check", command: "npm run check" },
-  { name: "Route parity test", command: "vitest run -c qa/vitest.config.ts qa/tests/unit/route-registry-parity.test.ts" },
-  { name: "Redirect chain check", command: "npm run check:redirects" },
-  { name: "Route proof", command: "npm run test:route-proof" },
-  { name: "KPI frozen dataset validation", command: "npm run validate:kpi-dataset" },
+  { name: "API tests", command: "npm run test:api" },
   { name: "Smoke tests", command: "npm run test:smoke" },
+  { name: "Routes tests", command: "npm run test:routes" },
   { name: "Workflow tests", command: WORKFLOW_TEST_COMMAND },
 ] as const;
 
@@ -219,7 +217,7 @@ function main() {
   console.log(`\nRelease gate result written to ${outputFile}`);
   console.log(`Overall release gate status: ${overall.toUpperCase()}`);
   if (overall === "fail") {
-    console.log("Release gate blocked: at least one REQUIRED check failed or returned warning.");
+    console.log("Release gate blocked: required stability proof is missing, warning, or failed.");
   }
 
   process.exit(overall === "pass" ? 0 : 1);

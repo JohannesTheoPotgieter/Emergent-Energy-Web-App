@@ -809,10 +809,6 @@ export function registerPmOnTheGoRoutes(app: Express) {
         await db.execute(
           sql`UPDATE project_info SET escalation_level = ${escalationLevel || "High"} WHERE id = ${projectId}`
         );
-        // Phase 2 bridge write: sync escalation update to core.projects
-        import("./bridge/bridge-writer").then(({ syncProject }) =>
-          syncProject({ id: projectId, escalationLevel: escalationLevel || "High" } as any)
-        ).catch(() => {});
 
         const pName = await getProjectName(projectId);
         await notifyAndEmail(

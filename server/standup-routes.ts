@@ -73,26 +73,15 @@ async function notifyStandupParticipants(
   }
 }
 
-/**
- * Dev-only table bootstrap for SQLite mode.
- * In production/staging, this table is created by migrations/20260404_create_standup_entries_v2.sql.
- */
 async function ensureStandupV2Table() {
-  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
-
   const isPostgres = getDbMode() === "postgres";
   const idCol = isPostgres ? "id SERIAL PRIMARY KEY" : "id INTEGER PRIMARY KEY AUTOINCREMENT";
   const tsDefault = isPostgres ? "DEFAULT NOW()" : "DEFAULT CURRENT_TIMESTAMP";
   await db.execute(sql`CREATE TABLE IF NOT EXISTS standup_entries_v2 (${sql.raw(idCol)}, user_id INTEGER NOT NULL, date TEXT NOT NULL, yesterday TEXT, today TEXT, blockers TEXT, project_id INTEGER, team_id INTEGER, created_at TIMESTAMP NOT NULL ${sql.raw(tsDefault)})`);
 }
 
-/**
- * Dev-only column repair for SQLite mode.
- * In production/staging, these columns are added by migrations/20260372_standup_schedules_add_deleted_columns.sql.
- */
+/** Ensure deleted_at/deleted_by columns exist on standup_schedules (mirrors migration 20260372) */
 async function ensureStandupScheduleColumns() {
-  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
-
   try {
     if (getDbMode() === "postgres") {
       await db.execute(sql`ALTER TABLE standup_schedules ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
@@ -365,7 +354,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Submit a standup entry */
-  app.post("/api/standups/entries", requireAuth, requirePermission("standups", "create"), async (req: Request, res: Response) => {
+  app.post("/api/standups/entries", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { scheduleId, standupDate, whatIDid, whatImDoing, blockers, mood } = req.body;
@@ -440,7 +429,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   /** Update a standup entry */
-  app.patch("/api/standups/entries/:id", requireAuth, requirePermission("standups", "edit"), async (req: Request, res: Response) => {
+  app.patch("/api/standups/entries/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id as string);
       const { whatIDid, whatImDoing, blockers, mood } = req.body;
@@ -1203,7 +1192,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   // ── Advanced daily standup workflow ───────────────────────────────────────
-  app.post("/api/standups/entry", requireAuth, requirePermission("standups", "create"), async (req: Request, res: Response) => {
+  app.post("/api/standups/entry", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       const { yesterday, today: todayPlan, blockers, project_id, team_id } = req.body || {};
@@ -1263,7 +1252,7 @@ export function registerStandupRoutes(app: Express) {
   });
 
   // ── Auto-seed default standup schedule (Mon/Wed/Fri) ──────────────────────
-  app.post("/api/standups/seed-default", requireAuth, requirePermission("admin", "edit"), async (req: Request, res: Response) => {
+  app.post("/api/standups/seed-default", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
       // Check if a default project standup already exists (ignore soft-deleted)

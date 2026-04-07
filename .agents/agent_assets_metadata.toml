@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "JYMHnepAZWIB08D5GfGhF"
+uri = "file://.local/navigation-audit.md"
+type = "text"
+title = "Navigation Audit — Full Mapping"

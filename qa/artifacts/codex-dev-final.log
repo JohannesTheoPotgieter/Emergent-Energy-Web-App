@@ -1,0 +1,308 @@
+
+> rest-express@1.0.0 dev
+> node script/with-node-env.cjs development tsx server/index.ts
+
+[DB] No DATABASE_URL found, using SQLite for reliability
+[DB] No DATABASE_URL found, using SQLite for reliability
+[DB] Using SQLite file: C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\data\app.sqlite
+[DB] Startup schema repair disabled - running additive SQLite compatibility bootstrap
+[DB] Ensuring SQLite schema exists...
+[DB] ✓ SQLite schema verified
+[DB] SQLite schema verified
+12:12:36 AM [express] Using in-memory session store (dbMode=sqlite)
+[Lifecycle] Migration error: near "EXISTS": syntax error
+12:12:37 AM [Startup:Routes] All route groups registered
+[Milestones] Notification checker started (6h interval)
+[MS Sync] Periodic sync started (every 15 minutes)
+12:12:38 AM [Startup] [Startup] dbMode=sqlite
+12:12:38 AM [Startup] [Startup] flags={"startupMaintenanceEnabled":false,"startupSchemaRepairEnabled":false,"startupDataSeedEnabled":false,"startupBackfillEnabled":false,"startupSessionResetEnabled":false,"startupSyncEnabled":true,"runtimeMaintenanceEnabled":false,"runtimeMutationsActive":false}
+12:12:38 AM [Startup] [Startup] maintenance=skipped
+12:12:38 AM [Startup] [Startup] backfills=skipped
+12:12:38 AM [Startup] [Startup] seeds=skipped
+12:12:38 AM [Startup] [Startup] routes=registered
+12:12:38 AM [Startup] [Startup] runtime=import-scheduler, milestone-checker, periodic-sync
+12:12:38 AM [Startup] serving on port 5000
+12:12:38 AM [express] GET /api/health 200 in 26ms
+[Milestones] Notification check error: no such column: pi.pm_user_id
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[SharePoint] Scheduled import error: no such table: sp_settings
+[MS Sync] Periodic sync loop error: no such table: ms_accounts
+[Milestones] Notification check error: no such column: pi.pm_user_id

@@ -160,10 +160,6 @@ export async function createFinancialReview(params: {
       updatedAt: new Date(),
     })
     .where(eq(projectExecutionState.projectId, params.projectId));
-  // Phase 2 bridge write: sync financial review status to core.projects
-  import("../bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
-    syncProjectExecutionState(params.projectId, { financialReviewStatus: "IN_PROGRESS" })
-  ).catch(() => {});
 
   await createProjectEvent({
     projectId: params.projectId,
@@ -402,10 +398,6 @@ export async function decideReview(params: {
         updatedAt: new Date(),
       })
       .where(eq(projectExecutionState.projectId, review.projectId));
-    // Phase 2 bridge write: sync financial review decision to core.projects
-    import("../bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
-      syncProjectExecutionState(review.projectId, { financialReviewStatus: newStatus })
-    ).catch(() => {});
 
     // Update S05 stage instance
     const stageUpdates: Record<string, unknown> = {

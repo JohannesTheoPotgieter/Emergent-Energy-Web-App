@@ -3,181 +3,18 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { format, parseISO } from "date-fns";
 import {
   Mail, Loader2, Search, Inbox, AlertTriangle,
-  CheckCheck, Link2, RefreshCw, ShieldAlert, Tag, ListTodo, MoreHorizontal,
+  CheckCheck, Link2, RefreshCw, ShieldAlert,
 } from "lucide-react";
 import { PageShell, SectionHeader, WorkspaceNotice } from "@/components/layout/page-shell";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-
-function authHeaders(): Record<string, string> {
-  const token = localStorage.getItem("auth_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
-
-function MsObjectActions({ item, onTagClick, onConvertClick }: {
-  item: any;
-  onTagClick: (item: any) => void;
-  onConvertClick: (item: any) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity" data-testid={`email-actions-${item.id}`}>
-          <MoreHorizontal className="h-4 w-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => onTagClick(item)} data-testid={`tag-project-${item.id}`}>
-          <Tag className="h-4 w-4 mr-2" />
-          {item.linkedProjectId ? "Change project tag" : "Tag to project"}
-        </DropdownMenuItem>
-        {!item.linkedTaskId && (
-          <DropdownMenuItem onClick={() => onConvertClick(item)} data-testid={`convert-task-${item.id}`}>
-            <ListTodo className="h-4 w-4 mr-2" />
-            Convert to task
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
-
-function TagToProjectDialog({ open, onOpenChange, msObjectId, currentProjectId }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  msObjectId: number | null;
-  currentProjectId?: number | null;
-}) {
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const { toast } = useToast();
-  const qc = useQueryClient();
-
-  const { data: projects = [] } = useQuery<any[]>({
-    queryKey: ["projects-summary"],
-    queryFn: async () => {
-      const res = await fetch("/api/projects-summary", { headers: authHeaders(), credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: open,
-  });
-
-  useEffect(() => {
-    if (open && currentProjectId) setSelectedProjectId(String(currentProjectId));
-    else if (!open) setSelectedProjectId("");
-  }, [open, currentProjectId]);
-
-  const tagMutation = useMutation({
-    mutationFn: async () => {
-      if (!msObjectId || !selectedProjectId) return;
-      const res = await fetch(`/api/ms-objects/${msObjectId}/tag-project`, {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ projectId: parseInt(selectedProjectId) }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Tag failed");
-      return res.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
-      toast({ title: "Email tagged to project" });
-      onOpenChange(false);
-    },
-    onError: (err: Error) => {
-      toast({ title: "Failed to tag", description: err.message, variant: "destructive" });
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="tag-project-dialog">
-        <DialogHeader>
-          <DialogTitle>Tag to Project</DialogTitle>
-        </DialogHeader>
-        <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-          <SelectTrigger data-testid="select-project">
-            <SelectValue placeholder="Select a project..." />
-          </SelectTrigger>
-          <SelectContent>
-            {projects.map((p: any) => (
-              <SelectItem key={p.id} value={String(p.id)}>{p.projectName || p.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => tagMutation.mutate()} disabled={!selectedProjectId || tagMutation.isPending} data-testid="confirm-tag-button">
-            {tagMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            Tag
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ConvertToTaskDialog({ open, onOpenChange, item }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  item: any;
-}) {
-  const { toast } = useToast();
-  const qc = useQueryClient();
-
-  const convertMutation = useMutation({
-    mutationFn: async () => {
-      const res = await fetch(`/api/ms-objects/${item.id}/convert-to-task`, {
-        method: "POST",
-        headers: { ...authHeaders(), "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ projectId: item.linkedProjectId || undefined }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Conversion failed");
-      return res.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["ms-objects-mine"] });
-      toast({ title: "Email converted to task" });
-      onOpenChange(false);
-    },
-    onError: (err: Error) => {
-      toast({ title: "Conversion failed", description: err.message, variant: "destructive" });
-    },
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="convert-task-dialog">
-        <DialogHeader>
-          <DialogTitle>Convert to Task</DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          This will create a work item from the email: <strong className="text-foreground">{item.subjectOrTitle || "(No Subject)"}</strong>
-        </p>
-        {item.linkedProjectId && (
-          <p className="text-xs text-muted-foreground">The task will be linked to the currently tagged project.</p>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => convertMutation.mutate()} disabled={convertMutation.isPending} data-testid="confirm-convert-button">
-            {convertMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-            Convert
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+  authHeaders, TagToProjectDialog, ConvertToTaskDialog, MsObjectActions,
+} from "./collaboration";
 
 function useEmailSync(onSsoUnavailable: () => void) {
   const qc = useQueryClient();

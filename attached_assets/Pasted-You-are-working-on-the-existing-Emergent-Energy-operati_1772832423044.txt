@@ -1,0 +1,324 @@
+You are working on the existing Emergent Energy operational web application.
+
+Do NOT build a new permission system.
+Do NOT break existing working functionality.
+Do NOT redesign randomly.
+
+This is a focused Roles & Permissions UX, structure, and truth-alignment pass.
+
+The problem:
+The current Roles & Permissions screen does not match the actual application structure well enough and is too hard to understand and safely configure.
+
+The sidebar/navigation structure on the left side of the app and the permissions structure on the right side of the Roles & Permissions screen do not align cleanly. This makes it difficult for an admin to understand what a role can actually see and do.
+
+The current UI also does not clearly separate:
+
+navigation access
+
+feature/entity permissions
+
+scope rules
+
+backend-enforced vs UI-only controls
+
+This must be fixed.
+
+==================================================
+PRIMARY OBJECTIVE
+
+Improve the Roles & Permissions screen so it becomes:
+
+easier to understand
+
+easier to configure safely
+
+aligned to the actual application structure
+
+more honest about enforcement
+
+more useful for real admin governance
+
+Do not just tweak styling.
+Fix the structure and information hierarchy.
+
+==================================================
+KEY REQUIREMENTS
+
+ALIGN THE PERMISSIONS UI TO THE REAL APP STRUCTURE
+
+The permissions page must mirror the actual application/sidebar structure more clearly.
+
+Use the same top-level business areas where applicable:
+
+My Work
+
+Project Development
+
+Engineering
+
+Quality
+
+Project Management
+
+Finance
+
+System
+
+Do not show a flat or mismatched grouping that confuses the admin.
+
+SEPARATE THE PERMISSION MODEL INTO CLEAR LAYERS
+
+Restructure the screen so the admin can clearly understand:
+
+A. Navigation access
+
+what sidebar sections/pages the role can see
+
+what routes they can reach
+
+B. Functional permissions
+
+what entities/features the role can:
+
+view
+
+create
+
+edit
+
+assign
+
+approve
+
+delete
+
+override
+
+recover/admin-fix
+
+C. Scope rules
+
+where relevant, show whether access applies to:
+
+all
+
+assigned only
+
+owned projects only
+
+program-level only
+
+admin only
+
+D. Enforcement truth
+
+clearly show what is:
+
+backend enforced
+
+frontend/UI visibility only
+
+application logic / assignment scoped
+
+not fully supported yet
+
+IMPROVE UX AND INFORMATION HIERARCHY
+
+The screen must become easier to read and configure.
+
+Improve:
+
+grouping
+
+spacing
+
+labels
+
+section headers
+
+role summary
+
+risk visibility
+
+control clarity
+
+Requirements:
+
+selected role should have a clear summary at the top
+
+show badges such as System / Custom
+
+show counts such as sections enabled, entities editable, admin-risk permissions enabled
+
+reduce ambiguity from tiny V/E/D style pills by making actions easier to understand
+
+keep dense enough for power users, but clearer and safer
+
+ADD A CLEAR “PERMISSION TRUTH” AREA
+
+For the selected role, show a clear summary panel or tab explaining:
+
+navigation permissions that are fully enforced
+
+entity permissions that are UI-level only
+
+scope limitations
+
+high-risk permissions enabled
+
+admin-only capabilities
+
+known gaps
+
+This must help the admin trust what they are configuring.
+
+KEEP CURRENT BACKEND LOGIC INTACT WHERE POSSIBLE
+
+Do not rewrite the whole permission backend unless necessary.
+
+This pass should primarily:
+
+improve alignment
+
+improve clarity
+
+improve mapping between UI and actual permission behavior
+
+improve safe configuration
+
+If some backend limitations remain, expose them honestly instead of hiding them.
+
+IMPROVE ADMIN SETUP PRODUCTIVITY
+
+Add helpful admin tooling if possible without overbuilding:
+
+search/filter permissions
+
+search/filter entities
+
+compare roles if practical
+
+visually disable child permissions when parent navigation access is off
+
+clearly distinguish dangerous permissions such as delete, override, recover, admin control
+
+==================================================
+RECOMMENDED SCREEN STRUCTURE
+
+Refactor the Roles & Permissions screen into a clearer structure.
+
+Preferred approach:
+
+left panel: role list with search and role badges
+
+main panel: tabs or sections such as:
+
+Navigation
+
+Functional Permissions
+
+Scope Rules
+
+Enforcement & Risks
+
+Users (existing if already present)
+
+Navigation tab:
+
+match actual app/sidebar structure
+
+Functional Permissions tab:
+
+matrix by entity and action
+
+Scope Rules tab:
+
+show actual supported scope model and limitations
+
+Enforcement & Risks tab:
+
+show backend enforced vs UI-only vs assignment logic
+
+If full tab redesign is too disruptive, implement the same logic within accordion sections, but preserve clarity and hierarchy.
+
+==================================================
+QA REQUIREMENTS
+
+After implementing improvements, run QA to ensure:
+
+The permissions UI structure aligns with actual sidebar/app structure
+
+The admin can clearly distinguish navigation vs functional permissions
+
+The admin can see enforcement truth clearly
+
+Existing role/permission behavior is not broken
+
+Section toggles still work
+
+Entity permissions still render and save correctly
+
+Existing admin-only protections still work
+
+The screen is easier to understand and configure
+
+No regressions are introduced in Users & Roles or route gating
+
+==================================================
+REQUIRED DELIVERABLES
+
+Create or update:
+
+ROLES_PERMISSIONS_UX_REWORK.md
+
+what was structurally wrong before
+
+what was changed
+
+how the new screen maps to the actual app
+
+PERMISSION_MODEL_ALIGNMENT.md
+
+navigation vs functional vs scope vs enforcement breakdown
+
+what is truly enforced vs still limited
+
+ROLES_PERMISSIONS_QA.md
+
+tests executed
+
+expected vs actual
+
+pass/fail
+
+regression checks
+
+ROLES_PERMISSIONS_RELEASE_NOTE.md
+
+what is improved
+
+what still remains limited
+
+recommendation for admin use before go-live
+
+==================================================
+SUCCESS CRITERIA
+
+This pass is complete only when:
+
+the permissions screen matches the actual app structure more clearly
+
+admins can understand what a role can see and do
+
+navigation access and functional permissions are clearly separated
+
+enforcement truth is clearly shown
+
+UX/layout is materially easier to understand and configure
+
+no current permissions behavior is broken
+
+Do not optimize for prettier boxes.
+Optimize for clarity, governance, and safe setup.
+
+Work like true engineers.

@@ -42,7 +42,7 @@ describe("financial review → S05 stage sync", () => {
   // ── Transaction wrapping ──
 
   it("wraps all state changes in a single transaction", () => {
-    expect(serviceSource).toContain("db.transaction(async (tx: any)");
+    expect(serviceSource).toContain("db.transaction(async (tx)");
     // All writes inside the transaction use tx, not db
     // tx is used for: approvals, projectFinancialReviews, projectExecutionState,
     // projectStageInstances, projectStageDecisions, projectStageExceptions

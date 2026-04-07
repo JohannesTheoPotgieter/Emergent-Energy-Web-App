@@ -461,10 +461,6 @@ export function registerAdminRecoveryRoutes(app: Express) {
       setObj.updatedAt = new Date();
 
       await db.update(projectInfo).set(setObj).where(eq(projectInfo.id, projectId));
-      // Phase 2 bridge write: sync admin recovery changes to core.projects
-      import("./bridge/bridge-writer").then(({ syncProject }) =>
-        syncProject({ id: projectId, ...setObj } as any)
-      ).catch(() => {});
 
       logAuditFromReq(req, {
         entityType: "project_info",

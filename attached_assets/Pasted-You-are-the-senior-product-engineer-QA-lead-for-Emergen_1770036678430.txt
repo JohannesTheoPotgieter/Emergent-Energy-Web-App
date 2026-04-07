@@ -1,0 +1,161 @@
+You are the senior product engineer + QA lead for Emergent Energy’s Program Dashboard web app.
+
+Task
+Replicate the Tracker sheet called “Revenue Tracking” in the web app with the SAME functionality and meaning as Excel.
+UI can be cleaner, but the data, rules, and outputs must match the tracker.
+
+Business meaning (must be preserved)
+This screen is how we manage client claims + cash collection:
+- Contract milestones to claim
+- Planned payment date
+- Invoice number (manual)
+- Invoice raised date (manual)
+- Payment received date (manual)
+- Payment status: if the payment received date text is RED = not yet in bank; BLACK = received in bank
+- Milestone requirements & comments (manual)
+- Milestone documents received (true/false tick)
+
+Top section:
+“Costed vs Actual” summary numbers (planned revenue/expenditure/profit/margin and actual equivalents).
+These values in Excel are running totals pulling through from other tracker sheets (e.g. Expenditure Breakdown etc).
+The app must display these top numbers correctly and consistently.
+
+Non-negotiable outcomes
+1) The Revenue Tracking tab must show:
+   A) A top summary block:
+      - Planned Revenue (R)
+      - Planned Expenditure (R)
+      - Planned Profit (R)
+      - Planned Margin (%)
+      - Actual Revenue (R)
+      - Actual Expenditure (R)
+      - Actual Profit (R)
+      - Actual Margin (%)
+      - VO PM Limit (R)
+      - Current VO Total (R)
+   B) A Milestones table that includes (at minimum):
+      - No.
+      - Payment Milestone (text)
+      - % (percentage)
+      - Value (currency)
+      - Planned Payment Date
+      - Invoice Number (editable)
+      - Invoice Raised Date (editable)
+      - Payment Received Date (editable)
+      - “In bank?” status (editable boolean)
+      - Milestone Requirements & Comments (editable multiline)
+      - Milestone Documents Received (editable boolean)
+      - Derived status badge: Outstanding / Invoiced / Received
+      - Totals row (sum of Values = contract total)
+2) Payment received “red/black” behavior MUST be replicated:
+   - In the web UI, if In bank? = false, render Payment Received Date in RED (or an “Outstanding” red badge).
+   - If In bank? = true, render it in BLACK (or “Received” neutral badge).
+   - This must be explicit and editable (do NOT rely on cell colour parsing).
+3) Read/write rules:
+   - Imported milestone structure (% / value / planned payment date / milestone description) is read-only by default.
+   - Editable fields (persisted in DB):
+     invoice_number, invoice_raised_date, payment_received_date, in_bank, requirements_comments, documents_received
+   - Top summary values should be read-only display (unless explicitly configured later).
+4) Data must persist correctly:
+   - Uploading a tracker creates/refreshes imported baseline for that project.
+   - Manual fields must persist across sessions.
+   - If project is replaced via upload, define behavior:
+     - Either keep manual edits if milestone row identity matches, OR warn user and reset. Implement one clearly and document it.
+5) No empty UI:
+   - If parsing confidence is low, render a RAW SHEET VIEW (scrollable grid) so user still sees the data.
+   - Never show “no data” when the sheet exists.
+
+Excel parsing requirements (Revenue Tracking sheet)
+- Do NOT assume headers are on row 1.
+- Implement header/table detection:
+  - Find the milestone table by scanning for keywords like:
+    “PAYMENT MILESTONE”, “Planned Payment Date”, “Invoice Number”, “Invoice Raised Date”, “Payment Received Date”
+  - Handle merged cells and title rows.
+  - Allow duplicate header names via indexing.
+- Extract the milestones as a normalized dataset (one row per milestone).
+
+Top summary extraction (must match Excel meaning)
+Approach:
+- Prefer extracting the exact displayed summary values from the sheet by locating labels:
+  “Planned Revenue”, “Planned Expenditure”, “Planned Profit”, “Planned Margin”
+  and the “Actual” equivalents.
+- Store these in a project_revenue_summary table (or derived view).
+- (Optional but recommended) Also compute these from other parsed sheets and compare:
+  If mismatch > tolerance, show a warning in a “Data Quality” panel.
+
+Data model (Postgres) – minimum
+1) revenue_milestone_imported
+- id, project_id
+- milestone_no (string)
+- milestone_name (text)
+- percent (numeric)
+- value (numeric)
+- planned_payment_date (date)
+- sort_index
+- created_at, updated_at
+
+2) revenue_milestone_manual
+(one-to-one with imported milestone row)
+- id, project_id, imported_milestone_id (unique)
+- invoice_number (text nullable)
+- invoice_raised_date (date nullable)
+- payment_received_date (date nullable)
+- in_bank (boolean default false)  <-- controls red/black behaviour
+- requirements_comments (text nullable)
+- documents_received (boolean default false)
+- updated_at
+
+3) project_revenue_summary
+- project_id
+- planned_revenue, planned_expenditure, planned_profit, planned_margin
+- actual_revenue, actual_expenditure, actual_profit, actual_margin
+- vo_pm_limit (numeric nullable)
+- current_vo_total (numeric nullable)
+- captured_at (timestamp)
+
+UI/UX improvements (must implement)
+- Make the milestone table easy to scan:
+  - Sticky headers
+  - Right-align currency
+  - Totals row pinned at bottom
+  - Status badges (Outstanding/Invoiced/Received)
+  - Quick filters: Outstanding only, Missing invoice number, Missing docs
+- Provide a “Financial Review” note box and “Timeline Review” note box like Excel:
+  - Store as project_notes (revenue_financial_review, revenue_timeline_review)
+  - Keep simple text areas.
+
+Integration behavior
+- This Revenue Tracking view must live inside Project Detail under the “Revenue Tracking” tab.
+- Must not break Replace/Duplicate upload logic.
+
+API endpoints (minimum)
+- GET /api/projects/:id/revenue-tracking
+  returns:
+    summary + milestones (imported + manual merged) + notes + diagnostics
+- PATCH /api/projects/:id/revenue-tracking/milestones/:milestoneId
+  updates manual fields only
+- PATCH /api/projects/:id/revenue-tracking/notes
+  updates financial/timeline review notes
+
+Acceptance tests (must pass)
+Using “1 Bolt Ave_Tracker.xlsx” as fixture:
+1) Revenue Tracking tab shows:
+   - 6 milestones (ProgramInflows rows for Bolt Ave = 6)
+   - Values and planned payment dates populated
+2) Top summary block shows planned vs actual numbers (not blank).
+3) Editing invoice number persists after refresh.
+4) Setting “In bank?” false renders payment received date as RED / Outstanding.
+5) Setting “In bank?” true renders payment received date as BLACK / Received.
+6) Documents received checkbox persists.
+7) If parsing fails, raw sheet view appears instead of empty table.
+
+Before implementing, ASK these questions (do not guess)
+1) Should a project “Replace upload” keep manual milestone edits when milestone names/No match?
+2) Should “In bank?” default to true when a payment_received_date is entered, or stay manual?
+3) Should we treat “Payment Received Date” as the actual bank date, or is it sometimes an expected date that later becomes “in bank”?
+
+Deliverable
+- Revenue Tracking view fully working and matching Excel behavior and meaning.
+- Robust parsing with diagnostics.
+- Clean EE theme.
+- Tests passing.

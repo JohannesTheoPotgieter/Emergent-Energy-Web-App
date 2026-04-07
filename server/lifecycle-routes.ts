@@ -14,12 +14,15 @@ import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle
 import { buildProjectLifecycleWorkspace } from "./services/project-lifecycle-workspace-service";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { initializeProjectStages } from "./services/stage-lifecycle-service";
-import { evaluateRevenueArStatus, isRevenueSettled } from "./lib/finance/revenue-ar-status";
+import { evaluateRevenueArStatus } from "./lib/finance/revenue-ar-status";
 import { projectStageInstances, STAGE_CODES } from "@shared/schema";
 import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../shared/utils/phase-to-stage-map";
 import { jwtAuth, requireAuth } from "./auth-context";
+<<<<<<< HEAD
 import { bridgeCatch } from "./bridge/bridge-writer";
 import { computeMarginPct } from "./lib/finance/margin";
+=======
+>>>>>>> ca9cefb4 (Restored to 'b00b1dfe977c9d0e6332d0cd7a23fa1636bdf41e')
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -317,8 +320,6 @@ export function registerLifecycleRoutes(app: Express) {
       console.log("[Lifecycle] Postgres-only additive migrations skipped for SQLite");
       return;
     }
-    // Production: schema must come from versioned migrations, not runtime DDL
-    if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
 
     try {
       await db.execute(sql.raw(`
@@ -508,11 +509,6 @@ export function registerLifecycleRoutes(app: Express) {
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
-        // F-01 fix: Include fields needed for canonical isRevenueSettled()
-        status: normalizedRevenueLines.status,
-        paidDate: normalizedRevenueLines.paidDate,
-        inBankDate: normalizedRevenueLines.inBankDate,
-        paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
       }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       const allCostLines = await db.select({
@@ -532,20 +528,12 @@ export function registerLifecycleRoutes(app: Express) {
       const finByNorm = new Map<string, ReturnType<typeof emptyFin>>();
       for (const r of allRevLines) {
         const amt = parseFloat(r.amountExVat || "0") || 0;
-        // F-01 fix: Use canonical isRevenueSettled() instead of just paidDateConfirmed
-        const settled = isRevenueSettled({
-          status: r.status,
-          paidDate: r.paidDate,
-          inBankDate: r.inBankDate,
-          paidDateConfirmed: r.paidDateConfirmed,
-          paidDateFontColor: r.paidDateFontColor,
-        });
         if (r.projectId) {
           if (!finByProjectId.has(r.projectId)) finByProjectId.set(r.projectId, emptyFin());
           const entry = finByProjectId.get(r.projectId)!;
           entry.totalRevenue += amt;
           if (r.invoiceNumber) entry.invoicedRevenue += amt;
-          if (settled) entry.receivedRevenue += amt;
+          if (r.paidDateConfirmed) entry.receivedRevenue += amt;
           continue;
         }
         const name = r.projectName;
@@ -555,7 +543,7 @@ export function registerLifecycleRoutes(app: Express) {
         const entry = finByNorm.get(norm)!;
         entry.totalRevenue += amt;
         if (r.invoiceNumber) entry.invoicedRevenue += amt;
-        if (settled) entry.receivedRevenue += amt;
+        if (r.paidDateConfirmed) entry.receivedRevenue += amt;
       }
       for (const c of allCostLines) {
         const amt = parseFloat(c.amountExVat || "0") || 0;
@@ -1549,10 +1537,6 @@ export function registerLifecycleRoutes(app: Express) {
       };
       const [created] = await db.insert(projectInfo).values(promoteInsertFields).returning();
       await syncProjectSplitTablesAfterInsert(created.id, promoteInsertFields);
-      // Phase 2 bridge write: mirror new project to core.projects
-      import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
-        syncProjectInsert(created as any)
-      ).catch(bridgeCatch);
 
       const targetPhase = phase || "First Assessment";
       const stageNames = PHASE_TO_ENG_STAGES[targetPhase];
@@ -1789,19 +1773,14 @@ export function registerLifecycleRoutes(app: Express) {
         }
 
         // Update execution state with the mapped stage code
-        const boardSyncFields = {
-          currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
-          gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
-          gateReadinessPct: isCompleted ? 100 : 0,
-          updatedAt: new Date(),
-        };
         await db.update(projectExecutionState)
-          .set(boardSyncFields)
+          .set({
+            currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
+            gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
+            gateReadinessPct: isCompleted ? 100 : 0,
+            updatedAt: new Date(),
+          })
           .where(eq(projectExecutionState.projectId, id));
-        // Phase 2 bridge write: sync execution state to core.projects
-        import("./bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
-          syncProjectExecutionState(id, boardSyncFields)
-        ).catch(bridgeCatch);
       } catch (stageErr: any) {
         console.warn("[lifecycle-board] Stage lifecycle sync error (non-fatal):", stageErr.message);
       }
@@ -2234,10 +2213,6 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM work_items WHERE workstream = 'PM' AND source = 'SMART_IMPORT' AND (project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'})`);
         await safeDel(sql`DELETE FROM normalized_revenue_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
         await safeDel(sql`DELETE FROM normalized_cost_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
-        // Phase 2 bridge write: cascade delete promoted finance lines
-        import("./bridge/bridge-writer").then(({ cascadeDeletePromotedFinanceLines }) =>
-          cascadeDeletePromotedFinanceLines(pId, pN)
-        ).catch(bridgeCatch);
         await safeDel(sql`DELETE FROM normalized_execution_phases WHERE project_id = ${pId} OR project_name = ${pN}`);
         await safeDel(sql`DELETE FROM pm_site_visits WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM pm_on_the_go_actions WHERE project_id = ${pId}`);
@@ -2283,10 +2258,6 @@ export function registerLifecycleRoutes(app: Express) {
 
         await tx.execute(sql`DELETE FROM project_info WHERE id = ${pId}`);
       });
-      // Phase 2 bridge write: mark promoted project as deleted
-      import("./bridge/bridge-writer").then(({ syncProjectDelete }) =>
-        syncProjectDelete(pId)
-      ).catch(bridgeCatch);
 
       console.log(`[lifecycle-board] Project ${projectId} (${pName}) HARD DELETED by ${deletedBy} — all related data removed`);
 

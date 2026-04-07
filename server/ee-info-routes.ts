@@ -11,7 +11,6 @@ import multer from "multer";
 import { verifyToken } from "./jwt";
 import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
 import { requireAuth } from "./auth-context";
-import { requirePermission } from "./permission-middleware";
 
 const SEED_ZIP_PATH = path.join(process.cwd(), "seed", "ee-info", "Emergent Energy.zip");
 const ASSETS_DIR = path.join(process.cwd(), "uploads", "ee-info-assets");
@@ -977,7 +976,7 @@ export function registerEeInfoRoutes(app: Express) {
     { slug: "os-dept-hr", title: "HR", sortOrder: 42, description: "Human resources and people management", parent: "os-dept-project-development" },
   ];
 
-  app.post("/api/ee-info/os/seed", requireAuth, requireCOO, async (_req, res) => {
+  app.post("/api/ee-info/os/seed", requireCOO, async (_req, res) => {
     try {
       const existing = await db.select({ slug: eeInfoNodes.slug }).from(eeInfoNodes)
         .where(or(
@@ -1339,7 +1338,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ee-info/os/processes", requireAuth, requireCOO, async (req, res) => {
+  app.post("/api/ee-info/os/processes", requireCOO, async (req, res) => {
     try {
       const { title, departmentSlug, lifecycleStages } = req.body;
       if (!title) return res.status(400).json({ error: "Title is required" });
@@ -1368,7 +1367,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ee-info/os/processes/:slug/sop", requireAuth, requireCOO, async (req, res) => {
+  app.post("/api/ee-info/os/processes/:slug/sop", requireCOO, async (req, res) => {
     try {
       const proc = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.slug, req.params.slug)).limit(1);
       if (!proc.length) return res.status(404).json({ error: "Process not found" });
@@ -1404,7 +1403,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.put("/api/ee-info/os/nodes/:id", requireAuth, requireCOO, async (req, res) => {
+  app.put("/api/ee-info/os/nodes/:id", requireCOO, async (req, res) => {
     try {
       const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, req.params.id)).limit(1);
       if (!node.length) return res.status(404).json({ error: "Node not found" });
@@ -1438,7 +1437,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ee-info/os/processes/:processId/steps", requireAuth, requireCOO, async (req, res) => {
+  app.post("/api/ee-info/os/processes/:processId/steps", requireCOO, async (req, res) => {
     try {
       const { title, description, sortOrder: order } = req.body;
       if (!title) return res.status(400).json({ error: "Step title is required" });
@@ -1464,7 +1463,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/ee-info/os/nodes/:id", requireAuth, requireCOO, async (req, res) => {
+  app.delete("/api/ee-info/os/nodes/:id", requireCOO, async (req, res) => {
     try {
       const node = await db.select().from(eeInfoNodes).where(eq(eeInfoNodes.id, req.params.id)).limit(1);
       if (!node.length) return res.status(404).json({ error: "Node not found" });
@@ -1505,7 +1504,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.put("/api/ee-info/nodes/:nodeId/details", requireAuth, requirePermission("ee_info", "edit"), async (req, res) => {
+  app.put("/api/ee-info/nodes/:nodeId/details", requireAuth, async (req, res) => {
     try {
       const { nodeId } = req.params;
       const user = req.user as any;
@@ -1868,7 +1867,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/ee-info/story/node/:id", requireAuth, requireCOO, async (req, res) => {
+  app.patch("/api/ee-info/story/node/:id", requireCOO, async (req, res) => {
     try {
       const nodeId = req.params.id;
       const updates = req.body;
@@ -1899,7 +1898,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ee-info/story/seed-demo", requireAuth, requireCOO, async (_req, res) => {
+  app.post("/api/ee-info/story/seed-demo", requireCOO, async (_req, res) => {
     try {
       const existing = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes)
         .where(eq(eeInfoNodes.stageCode, "DEMO"));
@@ -1929,7 +1928,7 @@ export function registerEeInfoRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ee-info/story/auto-seed", requireAuth, requirePermission("ee_info", "edit"), async (_req, res) => {
+  app.post("/api/ee-info/story/auto-seed", requireAuth, async (_req, res) => {
     try {
       const stageCount = await db.select({ id: eeInfoNodes.id }).from(eeInfoNodes)
         .where(and(

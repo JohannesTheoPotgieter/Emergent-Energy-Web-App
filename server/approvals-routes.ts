@@ -400,34 +400,6 @@ export function registerApprovalsRoutes(app: Express) {
       }).returning();
 
       const created = (Array.isArray(result) ? result : (result as any).rows || [])[0];
-
-      // Phase 2 bridge write: mirror to documentation.document_approvals
-      try {
-        const { db: dbConn } = await import("./db");
-        const { sql: sqlTag } = await import("drizzle-orm");
-        await dbConn.execute(sqlTag`
-          INSERT INTO documentation.document_approvals (
-            document_id, legacy_approval_id, approval_type, approval_category, title,
-            project_id, related_entity_type, related_entity_id, requested_by_user_id,
-            urgency, status, source_table, last_synced_at, created_at
-          ) VALUES (
-            COALESCE((SELECT id FROM documentation.documents WHERE legacy_deliverable_id = ${created.relatedEntityType === 'deliverable' ? created.relatedEntityId : null} LIMIT 1), 1),
-            ${created.id}, ${type}, ${approvalCategory || null}, ${title},
-            ${parseInt(projectId)}, ${relatedEntityType || null},
-            ${relatedEntityId ? parseInt(relatedEntityId) : null},
-            ${userId}, ${null}, 'pending', 'public.approvals', NOW(), NOW()
-          )
-          ON CONFLICT (legacy_approval_id) DO UPDATE SET
-            status = EXCLUDED.status,
-            approval_type = EXCLUDED.approval_type,
-            title = EXCLUDED.title,
-            project_id = EXCLUDED.project_id,
-            last_synced_at = NOW()
-        `);
-      } catch (bridgeErr) {
-        console.error("[bridge-write][approvals] failed", bridgeErr);
-      }
-
       const assignments = assigneeType && assigneeId
         ? await setEntityAssignment(req, {
           entityType: "approval",
@@ -546,36 +518,6 @@ export function registerApprovalsRoutes(app: Express) {
       const updated = (Array.isArray(result) ? result : (result as any).rows || [])[0];
       if (!updated) {
         throw notFound("Approval");
-      }
-
-      // Phase 2 bridge write: sync approval status to promoted
-      try {
-        const { db: dbConn } = await import("./db");
-        const { sql: sqlTag } = await import("drizzle-orm");
-        await dbConn.execute(sqlTag`
-          UPDATE documentation.document_approvals SET
-            status = ${updated.status},
-            decision_note = ${updated.decisionNote ?? null},
-            decided_at = ${updated.decidedAt ?? null},
-            last_synced_at = NOW()
-          WHERE legacy_approval_id = ${updated.id}
-        `);
-        // Also insert state history snapshot
-        await dbConn.execute(sqlTag`
-          INSERT INTO documentation.approval_state_history (
-            approval_id, legacy_approval_id, status, decision_note,
-            decided_by, decided_at, approval_type, title, project_id,
-            is_current, snapshot_reason, source_table, source_updated_at, snapshot_at
-          )
-          SELECT da.id, ${updated.id}, ${updated.status}, ${updated.decisionNote ?? null},
-                 ${updated.decidedBy ?? null}, ${updated.decidedAt ?? null},
-                 da.approval_type, da.title, da.project_id,
-                 true, 'bridge_write', 'public.approvals', NOW(), NOW()
-          FROM documentation.document_approvals da
-          WHERE da.legacy_approval_id = ${updated.id}
-        `);
-      } catch (bridgeErr) {
-        console.error("[bridge-write][approvals-update] failed", bridgeErr);
       }
 
       const assignments = assignmentRequested

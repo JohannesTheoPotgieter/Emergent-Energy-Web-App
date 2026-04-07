@@ -1,0 +1,201 @@
+You are building a web app for Emergent Energy that replicates our Excel-based “Program Dashboard” and per-project “Tracker” workbooks, but is easier to navigate, refresh, collaborate on, and read.
+
+Absolute rule:
+- Look & feel can improve, but ALL functionality + ALL numbers that the Excel outputs must be represented in the app.
+- Nothing is allowed to show “no data” or “-” when the sheet exists and contains data.
+- If parsing confidence is low, show the RAW SHEET VIEW rather than an empty UI.
+
+Branding / UX
+- Theme: Emergent Energy green + white, clean, readable, mobile-friendly.
+- Use Emergent logo in header (configurable).
+- App must feel like a “program control room” a world-class COO uses daily.
+
+Source of truth (fixtures)
+- Program-level dashboard workbook: “0.Program Dashboard FY26.xlsm”
+  Sheets present (FY26 file): Program Dashboard, Projects Summary 2026, Cashflow 2026, REV Tracker 26, COS Tracker 26,
+  Construction Dashboard 2026, Procurement 2026, Compliance 2026, ProjectInfo, ProgramPlan, ProgramExpense, ProgramInflows, Meta Data, Task Register.
+- Project tracker example: “1 Bolt Ave_Tracker.xlsx”
+  Sheets present: Project Plan, Revenue Tracking, Expenditure Tracking, Expenditure Breakdown, Cashflow, Finance - Revenue, Finance - COS, plus others.
+
+Financial year logic (non-negotiable)
+- FY runs Sep → Aug.
+- Default “This FY” filter must auto-select current FY window (e.g. 2025-09-01 to 2026-08-31).
+- FY filters must be consistent across all tabs, charts, and summaries.
+
+Core modules (minimum)
+1) Program Overview Dashboard
+   - Portfolio-level KPIs and trends (budget/spend/revenue/cashflow/active projects/etc).
+   - Quick search.
+   - Last refresh timestamp + refresh button.
+2) Projects Summary (portfolio list)
+   - Table must include the same columns as “Projects Summary 2026” in the program workbook, including:
+     Project Name, Size, PD, PM, Cost Proposal Signed, Funding Signed, EPC Contract Signed, Phase - Manual,
+     PD Handover date, Construction Start date, Duration, kW/Week, Commissioning Date, O&M Handover Date, Client Handover Date,
+     Project % Complete, Expected % Completed, Delta vs Expected, Actual Revenue, Actual Expenses, GP %, Revenue Outstanding, Expenses outstanding, Current VO Total.
+   - Clicking a project opens Project Detail.
+3) Project Detail view (per tracker)
+   Tabs/sections required (names must remain):
+   - Project Plan
+   - Revenue Tracking (milestones)
+   - Expenditure Breakdown
+   - Finance - Revenue
+   - Finance - COS
+   - Cashflow
+4) Data ingestion (upload trackers)
+   - Upload one or multiple Excel trackers.
+   - If project exists with same identity, prompt:
+     - Replace/Refresh (overwrite only that project)
+     - Duplicate (new version)
+   - Uploading a tracker must NEVER delete or overwrite other projects.
+   - Store upload history + diagnostics.
+5) Read/write rules
+   - Most data is read-only from tracker.
+   - Exception: Cashflow planning must allow moving amounts around (planning scenario) with instant chart updates.
+   - Budget entry: manual budget entry is required and supported (store separately, don’t overwrite imported values).
+6) Collaboration / stability
+   - Multi-user capable (shared DB). Auth optional, but must never block upload or viewing.
+   - Remove all flaky hostname dependencies that cause DNS issues (helium ENOTFOUND/EAI_AGAIN).
+   - Upload must work repeatedly (upload 1, upload 2, upload 3… no degradation).
+
+Critical bugs you MUST prevent (these have happened before)
+A) UI says “X tasks ingested” but table is empty.
+B) Cashflow/COS/Revenue show “no data available” even after upload.
+C) Upload instability and network errors (“Authentication required”, ENOTFOUND helium, EAI_AGAIN helium).
+D) Persistence bug: uploading a new tracker removes previously uploaded projects.
+
+Excel parsing requirements (non-negotiable)
+- Do NOT assume row 1 is headers. Ever.
+- Implement robust header detection per sheet:
+  - Scan top N rows to find the best header row based on keyword matches.
+  - Case-insensitive, trim whitespace, tolerate merged cells and title rows.
+  - Support duplicate header names by indexing them (Status_1, Status_2, etc).
+- Implement fallback:
+  - If mapping confidence is low, still show the raw sheet as a scrollable table (no empty UI).
+- Store parse diagnostics per upload per sheet:
+  - detected header row index
+  - matched column mapping (which source column → which canonical field)
+  - % rows with non-empty primary field (e.g. Task Description)
+  - warnings/errors
+
+Sheet-specific parsing (you must handle these sheet types)
+1) Project Plan (tracker)
+   - Real structure includes title rows and project info above the table.
+   - You must detect the header row (in Bolt Ave it’s the row containing “No.” and “HIGH LEVEL PROGRAMME”).
+   - Extract task rows (exclude blank separators).
+   Canonical fields:
+   task_number, task_description, planned_start, planned_duration_days, planned_end,
+   actual_start, actual_duration_days, actual_end, status_1/status_2 if present, comment if present.
+2) Revenue Tracking (tracker)
+   - Contains a milestone table with columns like: No., PAYMENT MILESTONE, %, VALUE, PLANNED PAYMENT DATE, INVOICE NUMBER, etc.
+   - Extract milestones into a normalized milestones table (long format).
+3) Expenditure Tracking (tracker)
+   - Category-level costed vs actual totals by category.
+   - Extract category totals and variance.
+4) Expenditure Breakdown (tracker)
+   - This sheet contains TWO tables (costed/budget + actual) side-by-side.
+   - You must extract the line items in each section.
+   - Keep category codes (e.g., “1. Panels”, “2. Inverters”).
+5) Cashflow (tracker)
+   - This is a matrix with dates across columns (weekly) and series down rows (planned vs actual).
+   - Detect the first date column by scanning for date-like cells.
+   - Pivot to long format series:
+     Planned Revenue (+ cumulative), Planned Expenditure (+ cumulative), Planned Cashflow,
+     Actual + Planned Revenue (+ cumulative), Actual + Planned Expenditure (+ cumulative), Actual Cashflow,
+     Revenue Recognition (+ cumulative).
+   - Planning interaction:
+     - User can adjust planned amounts by period.
+     - Chart updates instantly.
+     - Save changes as a scenario/version and preserve original imported values.
+6) Finance - Revenue and Finance - COS (tracker)
+   - These are pivot-like matrices with “Row Labels” and date columns (monthly).
+   - Extract to long format: category, period, value, plus totals.
+   - Never show empty if data exists.
+
+Architecture requirements (stability first)
+- React frontend + Node/Express backend + Postgres (Prisma/Drizzle ok).
+- No external hostname dependency that triggers helium DNS errors.
+- Upload endpoint supports multiple files and large Excel files.
+- Store normalized tables so filtering + charting is fast.
+- Maintain project identity + versioning.
+
+Project identity + versioning
+- Must support Replace vs Duplicate.
+- A project has:
+  - projectId (internal)
+  - projectCode + projectName (business identity; you must confirm the canonical ID location in tracker)
+  - versions (uploads) with timestamps and diagnostics
+
+Golden-master acceptance tests (must pass before deploy)
+Use the attached fixtures (“1 Bolt Ave_Tracker.xlsx” and “0.Program Dashboard FY26.xlsm”) to prove parsing + numbers.
+At minimum, after uploading “1 Bolt Ave_Tracker.xlsx”, the app must show:
+
+Expected extracted facts for Bolt Ave (taken from the program workbook’s “Projects Summary 2026” row)
+- Project Name: 1 Bolt Ave_Tracker.xlsx
+- Size: 366
+- PD: Peet Verreynne
+- PM: Peet Verreynne
+- Phase - Manual: Handover
+- PD Handover date: 2025-09-10
+- Construction Start date: 2025-10-15
+- Commissioning Date: 2026-01-23
+- O&M Handover Date: 2026-02-13
+- Client Handover Date: 2026-02-11
+- Project % Complete: 0.928398 (tolerance ±0.0005)
+- Expected % Completed: 0.930356 (tolerance ±0.0005)
+- Delta vs Expected: -0.001959 (tolerance ±0.0005)
+- Actual Revenue: 3,377,404.75
+- Actual Expenses: 2,217,962.171875
+- GP %: 0.343294 (tolerance ±0.0005)
+
+Expected row counts from the program workbook consolidated tables
+- ProgramPlan rows for Bolt Ave = 34 tasks (must display real task rows)
+- ProgramInflows rows for Bolt Ave = 6 milestones
+- ProgramExpense rows for Bolt Ave = 65 expense lines
+
+Acceptance test suite (required)
+1) Upload Bolt Ave tracker
+   - Project appears in Projects Summary with the fields above.
+   - Project Plan tab shows 34 real tasks (not “-”).
+   - Cashflow tab shows series + chart (not empty).
+   - Finance - Revenue and Finance - COS show data (not empty).
+2) Upload same tracker again
+   - Prompt Replace vs Duplicate.
+   - Replace updates only that project.
+   - Duplicate creates a versioned copy.
+3) Upload persistence
+   - Uploading additional trackers must never remove existing projects.
+4) FY filters
+   - Default “This FY” uses Sep 1 → Aug 31.
+   - Changing the date window updates charts/tables correctly.
+5) Stability
+   - Upload succeeds repeatedly (no second-upload failure).
+   - No “Authentication required” unless we intentionally enable auth (do not do that now).
+
+QC discipline you must follow
+- First, inspect the tracker sheets to understand real header positions and merged rows.
+- Then implement parsers with diagnostics.
+- Then build UI that always shows something (parsed view OR raw view).
+- Only then polish UI.
+- Provide a clear “Data Quality” panel per upload that highlights parse warnings and what was mapped.
+
+Before implementing and deploying changes, ASK THESE QUESTIONS (do not guess)
+1) Project unique key:
+   - Use Project Code, Project Name, or both?
+   - Where exactly in the tracker is the canonical ID stored?
+2) Cashflow periodicity:
+   - Are cashflow columns weekly dates, monthly dates, or mixed?
+   - Should we standardize internally to weekly or monthly?
+3) Planning edits:
+   - Which fields can be edited for planning (planned revenue only? planned expenditure only? both)?
+   - Do edits need approvals/audit trail, or just version history?
+4) Revenue recognition:
+   - Is it input from tracker, or calculated from milestones? If calculated, confirm formula logic.
+5) Access control:
+   - Keep no-login (recommended now), or a simple shared password later?
+
+Deliverable
+- A stable, modern “Program Dashboard” app that matches Excel outputs and never shows empty data when data exists.
+- Parsing is robust across merged rows and non-row-1 headers.
+- Replace/Duplicate versioning works.
+- Cashflow planning scenarios work.
+- Acceptance tests pass before deploy.

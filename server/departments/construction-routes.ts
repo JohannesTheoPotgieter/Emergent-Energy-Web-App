@@ -37,7 +37,7 @@ router.get("/api/construction/activities", requireAuth, async (req: Request, res
   }
 });
 
-router.post("/api/construction/activities", requireAuth, requirePermission("projects", "create"), async (req: Request, res: Response) => {
+router.post("/api/construction/activities", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(siteActivities).values(req.body).returning();
     res.status(201).json(row);
@@ -47,7 +47,7 @@ router.post("/api/construction/activities", requireAuth, requirePermission("proj
   }
 });
 
-router.patch("/api/construction/activities/:id", requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/construction/activities/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(siteActivities)
@@ -82,7 +82,7 @@ router.get("/api/construction/snags", requireAuth, async (req: Request, res: Res
   }
 });
 
-router.post("/api/construction/snags", requireAuth, requirePermission("quality", "create"), async (req: Request, res: Response) => {
+router.post("/api/construction/snags", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(snags).values(req.body).returning();
     res.status(201).json(row);
@@ -92,7 +92,7 @@ router.post("/api/construction/snags", requireAuth, requirePermission("quality",
   }
 });
 
-router.patch("/api/construction/snags/:id", requireAuth, requirePermission("quality", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/construction/snags/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(snags)
@@ -127,7 +127,7 @@ router.get("/api/construction/inspections", requireAuth, async (req: Request, re
   }
 });
 
-router.post("/api/construction/inspections", requireAuth, requirePermission("quality", "create"), async (req: Request, res: Response) => {
+router.post("/api/construction/inspections", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(siteInspections).values(req.body).returning();
     res.status(201).json(row);
@@ -137,7 +137,7 @@ router.post("/api/construction/inspections", requireAuth, requirePermission("qua
   }
 });
 
-router.patch("/api/construction/inspections/:id", requireAuth, requirePermission("quality", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/construction/inspections/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(siteInspections)
@@ -172,7 +172,7 @@ router.get("/api/construction/contractors", requireAuth, async (req: Request, re
   }
 });
 
-router.post("/api/construction/contractors", requireAuth, requirePermission("subcontractors", "create"), async (req: Request, res: Response) => {
+router.post("/api/construction/contractors", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(contractorAssignments).values(req.body).returning();
     res.status(201).json(row);
@@ -182,7 +182,7 @@ router.post("/api/construction/contractors", requireAuth, requirePermission("sub
   }
 });
 
-router.patch("/api/construction/contractors/:id", requireAuth, requirePermission("subcontractors", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/construction/contractors/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(contractorAssignments)

@@ -1,23 +1,31 @@
 # Documentation Index
 
-This directory is the canonical documentation entry point for the repository.
+This directory is the **single source of truth** for current project documentation.
 
-## Current canonical docs
+## Getting Started
+- [Setup and Runbook](./setup-and-runbook.md)
 
-- Architecture
-  - `docs/architecture.md` (platform overview)
-  - `docs/architecture/routing.md` (canonical route ownership + parity contract)
-- QA / release
-  - `docs/qa/route-truth-baseline-2026-04-06.md` (current route baseline)
-  - `docs/qa/current-audit-summary.md` (single active audit truth)
-  - `docs/qa/release-gate.md` (required release evidence and command checklist)
-- Operations
-  - `docs/cutover-runbook.md`
-  - `docs/setup-and-runbook.md`
+## Architecture
+- [Architecture](./architecture.md)
 
-## Archived or superseded docs
+## Data & Imports
+- [Data Import and Source of Truth](./data-import-and-source-of-truth.md)
 
-- `docs/archive/routes/ROUTE-INVENTORY.superseded.md`
-- `docs/archive/audits/*`
+## Reporting
+- [Reporting](./reporting.md)
 
-If a document is not listed here, treat it as historical context only unless another canonical doc explicitly references it.
+## Roles & Permissions
+- [Roles and Permissions](./roles-and-permissions.md)
+
+## Microsoft / SharePoint / Outlook integrations
+- [Microsoft Integrations](./microsoft-integrations.md)
+
+## Operations / SOPs
+- [Operations SOP](./operations-sop.md)
+
+## Training
+- [Training template](./training/ee-doc-template.html)
+
+## Archive
+- [Documentation archive](./archive/)
+- [Documentation inventory and cleanup decisions](./DOC_INVENTORY.md)

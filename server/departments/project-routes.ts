@@ -1171,10 +1171,9 @@ router.patch("/api/projects-summary/:projectInfoId/escalation", requireAuth, req
   }
 });
 
-// ==================== PROGRAM DASHBOARD (Deprecated shadow route) ====================
-// NOTE: Canonical /api/program-dashboard is implemented in server/routes/dashboard-routes.ts.
-// This legacy variant is intentionally retired from canonical route path to prevent duplicate registration.
-router.get("/api/program-dashboard-legacy-deprecated", requireAuth, async (req, res) => {
+// ==================== PROGRAM DASHBOARD ====================
+
+router.get("/api/program-dashboard", requireAuth, async (req, res) => {
   try {
     const [allProjectInfo, allExpenses, rawInflows, allPlans, allEditableFields, allTaskLinks, allOpTasks, manualEntries] = await Promise.all([
       storage.getAllProjectInfo(),
