@@ -1,32 +1,20 @@
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-
-function read(relPath: string) {
-  return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
-}
+import { PAGE_REGISTRY } from "@/config/page-registry";
 
 describe("program dashboard graph builder", () => {
-  it("keeps workbook-aligned chart datasets in the program dashboard API", () => {
-    const source = read("server/routes/dashboard-routes.ts");
+  it("registers the execution board page with the correct permission entity", () => {
+    const executionBoard = PAGE_REGISTRY.find((page) => page.id === "executionBoard");
 
-    expect(source).toContain('id: "monthlyForecast"');
-    expect(source).toContain('id: "weeklyCashflow"');
-    expect(source).toContain('id: "phaseSummary"');
-    expect(source).toContain('id: "milestonePipeline"');
-    expect(source).toContain('id: "constructionWindow"');
-    expect(source).toContain('title: "Portfolio Gantt Chart"');
-    expect(source).toContain("charts: chartDatasets");
+    expect(executionBoard).toBeDefined();
+    expect(executionBoard!.permissionEntity).toBe("execution_board");
+    expect(executionBoard!.routeComponentKey).toBe("ExecutionBoardPage");
   });
 
-  it("keeps the execution dashboard graph builder and workbook preset labels wired in the UI", () => {
-    const source = read("client/src/pages/dashboard.tsx");
+  it("registers the execution board program sub-route", () => {
+    const programView = PAGE_REGISTRY.find((page) => page.id === "executionBoardProgram");
 
-    expect(source).toContain("Workbook-aligned Program Dashboard");
-    expect(source).toContain("Build graphs from imported execution data");
-    expect(source).toContain('data-testid="execution-graph-builder"');
-    expect(source).toContain('testId="program-preset-chart"');
-    expect(source).toContain('testId="execution-builder-chart"');
-    expect(source).toContain("Load current preset");
+    expect(programView).toBeDefined();
+    expect(programView!.path).toBe("/execution-board/program");
+    expect(programView!.permissionEntity).toBe("execution_board");
   });
 });

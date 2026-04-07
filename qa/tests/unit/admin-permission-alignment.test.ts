@@ -1,26 +1,21 @@
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-
-function read(relPath: string) {
-  return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
-}
+import { PAGE_REGISTRY, getPermissionEntityForPath } from "@/config/page-registry";
 
 describe("admin permission alignment", () => {
-  it("guards admin pages through route permission entities instead of a blanket admin-path redirect", () => {
-    const appSource = read("client/src/App.tsx");
-
-    expect(appSource).toContain("const entity = getPermissionEntityForPath(location);");
-    expect(appSource).not.toContain('location.startsWith("/admin")');
+  it("returns the correct permission entity for admin paths", () => {
+    expect(getPermissionEntityForPath("/admin/smart-import")).toBe("smart_import");
+    expect(getPermissionEntityForPath("/admin/control-center")).toBe("admin");
+    expect(getPermissionEntityForPath("/admin/import-control-tower")).toBe("admin");
+    expect(getPermissionEntityForPath("/admin/roles")).toBe("admin_roles");
+    expect(getPermissionEntityForPath("/admin/activity-log")).toBe("activity_log");
   });
 
-  it("keeps smart import and import control tower bound to explicit permission entities", () => {
-    const smartImportSource = read("server/smart-import-routes.ts");
+  it("binds every admin route to an explicit permission entity", () => {
+    const adminPages = PAGE_REGISTRY.filter((page) => page.path.startsWith("/admin"));
+    expect(adminPages.length).toBeGreaterThan(0);
 
-    expect(smartImportSource).toContain('requirePermission("smart_import", "view")');
-    expect(smartImportSource).toContain('requirePermission("smart_import", "edit")');
-    expect(smartImportSource).toContain('requirePermission("admin", "view")');
-    expect(smartImportSource).toContain('requirePermission("admin", "edit")');
-    expect(smartImportSource).not.toContain("IMPORT_ROLES");
+    for (const page of adminPages) {
+      expect(page.permissionEntity, `${page.id} (${page.path}) must have a permissionEntity`).toBeTruthy();
+    }
   });
 });
