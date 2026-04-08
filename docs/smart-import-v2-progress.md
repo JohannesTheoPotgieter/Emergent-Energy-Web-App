@@ -755,7 +755,23 @@ The plug-and-play verdict from Phase 8 ("YES WITH CONDITIONS") was based on:
 - Row-matcher logic tested with synthetic edge cases — VERIFIED
 - Actual production data patterns — **NOT VERIFIED**
 
-Until a team member runs the checklist queries against the live database, the true plug-and-play status is **UNCONFIRMED**. The most likely outcome based on code analysis:
-- Schema checks will PASS (Drizzle schema is the source of truth for migrations)
-- Duplicate key checks are the unknown — depends entirely on actual tracker data
-- Migration may or may not have been applied yet
+### Live verification completed (2026-04-08)
+
+Live database was queried via Neon SQL console. Results:
+
+| Check | Result |
+|-------|--------|
+| Migration applied | **NO** — `milestone_no` column does not exist yet |
+| Core tables | PASS — all 8 tables present |
+| Duplicate revenue keys | **16 collision groups across 9 projects** (of 62 total) |
+| Duplicate cost keys | **30 collision groups across 17 projects** (of 62 total), 99 extra rows |
+| Plan rows without taskNo | 37 of 2,694 (1.4%) — acceptable |
+| Baseline JSON integrity | PASS — all 62 projects have valid normalization baselines |
+
+### Definitive verdict
+
+**YES WITH CONDITIONS:**
+- Migration must be applied before deployment (blocker)
+- ~36 of 62 projects (58%) are clean and safe for v2 pilot
+- ~26 projects (42%) have duplicate business keys and must use v1 "Advanced view" fallback
+- The duplicate cost key rate (27% of projects) is the primary barrier to full GA
