@@ -1244,12 +1244,12 @@ export function registerMytoolRoutes(app: Express): void {
       let flagged: any[] = [];
       try {
         flagged = await outlook.listFlaggedMessages(30);
-      } catch {}
+      } catch (e) { console.warn("[mytool-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
       let recentEmails: any[] = [];
       try {
         recentEmails = await outlook.listMessages({ top: 50 });
-      } catch {}
+      } catch (e) { console.warn("[mytool-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
       const keywordMatches: any[] = [];
       const senderMatches: any[] = [];

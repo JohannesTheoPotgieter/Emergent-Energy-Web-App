@@ -763,7 +763,7 @@ router.get("/api/outlook/events", requireAuth, async (req, res) => {
       try {
         const { getSsoTokenForUser } = await import("../ms-account-service");
         userToken = await getSsoTokenForUser(userId);
-      } catch {}
+      } catch (e) { console.warn("[exco-routes] non-critical error:", e instanceof Error ? e.message : e); }
     }
 
     let events: any[] = [];
@@ -1159,12 +1159,12 @@ router.get("/api/mytool/triage-inbox", requireAuth, requireAdmin, async (req, re
     let flagged: any[] = [];
     try {
       flagged = await outlook.listFlaggedMessages(30);
-    } catch {}
+    } catch (e) { console.warn("[exco-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
     let recentEmails: any[] = [];
     try {
       recentEmails = await outlook.listMessages({ top: 50 });
-    } catch {}
+    } catch (e) { console.warn("[exco-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
     const keywordMatches: any[] = [];
     const senderMatches: any[] = [];
@@ -1447,7 +1447,7 @@ router.post("/api/teams/groups/:id/members", requireAuth, async (req, res) => {
           addedBy: actingUserId,
         }).onConflictDoNothing().returning();
         if (member) results.push(member);
-      } catch {}
+      } catch (e) { console.warn("[exco-routes] non-critical error:", e instanceof Error ? e.message : e); }
     }
 
     res.json({ added: results.length });

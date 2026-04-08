@@ -588,7 +588,7 @@ export function registerPlanningTasksRoutes(app: Express) {
             const role = roleMap.get(wiId);
             t.assignmentRole = role || null;
           }
-        } catch {}
+        } catch (e) { console.warn("[planning-tasks-routes] non-critical error:", e instanceof Error ? e.message : e); }
       }
 
       res.json({ tasks: result, unlinkedOperationalCount });
