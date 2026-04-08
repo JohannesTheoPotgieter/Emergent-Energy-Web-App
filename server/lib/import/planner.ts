@@ -11,8 +11,9 @@
  */
 
 import type { NormalizationResult } from "./normalizer";
-import { detectImportMode, loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows } from "./baseline";
+import { detectImportMode, loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineNormalization } from "./baseline";
 import type { ImportMode } from "./baseline";
+import { runConflictEngine, type ConflictEngineResult, type ConflictSummary } from "./conflict-engine";
 
 // ---------------------------------------------------------------------------
 // Canonical source declarations — the authoritative table for each section.
@@ -34,6 +35,7 @@ export const CANONICAL_SOURCES = {
 } as const;
 import {
   matchRows,
+  generateBusinessKey,
   type SectionType,
   type MatchedRow,
   type MatchConfidence,
@@ -90,6 +92,8 @@ export interface PlannerResult {
     REVENUE: SectionPlan | null;
     EXPENDITURE: SectionPlan | null;
   };
+  /** 3-way conflict detection results (null for BASELINE imports) */
+  conflicts: ConflictEngineResult | null;
   /** Global planner warnings */
   warnings: string[];
   /** When the plan was generated */
@@ -180,35 +184,52 @@ export async function runImportPlanner(
     return buildBaselinePlan(normalization, warnings, baselineInfo.lastCommittedRunId);
   }
 
-  // INCREMENTAL — load current state and run row matching
-  const [planRows, revenueRows, costRows] = await Promise.all([
+  // INCREMENTAL — load current state, baseline snapshot, and run matching + conflicts
+  const [planRows, revenueRows, costRows, baselineNormalization] = await Promise.all([
     loadCurrentPlanRows(projectId),
     loadCurrentRevenueRows(projectId),
     loadCurrentCostRows(projectId),
+    loadBaselineNormalization(projectId),
   ]);
 
-  // Run row matching per section
+  if (!baselineNormalization) {
+    warnings.push("No baseline normalization found from last committed import. 3-way merge will treat current DB state as baseline.");
+  }
+
+  // Run row matching per section and collect matched rows for conflict engine
   let planSection: SectionPlan | null = null;
   let revenueSection: SectionPlan | null = null;
   let expenditureSection: SectionPlan | null = null;
+  const matchedRowsBySection: Record<SectionType, MatchedRow[]> = { PLAN: [], REVENUE: [], EXPENDITURE: [] };
 
   if (normalization.planTasks.length > 0 || planRows.length > 0) {
     const matched = matchRows("PLAN", projectId, normalization.planTasks, planRows as any);
+    matchedRowsBySection.PLAN = matched;
     planSection = buildSectionPlan(CANONICAL_SOURCES.PLAN, matched, normalization.planTasks.length, planRows.length);
     collectWarnings(matched, "PLAN", warnings);
   }
 
   if (normalization.revenueLines.length > 0 || revenueRows.length > 0) {
     const matched = matchRows("REVENUE", projectId, normalization.revenueLines, revenueRows as any);
+    matchedRowsBySection.REVENUE = matched;
     revenueSection = buildSectionPlan(CANONICAL_SOURCES.REVENUE, matched, normalization.revenueLines.length, revenueRows.length);
     collectWarnings(matched, "REVENUE", warnings);
   }
 
   if (normalization.costLines.length > 0 || costRows.length > 0) {
     const matched = matchRows("EXPENDITURE", projectId, normalization.costLines, costRows as any);
+    matchedRowsBySection.EXPENDITURE = matched;
     expenditureSection = buildSectionPlan(CANONICAL_SOURCES.EXPENDITURE, matched, normalization.costLines.length, costRows.length);
     collectWarnings(matched, "EXPENDITURE", warnings);
   }
+
+  // Run 3-way conflict engine
+  const conflicts = runConflictEngine(
+    matchedRowsBySection,
+    baselineNormalization,
+    projectId,
+    generateBusinessKey,
+  );
 
   return {
     importMode: "INCREMENTAL",
@@ -218,6 +239,7 @@ export async function runImportPlanner(
       REVENUE: revenueSection,
       EXPENDITURE: expenditureSection,
     },
+    conflicts,
     warnings,
     generatedAt: new Date().toISOString(),
   };
@@ -265,6 +287,7 @@ function buildBaselinePlan(
       REVENUE: baselineSectionPlan(CANONICAL_SOURCES.REVENUE, normalization.revenueLines),
       EXPENDITURE: baselineSectionPlan(CANONICAL_SOURCES.EXPENDITURE, normalization.costLines),
     },
+    conflicts: null, // No conflicts on baseline import
     warnings,
     generatedAt: new Date().toISOString(),
   };
@@ -295,3 +318,4 @@ function collectWarnings(matchedRows: MatchedRow[], section: SectionType, warnin
 // Re-export types for convenience
 export type { ImportMode } from "./baseline";
 export type { RowClassification, MatchConfidence, ChangedField } from "./row-matcher";
+export type { ConflictEngineResult, ConflictSummary, RowMergeResult, FieldMerge, MergeCase, RowConflictStatus, SectionConflictSummary } from "./conflict-engine";

@@ -395,7 +395,7 @@ export function matchRows(
 // Key dispatch
 // ---------------------------------------------------------------------------
 
-function generateBusinessKey(section: SectionType, projectId: number, row: Record<string, any>): BusinessKey {
+export function generateBusinessKey(section: SectionType, projectId: number, row: Record<string, any>): BusinessKey {
   switch (section) {
     case "PLAN":
       return planBusinessKey(projectId, row as any);

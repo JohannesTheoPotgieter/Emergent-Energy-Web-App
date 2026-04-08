@@ -13,6 +13,7 @@ import {
   workItems,
 } from "@shared/schema";
 import { eq, and, desc, isNull } from "drizzle-orm";
+import type { NormalizationResult } from "./normalizer";
 
 export type ImportMode = "BASELINE" | "INCREMENTAL";
 
@@ -111,6 +112,8 @@ export async function loadCurrentRevenueRows(projectId: number) {
     .select({
       id: normalizedRevenueLines.id,
       milestoneName: normalizedRevenueLines.milestoneName,
+      milestoneNo: normalizedRevenueLines.milestoneNo,
+      milestonePercent: normalizedRevenueLines.milestonePercent,
       description: normalizedRevenueLines.description,
       amountExVat: normalizedRevenueLines.amountExVat,
       vat: normalizedRevenueLines.vat,
@@ -166,4 +169,40 @@ export async function loadCurrentCostRows(projectId: number) {
         isNull(normalizedCostLines.effectiveTo),
       ),
     );
+}
+
+// ---------------------------------------------------------------------------
+// Baseline snapshot loader — last committed import's normalization data
+// ---------------------------------------------------------------------------
+
+/**
+ * Load the normalization data from the last COMMITTED import run for a project.
+ * This serves as the "baseline" (B) in the 3-way merge: B vs C vs F.
+ *
+ * Returns null if no committed run exists (baseline import).
+ */
+export async function loadBaselineNormalization(
+  projectId: number,
+): Promise<NormalizationResult | null> {
+  const [lastCommitted] = await db
+    .select({
+      id: smartImportRuns.id,
+      summaryJson: smartImportRuns.summaryJson,
+    })
+    .from(smartImportRuns)
+    .where(
+      and(
+        eq(smartImportRuns.projectId, projectId),
+        eq(smartImportRuns.status, "COMMITTED"),
+      ),
+    )
+    .orderBy(desc(smartImportRuns.committedAt))
+    .limit(1);
+
+  if (!lastCommitted) return null;
+
+  const summary = lastCommitted.summaryJson as any;
+  if (!summary?.normalization) return null;
+
+  return summary.normalization as NormalizationResult;
 }

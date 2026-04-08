@@ -244,7 +244,129 @@ The matching key is the same in both cases (milestoneName), because the canonica
 
 - ~~Revenue milestoneNo not available~~ → Now extracted and used for confidence. Limitation was in the normalizer, not the tracker data.
 
-### Remaining limitations
+### Remaining limitations (resolved in Phase 4)
 
-1. The canonical DB table `normalized_revenue_lines` does not store `milestoneNo`. A schema migration would be needed to use it as a true primary matching key. Currently, `milestoneName` is the matching key with milestoneNo affecting confidence only.
+1. ~~The canonical DB table `normalized_revenue_lines` does not store `milestoneNo`.~~ → Resolved: migration added, column persisted.
 2. The dead table `normalizedPlanTasks` remains in the schema. It could be cleaned up in a future PR but is not blocking anything.
+
+---
+
+## Phase 4: 3-Way Conflict Engine & Commit Integration
+
+**Date:** 2026-04-08
+**Status:** COMPLETE
+
+---
+
+### What was changed
+
+#### New files created
+
+| File | Purpose |
+|------|---------|
+| `server/lib/import/conflict-engine.ts` | 3-way merge engine: compares baseline (B) vs current app (C) vs uploaded file (F) per field |
+| `qa/tests/unit/smart-import-conflict-engine.test.ts` | 43 tests for all merge cases, canonical source alignment, commit gating |
+| `migrations/20260408_add_milestone_no_to_revenue.sql` | Adds `milestone_no` and `milestone_percent` columns to `normalized_revenue_lines` |
+
+#### Existing files modified
+
+| File | Changes |
+|------|---------|
+| `server/lib/import/planner.ts` | Integrates conflict engine. PlannerResult now includes `conflicts: ConflictEngineResult \| null`. Loads baseline normalization. |
+| `server/lib/import/baseline.ts` | Added `loadBaselineNormalization()` — loads last COMMITTED run's `summaryJson.normalization` as baseline snapshot. Added `milestoneNo`/`milestonePercent` to revenue loader. |
+| `server/lib/import/row-matcher.ts` | Exported `generateBusinessKey()` for use by conflict engine. |
+| `server/smart-import-routes.ts` | Added v2 conflict gate in commit handler: runs planner, blocks on unresolved conflicts, accepts `v2ConflictResolutions`. Added v2 conflict audit logging. Persists `milestoneNo`/`milestonePercent` in revenue commit. |
+| `shared/schema/finance.ts` | Added `milestoneNo` and `milestonePercent` columns to `normalizedRevenueLines` table. |
+
+### 3-Way Merge Logic
+
+The conflict engine classifies each field on matched rows:
+
+| Case | Condition | Result | User action |
+|------|-----------|--------|-------------|
+| E | B=C=F | UNCHANGED | None |
+| A | B=C, C≠F | AUTO_ACCEPT_FILE | None (auto) |
+| B | B≠C, B=F | KEEP_APP | None (auto) |
+| D | F blank, B≠C | KEEP_APP | None (preserve app) |
+| converged | B≠C, B≠F, C=F | UNCHANGED | None (both agree) |
+| C | B≠C, C≠F, B≠F | CONFLICT | User must choose |
+
+**Baseline source:** `summaryJson.normalization` from the last COMMITTED import run for the project.
+
+**Canonical sources for current app state:**
+- PLAN: `work_items` (source=SMART_IMPORT, workstream=PM)
+- REVENUE: `normalized_revenue_lines` (effectiveTo IS NULL)
+- EXPENDITURE: `normalized_cost_lines` (effectiveTo IS NULL)
+
+### Commit Handler Changes
+
+1. **V2 conflict gate** runs BEFORE the existing v1 manual-edit check.
+2. If unresolved conflicts exist → HTTP 409 with full conflict detail.
+3. Client resolves via `v2ConflictResolutions: { "rowKey::fieldName": "keep_app" | "accept_file" }`.
+4. All resolutions logged to `conflictResolutionLog` with `entityType = "v2_3way_merge"`.
+5. `skipV2ConflictCheck` escape hatch preserves backward compatibility.
+6. Existing v1 manual-edit detection remains as safety net.
+
+### Revenue milestoneNo Canonical Persistence
+
+- Schema: `milestone_no TEXT` and `milestone_percent NUMERIC(6,4)` added to `normalized_revenue_lines`
+- Migration: `migrations/20260408_add_milestone_no_to_revenue.sql`
+- Write path: commit handler now persists `milestoneNo` and `milestonePercent` from normalization
+- Read path: baseline loader now fetches these columns
+- Row matcher: uses milestoneNo for confidence upgrade (HIGH when present)
+
+### Preview Payload Shape
+
+The planner now returns conflict data:
+
+```typescript
+PlannerResult.conflicts: {
+  summary: {
+    totalConflictRows: number;
+    unresolvedConflictRows: number;
+    autoResolvedRows: number;
+    sections: {
+      PLAN: { canonicalSource, rows[], conflictRowCount, ... } | null;
+      REVENUE: { ... } | null;
+      EXPENDITURE: { ... } | null;
+    };
+  };
+  hasBlockingConflicts: boolean;
+  allRows: RowMergeResult[];
+}
+
+// Each RowMergeResult:
+{
+  rowKey: string;
+  displayLabel: string;
+  section: "PLAN" | "REVENUE" | "EXPENDITURE";
+  canonicalSource: string;
+  conflictStatus: "NO_CONFLICT" | "HAS_CONFLICTS" | "AUTO_RESOLVED";
+  fields: Array<{
+    fieldName: string;
+    baselineValue: string | null;
+    currentAppValue: string | null;
+    uploadedValue: string | null;
+    mergeCase: "UNCHANGED" | "AUTO_ACCEPT_FILE" | "KEEP_APP" | "CONFLICT";
+    requiresDecision: boolean;
+  }>;
+}
+```
+
+### Test Coverage
+
+115 total tests across 5 test files, all passing:
+
+| File | Tests | Coverage |
+|------|-------|---------|
+| `smart-import-conflict-engine.test.ts` | 43 | All merge cases (A-E), row merge, section merge, canonical sources, commit gate, milestoneNo persistence |
+| `smart-import-planner-spine.test.ts` | 39 | Canonical source alignment, row matcher, identity keys |
+| `smart-import-commit-guard.test.ts` | 18 | Atomic commit guard |
+| `smart-import-authorization.test.ts` | 14 | Permission checks |
+| `smart-import-storage-retention.test.ts` | 1 | Temporal retention |
+
+### Remaining gaps before UX phase
+
+1. **Commit does not yet apply v2 merge decisions to the actual write path.** The commit handler still uses the v1 full-replace strategy. The v2 conflict gate blocks/allows commit, and resolutions are logged, but the write path itself doesn't do incremental UPDATE-in-place. This is Phase 5 work.
+2. **No frontend conflict resolution UI yet.** The API shape is ready for it.
+3. **No backfill of milestoneNo for existing rows.** New imports will persist it; old rows will have NULL.

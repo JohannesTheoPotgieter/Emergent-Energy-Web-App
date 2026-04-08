@@ -1387,6 +1387,60 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     }
 
+    // ── Smart Import v2: 3-way conflict check ──
+    // Run the planner to detect true conflicts (both app and file diverged from baseline).
+    // Unresolved conflicts block commit.
+    const v2ConflictResolutions = req.body?.v2ConflictResolutions as Record<string, "keep_app" | "accept_file"> | undefined;
+    const skipV2ConflictCheck = req.body?.skipV2ConflictCheck === true;
+
+    if (!skipV2ConflictCheck && run.projectId) {
+      const summary = run.summaryJson as any;
+      if (summary?.normalization) {
+        try {
+          const plannerResult = await runImportPlanner(run.projectId, summary.normalization);
+          if (plannerResult.conflicts?.hasBlockingConflicts) {
+            const unresolvedConflicts = plannerResult.conflicts.allRows
+              .filter(r => r.conflictStatus === "HAS_CONFLICTS")
+              .map(r => ({
+                rowKey: r.rowKey,
+                displayLabel: r.displayLabel,
+                section: r.section,
+                canonicalSource: r.canonicalSource,
+                fields: r.fields.filter(f => f.requiresDecision).map(f => ({
+                  fieldName: f.fieldName,
+                  baselineValue: f.baselineValue,
+                  currentAppValue: f.currentAppValue,
+                  uploadedValue: f.uploadedValue,
+                  mergeCase: f.mergeCase,
+                })),
+              }));
+
+            // Check if all conflicts have been resolved by the client
+            const allResolved = v2ConflictResolutions
+              ? unresolvedConflicts.every(r =>
+                  r.fields.every(f => v2ConflictResolutions[`${r.rowKey}::${f.fieldName}`])
+                )
+              : false;
+
+            if (!allResolved) {
+              return res.status(409).json({
+                error: "v2_conflicts_detected",
+                message: `This import has ${unresolvedConflicts.length} row(s) where both the app and file changed differently from the last import. Please resolve each conflict.`,
+                conflicts: unresolvedConflicts,
+                planning: {
+                  importMode: plannerResult.importMode,
+                  warnings: plannerResult.warnings,
+                },
+                hint: "Resolve conflicts via v2ConflictResolutions: { 'rowKey::fieldName': 'keep_app' | 'accept_file' }",
+              });
+            }
+          }
+        } catch (planErr: unknown) {
+          console.warn("[SmartImport] v2 conflict check failed (falling through to v1):", (planErr instanceof Error ? planErr.message : String(planErr)));
+        }
+      }
+    }
+
     const acknowledgeManualEdits = req.body?.acknowledgeManualEdits === true;
     const preserveManualEdits = req.body?.preserveManualEdits === true;
     const conflictResolutions = req.body?.conflictResolutions as Record<string, "keep" | "import"> | undefined;
@@ -2022,6 +2076,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               projectName,
               description: merged.description,
               milestoneName: merged.milestoneName,
+              milestoneNo: merged.milestoneNo || null,
+              milestonePercent: merged.milestonePercent || null,
               amountExVat: merged.amountExVat,
               vat: merged.vat,
               invoiceNumber: merged.invoiceNumber,
@@ -2661,6 +2717,32 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         }
       } catch (resLogErr: any) {
         console.warn("[smart-import] Conflict resolution logging failed (non-blocking):", resLogErr.message);
+      }
+    }
+
+    // Step 4.6: Log v2 3-way conflict resolution decisions
+    if (v2ConflictResolutions && Object.keys(v2ConflictResolutions).length > 0) {
+      try {
+        for (const [key, decision] of Object.entries(v2ConflictResolutions)) {
+          const sepIdx = key.lastIndexOf("::");
+          if (sepIdx < 0) continue;
+          const rowKey = key.substring(0, sepIdx);
+          const fieldName = key.substring(sepIdx + 2);
+
+          await db.insert(conflictResolutionLog).values({
+            importRunId: runId,
+            entityType: "v2_3way_merge",
+            entityId: rowKey,
+            fieldName,
+            manualValue: decision === "keep_app" ? "preserved" : null,
+            importValue: decision === "accept_file" ? "applied" : null,
+            decision: decision === "keep_app" ? "KEEP_MANUAL" : "OVERWRITE_WITH_IMPORT",
+            decidedByUserId: userId,
+            decidedByName: (req as any).user?.name || null,
+          });
+        }
+      } catch (v2ResLogErr: any) {
+        console.warn("[smart-import] v2 conflict resolution logging failed (non-blocking):", v2ResLogErr.message);
       }
     }
 
