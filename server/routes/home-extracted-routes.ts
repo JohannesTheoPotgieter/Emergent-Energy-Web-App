@@ -1,0 +1,599 @@
+/**
+ * Home / Reporting Routes — Extracted from server/routes.ts (Phase 7)
+ *
+ * 5 handlers:
+ *   GET  /api/home/summary
+ *   GET  /api/home/notes
+ *   POST /api/home/notes
+ *   GET  /api/upcoming-events
+ *   GET  /api/upcoming-financials
+ */
+
+import type { Express } from "express";
+import { storage } from "../storage";
+import { db } from "../db";
+import { isNull } from "drizzle-orm";
+import { normalizedCostLines, normalizedRevenueLines } from "@shared/schema";
+import { requireAuth } from "../auth-context";
+import { requireAdmin } from "../middleware/requireAdmin";
+import { requirePermission } from "../permission-middleware";
+import { logAuditFromReq } from "../audit-logger";
+import { classifyExpenseState } from "../lib/calculations/stateClassifier";
+import { resolveInflowEffectiveDates } from "../lib/cashflow-helpers";
+import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
+import { safeNum, isWithinDays, isThisWeek, isThisMonth, getFYRange, findMaxEndDate, findMinStartDate } from "../lib/home-helpers";
+
+export function registerHomeExtractedRoutes(app: Express): void {
+
+  // ==================== HOME SUMMARY ====================
+
+  app.get("/api/home/summary", requireAuth, async (req, res) => {
+    try {
+      const [allProjectInfo, legacyExpenses, legacyRawInflows, legacyPlans, latestRefresh, revenueSummaries, allTaskLinks, allOpTasks, allPlanOverrides, allPlanTasks] = await Promise.all([
+        storage.getAllProjectInfo(),
+        storage.getAllProgramExpenses(),
+        storage.getAllProgramInflows(),
+        storage.getAllProjectPlans(),
+        storage.getLatestRefresh(),
+        storage.getAllProjectRevenueSummaries(),
+        storage.getAllMilestoneTaskLinks(),
+        storage.getAllOperationalTasks(),
+        Promise.resolve([]),
+        getAllPMWorkItemsAsProjectPlan(),
+      ]);
+      const allExpenses = legacyExpenses;
+      const allPlans = legacyPlans;
+      const allInflows = resolveInflowEffectiveDates(legacyRawInflows, allTaskLinks, allOpTasks, allPlans);
+
+      const today = new Date().toISOString().split("T")[0];
+      const fyRange = getFYRange();
+
+      // Active projects = those not in "Closed" or "On Hold" phase
+      const activeProjects = allProjectInfo.filter(p => 
+        p.phase && !p.phase.toLowerCase().includes('closed') && !p.phase.toLowerCase().includes('hold')
+      );
+      const onHoldProjects = allProjectInfo.filter(p => 
+        p.phase && p.phase.toLowerCase().includes('hold')
+      );
+      const closedProjects = allProjectInfo.filter(p => 
+        p.phase && p.phase.toLowerCase().includes('closed')
+      );
+      const constructionProjects = allProjectInfo.filter(p => 
+        p.phase && p.phase.toLowerCase() === 'construction'
+      );
+
+      // Active capacity (MW) = sum(sizeKwp)/1000 for active projects
+      let activeCapacityKw = 0;
+      for (const p of activeProjects) {
+        activeCapacityKw += safeNum(p.sizeKwp);
+      }
+      const activeCapacityMW = activeCapacityKw / 1000;
+
+      // Construction capacity
+      let constructionCapacityKw = 0;
+      for (const p of constructionProjects) {
+        constructionCapacityKw += safeNum(p.sizeKwp);
+      }
+
+      // Phase distribution
+      const phaseDistribution: Record<string, { count: number; kw: number }> = {};
+      for (const p of allProjectInfo) {
+        const phase = p.phase || 'Unknown';
+        if (!phaseDistribution[phase]) {
+          phaseDistribution[phase] = { count: 0, kw: 0 };
+        }
+        phaseDistribution[phase].count++;
+        phaseDistribution[phase].kw += safeNum(p.sizeKwp);
+      }
+
+      const todayStr = today;
+      const projectDeltas = new Map<string, { weightedActual: number; weightedExpected: number; totalWeight: number }>();
+      for (const plan of allPlans) {
+        if ((plan as any).rowNumber < 0 && (plan as any).isVirtual) continue;
+        const taskNo2 = (plan.taskNo || '').toString().toLowerCase().trim();
+        const isSummary2 = taskNo2 === 'no.' || taskNo2 === 'no' || taskNo2 === '#';
+        if (isSummary2) continue;
+        if (!projectDeltas.has(plan.projectName)) {
+          projectDeltas.set(plan.projectName, { weightedActual: 0, weightedExpected: 0, totalWeight: 0 });
+        }
+        const pd = projectDeltas.get(plan.projectName)!;
+        const dur = plan.durationDays && plan.durationDays > 0 ? plan.durationDays : 1;
+        pd.weightedActual += (plan.actualPctComplete ?? 0) * dur;
+        let exp = plan.expectedPctComplete;
+        if (exp == null || exp === undefined) {
+          const tStart = plan.actualStart?.substring?.(0, 10) || plan.startDate?.substring?.(0, 10);
+          const tEnd = plan.actualEnd?.substring?.(0, 10) || plan.endDate?.substring?.(0, 10);
+          if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
+            if (todayStr >= tEnd) exp = 1.0;
+            else if (todayStr <= tStart) exp = 0.0;
+            else {
+              const totalDays = Math.max(1, (new Date(tEnd).getTime() - new Date(tStart).getTime()) / 86400000);
+              const elapsedDays = (new Date(todayStr).getTime() - new Date(tStart).getTime()) / 86400000;
+              exp = Math.min(elapsedDays / totalDays, 1.0);
+            }
+          } else {
+            exp = 0;
+          }
+        }
+        pd.weightedExpected += (exp ?? 0) * dur;
+        pd.totalWeight += dur;
+      }
+
+      const projectDeltaValues: { projectName: string; delta: number; avgActual: number; avgExpected: number }[] = [];
+      for (const [projectName, pd] of Array.from(projectDeltas.entries())) {
+        if (pd.totalWeight > 0) {
+          const avgActual = pd.weightedActual / pd.totalWeight;
+          const avgExpected = pd.weightedExpected / pd.totalWeight;
+          const delta = (avgActual - avgExpected) * 100;
+          projectDeltaValues.push({ projectName, delta, avgActual: avgActual * 100, avgExpected: avgExpected * 100 });
+        }
+      }
+
+      // On schedule = delta >= 0
+      const onScheduleProjects = projectDeltaValues.filter(p => p.delta >= 0);
+      const behindPlanProjects = projectDeltaValues.filter(p => p.delta < 0);
+      const onScheduleRate = projectDeltaValues.length > 0 
+        ? (onScheduleProjects.length / projectDeltaValues.length) * 100 
+        : 0;
+
+      // Top 5 behind plan (most negative delta)
+      const top5BehindPlan = [...behindPlanProjects]
+        .sort((a, b) => a.delta - b.delta)
+        .slice(0, 5);
+
+      // Construction-specific metrics
+      const constructionProjectNames = new Set(constructionProjects.map(p => p.projectName));
+      const constructionDeltas = projectDeltaValues.filter(p => constructionProjectNames.has(p.projectName));
+      const avgConstructionComplete = constructionDeltas.length > 0
+        ? constructionDeltas.reduce((sum, p) => sum + p.avgActual, 0) / constructionDeltas.length
+        : 0;
+      const avgConstructionDelta = constructionDeltas.length > 0
+        ? constructionDeltas.reduce((sum, p) => sum + p.delta, 0) / constructionDeltas.length
+        : 0;
+      const constructionBehindCount = constructionDeltas.filter(p => p.delta < 0).length;
+
+      // Build per-project milestone dates from plan work items (actual dates from smart import)
+      const planTasksByProject = new Map<number, typeof allPlanTasks>();
+      for (const t of allPlanTasks) {
+        if (!t.projectId) continue;
+        if (!planTasksByProject.has(t.projectId)) planTasksByProject.set(t.projectId, []);
+        planTasksByProject.get(t.projectId)!.push(t);
+      }
+
+      function getProjectMilestoneDate(p: any): {
+        constructionStart: string | null;
+        commissioning: string | null;
+        omHandover: string | null;
+        clientHandover: string | null;
+      } {
+        const tasks = p.id ? (planTasksByProject.get(p.id) || []) : [];
+        const csFromPlan = findMinStartDate(tasks, ['site establishment']);
+        const commFromPlan = findMaxEndDate(tasks, ['commissioning']);
+        const omFromPlan = findMaxEndDate(tasks, ['handover to matriarch']);
+        const chFromPlan = findMaxEndDate(tasks, ['handover to client']);
+        return {
+          constructionStart: csFromPlan || p.constructionStartDate || null,
+          commissioning: commFromPlan || p.commissioningDate || null,
+          omHandover: omFromPlan || p.omHandoverDate || null,
+          clientHandover: chFromPlan || p.clientHandoverDate || null,
+        };
+      }
+
+      // Upcoming events (next 7 days) — using actual dates from plan work items
+      let constructionStartSoon = 0, commissioningSoon = 0, omHandoverSoon = 0, clientHandoverSoon = 0;
+      let commissioningDue30 = 0, omHandoverDue30 = 0, clientHandoverDue30 = 0;
+      for (const p of allProjectInfo) {
+        const dates = getProjectMilestoneDate(p);
+        if (isWithinDays(dates.constructionStart, 7)) constructionStartSoon++;
+        if (isWithinDays(dates.commissioning, 7)) commissioningSoon++;
+        if (isWithinDays(dates.omHandover, 7)) omHandoverSoon++;
+        if (isWithinDays(dates.clientHandover, 7)) clientHandoverSoon++;
+        if (isWithinDays(dates.commissioning, 30)) commissioningDue30++;
+        if (isWithinDays(dates.omHandover, 30)) omHandoverDue30++;
+        if (isWithinDays(dates.clientHandover, 30)) clientHandoverDue30++;
+      }
+
+      // Financial summary - compute from raw data tables
+      // If revenueSummaries table has data, use it; otherwise compute from raw inflows/expenses
+      let actualRevenue = 0, actualExpenses = 0, currentVoTotal = 0;
+      
+      const hasRevenueSummaryData = revenueSummaries.length > 0;
+      if (hasRevenueSummaryData) {
+        for (const rs of revenueSummaries) {
+          actualRevenue += safeNum(rs.actualRevenue);
+          actualExpenses += safeNum(rs.actualExpenditure);
+          currentVoTotal += safeNum(rs.currentVoTotal);
+        }
+      } else {
+        // Fallback: compute from normalized_revenue_lines and normalized_cost_lines using proper in-bank/paid logic
+        for (const inflow of allInflows) {
+          if (inflow.milestoneAmount) {
+            const manualInBank = (inflow as any).inBank === 1 || (inflow as any).inBank === '1' || (inflow as any).inBank === true;
+            const hasInvoice = !!(inflow.milestoneInvoiceNumber && String(inflow.milestoneInvoiceNumber).trim());
+            const hasPaymentReceived = !!(inflow.paymentReceivedDate && String(inflow.paymentReceivedDate).trim() && inflow.paymentReceivedDate !== '-');
+            const isInBank = manualInBank || (hasPaymentReceived && hasInvoice);
+            if (isInBank) {
+              actualRevenue += safeNum(inflow.milestoneAmount);
+            }
+          }
+        }
+        for (const expense of allExpenses) {
+          if (expense.expenseActualTotal) {
+            const state = classifyExpenseState(expense as any);
+            if (state === 'Paid') {
+              actualExpenses += safeNum(expense.expenseActualTotal);
+            }
+          }
+        }
+      }
+      const grossProfit = actualRevenue - actualExpenses;
+      const grossProfitPercent = actualRevenue > 0 ? (grossProfit / actualRevenue) * 100 : 0;
+
+      let revenueOutstanding = 0;
+      for (const inf of allInflows) {
+        if (inf.milestoneAmount) {
+          const hasInvoice = !!(inf.milestoneInvoiceNumber && inf.milestoneInvoiceNumber.trim());
+          const hasPaidDate = inf.paymentReceivedDate && /^\d{4}-\d{2}-\d{2}/.test(inf.paymentReceivedDate);
+          const paidClr = inf.paidDateFontColor ?? null;
+          const paidConf = inf.paidDateConfirmed;
+          const hasColorInfo = (paidConf != null && paidConf !== false) || (paidClr != null && paidClr !== '');
+          const paidBlack = hasPaidDate && (paidConf === true || paidClr === 'black' || !hasColorInfo);
+          const isInBank = hasInvoice && paidBlack;
+          if (hasInvoice && !isInBank) {
+            revenueOutstanding += safeNum(inf.milestoneAmount);
+          }
+        }
+      }
+
+      // Expenses outstanding = invoiced but not paid
+      let expensesOutstanding = 0;
+      for (const exp of allExpenses) {
+        if (exp.expenseInvoicedDate && !exp.expensePaymentDate && exp.expenseActualTotal) {
+          expensesOutstanding += safeNum(exp.expenseActualTotal);
+        }
+      }
+
+      // This week cashflows (uses effective date from revenue tab hierarchy)
+      let weeklyInflows = 0, weeklyOutflows = 0;
+      for (const inf of allInflows) {
+        if (isThisWeek(inf.effectiveDate) && inf.milestoneAmount) {
+          weeklyInflows += safeNum(inf.milestoneAmount);
+        }
+      }
+      for (const exp of allExpenses) {
+        if (isThisWeek(exp.expensePaymentDate) && exp.expenseActualTotal) {
+          weeklyOutflows += safeNum(exp.expenseActualTotal);
+        }
+      }
+
+      // This month outstanding
+      let monthlyRevOutstanding = 0, monthlyCosOutstanding = 0;
+      for (const inf of allInflows) {
+        if (inf.invoiceRaisedDate && !inf.paymentReceivedDate && isThisMonth(inf.invoiceRaisedDate) && inf.milestoneAmount) {
+          monthlyRevOutstanding += safeNum(inf.milestoneAmount);
+        }
+      }
+      for (const exp of allExpenses) {
+        if (exp.expenseInvoicedDate && !exp.expensePaymentDate && isThisMonth(exp.expenseInvoicedDate) && exp.expenseActualTotal) {
+          monthlyCosOutstanding += safeNum(exp.expenseActualTotal);
+        }
+      }
+
+      // Data quality checks
+      const missingPhase = allProjectInfo.filter(p => !p.phase).length;
+      const missingKwp = allProjectInfo.filter(p => !p.sizeKwp || safeNum(p.sizeKwp) === 0).length;
+      const missingCommissioning = allProjectInfo.filter(p => !getProjectMilestoneDate(p).commissioning).length;
+
+      res.json({
+        lastRefresh: latestRefresh?.refreshedAt || null,
+        fyRange,
+        portfolio: {
+          activeProjects: activeProjects.length,
+          activeCapacityMW,
+          onScheduleRate,
+          projectsBehindPlan: behindPlanProjects.length,
+          contractPackComplete: null, // Not tracked - will show as "—"
+          onHold: onHoldProjects.length,
+          closed: closedProjects.length,
+          phaseDistribution: Object.entries(phaseDistribution).map(([phase, data]) => ({
+            phase,
+            count: data.count,
+            kw: data.kw
+          }))
+        },
+        upcomingEvents: {
+          constructionStart: constructionStartSoon,
+          commissioning: commissioningSoon,
+          omHandover: omHandoverSoon,
+          clientHandover: clientHandoverSoon
+        },
+        execution: {
+          constructionProjects: constructionProjects.length,
+          executionCapacityKw: constructionCapacityKw,
+          avgPercentComplete: avgConstructionComplete,
+          avgDeltaVsExpected: avgConstructionDelta,
+          behindSchedule: constructionBehindCount,
+          commissioningDue30,
+          omHandoverDue30,
+          clientHandoverDue30
+        },
+        top5BehindPlan,
+        financial: {
+          actualRevenue,
+          actualExpenses,
+          grossProfit,
+          grossProfitPercent,
+          revenueOutstanding,
+          expensesOutstanding,
+          currentVoTotal,
+          thisWeek: {
+            inflows: weeklyInflows,
+            outflows: weeklyOutflows,
+            net: weeklyInflows - weeklyOutflows
+          },
+          thisMonth: {
+            revenueOutstanding: monthlyRevOutstanding,
+            cosOutstanding: monthlyCosOutstanding
+          }
+        },
+        dataQuality: {
+          missingPhase,
+          missingKwp,
+          missingCommissioning,
+          projectCount: allProjectInfo.length,
+          expenseCount: allExpenses.length,
+          inflowCount: allInflows.length,
+          planCount: allPlans.length,
+          lastUpload: latestRefresh?.refreshedAt || null
+        }
+      });
+    } catch (error) {
+      console.error("Home summary error:", error);
+      res.status(500).json({ error: "Failed to fetch home summary" });
+    }
+  });
+
+  // Get/Save home notes
+  app.get("/api/home/notes", requireAuth, async (req, res) => {
+    try {
+      const notes = await storage.getHomeNotes();
+      res.json(notes || { highlightsNotes: '', constructionNotes: '', financeNotes: '', preparedBy: '' });
+    } catch (error) {
+      console.error("Home notes fetch error:", error);
+      res.status(500).json({ error: "Failed to fetch home notes" });
+    }
+  });
+
+  app.post("/api/home/notes", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const { preparedBy, highlightsNotes, constructionNotes, financeNotes } = req.body;
+      const today = new Date().toISOString().split('T')[0];
+      const result = await storage.saveHomeNotes({
+        reportDate: today,
+        preparedBy: preparedBy || null,
+        highlightsNotes: highlightsNotes || null,
+        constructionNotes: constructionNotes || null,
+        financeNotes: financeNotes || null
+      });
+      logAuditFromReq(req, { entityType: "home_notes", action: "update", changesJson: { description: "Home notes updated", preparedBy } });
+      res.json(result);
+    } catch (error) {
+      console.error("Home notes save error:", error);
+      res.status(500).json({ error: "Failed to save home notes" });
+    }
+  });
+
+  // ==================== UPCOMING EVENTS / FINANCIALS ====================
+
+  app.get("/api/upcoming-events", requireAuth, async (req, res) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const workDays: string[] = [];
+      let d = new Date(today);
+      while (workDays.length < 5) {
+        const dow = d.getDay();
+        if (dow !== 0 && dow !== 6) workDays.push(d.toISOString().slice(0, 10));
+        d.setDate(d.getDate() + 1);
+      }
+      const rangeStart = workDays[0];
+      const rangeEnd = workDays[workDays.length - 1];
+
+      type UpcomingEvent = { type: string; date: string; projectName: string; projectId: number | null; detail: string; amount?: string };
+      const events: UpcomingEvent[] = [];
+
+      const planTasks = await getAllPMWorkItemsAsProjectPlan();
+
+      const milestoneMatchers: Array<{ type: string; detail: string; patterns: string[]; mode: "end" | "start" }> = [
+        { type: "site_establishment", detail: "Site Establishment", patterns: ["site establishment"], mode: "start" },
+        { type: "commissioning", detail: "Commissioning", patterns: ["commissioning"], mode: "end" },
+        { type: "handover_om", detail: "Handover to O&M", patterns: ["handover to matriarch"], mode: "end" },
+        { type: "handover_client", detail: "Handover to Client", patterns: ["handover to client"], mode: "end" },
+        { type: "practical_completion", detail: "Practical Completion", patterns: ["practical completion"], mode: "end" },
+        { type: "pd_handover", detail: "PD Handover", patterns: ["bd handover", "project charter handover"], mode: "end" },
+        { type: "construction_start", detail: "Construction Start", patterns: ["site establishment"], mode: "start" },
+      ];
+
+      const projectMilestones = new Map<string, UpcomingEvent>();
+
+      for (const task of planTasks) {
+        const desc = (task.highLevelProgramme || "").toLowerCase();
+        for (const m of milestoneMatchers) {
+          const matches = m.patterns.some((p) => desc.includes(p));
+          if (!matches) continue;
+
+          const dateVal = m.mode === "start"
+            ? (task.actualStart || "")
+            : (task.actualEnd || "");
+          if (!dateVal || !/^\d{4}-\d{2}-\d{2}/.test(dateVal)) continue;
+          const dt = dateVal.slice(0, 10);
+          if (dt < rangeStart || dt > rangeEnd) continue;
+
+          const key = `${task.projectId}-${m.type}`;
+          const existing = projectMilestones.get(key);
+          if (!existing ||
+            (m.mode === "end" && dt > existing.date) ||
+            (m.mode === "start" && dt < existing.date)) {
+            projectMilestones.set(key, {
+              type: m.type,
+              date: dt,
+              projectName: task.projectName || "Unnamed",
+              projectId: task.projectId || null,
+              detail: m.detail,
+            });
+          }
+        }
+      }
+
+      events.push(...projectMilestones.values());
+
+      const inflowRows = await db.select({
+        projectName: normalizedRevenueLines.projectName,
+        projectId: normalizedRevenueLines.projectId,
+        expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+        amountExVat: normalizedRevenueLines.amountExVat,
+        description: normalizedRevenueLines.description,
+        milestoneName: normalizedRevenueLines.milestoneName,
+        paidDate: normalizedRevenueLines.paidDate,
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+
+      for (const r of inflowRows) {
+        if (r.paidDate) continue;
+        const dt = (r.expectedPaymentDate || "").slice(0, 10);
+        if (dt >= rangeStart && dt <= rangeEnd) {
+          events.push({
+            type: "payment_in",
+            date: dt,
+            projectName: r.projectName,
+            projectId: r.projectId,
+            detail: r.milestoneName || r.description || "Inflow expected",
+            amount: r.amountExVat || undefined,
+          });
+        }
+      }
+
+      const outflowRows = await db.select({
+        projectName: normalizedCostLines.projectName,
+        projectId: normalizedCostLines.projectId,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        description: normalizedCostLines.description,
+        counterpartyName: normalizedCostLines.counterpartyName,
+        paidDate: normalizedCostLines.paidDate,
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+
+      for (const c of outflowRows) {
+        if (c.paidDate) continue;
+        const dt = (c.invoiceDate || "").slice(0, 10);
+        if (dt >= rangeStart && dt <= rangeEnd) {
+          events.push({
+            type: "payment_out",
+            date: dt,
+            projectName: c.projectName,
+            projectId: c.projectId,
+            detail: c.counterpartyName || c.description || "Outflow due",
+            amount: c.amountExVat || undefined,
+          });
+        }
+      }
+
+      events.sort((a, b) => a.date.localeCompare(b.date));
+      res.json({ rangeStart, rangeEnd, events });
+    } catch (err: any) {
+      console.error("upcoming-events error:", err);
+      res.status(500).json({ error: "Failed to load upcoming events" });
+    }
+  });
+
+  app.get("/api/upcoming-financials", requireAuth, requirePermission("financials", "view"), async (req, res) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const workDays: string[] = [];
+      let d = new Date(today);
+      while (workDays.length < 10) {
+        const dow = d.getDay();
+        if (dow !== 0 && dow !== 6) workDays.push(d.toISOString().slice(0, 10));
+        d.setDate(d.getDate() + 1);
+      }
+      const rangeStart = workDays[0];
+      const rangeEnd = workDays[workDays.length - 1];
+
+      type FinancialEvent = { type: "inflow" | "outflow"; date: string; projectName: string; projectId: number | null; detail: string; amount: string | null; invoiceNumber?: string | null };
+      const events: FinancialEvent[] = [];
+
+      const inflowRows = await db.select({
+        projectName: normalizedRevenueLines.projectName,
+        projectId: normalizedRevenueLines.projectId,
+        expectedPaymentDate: normalizedRevenueLines.expectedPaymentDate,
+        invoiceDate: normalizedRevenueLines.invoiceDate,
+        amountExVat: normalizedRevenueLines.amountExVat,
+        description: normalizedRevenueLines.description,
+        milestoneName: normalizedRevenueLines.milestoneName,
+        invoiceNumber: normalizedRevenueLines.invoiceNumber,
+        paidDate: normalizedRevenueLines.paidDate,
+      }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
+
+      for (const r of inflowRows) {
+        if (r.paidDate) continue;
+        const dt = (r.expectedPaymentDate || r.invoiceDate || "").slice(0, 10);
+        if (!dt || !/^\d{4}-\d{2}-\d{2}/.test(dt)) continue;
+        if (dt >= rangeStart && dt <= rangeEnd) {
+          events.push({
+            type: "inflow",
+            date: dt,
+            projectName: r.projectName,
+            projectId: r.projectId,
+            detail: r.milestoneName || r.description || "Inflow expected",
+            amount: r.amountExVat || null,
+            invoiceNumber: r.invoiceNumber || null,
+          });
+        }
+      }
+
+      const outflowRows = await db.select({
+        projectName: normalizedCostLines.projectName,
+        projectId: normalizedCostLines.projectId,
+        invoiceDate: normalizedCostLines.invoiceDate,
+        amountExVat: normalizedCostLines.amountExVat,
+        description: normalizedCostLines.description,
+        counterpartyName: normalizedCostLines.counterpartyName,
+        paidDate: normalizedCostLines.paidDate,
+        invoiceNumber: normalizedCostLines.invoiceNumber,
+      }).from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
+
+      for (const c of outflowRows) {
+        if (c.paidDate) continue;
+        const dt = (c.invoiceDate || "").slice(0, 10);
+        if (!dt || !/^\d{4}-\d{2}-\d{2}/.test(dt)) continue;
+        if (dt >= rangeStart && dt <= rangeEnd) {
+          events.push({
+            type: "outflow",
+            date: dt,
+            projectName: c.projectName,
+            projectId: c.projectId,
+            detail: c.counterpartyName || c.description || "Outflow due",
+            amount: c.amountExVat || null,
+            invoiceNumber: c.invoiceNumber || null,
+          });
+        }
+      }
+
+      events.sort((a, b) => a.date.localeCompare(b.date));
+
+      let totalInflow = 0, totalOutflow = 0;
+      for (const ev of events) {
+        const amt = Number(ev.amount) || 0;
+        if (ev.type === "inflow") totalInflow += amt;
+        else totalOutflow += amt;
+      }
+
+      res.json({ rangeStart, rangeEnd, events, totalInflow, totalOutflow, netCashflow: totalInflow - totalOutflow });
+    } catch (err: any) {
+      console.error("upcoming-financials error:", err);
+      res.status(500).json({ error: "Failed to load upcoming financials" });
+    }
+  });
+}
