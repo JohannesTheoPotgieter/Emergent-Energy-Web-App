@@ -34,6 +34,27 @@ export function registerCashflow2026Routes(app: Express) {
       const allExpenses = mergedData.expenses;
       const allInflows = resolveInflowEffectiveDates(mergedData.inflows, allTaskLinks, allOpTasks, allPlanTasks);
 
+      {
+        const items = allExpenses.filter((e: any) => e.rowType === 'item');
+        let diagTotal = 0;
+        let diagRows = 0;
+        const keySet = new Set<string>();
+        let dupKeyCount = 0;
+        for (const e of items) {
+          const d = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
+          if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+          const amt = parseFloat((e as any).quotedTotal || e.expenseActualTotal || (e as any).budgetTotal || '0') || 0;
+          if (amt > 0) {
+            diagTotal += amt;
+            diagRows++;
+            const key = `${e.projectId}::${e.rowNumber}`;
+            if (keySet.has(key)) dupKeyCount++;
+            keySet.add(key);
+          }
+        }
+        console.log(`[Cashflow Diag] items=${items.length} withDates=${diagRows} uniqueKeys=${keySet.size} dupKeys=${dupKeyCount} total=${diagTotal.toFixed(2)}`);
+      }
+
       const manualMap = new Map(manualBalances.map((m: any) => [m.weekStartDate, parseFloat(m.openingBalance || "0")]));
       const opexMonthlyMap = new Map(opexBudgets.map((o: any) => [o.monthKey, parseFloat(o.amount || "0")]));
       const opexWeeklyMap = new Map(opexWeeklyOverrides.map((o: any) => [o.weekStartDate, parseFloat(o.opexAmount || "0")]));
