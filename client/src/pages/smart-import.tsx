@@ -151,9 +151,10 @@ export function UploadStep({
   const addFiles = (fileList: FileList | File[]) => {
     const newFiles: FileUploadResult[] = [];
     const arr = Array.from(fileList);
+    let skippedCount = 0;
     for (const f of arr) {
       const ext = f.name.split(".").pop()?.toLowerCase();
-      if (ext !== "xlsx" && ext !== "xlsm") continue;
+      if (ext !== "xlsx" && ext !== "xlsm") { skippedCount++; continue; }
       if (files.some(existing => existing.file.name === f.name && existing.file.size === f.size)) continue;
       newFiles.push({ file: f, status: "pending" });
     }
@@ -163,6 +164,12 @@ export function UploadStep({
     }
     setFiles(prev => [...prev, ...newFiles]);
     setError(null);
+    if (skippedCount > 0) {
+      toast({
+        title: `${skippedCount} file${skippedCount > 1 ? "s" : ""} skipped`,
+        description: `Only .xlsx and .xlsm files are supported. ${newFiles.length} valid file${newFiles.length !== 1 ? "s" : ""} added.`,
+      });
+    }
   };
 
   const removeFile = (idx: number) => {
@@ -172,6 +179,55 @@ export function UploadStep({
   const clearAll = () => {
     setFiles([]);
     setError(null);
+  };
+
+  const retryFile = async (idx: number) => {
+    const entry = files[idx];
+    if (!entry || entry.status === "success" || entry.status === "uploading") return;
+    const updatedFiles = [...files];
+    updatedFiles[idx] = { ...entry, status: "uploading", error: undefined };
+    setFiles(updatedFiles);
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", entry.file);
+      const res = await fetch("/api/smart-import/upload", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || `Upload failed (${res.status})`);
+      }
+      const data = await res.json();
+      updatedFiles[idx] = {
+        ...entry,
+        status: "success",
+        runId: data.runId,
+        preview: data.preview,
+        sectionsFound: data.preview?.detection?.sections?.length || 0,
+        error: undefined,
+      };
+      setFiles([...updatedFiles]);
+      toast({ title: "Upload Complete", description: `${entry.file.name} analyzed successfully` });
+
+      // If this was the only file, proceed to next step
+      const allSuccessful = updatedFiles.filter(f => f.status === "success");
+      if (updatedFiles.length === 1 && allSuccessful.length === 1) {
+        onUploaded(allSuccessful[0].runId!, allSuccessful[0].preview);
+      }
+    } catch (err: any) {
+      updatedFiles[idx] = { ...entry, status: "error", error: err.message || "Upload failed" };
+      setFiles([...updatedFiles]);
+      toast({
+        title: "Retry Failed",
+        description: err.message || "Upload failed. See details below.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleUpload = async () => {
@@ -232,11 +288,21 @@ export function UploadStep({
     } else if (successful.length === 1) {
       toast({ title: "Upload Complete", description: "File analyzed successfully" });
       onUploaded(successful[0].runId!, successful[0].preview);
+    } else if (failed.length > 0) {
+      toast({
+        title: "Upload Failed",
+        description: "See the error details below. Fix the issue and retry.",
+        variant: "destructive",
+      });
     }
   };
 
   const singleMode = files.length <= 1;
   const hasSuccessful = files.some(f => f.status === "success");
+  const failedFiles = files.filter(f => f.status === "error");
+  const pendingFiles = files.filter(f => f.status === "pending");
+  const hasFailures = failedFiles.length > 0;
+  const hasRetryable = hasFailures || pendingFiles.length > 0;
 
   return (
     <Card className="bg-card rounded-xl shadow-sm" data-testid="upload-step">
@@ -372,6 +438,19 @@ export function UploadStep({
                   {entry.status === "uploading" && (
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
                   )}
+                  {entry.status === "error" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-[10px] px-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                      disabled={uploading}
+                      onClick={() => retryFile(idx)}
+                      data-testid={`btn-retry-file-${idx}`}
+                    >
+                      <ArrowRight className="w-3 h-3 mr-0.5" />
+                      Retry
+                    </Button>
+                  )}
                   {(entry.status === "pending" || entry.status === "error") && (
                     <Button
                       variant="ghost"
@@ -474,10 +553,30 @@ export function UploadStep({
           </div>
         )}
 
+        {/* Retry all failed banner */}
+        {hasFailures && !uploading && (
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2" data-testid="retry-failed-banner">
+            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+            <span className="text-xs text-red-700 flex-1">
+              {failedFiles.length} file{failedFiles.length > 1 ? "s" : ""} failed to upload. Fix the issues or retry.
+            </span>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white"
+              disabled={uploading}
+              onClick={handleUpload}
+              data-testid="btn-retry-all-failed"
+            >
+              <ArrowRight className="w-3.5 h-3.5 mr-1" />
+              Retry All Failed ({failedFiles.length})
+            </Button>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <Button
             className="flex-1"
-            disabled={files.length === 0 || uploading}
+            disabled={files.length === 0 || uploading || (!hasRetryable && hasSuccessful)}
             onClick={handleUpload}
             data-testid="btn-upload"
           >
@@ -485,6 +584,11 @@ export function UploadStep({
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 {files.length > 1 ? `Processing ${batchProgress.current}/${batchProgress.total}...` : "Uploading & Analyzing..."}
+              </>
+            ) : hasFailures && !pendingFiles.length ? (
+              <>
+                <ArrowRight className="w-4 h-4 mr-2" />
+                Retry Failed Upload{failedFiles.length > 1 ? "s" : ""} ({failedFiles.length})
               </>
             ) : (
               <>
@@ -3263,8 +3367,60 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
 
   useEffect(() => { loadPendingRuns(); }, [loadPendingRuns]);
 
+  const [allowingRun, setAllowingRun] = useState<number | null>(null);
+  const [allowingAllRuns, setAllowingAllRuns] = useState(false);
+
   const committableRuns = pendingRuns.filter(r => r.blockerCount === 0);
   const blockedRuns = pendingRuns.filter(r => r.blockerCount > 0);
+  const runsWithIssues = pendingRuns.filter(r => r.totalIssues > r.resolvedIssues);
+
+  // Allow All issues on a single run (inline quick-action)
+  const handleAllowRun = async (runId: number) => {
+    setAllowingRun(runId);
+    try {
+      const res = await fetch(`/api/smart-import/${runId}/allow-all`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast({ title: "All Issues Allowed", description: `${data.allowed} issue(s) resolved — file is ready to commit` });
+        await loadPendingRuns();
+      } else {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        toast({ title: "Error", description: err.error || "Failed to allow all", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally {
+      setAllowingRun(null);
+    }
+  };
+
+  // Allow All issues across ALL pending runs
+  const handleAllowAllRuns = async () => {
+    if (runsWithIssues.length === 0) return;
+    setAllowingAllRuns(true);
+    try {
+      let totalAllowed = 0;
+      for (const run of runsWithIssues) {
+        const res = await fetch(`/api/smart-import/${run.id}/allow-all`, {
+          method: "POST",
+          headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          totalAllowed += data.allowed;
+        }
+      }
+      toast({ title: "All Files Allowed", description: `${totalAllowed} issue(s) resolved across ${runsWithIssues.length} files — all ready to commit` });
+      await loadPendingRuns();
+    } catch {
+      toast({ title: "Error", description: "Failed to allow all", variant: "destructive" });
+    } finally {
+      setAllowingAllRuns(false);
+    }
+  };
 
   const handleIgnoreAllBlockers = async () => {
     if (blockedRuns.length === 0) return;
@@ -3550,15 +3706,31 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                     </Badge>
                   )}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs h-7 px-2"
-                  onClick={() => onSwitchToWizard(run.id)}
-                  data-testid={`btn-review-${run.id}`}
-                >
-                  Review
-                </Button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {/* Quick-action: Allow All for this file */}
+                  {(run.blockerCount > 0 || run.warningCount > 0) && run.resolvedIssues < run.totalIssues && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-[10px] h-6 px-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                      disabled={allowingRun === run.id || committing}
+                      onClick={() => handleAllowRun(run.id)}
+                      data-testid={`btn-allow-${run.id}`}
+                    >
+                      {allowingRun === run.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 mr-0.5" />}
+                      Allow All
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7 px-2"
+                    onClick={() => onSwitchToWizard(run.id)}
+                    data-testid={`btn-review-${run.id}`}
+                  >
+                    Review
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -3599,6 +3771,35 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
           )}
         </Button>
       </div>
+
+      {/* Allow All Files — one-click resolve everything */}
+      {runsWithIssues.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="allow-all-files-notice">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-blue-800">
+                  Allow All Files — import everything as-is
+                </p>
+                <p className="text-[10px] text-blue-600 mt-0.5">
+                  Resolves all errors and warnings across {runsWithIssues.length} file{runsWithIssues.length > 1 ? "s" : ""} so all can be committed. Use "Review" for fine-grained control.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white flex-shrink-0"
+              disabled={allowingAllRuns || committing}
+              onClick={handleAllowAllRuns}
+              data-testid="btn-allow-all-files"
+            >
+              {allowingAllRuns ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
+              Allow All ({runsWithIssues.length} files)
+            </Button>
+          </div>
+        </div>
+      )}
 
       {blockedRuns.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3" data-testid="blocked-runs-notice">

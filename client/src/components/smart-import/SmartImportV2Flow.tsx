@@ -125,6 +125,17 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
   // Determine if we should skip the decision step (no conflicts)
   const hasConflicts = planning?.conflicts?.hasBlockingConflicts === true;
 
+  // Reset the entire flow for a new import
+  const handleStartNew = useCallback(() => {
+    setStep(1);
+    setRunId(null);
+    setPreview(null);
+    setPlanning(null);
+    setDecisions({});
+    setPlanError(null);
+    onRunIdChange?.(null);
+  }, [onRunIdChange]);
+
   return (
     <div className="space-y-4" data-testid="v2-flow">
       <SmartImportStepIndicator
@@ -188,8 +199,10 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdCha
         <SmartImportConfirmStep
           runId={runId}
           planning={planning}
+          preview={preview}
           decisions={decisions}
           onBack={() => setStep(hasConflicts ? 4 : 3)}
+          onStartNew={handleStartNew}
         />
       )}
     </div>
