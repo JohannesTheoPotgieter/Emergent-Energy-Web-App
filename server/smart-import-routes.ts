@@ -10,6 +10,7 @@ import { requirePermission, hasImportPermission } from "./permission-middleware"
 import { jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
+import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
 import {
   smartImportRuns,
   importIssues,
@@ -701,6 +702,7 @@ router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePerm
 });
 
 // GET /api/smart-import/:runId
+// Optional query param: ?includePlan=true to include v2 planner output
 router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
@@ -711,10 +713,23 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
 
     const issues = await db.select().from(importIssues).where(eq(importIssues.importRunId, runId));
 
+    let planning: PlannerResult | null = null;
+    if (req.query.includePlan === "true") {
+      const summary = run.summaryJson as any;
+      if (summary?.normalization) {
+        try {
+          planning = await runImportPlanner(run.projectId, summary.normalization);
+        } catch (planErr: unknown) {
+          console.warn("[SmartImport] Planner failed (non-blocking):", (planErr instanceof Error ? planErr.message : String(planErr)));
+        }
+      }
+    }
+
     res.json({
       run,
       issues,
       preview: run.summaryJson,
+      planning,
     });
   } catch (err: unknown) {
     console.error("[smart-import] GET run error:", err);
@@ -838,6 +853,31 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
     res.json({ diff });
   } catch (err: unknown) {
     console.error("[smart-import] GET diff error:", err);
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+  }
+});
+
+// GET /api/smart-import/:runId/plan — Smart Import v2 planner output
+// Returns structured diff with row-level classifications:
+//   NEW / CHANGED / UNCHANGED / MISSING_FROM_UPLOAD / CONFLICT_PLACEHOLDER
+router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const summary = run.summaryJson as any;
+    if (!summary?.normalization) {
+      return res.status(400).json({ error: "No normalization data found in this import run" });
+    }
+
+    const planning = await runImportPlanner(run.projectId, summary.normalization);
+
+    res.json({ planning });
+  } catch (err: unknown) {
+    console.error("[smart-import] GET plan error:", err);
     res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
