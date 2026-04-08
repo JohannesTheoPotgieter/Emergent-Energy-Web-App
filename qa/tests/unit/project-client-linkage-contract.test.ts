@@ -17,7 +17,8 @@ describe("project-client linkage contract", () => {
   });
 
   it("records client-link changes in project history through the shared project info patch route", () => {
-    const source = read("server/routes.ts");
+    // Handlers were extracted from server/routes.ts to server/routes/project-info-extracted-routes.ts
+    const source = read("server/routes/project-info-extracted-routes.ts");
 
     expect(source).toContain("projectClientHistory");
     expect(source).toContain('Object.prototype.hasOwnProperty.call(projectInfoPatch, "clientId")');

@@ -12,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
-import { Sun, Plus, Search, DollarSign, Calendar, TrendingUp } from "lucide-react";
+import { Sun, Plus, Search, DollarSign, Calendar, TrendingUp, Pencil } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
 interface OpportunityRow {
@@ -74,6 +74,8 @@ export default function OpportunitiesPage() {
   const [stageFilter, setStageFilter] = useState("all");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [editingOpp, setEditingOpp] = useState<OpportunityRow | null>(null);
+  const [editForm, setEditForm] = useState(emptyForm);
 
   const { data: opportunities = [], isLoading, isError, error, refetch } = useQuery<OpportunityRow[]>({
     queryKey: ["/api/opportunities"],
@@ -101,6 +103,46 @@ export default function OpportunitiesPage() {
     },
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
   });
+
+  const editMutation = useMutation({
+    mutationFn: async ({ id, body }: { id: number; body: Record<string, unknown> }) => {
+      const res = await apiRequest("PATCH", `/api/opportunities/${id}`, body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/opportunities"] });
+      toast({ title: "Opportunity updated" });
+      setEditingOpp(null);
+    },
+    onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+  });
+
+  function openEditDialog(opp: OpportunityRow) {
+    setEditingOpp(opp);
+    setEditForm({
+      stage: opp.stage || "prospect",
+      contractType: opp.contractType || "",
+      estimatedValue: opp.estimatedValue || "",
+      estimatedKwp: opp.estimatedKwp || "",
+      expectedCloseDate: opp.expectedCloseDate || "",
+      clientId: opp.clientId ? String(opp.clientId) : "",
+      notes: opp.notes || "",
+    });
+  }
+
+  function handleEditSubmit() {
+    if (!editingOpp) return;
+    const body: Record<string, unknown> = {
+      stage: editForm.stage,
+      contractType: editForm.contractType || null,
+      estimatedValue: editForm.estimatedValue || null,
+      estimatedKwp: editForm.estimatedKwp || null,
+      expectedCloseDate: editForm.expectedCloseDate || null,
+      clientId: editForm.clientId ? Number(editForm.clientId) : null,
+      notes: editForm.notes || null,
+    };
+    editMutation.mutate({ id: editingOpp.id, body });
+  }
 
   function handleSubmit() {
     const body: Record<string, unknown> = {
@@ -220,6 +262,9 @@ export default function OpportunitiesPage() {
                     <Calendar className="h-3 w-3 inline mr-0.5" />{opp.expectedCloseDate}
                   </span>
                 )}
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditDialog(opp)}>
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
               </div>
               {opp.notes && <p className="text-xs text-muted-foreground mt-1 truncate">{opp.notes}</p>}
             </CardContent>
@@ -274,6 +319,57 @@ export default function OpportunitiesPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => { setShowForm(false); setForm(emptyForm); }}>Cancel</Button>
             <Button onClick={handleSubmit} disabled={createMutation.isPending}>Create</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit dialog */}
+      <Dialog open={!!editingOpp} onOpenChange={(v) => { if (!v) setEditingOpp(null); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Opportunity</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Client</Label>
+              <SearchableSelect
+                value={editForm.clientId || "__none__"}
+                onValueChange={(v) => setEditForm(f => ({ ...f, clientId: v === "__none__" ? "" : v }))}
+                options={[{ value: "__none__", label: "None" }, ...clients.map(c => ({ value: String(c.id), label: c.name }))]}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Stage</Label>
+                <SearchableSelect value={editForm.stage} onValueChange={(v) => setEditForm(f => ({ ...f, stage: v }))} options={STAGES} />
+              </div>
+              <div>
+                <Label className="text-xs">Contract Type</Label>
+                <SearchableSelect value={editForm.contractType || "__none__"} onValueChange={(v) => setEditForm(f => ({ ...f, contractType: v === "__none__" ? "" : v }))} options={[{ value: "__none__", label: "None" }, ...CONTRACT_TYPES]} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Estimated Value (R)</Label>
+                <Input type="number" value={editForm.estimatedValue} onChange={(e) => setEditForm(f => ({ ...f, estimatedValue: e.target.value }))} placeholder="0" />
+              </div>
+              <div>
+                <Label className="text-xs">Estimated kWp</Label>
+                <Input type="number" value={editForm.estimatedKwp} onChange={(e) => setEditForm(f => ({ ...f, estimatedKwp: e.target.value }))} placeholder="0" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Expected Close Date</Label>
+              <Input type="date" value={editForm.expectedCloseDate} onChange={(e) => setEditForm(f => ({ ...f, expectedCloseDate: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Notes</Label>
+              <Input value={editForm.notes} onChange={(e) => setEditForm(f => ({ ...f, notes: e.target.value }))} placeholder="Additional context..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingOpp(null)}>Cancel</Button>
+            <Button onClick={handleEditSubmit} disabled={editMutation.isPending}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -17,7 +17,8 @@ function readFile(relPath: string): string {
 }
 
 describe("calendar personal-task canonicalization", () => {
-  const routesSrc = readFile("server/routes.ts");
+  // Handlers were extracted from server/routes.ts to server/routes/mytool-routes.ts
+  const routesSrc = readFile("server/routes/mytool-routes.ts");
 
   describe("GET /api/calendar/my-tasks", () => {
     // Extract the handler block for the calendar my-tasks route

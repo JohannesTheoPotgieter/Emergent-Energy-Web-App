@@ -27,7 +27,7 @@ function statusBadge(s: string) {
 }
 
 export default function ConstructionDashboardPage() {
-  const [tab, setTab] = useState<"snags" | "inspections" | "activities">("snags");
+  const [tab, setTab] = useState<"snags" | "inspections">("snags");
 
   const { data: snags = [], isLoading: snagsLoading, isError, error, refetch } = useQuery<SnagSummary[]>({
     queryKey: ["/api/construction/snags"],
@@ -92,7 +92,7 @@ export default function ConstructionDashboardPage() {
 
       {/* Tabs */}
       <div className="flex items-center gap-1 bg-muted rounded-lg p-0.5 w-fit">
-        {(["snags", "inspections", "activities"] as const).map(t => (
+        {(["snags", "inspections"] as const).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -154,15 +154,6 @@ export default function ConstructionDashboardPage() {
         </div>
       )}
 
-      {/* Activities placeholder */}
-      {tab === "activities" && (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <HardHat className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Site activity log coming soon.</p>
-          </CardContent>
-        </Card>
-      )}
     </PageShell>
   );
 }
