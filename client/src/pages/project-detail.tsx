@@ -1119,9 +1119,12 @@ export default function ProjectDetailPage() {
   });
 
   const { data: expenditureTrustData } = useQuery<any>({
-    queryKey: ["expenditure-breakdown", projectName],
+    queryKey: ["expenditure-breakdown", projectName, projectInfoId],
     queryFn: async () => {
-      const res = await engFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`);
+      const params = new URLSearchParams();
+      if (projectInfoId) params.set("projectId", String(projectInfoId));
+      const qs = params.toString();
+      const res = await engFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}${qs ? `?${qs}` : ""}`);
       if (!res.ok) return null;
       return res.json();
     },
@@ -1712,7 +1715,7 @@ export default function ProjectDetailPage() {
           )}
 
           {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
-          {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
+          {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
           {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
           {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} initialFilter={procurementFilter || undefined} />}
           {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}

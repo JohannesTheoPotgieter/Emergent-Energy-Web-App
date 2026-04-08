@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 
 interface RevenueTrackerTabProps {
   projectName: string;
+  projectId?: number | null;
 }
 
 interface RevenueItem {
@@ -208,7 +209,7 @@ function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month:
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((item) => (
-                  <tr key={item.id} className="hover:bg-emerald-50/30 transition-colors" data-testid={`revenue-drawer-item-${item.id}`}>
+                  <tr key={item.canonicalLineKey || item.id} className="hover:bg-emerald-50/30 transition-colors" data-testid={`revenue-drawer-item-${item.id}`}>
                     <td className="px-4 py-2.5 text-slate-500 max-w-[120px] truncate">{item.category || "—"}</td>
                     <td className="px-4 py-2.5 text-slate-900 max-w-[180px] truncate font-medium">{item.lineItem || "—"}</td>
                     <td className="px-4 py-2.5 text-slate-500 max-w-[120px] truncate">{item.supplier || "—"}</td>
@@ -259,7 +260,7 @@ function RevenueDetailDrawer({ month, onClose, defaultFilter = "all" }: { month:
 
 type EditingCell = { field: string; monthKey: string; value: string };
 
-export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
+export function RevenueTrackerTab({ projectName, projectId }: RevenueTrackerTabProps) {
   const qc = useQueryClient();
   const { isAdmin } = useAuth();
   const [drawerMonth, setDrawerMonth] = useState<{ month: RevenueMonthData; defaultFilter: "all" | "realised" | "unrealised" } | null>(null);
@@ -271,7 +272,10 @@ export function RevenueTrackerTab({ projectName }: RevenueTrackerTabProps) {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/revenue-tracker/project/${encodeURIComponent(projectName)}`, {
+      const params = new URLSearchParams();
+      if (projectId) params.set("projectId", String(projectId));
+      const qs = params.toString();
+      const res = await fetch(`/api/revenue-tracker/project/${encodeURIComponent(projectName)}${qs ? `?${qs}` : ""}`, {
         credentials: "include",
         headers,
       });
