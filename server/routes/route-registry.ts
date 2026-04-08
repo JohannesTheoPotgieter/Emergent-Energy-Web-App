@@ -51,5 +51,9 @@ export async function registerExtractedRoutes(app: Express) {
   const { registerOverviewExtractedRoutes } = await import("./overview-extracted-routes");
   registerOverviewExtractedRoutes(app);
 
+  // Phase 9a: Finance / COS routes (22 handlers, extracted from routes.ts)
+  const { registerFinanceLegacyExtractedRoutes } = await import("./finance-legacy-extracted-routes");
+  registerFinanceLegacyExtractedRoutes(app);
+
   // Future phases will add more domain modules here.
 }
