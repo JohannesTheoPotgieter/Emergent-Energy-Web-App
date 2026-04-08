@@ -480,8 +480,107 @@ The existing rollback endpoint (`POST /:runId/rollback`) uses `softCloseByImport
 | `smart-import-authorization.test.ts` | 14 | Permission checks |
 | `smart-import-storage-retention.test.ts` | 1 | Temporal retention |
 
-### Remaining gaps before UX phase
+### Remaining gaps (resolved in Phase 6)
 
-1. **No frontend conflict resolution UI yet.** The API shape and preview payload are ready.
-2. **Derivative tables (programExpense, programInflows) are not updated by v2 path.** They rely on downstream refresh. If any screen still reads from these tables directly, those reads may show stale data after a v2 incremental commit until the next full v1 import or manual refresh.
+1. ~~No frontend conflict resolution UI yet.~~ → Resolved in Phase 6.
+2. **Derivative tables (programExpense, programInflows) are not updated by v2 path.** They rely on downstream refresh.
 3. **No backfill of milestoneNo for existing rows.** New imports persist it; old rows have NULL.
+
+---
+
+## Phase 6: Plain-Language UX Redesign
+
+**Date:** 2026-04-08
+**Status:** COMPLETE
+
+---
+
+### What was changed
+
+#### New files created
+
+| File | Purpose |
+|------|---------|
+| `client/src/components/smart-import/labels.ts` | All user-facing labels and constants. No technical jargon. |
+| `client/src/components/smart-import/SmartImportStepIndicator.tsx` | V2 step indicator with plain-language labels |
+| `client/src/components/smart-import/SmartImportFoundStep.tsx` | "What we found" step — project, import type, sections, skipped sheets |
+| `client/src/components/smart-import/SmartImportChangesStep.tsx` | "What changed" step — new/updated/unchanged/missing counts per section |
+| `client/src/components/smart-import/SmartImportDecisionStep.tsx` | "Needs your decision" step — 3-value conflict resolution UI |
+| `client/src/components/smart-import/SmartImportConfirmStep.tsx` | "Confirm import" step — summary, commit, result screen |
+| `client/src/components/smart-import/SmartImportV2Flow.tsx` | V2 flow orchestrator — manages steps 1-5, loads planner data |
+| `client/src/components/smart-import/index.ts` | Barrel export |
+| `qa/tests/unit/smart-import-v2-ux.test.ts` | 51 tests for plain-language UX |
+
+#### Existing files modified
+
+| File | Changes |
+|------|---------|
+| `client/src/pages/smart-import.tsx` | Added `useV2` state toggle. V2 flow rendered by default ("Simple view"). V1 flow available as "Advanced view". V1 loading/error/step-context gated behind `!useV2`. |
+
+### Step flow
+
+| Step | V2 label | What it shows |
+|------|----------|---------------|
+| 1 | Upload | Same as v1 — drag-drop, file/folder, batch. Reuses existing `UploadStep`. |
+| 2 | What we found | Project name, import type (First-time/Update), sections found, sheets not used, multi-project notice. Advanced details collapsed. |
+| 3 | What changed | Per-section summary cards: New data / Updated data / No change / Not in this upload. Expandable row-level details. |
+| 4 | Needs your decision | Conflict rows with 3-value comparison (Last import, Current app value, Uploaded value). Keep/Use buttons per field. Bulk actions. Skipped entirely when no conflicts. |
+| 5 | Confirm import | Summary counts. "Confirm import" button. Post-commit result screen with dashboard refresh note. |
+
+### Plain-language labels introduced
+
+| Technical term | User-facing label |
+|----------------|-------------------|
+| BASELINE | First-time import |
+| INCREMENTAL | Update |
+| PLAN | Schedule / Timeline |
+| REVENUE | Revenue / Milestones |
+| EXPENDITURE | Costs / Expenses |
+| NEW | New data |
+| CHANGED | Updated data |
+| UNCHANGED | No change |
+| MISSING_FROM_UPLOAD | Not in this upload |
+| CONFLICT | Needs your decision |
+| KEEP_MANUAL / keep_app | Keep current app value |
+| OVERWRITE_WITH_IMPORT / accept_file | Use uploaded value |
+| commit | Confirm import |
+| canonical source | (hidden in advanced panel) |
+| effectiveTo | (hidden entirely) |
+| issue fingerprint | (hidden entirely) |
+
+### File/folder parity
+
+The v2 flow reuses the existing `UploadStep` component from v1, which already handles:
+- Single file drag-drop
+- Multi-file selection
+- Folder upload via `webkitdirectory`
+- Batch progress tracking
+
+After upload completes, the v2 flow loads planner data via `GET /api/smart-import/:runId/plan` and proceeds through the same review steps regardless of upload method.
+
+### Advanced details
+
+Technical information is available but hidden by default:
+- **Found step**: Planner warnings, sheet detection metadata (header row, layout variant, confidence) behind "Advanced details" toggle
+- **Changes step**: Row-level details behind "Show details" toggle per section
+- **Page level**: "Simple view" / "Advanced view" toggle switches between v2 and v1 flows
+
+### Test Coverage
+
+205 total tests across 7 test files, all passing:
+
+| File | Tests | Coverage |
+|------|-------|---------|
+| `smart-import-v2-ux.test.ts` | 51 | Labels, components, wording, jargon absence, structure |
+| `smart-import-incremental-commit.test.ts` | 39 | Commit executor, field resolution, canonical targets |
+| `smart-import-conflict-engine.test.ts` | 43 | All merge cases, row merge, section merge |
+| `smart-import-planner-spine.test.ts` | 39 | Canonical source alignment, row matcher |
+| `smart-import-commit-guard.test.ts` | 18 | Atomic commit guard |
+| `smart-import-authorization.test.ts` | 14 | Permission checks |
+| `smart-import-storage-retention.test.ts` | 1 | Temporal retention |
+
+### Remaining gaps
+
+1. **Derivative tables (programExpense, programInflows) stale after v2 commit.** May need a sync step.
+2. **No milestoneNo backfill.** New imports persist it; old rows have NULL.
+3. **V1 "Advanced view" retains all original complexity.** Could be further simplified in a future phase.

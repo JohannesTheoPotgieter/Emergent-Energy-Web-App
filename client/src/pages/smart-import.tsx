@@ -16,6 +16,7 @@ import {
   Pencil, History, Zap, SkipForward,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { SmartImportV2Flow } from "@/components/smart-import";
 
 export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -3847,6 +3848,7 @@ export function SmartImportGovernancePanel({
 }
 
 export default function SmartImportPage() {
+  const [useV2, setUseV2] = useState(true);
   const [step, setStep] = useState(1);
   const [runId, setRunId] = useState<number | null>(null);
   const [preview, setPreview] = useState<any>(null);
@@ -3973,10 +3975,32 @@ export default function SmartImportPage() {
         retryRecentRuns={() => { void recentRunsQuery.refetch(); }}
       />
 
-      {!bulkMode && <StepIndicator currentStep={step} onStepClick={(s) => { if (s < step) setStep(s); }} />}
+      {/* V2 / V1 toggle — available for admin power users */}
+      <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground" data-testid="v2-mode-toggle">
+        <button
+          className={`px-2 py-1 rounded ${useV2 ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-slate-100"}`}
+          onClick={() => setUseV2(true)}
+        >
+          Simple view
+        </button>
+        <button
+          className={`px-2 py-1 rounded ${!useV2 ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-slate-100"}`}
+          onClick={() => setUseV2(false)}
+        >
+          Advanced view
+        </button>
+      </div>
 
-      {/* Contextual status line */}
-      {!bulkMode && step > 1 && preview && !loadingRun && (
+      {/* ── V2 flow (plain-language) ── */}
+      {useV2 && !bulkMode && (
+        <SmartImportV2Flow onBulkMode={() => setBulkMode(true)} />
+      )}
+
+      {/* ── V1 flow (advanced/legacy) ── */}
+      {!useV2 && !bulkMode && <StepIndicator currentStep={step} onStepClick={(s) => { if (s < step) setStep(s); }} />}
+
+      {/* Contextual status line (v1 only) */}
+      {!useV2 && !bulkMode && step > 1 && preview && !loadingRun && (
         <div className="flex items-center gap-2 -mt-4 mb-2 text-xs text-muted-foreground" data-testid="step-context">
           <Info className="w-3.5 h-3.5 shrink-0" />
           {step === 2 && (
@@ -4009,14 +4033,14 @@ export default function SmartImportPage() {
         </div>
       )}
 
-      {loadingRun && step > 1 && !bulkMode && (
+      {!useV2 && loadingRun && step > 1 && !bulkMode && (
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
           <span className="text-sm text-muted-foreground">Loading import data...</span>
         </div>
       )}
 
-      {runLoadError && !loadingRun && !bulkMode && (
+      {!useV2 && runLoadError && !loadingRun && !bulkMode && (
         <AdminQueryState
           isLoading={false}
           error={runLoadError}
@@ -4031,7 +4055,7 @@ export default function SmartImportPage() {
           onBack={() => { setBulkMode(false); setStep(1); }}
           onSwitchToWizard={handleSwitchToWizard}
         />
-      ) : (
+      ) : !useV2 ? (
         <>
           {cameFromBulk && step >= 2 && (
             <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2" data-testid="back-to-bulk-banner">
@@ -4096,7 +4120,7 @@ export default function SmartImportPage() {
             />
           )}
         </>
-      )}
+      ) : null}
     </div>
     </AdminPageShell>
   );
