@@ -274,12 +274,28 @@ export default function FinancePage() {
         </CardContent>
       </Card>
 
-      {/* Data availability notice */}
-      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-xs">
-        <Info className="w-4 h-4 shrink-0 mt-0.5" />
-        <span>
-          AR/AP ageing, cashflow forecasts, and VO/change control data are not yet available.
-        </span>
+      {/* AR/AP Ageing Summary */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Card className="border-blue-200 bg-blue-50/30">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Clock className="w-4 h-4 text-blue-600" />
+              <span className="text-[10px] text-blue-700 font-medium uppercase">Accounts Receivable (Overdue Inflows)</span>
+            </div>
+            <p className="text-xl font-bold text-blue-800">{formatCurrencyCompact(kpis.overdueInflowFy)}</p>
+            <p className="text-[10px] text-blue-600">{sorted.filter(p => p.overdueInflowFy > 0).length} projects with overdue inflows</p>
+          </CardContent>
+        </Card>
+        <Card className="border-orange-200 bg-orange-50/30">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-1.5 mb-2">
+              <Clock className="w-4 h-4 text-orange-600" />
+              <span className="text-[10px] text-orange-700 font-medium uppercase">Accounts Payable (Overdue Outflows)</span>
+            </div>
+            <p className="text-xl font-bold text-orange-800">{formatCurrencyCompact(kpis.overdueOutflowFy)}</p>
+            <p className="text-[10px] text-orange-600">{sorted.filter(p => p.overdueOutflowFy > 0).length} projects with overdue outflows</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Gross Profit & Collection Summary Cards */}

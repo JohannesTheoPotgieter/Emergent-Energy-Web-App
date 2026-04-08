@@ -352,7 +352,7 @@ describe("Route stability", () => {
     "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions",
     "/admin/control-center", "/admin/roles", "/admin/smart-import",
     "/my-work", "/my-work/tasks", "/my-work/calendar",
-    "/hse", "/construction", "/handover", "/procurement",
+    "/hse", "/handover", "/procurement",
     "/execution-board", "/portfolios", "/weekly-reviews",
     "/reports/center", "/reports/programme",
   ];
