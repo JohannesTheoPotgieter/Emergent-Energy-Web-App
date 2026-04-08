@@ -4646,6 +4646,12 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='row_number') THEN
     ALTER TABLE "program_inflows" ADD COLUMN "row_number" INTEGER;
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='milestone_no') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "milestone_no" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='milestone_percent') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "milestone_percent" NUMERIC(6,4);
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='milestone_no') THEN
     ALTER TABLE "program_inflows" ADD COLUMN "milestone_no" TEXT;
   END IF;
