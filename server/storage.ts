@@ -1158,15 +1158,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllCostLinesForCashflow(): Promise<any[]> {
-    // Canonical read: normalized_cost_lines only, no program_expense merge.
-    // Aligns cashflow with dashboards that read normalizedCostLines directly.
     const { adaptCostToExpense, createNameResolver } = await import("./lib/data-merge");
     const [costLines, piRows] = await Promise.all([
       this.dbInstance.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
     ]);
     const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    return costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+    const adapted = costLines.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+    const { winners, diagnostics } = selectWinningExpenseRows(adapted);
+    console.log(`[getAllCostLinesForCashflow] ${costLines.length} active NCL → ${adapted.length} adapted → ${winners.length} after dedup (removed ${diagnostics.duplicatesRemoved})`);
+    return winners;
   }
 
   async getProgramExpensesByProject(projectName: string): Promise<any[]> {
