@@ -725,3 +725,37 @@ No new code changes were needed in Phase 8. The system is code-complete.
 - Pilot rollout guardrails
 - Rollback guidance
 - GO recommendation with conditions
+
+---
+
+## Phase 9: Live Database Verification
+
+**Date:** 2026-04-08
+**Status:** CHECKLIST PRODUCED (live DB not accessible)
+
+---
+
+### Access status
+
+**Live database was NOT inspected.** DNS resolution to `ep-damp-dawn-ajbdpxyq.c-3.us-east-2.aws.neon.tech` is blocked in the current execution environment. All prior assessments (Phases 1-8) were based on code, Drizzle schema definitions, and automated tests — NOT live data.
+
+### What was produced
+
+`docs/smart-import-v2-live-db-checklist.md` — a complete operator checklist containing:
+- 10 exact SQL queries to run against the production database
+- Pass/fail thresholds for each check
+- Decision matrix: YES / YES WITH CONDITIONS / NO
+- Covers: migration status, schema columns, duplicate business keys, null milestoneNo, plan matching confidence, baseline readiness, summaryJson integrity
+
+### Honest assessment
+
+The plug-and-play verdict from Phase 8 ("YES WITH CONDITIONS") was based on:
+- Code-level schema verification (Drizzle definitions match v2 requirements) — VERIFIED
+- Migration file correctness (additive, safe, IF NOT EXISTS) — VERIFIED
+- Row-matcher logic tested with synthetic edge cases — VERIFIED
+- Actual production data patterns — **NOT VERIFIED**
+
+Until a team member runs the checklist queries against the live database, the true plug-and-play status is **UNCONFIRMED**. The most likely outcome based on code analysis:
+- Schema checks will PASS (Drizzle schema is the source of truth for migrations)
+- Duplicate key checks are the unknown — depends entirely on actual tracker data
+- Migration may or may not have been applied yet
