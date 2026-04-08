@@ -10,18 +10,21 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft, CheckCircle2, Loader2, AlertCircle,
-  Plus, RefreshCw, Check, Minus, Shield,
+  Plus, RefreshCw, Check, Minus, Shield, FileSpreadsheet, Upload,
 } from "lucide-react";
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { getAuthHeaders } from "@/pages/smart-import";
 import { SECTION_LABELS, CONFIRM_LABELS, RESULT_LABELS, IMPORT_MODE_LABELS } from "./labels";
 
 interface ConfirmStepProps {
   runId: number;
   planning: any;
+  preview?: any;
   decisions: Record<string, "keep_app" | "accept_file">;
   onBack: () => void;
   onCommitComplete?: () => void;
+  onStartNew?: () => void;
 }
 
 function SummaryRow({ icon, count, label, color }: { icon: React.ReactNode; count: number; label: string; color: string }) {
@@ -35,10 +38,11 @@ function SummaryRow({ icon, count, label, color }: { icon: React.ReactNode; coun
   );
 }
 
-export function SmartImportConfirmStep({ runId, planning, decisions, onBack, onCommitComplete }: ConfirmStepProps) {
+export function SmartImportConfirmStep({ runId, planning, preview, decisions, onBack, onCommitComplete, onStartNew }: ConfirmStepProps) {
   const [committing, setCommitting] = useState(false);
   const [commitResult, setCommitResult] = useState<any>(null);
   const [commitError, setCommitError] = useState<string | null>(null);
+  const [, navigate] = useLocation();
 
   const sections = planning?.sections || {};
   const conflicts = planning?.conflicts;
@@ -87,6 +91,7 @@ export function SmartImportConfirmStep({ runId, planning, decisions, onBack, onC
   if (commitResult) {
     const counts = commitResult.counts || {};
     const summary = commitResult.summary || {};
+    const projectName = preview?.detection?.projectInfo?.name || preview?.detection?.projectInfo?.projectName || preview?.projectInfo?.name || "";
     return (
       <Card data-testid="confirm-result">
         <CardHeader>
@@ -109,9 +114,58 @@ export function SmartImportConfirmStep({ runId, planning, decisions, onBack, onC
             )}
           </div>
 
+          {/* Per-section breakdown */}
+          {(counts.planTasks != null || counts.revenueLines != null || counts.costLines != null) && (
+            <div className="text-xs text-muted-foreground space-y-1 border-t pt-3">
+              {counts.planTasks != null && counts.planTasks > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium w-40">{SECTION_LABELS.PLAN || "Schedule / Timeline"}</span>
+                  <span>{counts.planTasks} rows imported</span>
+                </div>
+              )}
+              {counts.revenueLines != null && counts.revenueLines > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium w-40">{SECTION_LABELS.REVENUE || "Revenue / Milestones"}</span>
+                  <span>{counts.revenueLines} rows imported</span>
+                </div>
+              )}
+              {counts.costLines != null && counts.costLines > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="font-medium w-40">{SECTION_LABELS.EXPENDITURE || "Costs / Expenses"}</span>
+                  <span>{counts.costLines} rows imported</span>
+                </div>
+              )}
+            </div>
+          )}
+
           <p className="text-xs text-muted-foreground mt-3">
             {RESULT_LABELS.dashboardNote}
           </p>
+
+          {/* Post-import actions */}
+          <div className="flex gap-2 pt-2">
+            {projectName && (
+              <Button
+                size="sm"
+                onClick={() => navigate(`/project/${encodeURIComponent(projectName)}`)}
+                data-testid="confirm-view-project-btn"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 mr-1.5" />
+                View Project
+              </Button>
+            )}
+            {onStartNew && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onStartNew}
+                data-testid="confirm-start-new-btn"
+              >
+                <Upload className="w-3.5 h-3.5 mr-1.5" />
+                Import Another File
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     );

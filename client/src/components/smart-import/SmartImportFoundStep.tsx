@@ -43,11 +43,23 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: 
       </CardHeader>
       <CardContent className="space-y-5">
         {/* Project */}
-        <div className="flex items-center gap-3" data-testid="found-project">
-          <span className="text-sm font-medium text-slate-600 w-28">Project</span>
-          <span className="text-sm font-semibold" data-testid="found-project-name">
-            {projectInfo?.name || "Unknown project"}
-          </span>
+        <div data-testid="found-project">
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-slate-600 w-28">Project</span>
+            <span className="text-sm font-semibold" data-testid="found-project-name">
+              {projectInfo?.name || "Unknown project"}
+            </span>
+          </div>
+          {projectInfo && (projectInfo.sizeKwp || projectInfo.pm || projectInfo.pd || projectInfo.contractValue) && (
+            <div className="ml-[7.5rem] mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground" data-testid="found-project-details">
+              {projectInfo.sizeKwp && <span>Size: {projectInfo.sizeKwp} kWp</span>}
+              {projectInfo.pd && <span>PD: {projectInfo.pd}</span>}
+              {projectInfo.pm && <span>PM: {projectInfo.pm}</span>}
+              {projectInfo.contractValue && (
+                <span>Contract: R {Number(projectInfo.contractValue).toLocaleString("en-ZA", { maximumFractionDigits: 0 })}</span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Import type */}
@@ -74,21 +86,31 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: 
         <div data-testid="found-sections">
           <span className="text-sm font-medium text-slate-600 block mb-2">Sections found</span>
           <div className="grid gap-2">
-            {sections.map((sec: any, idx: number) => (
-              <div
-                key={idx}
-                className="flex items-center gap-3 bg-slate-50 rounded-lg px-4 py-2.5 border"
-                data-testid={`found-section-${sec.section}`}
-              >
-                <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                <span className="text-sm font-medium flex-1">
-                  {SECTION_LABELS[sec.section] || sec.section}
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  from sheet "{sec.sheetName}"
-                </span>
-              </div>
-            ))}
+            {sections.map((sec: any, idx: number) => {
+              const rowCount = sec.dataRows ?? (sec.dataEndRowIndex != null && sec.dataStartRowIndex != null
+                ? sec.dataEndRowIndex - sec.dataStartRowIndex + 1
+                : null);
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center gap-3 bg-slate-50 rounded-lg px-4 py-2.5 border"
+                  data-testid={`found-section-${sec.section}`}
+                >
+                  <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span className="text-sm font-medium flex-1">
+                    {SECTION_LABELS[sec.section] || sec.section}
+                  </span>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    {rowCount != null && (
+                      <span data-testid={`found-section-${sec.section}-rows`}>
+                        {rowCount} row{rowCount !== 1 ? "s" : ""}
+                      </span>
+                    )}
+                    <span>from sheet "{sec.sheetName}"</span>
+                  </div>
+                </div>
+              );
+            })}
             {sections.length === 0 && (
               <p className="text-sm text-muted-foreground italic">
                 No recognized sections found. Please check the file format.
@@ -110,6 +132,27 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: 
                   <li key={i}>"{u.sheetName}" {u.reason ? `\u2014 ${u.reason}` : ""}</li>
                 ))}
               </ul>
+            </div>
+          </div>
+        )}
+
+        {/* Key dates */}
+        {projectInfo && (projectInfo.constructionStartDate || projectInfo.commissioningDate || projectInfo.pdHandoverDate) && (
+          <div data-testid="found-key-dates">
+            <span className="text-sm font-medium text-slate-600 block mb-2">Key dates</span>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 bg-slate-50 rounded-lg px-4 py-2.5 border text-xs text-muted-foreground">
+              {projectInfo.pdHandoverDate && (
+                <span>PD Handover: <strong className="text-foreground">{new Date(projectInfo.pdHandoverDate).toLocaleDateString("en-ZA")}</strong></span>
+              )}
+              {projectInfo.constructionStartDate && (
+                <span>Construction: <strong className="text-foreground">{new Date(projectInfo.constructionStartDate).toLocaleDateString("en-ZA")}</strong></span>
+              )}
+              {projectInfo.commissioningDate && (
+                <span>Commissioning: <strong className="text-foreground">{new Date(projectInfo.commissioningDate).toLocaleDateString("en-ZA")}</strong></span>
+              )}
+              {projectInfo.clientHandoverDate && (
+                <span>Client Handover: <strong className="text-foreground">{new Date(projectInfo.clientHandoverDate).toLocaleDateString("en-ZA")}</strong></span>
+              )}
             </div>
           </div>
         )}
