@@ -1,4 +1,3 @@
-// @ts-nocheck — TODO: fix 29 type errors then remove this directive
 // Error breakdown: TS7006 implicit-any: 16, TS2345 query/param types: 9, other: 4
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
@@ -28,7 +27,8 @@ import { requireAdmin } from "./middleware/requireAdmin";
 import { invalidateEntityPermCache, invalidateUserOverrideCache } from "./permission-middleware";
 import bcrypt from "bcryptjs";
 import { logAuditFromReq } from "./audit-logger";
-import { logPermissionAudit } from "./permission-audit";
+import { logPermissionAudit, type PermissionAuditEventType } from "./permission-audit";
+import { paramStr } from "./lib/req-params";
 
 const LEGACY_ROLE_MAP: Record<string, string> = {
   admin: "COO_ADMIN",
@@ -137,7 +137,7 @@ function normalizeRolePermissionRecord(role: any) {
 }
 
 function buildDefaultRolePermissionsSnapshot() {
-  return DEFAULT_ROLE_PERMISSIONS.map((perm, index) =>
+  return DEFAULT_ROLE_PERMISSIONS.map((perm: any, index: any) =>
     normalizeRolePermissionRecord({
       id: index + 1,
       role: perm.role,
@@ -245,11 +245,11 @@ export async function seedRolePermissions() {
     const existing = await db.select().from(rolePermissions);
 
     for (const perm of DEFAULT_ROLE_PERMISSIONS) {
-      const exists = existing.find((e: any) => e.role === perm.role);
+      const exists = existing.find((e: any) => e.role === (perm as any).role);
       if (!exists) {
         await db.insert(rolePermissions).values(perm);
       } else {
-        const defaultSections = perm.sections as string[];
+        const defaultSections = (perm as any).sections as string[];
         const currentSections = migrateSections(parseSections(exists.sections));
         const missingSections = defaultSections.filter(s => !currentSections.includes(s));
         const merged = [...new Set([...currentSections, ...missingSections])];
@@ -258,7 +258,7 @@ export async function seedRolePermissions() {
         if (needsUpdate) {
           await db.update(rolePermissions)
             .set({ sections: merged, updatedAt: new Date() })
-            .where(eq(rolePermissions.role, perm.role));
+            .where(eq(rolePermissions.role, (perm as any).role));
         }
       }
     }
@@ -289,7 +289,7 @@ export function registerRoleManagementRoutes(app: Express) {
         roleUserCounts.set(mappedRole, (roleUserCounts.get(mappedRole) || 0) + 1);
       }
 
-      const roleSummaries = roles.map((role) => ({
+      const roleSummaries = roles.map((role: any) => ({
         ...role,
         userCount: roleUserCounts.get(role.role) || 0,
         configuredResources: countConfiguredResourcePermissions(role.entityPermissions),
@@ -492,13 +492,13 @@ export function registerRoleManagementRoutes(app: Express) {
       const authorityMatrix = ENTITY_PERMISSION_DEFAULTS.map((entityRule) => {
         const entity = entityRule.entity as PermissionEntity;
         const actionResults = AUTHORITY_ACTIONS.map((action) => ({
-          action,
           ...evaluateAuthorityForRole({
             role: effectiveRole!,
             entity,
             action: action as AuthorityAction,
             roleRecord: roleRecord as any,
           }),
+          action,
         }));
         return { entity, actions: actionResults };
       });
@@ -525,7 +525,7 @@ export function registerRoleManagementRoutes(app: Express) {
         ? await db.select().from(rolePermissions).where(eq(rolePermissions.role, targetRole))
         : await db.select().from(rolePermissions);
 
-      const byRole = roles.map((roleRow) => ({
+      const byRole = roles.map((roleRow: any) => ({
         role: roleRow.role,
         label: roleRow.label,
         effective: ENTITY_PERMISSION_DEFAULTS.map((entityRule) => ({
@@ -801,7 +801,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.get("/api/admin/user-overrides/:userId", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.userId);
+      const userId = parseInt(paramStr(req.params.userId));
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid userId" });
 
       const overrides = await db.select().from(userPermissionOverrides)
@@ -855,7 +855,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
   app.delete("/api/admin/user-overrides/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const overrideId = parseInt(req.params.id);
+      const overrideId = parseInt(paramStr(req.params.id));
       if (isNaN(overrideId)) return res.status(400).json({ error: "Invalid override ID" });
 
       const [existing] = await db.select().from(userPermissionOverrides)
@@ -924,7 +924,7 @@ export function registerRoleManagementRoutes(app: Express) {
         }
       }
 
-      const enriched = rows.map((row) => ({
+      const enriched = rows.map((row: any) => ({
         ...row,
         changedByName: row.changedByUserId ? userMap.get(row.changedByUserId) || null : null,
         targetUserName: row.targetUserId ? userMap.get(row.targetUserId) || null : null,
@@ -969,7 +969,7 @@ export function registerRoleManagementRoutes(app: Express) {
       }).returning();
 
       logPermissionAudit(req, {
-        eventType: "pd_visibility_role_updated",
+        eventType: "pd_visibility_role_updated" as PermissionAuditEventType,
         targetRole: role,
         changeDetail: { ticketTypes: created.ticketTypes, scope: created.scope },
       });
@@ -1001,7 +1001,7 @@ export function registerRoleManagementRoutes(app: Express) {
       }).returning();
 
       logPermissionAudit(req, {
-        eventType: "pd_visibility_user_updated",
+        eventType: "pd_visibility_user_updated" as PermissionAuditEventType,
         targetUserId: userId,
         changeDetail: { ticketTypes: created.ticketTypes, scope: created.scope },
       });
@@ -1015,7 +1015,7 @@ export function registerRoleManagementRoutes(app: Express) {
   // Delete a visibility config by ID
   app.delete("/api/admin/pd-visibility/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const configId = parseInt(req.params.id);
+      const configId = parseInt(paramStr(req.params.id));
       if (isNaN(configId)) return res.status(400).json({ error: "Invalid config ID" });
 
       const [existing] = await db.select().from(pdVisibilityConfig)
@@ -1025,7 +1025,7 @@ export function registerRoleManagementRoutes(app: Express) {
       await db.delete(pdVisibilityConfig).where(eq(pdVisibilityConfig.id, configId));
 
       logPermissionAudit(req, {
-        eventType: existing.userId ? "pd_visibility_user_removed" : "pd_visibility_role_removed",
+        eventType: (existing.userId ? "pd_visibility_user_removed" : "pd_visibility_role_removed") as PermissionAuditEventType,
         targetRole: existing.role || undefined,
         targetUserId: existing.userId || undefined,
         changeDetail: { ticketTypes: existing.ticketTypes, scope: existing.scope },
@@ -1092,7 +1092,7 @@ export function registerRoleManagementRoutes(app: Express) {
       });
 
       logPermissionAudit(req, {
-        eventType: "workstream_visibility_role_updated",
+        eventType: "workstream_visibility_role_updated" as PermissionAuditEventType,
         targetRole: role,
         changeDetail: { workstreams: created.workstreams, ticketTypes: created.ticketTypes, scope: created.scope },
       });
@@ -1136,7 +1136,7 @@ export function registerRoleManagementRoutes(app: Express) {
       });
 
       logPermissionAudit(req, {
-        eventType: "workstream_visibility_user_updated",
+        eventType: "workstream_visibility_user_updated" as PermissionAuditEventType,
         targetUserId: userId,
         changeDetail: { workstreams: created.workstreams, ticketTypes: created.ticketTypes, scope: created.scope },
       });
@@ -1150,7 +1150,7 @@ export function registerRoleManagementRoutes(app: Express) {
   // Delete a workstream visibility config by ID
   app.delete("/api/admin/workstream-visibility/:id", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const configId = parseInt(req.params.id);
+      const configId = parseInt(paramStr(req.params.id));
       if (isNaN(configId)) return res.status(400).json({ error: "Invalid config ID" });
 
       const [existing] = await db.select().from(workstreamVisibilityConfig)
@@ -1160,7 +1160,7 @@ export function registerRoleManagementRoutes(app: Express) {
       await db.delete(workstreamVisibilityConfig).where(eq(workstreamVisibilityConfig.id, configId));
 
       logPermissionAudit(req, {
-        eventType: existing.userId ? "workstream_visibility_user_removed" : "workstream_visibility_role_removed",
+        eventType: (existing.userId ? "workstream_visibility_user_removed" : "workstream_visibility_role_removed") as PermissionAuditEventType,
         targetRole: existing.role || undefined,
         targetUserId: existing.userId || undefined,
         changeDetail: { workstreams: existing.workstreams, ticketTypes: existing.ticketTypes, scope: existing.scope },
@@ -1179,7 +1179,7 @@ export function registerRoleManagementRoutes(app: Express) {
   // 3. User-level overrides (userPermissionOverrides)
   app.get("/api/admin/users/:id/effective-permissions", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const userId = parseInt(req.params.id);
+      const userId = parseInt(paramStr(req.params.id));
       if (isNaN(userId)) return res.status(400).json({ error: "Invalid user ID" });
 
       const [user] = await db.select().from(users).where(eq(users.id, userId));
@@ -1189,7 +1189,7 @@ export function registerRoleManagementRoutes(app: Express) {
 
       // Get role record
       const allRoles = await ensureRolePermissionsSeeded();
-      const roleRecord = allRoles.find((r) => r.role === userRole) || null;
+      const roleRecord = allRoles.find((r: any) => r.role === userRole) || null;
 
       // Get user overrides (non-expired)
       const overrides = await db.select({
@@ -1217,7 +1217,7 @@ export function registerRoleManagementRoutes(app: Express) {
       for (const rule of ENTITY_PERMISSION_DEFAULTS) {
         for (const action of ACTIONS) {
           // 1. Check user override
-          const userOverride = overrides.find((o) => o.entity === rule.entity && o.action === action);
+          const userOverride = overrides.find((o: any) => o.entity === rule.entity && o.action === action);
           if (userOverride) {
             permissions.push({
               entity: rule.entity,
@@ -1269,7 +1269,7 @@ export function registerRoleManagementRoutes(app: Express) {
       if (roleNames.length > 5) return res.status(400).json({ error: "Maximum 5 roles for comparison" });
 
       const allRoles = await ensureRolePermissionsSeeded();
-      const roleRecords = roleNames.map((name) => allRoles.find((r) => r.role === name)).filter(Boolean);
+      const roleRecords = roleNames.map((name) => allRoles.find((r: any) => r.role === name)).filter(Boolean);
 
       if (roleRecords.length < 2) return res.status(404).json({ error: "One or more roles not found" });
 
