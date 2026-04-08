@@ -589,7 +589,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
       if (projectName && typeof projectName === 'string') {
         // RLS: verify user has access to this project by name
-        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("../services/project-access-service");
         const infUser = (req as any).user;
         const infScope = await resolveProjectScope(infUser?.id || 0, infUser?.role || "", infUser?.name || "");
         if (!isProjectAccessibleByName(infScope, projectName)) {
@@ -604,7 +604,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       } else {
         inflows = await storage.getAllProgramInflows();
         // RLS: filter to accessible projects
-        const { resolveProjectScope, isProjectAccessibleByName } = await import("./services/project-access-service");
+        const { resolveProjectScope, isProjectAccessibleByName } = await import("../services/project-access-service");
         const infUser = (req as any).user;
         const infScope = await resolveProjectScope(infUser?.id || 0, infUser?.role || "", infUser?.name || "");
         if (infScope.kind === "scoped") {
