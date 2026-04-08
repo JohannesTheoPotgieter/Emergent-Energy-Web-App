@@ -157,3 +157,94 @@ This prevents false CHANGED classifications when, for example, a DB row has `pct
 2. `work_items` with `source='SMART_IMPORT'` and `workstream='PM'` is the correct table/filter for plan rows (not `normalizedPlanTasks`).
 3. The planner should be on-demand (computed per request) rather than cached, because DB state can change between requests.
 4. File upload and folder upload both use the same `POST /api/smart-import/upload` → `GET /:runId/plan` flow, satisfying BR-4.
+
+---
+
+## Phase 3: Spine Alignment Audit & Corrections
+
+**Date:** 2026-04-08
+**Status:** COMPLETE
+**Audit doc:** `docs/smart-import-v2-spine-alignment.md`
+
+---
+
+### Audit findings
+
+The Phase 2 planner was already correctly anchored to the canonical sources:
+
+| Section | Canonical source | Evidence |
+|---------|-----------------|----------|
+| **PLAN** | `work_items` (source=SMART_IMPORT, workstream=PM, deletedAt IS NULL) | The ONLY table written to during commit. Read by 11+ dashboard/report endpoints. `normalizedPlanTasks` is a dead table (never written, zero reads). |
+| **REVENUE** | `normalized_revenue_lines` (effectiveTo IS NULL) | Written first during commit. 33 read sites. Documented as canonical in `data-import-and-source-of-truth.md`. |
+| **EXPENDITURE** | `normalized_cost_lines` (effectiveTo IS NULL) | Written first during commit. 53 read sites. Documented as canonical in `data-import-and-source-of-truth.md`. |
+
+### What was changed
+
+#### Normalizer: milestoneNo/milestonePercent preservation
+
+The synonym layer and mapper already recognized `milestone_no` and `percent` columns from Excel trackers, but the normalizer **dropped these fields** — they were never extracted into the `NormalizationResult`.
+
+**Fixed:** Extended `NormalizationResult.revenueLines` to include `milestoneNo` and `milestonePercent`. The normalizer now extracts these values when the mapper identifies the columns.
+
+#### Row matcher: revenue identity confidence upgrade
+
+When `milestoneNo` is present on a file row, the revenue business key confidence is upgraded from MEDIUM to HIGH, and `keyType` is set to PRIMARY. The actual matching key remains `milestoneName` (since the canonical DB table `normalized_revenue_lines` does not store `milestoneNo`), but the confidence metadata now reflects the stronger identity signal.
+
+#### Planner: canonicalSource metadata
+
+Each `SectionPlan` in the planner output now includes a `canonicalSource` field declaring which table was queried:
+
+```typescript
+planning.sections.PLAN.canonicalSource      // "work_items"
+planning.sections.REVENUE.canonicalSource   // "normalized_revenue_lines"
+planning.sections.EXPENDITURE.canonicalSource // "normalized_cost_lines"
+```
+
+The `CANONICAL_SOURCES` constant is declared in `planner.ts` with JSDoc linking to the spine alignment audit doc.
+
+### Updated planner output shape
+
+```typescript
+interface SectionPlan {
+  canonicalSource: string;  // NEW — which DB table was compared against
+  newCount: number;
+  changedCount: number;
+  unchangedCount: number;
+  missingFromUploadCount: number;
+  conflictPlaceholderCount: number;
+  rows: PlannedRow[];
+  fileRowCount: number;
+  existingRowCount: number;
+}
+```
+
+### Updated revenue identity
+
+| Strategy | Key | Confidence | Condition |
+|----------|-----|-----------|-----------|
+| **Primary** | `projectId + subProjectName + norm(milestoneName)` | HIGH | `milestoneNo` present on file row |
+| **Fallback** | `projectId + subProjectName + norm(milestoneName)` | MEDIUM | `milestoneNo` absent |
+
+The matching key is the same in both cases (milestoneName), because the canonical DB table lacks a milestoneNo column. The confidence upgrade reflects that when milestoneNo exists in the tracker, the milestone identity is more trustworthy.
+
+### Tests added
+
+`qa/tests/unit/smart-import-planner-spine.test.ts` — 39 tests covering:
+- Canonical source declarations in planner
+- PLAN baseline loader targets work_items (not normalizedPlanTasks)
+- REVENUE baseline loader targets normalizedRevenueLines (not programInflows)
+- EXPENDITURE baseline loader targets normalizedCostLines (not programExpense)
+- milestoneNo/milestonePercent preserved in normalizer
+- Revenue matcher uses milestoneNo for confidence
+- Row matcher correctness (UNCHANGED, CHANGED, NEW, MISSING_FROM_UPLOAD)
+- projectId-first key isolation
+- File/folder upload parity
+
+### Limitations resolved from Phase 2
+
+- ~~Revenue milestoneNo not available~~ → Now extracted and used for confidence. Limitation was in the normalizer, not the tracker data.
+
+### Remaining limitations
+
+1. The canonical DB table `normalized_revenue_lines` does not store `milestoneNo`. A schema migration would be needed to use it as a true primary matching key. Currently, `milestoneName` is the matching key with milestoneNo affecting confidence only.
+2. The dead table `normalizedPlanTasks` remains in the schema. It could be cleaned up in a future PR but is not blocking anything.

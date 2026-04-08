@@ -29,6 +29,8 @@ export interface NormalizationResult {
   revenueLines: Array<{
     description: string | null;
     milestoneName: string | null;
+    milestoneNo: string | null;
+    milestonePercent: string | null;
     amountExVat: string | null;
     vat: string | null;
     invoiceNumber: string | null;
@@ -552,6 +554,8 @@ function extractRevenueLines(
   const lines: NormalizationResult["revenueLines"] = [];
 
   const milestoneNameCol = getColIndex(mapping, "milestone_name");
+  const milestoneNoCol = getColIndex(mapping, "milestone_no");
+  const milestonePercentCol = getColIndex(mapping, "percent");
   const amountCol = getColIndex(mapping, "amount_ex_vat");
   const vatCol = getColIndex(mapping, "vat");
   const invoiceNumCol = getColIndex(mapping, "invoice_number");
@@ -610,6 +614,8 @@ function extractRevenueLines(
 
     const amountExVat = amountCol >= 0 ? parseNumber(row[amountCol]) : null;
     const vat = vatCol >= 0 ? parseNumber(row[vatCol]) : null;
+    const milestoneNo = cellStr(row, milestoneNoCol);
+    const milestonePercent = milestonePercentCol >= 0 ? parseNumber(row[milestonePercentCol]) : null;
     const invoiceNumber = cellStr(row, invoiceNumCol);
     const invoiceDate = invoiceDateCol >= 0 ? parseDate(row[invoiceDateCol]) : null;
     const expectedPaymentDate = plannedDateCol >= 0 ? parseDate(row[plannedDateCol]) : null;
@@ -703,6 +709,8 @@ function extractRevenueLines(
     lines.push({
       description: milestoneName,
       milestoneName,
+      milestoneNo,
+      milestonePercent,
       amountExVat,
       vat,
       invoiceNumber,
