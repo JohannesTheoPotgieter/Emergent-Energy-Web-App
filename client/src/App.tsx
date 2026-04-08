@@ -111,7 +111,6 @@ const EngMonthlyReportProjectPage = lazy(() => import("@/pages/engineering-month
 const ReportCenterPage = lazy(() => import("@/pages/reports/report-center"));
 const PerformancePage = lazy(() => import("@/pages/reports/performance"));
 const EngineeringStandupPage = lazy(() => import("@/pages/engineering/standup"));
-const ConstructionDashboardPage = lazy(() => import("@/pages/construction-dashboard"));
 const POApprovalBoardPage = lazy(() => import("@/pages/po-approval-board"));
 const PaymentRequestBoardPage = lazy(() => import("@/pages/payment-request-board"));
 const PaymentBatchManagerPage = lazy(() => import("@/pages/payment-batch-manager"));
@@ -234,7 +233,6 @@ const ROUTE_COMPONENTS: Record<string, React.ComponentType<any>> = {
   ReportCenterPage,
   PerformancePage,
   EngineeringStandupPage,
-  ConstructionDashboardPage,
   POApprovalBoardPage,
   PaymentRequestBoardPage,
   PaymentBatchManagerPage,

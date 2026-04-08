@@ -329,19 +329,19 @@ router.get(
       try {
         const budgetYears = await db.selectDistinct({ fye: fyeBudgets.fye }).from(fyeBudgets);
         for (const r of budgetYears) { const y = parseInt(String(r.fye), 10); if (!isNaN(y)) yearSet.add(y); }
-      } catch {}
+      } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
       try {
         const pipelineYears = await db.selectDistinct({ fye: forecastPipeline.fyeYear }).from(forecastPipeline);
         for (const r of pipelineYears) { if (r.fye) yearSet.add(r.fye); }
-      } catch {}
+      } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
       try {
         const kpiYears = await db.selectDistinct({ fye: fyeKpiCounters.fyeYear }).from(fyeKpiCounters);
         for (const r of kpiYears) { if (r.fye) yearSet.add(r.fye); }
-      } catch {}
+      } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
       try {
         const snapYears = await db.selectDistinct({ fye: fyeReportSnapshots.fyeYear }).from(fyeReportSnapshots);
         for (const r of snapYears) { if (r.fye) yearSet.add(r.fye); }
-      } catch {}
+      } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
       const years = [...yearSet].sort((a, b) => b - a); // Descending
       res.json({ years, currentFye: current });
@@ -1301,7 +1301,7 @@ async function collectSnapshotData(fye: number) {
       if (b.budgetType === "revenue") budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
       else if (b.budgetType === "cos") budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + amt;
     }
-  } catch {}
+  } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
   // Actual Revenue + COS via COS-ratio allocation (matches Revenue Tracker)
   const [allInflows, allExpenses, snapCosOverrides] = await Promise.all([
@@ -1393,20 +1393,20 @@ async function collectSnapshotData(fye: number) {
   let pipelineRows: any[] = [];
   try {
     pipelineRows = await db.select({ id: forecastPipeline.id, projectName: forecastPipeline.projectName, projectDeveloper: forecastPipeline.projectDeveloper, location: forecastPipeline.location, sizeKwp: forecastPipeline.sizeKwp, dealProbabilityPct: forecastPipeline.dealProbabilityPct, forecastSignatureDate: forecastPipeline.forecastSignatureDate, solarRevenue: forecastPipeline.solarRevenue, bessRevenue: forecastPipeline.bessRevenue, forecastGpPct: forecastPipeline.forecastGpPct }).from(forecastPipeline).where(and(eq(forecastPipeline.status, "active"), eq(forecastPipeline.fyeYear, fye)));
-  } catch {}
+  } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
   // Lost deals
   let lostDealRows: any[] = [];
   try {
     lostDealRows = await db.select({ id: lostDeals.id, dealName: lostDeals.dealName, dealValue: lostDeals.dealValue, businessDeveloper: lostDeals.businessDeveloper, lostReason: lostDeals.lostReason, lostDate: lostDeals.lostDate }).from(lostDeals).where(eq(lostDeals.fyeYear, fye));
-  } catch {}
+  } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
   // KPIs
   let kpi = { broughtIn: 0, signed: 0, total: 0 };
   try {
     const [counter] = await db.select({ broughtIn: fyeKpiCounters.broughtIn, signed: fyeKpiCounters.signed }).from(fyeKpiCounters).where(eq(fyeKpiCounters.fyeYear, fye));
     if (counter) kpi = { broughtIn: counter.broughtIn, signed: counter.signed, total: counter.broughtIn + counter.signed };
-  } catch {}
+  } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
   return {
     dashboard: { months: dashboardMonths, monthKeys },

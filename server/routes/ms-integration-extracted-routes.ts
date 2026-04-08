@@ -90,7 +90,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         for (const row of rows.rows) {
           config[row.config_key as string] = row.config_value;
         }
-      } catch {}
+      } catch (e) { console.warn("[ms-integration-extracted-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
       const featureFlags = config.feature_flags || {};
       const spConfig = config.sharepoint_project_docs || {};
@@ -619,7 +619,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         try {
           const { getSsoTokenForUser } = await import("../ms-account-service");
           ssoToken = await getSsoTokenForUser(userId);
-        } catch {}
+        } catch (e) { console.warn("[ms-integration-extracted-routes] non-critical error:", e instanceof Error ? e.message : e); }
       }
       if (!ssoToken) {
         return res.json({ data: [], ssoRequired: true, message: "Sign in with Microsoft to access Teams data" });
@@ -651,7 +651,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
         try {
           const { getSsoTokenForUser } = await import("../ms-account-service");
           ssoToken = await getSsoTokenForUser(userId);
-        } catch {}
+        } catch (e) { console.warn("[ms-integration-extracted-routes] non-critical error:", e instanceof Error ? e.message : e); }
       }
       if (!ssoToken) {
         return res.json({ data: [], ssoRequired: true, message: "Sign in with Microsoft to access Teams chats" });
