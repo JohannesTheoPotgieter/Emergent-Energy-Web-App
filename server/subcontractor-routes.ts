@@ -1,8 +1,8 @@
-// @ts-nocheck — TODO: fix 71 type errors then remove this directive
 // Error breakdown: TS7006 implicit-any: 37, TS2345 query/param types: 30, other: 4
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, Request, Response, NextFunction } from "express";
+import { paramStr } from "./lib/req-params";
 import { db } from "./db";
 import { normalizedCostLines, counterparties, projectInfo, invoicePatternRules } from "@shared/schema";
 import { encryptField, decryptField } from "./lib/field-encryption";
@@ -35,11 +35,11 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
 
     const patternCounterpartyNames = new Set(
       patternRules
-        .filter(r => r.isActive && r.counterpartyName)
-        .map(r => r.counterpartyName!.trim().toLowerCase())
+        .filter((r: any) => r.isActive && r.counterpartyName)
+        .map((r: any) => r.counterpartyName!.trim().toLowerCase())
     );
 
-    let lines = allLines.filter(l => {
+    let lines = allLines.filter((l: any) => {
       const cpName = (l.counterpartyName || "").trim().toLowerCase();
       if (!cpName) return false;
       if (patternCounterpartyNames.size > 0) return patternCounterpartyNames.has(cpName);
@@ -47,17 +47,17 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
     });
 
     if (typeFilter && typeFilter !== "all") {
-      lines = lines.filter(l => l.counterpartyType === typeFilter);
+      lines = lines.filter((l: any) => l.counterpartyType === typeFilter);
     }
     if (projectFilter && projectFilter !== "all") {
-      lines = lines.filter(l => l.projectName === projectFilter);
+      lines = lines.filter((l: any) => l.projectName === projectFilter);
     }
 
-    const cpMap = new Map(counterpartyList.map(c => [c.id, c]));
+    const cpMap = new Map(counterpartyList.map((c: any) => [c.id, c]));
 
     if (coreOnly) {
-      const coreIds = new Set(counterpartyList.filter(c => c.isCore).map(c => c.id));
-      lines = lines.filter(l => l.counterpartyId && coreIds.has(l.counterpartyId));
+      const coreIds = new Set(counterpartyList.filter((c: any) => c.isCore).map((c: any) => c.id));
+      lines = lines.filter((l: any) => l.counterpartyId && coreIds.has(l.counterpartyId));
     }
 
     const grouped = new Map<string, typeof lines>();
@@ -94,7 +94,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
       const name = groupLines[0]?.counterpartyName || "Unknown";
       const cpId = groupLines[0]?.counterpartyId || null;
       const cp = cpId ? cpMap.get(cpId) : null;
-      const cpType = groupLines[0]?.counterpartyType || cp?.typeDefault || null;
+      const cpType = groupLines[0]?.counterpartyType || (cp as any)?.typeDefault || null;
 
       let totalSpend = 0;
       const invoiceNumbers = new Set<string>();
@@ -149,7 +149,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
         counterpartyName: name,
         counterpartyId: cpId,
         counterpartyType: cpType,
-        isCore: cp?.isCore || false,
+        isCore: (cp as any)?.isCore || false,
         totalSpendExVat: totalSpend,
         invoiceCount: invoiceNumbers.size || groupLines.length,
         projectCount: projects.size,
@@ -172,7 +172,7 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
     const totalOverdueAmount = summaries.reduce((s, c) => s + c.overdueAmount, 0);
     const totalOverdueCount = summaries.reduce((s, c) => s + c.overdueCount, 0);
     const totalUpcoming30d = summaries.reduce((s, c) => s + c.upcomingAmount30d, 0);
-    const allProjects = [...new Set(lines.map(l => l.projectName))];
+    const allProjects = [...new Set(lines.map((l: any) => l.projectName))];
 
     res.json({
       kpis: {
@@ -195,10 +195,10 @@ router.get("/api/subcontractor-dashboard/summary", requireAuth, async (req: Requ
 
 router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req: Request, res: Response) => {
   try {
-    const name = decodeURIComponent(req.params.name);
+    const name = decodeURIComponent(paramStr(req.params.name));
     const allLines = await db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo));
     const normalizedName = name.trim().toLowerCase();
-    const lines = allLines.filter(l => {
+    const lines = allLines.filter((l: any) => {
       const cpName = (l.counterpartyName || "").trim().toLowerCase();
       if (normalizedName === "unknown") {
         return cpName === "unknown" || cpName === "";
@@ -214,7 +214,7 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
     const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
     const upcoming = lines
-      .filter(l => {
+      .filter((l: any) => {
         if (l.status === "PAID") return false;
         if (!l.invoiceDate) return false;
         try {
@@ -222,7 +222,7 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
           return d >= now && d <= thirtyDaysFromNow;
         } catch { return false; }
       })
-      .map(l => ({
+      .map((l: any) => ({
         projectName: l.projectName,
         description: l.description,
         amountExVat: l.amountExVat,
@@ -247,26 +247,26 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
 
     const invoiceSummary = {
       totalInvoices: lines.length,
-      totalAmount: lines.reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+      totalAmount: lines.reduce((s: any, l: any) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
       settled: {
-        count: lines.filter(l => l.status === "PAID").length,
-        amount: lines.filter(l => l.status === "PAID").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+        count: lines.filter((l: any) => l.status === "PAID").length,
+        amount: lines.filter((l: any) => l.status === "PAID").reduce((s: any, l: any) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
       },
       outstanding: {
-        count: lines.filter(l => l.status !== "PAID").length,
-        amount: lines.filter(l => l.status !== "PAID").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+        count: lines.filter((l: any) => l.status !== "PAID").length,
+        amount: lines.filter((l: any) => l.status !== "PAID").reduce((s: any, l: any) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
       },
       invoiced: {
-        count: lines.filter(l => l.status === "INVOICED").length,
-        amount: lines.filter(l => l.status === "INVOICED").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+        count: lines.filter((l: any) => l.status === "INVOICED").length,
+        amount: lines.filter((l: any) => l.status === "INVOICED").reduce((s: any, l: any) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
       },
       planned: {
-        count: lines.filter(l => l.status === "PLANNED").length,
-        amount: lines.filter(l => l.status === "PLANNED").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+        count: lines.filter((l: any) => l.status === "PLANNED").length,
+        amount: lines.filter((l: any) => l.status === "PLANNED").reduce((s: any, l: any) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
       },
       approved: {
-        count: lines.filter(l => l.status === "APPROVED").length,
-        amount: lines.filter(l => l.status === "APPROVED").reduce((s, l) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
+        count: lines.filter((l: any) => l.status === "APPROVED").length,
+        amount: lines.filter((l: any) => l.status === "APPROVED").reduce((s: any, l: any) => s + (parseFloat(l.amountExVat || "0") || 0), 0),
       },
     };
 
@@ -284,26 +284,26 @@ router.get("/api/subcontractor-dashboard/detail/:name", requireAuth, async (req:
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([month, total]) => ({ month, total }));
 
-    const lastActivity = lines.reduce((max, l) => {
+    const lastActivity = lines.reduce((max: any, l: any) => {
       const d = l.paidDate || l.invoiceDate;
       if (d && (!max || d > max)) return d;
       return max;
     }, null as string | null);
 
     const oldestOpen = lines
-      .filter(l => l.status !== "PAID" && l.invoiceDate)
-      .reduce((min, l) => {
+      .filter((l: any) => l.status !== "PAID" && l.invoiceDate)
+      .reduce((min: any, l: any) => {
         if (!min || (l.invoiceDate && l.invoiceDate < min)) return l.invoiceDate;
         return min;
       }, null as string | null);
 
     const nextDue = upcoming.length > 0
-      ? upcoming.reduce((min, u) => (!min || (u.invoiceDate && u.invoiceDate < min) ? u.invoiceDate : min), null as string | null)
+      ? upcoming.reduce((min: any, u: any) => (!min || (u.invoiceDate && u.invoiceDate < min) ? u.invoiceDate : min), null as string | null)
       : null;
 
     res.json({
       invoiceSummary,
-      lines: lines.map(l => ({
+      lines: lines.map((l: any) => ({
         id: l.id,
         projectName: l.projectName,
         description: l.description,
@@ -339,8 +339,8 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
       db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
       db.select({ projectName: projectInfo.projectName }).from(projectInfo),
     ]);
-    const resolve = createNameResolver(piRows.map(p => p.projectName));
-    const expenses = rawCosts.map(c => adaptCostToExpense(c, resolve(c.projectName)));
+    const resolve = createNameResolver(piRows.map((p: any) => p.projectName));
+    const expenses = rawCosts.map((c: any) => adaptCostToExpense(c, resolve(c.projectName)));
     if (expenses.length === 0) {
       return res.json({ success: true, costLines: 0, counterpartiesCreated: 0, counterpartiesMatched: 0, projects: 0, message: "No expense data found" });
     }
@@ -438,7 +438,7 @@ router.post("/api/procurement-analysis/run", requireAuth, requirePermission('pro
           turnaroundDays = Math.max(0, Math.round((paid.getTime() - invoiced.getTime()) / (1000 * 60 * 60 * 24)));
         }
 
-        const matchedCp = cpId ? allCps.find(c => c.id === cpId) : null;
+        const matchedCp = cpId ? allCps.find((c: any) => c.id === cpId) : null;
         const cpType = matchedCp?.typeDefault || null;
 
         costValues.push({
@@ -521,7 +521,7 @@ router.patch("/api/subcontractor-dashboard/rename", requireAuth, requirePermissi
       return res.status(409).json({ error: "A counterparty with that name already exists" });
     }
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: any) => {
       if (oldCp.length > 0) {
         const currentAliases: string[] = Array.isArray(oldCp[0].nameAliases) ? oldCp[0].nameAliases as string[] : [];
         const newAliases = [...new Set([...currentAliases, oldCp[0].nameCanonical])];
@@ -545,14 +545,14 @@ router.patch("/api/subcontractor-dashboard/rename", requireAuth, requirePermissi
 
 router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const name = decodeURIComponent(req.params.name);
+    const name = decodeURIComponent(paramStr(req.params.name));
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Counterparty name is required" });
     }
 
     const normalized = name.trim().toLowerCase();
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: any) => {
       const cpRows = await tx.select().from(counterparties)
         .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalized}`);
 
@@ -577,7 +577,7 @@ router.delete("/api/subcontractor-dashboard/counterparty/:name", requireAuth, re
 
 router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth, requirePermission('procurement', 'edit'), async (req: Request, res: Response) => {
   try {
-    const name = decodeURIComponent(req.params.name);
+    const name = decodeURIComponent(paramStr(req.params.name));
     const { type } = req.body;
     if (!type || !["INSTALLER", "SUPPLIER", "OTHER"].includes(type)) {
       return res.status(400).json({ error: "Type must be INSTALLER, SUPPLIER, or OTHER" });
@@ -585,7 +585,7 @@ router.patch("/api/subcontractor-dashboard/counterparty/:name/type", requireAuth
 
     const normalized = name.trim().toLowerCase();
 
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: any) => {
       const cpRows = await tx.select().from(counterparties)
         .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalized}`);
 
@@ -636,7 +636,7 @@ router.post("/api/subcontractor-dashboard/merge", requireAuth, requirePermission
     const normalizedTarget = trimmedTarget.toLowerCase();
 
     let mergedAliasCount = 0;
-    await db.transaction(async (tx) => {
+    await db.transaction(async (tx: any) => {
       const targetCp = await tx.select().from(counterparties)
         .where(sql`LOWER(${counterparties.nameCanonical}) = ${normalizedTarget}`);
 
@@ -781,7 +781,7 @@ router.post("/api/subcontractor-dashboard/link-counterparty", requireAuth, requi
       const lines = await db.select().from(normalizedCostLines).where(
         and(sql`${normalizedCostLines.id} = ANY(${normalizedLineIds})`, isNull(normalizedCostLines.effectiveTo))
       );
-      const invoiceNumbers = lines.map(l => l.invoiceNumber).filter(Boolean);
+      const invoiceNumbers = lines.map((l: any) => l.invoiceNumber).filter(Boolean);
       if (invoiceNumbers.length > 0) {
         const userId = (req as any).user?.id || null;
         const prefixMatch = invoiceNumbers[0]!.match(/^([A-Za-z\-_]+)/);
@@ -822,16 +822,16 @@ router.get("/api/subcontractor-dashboard/overdue", requireAuth, async (req: Requ
 
     const patternCpNames = new Set(
       patternRules
-        .filter(r => r.isActive && r.counterpartyName)
-        .map(r => r.counterpartyName!.trim().toLowerCase())
+        .filter((r: any) => r.isActive && r.counterpartyName)
+        .map((r: any) => r.counterpartyName!.trim().toLowerCase())
     );
 
-    const filteredLines = allLines.filter(l => {
+    const filteredLines = allLines.filter((l: any) => {
       const cpName = (l.counterpartyName || "").trim().toLowerCase();
       return cpName && patternCpNames.has(cpName);
     });
 
-    const overdueLines = filteredLines.filter(l => {
+    const overdueLines = filteredLines.filter((l: any) => {
       if (l.status === "PAID") return false;
       const amt = parseFloat(l.amountExVat || "0") || 0;
       if (amt <= 0) return false;
@@ -841,7 +841,7 @@ router.get("/api/subcontractor-dashboard/overdue", requireAuth, async (req: Requ
       } catch { return false; }
     });
 
-    const items = overdueLines.map(l => {
+    const items = overdueLines.map((l: any) => {
       const invDate = new Date(l.invoiceDate!);
       const daysOverdue = Math.floor((now.getTime() - invDate.getTime()) / (1000 * 60 * 60 * 24));
       return {
@@ -860,9 +860,9 @@ router.get("/api/subcontractor-dashboard/overdue", requireAuth, async (req: Requ
       };
     });
 
-    items.sort((a, b) => b.daysOverdue - a.daysOverdue);
+    items.sort((a: any, b: any) => b.daysOverdue - a.daysOverdue);
 
-    const totalOverdue = items.reduce((s, i) => s + (parseFloat(i.amountExVat || "0") || 0), 0);
+    const totalOverdue = items.reduce((s: any, i: any) => s + (parseFloat(i.amountExVat || "0") || 0), 0);
 
     res.json({
       totalOverdue,
@@ -905,7 +905,7 @@ router.get("/api/subcontractor-dashboard/admin-questions", requireAuth, async (_
 
 router.get("/api/subcontractor-dashboard/supplier-details/:name", requireAuth, async (req: Request, res: Response) => {
   try {
-    const name = decodeURIComponent(req.params.name).trim().toLowerCase();
+    const name = decodeURIComponent(paramStr(req.params.name)).trim().toLowerCase();
     const result = await db.execute(sql`
       SELECT id, name_canonical, vat_number, registration_number, address,
              contact_person, contact_phone, contact_email,
@@ -935,7 +935,7 @@ router.get("/api/subcontractor-dashboard/supplier-details/:name", requireAuth, a
 
 router.patch("/api/subcontractor-dashboard/supplier-details/:name", requireAuth, requirePermission("procurement", "edit"), async (req: Request, res: Response) => {
   try {
-    const name = decodeURIComponent(req.params.name).trim();
+    const name = decodeURIComponent(paramStr(req.params.name)).trim();
     const {
       vatNumber, registrationNumber, address, contactPerson, contactPhone,
       contactEmail, bankName, bankAccountNumber, bankBranchCode, paymentTerms, notes
@@ -964,10 +964,10 @@ router.patch("/api/subcontractor-dashboard/supplier-details/:name", requireAuth,
         WHERE id = ${cpId}
       `);
       logAuditFromReq(req, {
-        entity: "counterparty",
-        entityId: cpId,
+        entityType: "counterparty",
+        entityId: String(cpId),
         action: "update_supplier_details",
-        details: { name },
+        changesJson: { name },
       });
       res.json({ success: true, id: cpId });
     } else {
@@ -983,10 +983,10 @@ router.patch("/api/subcontractor-dashboard/supplier-details/:name", requireAuth,
       `);
       const cpId = insertResult.rows[0]?.id;
       logAuditFromReq(req, {
-        entity: "counterparty",
-        entityId: cpId as number,
+        entityType: "counterparty",
+        entityId: String(cpId),
         action: "create_with_supplier_details",
-        details: { name },
+        changesJson: { name },
       });
       res.json({ success: true, id: cpId });
     }
@@ -1013,7 +1013,7 @@ router.get("/api/subcontractor-dashboard/supplier-list", requireAuth, async (_re
 
 router.get("/api/subcontractor-assignments/project/:projectId", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectId = parseInt(req.params.projectId);
+    const projectId = parseInt(paramStr(req.params.projectId));
     if (isNaN(projectId)) return res.status(400).json({ error: "Invalid projectId" });
     const rows = await db.execute(sql`
       SELECT sa.*, c.name_canonical as supplier_name, u.name as owner_name, p.project_name
@@ -1103,7 +1103,7 @@ router.patch("/api/subcontractor-assignments/:id", requireAuth, requirePermissio
 
 router.delete("/api/subcontractor-assignments/:id", requireAuth, requirePermission("procurement", "delete"), async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const id = parseInt(paramStr(req.params.id));
     if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
     await db.execute(sql`DELETE FROM project_subcontractor_assignments WHERE id = ${id}`);

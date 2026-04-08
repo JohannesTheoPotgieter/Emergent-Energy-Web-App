@@ -1,4 +1,3 @@
-// @ts-nocheck — TODO: fix 24 type errors then remove this directive
 // Error breakdown: TS7006 implicit-any: 17, TS2345 query/param types: 0, other: 7
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
@@ -100,16 +99,16 @@ export function registerApprovalsRoutes(app: Express) {
         .innerJoin(projectInfo, eq(projectEngStages.projectId, projectInfo.id))
         .where(eq(projectEngApprovals.status, "pending"));
 
-      const approverIds = engApprovals.map(a => a.approverUserId).filter(Boolean) as number[];
+      const approverIds = engApprovals.map((a: any) => a.approverUserId).filter(Boolean) as number[];
       let approverMap: Record<number, string> = {};
       if (approverIds.length > 0) {
         const approverUsers = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, approverIds));
-        approverMap = Object.fromEntries(approverUsers.map(u => [u.id, u.name]));
+        approverMap = Object.fromEntries(approverUsers.map((u: any) => [u.id, u.name]));
       }
 
       let filteredEngApprovals = engApprovals;
       if (!isAdmin && !showAll) {
-        filteredEngApprovals = engApprovals.filter(a => {
+        filteredEngApprovals = engApprovals.filter((a: any) => {
           if (a.approverUserId && a.approverUserId === userId) return true;
           if (a.approverRole) {
             const allowedRoles = APPROVAL_ROLE_TO_USER_ROLES[a.approverRole];
@@ -119,7 +118,7 @@ export function registerApprovalsRoutes(app: Express) {
         });
       }
 
-      const engineeringItems = filteredEngApprovals.map(a => ({
+      const engineeringItems = filteredEngApprovals.map((a: any) => ({
         id: `eng-${a.id}`,
         type: "engineering" as const,
         title: `${a.stageName} - ${a.approverRole}`,
@@ -164,7 +163,7 @@ export function registerApprovalsRoutes(app: Express) {
         }
       }
 
-      const qualityItems = filteredQcItems.map(q => {
+      const qualityItems = filteredQcItems.map((q: any) => {
         return {
           id: `qc-${q.id}`,
           type: "quality" as const,
@@ -198,25 +197,25 @@ export function registerApprovalsRoutes(app: Express) {
         );
 
       const delivUserIds = [...new Set([
-        ...deliverableItems.map(d => d.ownerUserId),
-        ...deliverableItems.map(d => d.reviewerUserId),
+        ...deliverableItems.map((d: any) => d.ownerUserId),
+        ...deliverableItems.map((d: any) => d.reviewerUserId),
       ].filter(Boolean))] as number[];
       let delivUserMap: Record<number, string> = {};
       if (delivUserIds.length > 0) {
         const dUsers = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, delivUserIds));
-        delivUserMap = Object.fromEntries(dUsers.map(u => [u.id, u.name]));
+        delivUserMap = Object.fromEntries(dUsers.map((u: any) => [u.id, u.name]));
       }
 
       let filteredDeliverables = deliverableItems;
       if (!isAdmin && !showAll) {
-        filteredDeliverables = deliverableItems.filter(d => {
+        filteredDeliverables = deliverableItems.filter((d: any) => {
           if (d.reviewerUserId && d.reviewerUserId === userId) return true;
           if (d.ownerUserId && d.ownerUserId === userId) return true;
           return false;
         });
       }
 
-      const delivItems = filteredDeliverables.map(d => ({
+      const delivItems = filteredDeliverables.map((d: any) => ({
         id: `del-${d.id}`,
         type: "deliverable" as const,
         title: `${d.title} (${d.deliverableType})`,
@@ -246,20 +245,20 @@ export function registerApprovalsRoutes(app: Express) {
 
       const generalApproverIds = [...new Set(
         generalApprovals
-          .map((approval) => approval.assignedApprover)
-          .filter((value): value is number => typeof value === "number"),
+          .map((approval: any) => approval.assignedApprover)
+          .filter((value: any): value is number => typeof value === "number"),
       )];
       let generalApproverMap: Record<number, string> = {};
       if (generalApproverIds.length > 0) {
-        const rows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, generalApproverIds));
-        generalApproverMap = Object.fromEntries(rows.map((row) => [row.id, row.name]));
+        const rows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, generalApproverIds as number[]));
+        generalApproverMap = Object.fromEntries(rows.map((row: any) => [row.id, row.name]));
       }
 
-      const generalAssignmentMap = await getAssignmentsForEntities("approval", generalApprovals.map((a) => a.id), "APPROVER");
+      const generalAssignmentMap = await getAssignmentsForEntities("approval", generalApprovals.map((a: any) => a.id), "APPROVER");
 
       let filteredGeneralApprovals = generalApprovals;
       if (!isAdmin && !showAll) {
-        filteredGeneralApprovals = generalApprovals.filter((approval) => {
+        filteredGeneralApprovals = generalApprovals.filter((approval: any) => {
           const primaryAssignment = (generalAssignmentMap.get(approval.id) || [])[0] || null;
           return Boolean(
             approval.assignedApprover === userId ||
@@ -268,7 +267,7 @@ export function registerApprovalsRoutes(app: Express) {
         });
       }
 
-      const generalItems = filteredGeneralApprovals.map((approval) => {
+      const generalItems = filteredGeneralApprovals.map((approval: any) => {
         const assignments = generalAssignmentMap.get(approval.id) || [];
         const primaryAssignment = assignments[0] || null;
         return {
@@ -344,20 +343,20 @@ export function registerApprovalsRoutes(app: Express) {
         .orderBy(desc(approvals.requestedAt));
 
       const userIds = [...new Set([
-        ...rows.map((row) => row.approval.requestedBy),
-        ...rows.map((row) => row.approval.decidedBy).filter(Boolean),
-        ...rows.map((row) => row.approval.assignedApprover).filter(Boolean),
+        ...rows.map((row: any) => row.approval.requestedBy),
+        ...rows.map((row: any) => row.approval.decidedBy).filter(Boolean),
+        ...rows.map((row: any) => row.approval.assignedApprover).filter(Boolean),
       ])] as number[];
       let userMap: Record<number, string> = {};
       if (userIds.length > 0) {
         const uRows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
-        userMap = Object.fromEntries(uRows.map(u => [u.id, u.name]));
+        userMap = Object.fromEntries(uRows.map((u: any) => [u.id, u.name]));
       }
 
-      const assignmentMap = await getAssignmentsForEntities("approval", rows.map((r) => r.approval.id), "APPROVER");
+      const assignmentMap = await getAssignmentsForEntities("approval", rows.map((r: any) => r.approval.id), "APPROVER");
 
       res.json({
-        approvals: rows.map(({ approval, projectName }) => {
+        approvals: rows.map(({ approval, projectName }: any) => {
           const assignments = assignmentMap.get(approval.id) || [];
           const primaryAssignment = assignments[0] || null;
           return {
@@ -407,7 +406,7 @@ export function registerApprovalsRoutes(app: Express) {
           entityType: "approval",
           entityId: created.id,
           assignmentRole: "APPROVER",
-          assigneeType,
+          assigneeType: assigneeType as string,
           assigneeId,
           mode: "replace",
         })
@@ -527,7 +526,7 @@ export function registerApprovalsRoutes(app: Express) {
           entityType: "approval",
           entityId: id,
           assignmentRole: "APPROVER",
-          assigneeType,
+          assigneeType: assigneeType as string | null,
           assigneeId,
           mode: assigneeType && assigneeId ? "replace" : "clear",
         })

@@ -1,4 +1,3 @@
-// @ts-nocheck — TODO: fix 20 type errors then remove this directive
 // Error breakdown: TS7006 implicit-any: 12, TS2345 query/param types: 8, other: 0
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
@@ -11,6 +10,7 @@ import { calculateCPM, applyOverridesToTasks, applyOverridesToDependencies } fro
 import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { paramStr } from "../lib/req-params";
 
 export function registerWorkingPlanRoutes(app: Express) {
   // ==================== PROJECT PLAN SCHEDULING API ====================
@@ -18,7 +18,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Get working plan with CPM calculation for a project
   app.get("/api/projects/:projectName/working-plan", requireAuth, async (req, res) => {
     try {
-      const { projectName } = req.params;
+      const projectName = paramStr(req.params.projectName);
       const decodedName = decodeURIComponent(projectName);
 
       // Get or create active scenario
@@ -78,15 +78,15 @@ export function registerWorkingPlanRoutes(app: Express) {
         hasCircularDependency: cpmResult.hasCircularDependency,
         warnings: cpmResult.warnings,
         keyDates: {
-          pdHandoverDate: projectInfo?.pdHandoverDate || null,
-          constructionStartDate: projectInfo?.constructionStartDate || null,
-          commissioningDate: projectInfo?.commissioningDate || null,
-          omHandoverDate: projectInfo?.omHandoverDate || null,
-          clientHandoverDate: projectInfo?.clientHandoverDate || null,
+          pdHandoverDate: (projectInfo as any)?.pdHandoverDate || null,
+          constructionStartDate: (projectInfo as any)?.constructionStartDate || null,
+          commissioningDate: (projectInfo as any)?.commissioningDate || null,
+          omHandoverDate: (projectInfo as any)?.omHandoverDate || null,
+          clientHandoverDate: (projectInfo as any)?.clientHandoverDate || null,
         },
         overrideCounts: {
-          taskOverrides: taskOverrides.filter(o => o.deletedFlag !== 1).length,
-          dependencyOverrides: depOverrides.filter(o => o.deletedFlag !== 1).length,
+          taskOverrides: taskOverrides.filter((o: any) => o.deletedFlag !== 1).length,
+          dependencyOverrides: depOverrides.filter((o: any) => o.deletedFlag !== 1).length,
         },
       });
     } catch (error: any) {
@@ -98,7 +98,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Reset working plan to baseline
   app.post("/api/projects/:projectName/working-plan/reset", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { projectName } = req.params;
+      const projectName = paramStr(req.params.projectName);
       const decodedName = decodeURIComponent(projectName);
 
       const scenario = await storage.getActiveScenario(decodedName);
@@ -117,7 +117,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Update a task in working plan
   app.patch("/api/working-plan/tasks/:taskId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { taskId } = req.params;
+      const taskId = paramStr(req.params.taskId);
       const { projectName, startDate, endDate, name, taskNo, comment, percentComplete } = req.body;
 
       if (!projectName) {
@@ -232,7 +232,7 @@ export function registerWorkingPlanRoutes(app: Express) {
 
   app.post("/api/projects/:projectName/working-plan/renumber-wbs", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { projectName } = req.params;
+      const projectName = paramStr(req.params.projectName);
       const decodedName = decodeURIComponent(projectName);
       const scenario = await storage.getOrCreateActiveScenario(decodedName);
       const baseTasks = await storage.getProjectPlansByProject(decodedName);
@@ -294,7 +294,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Delete task from working plan (soft delete)
   app.delete("/api/working-plan/tasks/:taskId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { taskId } = req.params;
+      const taskId = paramStr(req.params.taskId);
       const { projectName, isBaseline, isNewTask } = req.body;
 
       if (!projectName) {
@@ -347,7 +347,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Create dependency
   app.post("/api/projects/:projectName/dependencies", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { projectName } = req.params;
+      const projectName = paramStr(req.params.projectName);
       const decodedName = decodeURIComponent(projectName);
       const { predecessorTaskId, successorTaskId, dependencyType, lagDays } = req.body;
 
@@ -426,10 +426,10 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Delete dependency
   app.delete("/api/dependencies/:depId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const depId = parseInt(req.params.depId);
+      const depId = parseInt(paramStr(req.params.depId));
       if (isNaN(depId)) return res.status(400).json({ error: "Invalid dependency ID" });
       await storage.deleteDependency(depId);
-      logAuditFromReq(req, { entityType: "dependency", action: "delete", entityId: depId, changesJson: { description: "Dependency deleted" } });
+      logAuditFromReq(req, { entityType: "dependency", action: "delete", entityId: String(depId), changesJson: { description: "Dependency deleted" } });
       res.json({ success: true });
     } catch (error: any) {
       console.error("Error deleting dependency:", error);
@@ -440,7 +440,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Get schedule change notices
   app.get("/api/projects/:projectName/change-notices", requireAuth, async (req, res) => {
     try {
-      const { projectName } = req.params;
+      const projectName = paramStr(req.params.projectName);
       const decodedName = decodeURIComponent(projectName);
       const notices = await storage.getChangeNoticesByProject(decodedName);
       res.json(notices);
@@ -453,7 +453,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Create schedule change notice
   app.post("/api/projects/:projectName/change-notices", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const { projectName } = req.params;
+      const projectName = paramStr(req.params.projectName);
       const decodedName = decodeURIComponent(projectName);
       const { summary, oldFinishDate, newFinishDate, changedTasks, criticalPathDelta, userNote, createdBy } = req.body;
 
@@ -485,7 +485,7 @@ export function registerWorkingPlanRoutes(app: Express) {
   // Update schedule change notice (mark as notified/documented)
   app.patch("/api/change-notices/:noticeId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const noticeId = parseInt(req.params.noticeId);
+      const noticeId = parseInt(paramStr(req.params.noticeId));
       if (isNaN(noticeId)) return res.status(400).json({ error: "Invalid notice ID" });
       const { clientNotified, documentationUpdated, userNote } = req.body;
 
@@ -499,7 +499,7 @@ export function registerWorkingPlanRoutes(app: Express) {
         return res.status(404).json({ error: "not_found", message: "Change notice not found" });
       }
 
-      logAuditFromReq(req, { entityType: "change_notice", action: "update", entityId: noticeId, changesJson: { description: "Change notice updated", clientNotified, documentationUpdated, userNote } });
+      logAuditFromReq(req, { entityType: "change_notice", action: "update", entityId: String(noticeId), changesJson: { description: "Change notice updated", clientNotified, documentationUpdated, userNote } });
       res.json(updated);
     } catch (error: any) {
       console.error("Error updating change notice:", error);

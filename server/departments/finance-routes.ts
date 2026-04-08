@@ -1,4 +1,3 @@
-// @ts-nocheck — TODO: fix 89 type errors then remove this directive
 // Error breakdown: TS7006 implicit-any: 39, TS2345 query/param types: 33, other: 17
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
@@ -6,6 +5,7 @@ import { Router, type Express, type Request, type Response, type NextFunction } 
 import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";
 import { db } from "../db";
+import { paramStr } from "../lib/req-params";
 import { requirePermission } from "../permission-middleware";
 import { requireTrackerPermission } from "../lib/finance-route-access";
 import { z } from "zod";
@@ -544,7 +544,7 @@ async function loadProjectFinanceGovernanceContext(
       : Promise.resolve([] as any[]),
   ]);
 
-  const changeSetIds = changeRows.map((row) => row.id).filter((id): id is number => typeof id === "number");
+  const changeSetIds = changeRows.map((row: any) => row.id).filter((id: any): id is number => typeof id === "number");
   const changeFieldRows = changeSetIds.length
     ? await db.select().from(fieldChanges).where(inArray(fieldChanges.changeSetId, changeSetIds))
     : [];
@@ -553,8 +553,8 @@ async function loadProjectFinanceGovernanceContext(
     new Set(
       [
         ...extraUserIds,
-        ...changeRows.map((row) => row.actorUserId),
-        ...editRequestRows.map((row) => row.requestedByUserId),
+        ...changeRows.map((row: any) => row.actorUserId),
+        ...editRequestRows.map((row: any) => row.requestedByUserId),
       ].filter((id): id is number => typeof id === "number" && Number.isFinite(id))
     )
   );
@@ -570,13 +570,13 @@ async function loadProjectFinanceGovernanceContext(
     : [];
 
   const userNameById = new Map<number, string>(
-    userRows.map((row) => [row.id, row.name || `User ${row.id}`])
+    userRows.map((row: any) => [row.id, row.name || `User ${row.id}`])
   );
 
   const { byChangeSet, latestByEntity } = buildFieldChangesByChangeSet(changeRows, changeFieldRows);
-  const pendingApprovals = approvalRows.filter((row) => row.status === "pending");
-  const cashAffectingApprovals = pendingApprovals.filter((row) => isFinanceApprovalRecord(row));
-  const pendingEditRequests = editRequestRows.filter((row) => row.status === "pending");
+  const pendingApprovals = approvalRows.filter((row: any) => row.status === "pending");
+  const cashAffectingApprovals = pendingApprovals.filter((row: any) => isFinanceApprovalRecord(row));
+  const pendingEditRequests = editRequestRows.filter((row: any) => row.status === "pending");
 
   return {
     latestChangeByEntity: latestByEntity,
@@ -585,7 +585,7 @@ async function loadProjectFinanceGovernanceContext(
     approvals: {
       pendingCount: pendingApprovals.length,
       affectingCashCount: cashAffectingApprovals.length,
-      pending: cashAffectingApprovals.slice(0, 5).map((row) => ({
+      pending: cashAffectingApprovals.slice(0, 5).map((row: any) => ({
         id: row.id,
         title: row.title,
         type: row.type,
@@ -596,7 +596,7 @@ async function loadProjectFinanceGovernanceContext(
     },
     editRequests: {
       pendingCount: pendingEditRequests.length,
-      pending: pendingEditRequests.slice(0, 5).map((row) => ({
+      pending: pendingEditRequests.slice(0, 5).map((row: any) => ({
         id: row.id,
         editType: row.editType,
         editTarget: row.editTarget,
@@ -609,10 +609,10 @@ async function loadProjectFinanceGovernanceContext(
     },
     microsoft: {
       linkedCount: microsoftRows.length,
-      actionRequiredCount: microsoftRows.filter((row) => row.actionRequired).length,
-      unreadCount: microsoftRows.filter((row) => row.isRead === false).length,
-      linkedTaskCount: microsoftRows.filter((row) => row.linkedTaskId != null).length,
-      recent: microsoftRows.slice(0, 5).map((row) => ({
+      actionRequiredCount: microsoftRows.filter((row: any) => row.actionRequired).length,
+      unreadCount: microsoftRows.filter((row: any) => row.isRead === false).length,
+      linkedTaskCount: microsoftRows.filter((row: any) => row.linkedTaskId != null).length,
+      recent: microsoftRows.slice(0, 5).map((row: any) => ({
         id: row.id,
         type: row.type,
         subjectOrTitle: row.subjectOrTitle,
@@ -856,7 +856,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     for (const expense of itemExpenses) {
       if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
       const dateInfo = getExpenseEffectiveDateAndSource(expense);
-      if (dateInfo.source && diagnostics.dateSource[dateInfo.source] != null) diagnostics.dateSource[dateInfo.source] += 1;
+      if (dateInfo.source && (diagnostics.dateSource as any)[dateInfo.source] != null) (diagnostics.dateSource as any)[dateInfo.source] += 1;
       else diagnostics.dateSource.none += 1;
       const amountBreakdown = getOutflowAmountBreakdown(expense);
       diagnostics.amountSource[amountBreakdown.amountSource] += 1;
@@ -1131,13 +1131,13 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
       const existingFlag = await db.select().from(manualEditFlags)
         .where(and(
           eq(manualEditFlags.entityType, "program_expense"),
-          eq(manualEditFlags.entityId, String(expenseId)),
+          eq(manualEditFlags.entityId, Number(expenseId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
       if (existingFlag.length === 0) {
         await db.insert(manualEditFlags).values({
           entityType: "program_expense",
-          entityId: String(expenseId),
+          entityId: Number(expenseId),
           fieldName: "adminDateOverride",
           editedByUserId: userId,
           editedAt: now,
@@ -1154,7 +1154,7 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
       await db.delete(manualEditFlags)
         .where(and(
           eq(manualEditFlags.entityType, "program_expense"),
-          eq(manualEditFlags.entityId, String(expenseId)),
+          eq(manualEditFlags.entityId, Number(expenseId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
     }
@@ -1226,13 +1226,13 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
       const existingFlag = await db.select().from(manualEditFlags)
         .where(and(
           eq(manualEditFlags.entityType, "program_inflows"),
-          eq(manualEditFlags.entityId, String(inflowId)),
+          eq(manualEditFlags.entityId, Number(inflowId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
       if (existingFlag.length === 0) {
         await db.insert(manualEditFlags).values({
           entityType: "program_inflows",
-          entityId: String(inflowId),
+          entityId: Number(inflowId),
           fieldName: "adminDateOverride",
           editedByUserId: userId,
           editedAt: now,
@@ -1249,7 +1249,7 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
       await db.delete(manualEditFlags)
         .where(and(
           eq(manualEditFlags.entityType, "program_inflows"),
-          eq(manualEditFlags.entityId, String(inflowId)),
+          eq(manualEditFlags.entityId, Number(inflowId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
     }
@@ -1784,6 +1784,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
 
     interface LineItem {
       id: number;
+      canonicalLineKey: string | null;
       projectName: string;
       category: string | null;
       lineItem: string | null;
@@ -1799,6 +1800,9 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       realisedMonth: string | null;
       cosState: string;
       paymentStatus: string;
+      hasOverride: boolean;
+      overrideStatus: string | null;
+      overrideReason: string | null;
     }
 
     const items: LineItem[] = [];
@@ -2844,7 +2848,7 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
 
 router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
-    const { projectName } = req.params;
+    const projectName = paramStr(req.params.projectName);
     const canonicalEnabled = await isCanonicalFinanceCostlineReadEnabled();
 
     const expenses = canonicalEnabled
@@ -3130,7 +3134,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
 router.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.query;
-    let overrides;
+    let overrides: any[];
 
     // Override data now baked into base rows
     overrides = [];
@@ -3169,7 +3173,7 @@ router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async
       };
     });
 
-    const saved = await storage.upsertManyPlanningOverrides(overridesWithUser);
+    const saved = await (storage as any).upsertManyPlanningOverrides(overridesWithUser);
 
     try {
       for (const o of overrides) {
@@ -3205,7 +3209,7 @@ router.delete("/api/cashflow/planning-overrides/:projectName", requireAuth, requ
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deletePlanningOverridesByProject(projectName);
+    await storage.deleteProjectPlanOverridesByProject(projectName);
     res.json({ message: `Planning overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete planning overrides", message: "Failed to delete planning overrides" });
@@ -3388,7 +3392,7 @@ router.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requi
 
 router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
 
     let useCanonical = false;
     try { useCanonical = await isWorkItemsEnabled(); } catch (_e) { /* feature flag unavailable */ }
@@ -3922,7 +3926,7 @@ router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrF
 
 router.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const useCanonicalAlerts = await isWorkItemsEnabled();
     const [legacyTasks, canonicalAlertTasks, inflows, taskLinks] = await Promise.all([
       storage.getOperationalTasksByProject(projectName),
@@ -3961,7 +3965,7 @@ router.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, requireAdmi
 
 router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const { milestoneRowNumber, taskId } = req.body;
     if (!milestoneRowNumber || !taskId) {
       return res.status(400).json({ error: "milestoneRowNumber and taskId are required" });
@@ -4024,7 +4028,7 @@ router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdmin
 
 router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const { milestoneRowNumber, dateOverride, reason } = req.body;
     if (!milestoneRowNumber || !dateOverride) {
       return res.status(400).json({ error: "milestoneRowNumber and dateOverride are required" });
@@ -4084,8 +4088,8 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
 
 router.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
-    const milestoneRowNumber = parseInt(req.params.milestoneRowNumber);
+    const projectName = paramStr(req.params.projectName);
+    const milestoneRowNumber = parseInt(paramStr(req.params.milestoneRowNumber));
     const existingLinks = await storage.getMilestoneTaskLinks(projectName);
     const previousLink = existingLinks.find((link: any) => link.milestoneRowNumber === milestoneRowNumber);
     await storage.deleteMilestoneTaskLink(projectName, milestoneRowNumber);
@@ -4258,7 +4262,7 @@ router.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdm
 
 router.get("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const links = await storage.getExpenseTaskLinks(req.params.projectName);
+    const links = await storage.getExpenseTaskLinks(paramStr(req.params.projectName));
     res.json(links);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch expense task links" });
@@ -4271,15 +4275,15 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
     if (!expenseId || taskId === undefined) {
       return res.status(400).json({ error: "expenseId and taskId are required" });
     }
-    const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
+    const link = await storage.upsertExpenseTaskLink(paramStr(req.params.projectName), expenseId, taskId, (req.user as any)?.id);
 
     try {
       await recordOverride({
         actorUserId: (req as any).user?.id,
         actorRole: (req as any).user?.role,
         entityType: "expense_task_link",
-        entityId: `${req.params.projectName}|expense${expenseId}`,
-        projectName: decodeURIComponent(req.params.projectName),
+        entityId: `${paramStr(req.params.projectName)}|expense${expenseId}`,
+        projectName: decodeURIComponent(paramStr(req.params.projectName)),
         action: "EXPENSE_TASK_LINK",
         overrideCategory: "DATA_CORRECTION",
         overrideComment: `Linked expense ${expenseId} to task ${taskId}`,
@@ -4299,16 +4303,16 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
 
 router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    const expenseId = parseInt(req.params.expenseId);
-    await storage.deleteExpenseTaskLink(req.params.projectName, expenseId);
+    const expenseId = parseInt(paramStr(req.params.expenseId));
+    await storage.deleteExpenseTaskLink(paramStr(req.params.projectName), expenseId);
 
     try {
       await recordOverride({
         actorUserId: (req as any).user?.id,
         actorRole: (req as any).user?.role,
         entityType: "expense_task_link",
-        entityId: `${req.params.projectName}|expense${expenseId}`,
-        projectName: decodeURIComponent(req.params.projectName),
+        entityId: `${paramStr(req.params.projectName)}|expense${expenseId}`,
+        projectName: decodeURIComponent(paramStr(req.params.projectName)),
         action: "EXPENSE_TASK_UNLINK",
         overrideCategory: "DATA_CORRECTION",
         overrideComment: `Unlinked expense ${expenseId} from task`,
@@ -4328,8 +4332,8 @@ router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, re
 router.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     const { dateOverride, reason } = req.body;
-    const expProjectName = req.params.projectName;
-    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseInt(req.params.expenseId), dateOverride, reason);
+    const expProjectName = paramStr(req.params.projectName);
+    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseInt(paramStr(req.params.expenseId)), dateOverride, reason);
 
     res.json({ success: true });
 
@@ -4369,7 +4373,7 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
       expensePaymentDate: expensePaymentDate || null,
       lineStatus: 'Planned',
       idempotencyKey: idempotencyKey || undefined,
-    });
+    } as any);
 
     res.json(newExpense);
   } catch (error) {
@@ -4393,7 +4397,7 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
       expenseCategory: categoryName,
       expenseLineItem: categoryName,
       idempotencyKey: idempotencyKey || undefined,
-    });
+    } as any);
 
     res.json(newCategory);
   } catch (error) {
@@ -4432,7 +4436,7 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
       expensePaymentDate: taskEndDate,
       lineStatus: 'Planned',
       idempotencyKey: idempotencyKey || undefined,
-    });
+    } as any);
     await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
 
     res.json(newExpense);
@@ -4446,7 +4450,7 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
 
 router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const [projectLookup, taskLinks, opTasks, planTasks, projectRows, revSummary] = await Promise.all([
       getHighRiskProjectCostReadRows(projectName, projectIdParam).then((rows) => ({
@@ -4787,7 +4791,7 @@ router.get("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
+    const overrides = await (storage as any).getFinanceRevenueOverridesByProject(projectName);
     res.json(overrides);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch finance revenue overrides", message: "Failed to fetch finance revenue overrides" });
@@ -4808,7 +4812,7 @@ router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, require
     }
     const userId = req.user?.id;
     const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-    const saved = await storage.upsertManyFinanceRevenueOverrides(overridesWithUser);
+    const saved = await (storage as any).upsertManyFinanceRevenueOverrides(overridesWithUser);
 
     try {
       for (const o of overrides) {
@@ -4847,7 +4851,7 @@ router.delete("/api/finance/revenue/overrides/:projectName", requireAuth, requir
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deleteFinanceRevenueOverridesByProject(projectName);
+    await (storage as any).deleteFinanceRevenueOverridesByProject(projectName);
     res.json({ message: `Finance revenue overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete finance revenue overrides", message: "Failed to delete finance revenue overrides" });
@@ -4862,7 +4866,7 @@ router.get("/api/finance/cos/overrides", requireAuth, async (req, res) => {
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    const overrides = await storage.getFinanceCosOverridesByProject(projectName);
+    const overrides = await (storage as any).getFinanceCosOverridesByProject(projectName);
     res.json(overrides);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch finance COS overrides", message: "Failed to fetch finance COS overrides" });
@@ -4883,7 +4887,7 @@ router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePerm
     }
     const userId = req.user?.id;
     const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-    const saved = await storage.upsertManyFinanceCosOverrides(overridesWithUser);
+    const saved = await (storage as any).upsertManyFinanceCosOverrides(overridesWithUser);
 
     try {
       for (const o of overrides) {
@@ -4922,7 +4926,7 @@ router.delete("/api/finance/cos/overrides/:projectName", requireAuth, requireAdm
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deleteFinanceCosOverridesByProject(projectName);
+    await (storage as any).deleteFinanceCosOverridesByProject(projectName);
     res.json({ message: `Finance COS overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete finance COS overrides", message: "Failed to delete finance COS overrides" });

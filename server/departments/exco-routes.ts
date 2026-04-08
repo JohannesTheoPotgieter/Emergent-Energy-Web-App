@@ -1,4 +1,3 @@
-// @ts-nocheck — TODO: fix 40 type errors then remove this directive
 // Error breakdown: TS7006 implicit-any: 24, TS2345 query/param types: 14, other: 2
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
@@ -14,6 +13,7 @@ import path from "path";
 import fs from "fs";
 import multer from "multer";
 import { sanitizeFilename, allowedFileFilter } from "../lib/upload-security";
+import { paramStr } from "../lib/req-params";
 
 const router = Router();
 
@@ -179,7 +179,7 @@ router.post("/api/mytool/tasks", requireAuth, requireAdmin, async (req, res) => 
 
 router.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const taskId = parseInt(req.params.id);
+    const taskId = parseInt(paramStr(req.params.id));
     const userId = (req.user as any).id;
     const existingTask = await storage.getMytoolTask(taskId);
 
@@ -249,7 +249,7 @@ router.patch("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res
 
 router.delete("/api/mytool/tasks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolTask(parseInt(req.params.id));
+    await storage.deleteMytoolTask(parseInt(paramStr(req.params.id)));
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -284,7 +284,7 @@ router.post("/api/mytool/timeblocks", requireAuth, requireAdmin, async (req, res
 
 router.patch("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const block = await storage.updateMytoolTimeblock(parseInt(req.params.id), req.body);
+    const block = await storage.updateMytoolTimeblock(parseInt(paramStr(req.params.id)), req.body);
     res.json(block);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -293,7 +293,7 @@ router.patch("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req
 
 router.delete("/api/mytool/timeblocks/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolTimeblock(parseInt(req.params.id));
+    await storage.deleteMytoolTimeblock(parseInt(paramStr(req.params.id)));
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -352,7 +352,7 @@ router.get("/api/mytool/company-priorities", requireAuth, async (req, res) => {
     const { priorityLinks: plTable } = await import("@shared/schema");
     const allLinks = await db.select().from(plTable);
     const linksByPriority: Record<number, any[]> = {};
-    allLinks.forEach(l => {
+    allLinks.forEach((l: any) => {
       if (!linksByPriority[l.priorityId]) linksByPriority[l.priorityId] = [];
       linksByPriority[l.priorityId].push(l);
     });
@@ -412,7 +412,7 @@ router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityA
     if (!parsed.success) {
       return res.status(400).json({ error: "invalid_payload", details: parsed.error.flatten() });
     }
-    const priority = await storage.updateMytoolCompanyPriority(parseInt(req.params.id), parsed.data as any);
+    const priority = await storage.updateMytoolCompanyPriority(parseInt(paramStr(req.params.id)), parsed.data as any);
     res.json(priority);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -421,7 +421,7 @@ router.patch("/api/mytool/company-priorities/:id", requireAuth, requirePriorityA
 
 router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    await storage.updateMytoolCompanyPriority(parseInt(req.params.id), { status: "closed" } as any);
+    await storage.updateMytoolCompanyPriority(parseInt(paramStr(req.params.id)), { status: "closed" } as any);
     res.json({ success: true, mode: "soft_close" });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -432,7 +432,7 @@ router.delete("/api/mytool/company-priorities/:id", requireAuth, requirePriority
 
 router.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, res) => {
   try {
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseInt(paramStr(req.params.id));
     const links = await db.select().from(priorityLinks).where(eq(priorityLinks.priorityId, priorityId));
     const projects = await db.select({
       id: priorityProjects.id,
@@ -446,8 +446,8 @@ router.get("/api/mytool/company-priorities/:id/links", requireAuth, async (req, 
 
     const existingProjectIds = new Set(links.map((l: any) => l.projectId).filter(Boolean));
     const synthetic = projects
-      .filter((p) => !existingProjectIds.has(p.projectId))
-      .map((p) => ({
+      .filter((p: any) => !existingProjectIds.has(p.projectId))
+      .map((p: any) => ({
         id: -p.id,
         priorityId: p.priorityId,
         linkType: "project",
@@ -476,7 +476,7 @@ router.get("/api/mytool/priority-links", requireAuth, async (_req, res) => {
 
 router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const priorityId = parseInt(req.params.id);
+    const priorityId = parseInt(paramStr(req.params.id));
     const { linkType, projectName, taskId, taskType } = req.body;
     if (!linkType) return res.status(400).json({ error: "linkType is required" });
     let resolvedProjectId: number | null = req.body.projectId ? parseInt(req.body.projectId) : null;
@@ -516,7 +516,7 @@ router.post("/api/mytool/company-priorities/:id/links", requireAuth, requirePrio
 
 router.delete("/api/mytool/priority-links/:linkId", requireAuth, requirePriorityAdmin, async (req, res) => {
   try {
-    const linkId = parseInt(req.params.linkId);
+    const linkId = parseInt(paramStr(req.params.linkId));
     const [existing] = await db.select().from(priorityLinks).where(eq(priorityLinks.id, linkId)).limit(1);
     await db.delete(priorityLinks).where(eq(priorityLinks.id, linkId));
     if (existing?.projectId) {
@@ -645,7 +645,7 @@ router.post("/api/mytool/email-links", requireAuth, requireAdmin, async (req, re
 
 router.delete("/api/mytool/email-links/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteEmailLink(parseInt(req.params.id));
+    await storage.deleteEmailLink(parseInt(paramStr(req.params.id)));
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -674,7 +674,7 @@ router.post("/api/mytool/dod-templates", requireAuth, requireAdmin, async (req, 
 
 router.delete("/api/mytool/dod-templates/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    await storage.deleteMytoolDodTemplate(parseInt(req.params.id));
+    await storage.deleteMytoolDodTemplate(parseInt(paramStr(req.params.id)));
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -845,7 +845,7 @@ router.patch("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (r
   try {
     const outlook = await import("../outlook");
     const { calendarId, date, startTime, endTime, label } = req.body;
-    await outlook.updateOutlookEvent(req.params.eventId, calendarId || null, {
+    await outlook.updateOutlookEvent(paramStr(req.params.eventId), calendarId || null, {
       date, startTime, endTime, label,
     });
     res.json({ success: true });
@@ -859,7 +859,7 @@ router.delete("/api/outlook/events/:eventId", requireAuth, requireAdmin, async (
   try {
     const outlook = await import("../outlook");
     const { calendarId } = req.query;
-    await outlook.deleteOutlookEvent(req.params.eventId, (calendarId as string) || null);
+    await outlook.deleteOutlookEvent(paramStr(req.params.eventId), (calendarId as string) || null);
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Outlook] Delete event error:", err);
@@ -890,7 +890,7 @@ router.get("/api/outlook/messages", requireAuth, async (req, res) => {
 router.get("/api/outlook/messages/:id", requireAuth, async (req, res) => {
   try {
     const outlook = await import("../outlook");
-    const msg = await outlook.getMessageDetail(req.params.id);
+    const msg = await outlook.getMessageDetail(paramStr(req.params.id));
     res.json(msg);
   } catch (err: any) {
     console.error("[Outlook] Message detail error:", err);
@@ -1059,7 +1059,7 @@ router.post("/api/outlook/messages/:id/reply", requireAuth, requireAdmin, async 
     if (!comment) {
       return res.status(400).json({ error: "comment is required" });
     }
-    await outlook.replyToMessage(req.params.id, comment, !!replyAll);
+    await outlook.replyToMessage(paramStr(req.params.id), comment, !!replyAll);
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Outlook] Reply error:", err);
@@ -1074,7 +1074,7 @@ router.post("/api/outlook/messages/:id/forward", requireAuth, requireAdmin, asyn
     if (!to || !Array.isArray(to) || to.length === 0) {
       return res.status(400).json({ error: "to (array) is required" });
     }
-    await outlook.forwardMessage(req.params.id, comment || "", to);
+    await outlook.forwardMessage(paramStr(req.params.id), comment || "", to);
     res.json({ success: true });
   } catch (err: any) {
     console.error("[Outlook] Forward error:", err);
@@ -1115,7 +1115,7 @@ router.post("/api/mytool/triage-rules", requireAuth, requireAdmin, async (req, r
 
 router.patch("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const ruleId = parseInt(req.params.id);
+    const ruleId = parseInt(paramStr(req.params.id));
     const { triageRules: triageRulesTable } = await import("@shared/schema");
     const updates: any = {};
     if (req.body.value !== undefined) updates.value = req.body.value.trim();
@@ -1129,7 +1129,7 @@ router.patch("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (r
 
 router.delete("/api/mytool/triage-rules/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const ruleId = parseInt(req.params.id);
+    const ruleId = parseInt(paramStr(req.params.id));
     const { triageRules: triageRulesTable } = await import("@shared/schema");
     await db.delete(triageRulesTable).where(eq(triageRulesTable.id, ruleId));
     res.json({ success: true });
@@ -1152,9 +1152,9 @@ router.get("/api/mytool/triage-inbox", requireAuth, requireAdmin, async (req, re
     const rules = await db.select().from(triageRulesTable)
       .where(and(eq(triageRulesTable.ownerUserId, userId), eq(triageRulesTable.enabled, true)));
 
-    const keywords = rules.filter(r => r.ruleType === 'keyword').map(r => r.value.toLowerCase());
-    const senders = rules.filter(r => r.ruleType === 'sender').map(r => r.value.toLowerCase());
-    const domains = rules.filter(r => r.ruleType === 'domain').map(r => r.value.toLowerCase());
+    const keywords = rules.filter((r: any) => r.ruleType === 'keyword').map((r: any) => r.value.toLowerCase());
+    const senders = rules.filter((r: any) => r.ruleType === 'sender').map((r: any) => r.value.toLowerCase());
+    const domains = rules.filter((r: any) => r.ruleType === 'domain').map((r: any) => r.value.toLowerCase());
 
     let flagged: any[] = [];
     try {
@@ -1176,19 +1176,19 @@ router.get("/api/mytool/triage-inbox", requireAuth, requireAdmin, async (req, re
       const snippetLower = (email.snippet || "").toLowerCase();
       const senderEmailLower = (email.senderEmail || "").toLowerCase();
 
-      const matchedKeyword = keywords.find(kw => subjectLower.includes(kw) || snippetLower.includes(kw));
+      const matchedKeyword = keywords.find((kw: any) => subjectLower.includes(kw) || snippetLower.includes(kw));
       if (matchedKeyword) {
         keywordMatches.push({ ...email, matchedRule: matchedKeyword, matchType: 'keyword' });
         continue;
       }
 
-      const matchedSender = senders.find(s => senderEmailLower === s || (email.sender || "").toLowerCase() === s);
+      const matchedSender = senders.find((s: any) => senderEmailLower === s || (email.sender || "").toLowerCase() === s);
       if (matchedSender) {
         senderMatches.push({ ...email, matchedRule: matchedSender, matchType: 'sender' });
         continue;
       }
 
-      const matchedDomain = domains.find(d => senderEmailLower.endsWith("@" + d) || senderEmailLower.endsWith("." + d));
+      const matchedDomain = domains.find((d: any) => senderEmailLower.endsWith("@" + d) || senderEmailLower.endsWith("." + d));
       if (matchedDomain) {
         senderMatches.push({ ...email, matchedRule: matchedDomain, matchType: 'domain' });
       }
@@ -1256,7 +1256,7 @@ router.patch("/api/admin/users/:id/microsoft-id", requireAuth, async (req, res) 
     const userRole = (req.user as any).role;
     if (!COO_ROLES.includes(userRole)) return res.status(403).json({ error: "Admin access required" });
 
-    const userId = parseInt(req.params.id);
+    const userId = parseInt(paramStr(req.params.id));
     const { microsoftId, email } = req.body;
 
     const { users: usersTable } = await import("@shared/schema");
@@ -1304,7 +1304,7 @@ router.get("/api/teams/groups", requireAuth, async (req, res) => {
       membersByGroup[m.groupId].push(m);
     }
 
-    const groups = allGroups.map(g => {
+    const groups = allGroups.map((g: any) => {
       const groupMembers = membersByGroup[g.id] || [];
       const isMember = groupMembers.some(m => m.userId === userId);
       const isGroupAdmin = groupMembers.some(m => m.userId === userId && m.role === "admin");
@@ -1376,7 +1376,7 @@ router.post("/api/teams/groups", requireAuth, async (req, res) => {
 router.delete("/api/teams/groups/:id", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
-    const groupId = parseInt(req.params.id);
+    const groupId = parseInt(paramStr(req.params.id));
     const userId = (req.user as any).id;
     const userRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(userRole);
@@ -1403,7 +1403,7 @@ router.delete("/api/teams/groups/:id", requireAuth, async (req, res) => {
 router.post("/api/teams/groups/:id/members", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
-    const groupId = parseInt(req.params.id);
+    const groupId = parseInt(paramStr(req.params.id));
     const actingUserId = (req.user as any).id;
     const actingRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(actingRole);
@@ -1460,8 +1460,8 @@ router.post("/api/teams/groups/:id/members", requireAuth, async (req, res) => {
 router.delete("/api/teams/groups/:id/members/:userId", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers } = await import("@shared/schema");
-    const groupId = parseInt(req.params.id);
-    const targetUserId = parseInt(req.params.userId);
+    const groupId = parseInt(paramStr(req.params.id));
+    const targetUserId = parseInt(paramStr(req.params.userId));
     const actingUserId = (req.user as any).id;
     const actingRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(actingRole);
@@ -1506,7 +1506,7 @@ async function checkGroupMembership(groupId: number, userId: number): Promise<bo
 router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
   try {
     const { teamsChatMessages, users: usersTable } = await import("@shared/schema");
-    const groupId = parseInt(req.params.id);
+    const groupId = parseInt(paramStr(req.params.id));
     const limit = parseInt(req.query.limit as string) || 50;
 
     const messages = await db.select({
@@ -1540,7 +1540,7 @@ router.get("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
 router.post("/api/teams/groups/:id/messages", requireAuth, async (req, res) => {
   try {
     const { teamsChatMessages } = await import("@shared/schema");
-    const groupId = parseInt(req.params.id);
+    const groupId = parseInt(paramStr(req.params.id));
     const userId = (req.user as any).id;
     const userName = (req.user as any).name;
     const userRole = (req.user as any).role;
@@ -1623,7 +1623,7 @@ router.post("/api/teams/groups/:id/files", requireAuth, chatUpload.single("file"
 router.get("/api/teams/project-group/:projectName", requireAuth, async (req, res) => {
   try {
     const { teamsChatGroups, teamsChatMembers, users: usersTable, projectInfo: piTable } = await import("@shared/schema");
-    const pName = decodeURIComponent(req.params.projectName);
+    const pName = decodeURIComponent(paramStr(req.params.projectName));
     const userId = (req.user as any).id;
     const userRole = (req.user as any).role;
     const isCoo = COO_ROLES.includes(userRole);
@@ -1682,7 +1682,7 @@ router.get("/api/teams/project-group/:projectName", requireAuth, async (req, res
       .innerJoin(usersTable, eq(teamsChatMembers.userId, usersTable.id))
       .where(eq(teamsChatMembers.groupId, group.id));
 
-    const isMember = members.some(m => m.userId === userId);
+    const isMember = members.some((m: any) => m.userId === userId);
 
     if (!isMember) {
       await db.insert(teamsChatMembers).values({
