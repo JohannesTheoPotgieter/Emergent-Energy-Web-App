@@ -55,6 +55,21 @@ router.patch("/api/hse/incidents/:id", requireAuth, async (req: Request, res: Re
   }
 });
 
+router.delete("/api/hse/incidents/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(hseIncidents)
+      .set({ deletedAt: new Date() })
+      .where(eq(hseIncidents.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "HSE incident not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[HSE] Failed to delete incident:", err);
+    res.status(500).json({ error: "Failed to delete HSE incident" });
+  }
+});
+
 // ===================== CORRECTIVE ACTIONS =====================
 
 router.get("/api/hse/corrective-actions", requireAuth, async (req: Request, res: Response) => {
@@ -99,6 +114,21 @@ router.patch("/api/hse/corrective-actions/:id", requireAuth, async (req: Request
   } catch (err) {
     console.error("[HSE] Failed to update corrective action:", err);
     res.status(500).json({ error: "Failed to update corrective action" });
+  }
+});
+
+router.delete("/api/hse/corrective-actions/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(correctiveActions)
+      .set({ deletedAt: new Date() })
+      .where(eq(correctiveActions.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Corrective action not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[HSE] Failed to delete corrective action:", err);
+    res.status(500).json({ error: "Failed to delete corrective action" });
   }
 });
 
