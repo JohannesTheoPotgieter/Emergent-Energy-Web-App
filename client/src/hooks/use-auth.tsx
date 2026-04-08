@@ -56,6 +56,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       setUser(null);
+      // Clear stale token so subsequent refreshes don't retry with invalid credentials
+      setAuthToken(null);
+      localStorage.removeItem("company_role");
     } finally {
       setIsLoading(false);
     }
