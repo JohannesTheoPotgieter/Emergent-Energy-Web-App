@@ -475,4 +475,51 @@ export function registerAdminRecoveryRoutes(app: Express) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
+
+  app.post("/api/admin/recovery/cleanup-old-snapshots", jwtAuth, requireAuth, requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const dryRun = req.query.dryRun === "true";
+
+      const nclCount = await db.execute(sql`SELECT COUNT(*) as cnt FROM normalized_cost_lines WHERE effective_to IS NOT NULL`);
+      const peCount = await db.execute(sql`SELECT COUNT(*) as cnt FROM program_expense WHERE effective_to IS NOT NULL`);
+      const nrlCount = await db.execute(sql`SELECT COUNT(*) as cnt FROM normalized_revenue_lines WHERE effective_to IS NOT NULL`);
+
+      const nclRows = Number((nclCount.rows as any[])[0]?.cnt || 0);
+      const peRows = Number((peCount.rows as any[])[0]?.cnt || 0);
+      const nrlRows = Number((nrlCount.rows as any[])[0]?.cnt || 0);
+
+      if (dryRun) {
+        return res.json({
+          dryRun: true,
+          toDelete: {
+            normalized_cost_lines: nclRows,
+            program_expense: peRows,
+            normalized_revenue_lines: nrlRows,
+            total: nclRows + peRows + nrlRows,
+          },
+        });
+      }
+
+      await db.execute(sql`DELETE FROM normalized_cost_lines WHERE effective_to IS NOT NULL`);
+      await db.execute(sql`DELETE FROM program_expense WHERE effective_to IS NOT NULL`);
+      await db.execute(sql`DELETE FROM normalized_revenue_lines WHERE effective_to IS NOT NULL`);
+
+      await logAuditFromReq(req, "cleanup_old_snapshots", "system", 0, {
+        deleted: { normalized_cost_lines: nclRows, program_expense: peRows, normalized_revenue_lines: nrlRows },
+      });
+
+      res.json({
+        success: true,
+        deleted: {
+          normalized_cost_lines: nclRows,
+          program_expense: peRows,
+          normalized_revenue_lines: nrlRows,
+          total: nclRows + peRows + nrlRows,
+        },
+      });
+    } catch (err: unknown) {
+      console.error("[AdminRecovery] cleanup-old-snapshots error:", err);
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
 }
