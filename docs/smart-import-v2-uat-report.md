@@ -8,11 +8,14 @@
 
 ## Executive Summary
 
-**Go / No-Go Recommendation: GO — with conditions**
+**Go / No-Go Recommendation: GO — with conditions (updated with live DB data)**
 
 **Plug-and-Play Verdict: YES WITH CONDITIONS**
 
-Smart Import v2 is safe for controlled pilot rollout. The schema is fully compatible, the end-to-end flow is sound, and the architecture alignment is correct. Two data-level risks exist (duplicate business keys and plan hierarchy) that are pre-documented as known limitations and do not block pilot use on well-formed trackers.
+Smart Import v2 is safe for controlled pilot rollout on projects WITHOUT duplicate business keys. The migration must be applied first. Of 62 imported projects, 9 (15%) have duplicate revenue keys and 17 (27%) have duplicate cost keys. These projects must use the v1 "Advanced view" fallback until the duplicate key issue is resolved.
+
+> **Live database inspected:** 2026-04-08 via Neon SQL console.
+> Previous assessments (Phases 1-8) were code-only. This is the first real data verification.
 
 ---
 
@@ -100,22 +103,37 @@ All Drizzle schema definitions match v2 code requirements:
 
 **Action required before pilot:** Run migration `20260408_add_milestone_no_to_revenue.sql` on the target database. This is a safe additive-only change (no data modification, no destructive operations).
 
-### Current Data Readiness: READY WITH KNOWN RISKS
+### Current Data Readiness: READY WITH CONDITIONS
 
-| Risk | Severity | Impact | Mitigation |
-|------|----------|--------|------------|
-| Pre-v2 revenue rows have `milestone_no = NULL` | LOW | Revenue matching falls back to milestoneName (MEDIUM confidence). This is safe — row matching works correctly. Tested and confirmed. | No action needed. First v2 import will populate milestoneNo for new/changed rows. |
-| Duplicate business keys possible in revenue data | HIGH | Two revenue milestones with the same name (e.g., "Progress Payment") produce the same business key. The second file row matches the same DB row as the first, causing: one false CHANGED + one false MISSING. | See defect D1 below. Pilot should avoid trackers with duplicate milestone names. |
-| Duplicate business keys possible in cost data | HIGH | Two cost lines with same category + counterparty + description and no invoice number produce the same key. Same collision behavior. | See defect D2 below. |
-| Plan rows without taskNo | MEDIUM | Fallback to taskName+phase key. Two tasks with same name+phase collide. | Most real trackers have distinct task names per phase. LOW confidence warning emitted. |
-| Plan hierarchy not re-linked on v2 incremental | MEDIUM | If a task's parent task number changes in the spreadsheet, the `parentId` link is not updated by the v2 UPDATE path. | Documented limitation. Use v1 "Advanced view" for major hierarchy restructures. |
+**Live database queried on 2026-04-08. Real numbers below.**
 
-### Manual DB/Data Changes Required: NONE for pilot
+| Risk | Severity | Live data finding | Mitigation |
+|------|----------|-------------------|------------|
+| Migration not applied | **BLOCKER** | `milestone_no` and `milestone_percent` columns do NOT exist on `normalized_revenue_lines` yet. | **Apply migration before deployment.** Safe additive change. |
+| Duplicate revenue keys | **HIGH** | **9 of 62 projects (15%)** have 16 groups of duplicate milestone names, 23 extra colliding rows. | These 9 projects must use v1 "Advanced view" during pilot. |
+| Duplicate cost keys | **HIGH** | **17 of 62 projects (27%)** have 30 groups of duplicate cost line keys (no invoice, same desc+category+counterparty), 99 extra colliding rows. | These 17 projects must use v1 "Advanced view" during pilot. |
+| Plan rows without taskNo | LOW | **37 of 2,694 plan rows (1.4%)** have no task number. | Acceptable. LOW confidence warnings will be emitted. |
+| Baseline JSON integrity | PASS | All 62 projects with commits have valid `summaryJson` with normalization data. 3-way merge baselines are complete. | No action needed. |
+| Pre-v2 revenue milestoneNo | Expected | All revenue rows have `milestone_no = NULL` (column doesn't exist yet). | First v2 import after migration will populate it. |
+| Plan hierarchy re-linking | MEDIUM | Not done by v2 incremental path. | Use v1 "Advanced view" for major plan restructures. |
 
-- No manual data cleanup needed
-- No backfill required
-- Migration is the only schema change: `ADD COLUMN IF NOT EXISTS` (safe, additive)
-- Existing data patterns are compatible with v2 logic
+### Manual DB/Data Changes Required Before Pilot
+
+1. **REQUIRED:** Apply migration `20260408_add_milestone_no_to_revenue.sql`:
+   ```sql
+   ALTER TABLE normalized_revenue_lines
+     ADD COLUMN IF NOT EXISTS milestone_no TEXT,
+     ADD COLUMN IF NOT EXISTS milestone_percent NUMERIC(6,4);
+   ```
+2. **RECOMMENDED:** Identify the 9+17 affected projects (see queries in `docs/smart-import-v2-live-db-checklist.md`) and ensure operators use v1 "Advanced view" for those projects during pilot.
+
+### Safe v2 Pilot Scope
+
+Of 62 imported projects:
+- **~36 projects (58%)** have NO duplicate key issues → safe for v2 pilot immediately after migration
+- **~9 projects** have revenue key duplicates → use v1 fallback
+- **~17 projects** have cost key duplicates → use v1 fallback
+- (Some overlap likely between revenue and cost duplicate lists)
 
 ---
 
@@ -134,7 +152,9 @@ All Drizzle schema definitions match v2 code requirements:
 
 **Current mitigation:** Planner emits LOW/MEDIUM confidence warnings. Known limitation documented.
 
-**Pilot guidance:** Avoid trackers with duplicate milestone names during pilot. If encountered, use v1 "Advanced view" which does full-replace without key-based matching.
+**Live finding:** 9 of 62 projects affected. 16 collision groups, 23 extra rows.
+
+**Pilot guidance:** These 9 projects must use v1 "Advanced view" during pilot. Use the query in `docs/smart-import-v2-live-db-checklist.md` Check 5 to get the exact project list.
 
 ### D2: Duplicate cost business key collision
 
@@ -144,7 +164,9 @@ All Drizzle schema definitions match v2 code requirements:
 
 **Impact:** Same as D1.
 
-**Pilot guidance:** Same as D1. Most real cost lines either have invoice numbers (PRIMARY key, no collision) or distinct descriptions.
+**Live finding:** 17 of 62 projects affected. 30 collision groups, 99 extra rows. This is the most significant risk — over a quarter of projects.
+
+**Pilot guidance:** These 17 projects must use v1 "Advanced view" during pilot.
 
 ### D3: Plan hierarchy not updated on incremental import
 
@@ -160,16 +182,22 @@ All Drizzle schema definitions match v2 code requirements:
 
 ## Pilot Rollout Guardrails
 
+### Pre-deployment steps (required)
+1. Apply migration: `ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS milestone_no TEXT, ADD COLUMN IF NOT EXISTS milestone_percent NUMERIC(6,4);`
+2. Run Check 5 and Check 6 from `docs/smart-import-v2-live-db-checklist.md` to get the exact list of affected project IDs
+3. Communicate to operators: those projects must use "Advanced view" during pilot
+
 ### Who should use it first
 - Internal project managers familiar with the tracker format
-- Start with 1-2 well-known projects that have been previously imported via v1
+- Start with 2-3 projects that are NOT in the duplicate-key affected list
 - Confirm the planner output looks correct before committing
 
-### What files/trackers should be excluded initially
+### What projects must be excluded from v2 pilot
+- The 9 projects with duplicate revenue milestone names (from Check 5)
+- The 17 projects with duplicate cost line keys (from Check 6)
+- These projects should continue using "Advanced view" (v1) until the duplicate key issue is resolved
 - Multi-project trackers (FY 2026 Adhoc-style) — sub-project naming sensitivity
-- Trackers with duplicate milestone names (e.g., multiple "Progress Payment" milestones)
 - Trackers with heavily restructured plan hierarchies since last import
-- Any tracker with known data quality issues (formula errors, mixed formats)
 
 ### What should be monitored after each import
 1. **Planner summary** — verify NEW/CHANGED/UNCHANGED counts look reasonable
@@ -185,24 +213,34 @@ All Drizzle schema definitions match v2 code requirements:
 
 ---
 
-## Recommendation
+## Recommendation (updated with live data)
 
 ### GO — with the following conditions:
 
-1. **Run migration** `20260408_add_milestone_no_to_revenue.sql` before deploying
-2. **Pilot with 2-3 projects** using simple trackers (single-project, distinct milestone/task names)
-3. **Avoid duplicate-name trackers** during initial pilot (defects D1/D2)
-4. **Monitor first 5 imports** for unexpected CHANGED/MISSING counts
-5. **Keep v1 "Advanced view" accessible** as fallback for complex cases
-6. **Review conflict resolution** if any conflicts appear — confirm 3-way merge values look correct
-7. **Confirm dashboard refresh** after each pilot import
+1. **REQUIRED: Apply migration** before deploying:
+   ```sql
+   ALTER TABLE normalized_revenue_lines
+     ADD COLUMN IF NOT EXISTS milestone_no TEXT,
+     ADD COLUMN IF NOT EXISTS milestone_percent NUMERIC(6,4);
+   ```
+2. **REQUIRED: Identify affected projects** — run Check 5 + Check 6 from `docs/smart-import-v2-live-db-checklist.md` to get exact project IDs
+3. **Pilot with projects NOT on the affected list** (~36 of 62 projects are clean and safe for v2)
+4. **Route affected projects to "Advanced view"** (v1 fallback) — 9 with revenue collisions, 17 with cost collisions
+5. **Monitor first 5 v2 imports** — verify NEW/CHANGED/UNCHANGED counts look reasonable
+6. **Confirm dashboard refresh** after each pilot import
 
 ### Timeline
-- **Week 1:** 2-3 pilot projects, internal PMs only
-- **Week 2:** Expand to remaining projects if pilot passes
-- **Week 3:** GA — remove pilot restrictions, monitor
+- **Week 1:** Apply migration. Pilot with 2-3 clean projects, internal PMs only.
+- **Week 2:** Expand to all clean projects (~36) if pilot passes.
+- **Week 3+:** Investigate duplicate key resolution for the remaining ~26 affected projects.
 
 ### When to stop pilot
-- If any import produces data corruption (wrong field values on unchanged rows)
-- If duplicate key collisions occur on real trackers (indicates duplicate-name pattern is more common than expected)
+- If any v2 import produces data corruption (wrong field values on unchanged rows)
+- If a "clean" project's uploaded tracker itself has duplicate milestone/cost names
 - If plan hierarchy is incorrect after import and users rely on it
+
+### Path to full GA (all 62 projects)
+The 27% of projects with duplicate cost keys is the main barrier. Options to resolve:
+1. **Add sourceRow as tiebreaker** when business keys collide (positional within a section)
+2. **Add a dedup pre-check** that warns operators when duplicate keys are detected
+3. **Accept v1 fallback** for those projects permanently (least effort, fragments experience)
