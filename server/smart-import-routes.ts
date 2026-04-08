@@ -10,6 +10,11 @@ import { requirePermission, hasImportPermission } from "./permission-middleware"
 import { jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
+import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
+import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, type IncrementalCommitResult } from "./lib/import/commit-executor";
+import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
+import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
+import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineNormalization, detectImportMode } from "./lib/import/baseline";
 import {
   smartImportRuns,
   importIssues,
@@ -701,6 +706,7 @@ router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePerm
 });
 
 // GET /api/smart-import/:runId
+// Optional query param: ?includePlan=true to include v2 planner output
 router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
@@ -711,10 +717,23 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
 
     const issues = await db.select().from(importIssues).where(eq(importIssues.importRunId, runId));
 
+    let planning: PlannerResult | null = null;
+    if (req.query.includePlan === "true") {
+      const summary = run.summaryJson as any;
+      if (summary?.normalization) {
+        try {
+          planning = await runImportPlanner(run.projectId, summary.normalization);
+        } catch (planErr: unknown) {
+          console.warn("[SmartImport] Planner failed (non-blocking):", (planErr instanceof Error ? planErr.message : String(planErr)));
+        }
+      }
+    }
+
     res.json({
       run,
       issues,
       preview: run.summaryJson,
+      planning,
     });
   } catch (err: unknown) {
     console.error("[smart-import] GET run error:", err);
@@ -838,6 +857,31 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
     res.json({ diff });
   } catch (err: unknown) {
     console.error("[smart-import] GET diff error:", err);
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+  }
+});
+
+// GET /api/smart-import/:runId/plan — Smart Import v2 planner output
+// Returns structured diff with row-level classifications:
+//   NEW / CHANGED / UNCHANGED / MISSING_FROM_UPLOAD / CONFLICT_PLACEHOLDER
+router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const summary = run.summaryJson as any;
+    if (!summary?.normalization) {
+      return res.status(400).json({ error: "No normalization data found in this import run" });
+    }
+
+    const planning = await runImportPlanner(run.projectId, summary.normalization);
+
+    res.json({ planning });
+  } catch (err: unknown) {
+    console.error("[smart-import] GET plan error:", err);
     res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
@@ -1347,6 +1391,60 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     }
 
+    // ── Smart Import v2: 3-way conflict check ──
+    // Run the planner to detect true conflicts (both app and file diverged from baseline).
+    // Unresolved conflicts block commit.
+    const v2ConflictResolutions = req.body?.v2ConflictResolutions as Record<string, "keep_app" | "accept_file"> | undefined;
+    const skipV2ConflictCheck = req.body?.skipV2ConflictCheck === true;
+
+    if (!skipV2ConflictCheck && run.projectId) {
+      const summary = run.summaryJson as any;
+      if (summary?.normalization) {
+        try {
+          const plannerResult = await runImportPlanner(run.projectId, summary.normalization);
+          if (plannerResult.conflicts?.hasBlockingConflicts) {
+            const unresolvedConflicts = plannerResult.conflicts.allRows
+              .filter(r => r.conflictStatus === "HAS_CONFLICTS")
+              .map(r => ({
+                rowKey: r.rowKey,
+                displayLabel: r.displayLabel,
+                section: r.section,
+                canonicalSource: r.canonicalSource,
+                fields: r.fields.filter(f => f.requiresDecision).map(f => ({
+                  fieldName: f.fieldName,
+                  baselineValue: f.baselineValue,
+                  currentAppValue: f.currentAppValue,
+                  uploadedValue: f.uploadedValue,
+                  mergeCase: f.mergeCase,
+                })),
+              }));
+
+            // Check if all conflicts have been resolved by the client
+            const allResolved = v2ConflictResolutions
+              ? unresolvedConflicts.every(r =>
+                  r.fields.every(f => v2ConflictResolutions[`${r.rowKey}::${f.fieldName}`])
+                )
+              : false;
+
+            if (!allResolved) {
+              return res.status(409).json({
+                error: "v2_conflicts_detected",
+                message: `This import has ${unresolvedConflicts.length} row(s) where both the app and file changed differently from the last import. Please resolve each conflict.`,
+                conflicts: unresolvedConflicts,
+                planning: {
+                  importMode: plannerResult.importMode,
+                  warnings: plannerResult.warnings,
+                },
+                hint: "Resolve conflicts via v2ConflictResolutions: { 'rowKey::fieldName': 'keep_app' | 'accept_file' }",
+              });
+            }
+          }
+        } catch (planErr: unknown) {
+          console.warn("[SmartImport] v2 conflict check failed (falling through to v1):", (planErr instanceof Error ? planErr.message : String(planErr)));
+        }
+      }
+    }
+
     const acknowledgeManualEdits = req.body?.acknowledgeManualEdits === true;
     const preserveManualEdits = req.body?.preserveManualEdits === true;
     const conflictResolutions = req.body?.conflictResolutions as Record<string, "keep" | "import"> | undefined;
@@ -1649,6 +1747,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     const counts = { planTasks: 0, revenueLines: 0, costLines: 0, executionPhases: 0, counterparties: 0 };
     const skippedOverrideFields: Array<{ row: number; field: string; importValue: string; manualValue: string }> = [];
     const overwriteWarnings: string[] = [];
+    let v2Result: IncrementalCommitResult | null = null;
 
     let preservedManualEditsCount = 0;
 
@@ -1670,6 +1769,162 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       if (!claimed || claimed.length === 0) {
         throw Object.assign(new Error("Import run is no longer committable (already committed, rolled back, or superseded)"), { status: 409 });
       }
+
+      // ── Smart Import v2: Incremental commit path ──
+      // If v2 is active and projectId is known, use the planner+conflict engine
+      // to perform targeted writes instead of section-wide replace.
+      const useV2 = !skipV2ConflictCheck && projectId;
+
+      if (useV2) {
+        const commitTimestamp = new Date();
+        const baselineInfo = await detectImportMode(projectId);
+
+        // Load current state for matching
+        const [planRows, revenueRows, costRows, baselineNorm] = await Promise.all([
+          loadCurrentPlanRows(projectId),
+          loadCurrentRevenueRows(projectId),
+          loadCurrentCostRows(projectId),
+          baselineInfo.importMode === "INCREMENTAL" ? loadBaselineNormalization(projectId) : Promise.resolve(null),
+        ]);
+
+        // Run row matching per section
+        const matchedPlan = norm.planTasks?.length > 0 || planRows.length > 0
+          ? matchRows("PLAN" as SectionType, projectId, norm.planTasks || [], planRows as any) : [];
+        const matchedRevenue = norm.revenueLines?.length > 0 || revenueRows.length > 0
+          ? matchRows("REVENUE" as SectionType, projectId, norm.revenueLines || [], revenueRows as any) : [];
+        const matchedCost = norm.costLines?.length > 0 || costRows.length > 0
+          ? matchRows("EXPENDITURE" as SectionType, projectId, norm.costLines || [], costRows as any) : [];
+
+        // Run 3-way conflict engine for incremental imports
+        let conflictMergeResults = new Map<string, RowMergeResult>();
+        if (baselineInfo.importMode === "INCREMENTAL") {
+          const conflictResult = runConflictEngine(
+            { PLAN: matchedPlan, REVENUE: matchedRevenue, EXPENDITURE: matchedCost },
+            baselineNorm,
+            projectId,
+            generateBusinessKey,
+          );
+          for (const row of conflictResult.allRows) {
+            conflictMergeResults.set(row.rowKey, row);
+          }
+        }
+
+        const v2Decisions = v2ConflictResolutions || {};
+
+        // Write PLAN incrementally
+        let planResult = null;
+        if (matchedPlan.length > 0) {
+          planResult = await writePlanIncremental({
+            tx, projectId, projectName, runId, userId,
+            matchedRows: matchedPlan,
+            mergeResults: conflictMergeResults,
+            conflictDecisions: v2Decisions,
+            workItemsTable: workItems,
+            workItemDependenciesTable: workItemDependencies,
+            workItemAssignmentsTable: workItemAssignments,
+          });
+          counts.planTasks = planResult.counts.inserted + planResult.counts.updated;
+        }
+
+        // Write REVENUE incrementally
+        let revenueResult = null;
+        if (matchedRevenue.length > 0) {
+          revenueResult = await writeRevenueIncremental({
+            tx, projectId, projectName, runId, userId,
+            matchedRows: matchedRevenue,
+            mergeResults: conflictMergeResults,
+            conflictDecisions: v2Decisions,
+            commitTimestamp,
+          });
+          counts.revenueLines = revenueResult.counts.inserted + revenueResult.counts.updated;
+        }
+
+        // Write EXPENDITURE incrementally
+        let costResult = null;
+        if (matchedCost.length > 0) {
+          costResult = await writeExpenditureIncremental({
+            tx, projectId, projectName, runId, userId,
+            matchedRows: matchedCost,
+            mergeResults: conflictMergeResults,
+            conflictDecisions: v2Decisions,
+            commitTimestamp,
+          });
+          counts.costLines = costResult.counts.inserted + costResult.counts.updated;
+        }
+
+        v2Result = {
+          sections: {
+            PLAN: planResult,
+            REVENUE: revenueResult,
+            EXPENDITURE: costResult,
+          },
+          totalInserted: (planResult?.counts.inserted || 0) + (revenueResult?.counts.inserted || 0) + (costResult?.counts.inserted || 0),
+          totalUpdated: (planResult?.counts.updated || 0) + (revenueResult?.counts.updated || 0) + (costResult?.counts.updated || 0),
+          totalUnchanged: (planResult?.counts.unchanged || 0) + (revenueResult?.counts.unchanged || 0) + (costResult?.counts.unchanged || 0),
+          totalMissing: (planResult?.counts.missing || 0) + (revenueResult?.counts.missing || 0) + (costResult?.counts.missing || 0),
+        };
+
+        // Handle execution phases (simple re-insert — no temporal matching)
+        if (norm.executionPhases && norm.executionPhases.length > 0) {
+          await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, projectId));
+          const phaseValues = norm.executionPhases.map((p: any) => ({
+            projectId,
+            projectName,
+            phaseName: p.phaseName,
+            phaseDate: p.phaseDate,
+            source: "EXCEL_IMPORT" as const,
+            importRunId: runId,
+          }));
+          await tx.insert(normalizedExecutionPhases).values(phaseValues);
+          counts.executionPhases = phaseValues.length;
+        }
+
+        // Update project info from detected metadata (same as v1)
+        const detectedInfo = summary.detection?.projectInfo;
+        if (detectedInfo && projectId) {
+          const VALID_PHASES = ["dlp", "financial close", "planning", "construction", "qa", "handover", "commercial close out", "compliance handover", "hold"];
+          const [existingProject] = await tx.select({ pm: projectInfo.pm, pd: projectInfo.pd }).from(projectInfo).where(eq(projectInfo.id, projectId));
+          const updates: Record<string, any> = {};
+          if (detectedInfo.sizeKwp) updates.sizeKwp = String(detectedInfo.sizeKwp);
+          if (detectedInfo.pd && (!existingProject?.pd || !existingProject.pd.trim())) updates.pd = String(detectedInfo.pd);
+          if (detectedInfo.pm && (!existingProject?.pm || !existingProject.pm.trim())) updates.pm = String(detectedInfo.pm);
+          if (detectedInfo.contractValue) updates.contractValue = String(detectedInfo.contractValue);
+          const rawPhase = detectedInfo.phase ? String(detectedInfo.phase).trim() : null;
+          if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {
+            updates.phase = rawPhase;
+            updates.executionPhase = rawPhase;
+            updates.phaseUpdatedAt = new Date();
+          }
+          if (Object.keys(updates).length > 0) {
+            updates.updatedAt = new Date();
+            await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, projectId));
+            await syncProjectSplitTables(projectId, updates, tx);
+          }
+        }
+
+        // Finalize: mark as committed
+        const totalAttempted = (norm.planTasks?.length || 0) + (norm.revenueLines?.length || 0) + (norm.costLines?.length || 0) + (norm.executionPhases?.length || 0);
+        const totalSucceeded = (counts.planTasks || 0) + (counts.revenueLines || 0) + (counts.costLines || 0) + (counts.executionPhases || 0);
+        const totalFailed = totalAttempted - totalSucceeded;
+        const detectedSections: string[] = [];
+        if (norm.planTasks?.length > 0) detectedSections.push("PLAN");
+        if (norm.revenueLines?.length > 0) detectedSections.push("REVENUE");
+        if (norm.costLines?.length > 0) detectedSections.push("EXPENDITURE");
+
+        await tx.update(smartImportRuns).set({
+          status: "COMMITTED",
+          committedAt: new Date(),
+          committedBy: userId,
+          recordsAttempted: totalAttempted,
+          recordsSucceeded: totalSucceeded,
+          recordsFailed: totalFailed,
+          importType: detectedSections.join(","),
+        }).where(eq(smartImportRuns.id, runId));
+      }
+      // ── End v2 incremental commit path ──
+
+      // ── v1 fallback path (runs when v2 is disabled) ──
+      if (!useV2) {
 
       const existingTaskOwners = new Map<string, string>();
       {
@@ -1982,6 +2237,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               projectName,
               description: merged.description,
               milestoneName: merged.milestoneName,
+              milestoneNo: merged.milestoneNo || null,
+              milestonePercent: merged.milestonePercent || null,
               amountExVat: merged.amountExVat,
               vat: merged.vat,
               invoiceNumber: merged.invoiceNumber,
@@ -2550,6 +2807,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           importType: detectedSections.join(","),
         })
         .where(eq(smartImportRuns.id, runId));
+
+      } // end if (!useV2) — v1 fallback path
     });
 
     // Record audit ChangeSet for the import commit
@@ -2624,6 +2883,32 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     }
 
+    // Step 4.6: Log v2 3-way conflict resolution decisions
+    if (v2ConflictResolutions && Object.keys(v2ConflictResolutions).length > 0) {
+      try {
+        for (const [key, decision] of Object.entries(v2ConflictResolutions)) {
+          const sepIdx = key.lastIndexOf("::");
+          if (sepIdx < 0) continue;
+          const rowKey = key.substring(0, sepIdx);
+          const fieldName = key.substring(sepIdx + 2);
+
+          await db.insert(conflictResolutionLog).values({
+            importRunId: runId,
+            entityType: "v2_3way_merge",
+            entityId: rowKey,
+            fieldName,
+            manualValue: decision === "keep_app" ? "preserved" : null,
+            importValue: decision === "accept_file" ? "applied" : null,
+            decision: decision === "keep_app" ? "KEEP_MANUAL" : "OVERWRITE_WITH_IMPORT",
+            decidedByUserId: userId,
+            decidedByName: (req as any).user?.name || null,
+          });
+        }
+      } catch (v2ResLogErr: any) {
+        console.warn("[smart-import] v2 conflict resolution logging failed (non-blocking):", v2ResLogErr.message);
+      }
+    }
+
     logAuditFromReq(req, {
       entityType: "smart_import",
       entityId: String(runId),
@@ -2674,12 +2959,19 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       runId,
       summary: importSummary,
       counts,
+      // V2 incremental commit details (null when v1 fallback was used)
+      v2: v2Result ? {
+        totalInserted: v2Result.totalInserted,
+        totalUpdated: v2Result.totalUpdated,
+        totalUnchanged: v2Result.totalUnchanged,
+        totalMissing: v2Result.totalMissing,
+      } : undefined,
       preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
       preservedManualEdits: preservedManualEditsCount > 0 ? preservedManualEditsCount : undefined,
       overwriteWarnings: overwriteWarnings.length > 0 ? overwriteWarnings : undefined,
     });
 
-    // Prompt 12: Refresh materialized dashboard metrics after import commit
+    // Refresh materialized dashboard metrics after import commit (both v1 and v2)
     if (projectId) refreshProjectMetricsAsync(projectId);
   } catch (err: unknown) {
     console.error("[smart-import] POST commit error:", err);

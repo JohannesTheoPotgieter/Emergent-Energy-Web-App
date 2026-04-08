@@ -453,6 +453,8 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   projectName: text("project_name").notNull(),
   description: text("description"),
   milestoneName: text("milestone_name"),
+  milestoneNo: text("milestone_no"),
+  milestonePercent: decimal("milestone_percent", { precision: 6, scale: 4 }),
   amountExVat: decimal("amount_ex_vat", { precision: 15, scale: 2 }),
   vat: decimal("vat", { precision: 15, scale: 2 }),
   /** Legacy TEXT column preserved for 30-day rollback window. Remove after cleanup PR. */
