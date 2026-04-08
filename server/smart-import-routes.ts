@@ -1747,6 +1747,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     const counts = { planTasks: 0, revenueLines: 0, costLines: 0, executionPhases: 0, counterparties: 0 };
     const skippedOverrideFields: Array<{ row: number; field: string; importValue: string; manualValue: string }> = [];
     const overwriteWarnings: string[] = [];
+    let v2Result: IncrementalCommitResult | null = null;
 
     let preservedManualEditsCount = 0;
 
@@ -1773,7 +1774,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       // If v2 is active and projectId is known, use the planner+conflict engine
       // to perform targeted writes instead of section-wide replace.
       const useV2 = !skipV2ConflictCheck && projectId;
-      let v2Result: IncrementalCommitResult | null = null;
 
       if (useV2) {
         const commitTimestamp = new Date();
@@ -2959,12 +2959,19 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       runId,
       summary: importSummary,
       counts,
+      // V2 incremental commit details (null when v1 fallback was used)
+      v2: v2Result ? {
+        totalInserted: v2Result.totalInserted,
+        totalUpdated: v2Result.totalUpdated,
+        totalUnchanged: v2Result.totalUnchanged,
+        totalMissing: v2Result.totalMissing,
+      } : undefined,
       preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
       preservedManualEdits: preservedManualEditsCount > 0 ? preservedManualEditsCount : undefined,
       overwriteWarnings: overwriteWarnings.length > 0 ? overwriteWarnings : undefined,
     });
 
-    // Prompt 12: Refresh materialized dashboard metrics after import commit
+    // Refresh materialized dashboard metrics after import commit (both v1 and v2)
     if (projectId) refreshProjectMetricsAsync(projectId);
   } catch (err: unknown) {
     console.error("[smart-import] POST commit error:", err);

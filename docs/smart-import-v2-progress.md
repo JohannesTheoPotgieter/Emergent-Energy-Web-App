@@ -579,8 +579,96 @@ Technical information is available but hidden by default:
 | `smart-import-authorization.test.ts` | 14 | Permission checks |
 | `smart-import-storage-retention.test.ts` | 1 | Temporal retention |
 
-### Remaining gaps
+### Remaining gaps (addressed in Phase 7)
 
-1. **Derivative tables (programExpense, programInflows) stale after v2 commit.** May need a sync step.
+1. ~~Derivative tables stale after v2 commit~~ → Addressed: `refreshProjectMetricsAsync` confirmed running for both paths; honest messaging added.
 2. **No milestoneNo backfill.** New imports persist it; old rows have NULL.
-3. **V1 "Advanced view" retains all original complexity.** Could be further simplified in a future phase.
+3. **V1 "Advanced view" retains all original complexity.** Intentional — retained as operator escape hatch.
+
+---
+
+## Phase 7: Stabilization, Cleanup & Release Readiness
+
+**Date:** 2026-04-08
+**Status:** COMPLETE
+
+---
+
+### What was changed
+
+#### Code fixes
+
+| Fix | Detail |
+|-----|--------|
+| **v2Result scope** | Moved `v2Result` declaration outside the transaction block so commit response can include v2 incremental details |
+| **Commit response** | Response JSON now includes `v2: { totalInserted, totalUpdated, totalUnchanged, totalMissing }` when v2 path was used |
+| **Metrics refresh** | Confirmed `refreshProjectMetricsAsync(projectId)` fires for both v1 and v2 paths (it was already outside the if-block) |
+
+#### New documentation
+
+| File | Purpose |
+|------|---------|
+| `docs/smart-import-v2-release-notes.md` | What changed from v1, rollout notes, architecture alignment |
+| `docs/smart-import-v2-operator-guide.md` | Plain-language user guide for non-technical operators |
+| `docs/smart-import-v2-known-limitations.md` | 8 documented limitations with status and mitigation |
+| `docs/smart-import-v2-test-matrix.md` | Full test matrix: 205 automated + manual regression checks |
+
+#### New tests
+
+| File | Tests | Coverage |
+|------|-------|---------|
+| `smart-import-v2-stabilization.test.ts` | 54 | v2 default, v1 isolation, post-commit honesty, refresh, response shape, release docs, jargon sweep across all 6 v2 components |
+
+### Terminology sweep results
+
+All 6 v2 component files were swept for jargon in string literals. Zero instances found of:
+- "override", "canonical", "normalization", "fingerprint", "temporal"
+
+These terms exist only in:
+- TypeScript type names and variable names (not user-visible)
+- Code comments
+- The "Advanced view" (v1 path)
+- Backend-only modules
+
+### Post-commit refresh handling
+
+**Decision:** Honest messaging, not fake immediacy.
+
+- `refreshProjectMetricsAsync(projectId)` is called after both v1 and v2 commits. This refreshes materialized dashboard metrics asynchronously.
+- The user sees: "Dashboard summaries may take a moment to update."
+- No claim of immediate derivative table sync is made.
+
+### v1 isolation
+
+The v1 "Advanced view" is:
+- Behind a user-visible toggle labeled "Advanced view" (not "v1")
+- Gated in rendering by `!useV2` checks
+- Gated in commit by `if (!useV2)` inside the transaction
+- Accessible only by explicit user action
+- Not the default path
+
+### Test coverage final
+
+259 total tests across 8 test files, all passing:
+
+| File | Tests |
+|------|-------|
+| `smart-import-v2-stabilization.test.ts` | 54 |
+| `smart-import-v2-ux.test.ts` | 51 |
+| `smart-import-conflict-engine.test.ts` | 43 |
+| `smart-import-planner-spine.test.ts` | 39 |
+| `smart-import-incremental-commit.test.ts` | 39 |
+| `smart-import-commit-guard.test.ts` | 18 |
+| `smart-import-authorization.test.ts` | 14 |
+| `smart-import-storage-retention.test.ts` | 1 |
+
+### Remaining known limitations
+
+See `docs/smart-import-v2-known-limitations.md` for full details. Summary:
+1. Derivative table refresh is async (by design, messaged honestly)
+2. No milestoneNo backfill for pre-v2 rows
+3. V1 fallback retained as safety net
+4. No fuzzy row matching
+5. Duplicate business key edge case
+6. Multi-project tracker naming sensitivity
+7. Plan hierarchy re-linking not done by v2 incremental path
