@@ -16,7 +16,7 @@
 import type { Express, Request, Response } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { eq, and, sql, isNull, desc, inArray } from "drizzle-orm";
+import { eq, and, sql, isNull, desc, asc, inArray } from "drizzle-orm";
 import { users, notifications, workItems, workItemAssignments } from "@shared/schema";
 import { OVERRIDE_CATEGORIES } from "@shared/schema";
 import { requireAuth } from "../auth-context";
@@ -25,6 +25,8 @@ import { logAuditFromReq } from "../audit-logger";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { recordManualEditFlag } from "../lib/manual-edit-flag";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
+import { convertWorkItemTypeInPlace, WorkItemConversionError } from "../services/work-item-conversion-service";
+import { paramStr } from "../lib/req-params";
 
 // ── Plan change notification helpers (moved from routes.ts) ──
 
@@ -105,7 +107,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
 
   app.get("/api/project-plan/:projectName", requireAuth, async (req, res) => {
     try {
-      const projectName = req.params.projectName;
+      const projectName = paramStr(req.params.projectName);
       const { applyOverrides } = req.query;
 
       let plans = await storage.getProjectPlansByProject(projectName);
@@ -541,7 +543,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         if (!projectId) return res.status(400).json({ error: "Project not found" });
 
         try {
-          await db.transaction(async (tx) => {
+          await db.transaction(async (tx: any) => {
             const repo = {
               getById: async (id: number) => {
                 const rows = await tx.select({
@@ -617,7 +619,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         if (!projectId) return res.status(400).json({ error: "Project not found" });
 
         try {
-          await db.transaction(async (tx) => {
+          await db.transaction(async (tx: any) => {
             const repo = {
               getById: async (id: number) => {
                 const rows = await tx.select({
@@ -701,7 +703,7 @@ export function registerPlanningExtractedRoutes(app: Express): void {
         }
         const safeIds = workItemIds.filter((id: number) => id !== parentWorkItemId);
         if (safeIds.length === 0) return res.status(400).json({ error: "No valid tasks after excluding parent" });
-        await db.transaction(async (tx) => {
+        await db.transaction(async (tx: any) => {
           const parentItem = await tx.select({ indentLevel: workItems.indentLevel }).from(workItems).where(eq(workItems.id, parentWorkItemId));
           const parentIndent = parentItem[0]?.indentLevel ?? 0;
           for (const wiId of safeIds) {

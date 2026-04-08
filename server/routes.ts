@@ -8,7 +8,6 @@
  * Handler history: 167 → 0 (fully extracted across Phases 1–9b).
  * New routes MUST go in server/routes/ or server/departments/ domain files.
  */
-// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { registerAuthRoutes } from "./routes/auth-routes";

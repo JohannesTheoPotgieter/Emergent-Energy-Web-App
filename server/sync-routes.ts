@@ -1,4 +1,3 @@
-// @ts-nocheck — TODO: fix 25 type errors then remove this directive
 // Error breakdown: TS7006 implicit-any: 16, TS2345 query/param types: 8, other: 1
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
@@ -22,6 +21,7 @@ import {
   isSharePointListConfigured,
 } from "./sharepoint-list";
 import { getConnector } from "./intake-connector";
+import { paramStr } from "./lib/req-params";
 
 function isMissingTableError(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err ?? "");
@@ -71,7 +71,7 @@ export function registerSyncRoutes(app: Express) {
 
   app.get("/api/sp-sync/discover/lists/:siteId", jwtAuth, requireAuth, requireCOO, async (req, res) => {
     try {
-      const lists = await discoverLists(req.params.siteId);
+      const lists = await discoverLists(paramStr(req.params.siteId));
       res.json({ lists });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -80,7 +80,8 @@ export function registerSyncRoutes(app: Express) {
 
   app.get("/api/sp-sync/discover/list-by-name/:siteId/:listName", jwtAuth, requireAuth, requireCOO, async (req, res) => {
     try {
-      const { siteId, listName } = req.params;
+      const siteId = paramStr(req.params.siteId);
+      const listName = paramStr(req.params.listName);
       const { graphGet } = await import("./sharepoint-list");
       const result = await graphGet(
         `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${encodeURIComponent(listName)}?$select=id,displayName,list`
@@ -97,7 +98,7 @@ export function registerSyncRoutes(app: Express) {
 
   app.get("/api/sp-sync/discover/columns/:siteId/:listId", jwtAuth, requireAuth, requireCOO, async (req, res) => {
     try {
-      const columns = await getListColumns(req.params.siteId, req.params.listId);
+      const columns = await getListColumns(paramStr(req.params.siteId), paramStr(req.params.listId));
       res.json({ columns });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -503,7 +504,7 @@ export function registerSyncRoutes(app: Express) {
   // ===== Resolve conflicts =====
   app.post("/api/sp-sync/resolve-conflict/:requestId", jwtAuth, requireAuth, requireCOO, async (req, res) => {
     try {
-      const { requestId } = req.params;
+      const requestId = paramStr(req.params.requestId);
       const { resolutions } = req.body;
 
       const [request] = await db.select().from(intakeRequests)
@@ -551,7 +552,7 @@ export function registerSyncRoutes(app: Express) {
   // ===== CP Signed Gate =====
   app.post("/api/sp-sync/cp-signed/:requestId", jwtAuth, requireAuth, requireCOO, async (req, res) => {
     try {
-      const { requestId } = req.params;
+      const requestId = paramStr(req.params.requestId);
       const { evidenceType, evidenceRef, signedDate } = req.body;
 
       const [request] = await db.select().from(intakeRequests)
@@ -635,7 +636,7 @@ export function registerSyncRoutes(app: Express) {
   app.get("/api/sp-sync/intake-requests/:id", jwtAuth, requireAuth, async (req, res) => {
     try {
       const [request] = await db.select().from(intakeRequests)
-        .where(eq(intakeRequests.id, parseInt(req.params.id)));
+        .where(eq(intakeRequests.id, parseInt(paramStr(req.params.id))));
       if (!request) return res.status(404).json({ error: "Not found" });
 
       const tasks = await db.select().from(intakeTasks)
@@ -651,7 +652,7 @@ export function registerSyncRoutes(app: Express) {
   app.get("/api/sp-sync/intake-requests/by-project/:projectId", jwtAuth, requireAuth, async (req, res) => {
     try {
       const requests = await db.select().from(intakeRequests)
-        .where(eq(intakeRequests.projectId, parseInt(req.params.projectId)))
+        .where(eq(intakeRequests.projectId, parseInt(paramStr(req.params.projectId))))
         .orderBy(desc(intakeRequests.updatedAt));
       res.json({ requests });
     } catch (err: any) {
@@ -672,10 +673,10 @@ export function registerSyncRoutes(app: Express) {
 
       const [updated] = await db.update(intakeRequests)
         .set(updates)
-        .where(eq(intakeRequests.id, parseInt(req.params.id)))
+        .where(eq(intakeRequests.id, parseInt(paramStr(req.params.id))))
         .returning();
 
-      logAuditFromReq(req, { entityType: "intake_request", entityId: req.params.id, action: "update", changesJson: { fieldsUpdated: Object.keys(updates).filter(k => k !== "updatedAt" && k !== "lastAppEditAt") } });
+      logAuditFromReq(req, { entityType: "intake_request", entityId: paramStr(req.params.id), action: "update", changesJson: { fieldsUpdated: Object.keys(updates).filter(k => k !== "updatedAt" && k !== "lastAppEditAt") } });
       res.json({ request: updated });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -686,7 +687,7 @@ export function registerSyncRoutes(app: Express) {
   app.get("/api/sp-sync/intake-tasks/:requestId", jwtAuth, requireAuth, async (req, res) => {
     try {
       const tasks = await db.select().from(intakeTasks)
-        .where(eq(intakeTasks.intakeRequestId, parseInt(req.params.requestId)))
+        .where(eq(intakeTasks.intakeRequestId, parseInt(paramStr(req.params.requestId))))
         .orderBy(intakeTasks.sortOrder);
       res.json({ tasks });
     } catch (err: any) {
@@ -708,9 +709,9 @@ export function registerSyncRoutes(app: Express) {
 
       const [updated] = await db.update(intakeTasks)
         .set(updates)
-        .where(eq(intakeTasks.id, parseInt(req.params.taskId)))
+        .where(eq(intakeTasks.id, parseInt(paramStr(req.params.taskId))))
         .returning();
-      logAuditFromReq(req, { entityType: "intake_task", entityId: req.params.taskId, action: "update", changesJson: { status, assignedTo } });
+      logAuditFromReq(req, { entityType: "intake_task", entityId: paramStr(req.params.taskId), action: "update", changesJson: { status, assignedTo } });
       res.json({ task: updated });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -721,7 +722,7 @@ export function registerSyncRoutes(app: Express) {
   app.post("/api/sp-sync/generate-tasks/:requestId", jwtAuth, requireAuth, requireCOO, async (req, res) => {
     try {
       const [request] = await db.select().from(intakeRequests)
-        .where(eq(intakeRequests.id, parseInt(req.params.requestId)));
+        .where(eq(intakeRequests.id, parseInt(paramStr(req.params.requestId))));
       if (!request) return res.status(404).json({ error: "Not found" });
       if (request.tasksGenerated) return res.status(400).json({ error: "Tasks already generated" });
 
@@ -737,7 +738,7 @@ export function registerSyncRoutes(app: Express) {
 
       for (const tmpl of templates) {
         await db.insert(intakeTasks).values({
-          intakeRequestId: parseInt(req.params.requestId),
+          intakeRequestId: parseInt(paramStr(req.params.requestId)),
           templateItemId: tmpl.id,
           title: tmpl.title,
           description: tmpl.description,
@@ -750,9 +751,9 @@ export function registerSyncRoutes(app: Express) {
         tasksGenerated: true,
         requestType: requestType,
         updatedAt: new Date(),
-      }).where(eq(intakeRequests.id, parseInt(req.params.requestId)));
+      }).where(eq(intakeRequests.id, parseInt(paramStr(req.params.requestId))));
 
-      logAuditFromReq(req, { entityType: "intake_request", entityId: req.params.requestId, action: "generate_tasks", changesJson: { tasksCreated: templates.length, requestType } });
+      logAuditFromReq(req, { entityType: "intake_request", entityId: paramStr(req.params.requestId), action: "generate_tasks", changesJson: { tasksCreated: templates.length, requestType } });
       res.json({ success: true, tasksCreated: templates.length });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

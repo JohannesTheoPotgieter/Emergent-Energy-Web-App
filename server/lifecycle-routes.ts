@@ -1,4 +1,3 @@
-// @ts-nocheck — TODO: fix 18 type errors then remove this directive
 // Error breakdown: TS7006 implicit-any: 10, TS2345 query/param types: 8, other: 0
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
@@ -22,6 +21,7 @@ import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../s
 import { jwtAuth, requireAuth } from "./auth-context";
 import { bridgeCatch } from "./bridge/bridge-writer";
 import { computeMarginPct } from "./lib/finance/margin";
+import { paramStr } from "./lib/req-params";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -350,7 +350,7 @@ export function registerLifecycleRoutes(app: Express) {
       if (!RAG_ROLES.includes(role)) {
         return res.status(403).json({ error: "forbidden", message: "Only COO, CEO, or CCO can update RAG status" });
       }
-      const projectId = parseInt(req.params.id);
+      const projectId = parseInt(paramStr(req.params.id));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const { rag, comment } = req.body;
@@ -367,7 +367,7 @@ export function registerLifecycleRoutes(app: Express) {
       const userId = ((req as any).user as any)?.id;
       const fromRag = project.ragStatus || null;
 
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         const ragFields = {
           ragStatus: rag,
           ragComment: comment.trim(),
@@ -386,7 +386,7 @@ export function registerLifecycleRoutes(app: Express) {
         });
       });
 
-      logAuditFromReq(req, "project.rag_update", { projectId, fromRag, toRag: rag, comment: comment.trim() });
+      logAuditFromReq(req, { entityType: "project", action: "rag_update", entityId: String(projectId), changesJson: { projectId, fromRag, toRag: rag, comment: comment.trim() } });
 
       res.json({ success: true });
     } catch (err: any) {
@@ -397,7 +397,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.get("/api/lifecycle-board/projects/:id/rag-history", requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.id);
+      const projectId = parseInt(paramStr(req.params.id));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const history = await db.select({
@@ -411,14 +411,14 @@ export function registerLifecycleRoutes(app: Express) {
         .where(eq(projectRagAudit.projectId, projectId))
         .orderBy(desc(projectRagAudit.changedAt));
 
-      const userIds = [...new Set(history.map(h => h.changedByUserId).filter(Boolean))];
+      const userIds = [...new Set(history.map((h: any) => h.changedByUserId).filter(Boolean))];
       const userMap = new Map<number, string>();
       if (userIds.length > 0) {
-        const userRows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
+        const userRows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds as number[]));
         for (const u of userRows) userMap.set(u.id, u.name);
       }
 
-      res.json(history.map(h => ({
+      res.json(history.map((h: any) => ({
         ...h,
         changedByName: userMap.get(h.changedByUserId) || "Unknown",
       })));
@@ -715,7 +715,7 @@ export function registerLifecycleRoutes(app: Express) {
         console.warn("[lifecycle-board] PD pct query error:", e.message);
       }
 
-      const ragUserIds = allProjects.map(p => (p as any).ragUpdatedByUserId).filter(Boolean);
+      const ragUserIds = allProjects.map((p: any) => (p as any).ragUpdatedByUserId).filter(Boolean);
       const ragUserMap = new Map<number, string>();
       if (ragUserIds.length > 0) {
         try {
@@ -924,7 +924,7 @@ export function registerLifecycleRoutes(app: Express) {
       const revenueLines = await db.select(selectDefinedFields({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
-        client: normalizedRevenueLines.counterpartyName,
+        client: sql<string | null>`NULL`.as("client"),
 
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
@@ -1127,11 +1127,11 @@ export function registerLifecycleRoutes(app: Express) {
         const openEng = projectEng.filter((t) => !["done", "completed", "qc approved", "cancelled", "canceled"].includes((t.status || "").toLowerCase()));
         const engBlockers = openEng.filter((t) => Boolean(t.blockerReason) || ["high", "urgent", "highest", "critical"].includes((t.priority || "").toLowerCase()) || ((t.status || "").toLowerCase().includes("block")));
 
-        const projectQuality = qualityRows.filter((q) => normalizeName(q.projectName || "") === norm);
-        const openQuality = projectQuality.filter((q) => (q.status || "open").toLowerCase() !== "closed");
-        const criticalQuality = openQuality.filter((q) => ["high", "critical"].includes((q.severity || "").toLowerCase()));
+        const projectQuality = qualityRows.filter((q: any) => normalizeName(q.projectName || "") === norm);
+        const openQuality = projectQuality.filter((q: any) => (q.status || "open").toLowerCase() !== "closed");
+        const criticalQuality = openQuality.filter((q: any) => ["high", "critical"].includes((q.severity || "").toLowerCase()));
 
-        const projectApprovals = approvalRows.filter((a) => a.projectId === project.id && a.status === "pending");
+        const projectApprovals = approvalRows.filter((a: any) => a.projectId === project.id && a.status === "pending");
 
         const latestImport = latestImportByProjectId.get(project.id) || latestImportByNorm.get(norm) || null;
         const staleDays = latestImport ? Math.floor((todayDt.getTime() - latestImport.getTime()) / (1000 * 60 * 60 * 24)) : null;
@@ -1287,7 +1287,7 @@ export function registerLifecycleRoutes(app: Express) {
       const revenueLines = await db.select({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
-        client: normalizedRevenueLines.counterpartyName,
+        client: sql<string | null>`NULL`.as("client"),
 
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
@@ -1553,8 +1553,8 @@ export function registerLifecycleRoutes(app: Express) {
       await createProjectEvent({
         projectId: created.id,
         eventType: "project.created",
-        actorUserId: actor.actorUserId,
-        actorRole: actor.actorRole,
+        actorUserId: actorFromReq(req).actorUserId,
+        actorRole: actorFromReq(req).actorRole,
         sourceEntityType: "project_info",
         sourceEntityId: String(created.id),
         summary: `Project created in engineering lifecycle (${targetPhase})`,
@@ -1669,7 +1669,7 @@ export function registerLifecycleRoutes(app: Express) {
         entityType: "lifecycle",
         entityId: String(id),
         action: "override",
-        projectName: null,
+        projectName: undefined,
         changesJson: {
           description: "Stage gate override granted",
           gateName,
@@ -2147,7 +2147,7 @@ export function registerLifecycleRoutes(app: Express) {
         changesJson: { description: `Project hard-deleted by ${deletedBy}`, projectId, projectName: pName },
       });
 
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         const pId = projectId;
         const pN = pName;
         // Safe delete helper — uses SAVEPOINTs so a failed statement

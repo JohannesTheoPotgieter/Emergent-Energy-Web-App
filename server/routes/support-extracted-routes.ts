@@ -27,6 +27,7 @@ import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { logAuditFromReq } from "../audit-logger";
 import { ApiError, sendError, logApiError } from "../lib/api-error";
+import { paramStr } from "../lib/req-params";
 
 // ── generateCSV helper (moved from routes.ts) ──
 
@@ -331,10 +332,10 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.patch("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       const updated = await storage.updateWritebackMapping(id, req.body);
-      logAuditFromReq(req, { entityType: "writeback_mapping", action: "update", entityId: req.params.id, changesJson: { description: "Writeback mapping updated" } });
+      logAuditFromReq(req, { entityType: "writeback_mapping", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "Writeback mapping updated" } });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -343,10 +344,10 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.delete("/api/writeback-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
       await storage.deleteWritebackMapping(id);
-      logAuditFromReq(req, { entityType: "writeback_mapping", action: "delete", entityId: req.params.id, changesJson: { description: "Writeback mapping deleted" } });
+      logAuditFromReq(req, { entityType: "writeback_mapping", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Writeback mapping deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -485,7 +486,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.post("/api/writeback/rollback/:auditId", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const auditId = parseInt(req.params.auditId);
+      const auditId = parseInt(paramStr(req.params.auditId));
       const logs = await storage.getWritebackAuditLogs();
       const auditEntry = logs.find((l: any) => l.id === auditId);
       if (!auditEntry) return res.status(404).json({ error: "Audit entry not found" });
@@ -570,7 +571,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.patch("/api/feedback/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const { status, adminNotes, priority } = req.body;
       const updates: any = { updatedAt: new Date() };
       if (status) updates.status = status;
@@ -587,7 +588,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
 
   app.delete("/api/feedback/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       await db.delete(feedbackTickets).where(eq(feedbackTickets.id, id));
       logAuditFromReq(req, { entityType: "feedback", action: "delete", entityId: String(id), changesJson: { description: "Feedback ticket deleted" } });
       res.json({ success: true });
@@ -602,7 +603,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(paramStr(req.params.projectName));
 
       const [folder] = await db.select()
         .from(userProjectFolders)
@@ -621,7 +622,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(paramStr(req.params.projectName));
       const { folderName, folderPath } = req.body;
 
       if (!folderName) return res.status(400).json({ error: "folderName is required" });
@@ -655,7 +656,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "Unauthorized" });
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(paramStr(req.params.projectName));
 
       await db.delete(userProjectFolders)
         .where(and(

@@ -18,6 +18,7 @@
  */
 
 import type { Express } from "express";
+import { paramStr } from "../lib/req-params";
 import { storage } from "../storage";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
@@ -219,10 +220,10 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!userToken) {
         return res.status(401).json({ error: "Microsoft sign-in required to update calendar events." });
       }
-      await outlook.updateOutlookEvent(req.params.eventId, calendarId || null, {
+      await outlook.updateOutlookEvent(paramStr(req.params.eventId), calendarId || null, {
         date, startTime, endTime, label,
       }, userToken);
-      logAuditFromReq(req, { entityType: "outlook_event", action: "update", entityId: req.params.eventId, changesJson: { description: "Outlook event updated", label } });
+      logAuditFromReq(req, { entityType: "outlook_event", action: "update", entityId: paramStr(req.params.eventId), changesJson: { description: "Outlook event updated", label } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Update event error:", err);
@@ -237,8 +238,8 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!userToken) {
         return res.status(401).json({ error: "Microsoft sign-in required to delete calendar events." });
       }
-      await outlook.deleteOutlookEvent(req.params.eventId, (calendarId as string) || null, userToken);
-      logAuditFromReq(req, { entityType: "outlook_event", action: "delete", entityId: req.params.eventId, changesJson: { description: "Outlook event deleted" } });
+      await outlook.deleteOutlookEvent(paramStr(req.params.eventId), (calendarId as string) || null, userToken);
+      logAuditFromReq(req, { entityType: "outlook_event", action: "delete", entityId: paramStr(req.params.eventId), changesJson: { description: "Outlook event deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Delete event error:", err);
@@ -277,7 +278,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!userToken) {
         return res.status(401).json({ error: "Microsoft sign-in required to view emails. Please sign in with Microsoft." });
       }
-      const msg = await outlook.getMessageDetail(req.params.id, userToken);
+      const msg = await outlook.getMessageDetail(paramStr(req.params.id), userToken);
       res.json(msg);
     } catch (err: any) {
       console.error("[Outlook] Message detail error:", err);
@@ -290,7 +291,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
   app.post("/api/outlook/email-to-task", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { getFeatureFlag } = await import("../lib/feature-flags");
-      const enabled = await getFeatureFlag("ms_create_action", false);
+      const enabled = await getFeatureFlag("ms_create_action");
       if (!enabled) {
         return res.status(404).json({ error: "Microsoft create actions are not enabled" });
       }
@@ -580,8 +581,8 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!userToken) {
         return res.status(401).json({ error: "Microsoft sign-in required. Please sign in with Microsoft." });
       }
-      await outlook.replyToMessage(req.params.id, comment, !!replyAll, userToken);
-      logAuditFromReq(req, { entityType: "outlook_email", action: "reply", entityId: req.params.id, changesJson: { description: "Email reply sent", replyAll: !!replyAll } });
+      await outlook.replyToMessage(paramStr(req.params.id), comment, !!replyAll, userToken);
+      logAuditFromReq(req, { entityType: "outlook_email", action: "reply", entityId: paramStr(req.params.id), changesJson: { description: "Email reply sent", replyAll: !!replyAll } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Reply error:", err);
@@ -599,8 +600,8 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!userToken) {
         return res.status(401).json({ error: "Microsoft sign-in required. Please sign in with Microsoft." });
       }
-      await outlook.forwardMessage(req.params.id, comment || "", to, userToken);
-      logAuditFromReq(req, { entityType: "outlook_email", action: "forward", entityId: req.params.id, changesJson: { description: "Email forwarded", to } });
+      await outlook.forwardMessage(paramStr(req.params.id), comment || "", to, userToken);
+      logAuditFromReq(req, { entityType: "outlook_email", action: "forward", entityId: paramStr(req.params.id), changesJson: { description: "Email forwarded", to } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Outlook] Forward error:", err);
@@ -675,7 +676,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!ssoToken) {
         return res.json({ messages: [], ssoRequired: true });
       }
-      const messages = await outlook.getChatMessages(req.params.chatId, 50, ssoToken);
+      const messages = await outlook.getChatMessages(paramStr(req.params.chatId), 50, ssoToken);
       res.json({ messages });
     } catch (err: any) {
       if (err.message?.includes("403")) {
@@ -692,7 +693,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!ssoToken) {
         return res.json({ messages: [], ssoRequired: true });
       }
-      const messages = await outlook.getChannelMessages(req.params.teamId, req.params.channelId, 50, ssoToken);
+      const messages = await outlook.getChannelMessages(paramStr(req.params.teamId), paramStr(req.params.channelId), 50, ssoToken);
       res.json({ messages });
     } catch (err: any) {
       if (err.message?.includes("403")) {
@@ -713,8 +714,8 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!content || !content.trim()) {
         return res.status(400).json({ error: "Message content is required" });
       }
-      const result = await outlook.sendChatMessage(req.params.chatId, content.trim(), ssoToken);
-      logAuditFromReq(req, { entityType: "ms_teams_chat", entityId: req.params.chatId, action: "send_message" });
+      const result = await outlook.sendChatMessage(paramStr(req.params.chatId), content.trim(), ssoToken);
+      logAuditFromReq(req, { entityType: "ms_teams_chat", entityId: paramStr(req.params.chatId), action: "send_message" });
       res.json({ success: true, message: result });
     } catch (err: any) {
       console.error("[Teams] Send chat message error:", err);
@@ -732,8 +733,8 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!content || !content.trim()) {
         return res.status(400).json({ error: "Message content is required" });
       }
-      const result = await outlook.sendChannelMessage(req.params.teamId, req.params.channelId, content.trim(), ssoToken);
-      logAuditFromReq(req, { entityType: "ms_teams_channel", entityId: `${req.params.teamId}/${req.params.channelId}`, action: "send_message" });
+      const result = await outlook.sendChannelMessage(paramStr(req.params.teamId), paramStr(req.params.channelId), content.trim(), ssoToken);
+      logAuditFromReq(req, { entityType: "ms_teams_channel", entityId: `${paramStr(req.params.teamId)}/${paramStr(req.params.channelId)}`, action: "send_message" });
       res.json({ success: true, message: result });
     } catch (err: any) {
       console.error("[Teams] Send channel message error:", err);
@@ -766,7 +767,7 @@ export async function registerMsIntegrationRoutes(app: Express): Promise<void> {
       if (!userToken) {
         return res.json([]);
       }
-      const drives = await outlook.getSiteDrives(req.params.siteId, userToken);
+      const drives = await outlook.getSiteDrives(paramStr(req.params.siteId), userToken);
       res.json(drives);
     } catch (err: any) {
       console.error("[SharePoint] Site drives error:", err);

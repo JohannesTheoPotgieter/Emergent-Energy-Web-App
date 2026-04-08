@@ -10,7 +10,7 @@ import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
-import { classifyCosStatus } from "../lib/calculations/stateClassifier";
+import { classifyCosStatus, isDateBlack } from "../lib/calculations/stateClassifier";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
@@ -164,7 +164,8 @@ export function registerDashboardRoutes(app: Express) {
       const userNameById = new Map<number, string>((usersResult.rows as any[]).map((u: any) => [Number(u.id), u.name || `User ${u.id}`]));
       const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
       const toNum = (v: any) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
-      const isBlack = (v: any) => { const s = String(v || '').toLowerCase(); return s.includes('000000') || s.includes('black'); };
+      // Use canonical isDateBlack from stateClassifier for consistent settled/planned logic
+      const isBlack = (fontColor: any, confirmed?: boolean | null) => isDateBlack(confirmed ?? null, fontColor);
       const isInFy = (d: string | null | undefined) => !!(d && /^\d{4}-\d{2}-\d{2}/.test(d) && d >= fyStart && d <= fyEnd);
       const taskIntersectsFy = (t: any) => {
         const s = t.actual_start_date || t.start_date;
@@ -319,7 +320,7 @@ export function registerDashboardRoutes(app: Express) {
         const row = ensureRow(proj); row.__hasFyItem = true;
         const amt = toNum(r.amountExVat);
         row.plannedRevenueFy += amt;
-        const baseReceived = hasText(r.invoiceNumber) && hasText(r.paidDate) && isBlack(r.paidDateFontColor);
+        const baseReceived = hasText(r.invoiceNumber) && hasText(r.paidDate) && isBlack(r.paidDateFontColor, r.paidDateConfirmed);
         const overrideInBank = inBankOverrideSet.has(`${r.projectName}::${r.sourceRow}`);
         const received = baseReceived || overrideInBank;
         if (received) row.receivedInflowFy += amt;
@@ -338,7 +339,7 @@ export function registerDashboardRoutes(app: Express) {
         const row = ensureRow(proj); row.__hasFyItem = true;
         const amt = toNum(c.amountExVat);
         row.plannedExpenditureFy += amt;
-        const paid = hasText(c.invoiceNumber) && hasText(c.paidDate) && isBlack(c.paidDateFontColor);
+        const paid = hasText(c.invoiceNumber) && hasText(c.paidDate) && isBlack(c.paidDateFontColor, c.paidDateConfirmed);
         if (paid) row.paidExpenditureFy += amt;
         if (!paid && dateKey && dateKey < today) row._outflowRisk += amt;
 
@@ -573,7 +574,7 @@ export function registerDashboardRoutes(app: Express) {
                 forecastExpenditure: 0,
               }));
               bucket.plannedRevenue += toNum(row.amountExVat);
-              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor)) {
+              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor, row.paidDateConfirmed)) {
                 bucket.actualCashflow += toNum(row.amountExVat);
               }
             }
@@ -593,7 +594,7 @@ export function registerDashboardRoutes(app: Express) {
                 forecastExpenditure: 0,
               }));
               bucket.plannedExpenditure += toNum(row.amountExVat);
-              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor)) {
+              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor, (row as any).paidDateConfirmed)) {
                 bucket.actualCashflow -= toNum(row.amountExVat);
               }
             }
