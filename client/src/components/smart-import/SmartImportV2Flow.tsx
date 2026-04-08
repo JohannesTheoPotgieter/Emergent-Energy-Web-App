@@ -25,11 +25,15 @@ import { SmartImportConfirmStep } from "./SmartImportConfirmStep";
 interface V2FlowProps {
   /** Called when the user enters bulk mode (multiple files uploaded) */
   onBulkMode?: () => void;
+  /** If set, skip upload and start reviewing this run directly */
+  initialRunId?: number | null;
+  /** Called when user wants to go back (e.g., to bulk panel) */
+  onBack?: () => void;
 }
 
-export function SmartImportV2Flow({ onBulkMode }: V2FlowProps) {
-  const [step, setStep] = useState(1);
-  const [runId, setRunId] = useState<number | null>(null);
+export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack }: V2FlowProps) {
+  const [step, setStep] = useState(initialRunId ? 2 : 1);
+  const [runId, setRunId] = useState<number | null>(initialRunId || null);
   const [preview, setPreview] = useState<any>(null);
   const [planning, setPlanning] = useState<any>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
@@ -60,6 +64,13 @@ export function SmartImportV2Flow({ onBulkMode }: V2FlowProps) {
       setLoadingPlan(false);
     }
   }, []);
+
+  // If opened with an initialRunId (e.g., from bulk panel "Review"), load it
+  useEffect(() => {
+    if (initialRunId) {
+      loadPlannerData(initialRunId);
+    }
+  }, [initialRunId, loadPlannerData]);
 
   // Handle single file upload completion
   const handleUploaded = useCallback((newRunId: number, newPreview: any) => {
@@ -110,8 +121,8 @@ export function SmartImportV2Flow({ onBulkMode }: V2FlowProps) {
         onStepClick={(s) => { if (s < step) setStep(s); }}
       />
 
-      {/* Step 1: Upload */}
-      {step === 1 && (
+      {/* Step 1: Upload (skipped when initialRunId is provided) */}
+      {step === 1 && !initialRunId && (
         <UploadStep
           onUploaded={handleUploaded}
           onBatchUploaded={handleBatchUploaded}
@@ -133,7 +144,7 @@ export function SmartImportV2Flow({ onBulkMode }: V2FlowProps) {
           preview={preview}
           planning={planning}
           onContinue={() => setStep(3)}
-          onBack={() => setStep(1)}
+          onBack={() => onBack ? onBack() : setStep(1)}
         />
       )}
 
