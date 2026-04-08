@@ -11,6 +11,10 @@ import { jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
 import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
+import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, type IncrementalCommitResult } from "./lib/import/commit-executor";
+import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
+import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
+import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineNormalization, detectImportMode } from "./lib/import/baseline";
 import {
   smartImportRuns,
   importIssues,
@@ -1765,6 +1769,163 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         throw Object.assign(new Error("Import run is no longer committable (already committed, rolled back, or superseded)"), { status: 409 });
       }
 
+      // ── Smart Import v2: Incremental commit path ──
+      // If v2 is active and projectId is known, use the planner+conflict engine
+      // to perform targeted writes instead of section-wide replace.
+      const useV2 = !skipV2ConflictCheck && projectId;
+      let v2Result: IncrementalCommitResult | null = null;
+
+      if (useV2) {
+        const commitTimestamp = new Date();
+        const baselineInfo = await detectImportMode(projectId);
+
+        // Load current state for matching
+        const [planRows, revenueRows, costRows, baselineNorm] = await Promise.all([
+          loadCurrentPlanRows(projectId),
+          loadCurrentRevenueRows(projectId),
+          loadCurrentCostRows(projectId),
+          baselineInfo.importMode === "INCREMENTAL" ? loadBaselineNormalization(projectId) : Promise.resolve(null),
+        ]);
+
+        // Run row matching per section
+        const matchedPlan = norm.planTasks?.length > 0 || planRows.length > 0
+          ? matchRows("PLAN" as SectionType, projectId, norm.planTasks || [], planRows as any) : [];
+        const matchedRevenue = norm.revenueLines?.length > 0 || revenueRows.length > 0
+          ? matchRows("REVENUE" as SectionType, projectId, norm.revenueLines || [], revenueRows as any) : [];
+        const matchedCost = norm.costLines?.length > 0 || costRows.length > 0
+          ? matchRows("EXPENDITURE" as SectionType, projectId, norm.costLines || [], costRows as any) : [];
+
+        // Run 3-way conflict engine for incremental imports
+        let conflictMergeResults = new Map<string, RowMergeResult>();
+        if (baselineInfo.importMode === "INCREMENTAL") {
+          const conflictResult = runConflictEngine(
+            { PLAN: matchedPlan, REVENUE: matchedRevenue, EXPENDITURE: matchedCost },
+            baselineNorm,
+            projectId,
+            generateBusinessKey,
+          );
+          for (const row of conflictResult.allRows) {
+            conflictMergeResults.set(row.rowKey, row);
+          }
+        }
+
+        const v2Decisions = v2ConflictResolutions || {};
+
+        // Write PLAN incrementally
+        let planResult = null;
+        if (matchedPlan.length > 0) {
+          planResult = await writePlanIncremental({
+            tx, projectId, projectName, runId, userId,
+            matchedRows: matchedPlan,
+            mergeResults: conflictMergeResults,
+            conflictDecisions: v2Decisions,
+            workItemsTable: workItems,
+            workItemDependenciesTable: workItemDependencies,
+            workItemAssignmentsTable: workItemAssignments,
+          });
+          counts.planTasks = planResult.counts.inserted + planResult.counts.updated;
+        }
+
+        // Write REVENUE incrementally
+        let revenueResult = null;
+        if (matchedRevenue.length > 0) {
+          revenueResult = await writeRevenueIncremental({
+            tx, projectId, projectName, runId, userId,
+            matchedRows: matchedRevenue,
+            mergeResults: conflictMergeResults,
+            conflictDecisions: v2Decisions,
+            commitTimestamp,
+          });
+          counts.revenueLines = revenueResult.counts.inserted + revenueResult.counts.updated;
+        }
+
+        // Write EXPENDITURE incrementally
+        let costResult = null;
+        if (matchedCost.length > 0) {
+          costResult = await writeExpenditureIncremental({
+            tx, projectId, projectName, runId, userId,
+            matchedRows: matchedCost,
+            mergeResults: conflictMergeResults,
+            conflictDecisions: v2Decisions,
+            commitTimestamp,
+          });
+          counts.costLines = costResult.counts.inserted + costResult.counts.updated;
+        }
+
+        v2Result = {
+          sections: {
+            PLAN: planResult,
+            REVENUE: revenueResult,
+            EXPENDITURE: costResult,
+          },
+          totalInserted: (planResult?.counts.inserted || 0) + (revenueResult?.counts.inserted || 0) + (costResult?.counts.inserted || 0),
+          totalUpdated: (planResult?.counts.updated || 0) + (revenueResult?.counts.updated || 0) + (costResult?.counts.updated || 0),
+          totalUnchanged: (planResult?.counts.unchanged || 0) + (revenueResult?.counts.unchanged || 0) + (costResult?.counts.unchanged || 0),
+          totalMissing: (planResult?.counts.missing || 0) + (revenueResult?.counts.missing || 0) + (costResult?.counts.missing || 0),
+        };
+
+        // Handle execution phases (simple re-insert — no temporal matching)
+        if (norm.executionPhases && norm.executionPhases.length > 0) {
+          await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, projectId));
+          const phaseValues = norm.executionPhases.map((p: any) => ({
+            projectId,
+            projectName,
+            phaseName: p.phaseName,
+            phaseDate: p.phaseDate,
+            source: "EXCEL_IMPORT" as const,
+            importRunId: runId,
+          }));
+          await tx.insert(normalizedExecutionPhases).values(phaseValues);
+          counts.executionPhases = phaseValues.length;
+        }
+
+        // Update project info from detected metadata (same as v1)
+        const detectedInfo = summary.detection?.projectInfo;
+        if (detectedInfo && projectId) {
+          const VALID_PHASES = ["dlp", "financial close", "planning", "construction", "qa", "handover", "commercial close out", "compliance handover", "hold"];
+          const [existingProject] = await tx.select({ pm: projectInfo.pm, pd: projectInfo.pd }).from(projectInfo).where(eq(projectInfo.id, projectId));
+          const updates: Record<string, any> = {};
+          if (detectedInfo.sizeKwp) updates.sizeKwp = String(detectedInfo.sizeKwp);
+          if (detectedInfo.pd && (!existingProject?.pd || !existingProject.pd.trim())) updates.pd = String(detectedInfo.pd);
+          if (detectedInfo.pm && (!existingProject?.pm || !existingProject.pm.trim())) updates.pm = String(detectedInfo.pm);
+          if (detectedInfo.contractValue) updates.contractValue = String(detectedInfo.contractValue);
+          const rawPhase = detectedInfo.phase ? String(detectedInfo.phase).trim() : null;
+          if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {
+            updates.phase = rawPhase;
+            updates.executionPhase = rawPhase;
+            updates.phaseUpdatedAt = new Date();
+          }
+          if (Object.keys(updates).length > 0) {
+            updates.updatedAt = new Date();
+            await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, projectId));
+            await syncProjectSplitTables(projectId, updates, tx);
+          }
+        }
+
+        // Finalize: mark as committed
+        const totalAttempted = (norm.planTasks?.length || 0) + (norm.revenueLines?.length || 0) + (norm.costLines?.length || 0) + (norm.executionPhases?.length || 0);
+        const totalSucceeded = (counts.planTasks || 0) + (counts.revenueLines || 0) + (counts.costLines || 0) + (counts.executionPhases || 0);
+        const totalFailed = totalAttempted - totalSucceeded;
+        const detectedSections: string[] = [];
+        if (norm.planTasks?.length > 0) detectedSections.push("PLAN");
+        if (norm.revenueLines?.length > 0) detectedSections.push("REVENUE");
+        if (norm.costLines?.length > 0) detectedSections.push("EXPENDITURE");
+
+        await tx.update(smartImportRuns).set({
+          status: "COMMITTED",
+          committedAt: new Date(),
+          committedBy: userId,
+          recordsAttempted: totalAttempted,
+          recordsSucceeded: totalSucceeded,
+          recordsFailed: totalFailed,
+          importType: detectedSections.join(","),
+        }).where(eq(smartImportRuns.id, runId));
+      }
+      // ── End v2 incremental commit path ──
+
+      // ── v1 fallback path (runs when v2 is disabled) ──
+      if (!useV2) {
+
       const existingTaskOwners = new Map<string, string>();
       {
         const existingWiTasks = projectId
@@ -2646,6 +2807,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           importType: detectedSections.join(","),
         })
         .where(eq(smartImportRuns.id, runId));
+
+      } // end if (!useV2) — v1 fallback path
     });
 
     // Record audit ChangeSet for the import commit

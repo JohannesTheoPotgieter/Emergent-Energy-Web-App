@@ -365,8 +365,123 @@ PlannerResult.conflicts: {
 | `smart-import-authorization.test.ts` | 14 | Permission checks |
 | `smart-import-storage-retention.test.ts` | 1 | Temporal retention |
 
-### Remaining gaps before UX phase
+### Remaining gaps (resolved in Phase 5)
 
-1. **Commit does not yet apply v2 merge decisions to the actual write path.** The commit handler still uses the v1 full-replace strategy. The v2 conflict gate blocks/allows commit, and resolutions are logged, but the write path itself doesn't do incremental UPDATE-in-place. This is Phase 5 work.
+1. ~~Commit does not yet apply v2 merge decisions to the actual write path.~~ → Resolved in Phase 5.
 2. **No frontend conflict resolution UI yet.** The API shape is ready for it.
 3. **No backfill of milestoneNo for existing rows.** New imports will persist it; old rows will have NULL.
+
+---
+
+## Phase 5: Incremental Commit Write Path
+
+**Date:** 2026-04-08
+**Status:** COMPLETE
+
+---
+
+### What was changed
+
+#### New files created
+
+| File | Purpose |
+|------|---------|
+| `server/lib/import/commit-executor.ts` | Incremental write functions for PLAN/REVENUE/EXPENDITURE — replaces v1 blanket-replace with targeted INSERT/UPDATE/SKIP |
+| `qa/tests/unit/smart-import-incremental-commit.test.ts` | 39 tests for incremental commit behavior |
+
+#### Existing files modified
+
+| File | Changes |
+|------|---------|
+| `server/smart-import-routes.ts` | Added v2 incremental commit path inside the transaction, gated by `useV2` flag. v1 full-replace is preserved as fallback behind `if (!useV2)`. Imported new modules. |
+
+### How the v2 commit path works
+
+Inside the commit transaction, the handler now has two branches:
+
+```
+if (useV2 = !skipV2ConflictCheck && projectId) {
+  // V2 INCREMENTAL PATH:
+  // 1. Load current state from canonical tables
+  // 2. Run row matching (matchRows per section)
+  // 3. Run 3-way conflict engine (baseline vs current vs file)
+  // 4. For each section, call incremental writer:
+  //    - UNCHANGED → skip (no DB write, row keeps its id)
+  //    - NEW       → insert into canonical table
+  //    - CHANGED   → update-in-place (PLAN) or soft-close+replace (REVENUE/EXPENDITURE)
+  //    - MISSING   → keep (not deleted, not soft-closed)
+  // 5. Mark run as COMMITTED
+} else {
+  // V1 FALLBACK:
+  // Original soft-close-all + re-insert-all behavior
+}
+```
+
+### Canonical write targets (unchanged from spine audit)
+
+| Section | Canonical table | Write strategy |
+|---------|----------------|----------------|
+| **PLAN** | `work_items` | UPDATE-in-place for CHANGED rows; INSERT for NEW rows |
+| **REVENUE** | `normalized_revenue_lines` | Soft-close specific row + INSERT replacement for CHANGED; INSERT for NEW |
+| **EXPENDITURE** | `normalized_cost_lines` | Soft-close specific row + INSERT replacement for CHANGED; INSERT for NEW |
+
+### Missing row policy
+
+| Section | Policy | Rationale |
+|---------|--------|-----------|
+| PLAN | **Keep** — missing rows are not deleted | The file may be a partial export. Safe default. |
+| REVENUE | **Keep** — missing rows are not soft-closed | Same rationale. |
+| EXPENDITURE | **Keep** — missing rows are not soft-closed | Same rationale. |
+
+Missing rows increment `counts.missing` and are reported in the commit result, but no destructive action is taken. If the business requires explicit deletion of missing rows, this can be added as a per-section policy flag in a future phase.
+
+### What was removed from the hot path
+
+The v2 path does NOT call:
+- `softCloseByProjectId(tx, "normalized_revenue_lines", projectId)` — no blanket close
+- `softCloseByProjectId(tx, "normalized_cost_lines", projectId)` — no blanket close
+- `tx.delete(workItems).where(...)` — no blanket delete of plan rows
+- `softCloseByProjectName(tx, "program_inflows", ...)` — no derivative table churn
+- `softCloseByProjectName(tx, "program_expense", ...)` — no derivative table churn
+
+### Derivative tables
+
+In the v2 path, derivative/helper tables (`programExpense`, `programInflows`, `expenseTaskLinks`) are NOT touched during the incremental commit. This is intentional:
+- The canonical tables are the source of truth
+- Derivative tables are populated by downstream refresh mechanisms
+- Existing `expenseTaskLinks` references remain valid because canonical row IDs are stable
+- `refreshProjectMetricsAsync(projectId)` is still called after commit to update dashboard metrics
+
+### App-owned field preservation
+
+When a CHANGED row is soft-closed and replaced (REVENUE/EXPENDITURE), the replacement row carries forward:
+- `adminDateOverride`, `adminDateOverrideReason`, `adminDateOverrideBy`, `adminDateOverrideAt`
+- `cosRealised`, `cashflowConfirmed`, `noRevenueLinked` (EXPENDITURE)
+- `invoiceDateConfirmed`, `paidDateConfirmed` (preserved from existing row)
+
+### Rollback note
+
+The existing rollback endpoint (`POST /:runId/rollback`) uses `softCloseByImportRunId` which closes rows by their `importRunId`. For v2 incremental commits:
+- NEW rows have `importRunId = runId` → rollback will soft-close them correctly
+- CHANGED rows create new temporal versions with `importRunId = runId` → rollback soft-closes the new versions
+- UNCHANGED rows are not touched → rollback correctly ignores them
+- The v1 rollback mechanism is compatible with v2 writes.
+
+### Test Coverage
+
+154 total tests across 6 test files, all passing:
+
+| File | Tests | Coverage |
+|------|-------|---------|
+| `smart-import-incremental-commit.test.ts` | 39 | Commit executor module, resolveFieldValues, v2 route gating, canonical targets, UNCHANGED skip, MISSING policy, temporal handling, audit trail |
+| `smart-import-conflict-engine.test.ts` | 43 | All merge cases (A-E), row merge, section merge, canonical sources, commit gate, milestoneNo persistence |
+| `smart-import-planner-spine.test.ts` | 39 | Canonical source alignment, row matcher, identity keys |
+| `smart-import-commit-guard.test.ts` | 18 | Atomic commit guard |
+| `smart-import-authorization.test.ts` | 14 | Permission checks |
+| `smart-import-storage-retention.test.ts` | 1 | Temporal retention |
+
+### Remaining gaps before UX phase
+
+1. **No frontend conflict resolution UI yet.** The API shape and preview payload are ready.
+2. **Derivative tables (programExpense, programInflows) are not updated by v2 path.** They rely on downstream refresh. If any screen still reads from these tables directly, those reads may show stale data after a v2 incremental commit until the next full v1 import or manual refresh.
+3. **No backfill of milestoneNo for existing rows.** New imports persist it; old rows have NULL.
