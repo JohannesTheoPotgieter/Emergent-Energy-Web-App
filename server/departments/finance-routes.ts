@@ -47,8 +47,33 @@ import {
   getCosEffectiveDateAndSource,
   getOutflowAmountBreakdown,
 } from "../lib/expense-row-selector";
+import {
+  getCanonicalAllCurrentCostLines,
+  getCanonicalCostLineDiagnostics,
+  getCostLineRiskDiagnostics,
+  getCanonicalProjectCostLines,
+  getCanonicalProjectCostLinesByName,
+  resolveProjectIdByName,
+} from "../services/project-cost-line-read-service";
+import { getFeatureFlag } from "../lib/feature-flags";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
+const CANONICAL_FINANCE_COSTLINE_READ_FLAG = "canonical_finance_costline_read_v1";
+
+async function isCanonicalFinanceCostlineReadEnabled(): Promise<boolean> {
+  return getFeatureFlag(CANONICAL_FINANCE_COSTLINE_READ_FLAG);
+}
+
+async function getHighRiskProjectCostReadRows(projectName: string, projectIdParam?: number | null): Promise<any[]> {
+  if (!(await isCanonicalFinanceCostlineReadEnabled())) {
+    return storage.getProgramExpensesByProject(projectName);
+  }
+
+  if (projectIdParam != null && Number.isFinite(projectIdParam)) {
+    return getCanonicalProjectCostLines(projectIdParam as number);
+  }
+  return getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
+}
 
 function requireAdminOrFinancialEditor(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
@@ -1614,7 +1639,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
-    const projectExpenses = await storage.getProgramExpensesByProject(projectName);
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
+    const projectExpenses = await getHighRiskProjectCostReadRows(projectName, projectIdParam);
 
     const cosByMonth = new Map<string, number>();
     const realisedByMonth = new Map<string, number>();
@@ -1649,6 +1675,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
       itemsByMonth.get(monthKey)!.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
         amount,
@@ -1826,6 +1853,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
 
       items.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         projectName: pName,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
@@ -2006,8 +2034,9 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
 router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const [projectExpenses, revLines, manualEntries] = await Promise.all([
-      storage.getProgramExpensesByProject(projectName),
+      getHighRiskProjectCostReadRows(projectName, projectIdParam),
       storage.getProgramInflowsByProject(projectName),
       storage.getTrackerMonthlyManual('REV'),
     ]);
@@ -2059,6 +2088,7 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
       if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
       itemsByMonth.get(monthKey)!.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
         costAmount: amount,
@@ -2301,8 +2331,9 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
 router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const [projectExpenses, revLines, cosOverrideMapProj] = await Promise.all([
-      storage.getProgramExpensesByProject(projectName),
+      getHighRiskProjectCostReadRows(projectName, projectIdParam),
       storage.getProgramInflowsByProject(projectName),
       Promise.resolve(new Map()),
     ]);
@@ -2360,6 +2391,7 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
       if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
       itemsByMonth.get(monthKey)!.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
         costAmount: amount,
@@ -2496,6 +2528,7 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
 
       items.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         projectName: pName,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
@@ -2687,7 +2720,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
     const [allExpenses, cosOverrideMapRMD] = await Promise.all([
-      project ? storage.getProgramExpensesByProject(project) : storage.getAllCostLinesForCashflow(),
+      project ? getCanonicalProjectCostLinesByName(project).then((r) => r.rows) : getCanonicalAllCurrentCostLines(),
       Promise.resolve(new Map()),
     ]);
 
@@ -2745,6 +2778,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
 
       items.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         projectName: pName,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
@@ -2773,11 +2807,17 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let expenses;
+    const canonicalEnabled = await isCanonicalFinanceCostlineReadEnabled();
 
-    if (projectName && typeof projectName === 'string') {
-      expenses = await storage.getProgramExpensesByProject(projectName);
+    if (canonicalEnabled && projectName && typeof projectName === 'string') {
+      const resolvedProjectId = await resolveProjectIdByName(projectName);
+      expenses = resolvedProjectId ? await getCanonicalProjectCostLines(resolvedProjectId) : [];
 
       // Override data now baked into base rows
+    } else if (canonicalEnabled) {
+      expenses = await getCanonicalAllCurrentCostLines();
+    } else if (projectName && typeof projectName === 'string') {
+      expenses = await storage.getProgramExpensesByProject(projectName);
     } else {
       expenses = await storage.getAllProgramExpenses();
     }
@@ -2798,12 +2838,80 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
 router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.params;
+    const canonicalEnabled = await isCanonicalFinanceCostlineReadEnabled();
 
-    let expenses = await storage.getProgramExpensesByProject(projectName);
+    const expenses = canonicalEnabled
+      ? await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows)
+      : await storage.getProgramExpensesByProject(projectName);
 
     res.json(expenses);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
+  }
+});
+
+router.get("/api/finance/cost-lines/diagnostics", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
+    const scopedProjectId = Number.isFinite(projectIdParam) ? projectIdParam! : undefined;
+    const [canonicalDiagnostics, riskDiagnostics, canonicalReadEnabled] = await Promise.all([
+      getCanonicalCostLineDiagnostics(scopedProjectId),
+      getCostLineRiskDiagnostics(scopedProjectId),
+      isCanonicalFinanceCostlineReadEnabled(),
+    ]);
+    res.json({
+      featureFlag: {
+        key: CANONICAL_FINANCE_COSTLINE_READ_FLAG,
+        enabled: canonicalReadEnabled,
+      },
+      canonical: canonicalDiagnostics,
+      risks: riskDiagnostics,
+    });
+  } catch (error) {
+    console.error("Cost-line diagnostics error:", error);
+    res.status(500).json({ error: "Failed to fetch cost-line diagnostics" });
+  }
+});
+
+router.get("/api/finance/cost-lines/rollout-report", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const projectIds = String(req.query.projectIds || "")
+      .split(",")
+      .map((v) => parseInt(v.trim(), 10))
+      .filter((v) => Number.isFinite(v));
+
+    if (projectIds.length === 0) {
+      return res.status(400).json({ error: "projectIds query param is required (comma-separated integers)" });
+    }
+
+    const report = await Promise.all(projectIds.map(async (projectId) => {
+      const [canonicalRows, legacyRows] = await Promise.all([
+        getCanonicalProjectCostLines(projectId),
+        db.select().from(programExpense).where(and(eq(programExpense.projectId, projectId), isNull(programExpense.effectiveTo))),
+      ]);
+
+      const canonicalTotal = canonicalRows.reduce((sum: number, row: any) => sum + (parseFloat(String(row.expenseActualTotal || "0")) || 0), 0);
+      const legacyTotal = (legacyRows as any[]).reduce((sum: number, row: any) => sum + (parseFloat(String(row.expenseActualTotal || "0")) || 0), 0);
+
+      return {
+        projectId,
+        canonical: { rowCount: canonicalRows.length, totalExpenseActual: canonicalTotal },
+        legacy: { rowCount: legacyRows.length, totalExpenseActual: legacyTotal },
+        delta: {
+          rowCount: canonicalRows.length - legacyRows.length,
+          totalExpenseActual: canonicalTotal - legacyTotal,
+        },
+      };
+    }));
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      projectIds,
+      report,
+    });
+  } catch (error) {
+    console.error("Cost-line rollout report error:", error);
+    res.status(500).json({ error: "Failed to generate rollout report" });
   }
 });
 
@@ -2865,8 +2973,8 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
     // Override data now baked into base rows
 
     const expenses = projectName
-      ? await storage.getProgramExpensesByProject(projectName)
-      : await storage.getAllProgramExpenses();
+      ? await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows)
+      : await getCanonicalAllCurrentCostLines();
 
     const [rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
       projectName ? storage.getProgramInflowsByProject(projectName) : storage.getAllProgramInflows(),
@@ -4332,8 +4440,12 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
 router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = req.params.projectName;
-    const [expenses, taskLinks, opTasks, planTasks, projectRows, revSummary] = await Promise.all([
-      storage.getProgramExpensesByProject(projectName),
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
+    const [projectLookup, taskLinks, opTasks, planTasks, projectRows, revSummary] = await Promise.all([
+      getHighRiskProjectCostReadRows(projectName, projectIdParam).then((rows) => ({
+        projectId: Number.isFinite(projectIdParam) ? (projectIdParam as number) : null,
+        rows,
+      })),
       storage.getExpenseTaskLinks(projectName),
       storage.getOperationalTasksByProject(projectName),
       storage.getProjectPlansByProject(projectName),
@@ -4347,6 +4459,7 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         .limit(1),
       storage.getProjectRevenueSummary(projectName),
     ]);
+    const expenses = projectLookup.rows;
 
     const cosOverrideByExpenseId = new Map();
     const cosOverrideByRow = new Map();
