@@ -61,6 +61,21 @@ router.patch("/api/construction/activities/:id", requireAuth, async (req: Reques
   }
 });
 
+router.delete("/api/construction/activities/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(siteActivities)
+      .set({ deletedAt: new Date() })
+      .where(eq(siteActivities.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Site activity not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[Construction] Failed to delete site activity:", err);
+    res.status(500).json({ error: "Failed to delete site activity" });
+  }
+});
+
 // ===================== SNAGS =====================
 
 router.get("/api/construction/snags", requireAuth, async (req: Request, res: Response) => {
@@ -106,6 +121,21 @@ router.patch("/api/construction/snags/:id", requireAuth, async (req: Request, re
   }
 });
 
+router.delete("/api/construction/snags/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(snags)
+      .set({ deletedAt: new Date() })
+      .where(eq(snags.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Snag not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[Construction] Failed to delete snag:", err);
+    res.status(500).json({ error: "Failed to delete snag" });
+  }
+});
+
 // ===================== SITE INSPECTIONS =====================
 
 router.get("/api/construction/inspections", requireAuth, async (req: Request, res: Response) => {
@@ -148,6 +178,21 @@ router.patch("/api/construction/inspections/:id", requireAuth, async (req: Reque
   } catch (err) {
     console.error("[Construction] Failed to update inspection:", err);
     res.status(500).json({ error: "Failed to update inspection" });
+  }
+});
+
+router.delete("/api/construction/inspections/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(siteInspections)
+      .set({ deletedAt: new Date() })
+      .where(eq(siteInspections.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Inspection not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[Construction] Failed to delete inspection:", err);
+    res.status(500).json({ error: "Failed to delete inspection" });
   }
 });
 
