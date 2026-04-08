@@ -16,7 +16,7 @@ function readFile(relPath: string): string {
  */
 
 describe("enrichMytoolTasks dependency canonicalization", () => {
-  const src = readFile("server/routes.ts");
+  const src = readFile("server/routes/mytool-routes.ts");
   const fnStart = src.indexOf("async function enrichMytoolTasks");
   const fnEnd = src.indexOf("async function refreshDependentTaskStates");
   const fn = src.slice(fnStart, fnEnd);
@@ -49,7 +49,7 @@ describe("enrichMytoolTasks dependency canonicalization", () => {
 });
 
 describe("GET /api/mytool/tasks/:id/dependencies — canonical", () => {
-  const src = readFile("server/routes.ts");
+  const src = readFile("server/routes/mytool-routes.ts");
   const routeStart = src.indexOf('app.get("/api/mytool/tasks/:id/dependencies"');
   const routeEnd = src.indexOf('app.post("/api/mytool/tasks/:id/dependencies"');
   const route = src.slice(routeStart, routeEnd);
@@ -74,7 +74,7 @@ describe("GET /api/mytool/tasks/:id/dependencies — canonical", () => {
 });
 
 describe("POST /api/mytool/tasks/:id/dependencies — canonical", () => {
-  const src = readFile("server/routes.ts");
+  const src = readFile("server/routes/mytool-routes.ts");
   const routeStart = src.indexOf('app.post("/api/mytool/tasks/:id/dependencies"');
   const routeEnd = src.indexOf('app.delete("/api/mytool/tasks/:id/dependencies');
   const route = src.slice(routeStart, routeEnd);
@@ -100,7 +100,7 @@ describe("POST /api/mytool/tasks/:id/dependencies — canonical", () => {
 });
 
 describe("DELETE /api/mytool/tasks/:id/dependencies/:dependencyId — canonical", () => {
-  const src = readFile("server/routes.ts");
+  const src = readFile("server/routes/mytool-routes.ts");
   const deleteStart = src.indexOf('app.delete("/api/mytool/tasks/:id/dependencies/:dependencyId"');
   const deleteEnd = src.indexOf('app.get("/api/mytool/recurrence-templates"');
   const route = src.slice(deleteStart, deleteEnd);
@@ -117,7 +117,7 @@ describe("DELETE /api/mytool/tasks/:id/dependencies/:dependencyId — canonical"
 });
 
 describe("dependency type mapping", () => {
-  const src = readFile("server/routes.ts");
+  const src = readFile("server/routes/mytool-routes.ts");
 
   it("defines canonical-to-legacy mapping", () => {
     expect(src).toContain('FS: "finish_to_start"');
@@ -135,7 +135,7 @@ describe("dependency type mapping", () => {
 });
 
 describe("no active runtime mytoolTaskDependencies writes remain", () => {
-  const src = readFile("server/routes.ts");
+  const src = readFile("server/routes/mytool-routes.ts");
 
   it("does NOT insert into mytoolTaskDependencies", () => {
     expect(src).not.toMatch(/\.insert\(mytoolTaskDependencies\)/);
