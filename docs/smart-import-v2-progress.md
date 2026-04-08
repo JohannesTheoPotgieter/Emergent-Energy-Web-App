@@ -672,3 +672,56 @@ See `docs/smart-import-v2-known-limitations.md` for full details. Summary:
 5. Duplicate business key edge case
 6. Multi-project tracker naming sensitivity
 7. Plan hierarchy re-linking not done by v2 incremental path
+
+---
+
+## Phase 8: UAT & Release-Candidate Assessment
+
+**Date:** 2026-04-08
+**Status:** COMPLETE
+
+---
+
+### Verdict
+
+**Go / No-Go: GO — with conditions**
+**Plug-and-Play: YES WITH CONDITIONS**
+
+### What was assessed
+
+- End-to-end flow: upload → plan → conflict → commit → response (all PASS)
+- DB schema compatibility (all columns present, migration ready)
+- Data compatibility (pre-v2 rows safe, two duplicate-key risks documented)
+- High-risk edge cases tested with actual row-matcher logic
+- v1 fallback isolation verified
+- Post-commit messaging verified as honest
+
+### Defects found
+
+| ID | Severity | Description |
+|----|----------|-------------|
+| D1 | HIGH | Duplicate revenue business key collision: two milestones with same name in one file match the same DB row |
+| D2 | HIGH | Duplicate cost business key collision: same issue for cost lines without invoice numbers |
+| D3 | MEDIUM | Plan hierarchy (parentId) not re-linked on v2 incremental update |
+
+These are all pre-documented known limitations (items 5, 6, 8 in known-limitations.md). They do not block pilot rollout on well-formed trackers.
+
+### Code changes
+
+| Change | Detail |
+|--------|--------|
+| v2Result scope fix | Moved `v2Result` declaration outside transaction for response inclusion (done in Phase 7) |
+| Commit response v2 field | Response includes `v2: { totalInserted, totalUpdated, totalUnchanged, totalMissing }` (done in Phase 7) |
+
+No new code changes were needed in Phase 8. The system is code-complete.
+
+### Deliverable
+
+`docs/smart-import-v2-uat-report.md` — full UAT report with:
+- 30+ tested scenarios (all PASS)
+- Schema compatibility verdict (READY)
+- Data compatibility verdict (READY WITH KNOWN RISKS)
+- 3 defects classified (2 HIGH, 1 MEDIUM — none BLOCKER)
+- Pilot rollout guardrails
+- Rollback guidance
+- GO recommendation with conditions
