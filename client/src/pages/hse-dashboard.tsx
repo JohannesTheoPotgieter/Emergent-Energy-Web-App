@@ -10,11 +10,11 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { PageShell, SectionHeader } from "@/components/layout/page-shell";
 import { useToast } from "@/hooks/use-toast";
-import { ShieldAlert, AlertTriangle, CheckCircle2, Clock, Plus } from "lucide-react";
+import { ShieldAlert, AlertTriangle, CheckCircle2, Clock, Plus, Pencil } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { PageError, PageSkeleton } from "@/components/ui/page-states";
 
-interface HseIncidentSummary { id: number; incidentType: string; severity: string; description: string; status: string; incidentDate: string; }
+interface HseIncidentSummary { id: number; incidentType: string; severity: string; description: string; status: string; incidentDate: string; location: string | null; evidenceLink: string | null; }
 interface CorrectiveActionSummary { id: number; title: string; sourceType: string; status: string; dueDate: string | null; }
 
 function incidentTypeBadge(t: string) {
@@ -56,6 +56,8 @@ export default function HseDashboardPage() {
   const [tab, setTab] = useState<"incidents" | "corrective_actions">("incidents");
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ incidentType: "near_miss", severity: "low", description: "", location: "", evidenceLink: "", incidentDate: new Date().toISOString().slice(0, 10) });
+  const [editingIncident, setEditingIncident] = useState<HseIncidentSummary | null>(null);
+  const [editForm, setEditForm] = useState({ incidentType: "near_miss", severity: "low", description: "", location: "", evidenceLink: "", incidentDate: new Date().toISOString().slice(0, 10) });
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -72,6 +74,46 @@ export default function HseDashboardPage() {
     },
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
   });
+
+  const editMutation = useMutation({
+    mutationFn: async ({ id, body }: { id: number; body: Record<string, unknown> }) => {
+      const res = await apiRequest("PATCH", `/api/hse/incidents/${id}`, body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/hse/incidents"] });
+      toast({ title: "Incident updated" });
+      setEditingIncident(null);
+    },
+    onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+  });
+
+  function openEditIncident(incident: HseIncidentSummary) {
+    setEditingIncident(incident);
+    setEditForm({
+      incidentType: incident.incidentType,
+      severity: incident.severity,
+      description: incident.description,
+      location: incident.location || "",
+      evidenceLink: incident.evidenceLink || "",
+      incidentDate: incident.incidentDate,
+    });
+  }
+
+  function handleEditSubmit() {
+    if (!editingIncident) return;
+    editMutation.mutate({
+      id: editingIncident.id,
+      body: {
+        incidentType: editForm.incidentType,
+        severity: editForm.severity,
+        description: editForm.description,
+        incidentDate: editForm.incidentDate,
+        location: editForm.location || null,
+        evidenceLink: editForm.evidenceLink || null,
+      },
+    });
+  }
 
   const { data: incidents = [], isLoading: incidentsLoading, isError, error, refetch } = useQuery<HseIncidentSummary[]>({
     queryKey: ["/api/hse/incidents"],
@@ -173,6 +215,9 @@ export default function HseDashboardPage() {
                   </Badge>
                   <Badge className={`text-[10px] ${severityBadge(incident.severity)}`}>{incident.severity}</Badge>
                   <span className="text-xs text-muted-foreground ml-auto">{incident.incidentDate}</span>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditIncident(incident)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
                 <p className="text-sm truncate">{incident.description}</p>
               </CardContent>
@@ -223,6 +268,27 @@ export default function HseDashboardPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreate(false)}>Cancel</Button>
             <Button onClick={() => createMutation.mutate({ projectId: 0, incidentType: form.incidentType, severity: form.severity, description: form.description, incidentDate: form.incidentDate, location: form.location || null, evidenceLink: form.evidenceLink || null })} disabled={!form.description.trim() || createMutation.isPending}>Report</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Incident Dialog */}
+      <Dialog open={!!editingIncident} onOpenChange={(v) => { if (!v) setEditingIncident(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Edit HSE Incident</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label className="text-xs">Type *</Label><SearchableSelect value={editForm.incidentType} onValueChange={v => setEditForm(f => ({ ...f, incidentType: v }))} options={INCIDENT_TYPES} /></div>
+              <div><Label className="text-xs">Severity *</Label><SearchableSelect value={editForm.severity} onValueChange={v => setEditForm(f => ({ ...f, severity: v }))} options={SEVERITIES} /></div>
+            </div>
+            <div><Label className="text-xs">Date</Label><Input type="date" value={editForm.incidentDate} onChange={e => setEditForm(f => ({ ...f, incidentDate: e.target.value }))} /></div>
+            <div><Label className="text-xs">Description *</Label><Textarea value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} placeholder="What happened?" className="min-h-[80px]" /></div>
+            <div><Label className="text-xs">Location</Label><Input value={editForm.location} onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))} placeholder="Where did it occur?" /></div>
+            <div><Label className="text-xs">Evidence Link</Label><Input value={editForm.evidenceLink} onChange={e => setEditForm(f => ({ ...f, evidenceLink: e.target.value }))} placeholder="https://sharepoint..." /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingIncident(null)}>Cancel</Button>
+            <Button onClick={handleEditSubmit} disabled={!editForm.description.trim() || editMutation.isPending}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
