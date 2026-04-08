@@ -592,12 +592,46 @@ export function registerEngineeringRoutes(app: Express) {
         data.status = "TO DO";
       }
 
-      // Resolve projectName to projectId if projectId is not provided
-      let resolvedProjectId = data.projectId || null;
-      if (!resolvedProjectId && data.projectName) {
+      // Primary path: projectId from client. Fallback: projectName for backwards compatibility.
+      let resolvedProjectId: number | null = Number.isInteger(data.projectId) ? data.projectId : null;
+      if (resolvedProjectId) {
+        const [projectById] = await db.select({ id: projectInfo.id }).from(projectInfo)
+          .where(eq(projectInfo.id, resolvedProjectId)).limit(1);
+        if (!projectById) {
+          console.warn("[Engineering] task create validation failed: invalid projectId", { projectId: data.projectId, userId: getUser(req).id });
+          return sendError(res, badRequest("Selected project could not be resolved. Please re-select the project."));
+        }
+      } else if (typeof data.projectName === "string" && data.projectName.trim()) {
+        const projectName = data.projectName.trim();
         const [project] = await db.select({ id: projectInfo.id }).from(projectInfo)
-          .where(eq(projectInfo.projectName, data.projectName)).limit(1);
+          .where(or(
+            eq(projectInfo.projectName, projectName),
+            sql`REPLACE(REGEXP_REPLACE(${projectInfo.projectName}, '_Tracker.*$', ''), '_', ' ') = ${projectName}`,
+          ))
+          .limit(1);
         if (project) resolvedProjectId = project.id;
+      }
+
+      if (!resolvedProjectId) {
+        console.warn("[Engineering] task create validation failed: unresolved project selection", {
+          projectId: data.projectId ?? null,
+          projectName: data.projectName ?? null,
+          userId: getUser(req).id,
+        });
+        return sendError(res, badRequest("Selected project could not be resolved. Please re-select the project."));
+      }
+
+      if (data.ownerUserId !== undefined && data.ownerUserId !== null && data.ownerUserId !== "") {
+        const ownerUserId = Number(data.ownerUserId);
+        if (!Number.isInteger(ownerUserId) || ownerUserId <= 0) {
+          return sendError(res, badRequest("Selected assignee is invalid. Please re-select the assignee."));
+        }
+        const [ownerExists] = await db.select({ id: users.id }).from(users).where(eq(users.id, ownerUserId)).limit(1);
+        if (!ownerExists) {
+          console.warn("[Engineering] task create validation failed: invalid ownerUserId", { ownerUserId, userId: getUser(req).id });
+          return sendError(res, badRequest("Selected assignee is invalid. Please re-select the assignee."));
+        }
+        data.ownerUserId = ownerUserId;
       }
 
       if (data.assignees?.length > 0) {
