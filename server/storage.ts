@@ -4,6 +4,7 @@ import { UsersRepository } from "./repositories/users-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
 import { SupportTicketsRepository } from "./repositories/support-tickets-repository";
 import { MytoolStateRepository } from "./repositories/mytool-state-repository";
+import { ProjectSupportRepository } from "./repositories/project-support-repository";
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
@@ -13,8 +14,8 @@ import {
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   workingPlanScenario, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
-  projectRevenueSummary, homeNotes,
-  projectEditableFields, cashflowWeeklyManual, cashflowBalanceHistory, opexBudgetMonthly, trackerMonthlyManual,
+  projectRevenueSummary,
+  cashflowWeeklyManual, cashflowBalanceHistory, opexBudgetMonthly, trackerMonthlyManual,
   taskComments, taskChecklists, taskChecklistItems, taskAttachments, taskActivityLog, writebackMappings, writebackAuditLog,
   type User, type InsertUser,
   type Project, type InsertProject,
@@ -421,6 +422,7 @@ export class DatabaseStorage implements IStorage {
   private readonly workManagementRepository: WorkManagementRepository;
   private readonly supportTicketsRepository: SupportTicketsRepository;
   private readonly mytoolStateRepository: MytoolStateRepository;
+  private readonly projectSupportRepository: ProjectSupportRepository;
 
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -433,6 +435,7 @@ export class DatabaseStorage implements IStorage {
     this.workManagementRepository = new WorkManagementRepository(this.dbInstance);
     this.supportTicketsRepository = new SupportTicketsRepository(this.dbInstance);
     this.mytoolStateRepository = new MytoolStateRepository(this.dbInstance);
+    this.projectSupportRepository = new ProjectSupportRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -2003,44 +2006,23 @@ export class DatabaseStorage implements IStorage {
 
   // Home Notes
   async getHomeNotes(): Promise<HomeNotes | undefined> {
-    const results = await this.dbInstance.select().from(homeNotes).orderBy(desc(homeNotes.updatedAt)).limit(1);
-    return results[0];
+    return this.projectSupportRepository.getHomeNotes();
   }
 
   async saveHomeNotes(notes: InsertHomeNotes): Promise<HomeNotes> {
-    const existing = await this.getHomeNotes();
-    if (existing) {
-      const updated = await this.dbInstance.update(homeNotes)
-        .set({ ...notes, updatedAt: new Date() })
-        .where(eq(homeNotes.id, existing.id))
-        .returning();
-      return updated[0];
-    } else {
-      const inserted = await this.dbInstance.insert(homeNotes).values(notes).returning();
-      return inserted[0];
-    }
+    return this.projectSupportRepository.saveHomeNotes(notes);
   }
 
   async getProjectEditableFields(projectName: string): Promise<ProjectEditableFields | undefined> {
-    const results = await this.dbInstance.select().from(projectEditableFields).where(eq(projectEditableFields.projectName, projectName));
-    return results[0];
+    return this.projectSupportRepository.getProjectEditableFields(projectName);
   }
 
   async getAllProjectEditableFields(): Promise<ProjectEditableFields[]> {
-    return this.dbInstance.select().from(projectEditableFields);
+    return this.projectSupportRepository.getAllProjectEditableFields();
   }
 
   async upsertProjectEditableFields(data: InsertProjectEditableFields): Promise<ProjectEditableFields> {
-    const existing = await this.getProjectEditableFields((data as any).projectName);
-    if (existing) {
-      const updated = await this.dbInstance.update(projectEditableFields)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(projectEditableFields.id, existing.id))
-        .returning();
-      return updated[0];
-    }
-    const inserted = await this.dbInstance.insert(projectEditableFields).values(data).returning();
-    return inserted[0];
+    return this.projectSupportRepository.upsertProjectEditableFields(data);
   }
 
   async getAllCashflowWeeklyManual(): Promise<CashflowWeeklyManual[]> {
