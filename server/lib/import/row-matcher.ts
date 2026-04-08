@@ -122,13 +122,22 @@ export function planBusinessKey(
 
 export function revenueBusinessKey(
   projectId: number,
-  row: { milestoneName?: string | null; description?: string | null; subProjectName?: string | null },
+  row: {
+    milestoneNo?: string | null;
+    milestoneName?: string | null;
+    description?: string | null;
+    subProjectName?: string | null;
+  },
 ): BusinessKey {
   const sub = norm(row.subProjectName);
-  // Note: milestoneNo is not available from the normalizer.
-  // The normalizer only outputs: milestoneName, description, amountExVat, etc.
-  // milestoneNo is synthesized during commit as a sequential counter.
-  // So we always use milestoneName as identity.
+
+  // The canonical table (normalizedRevenueLines) does NOT store milestoneNo,
+  // so we cannot use it as the matching key when comparing file vs DB.
+  // We always key on milestoneName for matching, but we upgrade confidence
+  // to HIGH when milestoneNo is also available on the file row (proves the
+  // milestone has a stable numeric identifier in the tracker).
+
+  const hasMilestoneNo = !!(row.milestoneNo && row.milestoneNo.trim());
 
   const name = norm(row.milestoneName) || norm(row.description);
   if (!name) {
@@ -142,8 +151,8 @@ export function revenueBusinessKey(
 
   return {
     key: compositeKey(String(projectId), sub, name),
-    keyType: "FALLBACK",
-    matchConfidence: "MEDIUM",
+    keyType: hasMilestoneNo ? "PRIMARY" : "FALLBACK",
+    matchConfidence: hasMilestoneNo ? "HIGH" : "MEDIUM",
     rowLabel: row.milestoneName || row.description || "",
   };
 }
@@ -258,7 +267,7 @@ export const PLAN_COMPARE_FIELDS = [
 ];
 
 export const REVENUE_COMPARE_FIELDS = [
-  "amountExVat", "vat", "invoiceNumber", "invoiceDate",
+  "amountExVat", "vat", "milestonePercent", "invoiceNumber", "invoiceDate",
   "expectedPaymentDate", "paidDate", "inBankDate", "status",
 ];
 

@@ -13,6 +13,25 @@
 import type { NormalizationResult } from "./normalizer";
 import { detectImportMode, loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows } from "./baseline";
 import type { ImportMode } from "./baseline";
+
+// ---------------------------------------------------------------------------
+// Canonical source declarations — the authoritative table for each section.
+// See docs/smart-import-v2-spine-alignment.md for full evidence.
+// ---------------------------------------------------------------------------
+
+/**
+ * PLAN:        work_items (source=SMART_IMPORT, workstream=PM)
+ *              — normalizedPlanTasks is a dead table (never written, never read).
+ * REVENUE:     normalized_revenue_lines (effectiveTo IS NULL)
+ *              — programInflows is a derivative for FYE tracking.
+ * EXPENDITURE: normalized_cost_lines (effectiveTo IS NULL)
+ *              — programExpense is a derivative for FYE tracking.
+ */
+export const CANONICAL_SOURCES = {
+  PLAN: "work_items",
+  REVENUE: "normalized_revenue_lines",
+  EXPENDITURE: "normalized_cost_lines",
+} as const;
 import {
   matchRows,
   type SectionType,
@@ -28,6 +47,8 @@ import {
 // ---------------------------------------------------------------------------
 
 export interface SectionPlan {
+  /** The canonical DB table used as comparison source for this section */
+  canonicalSource: string;
   /** Number of rows classified as NEW */
   newCount: number;
   /** Number of rows classified as CHANGED */
@@ -80,6 +101,7 @@ export interface PlannerResult {
 // ---------------------------------------------------------------------------
 
 function buildSectionPlan(
+  canonicalSource: string,
   matchedRows: MatchedRow[],
   fileRowCount: number,
   existingRowCount: number,
@@ -115,6 +137,7 @@ function buildSectionPlan(
   }
 
   return {
+    canonicalSource,
     newCount,
     changedCount,
     unchangedCount,
@@ -171,19 +194,19 @@ export async function runImportPlanner(
 
   if (normalization.planTasks.length > 0 || planRows.length > 0) {
     const matched = matchRows("PLAN", projectId, normalization.planTasks, planRows as any);
-    planSection = buildSectionPlan(matched, normalization.planTasks.length, planRows.length);
+    planSection = buildSectionPlan(CANONICAL_SOURCES.PLAN, matched, normalization.planTasks.length, planRows.length);
     collectWarnings(matched, "PLAN", warnings);
   }
 
   if (normalization.revenueLines.length > 0 || revenueRows.length > 0) {
     const matched = matchRows("REVENUE", projectId, normalization.revenueLines, revenueRows as any);
-    revenueSection = buildSectionPlan(matched, normalization.revenueLines.length, revenueRows.length);
+    revenueSection = buildSectionPlan(CANONICAL_SOURCES.REVENUE, matched, normalization.revenueLines.length, revenueRows.length);
     collectWarnings(matched, "REVENUE", warnings);
   }
 
   if (normalization.costLines.length > 0 || costRows.length > 0) {
     const matched = matchRows("EXPENDITURE", projectId, normalization.costLines, costRows as any);
-    expenditureSection = buildSectionPlan(matched, normalization.costLines.length, costRows.length);
+    expenditureSection = buildSectionPlan(CANONICAL_SOURCES.EXPENDITURE, matched, normalization.costLines.length, costRows.length);
     collectWarnings(matched, "EXPENDITURE", warnings);
   }
 
@@ -209,9 +232,10 @@ function buildBaselinePlan(
   warnings: string[],
   lastCommittedRunId: number | null = null,
 ): PlannerResult {
-  function baselineSectionPlan(rows: Record<string, any>[]): SectionPlan | null {
+  function baselineSectionPlan(canonicalSource: string, rows: Record<string, any>[]): SectionPlan | null {
     if (rows.length === 0) return null;
     return {
+      canonicalSource,
       newCount: rows.length,
       changedCount: 0,
       unchangedCount: 0,
@@ -237,9 +261,9 @@ function buildBaselinePlan(
     importMode: "BASELINE",
     lastCommittedRunId,
     sections: {
-      PLAN: baselineSectionPlan(normalization.planTasks),
-      REVENUE: baselineSectionPlan(normalization.revenueLines),
-      EXPENDITURE: baselineSectionPlan(normalization.costLines),
+      PLAN: baselineSectionPlan(CANONICAL_SOURCES.PLAN, normalization.planTasks),
+      REVENUE: baselineSectionPlan(CANONICAL_SOURCES.REVENUE, normalization.revenueLines),
+      EXPENDITURE: baselineSectionPlan(CANONICAL_SOURCES.EXPENDITURE, normalization.costLines),
     },
     warnings,
     generatedAt: new Date().toISOString(),
