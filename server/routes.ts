@@ -57,24 +57,10 @@ import { registerCosControlRoutes } from "./routes/cos-control-routes";
 import { registerPlanningTasksRoutes } from "./routes/planning-tasks-routes";
 import { registerDashboardRoutes } from "./routes/dashboard-routes";
 
-import { STATIC_COS_BUDGET_FY26, classifyCosStatusFull } from "./lib/calculations/financeUtils";
+import { STATIC_COS_BUDGET_FY26 } from "./lib/calculations/financeUtils";
 import { isDateConfirmedCheck, getMergedExpensesAndInflows } from "./lib/cashflow-helpers";
 
-// Unified realisation check: past-month committed costs are treated as realised.
-function isEffectivelyRealisedLocal(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  const cosStatus = classifyCosStatusFull(exp);
-  if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
-  if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
-  return false;
-}
-
-function isCashflowConfirmedCheck(exp: any): boolean {
-  const hasInvoice = !!(exp.expenseInvoiceNumber && String(exp.expenseInvoiceNumber).trim());
-  const hasPayDate = !!(exp.expensePaymentDate && String(exp.expensePaymentDate).trim());
-  if (!hasInvoice || !hasPayDate) return false;
-  const payDateConfirmed = isDateConfirmedCheck(exp.paymentDateConfirmed, exp.paymentDateFontColor);
-  return payDateConfirmed;
-}
+import { isEffectivelyRealisedLocal, isCashflowConfirmedCheck } from "./lib/finance-helpers";
 
 // Ensure uploads directory exists
 const uploadDir = path.join(process.cwd(), 'uploads');
