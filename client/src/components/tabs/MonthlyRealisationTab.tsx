@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 
 interface MonthlyRealisationTabProps {
   projectName: string;
+  projectId?: number | null;
 }
 
 interface MonthItem {
@@ -215,7 +216,7 @@ function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: P
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((item) => (
-                  <tr key={item.id} className="hover:bg-muted/40 transition-colors" data-testid={`drawer-item-${item.id}`}>
+                  <tr key={item.canonicalLineKey || item.id} className="hover:bg-muted/40 transition-colors" data-testid={`drawer-item-${item.id}`}>
                     <td className="px-4 py-2.5 text-muted-foreground max-w-[120px] truncate">{item.category || "—"}</td>
                     <td className="px-4 py-2.5 text-foreground max-w-[180px] truncate font-medium">{item.lineItem || "—"}</td>
                     <td className="px-4 py-2.5 text-muted-foreground max-w-[120px] truncate">{item.supplier || "—"}</td>
@@ -254,13 +255,16 @@ function MonthDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: P
   );
 }
 
-export function MonthlyRealisationTab({ projectName }: MonthlyRealisationTabProps) {
+export function MonthlyRealisationTab({ projectName, projectId }: MonthlyRealisationTabProps) {
   const [drawerMonth, setDrawerMonth] = useState<{ month: ProjectMonthData; defaultFilter: "all" | "realised" | "committed" | "unrealised" } | null>(null);
 
   const { data: months = [], isLoading } = useQuery<ProjectMonthData[]>({
     queryKey: ["cos-tracker-project", projectName],
     queryFn: async () => {
-      const res = await fetch(`/api/cos-tracker/project/${encodeURIComponent(projectName)}`, { credentials: "include" });
+      const params = new URLSearchParams();
+      if (projectId) params.set("projectId", String(projectId));
+      const qs = params.toString();
+      const res = await fetch(`/api/cos-tracker/project/${encodeURIComponent(projectName)}${qs ? `?${qs}` : ""}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
