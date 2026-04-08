@@ -355,6 +355,115 @@ async function runAdditiveSchemaAlignments() {
     END $$;
   `);
 
+  await safeExec("work_items view insert trigger fix", `
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items')
+         AND EXISTS (SELECT 1 FROM pg_proc WHERE proname='_work_items_view_insert') THEN
+        CREATE OR REPLACE FUNCTION public._work_items_view_insert()
+        RETURNS trigger LANGUAGE plpgsql AS $fn$
+        DECLARE
+          resolved_id INTEGER;
+        BEGIN
+          resolved_id := COALESCE(NEW.id, nextval('work_items_id_seq'));
+          INSERT INTO core.work_items (
+            id, client_id, project_id, workstream, type, source, title, description,
+            status, priority, start_date, end_date, duration, percent_complete,
+            wbs_code, outline_number, parent_id, parent_work_item_id,
+            owner_user_id, is_shared, external_ref, legacy_table, legacy_id,
+            created_by, created_at, updated_at, deleted_at,
+            scheduled_date, scheduled_start_time, scheduled_end_time,
+            expected_pct_complete, indent_level, is_milestone, phase,
+            owner_name, source_row, source_sheet, import_run_id,
+            baseline_start, baseline_end, baseline_duration, task_mode,
+            actual_start, actual_end, actual_duration, sort_order,
+            estimate_minutes, task_category, is_recurring, recurrence_frequency,
+            recurrence_interval, recurrence_days_of_week, recurrence_end_date,
+            recurrence_parent_id, sub_project_name, hold_reason, blocked_type,
+            approval_required, linked_plan_item_id, linked_deliverable_id,
+            linked_quality_item_instance_id, completed_at, tracking_rag,
+            task_type_tag, blocker_reason, pd_ticket_id, planned_hours,
+            actual_hours, bucket, pinned_today, pinned_week,
+            source_email_id, source_email_subject, next_step,
+            definition_of_done, completion_note, source_table
+          ) VALUES (
+            resolved_id, NEW.client_id, NEW.project_id, NEW.workstream, NEW.type, NEW.source, NEW.title, NEW.description,
+            NEW.status, NEW.priority, NEW.start_date, NEW.end_date, NEW.duration, NEW.percent_complete,
+            NEW.wbs_code, NEW.outline_number, NEW.parent_id, NEW.parent_id,
+            NEW.owner_user_id, NEW.is_shared, NEW.external_ref, NEW.legacy_table, NEW.legacy_id,
+            NEW.created_by, COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW()), NEW.deleted_at,
+            NEW.scheduled_date, NEW.scheduled_start_time, NEW.scheduled_end_time,
+            NEW.expected_pct_complete, NEW.indent_level, NEW.is_milestone, NEW.phase,
+            NEW.owner_name, NEW.source_row, NEW.source_sheet, NEW.import_run_id,
+            NEW.baseline_start, NEW.baseline_end, NEW.baseline_duration, NEW.task_mode,
+            NEW.actual_start, NEW.actual_end, NEW.actual_duration, COALESCE(NEW.sort_order, 0),
+            NEW.estimate_minutes, NEW.task_category, NEW.is_recurring, NEW.recurrence_frequency,
+            NEW.recurrence_interval, NEW.recurrence_days_of_week, NEW.recurrence_end_date,
+            NEW.recurrence_parent_id, NEW.sub_project_name, NEW.hold_reason, NEW.blocked_type,
+            NEW.approval_required, NEW.linked_plan_item_id, NEW.linked_deliverable_id,
+            NEW.linked_quality_item_instance_id, NEW.completed_at, NEW.tracking_rag,
+            NEW.task_type_tag, NEW.blocker_reason, NEW.pd_ticket_id, NEW.planned_hours,
+            NEW.actual_hours, NEW.bucket, NEW.pinned_today, NEW.pinned_week,
+            NEW.source_email_id, NEW.source_email_subject, NEW.next_step,
+            NEW.definition_of_done, NEW.completion_note, 'public.work_items'
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            status = EXCLUDED.status, title = EXCLUDED.title, description = EXCLUDED.description,
+            priority = EXCLUDED.priority, owner_user_id = EXCLUDED.owner_user_id,
+            updated_at = NOW(), deleted_at = EXCLUDED.deleted_at;
+          NEW.id := resolved_id;
+          INSERT INTO public._work_items_legacy (
+            id, client_id, project_id, workstream, type, source, title, description,
+            status, priority, start_date, end_date, duration, percent_complete,
+            wbs_code, outline_number, parent_id,
+            owner_user_id, is_shared, external_ref, legacy_table, legacy_id,
+            created_by, created_at, updated_at, deleted_at,
+            scheduled_date, scheduled_start_time, scheduled_end_time,
+            expected_pct_complete, indent_level, is_milestone, phase,
+            owner_name, source_row, source_sheet, import_run_id,
+            baseline_start, baseline_end, baseline_duration, task_mode,
+            actual_start, actual_end, actual_duration, sort_order,
+            estimate_minutes, task_category, is_recurring, recurrence_frequency,
+            recurrence_interval, recurrence_days_of_week, recurrence_end_date,
+            recurrence_parent_id, sub_project_name, hold_reason, blocked_type,
+            approval_required, linked_plan_item_id, linked_deliverable_id,
+            linked_quality_item_instance_id, completed_at, tracking_rag,
+            task_type_tag, blocker_reason, pd_ticket_id, planned_hours,
+            actual_hours, bucket, pinned_today, pinned_week,
+            source_email_id, source_email_subject, next_step,
+            definition_of_done, completion_note
+          ) VALUES (
+            NEW.id, NEW.client_id, NEW.project_id,
+            NEW.workstream::work_item_workstream, NEW.type, NEW.source::work_item_source,
+            NEW.title, NEW.description,
+            NEW.status, NEW.priority, NEW.start_date, NEW.end_date, NEW.duration, NEW.percent_complete,
+            NEW.wbs_code, NEW.outline_number, NEW.parent_id,
+            NEW.owner_user_id, NEW.is_shared, NEW.external_ref, NEW.legacy_table, NEW.legacy_id,
+            NEW.created_by, COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW()), NEW.deleted_at,
+            NEW.scheduled_date, NEW.scheduled_start_time, NEW.scheduled_end_time,
+            NEW.expected_pct_complete, NEW.indent_level, NEW.is_milestone, NEW.phase,
+            NEW.owner_name, NEW.source_row, NEW.source_sheet, NEW.import_run_id,
+            NEW.baseline_start, NEW.baseline_end, NEW.baseline_duration, NEW.task_mode,
+            NEW.actual_start, NEW.actual_end, NEW.actual_duration, COALESCE(NEW.sort_order, 0),
+            NEW.estimate_minutes, NEW.task_category, NEW.is_recurring, NEW.recurrence_frequency,
+            NEW.recurrence_interval, NEW.recurrence_days_of_week, NEW.recurrence_end_date,
+            NEW.recurrence_parent_id, NEW.sub_project_name, NEW.hold_reason, NEW.blocked_type,
+            NEW.approval_required, NEW.linked_plan_item_id, NEW.linked_deliverable_id,
+            NEW.linked_quality_item_instance_id, NEW.completed_at, NEW.tracking_rag,
+            NEW.task_type_tag, NEW.blocker_reason, NEW.pd_ticket_id, NEW.planned_hours,
+            NEW.actual_hours, NEW.bucket, NEW.pinned_today, NEW.pinned_week,
+            NEW.source_email_id, NEW.source_email_subject, NEW.next_step,
+            NEW.definition_of_done, NEW.completion_note
+          )
+          ON CONFLICT (id) DO UPDATE SET
+            status = EXCLUDED.status, title = EXCLUDED.title, updated_at = EXCLUDED.updated_at;
+          RETURN NEW;
+        END;
+        $fn$;
+        RAISE NOTICE '[DB] Updated _work_items_view_insert trigger to auto-generate IDs';
+      END IF;
+    END $$;
+  `);
+
   const wiExists = await db.execute(sql.raw(
     "SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items' UNION ALL SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"
   ));
