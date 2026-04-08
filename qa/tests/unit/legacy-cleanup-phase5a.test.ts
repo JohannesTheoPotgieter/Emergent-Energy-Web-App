@@ -100,9 +100,11 @@ describe("admin-recovery personal tasks use canonical work_items", () => {
 });
 
 describe("unclassified-tasks routes use canonical work_items", () => {
-  it("routes.ts unclassified-tasks reads from work_items", () => {
-    const src = readFile("server/routes.ts");
-    const routeStart = src.indexOf('/api/mytool/unclassified-tasks');
+  it("mytool-routes.ts unclassified-tasks reads from work_items", () => {
+    // Handlers were extracted from server/routes.ts to server/routes/mytool-routes.ts
+    const src = readFile("server/routes/mytool-routes.ts");
+    // Skip the header comment (first match is the handler doc), find the actual route handler
+    const routeStart = src.indexOf('app.get("/api/mytool/unclassified-tasks"');
     const routeBlock = src.slice(routeStart, routeStart + 500);
     expect(routeBlock).toContain(".from(workItems)");
     expect(routeBlock).toContain('"PERSONAL"');

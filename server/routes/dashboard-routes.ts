@@ -10,7 +10,9 @@ import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
-import { classifyCosStatus, isDateBlack } from "../lib/calculations/stateClassifier";
+import { isDateBlack } from "../lib/calculations/stateClassifier";
+import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
+import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
@@ -320,9 +322,14 @@ export function registerDashboardRoutes(app: Express) {
         const row = ensureRow(proj); row.__hasFyItem = true;
         const amt = toNum(r.amountExVat);
         row.plannedRevenueFy += amt;
-        const baseReceived = hasText(r.invoiceNumber) && hasText(r.paidDate) && isBlack(r.paidDateFontColor, r.paidDateConfirmed);
         const overrideInBank = inBankOverrideSet.has(`${r.projectName}::${r.sourceRow}`);
-        const received = baseReceived || overrideInBank;
+        const received = overrideInBank || isRevenueSettled({
+          paidDate: r.paidDate,
+          paidDateConfirmed: r.paidDateConfirmed,
+          paidDateFontColor: r.paidDateFontColor,
+          inBankDate: r.inBankDate,
+          manualInBank: overrideInBank ? 1 : null,
+        });
         if (received) row.receivedInflowFy += amt;
         if (!received && dateKey && dateKey < today) row._inflowRisk += amt;
       }
@@ -346,13 +353,14 @@ export function registerDashboardRoutes(app: Express) {
         if (dateKey && dateKey.slice(0, 7) === currentMonthKey) {
           cosPlannedMonth += amt;
           const cosOverrideStatus = cosOverrideByKey.get(`${c.projectName}::${c.sourceRow}`);
-          const isRealised = cosOverrideStatus === 'COS Realised' || (!cosOverrideStatus && classifyCosStatus({
+          const isRealised = classifyCosStatusFull({
             expenseInvoiceNumber: c.invoiceNumber,
             expenseInvoicedDate: c.invoiceDate,
             expensePoNumber: c.poNumber,
             invoiceDateConfirmed: c.invoiceDateConfirmed,
             invoiceDateFontColor: c.invoiceDateFontColor,
-          }) === 'COS Realised');
+            _cosOverrideStatus: cosOverrideStatus ?? null,
+          }) === 'COS Realised';
           if (isRealised) cosRealisedMonth += amt;
         }
       }
@@ -574,7 +582,7 @@ export function registerDashboardRoutes(app: Express) {
                 forecastExpenditure: 0,
               }));
               bucket.plannedRevenue += toNum(row.amountExVat);
-              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor, row.paidDateConfirmed)) {
+              if (isRevenueSettled({ paidDate: row.paidDate, paidDateConfirmed: row.paidDateConfirmed, paidDateFontColor: row.paidDateFontColor, inBankDate: row.inBankDate })) {
                 bucket.actualCashflow += toNum(row.amountExVat);
               }
             }
@@ -594,7 +602,7 @@ export function registerDashboardRoutes(app: Express) {
                 forecastExpenditure: 0,
               }));
               bucket.plannedExpenditure += toNum(row.amountExVat);
-              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor, (row as any).paidDateConfirmed)) {
+              if (isRevenueSettled({ paidDate: row.paidDate, paidDateConfirmed: (row as any).paidDateConfirmed, paidDateFontColor: row.paidDateFontColor, inBankDate: (row as any).inBankDate })) {
                 bucket.actualCashflow -= toNum(row.amountExVat);
               }
             }

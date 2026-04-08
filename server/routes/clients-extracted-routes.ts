@@ -10,7 +10,7 @@
 
 import type { Express } from "express";
 import { db } from "../db";
-import { asc, sql } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { clients } from "@shared/schema";
 import { requireAuth } from "../auth-context";
@@ -98,6 +98,42 @@ export function registerClientsExtractedRoutes(app: Express): void {
     } catch (error) {
       console.error("Client create error:", error);
       res.status(500).json({ error: "Failed to create client" });
+    }
+  });
+
+  app.patch("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
+    try {
+      const schema = z.object({
+        name: z.string().min(1).optional(),
+        legalEntityName: z.string().optional(),
+        billingEmail: z.string().email().optional().or(z.literal('')),
+        contactPerson: z.string().optional(),
+        contactEmail: z.string().email().optional().or(z.literal('')),
+        contactPhone: z.string().optional(),
+        notes: z.string().optional(),
+      });
+      const parsed = schema.parse(req.body);
+      const [updated] = await db
+        .update(clients)
+        .set({ ...parsed, updatedAt: new Date(), updatedBy: req.user?.id })
+        .where(eq(clients.id, Number(req.params.id)))
+        .returning();
+      if (!updated) {
+        return res.status(404).json({ error: "Client not found" });
+      }
+      logAuditFromReq(req, {
+        entityType: "client",
+        entityId: String(updated.id),
+        action: "update",
+        changesJson: parsed,
+      });
+      res.json(updated);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ error: "Validation failed", details: error.errors });
+      }
+      console.error("Client update error:", error);
+      res.status(500).json({ error: "Failed to update client" });
     }
   });
 }

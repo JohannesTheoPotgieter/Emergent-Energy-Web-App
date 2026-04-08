@@ -28,6 +28,8 @@ import { requireAdmin } from "../middleware/requireAdmin";
 import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { classifyExpenseState } from "../lib/calculations/stateClassifier";
+import { z } from "zod";
+import { createCostLine, updateCostLineFields, createRevenueLine, updateRevenueLineFields } from "../services/finance-line-write-service";
 import { mapCostToExpenseInput } from "../lib/data-merge";
 import { getMergedExpensesAndInflows } from "../lib/cashflow-helpers";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
@@ -1152,6 +1154,139 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
     } catch (error) {
       console.error("COS override delete error:", error);
       res.status(500).json({ error: "Failed to remove COS status override" });
+    }
+  });
+
+  // ── Record-level cost/revenue line CRUD ────────────────────────────
+  // Allows finance users to create, edit, and soft-delete individual
+  // cost and revenue line items via the UI (without requiring an import).
+
+  const costLineSchema = z.object({
+    projectId: z.number().int(),
+    projectName: z.string().min(1),
+    description: z.string().optional(),
+    supplier: z.string().optional(),
+    amountExVat: z.union([z.string(), z.number()]),
+    invoiceNumber: z.string().optional(),
+    invoiceDate: z.string().optional(),
+    paidDate: z.string().optional(),
+    poNumber: z.string().optional(),
+    category: z.string().optional(),
+    notes: z.string().optional(),
+  });
+
+  const revenueLineSchema = z.object({
+    projectId: z.number().int(),
+    projectName: z.string().min(1),
+    description: z.string().optional(),
+    milestoneDescription: z.string().optional(),
+    amountExVat: z.union([z.string(), z.number()]),
+    invoiceNumber: z.string().optional(),
+    invoiceDate: z.string().optional(),
+    paidDate: z.string().optional(),
+    expectedPaymentDate: z.string().optional(),
+    notes: z.string().optional(),
+  });
+
+  // Create a cost line
+  app.post("/api/finance/cost-lines", requireAuth, requirePermission("financials", "create"), async (req: Request, res: Response) => {
+    try {
+      const parsed = costLineSchema.parse(req.body);
+      const row = await createCostLine({
+        ...parsed,
+        source: "MANUAL",
+        effectiveFrom: new Date().toISOString(),
+        createdAt: new Date(),
+      });
+      logAuditFromReq(req, { entityType: "cost_line", action: "create", entityId: String(row.id), projectName: parsed.projectName, source: "UI" });
+      res.status(201).json(row);
+    } catch (error: any) {
+      if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
+      console.error("[Finance] Failed to create cost line:", error);
+      res.status(500).json({ error: "Failed to create cost line" });
+    }
+  });
+
+  // Update a cost line
+  app.patch("/api/finance/cost-lines/:id", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+      const parsed = costLineSchema.partial().parse(req.body);
+      const updated = await updateCostLineFields(id, { ...parsed, updatedAt: new Date() });
+      if (!updated) return res.status(404).json({ error: "Cost line not found" });
+      logAuditFromReq(req, { entityType: "cost_line", action: "update", entityId: String(id), changesJson: parsed, source: "UI" });
+      res.json(updated);
+    } catch (error: any) {
+      if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
+      console.error("[Finance] Failed to update cost line:", error);
+      res.status(500).json({ error: "Failed to update cost line" });
+    }
+  });
+
+  // Soft-delete a cost line
+  app.delete("/api/finance/cost-lines/:id", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+      const [row] = await db.update(normalizedCostLines).set({ effectiveTo: new Date().toISOString() }).where(eq(normalizedCostLines.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "Cost line not found" });
+      logAuditFromReq(req, { entityType: "cost_line", action: "soft_delete", entityId: String(id), source: "UI" });
+      res.json(row);
+    } catch (error) {
+      console.error("[Finance] Failed to delete cost line:", error);
+      res.status(500).json({ error: "Failed to delete cost line" });
+    }
+  });
+
+  // Create a revenue line
+  app.post("/api/finance/revenue-lines", requireAuth, requirePermission("financials", "create"), async (req: Request, res: Response) => {
+    try {
+      const parsed = revenueLineSchema.parse(req.body);
+      const row = await createRevenueLine({
+        ...parsed,
+        source: "MANUAL",
+        effectiveFrom: new Date().toISOString(),
+        createdAt: new Date(),
+      });
+      logAuditFromReq(req, { entityType: "revenue_line", action: "create", entityId: String(row.id), projectName: parsed.projectName, source: "UI" });
+      res.status(201).json(row);
+    } catch (error: any) {
+      if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
+      console.error("[Finance] Failed to create revenue line:", error);
+      res.status(500).json({ error: "Failed to create revenue line" });
+    }
+  });
+
+  // Update a revenue line
+  app.patch("/api/finance/revenue-lines/:id", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+      const parsed = revenueLineSchema.partial().parse(req.body);
+      const updated = await updateRevenueLineFields(id, { ...parsed, updatedAt: new Date() });
+      if (!updated) return res.status(404).json({ error: "Revenue line not found" });
+      logAuditFromReq(req, { entityType: "revenue_line", action: "update", entityId: String(id), changesJson: parsed, source: "UI" });
+      res.json(updated);
+    } catch (error: any) {
+      if (error?.name === "ZodError") return res.status(400).json({ error: "Validation error", details: error.issues });
+      console.error("[Finance] Failed to update revenue line:", error);
+      res.status(500).json({ error: "Failed to update revenue line" });
+    }
+  });
+
+  // Soft-delete a revenue line
+  app.delete("/api/finance/revenue-lines/:id", requireAuth, requirePermission("financials", "edit"), async (req: Request, res: Response) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: "Invalid id" });
+      const [row] = await db.update(normalizedRevenueLines).set({ effectiveTo: new Date().toISOString() }).where(eq(normalizedRevenueLines.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "Revenue line not found" });
+      logAuditFromReq(req, { entityType: "revenue_line", action: "soft_delete", entityId: String(id), source: "UI" });
+      res.json(row);
+    } catch (error) {
+      console.error("[Finance] Failed to delete revenue line:", error);
+      res.status(500).json({ error: "Failed to delete revenue line" });
     }
   });
 

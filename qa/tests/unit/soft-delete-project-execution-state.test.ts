@@ -12,7 +12,7 @@ const MIGRATED_FILES = [
   "server/services/exception-dashboard-service.ts",
   "server/storage.ts",
   "server/template-routes.ts",
-  "server/routes.ts",
+  "server/routes/finance-legacy-extracted-routes.ts",
 ];
 
 describe("soft-delete: project_execution_state isActive → deletedAt", () => {
@@ -31,7 +31,8 @@ describe("soft-delete: project_execution_state isActive → deletedAt", () => {
   });
 
   it("no file uses isActive IS NOT FALSE as a filter", () => {
-    const routesSource = read("server/routes.ts");
+    // Routes were extracted from server/routes.ts to server/routes/ — check the extracted file
+    const routesSource = read("server/routes/finance-legacy-extracted-routes.ts");
     expect(routesSource).not.toContain("isActive} IS NOT FALSE");
   });
 
@@ -68,8 +69,9 @@ describe("soft-delete: project_execution_state isActive → deletedAt", () => {
     expect(source).toContain("isNull(projectExecutionState.deletedAt)");
   });
 
-  it("routes.ts uses isNull(projectExecutionState.deletedAt)", () => {
-    const source = read("server/routes.ts");
+  it("extracted route file uses isNull(projectExecutionState.deletedAt)", () => {
+    // Handlers were extracted from server/routes.ts to server/routes/finance-legacy-extracted-routes.ts
+    const source = read("server/routes/finance-legacy-extracted-routes.ts");
     expect(source).toContain("isNull(projectExecutionState.deletedAt)");
   });
 
