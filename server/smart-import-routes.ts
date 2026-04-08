@@ -1405,8 +1405,9 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     // Unresolved conflicts block commit.
     const v2ConflictResolutions = req.body?.v2ConflictResolutions as Record<string, "keep_app" | "accept_file"> | undefined;
     const skipV2ConflictCheck = req.body?.skipV2ConflictCheck === true;
+    const preserveManualEditsEarly = req.body?.preserveManualEdits === true;
 
-    if (!skipV2ConflictCheck && run.projectId) {
+    if (!skipV2ConflictCheck && !preserveManualEditsEarly && run.projectId) {
       const summary = run.summaryJson as any;
       if (summary?.normalization) {
         try {
@@ -1455,7 +1456,7 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     }
 
     const acknowledgeManualEdits = req.body?.acknowledgeManualEdits === true;
-    const preserveManualEdits = req.body?.preserveManualEdits === true;
+    const preserveManualEdits = preserveManualEditsEarly;
     const conflictResolutions = req.body?.conflictResolutions as Record<string, "keep" | "import"> | undefined;
 
     const hasConflictResolutions = conflictResolutions && Object.keys(conflictResolutions).length > 0;
@@ -2988,13 +2989,26 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     // Refresh materialized dashboard metrics after import commit (both v1 and v2)
     if (projectId) refreshProjectMetricsAsync(projectId);
   } catch (err: unknown) {
+    const pgCause = (err as any)?.cause;
     console.error("[smart-import] POST commit error:", err);
+    if (pgCause) {
+      console.error("[smart-import] PostgreSQL cause:", {
+        message: pgCause?.message,
+        detail: pgCause?.detail,
+        code: pgCause?.code,
+        constraint: pgCause?.constraint,
+        table: pgCause?.table,
+        column: pgCause?.column,
+        schema: pgCause?.schema,
+      });
+    }
 
     // Log failed import attempt
     try {
       const userId = (req as any).user?.id || null;
       const runId = parseInt(req.params.runId as string);
       if (!isNaN(runId)) {
+        const causeMsg = pgCause ? ` | PG: ${pgCause.message || ''} [${pgCause.code || ''}] constraint=${pgCause.constraint || ''} detail=${pgCause.detail || ''}` : '';
         const [failedRun] = await db.select({ fileName: smartImportRuns.sourceFileName, projectName: smartImportRuns.projectName })
           .from(smartImportRuns).where(eq(smartImportRuns.id, runId)).limit(1);
         await db.insert(importLogs).values({
@@ -3004,13 +3018,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           importedByName: (req as any).user?.name || null,
           projectName: failedRun?.projectName || null,
           status: "FAILED",
-          errorMessage: (err instanceof Error ? err.message : String(err)),
+          errorMessage: ((err instanceof Error ? err.message : String(err)) + causeMsg).substring(0, 2000),
         });
       }
     } catch (_) { /* non-blocking */ }
 
     const statusCode = (err as any)?.status === 409 ? 409 : 500;
-    res.status(statusCode).json({ error: (err instanceof Error ? err.message : String(err)) });
+    const causeInfo = pgCause ? { pgCode: pgCause.code, pgConstraint: pgCause.constraint, pgDetail: pgCause.detail, pgMessage: pgCause.message } : undefined;
+    res.status(statusCode).json({ error: (err instanceof Error ? err.message : String(err)), cause: causeInfo });
   }
 });
 
