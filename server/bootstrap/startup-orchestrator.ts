@@ -411,6 +411,10 @@ async function runAdditiveSchemaAlignments() {
             priority = EXCLUDED.priority, owner_user_id = EXCLUDED.owner_user_id,
             updated_at = NOW(), deleted_at = EXCLUDED.deleted_at;
           NEW.id := resolved_id;
+          IF NEW.external_ref IS NOT NULL THEN
+            DELETE FROM public._work_items_legacy
+            WHERE external_ref = NEW.external_ref AND id != resolved_id;
+          END IF;
           INSERT INTO public._work_items_legacy (
             id, client_id, project_id, workstream, type, source, title, description,
             status, priority, start_date, end_date, duration, percent_complete,
@@ -460,6 +464,20 @@ async function runAdditiveSchemaAlignments() {
         END;
         $fn$;
         RAISE NOTICE '[DB] Updated _work_items_view_insert trigger to auto-generate IDs';
+      END IF;
+    END $$;
+  `);
+
+  await safeExec("sync work_items_id_seq to max(id)", `
+    DO $$ 
+    DECLARE max_id BIGINT;
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_sequences WHERE sequencename = 'work_items_id_seq') THEN
+        SELECT COALESCE(MAX(id), 0) INTO max_id FROM core.work_items;
+        IF max_id > 0 THEN
+          PERFORM setval('public.work_items_id_seq', max_id, true);
+          RAISE NOTICE '[DB] Synced work_items_id_seq to %', max_id;
+        END IF;
       END IF;
     END $$;
   `);
