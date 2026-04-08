@@ -18,7 +18,7 @@ import {
   Plus, RefreshCw, Minus, Check,
 } from "lucide-react";
 import { useState } from "react";
-import { SECTION_LABELS, CLASSIFICATION_LABELS, IMPORT_MODE_LABELS } from "./labels";
+import { SECTION_LABELS, CLASSIFICATION_LABELS } from "./labels";
 
 interface ChangesStepProps {
   planning: any;
@@ -27,16 +27,6 @@ interface ChangesStepProps {
   onRetryPlan?: () => void;
   onContinue: () => void;
   onBack: () => void;
-}
-
-function countBadge(count: number, label: string, color: string) {
-  if (count === 0) return null;
-  return (
-    <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${color}`}>
-      <span className="text-lg font-bold">{count}</span>
-      <span className="text-sm">{label}</span>
-    </div>
-  );
 }
 
 interface SectionSummaryCardProps {
@@ -197,7 +187,7 @@ export function SmartImportChangesStep({ planning, planError, loadingPlan, onRet
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2">
           <RefreshCw className="w-5 h-5 text-blue-600" />
-          What changed
+          {importMode === "BASELINE" ? "What will be imported" : "What changed"}
         </CardTitle>
         <p className="text-sm text-muted-foreground">
           {importMode === "BASELINE"
