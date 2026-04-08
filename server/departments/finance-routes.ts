@@ -75,6 +75,13 @@ async function getHighRiskProjectCostReadRows(projectName: string, projectIdPara
   return getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
 }
 
+async function getHighRiskAllCostReadRows(): Promise<any[]> {
+  if (!(await isCanonicalFinanceCostlineReadEnabled())) {
+    return storage.getAllCostLinesForCashflow();
+  }
+  return getCanonicalAllCurrentCostLines();
+}
+
 function requireAdminOrFinancialEditor(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
   if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
@@ -1476,7 +1483,7 @@ router.get("/api/rev-tracker", requireAuth, requirePermission("revenue_tracker",
 router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
     const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
-      storage.getAllCostLinesForCashflow(),
+      getHighRiskAllCostReadRows(),
       storage.getTrackerMonthlyManual('COS'),
       storage.getAllRevenueLinesForCashflow(),
       storage.getAllMilestoneTaskLinks(),
@@ -1770,7 +1777,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
     const [allExpenses, cosOverrideMapMD] = await Promise.all([
-      storage.getAllCostLinesForCashflow(),
+      getHighRiskAllCostReadRows(),
       Promise.resolve(new Map()),
     ]);
 

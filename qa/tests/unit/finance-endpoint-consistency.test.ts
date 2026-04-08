@@ -19,25 +19,23 @@ function read(relPath: string) {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-describe("COS Tracker endpoints use canonical source", () => {
+describe("COS Tracker endpoints use lineage-aware high-risk source helper", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("COS tracker main uses getAllCostLinesForCashflow", () => {
+  it("COS tracker main uses high-risk all-cost helper", () => {
     const block = routes.substring(
       routes.indexOf('"/api/cos-tracker"'),
       routes.indexOf('"/api/cos-tracker/project/')
     );
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
-    expect(block).not.toContain("storage.getAllProgramExpenses()");
+    expect(block).toContain("getHighRiskAllCostReadRows()");
   });
 
-  it("COS tracker month-detail uses getAllCostLinesForCashflow", () => {
+  it("COS tracker month-detail uses high-risk all-cost helper", () => {
     const block = routes.substring(
       routes.indexOf('"/api/cos-tracker/month-detail"'),
       routes.indexOf('"/api/cos-tracker/toggle-realised/')
     );
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
-    expect(block).not.toContain("storage.getAllProgramExpenses()");
+    expect(block).toContain("getHighRiskAllCostReadRows()");
   });
 
   it("COS tracker toggle-realised uses getAllCostLinesForCashflow", () => {
@@ -139,11 +137,12 @@ describe("Expenditure endpoints now delegate to canonical project-cost service",
   it("program-expenses route resolves projectId and delegates to canonical service", () => {
     const block = routes.substring(
       routes.indexOf('"/api/program-expenses"'),
-      routes.indexOf('"/api/program-expenses"') + 800
+      routes.indexOf('"/api/program-expenses"') + 1200
     );
+    expect(block).toContain("isCanonicalFinanceCostlineReadEnabled()");
     expect(block).toContain("getCanonicalProjectCostLines(");
     expect(block).toContain("getCanonicalAllCurrentCostLines()");
-    expect(block).not.toContain("storage.getAllProgramExpenses()");
+    expect(block).toContain("storage.getAllProgramExpenses()");
   });
 
   it("expenditure-breakdown route no longer uses merged program-expense storage reads", () => {
@@ -151,8 +150,7 @@ describe("Expenditure endpoints now delegate to canonical project-cost service",
       routes.indexOf('"/api/expenditure-breakdown/:projectName"'),
       routes.indexOf('"/api/expenditure-breakdown/:projectName"') + 700
     );
-    expect(block).toContain("getCanonicalProjectCostLinesByName(projectName)");
-    expect(block).not.toContain("storage.getProgramExpensesByProject(projectName)");
+    expect(block).toContain("getHighRiskProjectCostReadRows(projectName, projectIdParam)");
   });
 });
 
@@ -161,16 +159,13 @@ describe("Data source alignment summary", () => {
 
   it("program-expense merge reads are not used by high-risk tracker/expenditure endpoints", () => {
     const matches = routes.match(/storage\.getProgramExpensesByProject\(/g) || [];
-    // Remaining usages are edit/writeback workflows, not high-risk read screens.
-    expect(matches.length).toBeLessThanOrEqual(5);
+    // Feature-flag rollback paths intentionally retain legacy reads.
+    expect(matches.length).toBeLessThanOrEqual(9);
   });
 
-  it("getAllCostLinesForCashflow is used by all tracker endpoints", () => {
-    const matches = routes.match(/storage\.getAllCostLinesForCashflow\(\)/g);
+  it("all-project high-risk helper exists and is used in COS global endpoints", () => {
+    const matches = routes.match(/getHighRiskAllCostReadRows\(\)/g);
     expect(matches).toBeTruthy();
-    // Cashflow weekly, cashflow detail, COS tracker main, COS month-detail,
-    // COS toggle, COS override, GP main, GP month-detail, revenue tracker,
-    // revenue month-detail, program/cos
-    expect(matches!.length).toBeGreaterThanOrEqual(8);
+    expect(matches!.length).toBeGreaterThanOrEqual(2);
   });
 });

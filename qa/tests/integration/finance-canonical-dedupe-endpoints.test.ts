@@ -23,6 +23,8 @@ interface SeedCostLine {
 const canonicalProjectId = 101;
 const canonicalProjectName = "Alpha Canonical";
 const driftedProjectName = "Alpha Legacy Drift";
+const secondProjectId = 202;
+const secondProjectName = "Beta Canonical";
 
 const seededNormalizedRows: SeedCostLine[] = [
   // Scenario 1: duplicate active imported lineage key; newer row should win.
@@ -131,6 +133,58 @@ const seededNormalizedRows: SeedCostLine[] = [
     expenseCategory: "Capex",
     rowType: "item",
   },
+  // Project 2 duplicate imported lineage + manual row (multi-project inflation proof).
+  {
+    id: 21,
+    projectId: secondProjectId,
+    projectName: secondProjectName,
+    sourceSheet: "OPS",
+    sourceRow: 1,
+    idempotencyKey: null,
+    updatedAt: "2025-09-01T00:00:00.000Z",
+    createdAt: "2025-09-01T00:00:00.000Z",
+    importRunId: 4,
+    expenseActualTotal: "70",
+    budgetTotal: "70",
+    expensePaymentDate: "2025-09-05",
+    expenseLineItem: "Beta old import",
+    expenseCategory: "Capex",
+    rowType: "item",
+  },
+  {
+    id: 22,
+    projectId: secondProjectId,
+    projectName: secondProjectName,
+    sourceSheet: "OPS",
+    sourceRow: 1,
+    idempotencyKey: null,
+    updatedAt: "2025-09-02T00:00:00.000Z",
+    createdAt: "2025-09-02T00:00:00.000Z",
+    importRunId: 5,
+    expenseActualTotal: "75",
+    budgetTotal: "75",
+    expensePaymentDate: "2025-09-05",
+    expenseLineItem: "Beta newest import",
+    expenseCategory: "Capex",
+    rowType: "item",
+  },
+  {
+    id: 23,
+    projectId: secondProjectId,
+    projectName: secondProjectName,
+    sourceSheet: null,
+    sourceRow: null,
+    idempotencyKey: "beta-manual-001",
+    updatedAt: "2025-09-03T00:00:00.000Z",
+    createdAt: "2025-09-03T00:00:00.000Z",
+    importRunId: 5,
+    expenseActualTotal: "30",
+    budgetTotal: "30",
+    expensePaymentDate: "2025-09-06",
+    expenseLineItem: "Beta manual",
+    expenseCategory: "Opex",
+    rowType: "item",
+  },
 ];
 
 // Scenario 2 seed only: overlapping legacy table row that must not be used by canonical endpoints.
@@ -142,6 +196,11 @@ const overlappingProgramExpenseSeed = [{
   rowType: "item",
 }];
 let canonicalReadEnabled = true;
+const legacyAllCostLinesSeed = [
+  ...seededNormalizedRows,
+  // legacy overlap row that should inflate when canonical flag is OFF
+  { id: 9002, projectName: canonicalProjectName, expenseActualTotal: "999", expensePaymentDate: "2025-09-22", rowType: "item" as const },
+];
 
 function toCanonicalKey(row: SeedCostLine): string {
   if (row.sourceRow != null) return `${row.projectId}|${row.sourceSheet || "unknown-sheet"}|${row.sourceRow}`;
@@ -189,6 +248,11 @@ vi.mock("../../../server/storage", () => ({
     getProjectRevenueSummary: vi.fn(async () => ({ totalRevenue: 0 })),
     // Explicitly seeded but intentionally ignored by canonical endpoints.
     getProgramExpensesByProject: vi.fn(async () => overlappingProgramExpenseSeed),
+    getAllCostLinesForCashflow: vi.fn(async () => legacyAllCostLinesSeed),
+    getAllRevenueLinesForCashflow: vi.fn(async () => []),
+    getAllMilestoneTaskLinks: vi.fn(async () => []),
+    getAllOperationalTasks: vi.fn(async () => []),
+    getAllProjectPlans: vi.fn(async () => []),
   },
 }));
 
@@ -246,6 +310,19 @@ vi.mock("../../../server/services/project-cost-line-read-service", () => {
       expenseInvoiceNumber: `INV-${row.id}`,
     }));
   };
+  const getAllRows = () => {
+    const deduped = dedupeByCurrentLineage(seededNormalizedRows);
+    return deduped.map((row) => ({
+      ...row,
+      canonicalLineKey: toCanonicalKey(row),
+      lineageType: row.sourceRow != null ? "IMPORTED" : row.idempotencyKey ? "MANUAL_IDEMPOTENT" : "MANUAL_FALLBACK",
+      isCurrent: true,
+      effectiveFrom: null,
+      noRevenueLinked: false,
+      expenseInvoicedDate: row.expensePaymentDate,
+      expenseInvoiceNumber: `INV-${row.id}`,
+    }));
+  };
 
   return {
     getCanonicalProjectCostLines: vi.fn(async (projectId: number) => getRowsByProjectId(projectId)),
@@ -256,7 +333,7 @@ vi.mock("../../../server/services/project-cost-line-read-service", () => {
       }
       return { projectId: null, rows: [] };
     }),
-    getCanonicalAllCurrentCostLines: vi.fn(async () => getRowsByProjectId(canonicalProjectId)),
+    getCanonicalAllCurrentCostLines: vi.fn(async () => getAllRows()),
     resolveProjectIdByName: vi.fn(async (name: string) => (name === canonicalProjectName ? canonicalProjectId : null)),
     getCanonicalCostLineDiagnostics: vi.fn(async () => ({ totalRows: 0, duplicateCanonicalGroups: 0, duplicateRows: 0, lineageSummary: {}, duplicates: [] })),
     getCostLineRiskDiagnostics: vi.fn(async () => ({
@@ -366,5 +443,32 @@ describe("integration: canonical dedupe proof on finance endpoints", () => {
     expect(res.body.risks).toHaveProperty("nullSourceImportedRows");
     expect(res.body.risks).toHaveProperty("projectNameDriftGroups");
     expect(res.body.risks).toHaveProperty("normalizedVsProgramExpenseActiveOverlap");
+  });
+
+  it("global COS KPI/cards and month-detail use the same deduped all-project source", async () => {
+    canonicalReadEnabled = true;
+    const [cosRes, monthDetailRes] = await Promise.all([
+      request(app).get("/api/cos-tracker"),
+      request(app).get("/api/cos-tracker/month-detail?monthKey=2025-09"),
+    ]);
+    expect(cosRes.status).toBe(200);
+    expect(monthDetailRes.status).toBe(200);
+
+    const month = (cosRes.body as any[]).find((m: any) => m.monthKey === "2025-09");
+    expect(month.totalCOS).toBe(365);
+    expect(month.ytdCOS).toBe(365);
+    expect(month.ytdRealised).toBe(365);
+    expect(month.ytdUnrealised).toBe(0);
+    expect(monthDetailRes.body.totalAmount).toBe(365);
+    expect(monthDetailRes.body.lineCount).toBe(5);
+  });
+
+  it("global COS route rollback path shows legacy inflation when canonical flag is disabled", async () => {
+    canonicalReadEnabled = false;
+    const res = await request(app).get("/api/cos-tracker");
+    canonicalReadEnabled = true;
+    expect(res.status).toBe(200);
+    const month = (res.body as any[]).find((m: any) => m.monthKey === "2025-09");
+    expect(month.totalCOS).toBe(1614);
   });
 });
