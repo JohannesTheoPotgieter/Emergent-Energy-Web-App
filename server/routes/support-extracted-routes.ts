@@ -173,7 +173,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
           const rnPath = pathMod.default.resolve("dist/public/release-notes.json");
           const rnData = JSON.parse(await fs.readFile(rnPath, "utf-8"));
           releaseNotes = rnData.notes || [];
-        } catch {}
+        } catch (e) { console.warn("[support-extracted-routes] non-critical error:", e instanceof Error ? e.message : e); }
         return res.json({ version: data.version, buildTime: data.buildTime, buildId: data.buildId, buildNumber: data.buildNumber || null, releaseNotes });
       }
       const vPath = pathMod.default.resolve("version.json");
@@ -186,7 +186,7 @@ export async function registerSupportExtractedRoutes(app: Express): Promise<void
         const rnPath = pathMod.default.resolve("release-notes.json");
         const rnData = JSON.parse(await fs.readFile(rnPath, "utf-8"));
         releaseNotes = rnData.notes || [];
-      } catch {}
+      } catch (e) { console.warn("[support-extracted-routes] non-critical error:", e instanceof Error ? e.message : e); }
       return res.json({ version, buildTime: data.lastUpdated, buildId: null, buildNumber, releaseNotes });
     } catch (error) {
       logApiError("GET /api/version", error);

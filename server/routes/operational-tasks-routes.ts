@@ -221,7 +221,7 @@ export function registerOperationalTasksRoutes(app: Express) {
             planTask = plans.find((t: any) => t.id === planId);
             if (planTask) break;
           }
-        } catch {}
+        } catch (e) { console.warn("[operational-tasks-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
         if (!planTask) return res.status(404).json({ error: "Baseline task not found" });
 
@@ -373,7 +373,7 @@ export function registerOperationalTasksRoutes(app: Express) {
               planTask = plans.find((t: any) => t.id === planId);
               if (planTask) break;
             }
-          } catch {}
+          } catch (e) { console.warn("[operational-tasks-routes] non-critical error:", e instanceof Error ? e.message : e); }
           if (!planTask) continue;
 
           const pctComplete = planTask.actualPctComplete != null ? Math.round(planTask.actualPctComplete * 100) : 0;
