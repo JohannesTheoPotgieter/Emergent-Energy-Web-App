@@ -2,6 +2,7 @@ import { db, getDbMode } from "./db";
 import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { UsersRepository } from "./repositories/users-repository";
 import { WorkManagementRepository } from "./repositories/work-management-repository";
+import { SupportTicketsRepository } from "./repositories/support-tickets-repository";
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
@@ -418,6 +419,7 @@ export class DatabaseStorage implements IStorage {
   private _dbInstance?: typeof db;
   private readonly usersRepository: UsersRepository;
   private readonly workManagementRepository: WorkManagementRepository;
+  private readonly supportTicketsRepository: SupportTicketsRepository;
   
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -428,6 +430,7 @@ export class DatabaseStorage implements IStorage {
     this._dbInstance = dbInstance;
     this.usersRepository = new UsersRepository(this.dbInstance);
     this.workManagementRepository = new WorkManagementRepository(this.dbInstance);
+    this.supportTicketsRepository = new SupportTicketsRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -2409,12 +2412,11 @@ export class DatabaseStorage implements IStorage {
 
   // Support Tickets
   async createSupportTicket(ticket: InsertSupportTicket): Promise<SupportTicket> {
-    const [result] = await this.dbInstance.insert(supportTickets).values(ticket).returning();
-    return result;
+    return this.supportTicketsRepository.create(ticket);
   }
 
   async getSupportTickets(): Promise<SupportTicket[]> {
-    return this.dbInstance.select().from(supportTickets).orderBy(desc(supportTickets.createdAt));
+    return this.supportTicketsRepository.list();
   }
 
   // SharePoint Settings
