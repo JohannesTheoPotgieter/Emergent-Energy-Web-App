@@ -39,5 +39,9 @@ export async function registerExtractedRoutes(app: Express) {
   const { registerProjectInfoExtractedRoutes } = await import("./project-info-extracted-routes");
   registerProjectInfoExtractedRoutes(app);
 
+  // Phase 5: Misc read routes (2 handlers, extracted from routes.ts)
+  const { registerMiscExtractedRoutes } = await import("./misc-extracted-routes");
+  registerMiscExtractedRoutes(app);
+
   // Future phases will add more domain modules here.
 }
