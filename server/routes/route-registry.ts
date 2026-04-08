@@ -55,5 +55,7 @@ export async function registerExtractedRoutes(app: Express) {
   const { registerFinanceLegacyExtractedRoutes } = await import("./finance-legacy-extracted-routes");
   registerFinanceLegacyExtractedRoutes(app);
 
-  // Future phases will add more domain modules here.
+  // Phase 9b: Imports / Upload / Admin routes (21 handlers, extracted from routes.ts)
+  const { registerImportsAdminExtractedRoutes } = await import("./imports-admin-extracted-routes");
+  await registerImportsAdminExtractedRoutes(app);
 }
