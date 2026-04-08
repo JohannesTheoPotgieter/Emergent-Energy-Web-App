@@ -164,6 +164,7 @@ interface CategoryGroup {
 
 interface ExpenditureEditableTabProps {
   projectName: string;
+  projectId?: number | null;
   highlightId?: number | null;
   initialFilter?: string;
 }
@@ -289,7 +290,7 @@ const OverrideDot = ({ originalValue, audit }: { originalValue: string; audit?: 
   </TooltipProvider>
 );
 
-export function ExpenditureEditableTab({ projectName, highlightId, initialFilter }: ExpenditureEditableTabProps) {
+export function ExpenditureEditableTab({ projectName, projectId, highlightId, initialFilter }: ExpenditureEditableTabProps) {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -379,7 +380,10 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
   }>({
     queryKey: breakdownKey,
     queryFn: async () => {
-      const res = await authFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`);
+      const params = new URLSearchParams();
+      if (projectId) params.set("projectId", String(projectId));
+      const qs = params.toString();
+      const res = await authFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}${qs ? `?${qs}` : ""}`);
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -1612,7 +1616,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
                         <TableCell />
                       </TableRow>
                       {!isCollapsed && group.items.map((exp, rowIdx) => (
-                        <TableRow key={exp.id}
+                        <TableRow key={exp.canonicalLineKey || exp.id}
                           data-row-id={exp.id}
                           data-testid={`row-expense-${exp.id}`}
                           className={`border-b border-border hover:bg-blue-50/30 transition-colors

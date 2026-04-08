@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 
 interface GpTrackerTabProps {
   projectName: string;
+  projectId?: number | null;
 }
 
 interface GpItem {
@@ -209,7 +210,7 @@ function GpDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: GpMo
                 {filtered.map((item) => {
                   const gp = item.revenueAmount - item.costAmount;
                   return (
-                    <tr key={item.id} className="hover:bg-emerald-50/30 transition-colors" data-testid={`gp-drawer-item-${item.id}`}>
+                    <tr key={item.canonicalLineKey || item.id} className="hover:bg-emerald-50/30 transition-colors" data-testid={`gp-drawer-item-${item.id}`}>
                       <td className="px-4 py-2.5 text-slate-500 max-w-[120px] truncate">{item.category || "—"}</td>
                       <td className="px-4 py-2.5 text-slate-900 max-w-[180px] truncate font-medium">{item.lineItem || "—"}</td>
                       <td className="px-4 py-2.5 text-slate-500 max-w-[120px] truncate">{item.supplier || "—"}</td>
@@ -251,7 +252,7 @@ function GpDetailDrawer({ month, onClose, defaultFilter = "all" }: { month: GpMo
   );
 }
 
-export function GpTrackerTab({ projectName }: GpTrackerTabProps) {
+export function GpTrackerTab({ projectName, projectId }: GpTrackerTabProps) {
   const [drawerMonth, setDrawerMonth] = useState<{ month: GpMonthData; defaultFilter: "all" | "realised" | "unrealised" } | null>(null);
 
   const { data, isLoading } = useQuery<GpTrackerResponse>({
@@ -260,7 +261,10 @@ export function GpTrackerTab({ projectName }: GpTrackerTabProps) {
       const token = localStorage.getItem("auth_token");
       const headers: Record<string, string> = {};
       if (token) headers["Authorization"] = `Bearer ${token}`;
-      const res = await fetch(`/api/gp-tracker/project/${encodeURIComponent(projectName)}`, {
+      const params = new URLSearchParams();
+      if (projectId) params.set("projectId", String(projectId));
+      const qs = params.toString();
+      const res = await fetch(`/api/gp-tracker/project/${encodeURIComponent(projectName)}${qs ? `?${qs}` : ""}`, {
         credentials: "include",
         headers,
       });

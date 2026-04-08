@@ -19,25 +19,23 @@ function read(relPath: string) {
   return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-describe("COS Tracker endpoints use canonical source", () => {
+describe("COS Tracker endpoints use lineage-aware high-risk source helper", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("COS tracker main uses getAllCostLinesForCashflow", () => {
+  it("COS tracker main uses high-risk all-cost helper", () => {
     const block = routes.substring(
       routes.indexOf('"/api/cos-tracker"'),
       routes.indexOf('"/api/cos-tracker/project/')
     );
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
-    expect(block).not.toContain("storage.getAllProgramExpenses()");
+    expect(block).toContain("getHighRiskAllCostReadRows()");
   });
 
-  it("COS tracker month-detail uses getAllCostLinesForCashflow", () => {
+  it("COS tracker month-detail uses high-risk all-cost helper", () => {
     const block = routes.substring(
       routes.indexOf('"/api/cos-tracker/month-detail"'),
       routes.indexOf('"/api/cos-tracker/toggle-realised/')
     );
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
-    expect(block).not.toContain("storage.getAllProgramExpenses()");
+    expect(block).toContain("getHighRiskAllCostReadRows()");
   });
 
   it("COS tracker toggle-realised uses getAllCostLinesForCashflow", () => {
@@ -95,8 +93,8 @@ describe("Revenue Tracker endpoints use canonical source", () => {
 
   it("Revenue tracker month-detail uses canonical cost lines for all-projects case", () => {
     const startIdx = routes.indexOf('"/api/revenue-tracker/month-detail"');
-    const block = routes.substring(startIdx, startIdx + 1000);
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
+    const block = routes.substring(startIdx, startIdx + 1200);
+    expect(block).toContain("getCanonicalAllCurrentCostLines()");
   });
 });
 
@@ -133,41 +131,41 @@ describe("Dashboard services use direct NCL queries (already canonical)", () => 
   });
 });
 
-describe("Remaining endpoints still on merged path (documented)", () => {
+describe("Expenditure endpoints now delegate to canonical project-cost service", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("program-expenses pass-through still uses merged path (serves expenditure tabs)", () => {
+  it("program-expenses route resolves projectId and delegates to canonical service", () => {
     const block = routes.substring(
       routes.indexOf('"/api/program-expenses"'),
-      routes.indexOf('"/api/program-expenses"') + 500
+      routes.indexOf('"/api/program-expenses"') + 1200
     );
-    // This endpoint serves ExpenditureTab which needs PE-specific fields
+    expect(block).toContain("isCanonicalFinanceCostlineReadEnabled()");
+    expect(block).toContain("getCanonicalProjectCostLines(");
+    expect(block).toContain("getCanonicalAllCurrentCostLines()");
     expect(block).toContain("storage.getAllProgramExpenses()");
   });
 
-  it("expenditure-breakdown still uses merged path (serves editable tab)", () => {
-    expect(routes).toContain("storage.getProgramExpensesByProject(projectName)");
-    // This is intentional — editable tab needs PE-specific fields like expenseQty
+  it("expenditure-breakdown route no longer uses merged program-expense storage reads", () => {
+    const block = routes.substring(
+      routes.indexOf('"/api/expenditure-breakdown/:projectName"'),
+      routes.indexOf('"/api/expenditure-breakdown/:projectName"') + 700
+    );
+    expect(block).toContain("getHighRiskProjectCostReadRows(projectName, projectIdParam)");
   });
 });
 
 describe("Data source alignment summary", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("getAllProgramExpenses is only used by expenditure pass-through endpoints", () => {
-    // Count remaining getAllProgramExpenses calls
-    const matches = routes.match(/storage\.getAllProgramExpenses\(\)/g);
-    // Should be 2: program-expenses pass-through + cashflow legacy pass-through
-    expect(matches).toBeTruthy();
-    expect(matches!.length).toBeLessThanOrEqual(3);
+  it("program-expense merge reads are not used by high-risk tracker/expenditure endpoints", () => {
+    const matches = routes.match(/storage\.getProgramExpensesByProject\(/g) || [];
+    // Feature-flag rollback paths intentionally retain legacy reads.
+    expect(matches.length).toBeLessThanOrEqual(9);
   });
 
-  it("getAllCostLinesForCashflow is used by all tracker endpoints", () => {
-    const matches = routes.match(/storage\.getAllCostLinesForCashflow\(\)/g);
+  it("all-project high-risk helper exists and is used in COS global endpoints", () => {
+    const matches = routes.match(/getHighRiskAllCostReadRows\(\)/g);
     expect(matches).toBeTruthy();
-    // Cashflow weekly, cashflow detail, COS tracker main, COS month-detail,
-    // COS toggle, COS override, GP main, GP month-detail, revenue tracker,
-    // revenue month-detail, program/cos
-    expect(matches!.length).toBeGreaterThanOrEqual(8);
+    expect(matches!.length).toBeGreaterThanOrEqual(2);
   });
 });
