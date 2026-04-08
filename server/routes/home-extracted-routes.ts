@@ -101,8 +101,8 @@ export function registerHomeExtractedRoutes(app: Express): void {
         pd.weightedActual += (plan.actualPctComplete ?? 0) * dur;
         let exp = plan.expectedPctComplete;
         if (exp == null || exp === undefined) {
-          const tStart = plan.actualStart?.substring?.(0, 10) || plan.startDate?.substring?.(0, 10);
-          const tEnd = plan.actualEnd?.substring?.(0, 10) || plan.endDate?.substring?.(0, 10);
+          const tStart = plan.actualStart?.substring?.(0, 10) || (plan as any).startDate?.substring?.(0, 10);
+          const tEnd = plan.actualEnd?.substring?.(0, 10) || (plan as any).endDate?.substring?.(0, 10);
           if (tStart && tEnd && /^\d{4}-\d{2}-\d{2}/.test(tStart) && /^\d{4}-\d{2}-\d{2}/.test(tEnd)) {
             if (todayStr >= tEnd) exp = 1.0;
             else if (todayStr <= tStart) exp = 0.0;

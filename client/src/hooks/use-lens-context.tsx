@@ -9,6 +9,7 @@
  */
 
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "./use-auth";
 import {
   resolveUserLens,
@@ -65,15 +66,22 @@ export function LensProvider({ children }: { children: ReactNode }) {
   const cooSuperAdmin = useMemo(() => isSuperAdmin(normalizeRoleForPermissions(dbRole)), [dbRole]);
 
   const [simulation, setSimulation] = useState<LensSimulation | null>(null);
+  const qc = useQueryClient();
 
   const startSimulation = useCallback((lens: LensRole, mode: "read_only" | "full_power" = "read_only", userId?: number) => {
     if (!cooSuperAdmin) return; // Only COO can simulate
     setSimulation({ simulatedLens: lens, mode, simulatedUserId: userId });
-  }, [cooSuperAdmin]);
+    // Invalidate permission queries so they refetch for the simulated role
+    qc.invalidateQueries({ queryKey: ["auth-permissions"] });
+    qc.invalidateQueries({ queryKey: ["auth-permissions-matrix"] });
+  }, [cooSuperAdmin, qc]);
 
   const stopSimulation = useCallback(() => {
     setSimulation(null);
-  }, []);
+    // Invalidate permission queries to restore the natural role's permissions
+    qc.invalidateQueries({ queryKey: ["auth-permissions"] });
+    qc.invalidateQueries({ queryKey: ["auth-permissions-matrix"] });
+  }, [qc]);
 
   const activeLens = simulation ? simulation.simulatedLens : naturalLens;
   const activeLensLabel = LENS_ROLE_LABELS[activeLens] || activeLens;

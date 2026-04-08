@@ -1,4 +1,3 @@
-// @ts-nocheck — TODO: fix 36 type errors then remove this directive
 // Error breakdown: TS7006 implicit-any: 21, TS2345 query/param types: 12, other: 3
 // Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
 // add explicit ': any' to .map/.filter callback params on db result rows.
@@ -9,6 +8,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { sanitizeFilename, allowedFileFilter } from "./lib/upload-security";
+import { paramStr } from "./lib/req-params";
 import {
   engStageTemplates,
   engTaskTemplates,
@@ -72,17 +72,17 @@ export async function generateEngStagesForProject(
 ): Promise<{ stagesCreated: number; tasksCreated: number; stageDetails: string[] }> {
   const existingStages = await db.select({ id: projectEngStages.id, stageTemplateId: projectEngStages.stageTemplateId })
     .from(projectEngStages).where(eq(projectEngStages.projectId, projectId));
-  const existingTemplateIds = existingStages.map(s => s.stageTemplateId);
+  const existingTemplateIds = existingStages.map((s: any) => s.stageTemplateId);
 
   let templatesToGenerate = await db.select().from(engStageTemplates)
     .where(eq(engStageTemplates.isActive, true))
     .orderBy(engStageTemplates.sortOrder);
 
-  templatesToGenerate = templatesToGenerate.filter(t => !existingTemplateIds.includes(t.id));
+  templatesToGenerate = templatesToGenerate.filter((t: any) => !existingTemplateIds.includes(t.id));
 
   if (stageNames && stageNames.length > 0) {
     const namesLower = stageNames.map(n => n.toLowerCase());
-    templatesToGenerate = templatesToGenerate.filter(t => namesLower.includes(t.name.toLowerCase()));
+    templatesToGenerate = templatesToGenerate.filter((t: any) => namesLower.includes(t.name.toLowerCase()));
   }
 
   let stagesCreated = 0;
@@ -173,7 +173,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/eng-stages/templates/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [template] = await db.select().from(engStageTemplates).where(eq(engStageTemplates.id, id));
       if (!template) return res.status(404).json({ error: "Template not found" });
 
@@ -192,7 +192,7 @@ export function registerEngStageRoutes(app: Express) {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
 
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const { isActive } = req.body;
       await db.update(engStageTemplates).set({ isActive }).where(eq(engStageTemplates.id, id));
       logAuditFromReq(req, { entityType: "eng_stage_template", entityId: String(id), action: "update", changesJson: { description: "Stage template updated", isActive } });
@@ -207,7 +207,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const stageTemplateId = parseInt(req.params.id);
+      const stageTemplateId = parseInt(paramStr(req.params.id));
       const { title, description, isRequired, sequence, defaultOwnerRole } = req.body;
       if (!title) return res.status(400).json({ error: "Title is required" });
       const maxSeq = await db.select({ max: sql<number>`COALESCE(MAX(sequence), 0)` }).from(engTaskTemplates).where(eq(engTaskTemplates.stageTemplateId, stageTemplateId));
@@ -231,7 +231,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const taskId = parseInt(req.params.taskId);
+      const taskId = parseInt(paramStr(req.params.taskId));
       const { title, description, isRequired, sequence, defaultOwnerRole } = req.body;
       const updates: any = {};
       if (title !== undefined) updates.title = title;
@@ -253,7 +253,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const taskId = parseInt(req.params.taskId);
+      const taskId = parseInt(paramStr(req.params.taskId));
       const [deleted] = await db.update(engTaskTemplates).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(engTaskTemplates.id, taskId)).returning();
       if (!deleted) return res.status(404).json({ error: "Task template not found" });
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(taskId), action: "delete", changesJson: { description: "Task template deleted", title: deleted.title } });
@@ -268,7 +268,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const stageTemplateId = parseInt(req.params.id);
+      const stageTemplateId = parseInt(paramStr(req.params.id));
       const { name, description, isRequired, allowedFileTypes, requiredCount } = req.body;
       if (!name) return res.status(400).json({ error: "Name is required" });
       const [deliverable] = await db.insert(engDeliverableTemplates).values({
@@ -291,7 +291,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const delId = parseInt(req.params.delId);
+      const delId = parseInt(paramStr(req.params.delId));
       const { name, description, isRequired, allowedFileTypes, requiredCount } = req.body;
       const updates: any = {};
       if (name !== undefined) updates.name = name;
@@ -313,7 +313,7 @@ export function registerEngStageRoutes(app: Express) {
     try {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required" });
-      const delId = parseInt(req.params.delId);
+      const delId = parseInt(paramStr(req.params.delId));
       const [deleted] = await db.update(engDeliverableTemplates).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(engDeliverableTemplates.id, delId)).returning();
       if (!deleted) return res.status(404).json({ error: "Deliverable template not found" });
       logAuditFromReq(req, { entityType: "eng_stage_item", entityId: String(delId), action: "delete", changesJson: { description: "Deliverable template deleted", name: deleted.name } });
@@ -327,7 +327,7 @@ export function registerEngStageRoutes(app: Express) {
   app.post("/api/projects/:projectId/eng-stages/generate", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
 
       const [project] = await db.select({ id: projectInfo.id, projectName: projectInfo.projectName })
         .from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -349,15 +349,15 @@ export function registerEngStageRoutes(app: Express) {
       if (!stageTemplateId && existingStages.length > 0) {
         const activeTemplates = await db.select({ id: engStageTemplates.id })
           .from(engStageTemplates).where(eq(engStageTemplates.isActive, true));
-        const existingTemplateIds = new Set(existingStages.map(s => s.stageTemplateId));
-        const remaining = activeTemplates.filter(t => !existingTemplateIds.has(t.id));
+        const existingTemplateIds = new Set(existingStages.map((s: any) => s.stageTemplateId));
+        const remaining = activeTemplates.filter((t: any) => !existingTemplateIds.has(t.id));
         if (remaining.length === 0) {
           return res.status(409).json({ error: "Engineering stages have already been generated for this project" });
         }
       }
 
       if (stageTemplateId) {
-        const alreadyExists = existingStages.some(s => s.stageTemplateId === stageTemplateId);
+        const alreadyExists = existingStages.some((s: any) => s.stageTemplateId === stageTemplateId);
         if (alreadyExists) {
           return res.status(409).json({ error: "This engineering stage has already been generated for this project" });
         }
@@ -380,7 +380,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/eng-stages", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
 
       const stages = await db.select({
         id: projectEngStages.id,
@@ -420,9 +420,9 @@ export function registerEngStageRoutes(app: Express) {
           .where(eq(projectEngTasks.projectEngStageId, s.id));
 
         const totalTasks = tasks.length;
-        const completedTasks = tasks.filter(t => t.status === "complete").length;
-        const requiredTasks = tasks.filter(t => t.isRequired).length;
-        const requiredComplete = tasks.filter(t => t.isRequired && t.status === "complete").length;
+        const completedTasks = tasks.filter((t: any) => t.status === "complete").length;
+        const requiredTasks = tasks.filter((t: any) => t.isRequired).length;
+        const requiredComplete = tasks.filter((t: any) => t.isRequired && t.status === "complete").length;
 
         const deliverables = await db.select({ id: projectEngDeliverables.id })
           .from(projectEngDeliverables)
@@ -460,7 +460,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/eng-stages/:stageId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const stageId = parseInt(req.params.stageId);
+      const stageId = parseInt(paramStr(req.params.stageId));
 
       const [stage] = await db.select({
         id: projectEngStages.id,
@@ -549,7 +549,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.patch("/api/eng-stages/tasks/:taskId", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const taskId = parseInt(req.params.taskId);
+      const taskId = parseInt(paramStr(req.params.taskId));
       const user = getUser(req);
       const { status, notes, ownerUserId, hasDeliverable } = req.body;
 
@@ -626,7 +626,7 @@ export function registerEngStageRoutes(app: Express) {
       if (task) {
         const allTasks = await db.select({ status: projectEngTasks.status })
           .from(projectEngTasks).where(eq(projectEngTasks.projectEngStageId, task.stageId));
-        const anyInProgress = allTasks.some(t => t.status === "in_progress" || t.status === "complete");
+        const anyInProgress = allTasks.some((t: any) => t.status === "in_progress" || t.status === "complete");
         const [currentStage] = await db.select({ status: projectEngStages.status, projectId: projectEngStages.projectId })
           .from(projectEngStages).where(eq(projectEngStages.id, task.stageId));
         if (currentStage?.status === "not_started" && anyInProgress) {
@@ -650,7 +650,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.post("/api/eng-stages/tasks/:taskId/deliverables", jwtAuth, requireAuth, upload.single("file"), async (req: Request, res: Response) => {
     try {
-      const taskId = parseInt(req.params.taskId);
+      const taskId = parseInt(paramStr(req.params.taskId));
       const user = getUser(req);
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No file uploaded" });
@@ -684,7 +684,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.patch("/api/eng-stages/deliverables/:id/approve", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const user = getUser(req);
       const { status } = req.body;
 
@@ -719,7 +719,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.post("/api/eng-stages/stages/:stageId/deliverables", jwtAuth, requireAuth, upload.single("file"), async (req: Request, res: Response) => {
     try {
-      const stageId = parseInt(req.params.stageId);
+      const stageId = parseInt(paramStr(req.params.stageId));
       const user = getUser(req);
       const file = req.file;
       if (!file) return res.status(400).json({ error: "No file uploaded" });
@@ -752,7 +752,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.get("/api/eng-stages/deliverables/:id/download", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
       if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
 
@@ -770,7 +770,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.delete("/api/eng-stages/deliverables/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [deliverable] = await db.select().from(projectEngDeliverables).where(eq(projectEngDeliverables.id, id));
       if (!deliverable) return res.status(404).json({ error: "Deliverable not found" });
 
@@ -789,7 +789,7 @@ export function registerEngStageRoutes(app: Express) {
   app.patch("/api/eng-stages/approvals/:id", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const user = getUser(req);
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const { status, comments } = req.body;
 
       const [approval] = await db.select().from(projectEngApprovals).where(eq(projectEngApprovals.id, id));
@@ -841,7 +841,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.post("/api/eng-stages/stages/:stageId/complete", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const stageId = parseInt(req.params.stageId);
+      const stageId = parseInt(paramStr(req.params.stageId));
 
       const [stage] = await db.select({
         id: projectEngStages.id,
@@ -869,7 +869,7 @@ export function registerEngStageRoutes(app: Express) {
           .innerJoin(engTaskTemplates, eq(projectEngTasks.taskTemplateId, engTaskTemplates.id))
           .where(eq(projectEngTasks.projectEngStageId, stageId));
 
-        const incompleteTasks = tasks.filter(t => t.isRequired && t.status !== "complete");
+        const incompleteTasks = tasks.filter((t: any) => t.isRequired && t.status !== "complete");
         for (const t of incompleteTasks) {
           missing.push(`Task incomplete: ${t.title}`);
         }
@@ -885,7 +885,7 @@ export function registerEngStageRoutes(app: Express) {
 
         for (const dt of delTemplates) {
           if (!dt.isRequired) continue;
-          const uploadedForThis = uploaded.filter(u => u.deliverableTemplateId === dt.id);
+          const uploadedForThis = uploaded.filter((u: any) => u.deliverableTemplateId === dt.id);
           if (uploadedForThis.length < dt.requiredCount) {
             missing.push(`Deliverable missing: ${dt.name} (${uploadedForThis.length}/${dt.requiredCount} uploaded)`);
           }
@@ -895,7 +895,7 @@ export function registerEngStageRoutes(app: Express) {
       if (rules.requireQaApproval) {
         const qaApprovals = await db.select().from(projectEngApprovals)
           .where(and(eq(projectEngApprovals.projectEngStageId, stageId), eq(projectEngApprovals.approverRole, "QA_REVIEW")));
-        if (qaApprovals.length === 0 || qaApprovals.some(a => a.status !== "approved")) {
+        if (qaApprovals.length === 0 || qaApprovals.some((a: any) => a.status !== "approved")) {
           missing.push("QA Review approval required (Dean)");
         }
       }
@@ -903,7 +903,7 @@ export function registerEngStageRoutes(app: Express) {
       if (rules.requireTechnicalSignoff) {
         const techApprovals = await db.select().from(projectEngApprovals)
           .where(and(eq(projectEngApprovals.projectEngStageId, stageId), eq(projectEngApprovals.approverRole, "TECHNICAL_SIGNOFF")));
-        if (techApprovals.length === 0 || techApprovals.some(a => a.status !== "approved")) {
+        if (techApprovals.length === 0 || techApprovals.some((a: any) => a.status !== "approved")) {
           missing.push("Technical Signoff required (Tanaka)");
         }
       }
@@ -941,7 +941,7 @@ export function registerEngStageRoutes(app: Express) {
           // Also fetch the project PM to ensure they're notified even if not a team member
           const [proj] = await db.select({ pmUserId: projectInfo.pmUserId })
             .from(projectInfo).where(eq(projectInfo.id, stageProject.projectId));
-          const recipientIds = new Set(teamMembers.map(m => m.userId).filter(Boolean));
+          const recipientIds = new Set(teamMembers.map((m: any) => m.userId).filter(Boolean));
           if (proj?.pmUserId) recipientIds.add(proj.pmUserId);
 
           const currentUser = getUser(req);
@@ -985,7 +985,7 @@ export function registerEngStageRoutes(app: Express) {
       const user = getUser(req);
       if (!isCoo(user.role)) return res.status(403).json({ error: "COO access required for override" });
 
-      const stageId = parseInt(req.params.stageId);
+      const stageId = parseInt(paramStr(req.params.stageId));
       const { reason } = req.body;
       if (!reason || reason.trim().length === 0) {
         return res.status(400).json({ error: "Override reason is mandatory" });
@@ -1035,7 +1035,7 @@ export function registerEngStageRoutes(app: Express) {
 
   app.patch("/api/eng-stages/stages/:stageId/status", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
-      const stageId = parseInt(req.params.stageId);
+      const stageId = parseInt(paramStr(req.params.stageId));
       const { status } = req.body;
       const updates: any = { status };
       if (status === "in_progress" || status === "blocked" || status === "ready_for_review") {

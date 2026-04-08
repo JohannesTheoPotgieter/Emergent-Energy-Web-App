@@ -1682,7 +1682,7 @@ export function ExpenditureEditableTab({ projectName, projectId, highlightId, in
                 <Button onClick={handleSave} disabled={saveMutation.isPending || overrideComment.length < 3} size="sm"
                   className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
                   data-testid="button-save-edits">
-                  <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Submitting..." : "Submit for Approval"}
+                  <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Saving..." : isAdmin ? "Save Changes" : "Submit for Approval"}
                 </Button>
               </PermissionGate>
             </div>

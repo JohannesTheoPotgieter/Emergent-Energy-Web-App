@@ -37,6 +37,7 @@ import { recordOverride, recordManualEdit } from "../lib/audit/diff-engine";
 import { recordManualEditFlag } from "../lib/manual-edit-flag";
 import { safeNum, getFYRange } from "../lib/home-helpers";
 import { isEffectivelyRealisedLocal, isCashflowConfirmedCheck } from "../lib/finance-helpers";
+import { paramStr } from "../lib/req-params";
 
 export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
@@ -222,7 +223,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
         .where(isNull(projectExecutionState.deletedAt));
       const activeNames = new Set(
         activeProjectsResult
-          .filter(p => {
+          .filter((p: { projectName: string; phase: string | null; phaseUpdatedAt: Date | null }) => {
             const phase = p.phase || "";
             if (HARD_EXCLUDED.includes(phase)) return false;
             if (phase === "Compliance Handover") {
@@ -234,7 +235,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
             }
             return true;
           })
-          .map(p => p.projectName.toLowerCase().trim())
+          .map((p: { projectName: string }) => p.projectName.toLowerCase().trim())
       );
 
       const [allNormCosts, allNormRev] = await Promise.all([
@@ -855,7 +856,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   app.get("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const links = await storage.getExpenseTaskLinks(req.params.projectName);
+      const links = await storage.getExpenseTaskLinks(paramStr(req.params.projectName));
       res.json(links);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch expense task links" });
@@ -868,9 +869,9 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
       if (!expenseId || taskId === undefined) {
         return res.status(400).json({ error: "expenseId and taskId are required" });
       }
-      const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
+      const link = await storage.upsertExpenseTaskLink(paramStr(req.params.projectName), expenseId, taskId, (req.user as any)?.id);
 
-      logAuditFromReq(req, { entityType: "expense_link", action: "create", projectName: req.params.projectName, changesJson: { description: "Expense linked to task", expenseId, taskId } });
+      logAuditFromReq(req, { entityType: "expense_link", action: "create", projectName: paramStr(req.params.projectName), changesJson: { description: "Expense linked to task", expenseId, taskId } });
       res.json(link);
     } catch (error) {
       console.error("Link expense task error:", error);
@@ -880,9 +881,9 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   app.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdmin, async (req, res) => {
     try {
-      await storage.deleteExpenseTaskLink(req.params.projectName, parseInt(req.params.expenseId));
+      await storage.deleteExpenseTaskLink(paramStr(req.params.projectName), parseInt(paramStr(req.params.expenseId)));
 
-      logAuditFromReq(req, { entityType: "expense_link", action: "delete", projectName: req.params.projectName, changesJson: { description: "Expense task link removed", expenseId: req.params.expenseId } });
+      logAuditFromReq(req, { entityType: "expense_link", action: "delete", projectName: paramStr(req.params.projectName), changesJson: { description: "Expense task link removed", expenseId: paramStr(req.params.expenseId) } });
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to unlink task" });
@@ -892,8 +893,8 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
   app.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdmin, async (req, res) => {
     try {
       const { dateOverride, reason } = req.body;
-      const projectName = req.params.projectName;
-      const expenseId = parseInt(req.params.expenseId);
+      const projectName = paramStr(req.params.projectName);
+      const expenseId = parseInt(paramStr(req.params.expenseId));
       await storage.updateExpenseTaskLinkDateOverride(projectName, expenseId, dateOverride, reason);
 
       try {
@@ -942,7 +943,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
         expensePaymentDate: expensePaymentDate || null,
         lineStatus: 'Planned',
         isManual: true,
-      });
+      } as any);
 
       try {
         await recordManualEdit({
@@ -983,7 +984,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
         expenseCategory: categoryName,
         expenseLineItem: categoryName,
         isManual: true,
-      });
+      } as any);
 
       try {
         await recordManualEdit({
@@ -1039,7 +1040,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
         expensePaymentDate: taskEndDate,
         lineStatus: 'Planned',
         isManual: true,
-      });
+      } as any);
       await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
 
       try {
@@ -1141,7 +1142,7 @@ export function registerFinanceLegacyExtractedRoutes(app: Express): void {
 
   app.delete("/api/cos-status-override/:expenseId", requireAuth, async (req, res) => {
     try {
-      const expenseId = parseInt(req.params.expenseId);
+      const expenseId = parseInt(paramStr(req.params.expenseId));
 
       // PE dual-write removed — normalized_cost_lines is canonical source
       // DEPRECATED: cosStatusOverrides table removed — override data baked into base rows

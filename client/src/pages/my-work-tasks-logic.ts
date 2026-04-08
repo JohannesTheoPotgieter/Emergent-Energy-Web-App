@@ -53,7 +53,7 @@ export function canReassignTask(task: TaskLike, role = ""): boolean {
     case "tr_register":
       return isPrivileged;
     case "quality_task":
-      return isPrivileged || isAssigneeContext || ["QUALITY_MANAGER", "quality_manager"].includes(role);
+      return isPrivileged || isAssigneeContext || role.toUpperCase() === "QUALITY_MANAGER";
     default:
       return false;
   }

@@ -39,8 +39,8 @@ export function registerOverviewExtractedRoutes(app: Express): void {
                 db.select().from(workItems).where(isNull(workItems.deletedAt)),
                 db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
               ]);
-              const piNameMap = new Map(piRows.map(p => [p.id, p.projectName]));
-              return wiRows.map(wi => ({
+              const piNameMap = new Map(piRows.map((p: { id: number; projectName: string }) => [p.id, p.projectName]));
+              return wiRows.map((wi: any) => ({
                 id: wi.id,
                 projectId: wi.projectId,
                 projectName: (wi.projectId ? piNameMap.get(wi.projectId) : null) || "",
@@ -75,8 +75,8 @@ export function registerOverviewExtractedRoutes(app: Express): void {
                 db.select().from(workItems).where(and(eq(workItems.workstream, 'PM' as any), eq(workItems.source, 'SMART_IMPORT' as any), isNull(workItems.deletedAt))),
                 db.select({ id: projectInfo.id, projectName: projectInfo.projectName }).from(projectInfo),
               ]);
-              const piNameMap = new Map(piRows.map(p => [p.id, p.projectName]));
-              return wiRows.map(wi => ({
+              const piNameMap = new Map(piRows.map((p: { id: number; projectName: string }) => [p.id, p.projectName]));
+              return wiRows.map((wi: any) => ({
                 id: wi.id,
                 projectId: wi.projectId,
                 projectName: (wi.projectId ? piNameMap.get(wi.projectId) : null) || "",
