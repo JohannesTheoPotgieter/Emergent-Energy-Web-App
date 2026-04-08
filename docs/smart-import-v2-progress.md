@@ -768,6 +768,13 @@ Live database was queried via Neon SQL console. Results:
 | Plan rows without taskNo | 37 of 2,694 (1.4%) — acceptable |
 | Baseline JSON integrity | PASS — all 62 projects have valid normalization baselines |
 
+### Bulk review fix (2026-04-08)
+
+Live testing revealed that clicking "Review" on any run in the bulk panel opened the v1 wizard regardless of the Simple/Advanced toggle. Fixed by:
+- Adding `initialRunId` and `onBack` props to `SmartImportV2Flow`
+- When `useV2=true`, `handleSwitchToWizard` now opens the v2 plain-language flow instead of the v1 wizard
+- Back button from v2 review returns to the bulk panel
+
 ### Definitive verdict
 
 **YES WITH CONDITIONS:**

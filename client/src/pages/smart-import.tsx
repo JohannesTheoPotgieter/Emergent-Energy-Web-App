@@ -3857,6 +3857,8 @@ export default function SmartImportPage() {
   const [runLoadError, setRunLoadError] = useState<string | null>(null);
   const [bulkMode, setBulkMode] = useState(false);
   const [cameFromBulk, setCameFromBulk] = useState(false);
+  /** When v2 is active and user clicks Review on a bulk run, open it in v2 flow */
+  const [v2ReviewRunId, setV2ReviewRunId] = useState<number | null>(null);
   const pendingRunsQuery = useQuery<PendingRun[], Error>({
     queryKey: ["smart-import-pending-governance"],
     queryFn: async () => {
@@ -3936,13 +3938,21 @@ export default function SmartImportPage() {
   };
 
   const handleSwitchToWizard = (wizardRunId: number) => {
-    setBulkMode(false);
-    setCameFromBulk(true);
-    setRunId(wizardRunId);
-    setStep(2);
-    setIssues([]);
-    setRunLoadError(null);
-    loadRunData(wizardRunId);
+    if (useV2) {
+      // V2: open the run in the plain-language v2 flow
+      setBulkMode(false);
+      setV2ReviewRunId(wizardRunId);
+      setCameFromBulk(true);
+    } else {
+      // V1: open in the advanced wizard
+      setBulkMode(false);
+      setCameFromBulk(true);
+      setRunId(wizardRunId);
+      setStep(2);
+      setIssues([]);
+      setRunLoadError(null);
+      loadRunData(wizardRunId);
+    }
   };
 
   return (
@@ -3993,7 +4003,15 @@ export default function SmartImportPage() {
 
       {/* ── V2 flow (plain-language) ── */}
       {useV2 && !bulkMode && (
-        <SmartImportV2Flow onBulkMode={() => setBulkMode(true)} />
+        <SmartImportV2Flow
+          onBulkMode={() => setBulkMode(true)}
+          initialRunId={v2ReviewRunId}
+          onBack={cameFromBulk ? () => {
+            setV2ReviewRunId(null);
+            setCameFromBulk(false);
+            setBulkMode(true);
+          } : undefined}
+        />
       )}
 
       {/* ── V1 flow (advanced/legacy) ── */}
