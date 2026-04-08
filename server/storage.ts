@@ -166,6 +166,12 @@ export interface IStorage {
   createManyProjectPlans(plans: InsertProjectPlan[]): Promise<ProjectPlan[]>;
   deleteProjectPlansByProject(projectName: string): Promise<void>;
 
+  // Plan overrides (collapsed into direct work-item edits)
+  upsertManyProjectPlanOverrides(
+    overrides: Array<{ projectName: string; rowNumber: number; fieldName: string; overrideValue: any; createdBy?: number }>
+  ): Promise<Array<{ projectName: string; rowNumber: number; fieldName: string; overrideValue: any }>>;
+  deleteProjectPlanOverridesByProject(projectName: string): Promise<void>;
+
   // Cashflow Points (new)
   getAllCashflowPoints(): Promise<CashflowPoint[]>;
   getCashflowPointsByProject(projectName: string): Promise<CashflowPoint[]>;
@@ -230,7 +236,7 @@ export interface IStorage {
   updateExpenseTaskLinkDateOverride(projectName: string, expenseId: number, dateOverride: string | null, reason: string | null): Promise<void>;
 
   // Manual Expense Rows
-  createManualExpense(data: InsertProgramExpense): Promise<ProgramExpense>;
+  createManualExpense(data: InsertProgramExpense & { projectName?: string; idempotencyKey?: string; projectId?: number }): Promise<ProgramExpense>;
 
   // Home Notes
   getHomeNotes(): Promise<HomeNotes | undefined>;
@@ -1521,6 +1527,60 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  /**
+   * Applies inline field overrides to work-item backed project plan rows.
+   * Replaces the removed project_plan_overrides table — edits are applied
+   * directly to the work_items row identified by sourceRow + projectName.
+   */
+  async upsertManyProjectPlanOverrides(
+    overrides: Array<{ projectName: string; rowNumber: number; fieldName: string; overrideValue: any; createdBy?: number }>
+  ): Promise<Array<{ projectName: string; rowNumber: number; fieldName: string; overrideValue: any }>> {
+    const PLAN_FIELD_TO_WI: Record<string, string> = {
+      highLevelProgramme: "title",
+      actualStart: "startDate",
+      durationDays: "duration",
+      actualEnd: "endDate",
+      actualPctComplete: "percentComplete",
+      expectedPctComplete: "expectedPctComplete",
+      taskNo: "wbsCode",
+    };
+
+    const results: typeof overrides = [];
+
+    for (const o of overrides) {
+      const wiColumn = PLAN_FIELD_TO_WI[o.fieldName] || o.fieldName;
+      const piRow = await this.dbInstance.select({ id: projectInfo.id }).from(projectInfo)
+        .where(eq(projectInfo.projectName, o.projectName)).limit(1);
+      if (piRow.length === 0) continue;
+
+      const matchingRows = await this.dbInstance.select({ id: workItems.id }).from(workItems)
+        .where(and(
+          eq(workItems.projectId, piRow[0].id),
+          eq(workItems.workstream, "PM"),
+          eq(workItems.source, "SMART_IMPORT"),
+          eq(workItems.sourceRow, o.rowNumber),
+          isNull(workItems.deletedAt),
+        )).limit(1);
+
+      if (matchingRows.length > 0) {
+        await this.dbInstance.update(workItems)
+          .set({ [wiColumn]: o.overrideValue, updatedAt: new Date() } as any)
+          .where(eq(workItems.id, matchingRows[0].id));
+        results.push(o);
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Soft-deletes all work-item backed plan rows for a project.
+   * Replaces the removed deleteProjectPlanOverridesByProject.
+   */
+  async deleteProjectPlanOverridesByProject(projectName: string): Promise<void> {
+    await this.deleteProjectPlansByProject(projectName);
+  }
+
   // Cashflow Points (new)
   async getAllCashflowPoints(): Promise<CashflowPoint[]> {
     return this.dbInstance.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)).orderBy(desc(cashflowPoints.createdAt));
@@ -1895,7 +1955,7 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(expenseTaskLinks.projectName, projectName), eq(expenseTaskLinks.expenseId, expenseId)));
   }
 
-  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number }): Promise<ProgramExpense> {
+  async createManualExpense(data: InsertProgramExpense & { idempotencyKey?: string; projectId?: number; projectName?: string }): Promise<ProgramExpense> {
     // Resolve projectId from projectName if not explicitly provided.
     let resolvedProjectId = data.projectId ?? null;
     if (!resolvedProjectId && data.projectName) {

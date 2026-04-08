@@ -55,6 +55,7 @@ import { logAuditFromReq } from "../audit-logger";
 import { validateTaskCreate, validateTaskUpdate } from "../lib/task-validation";
 import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine";
 import { sendError, badRequest, validationError } from "../lib/api-error";
+import { paramStr } from "../lib/req-params";
 import { computeNextRecurrenceDate, isOverdue, shouldBlockTask, validateDependencyPair } from "../lib/mytool-work-engine";
 import { mytoolTaskIdempotencyStore } from "../lib/mytool-task-idempotency";
 
@@ -95,16 +96,16 @@ async function enrichMytoolTasks(userId: number, tasks: any[]) {
   const taskById = new Map<number, any>(tasks.map((t) => [t.id, t]));
 
   for (const task of tasks) {
-    const blockedBy = deps.filter((d) => d.successorId === task.id).map((d) => {
+    const blockedBy = deps.filter((d: any) => d.successorId === task.id).map((d: any) => {
       const predecessor = taskById.get(d.predecessorId);
       return { ...d, predecessorTaskId: d.predecessorId, successorTaskId: d.successorId, predecessorStatus: predecessor?.status ?? null, predecessorTitle: predecessor?.title ?? null };
     });
-    const blocking = deps.filter((d) => d.predecessorId === task.id).map((d) => {
+    const blocking = deps.filter((d: any) => d.predecessorId === task.id).map((d: any) => {
       const successor = taskById.get(d.successorId);
       return { ...d, predecessorTaskId: d.predecessorId, successorTaskId: d.successorId, successorStatus: successor?.status ?? null, successorTitle: successor?.title ?? null };
     });
 
-    const blockersIncomplete = blockedBy.filter((d) => shouldBlockTask([d.predecessorStatus]));
+    const blockersIncomplete = blockedBy.filter((d: any) => shouldBlockTask([d.predecessorStatus]));
     task.blockedBy = blockedBy;
     task.blocking = blocking;
     task.blockedByCount = blockersIncomplete.length;
@@ -259,7 +260,7 @@ export function registerMytoolRoutes(app: Express): void {
       }
 
       const combined = [
-        ...myToolTasksResult.map((t) => ({
+        ...myToolTasksResult.map((t: any) => ({
           id: t.id,
           taskType: "mytool" as const,
           title: t.title,
@@ -304,7 +305,7 @@ export function registerMytoolRoutes(app: Express): void {
           phase: t.phase,
           owner: t.owner,
         })),
-        ...engTasksForUser.map((t) => ({
+        ...engTasksForUser.map((t: any) => ({
           id: t.id,
           taskType: "engineering" as const,
           title: t.title,
@@ -660,7 +661,7 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.patch("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
-      const taskId = parseInt(req.params.id);
+      const taskId = parseInt(paramStr(req.params.id));
       const userId = (req.user as any).id;
       const validationErrors = validateTaskUpdate(req.body);
       if (validationErrors.length > 0) {
@@ -746,7 +747,7 @@ export function registerMytoolRoutes(app: Express): void {
         }
       }
 
-      logAuditFromReq(req, { entityType: "mytool_task", action: "update", entityId: req.params.id, changesJson: { description: "MyTool task updated", changedFields: Object.keys(req.body) } });
+      logAuditFromReq(req, { entityType: "mytool_task", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "MyTool task updated", changedFields: Object.keys(req.body) } });
       res.json(task);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -755,14 +756,14 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.delete("/api/mytool/tasks/:id", requireAuth, async (req, res) => {
     try {
-      const taskId = parseInt(req.params.id);
+      const taskId = parseInt(paramStr(req.params.id));
       const userId = (req.user as any).id;
       const existingTask = await storage.getMytoolTask(taskId);
       if (existingTask && existingTask.ownerUserId !== userId && !isMyToolOversightRole(req)) {
         return res.status(403).json({ error: "Insufficient permissions to perform data imports" });
       }
       await storage.deleteMytoolTask(taskId);
-      logAuditFromReq(req, { entityType: "mytool_task", action: "delete", entityId: req.params.id, changesJson: { description: "MyTool task deleted" } });
+      logAuditFromReq(req, { entityType: "mytool_task", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "MyTool task deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -788,7 +789,7 @@ export function registerMytoolRoutes(app: Express): void {
         )
       );
       // Map response to legacy shape for backward compat
-      res.json(deps.map((d) => ({
+      res.json(deps.map((d: any) => ({
         id: d.id,
         predecessorTaskId: d.predecessorId,
         successorTaskId: d.successorId,
@@ -818,7 +819,7 @@ export function registerMytoolRoutes(app: Express): void {
       const predecessorLinks = await db.select().from(workItemDependencies).where(
         and(eq(workItemDependencies.successorId, predecessorTaskId), isNull(workItemDependencies.deletedAt))
       );
-      if (predecessorLinks.some((l) => l.predecessorId === successorTaskId)) {
+      if (predecessorLinks.some((l: any) => l.predecessorId === successorTaskId)) {
         return res.status(400).json({ error: "Circular dependency is not allowed" });
       }
 
@@ -908,8 +909,8 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.patch("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
     try {
-      const block = await storage.updateMytoolTimeblock(parseInt(req.params.id), req.body);
-      logAuditFromReq(req, { entityType: "mytool_timeblock", action: "update", entityId: req.params.id, changesJson: { description: "Timeblock updated" } });
+      const block = await storage.updateMytoolTimeblock(parseInt(paramStr(req.params.id)), req.body);
+      logAuditFromReq(req, { entityType: "mytool_timeblock", action: "update", entityId: paramStr(req.params.id), changesJson: { description: "Timeblock updated" } });
       res.json(block);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -918,8 +919,8 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.delete("/api/mytool/timeblocks/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteMytoolTimeblock(parseInt(req.params.id));
-      logAuditFromReq(req, { entityType: "mytool_timeblock", action: "delete", entityId: req.params.id, changesJson: { description: "Timeblock deleted" } });
+      await storage.deleteMytoolTimeblock(parseInt(paramStr(req.params.id)));
+      logAuditFromReq(req, { entityType: "mytool_timeblock", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Timeblock deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1076,8 +1077,8 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.delete("/api/mytool/email-links/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteEmailLink(parseInt(req.params.id));
-      logAuditFromReq(req, { entityType: "email_link", action: "delete", entityId: req.params.id, changesJson: { description: "Email link deleted" } });
+      await storage.deleteEmailLink(parseInt(paramStr(req.params.id)));
+      logAuditFromReq(req, { entityType: "email_link", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "Email link deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1108,8 +1109,8 @@ export function registerMytoolRoutes(app: Express): void {
 
   app.delete("/api/mytool/dod-templates/:id", requireAuth, async (req, res) => {
     try {
-      await storage.deleteMytoolDodTemplate(parseInt(req.params.id));
-      logAuditFromReq(req, { entityType: "dod_template", action: "delete", entityId: req.params.id, changesJson: { description: "DoD template deleted" } });
+      await storage.deleteMytoolDodTemplate(parseInt(paramStr(req.params.id)));
+      logAuditFromReq(req, { entityType: "dod_template", action: "delete", entityId: paramStr(req.params.id), changesJson: { description: "DoD template deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1188,7 +1189,7 @@ export function registerMytoolRoutes(app: Express): void {
   app.patch("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const ruleId = parseInt(req.params.id);
+      const ruleId = parseInt(paramStr(req.params.id));
       const { triageRules: triageRulesTable } = await import("@shared/schema");
       const [existing] = await db.select().from(triageRulesTable).where(eq(triageRulesTable.id, ruleId)).limit(1);
       if (existing && existing.ownerUserId !== userId && !isMyToolOversightRole(req)) {
@@ -1208,7 +1209,7 @@ export function registerMytoolRoutes(app: Express): void {
   app.delete("/api/mytool/triage-rules/:id", requireAuth, async (req, res) => {
     try {
       const userId = (req.user as any).id;
-      const ruleId = parseInt(req.params.id);
+      const ruleId = parseInt(paramStr(req.params.id));
       const { triageRules: triageRulesTable } = await import("@shared/schema");
       const [existing] = await db.select().from(triageRulesTable).where(eq(triageRulesTable.id, ruleId)).limit(1);
       if (existing && existing.ownerUserId !== userId && !isMyToolOversightRole(req)) {
@@ -1236,9 +1237,9 @@ export function registerMytoolRoutes(app: Express): void {
       const rules = await db.select().from(triageRulesTable)
         .where(and(eq(triageRulesTable.ownerUserId, userId), eq(triageRulesTable.enabled, true)));
 
-      const keywords = rules.filter(r => r.ruleType === 'keyword').map(r => r.value.toLowerCase());
-      const senders = rules.filter(r => r.ruleType === 'sender').map(r => r.value.toLowerCase());
-      const domains = rules.filter(r => r.ruleType === 'domain').map(r => r.value.toLowerCase());
+      const keywords = rules.filter((r: any) => r.ruleType === 'keyword').map((r: any) => r.value.toLowerCase());
+      const senders = rules.filter((r: any) => r.ruleType === 'sender').map((r: any) => r.value.toLowerCase());
+      const domains = rules.filter((r: any) => r.ruleType === 'domain').map((r: any) => r.value.toLowerCase());
 
       let flagged: any[] = [];
       try {
@@ -1260,19 +1261,19 @@ export function registerMytoolRoutes(app: Express): void {
         const snippetLower = (email.snippet || "").toLowerCase();
         const senderEmailLower = (email.senderEmail || "").toLowerCase();
 
-        const matchedKeyword = keywords.find(kw => subjectLower.includes(kw) || snippetLower.includes(kw));
+        const matchedKeyword = keywords.find((kw: string) => subjectLower.includes(kw) || snippetLower.includes(kw));
         if (matchedKeyword) {
           keywordMatches.push({ ...email, matchedRule: matchedKeyword, matchType: 'keyword' });
           continue;
         }
 
-        const matchedSender = senders.find(s => senderEmailLower === s || (email.sender || "").toLowerCase() === s);
+        const matchedSender = senders.find((s: string) => senderEmailLower === s || (email.sender || "").toLowerCase() === s);
         if (matchedSender) {
           senderMatches.push({ ...email, matchedRule: matchedSender, matchType: 'sender' });
           continue;
         }
 
-        const matchedDomain = domains.find(d => senderEmailLower.endsWith("@" + d) || senderEmailLower.endsWith("." + d));
+        const matchedDomain = domains.find((d: string) => senderEmailLower.endsWith("@" + d) || senderEmailLower.endsWith("." + d));
         if (matchedDomain) {
           senderMatches.push({ ...email, matchedRule: matchedDomain, matchType: 'domain' });
         }

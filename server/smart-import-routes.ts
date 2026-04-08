@@ -2960,12 +2960,17 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       summary: importSummary,
       counts,
       // V2 incremental commit details (null when v1 fallback was used)
-      v2: v2Result ? {
-        totalInserted: v2Result.totalInserted,
-        totalUpdated: v2Result.totalUpdated,
-        totalUnchanged: v2Result.totalUnchanged,
-        totalMissing: v2Result.totalMissing,
-      } : undefined,
+      // v2Result is mutated inside the transaction callback; capture to
+      // a fresh const so TypeScript can narrow the type correctly.
+      v2: (() => {
+        const r = v2Result as IncrementalCommitResult | null;
+        return r ? {
+          totalInserted: r.totalInserted,
+          totalUpdated: r.totalUpdated,
+          totalUnchanged: r.totalUnchanged,
+          totalMissing: r.totalMissing,
+        } : undefined;
+      })(),
       preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
       preservedManualEdits: preservedManualEditsCount > 0 ? preservedManualEditsCount : undefined,
       overwriteWarnings: overwriteWarnings.length > 0 ? overwriteWarnings : undefined,

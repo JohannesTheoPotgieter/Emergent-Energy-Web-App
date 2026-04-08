@@ -23,7 +23,7 @@ import { eq, and, sql, isNull, desc } from "drizzle-orm";
 import { z } from "zod";
 import {
   qcItemInstance, qcChecklist, workItems,
-  projectClientHistory,
+  projectClientHistory, projectExecutionState,
 } from "@shared/schema";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
@@ -35,6 +35,7 @@ import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-ada
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
 import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
 import { actorFromReq, createProjectEvent } from "../services/project-event-service";
+import { paramStr } from "../lib/req-params";
 import { classifyProjectInfoPayload } from "../services/source-of-truth-policy";
 import { listImportSyncState } from "../services/imports-governance-service";
 import {
@@ -73,7 +74,7 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
 
   app.get("/api/projects/:projectName/health-summary", requireAuth, async (req: Request, res: Response) => {
     try {
-      const { projectName } = req.params;
+      const projectName = paramStr(req.params.projectName);
       const decodedName = decodeURIComponent(projectName);
 
       // Fetch all data in parallel
@@ -476,7 +477,7 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
 
   app.patch("/api/project-info/:id", requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid project ID" });
 
       const editSchema = z.object({
@@ -532,11 +533,15 @@ export function registerProjectInfoExtractedRoutes(app: Express): void {
       if (projectDualWriteEnabled) {
         projectMirror.attempted = true;
         try {
+          // Fetch execution state for phase/rag/gate fields (they live in projectExecutionState, not projectInfo)
+          const execStateRows = await db.select().from(projectExecutionState)
+            .where(eq(projectExecutionState.projectId, updated.id)).limit(1);
+          const execState = execStateRows[0] ?? null;
           await db.execute(sql`
             INSERT INTO core.projects (
               id, legacy_project_info_id, project_name, client_id, phase, rag_status, execution_gate_status, execution_gate_reason, updated_at, source_table
             ) VALUES (
-              ${updated.id}, ${updated.id}, ${updated.projectName}, ${updated.clientId ?? null}, ${updated.phase ?? null}, ${updated.ragStatus ?? null}, ${updated.executionGateStatus ?? null}, ${updated.executionGateReason ?? null}, NOW(), 'public.project_info'
+              ${updated.id}, ${updated.id}, ${updated.projectName}, ${updated.clientId ?? null}, ${execState?.phase ?? null}, ${execState?.ragStatus ?? null}, ${execState?.executionGateStatus ?? null}, ${execState?.executionGateReason ?? null}, NOW(), 'public.project_info'
             )
             ON CONFLICT (id) DO UPDATE
             SET
