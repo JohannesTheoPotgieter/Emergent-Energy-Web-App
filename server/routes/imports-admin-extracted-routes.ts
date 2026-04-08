@@ -39,6 +39,7 @@ import { eq, and, or, sql } from "drizzle-orm";
 import { runSmartImportPreview } from "../lib/import/index";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
+import { requirePermission } from "../permission-middleware";
 import { logAuditFromReq } from "../audit-logger";
 import { ApiError, sendError, badRequest, logApiError } from "../lib/api-error";
 
@@ -412,7 +413,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
 
         } catch (fileError: any) {
           console.error("File parse/upload error:", fileError);
-          const { dbMode } = await import("./db");
+          const { dbMode } = await import("../db");
           
           results.push({
             file: file.originalname,
@@ -447,7 +448,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       });
     } catch (error: any) {
       console.error("Upload error:", error);
-      const { dbMode } = await import("./db");
+      const { dbMode } = await import("../db");
       res.status(500).json({ 
         error: error.message || "Failed to process upload",
         message: error.message || "Failed to process upload",
@@ -560,7 +561,7 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
       
     } catch (error: any) {
       console.error("Reprocess error:", error);
-      const { dbMode } = await import("./db");
+      const { dbMode } = await import("../db");
       res.status(500).json({ 
         error: error.message || "Failed to reprocess files",
         message: error.message || "Failed to reprocess files",
@@ -1160,8 +1161,8 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
     try {
       // 1. Health Check
       try {
-        const { dbMode } = await import("./db");
-        const { getDbConfigStatus } = await import("./db-config");
+        const { dbMode } = await import("../db");
+        const { getDbConfigStatus } = await import("../db-config");
         const dbStatus = getDbConfigStatus();
         
         const healthPassed = dbStatus.connected === true;
@@ -1387,8 +1388,8 @@ export async function registerImportsAdminExtractedRoutes(app: Express): Promise
 
   // ==================== SHAREPOINT IMPORT ROUTES ====================
 
-  const { testConnection, isSharePointConfigured, browseFolders } = await import("./sharepoint");
-  const { runFullImport, retryFailedImports, importSingleFile, createSnapshotFromUpload } = await import("./importPipeline");
+  const { testConnection, isSharePointConfigured, browseFolders } = await import("../sharepoint");
+  const { runFullImport, retryFailedImports, importSingleFile, createSnapshotFromUpload } = await import("../importPipeline");
 
   // Admin: Get SP settings
   app.get("/api/admin/sp-settings", requireAuth, requireAdmin, async (req, res) => {

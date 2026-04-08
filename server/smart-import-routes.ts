@@ -3288,53 +3288,56 @@ export function registerSmartImportRoutes(app: Express) {
       const { getDbMode } = await import("./db");
       if (getDbMode() === "sqlite") return;
       const { sql: rawSql } = await import("drizzle-orm");
-      await db.execute(rawSql.raw(`
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_qty NUMERIC(12,4);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_rate_unit NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_total NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_cos_total NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_qty NUMERIC(12,4);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_rate_unit NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_actual_total NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_po_number TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoice_number TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoiced_date TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_confirmed BOOLEAN DEFAULT FALSE;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_font_color TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_payment_date TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_confirmed BOOLEAN DEFAULT FALSE;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_font_color TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS revenue_amount NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS actual_cos_total NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS line_status TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_line_hash TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_state TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_forecast_payment_date TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS supplier_name TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER;
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE work_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE work_item_assignments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE invoice_pattern_matches ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE normalized_execution_phases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE project_revenue_summary ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE project_plan ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-      `));
+      const schemaStatements = [
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_qty NUMERIC(12,4)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_rate_unit NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_total NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_cos_total NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_qty NUMERIC(12,4)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_rate_unit NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_actual_total NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_po_number TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoice_number TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoiced_date TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_confirmed BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_font_color TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_payment_date TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_confirmed BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_font_color TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS revenue_amount NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS actual_cos_total NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS line_status TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_line_hash TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_state TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_forecast_payment_date TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS supplier_name TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT'`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name TEXT`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT'`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE work_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE work_item_assignments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE invoice_pattern_matches ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE normalized_execution_phases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE project_revenue_summary ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE project_plan ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+      ];
+      for (const statement of schemaStatements) {
+        await db.execute(rawSql.raw(statement));
+      }
       console.log("[SmartImport] Ensured program_expense/program_inflows columns exist");
     } catch (e: any) {
-      console.warn("[SmartImport] Column check skipped:", e?.message?.slice(0, 80));
+      console.warn("[SmartImport] Column check skipped:", e?.message ?? String(e));
     }
   })();
 }
