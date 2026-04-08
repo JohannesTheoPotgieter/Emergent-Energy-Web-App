@@ -47,14 +47,14 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: 
           <div className="flex items-center gap-3">
             <span className="text-sm font-medium text-slate-600 w-28">Project</span>
             <span className="text-sm font-semibold" data-testid="found-project-name">
-              {projectInfo?.name || "Unknown project"}
+              {String(projectInfo?.name || "Unknown project")}
             </span>
           </div>
           {projectInfo && (projectInfo.sizeKwp || projectInfo.pm || projectInfo.pd || projectInfo.contractValue) && (
             <div className="ml-[7.5rem] mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground" data-testid="found-project-details">
-              {projectInfo.sizeKwp && <span>Size: {projectInfo.sizeKwp} kWp</span>}
-              {projectInfo.pd && <span>PD: {projectInfo.pd}</span>}
-              {projectInfo.pm && <span>PM: {projectInfo.pm}</span>}
+              {projectInfo.sizeKwp && <span>Size: {String(projectInfo.sizeKwp)} kWp</span>}
+              {projectInfo.pd && <span>PD: {String(projectInfo.pd)}</span>}
+              {projectInfo.pm && <span>PM: {String(projectInfo.pm)}</span>}
               {projectInfo.contractValue && (
                 <span>Contract: R {Number(projectInfo.contractValue).toLocaleString("en-ZA", { maximumFractionDigits: 0 })}</span>
               )}
@@ -98,7 +98,7 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: 
                 >
                   <div className="w-2 h-2 rounded-full bg-emerald-500" />
                   <span className="text-sm font-medium flex-1">
-                    {SECTION_LABELS[sec.section] || sec.section}
+                    {SECTION_LABELS[sec.section] || String(sec.section || "")}
                   </span>
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     {rowCount != null && (
@@ -106,7 +106,7 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: 
                         {rowCount} row{rowCount !== 1 ? "s" : ""}
                       </span>
                     )}
-                    <span>from sheet "{sec.sheetName}"</span>
+                    <span>from sheet &quot;{String(sec.sheetName || "")}&quot;</span>
                   </div>
                 </div>
               );
@@ -129,7 +129,7 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: 
               </p>
               <ul className="text-xs space-y-0.5">
                 {unmatched.map((u: any, i: number) => (
-                  <li key={i}>"{u.sheetName}" {u.reason ? `\u2014 ${u.reason}` : ""}</li>
+                  <li key={i}>&quot;{String(u.sheetName || "")}&quot; {u.reason ? `\u2014 ${String(u.reason)}` : ""}</li>
                 ))}
               </ul>
             </div>
@@ -188,16 +188,16 @@ export function SmartImportFoundStep({ preview, planning, onContinue, onBack }: 
                 <div>
                   <p className="font-medium text-slate-600 mb-1">Planner warnings</p>
                   <ul className="space-y-0.5 text-slate-500">
-                    {planning.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}
+                    {planning.warnings.map((w: any, i: number) => <li key={i}>{typeof w === "object" ? JSON.stringify(w) : String(w)}</li>)}
                   </ul>
                 </div>
               )}
               {sections.map((sec: any, i: number) => (
                 <div key={i}>
-                  <p className="font-medium text-slate-600">{sec.section}</p>
+                  <p className="font-medium text-slate-600">{String(sec.section || "")}</p>
                   <p className="text-slate-500">
-                    Sheet: {sec.sheetName}, Header row: {sec.headerRowIndex + 1}, Data rows: {sec.dataStartRowIndex + 1}–{sec.dataEndRowIndex + 1}
-                    {sec.layoutVariant && sec.layoutVariant !== "UNKNOWN" ? `, Layout: ${sec.layoutVariant}` : ""}
+                    Sheet: {String(sec.sheetName || "")}, Header row: {sec.headerRowIndex + 1}, Data rows: {sec.dataStartRowIndex + 1}–{sec.dataEndRowIndex + 1}
+                    {sec.layoutVariant && sec.layoutVariant !== "UNKNOWN" ? `, Layout: ${String(sec.layoutVariant)}` : ""}
                     , Confidence: {Math.round(sec.confidence * 100)}%
                   </p>
                 </div>

@@ -39,8 +39,8 @@ interface ConflictRow {
   fields: ConflictField[];
 }
 
-function ValueDisplay({ label, value, accent }: { label: string; value: string | null; accent?: string }) {
-  const displayValue = value || "\u2014 (empty)";
+function ValueDisplay({ label, value, accent }: { label: string; value: unknown; accent?: string }) {
+  const displayValue = value != null && value !== "" ? (typeof value === "object" ? JSON.stringify(value) : String(value)) : "\u2014 (empty)";
   return (
     <div className={`px-3 py-2 rounded-lg border text-sm ${accent || "bg-white border-slate-200"}`}>
       <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">{label}</div>
@@ -70,9 +70,9 @@ function ConflictCard({
             ? <Check className="w-4 h-4 text-emerald-600" />
             : <AlertTriangle className="w-4 h-4 text-amber-600" />
           }
-          <span className="text-sm font-semibold">{row.displayLabel}</span>
+          <span className="text-sm font-semibold">{String(row.displayLabel || "")}</span>
           <Badge variant="outline" className="text-[10px]">
-            {SECTION_LABELS[row.section] || row.section}
+            {SECTION_LABELS[row.section] || String(row.section || "")}
           </Badge>
           {allResolved && (
             <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px]">

@@ -18,6 +18,12 @@ import {
 import { useLocation } from "wouter";
 import { SmartImportV2Flow } from "@/components/smart-import";
 
+function safeStr(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
 export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
   const headers: Record<string, string> = {};
@@ -469,7 +475,7 @@ export function UploadStep({
                       <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
                       <div className="space-y-1">
                         <p className="font-medium text-red-700">Why it failed</p>
-                        <p className="text-red-600">{entry.error}</p>
+                        <p className="text-red-600">{safeStr(entry.error)}</p>
                       </div>
                     </div>
                     <div className="border-t border-red-200 pt-1.5 mt-1.5">
@@ -549,7 +555,7 @@ export function UploadStep({
         {error && (
           <div className="flex items-center gap-2 text-red-600 text-sm" data-testid="text-upload-error">
             <AlertCircle className="w-4 h-4" />
-            {error}
+            {safeStr(error)}
           </div>
         )}
 
@@ -1693,7 +1699,7 @@ export function IssuesStep({
                           </Badge>
                         )}
                         <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
-                          {issue.message}
+                          {safeStr(issue.message)}
                         </p>
                       </div>
                       {issue.autoResolved && (
@@ -2126,7 +2132,7 @@ export function IssuesStep({
               {unresolvedBlockers.map((b: any) => (
                 <li key={b.id} className="text-xs text-red-700 flex items-center gap-1.5" data-testid={`admin-blocker-${b.id}`}>
                   <X className="w-3 h-3" />
-                  {b.message}
+                  {safeStr(b.message)}
                 </li>
               ))}
             </ul>
@@ -2912,7 +2918,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
               <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium text-red-800">{previouslyDeletedWarning.message}</p>
+                <p className="text-sm font-medium text-red-800">{safeStr(previouslyDeletedWarning.message)}</p>
                 <p className="text-xs text-red-600">This project was previously deleted from the system. Proceeding will create a brand new project with this name and import all the data from this file.</p>
                 <div className="flex gap-2 mt-3">
                   <Button
@@ -2946,7 +2952,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div className="flex-1 space-y-3">
-                <p className="text-sm font-medium text-amber-800">{manualEditsWarning.message}</p>
+                <p className="text-sm font-medium text-amber-800">{safeStr(manualEditsWarning.message)}</p>
                 <p className="text-xs text-amber-600">Choose how to handle your existing manual changes below.</p>
 
                 {manualEditsWarning.conflicts && manualEditsWarning.conflicts.length > 0 && (
@@ -3115,7 +3121,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium text-amber-800">{recencyWarning.message}</p>
+                <p className="text-sm font-medium text-amber-800">{safeStr(recencyWarning.message)}</p>
                 <p className="text-xs text-amber-600">
                   {recencyWarning.error === "import_equal_date"
                     ? "The uploaded file has the same date as the existing data. You may proceed if the file contains corrections."
@@ -3153,7 +3159,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div className="space-y-1">
-                <p className="text-sm font-medium text-amber-800">{planEditConflict.message}</p>
+                <p className="text-sm font-medium text-amber-800">{safeStr(planEditConflict.message)}</p>
                 <p className="text-xs text-amber-600">{planEditConflict.unresolvedCount} unresolved plan edit(s) must be reviewed before this import can be committed.</p>
               </div>
             </div>
@@ -3192,7 +3198,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div className="space-y-1">
-                <p className="text-sm font-medium text-amber-800">{duplicateProjectWarning.message}</p>
+                <p className="text-sm font-medium text-amber-800">{safeStr(duplicateProjectWarning.message)}</p>
                 <p className="text-xs text-amber-600">
                   {duplicateProjectWarning.matchCandidates?.some((m: any) => m.matchReason === "same_project_different_phase")
                     ? "This file appears to be a different phase of an existing project. Please confirm which project to map to."
@@ -3231,7 +3237,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <XCircle className="w-5 h-5 text-red-600 mt-0.5" />
               <div className="space-y-1">
-                <p className="text-sm font-medium text-red-800">{blockerWarning.message}</p>
+                <p className="text-sm font-medium text-red-800">{safeStr(blockerWarning.message)}</p>
                 <p className="text-xs text-red-600">Fix these rows in the Issues step, then retry the commit.</p>
               </div>
             </div>
@@ -3243,9 +3249,9 @@ export function PreviewCommitStep({
                     {blocker.rowReference != null ? <Badge variant="outline">Row {blocker.rowReference}</Badge> : null}
                     {blocker.field ? <Badge variant="outline">{blocker.field}</Badge> : null}
                   </div>
-                  <p className="mt-2 font-medium text-slate-900">{blocker.message}</p>
-                  {blocker.reason ? <p className="mt-1">Reason: {blocker.reason}</p> : null}
-                  {blocker.expected ? <p className="mt-1">Expected: {blocker.expected}</p> : null}
+                  <p className="mt-2 font-medium text-slate-900">{safeStr(blocker.message)}</p>
+                  {blocker.reason ? <p className="mt-1">Reason: {safeStr(blocker.reason)}</p> : null}
+                  {blocker.expected ? <p className="mt-1">Expected: {safeStr(blocker.expected)}</p> : null}
                 </div>
               ))}
             </div>
@@ -3612,7 +3618,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                       </span>
                     )}
                     {(r.status === "skipped" || r.status === "failed") && r.error && (
-                      <span className="text-xs text-red-500 max-w-[200px] truncate">{r.error}</span>
+                      <span className="text-xs text-red-500 max-w-[200px] truncate">{safeStr(r.error)}</span>
                     )}
                   </div>
                 ))}
