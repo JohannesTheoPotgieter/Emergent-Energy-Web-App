@@ -22,6 +22,9 @@ import { SECTION_LABELS, CLASSIFICATION_LABELS, IMPORT_MODE_LABELS } from "./lab
 
 interface ChangesStepProps {
   planning: any;
+  planError?: string | null;
+  loadingPlan?: boolean;
+  onRetryPlan?: () => void;
   onContinue: () => void;
   onBack: () => void;
 }
@@ -153,12 +156,33 @@ function SectionSummaryCard({ sectionKey, plan }: SectionSummaryCardProps) {
   );
 }
 
-export function SmartImportChangesStep({ planning, onContinue, onBack }: ChangesStepProps) {
+export function SmartImportChangesStep({ planning, planError, loadingPlan, onRetryPlan, onContinue, onBack }: ChangesStepProps) {
+  if (planError) {
+    return (
+      <Card data-testid="changes-step">
+        <CardContent className="py-8 text-center space-y-3">
+          <p className="text-red-600 font-medium">Failed to load plan</p>
+          <p className="text-sm text-muted-foreground">{planError}</p>
+          <div className="flex justify-center gap-3 pt-2">
+            <Button variant="outline" onClick={onBack} data-testid="button-back">
+              <ArrowLeft className="w-4 h-4 mr-1" /> Back
+            </Button>
+            {onRetryPlan && (
+              <Button onClick={onRetryPlan} data-testid="button-retry-plan">
+                <RefreshCw className="w-4 h-4 mr-1" /> Retry
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (!planning) {
     return (
       <Card data-testid="changes-step">
         <CardContent className="py-8 text-center text-muted-foreground">
-          Loading plan...
+          {loadingPlan ? "Loading plan..." : "Waiting for plan data..."}
         </CardContent>
       </Card>
     );

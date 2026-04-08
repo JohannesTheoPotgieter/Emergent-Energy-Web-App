@@ -37,13 +37,15 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack }: V2FlowPr
   const [preview, setPreview] = useState<any>(null);
   const [planning, setPlanning] = useState<any>(null);
   const [loadingPlan, setLoadingPlan] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
   const [decisions, setDecisions] = useState<Record<string, "keep_app" | "accept_file">>({});
 
   // Load planner data for the current run
   const loadPlannerData = useCallback(async (id: number) => {
     setLoadingPlan(true);
+    setPlanError(null);
+    setPlanning(null);
     try {
-      // Load run data (includes preview) and planner data in parallel
       const [runRes, planRes] = await Promise.all([
         fetch(`/api/smart-import/${id}`, { headers: getAuthHeaders() }),
         fetch(`/api/smart-import/${id}/plan`, { headers: getAuthHeaders() }),
@@ -57,9 +59,13 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack }: V2FlowPr
       if (planRes.ok) {
         const planData = await planRes.json();
         setPlanning(planData.planning);
+      } else {
+        const errData = await planRes.json().catch(() => ({ error: "Unknown error" }));
+        setPlanError(errData.error || `Plan request failed (${planRes.status})`);
       }
     } catch (err) {
       console.error("[SmartImportV2] Failed to load planner data:", err);
+      setPlanError(err instanceof Error ? err.message : "Failed to load plan data");
     } finally {
       setLoadingPlan(false);
     }
@@ -152,6 +158,9 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack }: V2FlowPr
       {step === 3 && !loadingPlan && (
         <SmartImportChangesStep
           planning={planning}
+          planError={planError}
+          loadingPlan={loadingPlan}
+          onRetryPlan={runId ? () => loadPlannerData(runId) : undefined}
           onContinue={() => setStep(hasConflicts ? 4 : 5)}
           onBack={() => setStep(2)}
         />

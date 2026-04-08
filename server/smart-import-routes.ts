@@ -868,6 +868,8 @@ router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, re
   try {
     const runId = parseInt(req.params.runId as string);
     if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+    console.log(`[smart-import] GET plan start: runId=${runId}`);
+    const t0 = Date.now();
 
     const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
     if (!run) return res.status(404).json({ error: "Import run not found" });
@@ -877,7 +879,14 @@ router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, re
       return res.status(400).json({ error: "No normalization data found in this import run" });
     }
 
-    const planning = await runImportPlanner(run.projectId, summary.normalization);
+    const timeoutMs = 30000;
+    const plannerPromise = runImportPlanner(run.projectId, summary.normalization);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Planner timed out after ${timeoutMs}ms`)), timeoutMs)
+    );
+
+    const planning = await Promise.race([plannerPromise, timeoutPromise]);
+    console.log(`[smart-import] GET plan done: runId=${runId} in ${Date.now() - t0}ms`);
 
     res.json({ planning });
   } catch (err: unknown) {
