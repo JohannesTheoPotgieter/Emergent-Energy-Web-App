@@ -95,8 +95,8 @@ describe("Revenue Tracker endpoints use canonical source", () => {
 
   it("Revenue tracker month-detail uses canonical cost lines for all-projects case", () => {
     const startIdx = routes.indexOf('"/api/revenue-tracker/month-detail"');
-    const block = routes.substring(startIdx, startIdx + 1000);
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
+    const block = routes.substring(startIdx, startIdx + 1200);
+    expect(block).toContain("getCanonicalAllCurrentCostLines()");
   });
 });
 
@@ -133,33 +133,36 @@ describe("Dashboard services use direct NCL queries (already canonical)", () => 
   });
 });
 
-describe("Remaining endpoints still on merged path (documented)", () => {
+describe("Expenditure endpoints now delegate to canonical project-cost service", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("program-expenses pass-through still uses merged path (serves expenditure tabs)", () => {
+  it("program-expenses route resolves projectId and delegates to canonical service", () => {
     const block = routes.substring(
       routes.indexOf('"/api/program-expenses"'),
-      routes.indexOf('"/api/program-expenses"') + 500
+      routes.indexOf('"/api/program-expenses"') + 800
     );
-    // This endpoint serves ExpenditureTab which needs PE-specific fields
-    expect(block).toContain("storage.getAllProgramExpenses()");
+    expect(block).toContain("getCanonicalProjectCostLines(");
+    expect(block).toContain("getCanonicalAllCurrentCostLines()");
+    expect(block).not.toContain("storage.getAllProgramExpenses()");
   });
 
-  it("expenditure-breakdown still uses merged path (serves editable tab)", () => {
-    expect(routes).toContain("storage.getProgramExpensesByProject(projectName)");
-    // This is intentional — editable tab needs PE-specific fields like expenseQty
+  it("expenditure-breakdown route no longer uses merged program-expense storage reads", () => {
+    const block = routes.substring(
+      routes.indexOf('"/api/expenditure-breakdown/:projectName"'),
+      routes.indexOf('"/api/expenditure-breakdown/:projectName"') + 700
+    );
+    expect(block).toContain("getCanonicalProjectCostLinesByName(projectName)");
+    expect(block).not.toContain("storage.getProgramExpensesByProject(projectName)");
   });
 });
 
 describe("Data source alignment summary", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("getAllProgramExpenses is only used by expenditure pass-through endpoints", () => {
-    // Count remaining getAllProgramExpenses calls
-    const matches = routes.match(/storage\.getAllProgramExpenses\(\)/g);
-    // Should be 2: program-expenses pass-through + cashflow legacy pass-through
-    expect(matches).toBeTruthy();
-    expect(matches!.length).toBeLessThanOrEqual(3);
+  it("program-expense merge reads are not used by high-risk tracker/expenditure endpoints", () => {
+    const matches = routes.match(/storage\.getProgramExpensesByProject\(/g) || [];
+    // Remaining usages are edit/writeback workflows, not high-risk read screens.
+    expect(matches.length).toBeLessThanOrEqual(5);
   });
 
   it("getAllCostLinesForCashflow is used by all tracker endpoints", () => {
