@@ -42,7 +42,8 @@ describe("Phase 2: sub_project_name on program_expense and program_inflows", () 
 });
 
 describe("Phase 3: API endpoints support sub-project filtering", () => {
-  const routes = read("server/routes.ts");
+  // Handlers were extracted from server/routes.ts to server/routes/finance-legacy-extracted-routes.ts
+  const routes = read("server/routes/finance-legacy-extracted-routes.ts");
 
   // NOTE: The /api/program-expenses routes were moved to server/departments/finance-routes.ts.
   // The subProject filter was present in the legacy (dead) route but is NOT present in the

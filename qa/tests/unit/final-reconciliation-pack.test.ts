@@ -173,7 +173,8 @@ describe("A. TRUTH MAP: Idempotency", () => {
 // =========================================================================
 
 describe("B. DECOMMISSION MATRIX: Items safe to remove", () => {
-  it("SAFE: legacy /api/program-expenses in routes.ts — already removed", () => {
+  it("SAFE: legacy /api/program-expenses in routes.ts — fully extracted (routes.ts is now a thin shell)", () => {
+    // routes.ts is now a thin legacy shell; all handlers extracted to server/routes/
     const routes = read("server/routes.ts");
     const hasActiveHandler = /app\.get\(\s*["']\/api\/program-expenses["']/.test(routes);
     expect(hasActiveHandler).toBe(false);
@@ -270,19 +271,22 @@ describe("C. BASELINE: Changed behaviors (all intentional)", () => {
     const storage = read("server/storage.ts");
     const block = storage.substring(
       storage.indexOf("async createManualExpense"),
-      storage.indexOf("async createManualExpense") + 1000
+      storage.indexOf("async createManualExpense") + 1500
     );
     expect(block).toContain("projectId: resolvedProjectId");
   });
 
   it("CHANGE: COS tracker/GP tracker use NCL-only source", () => {
     // Canonicalization: aligns tracker totals with dashboard totals
+    // COS tracker now uses getHighRiskAllCostReadRows() which delegates to getAllCostLinesForCashflow
     const routes = read("server/departments/finance-routes.ts");
     const cosBlock = routes.substring(
       routes.indexOf('"/api/cos-tracker"'),
       routes.indexOf('"/api/cos-tracker/project/')
     );
-    expect(cosBlock).toContain("storage.getAllCostLinesForCashflow()");
+    expect(cosBlock).toContain("getHighRiskAllCostReadRows()");
+    // Verify the wrapper delegates to the canonical NCL-only source
+    expect(routes).toContain("return storage.getAllCostLinesForCashflow();");
   });
 
   it("CHANGE: all margin calculations use shared computeMarginPct", () => {

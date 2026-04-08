@@ -204,11 +204,12 @@ describe("CAT 4: Duplicate merge output (dedup failure in selectWinningExpenseRo
 // =========================================================================
 
 describe("CAT 5: UI duplicate rendering", () => {
-  it("MECHANISM: React renders each item in the array with key={exp.id}", () => {
+  it("MECHANISM: React renders each item in the array with a unique key", () => {
     const tab = read("client/src/components/tabs/ExpenditureEditableTab.tsx");
-    expect(tab).toContain("key={exp.id}");
-    // If two items had the same id, React would only render one (last wins)
-    // If two different items had different ids, both render
+    // Key uses canonicalLineKey when available, falling back to id
+    expect(tab).toContain("key={exp.canonicalLineKey || exp.id}");
+    // If two items had the same key, React would only render one (last wins)
+    // If two different items had different keys, both render
   });
 
   it("PROTECTION: negative IDs guarantee no collision with PE IDs", () => {

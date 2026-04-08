@@ -72,10 +72,11 @@ describe("assignment unique constraints", () => {
   });
 
   it("entityAssignment inserts use onConflictDoNothing", () => {
-    const routesSource = read("server/routes.ts");
+    // Handlers were extracted from server/routes.ts to server/routes/mytool-routes.ts
+    const routesSource = read("server/routes/mytool-routes.ts");
     const trSource = read("server/tr-register-routes.ts");
 
-    // routes.ts has one entityAssignments insert
+    // mytool-routes.ts has entityAssignments insert (extracted from routes.ts)
     const routesInsertIdx = routesSource.indexOf("insert(entityAssignments)");
     expect(routesInsertIdx).toBeGreaterThan(-1);
     const routesChunk = routesSource.substring(routesInsertIdx, routesInsertIdx + 500);
