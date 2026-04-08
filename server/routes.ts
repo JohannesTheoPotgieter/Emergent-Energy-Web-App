@@ -278,57 +278,12 @@ function applyPlanningOverrides(
   });
 }
 
-// Apply project plan overrides to tasks/milestones
-const NUMERIC_PLAN_FIELDS = new Set(["actualPctComplete", "expectedPctComplete", "durationDays", "parentRowNumber", "indentLevel", "sortOrder"]);
-const BOOLEAN_PLAN_FIELDS = new Set(["isMilestone"]);
-
-function coercePlanOverride(fieldName: string, value: any): any {
-  if (value === null || value === undefined || value === "") return null;
-  if (NUMERIC_PLAN_FIELDS.has(fieldName)) {
-    const num = Number(value);
-    return isNaN(num) ? null : num;
-  }
-  if (BOOLEAN_PLAN_FIELDS.has(fieldName)) {
-    return value === true || value === "true";
-  }
-  return value;
-}
-
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
   if (role === "COO_ADMIN" || role === "CEO_ADMIN") {
     return next();
   }
   res.status(403).json({ error: "admin_required", message: "Admin access required", code: "ADMIN_REQUIRED" });
-}
-
-function requireRole(...roles: string[]) {
-  return (req: Request, res: Response, next: NextFunction) => {
-    if (req.user?.role && roles.includes(req.user.role)) {
-      return next();
-    }
-    res.status(403).json({ error: "forbidden", message: `Requires one of: ${roles.join(', ')}`, code: "ROLE_REQUIRED" });
-  };
-}
-
-function requireQmChallenge(req: Request, res: Response, next: NextFunction) {
-  const role = req.user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-  if ((req.session as any)?.qmChallengePassed) return next();
-  res.status(403).json({ error: "qm_challenge_required", message: "Quality Manager access code required", code: "QM_CHALLENGE_REQUIRED" });
-}
-
-function requireEpmChallenge(req: Request, res: Response, next: NextFunction) {
-  const role = req.user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN") return next();
-  if ((req.session as any)?.epmChallengePassed) return next();
-  res.status(403).json({ error: "epm_challenge_required", message: "Engineering Program Manager access code required", code: "EPM_CHALLENGE_REQUIRED" });
-}
-
-function requireAdminOrEpm(req: Request, res: Response, next: NextFunction) {
-  const role = req.user?.role;
-  if (role === "COO_ADMIN" || role === "CEO_ADMIN" || role === "eng_program_manager" || role === "ENGINEERING_MANAGER") return next();
-  res.status(403).json({ error: "forbidden", message: "Admin or Engineering Program Manager access required", code: "ROLE_REQUIRED" });
 }
 
 const PLAN_CHANGE_NOTIFY_ROLES = ['PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER'];
@@ -367,38 +322,6 @@ async function sendPlanChangeNotifications(
   }
 }
 
-async function notifyWorkItemWatchers(params: {
-  workItemId: number;
-  actorUserId?: number;
-  projectName: string;
-  title: string;
-  body: string;
-  eventType?: string;
-}) {
-  try {
-    const watcherRows = await db
-      .select({ userId: workItemAssignments.userId })
-      .from(workItemAssignments)
-      .where(and(eq(workItemAssignments.workItemId, params.workItemId), eq(workItemAssignments.role, "VIEWER")));
-
-    if (!watcherRows.length) return;
-
-    for (const watcher of watcherRows) {
-      if (params.actorUserId && watcher.userId === params.actorUserId) continue;
-      await db.insert(notifications).values({
-        recipientUserId: watcher.userId,
-        eventType: params.eventType || "watcher_update",
-        title: params.title,
-        body: params.body,
-        projectName: params.projectName,
-        linkedTaskId: params.workItemId,
-        changeDetails: JSON.stringify({ source: "watcher_notification", workItemId: params.workItemId }),
-      });
-    }
-  } catch (error: any) {
-    console.warn("[watcher-notify] Failed to notify watchers:", error?.message || error);
-  }
-}
 
 export async function registerRoutes(
   httpServer: Server,
