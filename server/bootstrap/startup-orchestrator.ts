@@ -168,6 +168,7 @@ async function runAdditiveSchemaAlignments() {
         return;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
+        const pgCause = (err as any)?.cause;
         const isTransient = /connection|ECONNREFUSED|not yet accepting|timeout/i.test(msg);
         if (isTransient && attempt < 2) {
           console.warn(`[Schema] ${label} transient error, retrying in 2s: ${msg}`);
@@ -175,6 +176,7 @@ async function runAdditiveSchemaAlignments() {
           continue;
         }
         console.error(`[Schema] ${label} error:`, msg);
+        if (pgCause) console.error(`[Schema] ${label} PG cause:`, pgCause.message || pgCause);
       }
     }
   }
@@ -468,15 +470,149 @@ async function runAdditiveSchemaAlignments() {
     END $$;
   `);
 
+  await safeExec("work_items view update trigger", `
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items')
+         AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='core' AND tablename='work_items') THEN
+        CREATE OR REPLACE FUNCTION public._work_items_view_update()
+        RETURNS trigger LANGUAGE plpgsql AS $fn$
+        BEGIN
+          UPDATE core.work_items SET
+            client_id = NEW.client_id,
+            project_id = NEW.project_id,
+            workstream = NEW.workstream,
+            type = NEW.type,
+            source = NEW.source,
+            title = NEW.title,
+            description = NEW.description,
+            status = NEW.status,
+            priority = NEW.priority,
+            start_date = NEW.start_date,
+            end_date = NEW.end_date,
+            duration = NEW.duration,
+            percent_complete = NEW.percent_complete,
+            wbs_code = NEW.wbs_code,
+            outline_number = NEW.outline_number,
+            parent_id = NEW.parent_id,
+            owner_user_id = NEW.owner_user_id,
+            is_shared = COALESCE(NEW.is_shared, OLD.is_shared),
+            external_ref = NEW.external_ref,
+            legacy_table = NEW.legacy_table,
+            legacy_id = NEW.legacy_id,
+            updated_at = COALESCE(NEW.updated_at, NOW()),
+            deleted_at = NEW.deleted_at,
+            scheduled_date = NEW.scheduled_date,
+            scheduled_start_time = NEW.scheduled_start_time,
+            scheduled_end_time = NEW.scheduled_end_time,
+            expected_pct_complete = NEW.expected_pct_complete,
+            indent_level = NEW.indent_level,
+            is_milestone = COALESCE(NEW.is_milestone, OLD.is_milestone),
+            phase = NEW.phase,
+            owner_name = NEW.owner_name,
+            source_row = NEW.source_row,
+            source_sheet = NEW.source_sheet,
+            import_run_id = NEW.import_run_id,
+            baseline_start = NEW.baseline_start,
+            baseline_end = NEW.baseline_end,
+            baseline_duration = NEW.baseline_duration,
+            task_mode = NEW.task_mode,
+            actual_start = NEW.actual_start,
+            actual_end = NEW.actual_end,
+            actual_duration = NEW.actual_duration,
+            sort_order = COALESCE(NEW.sort_order, OLD.sort_order),
+            estimate_minutes = NEW.estimate_minutes,
+            task_category = NEW.task_category,
+            is_recurring = COALESCE(NEW.is_recurring, OLD.is_recurring),
+            recurrence_frequency = NEW.recurrence_frequency,
+            recurrence_interval = NEW.recurrence_interval,
+            recurrence_days_of_week = NEW.recurrence_days_of_week,
+            recurrence_end_date = NEW.recurrence_end_date,
+            recurrence_parent_id = NEW.recurrence_parent_id,
+            sub_project_name = NEW.sub_project_name,
+            hold_reason = NEW.hold_reason,
+            blocked_type = NEW.blocked_type,
+            approval_required = COALESCE(NEW.approval_required, OLD.approval_required),
+            linked_plan_item_id = NEW.linked_plan_item_id,
+            linked_deliverable_id = NEW.linked_deliverable_id,
+            linked_quality_item_instance_id = NEW.linked_quality_item_instance_id,
+            completed_at = NEW.completed_at,
+            tracking_rag = NEW.tracking_rag,
+            task_type_tag = NEW.task_type_tag,
+            blocker_reason = NEW.blocker_reason,
+            pd_ticket_id = NEW.pd_ticket_id,
+            planned_hours = NEW.planned_hours,
+            actual_hours = NEW.actual_hours,
+            bucket = NEW.bucket,
+            pinned_today = COALESCE(NEW.pinned_today, OLD.pinned_today),
+            pinned_week = COALESCE(NEW.pinned_week, OLD.pinned_week),
+            source_email_id = NEW.source_email_id,
+            source_email_subject = NEW.source_email_subject,
+            next_step = NEW.next_step,
+            definition_of_done = NEW.definition_of_done,
+            completion_note = NEW.completion_note
+          WHERE id = OLD.id;
+
+          UPDATE public._work_items_legacy SET
+            status = NEW.status,
+            title = NEW.title,
+            description = NEW.description,
+            priority = NEW.priority,
+            percent_complete = NEW.percent_complete,
+            start_date = NEW.start_date,
+            end_date = NEW.end_date,
+            duration = NEW.duration,
+            owner_user_id = NEW.owner_user_id,
+            owner_name = NEW.owner_name,
+            phase = NEW.phase,
+            actual_start = NEW.actual_start,
+            actual_end = NEW.actual_end,
+            actual_duration = NEW.actual_duration,
+            import_run_id = NEW.import_run_id,
+            updated_at = COALESCE(NEW.updated_at, NOW()),
+            deleted_at = NEW.deleted_at
+          WHERE id = OLD.id;
+
+          RETURN NEW;
+        END;
+        $fn$;
+
+        DROP TRIGGER IF EXISTS _work_items_view_update_trigger ON public.work_items;
+        CREATE TRIGGER _work_items_view_update_trigger
+          INSTEAD OF UPDATE ON public.work_items
+          FOR EACH ROW EXECUTE FUNCTION public._work_items_view_update();
+
+        RAISE NOTICE '[DB] Created _work_items_view_update trigger on work_items view';
+      END IF;
+    END $$;
+  `);
+
   await safeExec("sync work_items_id_seq to max(id)", `
-    DO $$ 
+    DO $$
     DECLARE max_id BIGINT;
+    DECLARE seq_exists BOOLEAN;
+    DECLARE core_exists BOOLEAN;
     BEGIN
-      IF EXISTS (SELECT 1 FROM pg_sequences WHERE sequencename = 'work_items_id_seq') THEN
+      SELECT EXISTS (
+        SELECT 1 FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relkind = 'S' AND c.relname = 'work_items_id_seq'
+      ) INTO seq_exists;
+
+      SELECT EXISTS (
+        SELECT 1 FROM pg_tables WHERE schemaname = 'core' AND tablename = 'work_items'
+      ) INTO core_exists;
+
+      IF seq_exists AND core_exists THEN
         SELECT COALESCE(MAX(id), 0) INTO max_id FROM core.work_items;
         IF max_id > 0 THEN
-          PERFORM setval('public.work_items_id_seq', max_id, true);
+          PERFORM setval('work_items_id_seq', max_id, true);
           RAISE NOTICE '[DB] Synced work_items_id_seq to %', max_id;
+        END IF;
+      ELSIF seq_exists THEN
+        SELECT COALESCE(MAX(id), 0) INTO max_id FROM public.work_items;
+        IF max_id > 0 THEN
+          PERFORM setval('work_items_id_seq', max_id, true);
+          RAISE NOTICE '[DB] Synced work_items_id_seq (from public.work_items) to %', max_id;
         END IF;
       END IF;
     END $$;

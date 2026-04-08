@@ -225,7 +225,7 @@ export function SmartImportConfirmStep({ runId, planning, preview, decisions, on
             <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <div>
               <p className="font-medium">Import could not be completed</p>
-              <p className="text-xs mt-0.5">{commitError}</p>
+              <p className="text-xs mt-0.5">{typeof commitError === "object" ? JSON.stringify(commitError) : String(commitError)}</p>
             </div>
           </div>
         )}

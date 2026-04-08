@@ -127,7 +127,7 @@ function SectionSummaryCard({ sectionKey, plan }: SectionSummaryCardProps) {
                       {CLASSIFICATION_LABELS[row.classification] || row.classification}
                     </Badge>
                   </td>
-                  <td className="py-1 pr-2 font-medium">{row.rowLabel || `Row ${idx + 1}`}</td>
+                  <td className="py-1 pr-2 font-medium">{String(row.rowLabel || `Row ${idx + 1}`)}</td>
                   <td className="py-1 text-muted-foreground">
                     {row.changedFields?.length > 0 && (
                       <span>{row.changedFields.length} field{row.changedFields.length > 1 ? "s" : ""} changed</span>
