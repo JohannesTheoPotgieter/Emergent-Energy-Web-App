@@ -188,11 +188,11 @@ export function registerPmOnTheGoRoutes(app: Express) {
             pi.is_active,
             COALESCE(
               (SELECT SUM(CAST(ncl.amount_ex_vat AS NUMERIC))
-               FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name), 0
+               FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name AND ncl.effective_to IS NULL), 0
             ) AS total_budget,
             COALESCE(
               (SELECT SUM(CAST(ncl.amount_ex_vat AS NUMERIC))
-               FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name
+               FROM normalized_cost_lines ncl WHERE ncl.project_name = pi.project_name AND ncl.effective_to IS NULL
                AND ncl.paid_date IS NOT NULL AND ncl.paid_date != ''), 0
             ) AS total_spent,
             COALESCE(
@@ -276,7 +276,7 @@ export function registerPmOnTheGoRoutes(app: Express) {
             COALESCE(SUM(CASE WHEN paid_date IS NOT NULL AND paid_date != '' THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS total_spent,
             COALESCE(SUM(CASE WHEN po_number IS NOT NULL AND po_number != '' THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS committed
           FROM normalized_cost_lines
-          WHERE project_name = ${p.projectName}
+          WHERE project_name = ${p.projectName} AND effective_to IS NULL
         `);
         const fin = (financials.rows as any[])[0] || {};
         const budget = parseFloat(fin.total_budget) || 0;

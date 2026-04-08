@@ -89,6 +89,10 @@ The app supports two database modes selected at runtime:
 - **Session:** Express session with role stored; no client-side-only permission checks for sensitive actions
 - **Azure Key Vault:** `@azure/keyvault-secrets` used for secret management in production
 
+### Snapshot / Import Deduplication
+
+Both `normalized_cost_lines` and `program_expense` use snapshot versioning via `effective_to` column. When new data is imported, previous rows are "closed" by setting `effective_to` to the import timestamp. **All queries aggregating costs/expenses MUST include `AND effective_to IS NULL`** (or the Drizzle equivalent `isNull(table.effectiveTo)`) to avoid summing historical snapshots alongside current data.
+
 ### Excel Tracker Import
 
 A core workflow — users upload `.xlsx` project tracker workbooks:

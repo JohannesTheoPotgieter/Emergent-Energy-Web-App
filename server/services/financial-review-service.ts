@@ -42,7 +42,7 @@ export async function computeFinancialSnapshot(projectId: number) {
   const costResult = await db
     .select({ total: sql<string>`COALESCE(SUM(NULLIF(amount_ex_vat, '')::numeric), 0)` })
     .from(normalizedCostLines)
-    .where(eq(normalizedCostLines.projectId, projectId));
+    .where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo)));
   const actualTotal = Number(costResult[0]?.total || 0);
 
   // Revenue summary
