@@ -29,9 +29,11 @@ interface V2FlowProps {
   initialRunId?: number | null;
   /** Called when user wants to go back (e.g., to bulk panel) */
   onBack?: () => void;
+  /** Called when the active runId changes so the parent can track it */
+  onRunIdChange?: (runId: number | null) => void;
 }
 
-export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack }: V2FlowProps) {
+export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack, onRunIdChange }: V2FlowProps) {
   const [step, setStep] = useState(initialRunId ? 2 : 1);
   const [runId, setRunId] = useState<number | null>(initialRunId || null);
   const [preview, setPreview] = useState<any>(null);
@@ -74,9 +76,11 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack }: V2FlowPr
   // If opened with an initialRunId (e.g., from bulk panel "Review"), load it
   useEffect(() => {
     if (initialRunId) {
+      setRunId(initialRunId);
       loadPlannerData(initialRunId);
+      onRunIdChange?.(initialRunId);
     }
-  }, [initialRunId, loadPlannerData]);
+  }, [initialRunId, loadPlannerData, onRunIdChange]);
 
   // Handle single file upload completion
   const handleUploaded = useCallback((newRunId: number, newPreview: any) => {
@@ -85,7 +89,8 @@ export function SmartImportV2Flow({ onBulkMode, initialRunId, onBack }: V2FlowPr
     setDecisions({});
     setStep(2);
     loadPlannerData(newRunId);
-  }, [loadPlannerData]);
+    onRunIdChange?.(newRunId);
+  }, [loadPlannerData, onRunIdChange]);
 
   // Handle batch upload completion
   const handleBatchUploaded = useCallback((results: FileUploadResult[]) => {

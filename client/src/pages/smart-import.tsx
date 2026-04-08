@@ -3859,6 +3859,7 @@ export default function SmartImportPage() {
   const [cameFromBulk, setCameFromBulk] = useState(false);
   /** When v2 is active and user clicks Review on a bulk run, open it in v2 flow */
   const [v2ReviewRunId, setV2ReviewRunId] = useState<number | null>(null);
+  const [v2ActiveRunId, setV2ActiveRunId] = useState<number | null>(null);
   const pendingRunsQuery = useQuery<PendingRun[], Error>({
     queryKey: ["smart-import-pending-governance"],
     queryFn: async () => {
@@ -3989,13 +3990,26 @@ export default function SmartImportPage() {
       <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground" data-testid="v2-mode-toggle">
         <button
           className={`px-2 py-1 rounded ${useV2 ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-slate-100"}`}
-          onClick={() => setUseV2(true)}
+          onClick={() => {
+            if (!useV2 && runId) {
+              setV2ReviewRunId(runId);
+            }
+            setUseV2(true);
+          }}
         >
           Simple view
         </button>
         <button
           className={`px-2 py-1 rounded ${!useV2 ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-slate-100"}`}
-          onClick={() => setUseV2(false)}
+          onClick={() => {
+            const activeId = v2ActiveRunId;
+            if (useV2 && activeId) {
+              setRunId(activeId);
+              setStep(2);
+              loadRunData(activeId);
+            }
+            setUseV2(false);
+          }}
         >
           Advanced view
         </button>
@@ -4006,6 +4020,7 @@ export default function SmartImportPage() {
         <SmartImportV2Flow
           onBulkMode={() => setBulkMode(true)}
           initialRunId={v2ReviewRunId}
+          onRunIdChange={setV2ActiveRunId}
           onBack={cameFromBulk ? () => {
             setV2ReviewRunId(null);
             setCameFromBulk(false);

@@ -60,7 +60,7 @@ export function SmartImportConfirmStep({ runId, planning, decisions, onBack, onC
     setCommitting(true);
     setCommitError(null);
     try {
-      const body: any = {};
+      const body: any = { preserveManualEdits: true };
       if (totalDecisions > 0) {
         body.v2ConflictResolutions = decisions;
       }
