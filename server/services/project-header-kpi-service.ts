@@ -17,7 +17,6 @@ import { db } from "../db";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
 
-const REVENUE_REALISED_STATUSES = new Set(["PAID", "IN_BANK", "REALISED"]);
 const COS_REALISED_OVERRIDES = new Set(["COS REALISED", "REALISED"]);
 const COS_NOT_REALISED_OVERRIDES = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
 const STAGE_ORDER = new Map([
@@ -55,8 +54,7 @@ function safePct(numerator: number, denominator: number): number {
 }
 
 function isRevenueRealised(line: { status: string | null; paidDate: string | null; inBankDate: string | null }): boolean {
-  const status = String(line.status ?? "").trim().toUpperCase();
-  return REVENUE_REALISED_STATUSES.has(status) || !!line.paidDate || !!line.inBankDate;
+  return isRevenueSettled({ status: line.status, paidDate: line.paidDate, inBankDate: line.inBankDate });
 }
 
 function isCosRealisedLine(line: { cosRealised: boolean | null; cosStatusOverride: string | null }): boolean {
