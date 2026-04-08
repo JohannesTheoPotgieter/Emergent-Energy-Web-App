@@ -135,7 +135,8 @@ describe("Commit response includes v2 details", () => {
   const routes = read("server/smart-import-routes.ts");
 
   it("response JSON includes v2 result when available", () => {
-    expect(routes).toContain("v2: v2Result ?");
+    // v2Result is cast via IIFE to work around TypeScript closure narrowing
+    expect(routes).toContain("v2Result as IncrementalCommitResult | null");
     expect(routes).toContain("totalInserted");
     expect(routes).toContain("totalUpdated");
     expect(routes).toContain("totalUnchanged");

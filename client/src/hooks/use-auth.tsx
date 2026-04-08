@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { getErrorMessage } from "@/lib/errors";
 import { isSuperAdmin } from "@/lib/access-control";
+import { queryClient } from "@/lib/queryClient";
 
 interface AuthContextType {
   user: User | null;
@@ -90,6 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setAuthToken(null);
       localStorage.removeItem("company_role");
+      // Clear all cached query data to prevent data leakage between sessions
+      queryClient.clear();
       setLocation("/auth/login");
       toast({
         title: "Logged out",
@@ -104,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading, 
       isAuthenticated: !!user,
       isAdmin: isSuperAdmin(user?.role, localStorage.getItem("company_role")),
-      isQm: ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || ''),
+      isQm: (user?.role || '').toUpperCase() === 'QUALITY_MANAGER',
       login, 
       logout 
     }}>

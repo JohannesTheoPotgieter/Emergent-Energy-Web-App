@@ -504,8 +504,11 @@ export function registerAdminRecoveryRoutes(app: Express) {
       await db.execute(sql`DELETE FROM program_expense WHERE effective_to IS NOT NULL`);
       await db.execute(sql`DELETE FROM normalized_revenue_lines WHERE effective_to IS NOT NULL`);
 
-      await logAuditFromReq(req, "cleanup_old_snapshots", "system", 0, {
-        deleted: { normalized_cost_lines: nclRows, program_expense: peRows, normalized_revenue_lines: nrlRows },
+      logAuditFromReq(req, {
+        action: "cleanup_old_snapshots",
+        entityType: "system",
+        entityId: "0",
+        changesJson: { deleted: { normalized_cost_lines: nclRows, program_expense: peRows, normalized_revenue_lines: nrlRows } },
       });
 
       res.json({

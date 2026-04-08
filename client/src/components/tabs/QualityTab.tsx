@@ -179,7 +179,7 @@ export function QualityTab({ projectName, initialStatusFilter }: QualityTabProps
   const [evidenceUploading, setEvidenceUploading] = useState<number | null>(null);
   const fileInputRefs = useRef<Record<number, HTMLInputElement | null>>({});
 
-  const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || ['quality_manager', 'QUALITY_MANAGER'].includes(user?.role || '');
+  const isQmOrAdmin = ['admin', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '') || (user?.role || '').toUpperCase() === 'QUALITY_MANAGER';
   const canEdit = isQmOrAdmin;
   const { allowed: canDeleteQc } = usePermission('pd_quality', 'delete');
 
