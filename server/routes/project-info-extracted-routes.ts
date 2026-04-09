@@ -33,7 +33,7 @@ import { ApiError, sendError, badRequest, serverError, logApiError } from "../li
 import { getFeatureFlag, getFeatureFlags } from "../lib/feature-flags";
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
 import { computeScheduleRag, computeCostRag, computeQualityRag, computeOverallRag } from "@shared/kpi-definitions";
-import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
+import { classifyCosStatusFull, isCosRealised as isCosRealisedCanonical } from "../lib/calculations/financeUtils";
 import { actorFromReq, createProjectEvent } from "../services/project-event-service";
 import { paramStr } from "../lib/req-params";
 import { classifyProjectInfoPayload } from "../services/source-of-truth-policy";
@@ -52,8 +52,9 @@ import {
 
 // ── Helpers (moved from routes.ts) ──
 
+// Use canonical invoice-only rule for COS realisation (not the display-label classifier)
 function isCosRealisedCheck(exp: any): boolean {
-  return classifyCosStatusFull(exp) === 'COS Realised';
+  return isCosRealisedCanonical(exp);
 }
 
 const parityLogCooldownByKey = new Map<string, number>();
