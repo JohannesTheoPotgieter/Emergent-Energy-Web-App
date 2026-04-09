@@ -21,6 +21,7 @@ import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../s
 import { jwtAuth, requireAuth } from "./auth-context";
 import { bridgeCatch } from "./bridge/bridge-writer";
 import { computeMarginPct } from "./lib/finance/margin";
+import { isCanonicalCosRealised } from "./lib/finance/cos-realisation";
 import { paramStr } from "./lib/req-params";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -197,9 +198,6 @@ function buildOverdueFinanceLedger(params: {
   let arMissingDueDate = 0;
   const apSeen = new Set<string>();
   const arSeen = new Set<string>();
-  const COS_REALISED_OVERRIDES_OD = new Set(["COS REALISED", "REALISED"]);
-  const COS_NOT_REALISED_OVERRIDES_OD = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
-
   for (const row of costLines) {
     const rowProjectNorm = normalizeName(row.projectName || "");
     const isActiveProject = (row.projectId && activeProjectIds.has(row.projectId)) || (!!row.projectName && activeProjectNames.has(rowProjectNorm));
@@ -212,16 +210,17 @@ function buildOverdueFinanceLedger(params: {
     const keyDate = dueDate || invoiceDate;
     if (!isDateInRange(keyDate, fyStart, fyEnd)) continue;
 
-    // Canonical COS settled logic (matching project-header-kpi-service isCosRealisedLine)
-    const cosOverrideOd = String(row.cosStatusOverride ?? "").trim().toUpperCase();
-    let settled: boolean;
-    if (COS_REALISED_OVERRIDES_OD.has(cosOverrideOd)) {
-      settled = true;
-    } else if (COS_NOT_REALISED_OVERRIDES_OD.has(cosOverrideOd)) {
-      settled = false;
-    } else {
-      settled = row.cosRealised === true;
-    }
+    // Use canonical COS realisation check (invoice-only hard rule)
+    const settled = isCanonicalCosRealised({
+      status: null,
+      cosStatusOverride: row.cosStatusOverride ?? null,
+      cosRealised: row.cosRealised ?? null,
+      expenseInvoiceNumber: row.invoiceNumber ?? null,
+      expenseInvoicedDate: row.invoiceDate ?? null,
+      expensePoNumber: (row as any).poNumber ?? null,
+      paymentDate: row.paidDate ?? null,
+      today,
+    });
     if (settled) continue;
     if (!dueDate) {
       apMissingDueDate += 1;

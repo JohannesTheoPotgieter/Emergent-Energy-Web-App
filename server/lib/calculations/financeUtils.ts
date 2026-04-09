@@ -9,6 +9,7 @@
  */
 
 import { classifyCosStatus, type CosStatus } from './stateClassifier';
+import { isCanonicalCosRealised, getCosRealisationWarnings, type CosLineInput } from '../finance/cos-realisation';
 
 // ─── Static fallback COS budget (FY2025-2026) ───
 // Used when no manual budget override has been entered for a month.
@@ -83,9 +84,12 @@ export function classifyCosStatusFull(exp: {
 
 // ─── COS realisation check ───
 // Determines whether a cost line item should be treated as "realised" for tracker
-// purposes. Uses classifyCosStatusFull() which respects admin overrides and the
-// canonical classifyCosStatus() logic (requires invoice number + invoice date +
-// confirmed/black date).
+// purposes. Delegates to the canonical isCanonicalCosRealised() which uses the
+// invoice-only hard rule: if a supplier invoice number is captured, COS is realised.
+//
+// NOTE: classifyCosStatusFull() is a DISPLAY label (Planned/Committed/COS Realised)
+// based on data quality (invoice + date + confirmed). The realisation CHECK is
+// separate and less strict — invoice number alone is sufficient per business rules.
 export function isCosRealised(exp: {
   expenseInvoiceNumber?: string | null;
   expenseInvoicedDate?: string | null;
@@ -93,8 +97,19 @@ export function isCosRealised(exp: {
   invoiceDateConfirmed?: boolean | null;
   invoiceDateFontColor?: string | null;
   _cosOverrideStatus?: string | null;
+  cosRealised?: boolean | null;
+  cosStatusOverride?: string | null;
 }): boolean {
-  return classifyCosStatusFull(exp) === 'COS Realised';
+  return isCanonicalCosRealised({
+    status: null, // status labels do NOT independently determine realisation
+    cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
+    cosRealised: exp.cosRealised ?? null,
+    expenseInvoiceNumber: exp.expenseInvoiceNumber ?? null,
+    expenseInvoicedDate: exp.expenseInvoicedDate ?? null,
+    expensePoNumber: exp.expensePoNumber ?? null,
+    paymentDate: null,
+    today: new Date().toISOString().slice(0, 10),
+  });
 }
 
 // ─── Project-name normalisation ───

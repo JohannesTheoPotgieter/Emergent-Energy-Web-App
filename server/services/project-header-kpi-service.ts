@@ -16,9 +16,7 @@ import {
 import { db } from "../db";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
-
-const COS_REALISED_OVERRIDES = new Set(["COS REALISED", "REALISED"]);
-const COS_NOT_REALISED_OVERRIDES = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
+import { isCanonicalCosRealised, OVERRIDE_REALISED, OVERRIDE_NOT_REALISED } from "../lib/finance/cos-realisation";
 const STAGE_ORDER = new Map([
   ["S01_FIRST_ASSESSMENT", 1],
   ["S02_DESIGN_COST_PROPOSAL", 2],
@@ -57,11 +55,17 @@ function isRevenueRealised(line: { status: string | null; paidDate: string | nul
   return isRevenueSettled({ status: line.status, paidDate: line.paidDate, inBankDate: line.inBankDate });
 }
 
-function isCosRealisedLine(line: { cosRealised: boolean | null; cosStatusOverride: string | null }): boolean {
-  const override = String(line.cosStatusOverride ?? "").trim().toUpperCase();
-  if (COS_REALISED_OVERRIDES.has(override)) return true;
-  if (COS_NOT_REALISED_OVERRIDES.has(override)) return false;
-  return line.cosRealised === true;
+function isCosRealisedLine(line: { cosRealised: boolean | null; cosStatusOverride: string | null; invoiceNumber?: string | null }): boolean {
+  return isCanonicalCosRealised({
+    status: null,
+    cosStatusOverride: line.cosStatusOverride,
+    cosRealised: line.cosRealised,
+    expenseInvoiceNumber: line.invoiceNumber ?? null,
+    expenseInvoicedDate: null,
+    expensePoNumber: null,
+    paymentDate: null,
+    today: new Date().toISOString().slice(0, 10),
+  });
 }
 
 function stageSequenceFor(stageCode: string | null | undefined, explicitSeq?: number | null): number {
@@ -108,7 +112,7 @@ export function computeProjectHeaderKpis(input: {
   contractValue: number;
   canonicalRevenueRows: Array<{ amountExVat: unknown; status: string | null; paidDate: string | null; inBankDate: string | null }>;
   inflowFallbackRows: Array<{ milestoneAmount: unknown; paymentReceivedDate: string | null; inBank: unknown }>;
-  canonicalCostRows: Array<{ amountExVat: unknown; cosRealised: boolean | null; cosStatusOverride: string | null }>;
+  canonicalCostRows: Array<{ amountExVat: unknown; cosRealised: boolean | null; cosStatusOverride: string | null; invoiceNumber?: string | null }>;
   expenseFallbackRows: Array<{ expenseActualTotal: unknown; actualCosTotal: unknown; expenseInvoiceNumber: string | null; expenseInvoicedDate: string | null; cosStatusOverride: string | null; rowType: string | null }>;
   derivedGrossMarginPct: number;
   budgetBaselineMarginPct?: number | null;
@@ -141,9 +145,17 @@ export function computeProjectHeaderKpis(input: {
       .filter((row) => String(row.rowType ?? "item").toLowerCase() === "item")
       .map((row) => {
         const baseAmount = toNumber(row.actualCosTotal) || toNumber(row.expenseActualTotal);
-        const override = String(row.cosStatusOverride ?? "").trim().toUpperCase();
-        const invoiceBased = !!row.expenseInvoiceNumber && !!row.expenseInvoicedDate;
-        const realised = COS_REALISED_OVERRIDES.has(override) || (!COS_NOT_REALISED_OVERRIDES.has(override) && invoiceBased);
+        // Use canonical check: invoice number is the hard gate
+        const realised = isCanonicalCosRealised({
+          status: null,
+          cosStatusOverride: row.cosStatusOverride,
+          cosRealised: null,
+          expenseInvoiceNumber: row.expenseInvoiceNumber,
+          expenseInvoicedDate: row.expenseInvoicedDate,
+          expensePoNumber: null,
+          paymentDate: null,
+          today: new Date().toISOString().slice(0, 10),
+        });
         return { amount: baseAmount, realised };
       });
 
@@ -242,7 +254,7 @@ export async function getProjectHeaderKpis(projectId: number): Promise<ProjectHe
   const [projectRows, canonicalRevenueRows, canonicalCostRows, inflowFallbackRows, expenseFallbackRows, derivedRows, baselineRows, executionRows, revenueSummaryRows, stageRows, stageDefRows] = await Promise.all([
     db.select({ contractValue: projectInfo.contractValue }).from(projectInfo).where(and(eq(projectInfo.id, projectId), isNull(projectInfo.deletedAt))).limit(1),
     db.select({ amountExVat: normalizedRevenueLines.amountExVat, status: normalizedRevenueLines.status, paidDate: normalizedRevenueLines.paidDate, inBankDate: normalizedRevenueLines.inBankDate }).from(normalizedRevenueLines).where(and(eq(normalizedRevenueLines.projectId, projectId), isNull(normalizedRevenueLines.effectiveTo))),
-    db.select({ amountExVat: normalizedCostLines.amountExVat, cosRealised: normalizedCostLines.cosRealised, cosStatusOverride: normalizedCostLines.cosStatusOverride }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
+    db.select({ amountExVat: normalizedCostLines.amountExVat, cosRealised: normalizedCostLines.cosRealised, cosStatusOverride: normalizedCostLines.cosStatusOverride, invoiceNumber: normalizedCostLines.invoiceNumber }).from(normalizedCostLines).where(and(eq(normalizedCostLines.projectId, projectId), isNull(normalizedCostLines.effectiveTo))),
     db.select({ milestoneAmount: programInflows.milestoneAmount, paymentReceivedDate: programInflows.paymentReceivedDate, inBank: programInflows.inBank }).from(programInflows).where(and(eq(programInflows.projectId, projectId), isNull(programInflows.effectiveTo))),
     db.select({ expenseActualTotal: programExpense.expenseActualTotal, actualCosTotal: programExpense.actualCosTotal, expenseInvoiceNumber: programExpense.expenseInvoiceNumber, expenseInvoicedDate: programExpense.expenseInvoicedDate, cosStatusOverride: programExpense.cosStatusOverride, rowType: programExpense.rowType }).from(programExpense).where(and(eq(programExpense.projectId, projectId), isNull(programExpense.effectiveTo), isNull(programExpense.deletedAt))),
     db.select({ grossMarginPct: derivedProjectKpis.grossMarginPct }).from(derivedProjectKpis).where(and(eq(derivedProjectKpis.projectId, projectId), isNull(derivedProjectKpis.deletedAt))).limit(1),

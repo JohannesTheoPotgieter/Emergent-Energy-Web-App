@@ -117,8 +117,10 @@ export function adaptCostToExpense(cost: NormalizedCostLine, resolvedName: strin
     effectiveFrom: (cost as any).effectiveFrom ?? null,
     _isNormalized: true,
     _sourceRow: (cost as any).sourceRow || cost.id,
-    _cosRealisedFlag: (cost as any).cosRealised ?? false,
+    cosRealised: (cost as any).cosRealised ?? false, // canonical field name for isCosRealised() consumers
+    _cosRealisedFlag: (cost as any).cosRealised ?? false, // backward-compat alias
     _cosOverrideStatus: (cost as any).cosStatusOverride ?? null,
+    cosStatusOverride: (cost as any).cosStatusOverride ?? null, // canonical field name
     _cosOverrideBy: (cost as any).cosStatusOverrideBy ?? null,
     _cosOverrideAt: (cost as any).cosStatusOverrideAt ?? null,
     _cosOverrideReason: (cost as any).cosStatusOverrideReason ?? null,

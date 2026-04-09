@@ -16,6 +16,8 @@ export interface CanonicalProjectFinanceRow {
   totalCost: number;
   paidCost: number;
   outstandingCost: number;
+  /** COS realised — invoice-only hard rule. Separate from paidCost (cash concept). */
+  realisedCost: number;
 }
 
 export interface CanonicalProjectTaskRow {
@@ -54,6 +56,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       totalCost: 0,
       paidCost: 0,
       outstandingCost: 0,
+      realisedCost: 0,
     });
   }
 
@@ -85,6 +88,10 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       } else {
         current.outstandingCost += amount;
       }
+      // COS realised = invoice number present (canonical invoice-only rule)
+      if (row.invoiceNumber && String(row.invoiceNumber).trim()) {
+        current.realisedCost += amount;
+      }
     }
 
     return byProject;
@@ -107,7 +114,8 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       project_id,
       COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_cost,
       COALESCE(SUM(CASE WHEN paid_date IS NOT NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS paid_cost,
-      COALESCE(SUM(CASE WHEN paid_date IS NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS outstanding_cost
+      COALESCE(SUM(CASE WHEN paid_date IS NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS outstanding_cost,
+      COALESCE(SUM(CASE WHEN invoice_number IS NOT NULL AND TRIM(invoice_number) <> '' THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS realised_cost
     FROM normalized_cost_lines
     WHERE project_id = ANY(${sql`ARRAY[${sql.join(projectIds.map((id) => sql`${id}`), sql`,`)}]::int[]`})
       AND effective_to IS NULL
@@ -130,6 +138,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
     current.totalCost = toNumber(row.total_cost);
     current.paidCost = toNumber(row.paid_cost);
     current.outstandingCost = toNumber(row.outstanding_cost);
+    current.realisedCost = toNumber(row.realised_cost);
   }
 
   return byProject;
