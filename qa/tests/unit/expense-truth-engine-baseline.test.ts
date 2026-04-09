@@ -26,7 +26,6 @@ import {
 import {
   getExpenseBusinessKey,
   selectWinningExpenseRows,
-  isApprovedExpenseRow,
   type ExpenseLikeRow,
 } from "../../../server/lib/expense-row-selector";
 
@@ -235,41 +234,111 @@ describe("getExpenseBusinessKey invariants", () => {
 
 // ──────────────────────────────────────────────────────────
 // 4. Budget/date overlay behavior
+//
+// CRITICAL INVARIANT: _fetchAllProgramExpenses overlays 10 fields.
+// getProgramExpensesByProject overlays only 6 fields (no adminDateOverride*).
+// These MUST NOT be unified during extraction.
+//
+// _fetchAllProgramExpenses overlay (storage.ts lines 1156-1165):
+//   budgetTotal, budgetQty, budgetRateUnit, budgetCosTotal,
+//   forecastPaymentDate, computedForecastPaymentDate,
+//   adminDateOverride, adminDateOverrideReason, adminDateOverrideBy, adminDateOverrideAt
+//
+// getProgramExpensesByProject overlay (storage.ts lines 1251-1256):
+//   budgetTotal, budgetQty, budgetRateUnit, budgetCosTotal,
+//   forecastPaymentDate, computedForecastPaymentDate
+//   (NO adminDateOverride fields)
 // ──────────────────────────────────────────────────────────
 describe("PE budget overlay onto adapted NCL rows", () => {
-  it("overlays budgetTotal from legacy PE winner onto adapted NCL row by business key", () => {
-    // Simulates _fetchAllProgramExpenses overlay logic (storage.ts lines 1148-1166)
-    const adaptedNormalized = [
-      { id: -10, projectId: 5, _sourceRow: 3, _isNormalized: true, budgetTotal: null, rowNumber: 3 },
-    ];
-    const legacyWinners = [
-      { id: 200, projectId: 5, rowNumber: 3, _isNormalized: false, budgetTotal: "50000", budgetQty: "10", budgetRateUnit: "5000" },
-    ];
+  // Full PE row with all 10 possible overlay fields populated
+  const fullPeRow = {
+    id: 200, projectId: 5, rowNumber: 3, _isNormalized: false,
+    budgetTotal: "50000", budgetQty: "10", budgetRateUnit: "5000", budgetCosTotal: "48000",
+    forecastPaymentDate: "2026-06-15", computedForecastPaymentDate: "2026-06-20",
+    adminDateOverride: "2026-07-01", adminDateOverrideReason: "Delayed by client",
+    adminDateOverrideBy: "admin-user", adminDateOverrideAt: "2026-05-10T00:00:00Z",
+  };
 
-    // Simulate overlay
-    const legacyByKey = new Map(legacyWinners.map(pe => [getExpenseBusinessKey(pe), pe]));
-    for (const item of adaptedNormalized) {
-      const pe = legacyByKey.get(getExpenseBusinessKey(item));
-      if (pe) {
-        if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
-      }
-    }
+  it("_fetchAllProgramExpenses overlays all 10 fields from PE onto adapted NCL row", () => {
+    // Simulates storage.ts lines 1148-1166
+    const item: Record<string, any> = {
+      id: -10, projectId: 5, _sourceRow: 3, _isNormalized: true, rowNumber: 3,
+      budgetTotal: null, budgetQty: null, budgetRateUnit: null, budgetCosTotal: null,
+      forecastPaymentDate: null, computedForecastPaymentDate: null,
+      adminDateOverride: null, adminDateOverrideReason: null,
+      adminDateOverrideBy: null, adminDateOverrideAt: null,
+    };
 
-    expect(adaptedNormalized[0].budgetTotal).toBe("50000");
+    const pe = fullPeRow;
+    // Exact replica of storage.ts lines 1156-1165
+    if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
+    if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
+    if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
+    if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
+    if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+    if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
+    if (pe.adminDateOverride != null) item.adminDateOverride = pe.adminDateOverride;
+    if (pe.adminDateOverrideReason != null) item.adminDateOverrideReason = pe.adminDateOverrideReason;
+    if (pe.adminDateOverrideBy != null) item.adminDateOverrideBy = pe.adminDateOverrideBy;
+    if (pe.adminDateOverrideAt != null) item.adminDateOverrideAt = pe.adminDateOverrideAt;
+
+    expect(item.budgetTotal).toBe("50000");
+    expect(item.budgetQty).toBe("10");
+    expect(item.budgetRateUnit).toBe("5000");
+    expect(item.budgetCosTotal).toBe("48000");
+    expect(item.forecastPaymentDate).toBe("2026-06-15");
+    expect(item.computedForecastPaymentDate).toBe("2026-06-20");
+    expect(item.adminDateOverride).toBe("2026-07-01");
+    expect(item.adminDateOverrideReason).toBe("Delayed by client");
+    expect(item.adminDateOverrideBy).toBe("admin-user");
+    expect(item.adminDateOverrideAt).toBe("2026-05-10T00:00:00Z");
+  });
+
+  it("getProgramExpensesByProject overlays only 6 fields — NO adminDateOverride*", () => {
+    // Simulates storage.ts lines 1251-1256
+    const item: Record<string, any> = {
+      id: -10, projectId: 5, _sourceRow: 3, _isNormalized: true, rowNumber: 3,
+      budgetTotal: null, budgetQty: null, budgetRateUnit: null, budgetCosTotal: null,
+      forecastPaymentDate: null, computedForecastPaymentDate: null,
+      adminDateOverride: null, adminDateOverrideReason: null,
+      adminDateOverrideBy: null, adminDateOverrideAt: null,
+    };
+
+    const pe = fullPeRow;
+    // Exact replica of storage.ts lines 1251-1256 (only 6 fields)
+    if (pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
+    if (pe.budgetQty != null) item.budgetQty = String(pe.budgetQty);
+    if (pe.budgetRateUnit != null) item.budgetRateUnit = String(pe.budgetRateUnit);
+    if (pe.budgetCosTotal != null) item.budgetCosTotal = String(pe.budgetCosTotal);
+    if (pe.forecastPaymentDate != null) item.forecastPaymentDate = pe.forecastPaymentDate;
+    if (pe.computedForecastPaymentDate != null) item.computedForecastPaymentDate = pe.computedForecastPaymentDate;
+
+    // 6 overlaid fields
+    expect(item.budgetTotal).toBe("50000");
+    expect(item.budgetQty).toBe("10");
+    expect(item.budgetRateUnit).toBe("5000");
+    expect(item.budgetCosTotal).toBe("48000");
+    expect(item.forecastPaymentDate).toBe("2026-06-15");
+    expect(item.computedForecastPaymentDate).toBe("2026-06-20");
+
+    // 4 fields that are NOT overlaid by per-project method — must remain null
+    expect(item.adminDateOverride).toBeNull();
+    expect(item.adminDateOverrideReason).toBeNull();
+    expect(item.adminDateOverrideBy).toBeNull();
+    expect(item.adminDateOverrideAt).toBeNull();
   });
 
   it("does NOT overlay when no matching legacy PE row exists", () => {
-    const adaptedNormalized = [
-      { id: -10, projectId: 5, _sourceRow: 99, _isNormalized: true, budgetTotal: null, rowNumber: 99 },
-    ];
+    const item: Record<string, any> = {
+      id: -10, projectId: 5, _sourceRow: 99, _isNormalized: true, rowNumber: 99,
+      budgetTotal: null,
+    };
     const legacyByKey = new Map<string, any>();
 
-    for (const item of adaptedNormalized) {
-      const pe = legacyByKey.get(getExpenseBusinessKey(item));
-      if (pe && pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
-    }
+    const pe = legacyByKey.get(getExpenseBusinessKey(item));
+    if (pe && pe.budgetTotal != null) item.budgetTotal = String(pe.budgetTotal);
 
-    expect(adaptedNormalized[0].budgetTotal).toBeNull();
+    expect(item.budgetTotal).toBeNull();
   });
 });
 
@@ -277,79 +346,164 @@ describe("PE budget overlay onto adapted NCL rows", () => {
 // 5. Carry-forward logic simulation
 // ──────────────────────────────────────────────────────────
 describe("carry-forward behavior simulation", () => {
-  it("inherits payment date from closed row when active row has none", () => {
-    // Simulates getProgramExpensesByProject carry-forward (storage.ts lines 1200-1232)
-    const adapted = [
-      { rowNumber: 5, expensePaymentDate: null, forecastPaymentDate: null, _carryForward: undefined as boolean | undefined },
-    ];
-    const closedRows = [
-      { id: 100, sourceRow: 5, paidDate: "2026-01-15", paidDateFontColor: "black", paidDateConfirmed: true },
-    ];
+  // Mirrors getProgramExpensesByProject carry-forward (storage.ts lines 1200-1232).
+  //
+  // Key behavior:
+  //   1. Only triggered when at least one adapted row lacks BOTH expensePaymentDate AND forecastPaymentDate
+  //   2. Queries CLOSED NCL rows (effectiveTo IS NOT NULL) for the same project
+  //   3. For each closed row, the pay date is: cl.paidDate || cl.forecastPaymentDate (line 1211)
+  //   4. Picks the closed row with highest id per sourceRow (line 1214)
+  //   5. Applies: expensePaymentDate, forecastPaymentDate, paymentDateFontColor, paymentDateConfirmed, _carryForward
 
-    // Build prior map (latest by id per sourceRow)
+  /** Simulates the exact carry-forward algorithm from storage.ts lines 1207-1232 */
+  function simulateCarryForward(
+    adapted: Array<Record<string, any>>,
+    closedRows: Array<Record<string, any>>,
+  ) {
     const priorByRow = new Map<number, any>();
     for (const cl of closedRows) {
-      if (cl.sourceRow == null) continue;
-      const payDate = cl.paidDate;
+      const row = cl.sourceRow;
+      if (row == null) continue;
+      // Line 1211: paidDate || forecastPaymentDate
+      const payDate = cl.paidDate || cl.forecastPaymentDate;
       if (!payDate) continue;
-      const existing = priorByRow.get(cl.sourceRow);
-      if (!existing || cl.id > existing.id) priorByRow.set(cl.sourceRow, cl);
+      const existing = priorByRow.get(row);
+      if (!existing || (cl.id > existing.id)) {
+        priorByRow.set(row, cl);
+      }
     }
-
-    // Apply carry-forward
     for (const item of adapted) {
       if (!item.expensePaymentDate && !item.forecastPaymentDate) {
         const prior = priorByRow.get(item.rowNumber);
         if (prior) {
-          const priorDate = prior.paidDate;
+          // Line 1222: paidDate || forecastPaymentDate
+          const priorDate = prior.paidDate || prior.forecastPaymentDate;
           if (priorDate) {
             item.expensePaymentDate = priorDate;
             item.forecastPaymentDate = priorDate;
+            item.paymentDateFontColor = prior.paidDateFontColor || "red";
+            item.paymentDateConfirmed = prior.paidDateConfirmed ?? false;
             item._carryForward = true;
           }
         }
       }
     }
+  }
+
+  it("inherits paidDate from closed row, including font color and confirmed flag", () => {
+    const adapted = [
+      { rowNumber: 5, expensePaymentDate: null, forecastPaymentDate: null,
+        paymentDateFontColor: null as string | null, paymentDateConfirmed: null as boolean | null,
+        _carryForward: undefined as boolean | undefined },
+    ];
+    const closedRows = [
+      { id: 100, sourceRow: 5, paidDate: "2026-01-15", forecastPaymentDate: null,
+        paidDateFontColor: "black", paidDateConfirmed: true },
+    ];
+
+    simulateCarryForward(adapted, closedRows);
 
     expect(adapted[0].expensePaymentDate).toBe("2026-01-15");
     expect(adapted[0].forecastPaymentDate).toBe("2026-01-15");
+    expect(adapted[0].paymentDateFontColor).toBe("black");
+    expect(adapted[0].paymentDateConfirmed).toBe(true);
+    expect(adapted[0]._carryForward).toBe(true);
+  });
+
+  it("falls back to forecastPaymentDate when closed row has no paidDate", () => {
+    // This is the Gap 3 test: line 1211 uses cl.paidDate || cl.forecastPaymentDate
+    const adapted = [
+      { rowNumber: 8, expensePaymentDate: null, forecastPaymentDate: null,
+        paymentDateFontColor: null as string | null, paymentDateConfirmed: null as boolean | null,
+        _carryForward: undefined as boolean | undefined },
+    ];
+    const closedRows = [
+      { id: 200, sourceRow: 8, paidDate: null, forecastPaymentDate: "2026-04-01",
+        paidDateFontColor: null, paidDateConfirmed: false },
+    ];
+
+    simulateCarryForward(adapted, closedRows);
+
+    expect(adapted[0].expensePaymentDate).toBe("2026-04-01");
+    expect(adapted[0].forecastPaymentDate).toBe("2026-04-01");
+    // Line 1226: prior.paidDateFontColor || "red" → null || "red" = "red"
+    expect(adapted[0].paymentDateFontColor).toBe("red");
+    // Line 1227: prior.paidDateConfirmed ?? false → false ?? false = false
+    expect(adapted[0].paymentDateConfirmed).toBe(false);
     expect(adapted[0]._carryForward).toBe(true);
   });
 
   it("does NOT carry forward when active row already has a payment date", () => {
     const adapted = [
-      { rowNumber: 5, expensePaymentDate: "2026-03-01", forecastPaymentDate: null, _carryForward: undefined as boolean | undefined },
+      { rowNumber: 5, expensePaymentDate: "2026-03-01", forecastPaymentDate: null,
+        paymentDateFontColor: null as string | null, paymentDateConfirmed: null as boolean | null,
+        _carryForward: undefined as boolean | undefined },
     ];
-    const priorByRow = new Map<number, any>([[5, { paidDate: "2026-01-15" }]]);
+    const closedRows = [
+      { id: 100, sourceRow: 5, paidDate: "2026-01-15", forecastPaymentDate: null,
+        paidDateFontColor: "black", paidDateConfirmed: true },
+    ];
 
-    for (const item of adapted) {
-      if (!item.expensePaymentDate && !item.forecastPaymentDate) {
-        const prior = priorByRow.get(item.rowNumber);
-        if (prior?.paidDate) {
-          item._carryForward = true;
-        }
-      }
-    }
+    simulateCarryForward(adapted, closedRows);
 
     expect(adapted[0]._carryForward).toBeUndefined();
     expect(adapted[0].expensePaymentDate).toBe("2026-03-01");
+    expect(adapted[0].paymentDateFontColor).toBeNull();
+  });
+
+  it("does NOT carry forward when active row has forecastPaymentDate", () => {
+    const adapted = [
+      { rowNumber: 5, expensePaymentDate: null, forecastPaymentDate: "2026-05-01",
+        paymentDateFontColor: null as string | null, paymentDateConfirmed: null as boolean | null,
+        _carryForward: undefined as boolean | undefined },
+    ];
+    const closedRows = [
+      { id: 100, sourceRow: 5, paidDate: "2026-01-15", forecastPaymentDate: null,
+        paidDateFontColor: "black", paidDateConfirmed: true },
+    ];
+
+    simulateCarryForward(adapted, closedRows);
+
+    expect(adapted[0]._carryForward).toBeUndefined();
+    expect(adapted[0].forecastPaymentDate).toBe("2026-05-01");
   });
 
   it("picks the closed row with highest id when multiple exist for same sourceRow", () => {
     const closedRows = [
-      { id: 50, sourceRow: 5, paidDate: "2025-06-01" },
-      { id: 80, sourceRow: 5, paidDate: "2025-12-01" },
-      { id: 60, sourceRow: 5, paidDate: "2025-09-01" },
+      { id: 50, sourceRow: 5, paidDate: "2025-06-01", forecastPaymentDate: null, paidDateFontColor: "red", paidDateConfirmed: false },
+      { id: 80, sourceRow: 5, paidDate: "2025-12-01", forecastPaymentDate: null, paidDateFontColor: "black", paidDateConfirmed: true },
+      { id: 60, sourceRow: 5, paidDate: "2025-09-01", forecastPaymentDate: null, paidDateFontColor: "red", paidDateConfirmed: false },
     ];
 
-    const priorByRow = new Map<number, any>();
-    for (const cl of closedRows) {
-      const existing = priorByRow.get(cl.sourceRow);
-      if (!existing || cl.id > existing.id) priorByRow.set(cl.sourceRow, cl);
-    }
+    const adapted = [
+      { rowNumber: 5, expensePaymentDate: null, forecastPaymentDate: null,
+        paymentDateFontColor: null as string | null, paymentDateConfirmed: null as boolean | null,
+        _carryForward: undefined as boolean | undefined },
+    ];
 
-    expect(priorByRow.get(5)!.paidDate).toBe("2025-12-01");
-    expect(priorByRow.get(5)!.id).toBe(80);
+    simulateCarryForward(adapted, closedRows);
+
+    expect(adapted[0].expensePaymentDate).toBe("2025-12-01");
+    expect(adapted[0].paymentDateFontColor).toBe("black");
+    expect(adapted[0].paymentDateConfirmed).toBe(true);
+    expect(adapted[0]._carryForward).toBe(true);
+  });
+
+  it("skips closed rows that have neither paidDate nor forecastPaymentDate", () => {
+    const adapted = [
+      { rowNumber: 5, expensePaymentDate: null, forecastPaymentDate: null,
+        paymentDateFontColor: null as string | null, paymentDateConfirmed: null as boolean | null,
+        _carryForward: undefined as boolean | undefined },
+    ];
+    const closedRows = [
+      { id: 100, sourceRow: 5, paidDate: null, forecastPaymentDate: null,
+        paidDateFontColor: null, paidDateConfirmed: null },
+    ];
+
+    simulateCarryForward(adapted, closedRows);
+
+    expect(adapted[0]._carryForward).toBeUndefined();
+    expect(adapted[0].expensePaymentDate).toBeNull();
   });
 });
 
@@ -412,11 +566,65 @@ describe("updateProgramExpenseFields field mapping", () => {
     expect(fieldMap.cosStatusOverride).toBe("cosStatusOverride");
   });
 
-  it("passes through unmapped keys that exist as valid DB columns", () => {
-    // storage.ts line 1315-1316: fieldMap[key] || key — unmapped keys fall through
-    const input = { someUnmappedField: "value" };
-    const mapped = fieldMap[Object.keys(input)[0]] || Object.keys(input)[0];
-    expect(mapped).toBe("someUnmappedField");
+  it("accepts unmapped keys only if they are valid NCL schema columns", () => {
+    // storage.ts lines 1313-1318: two-gate filter
+    //   Gate 1: mapped key is in validDbColumns (Set of NCL column names from fieldMap values)
+    //   Gate 2: OR raw/mapped key exists in Object.keys(normalizedCostLines) (drizzle schema)
+    //
+    // Known NCL schema column names (from shared/schema/finance.ts lines 493-551):
+    //   id, projectId, projectName, costCategory, counterpartyId, counterpartyName,
+    //   counterpartyType, description, amountExVat, amountExVatLegacy, invoiceNumber,
+    //   invoiceDate, invoiceDateFontColor, invoiceDateConfirmed, approvedDate, paidDate,
+    //   paidDateFontColor, paidDateConfirmed, poNumber, cosRealised, cashflowConfirmed,
+    //   status, sourceSheet, sourceRow, importRunId, turnaroundDays, patternRuleId,
+    //   patternClassifiedAt, patternInferredType, noRevenueLinked, budgetQty, budgetRate,
+    //   budgetTotal, budgetCos, revenueRecognitionAmount, forecastPaymentDate,
+    //   adminDateOverride, adminDateOverrideReason, adminDateOverrideBy, adminDateOverrideAt,
+    //   subProjectName, cosStatusOverride, cosStatusOverrideBy, cosStatusOverrideAt,
+    //   cosStatusOverrideReason, createdAt, updatedAt, effectiveFrom, effectiveTo,
+    //   snapshotRunId, idempotencyKey
+
+    const validDbColumns = new Set(Object.values(fieldMap));
+
+    // Simulate the filter from storage.ts lines 1314-1318
+    function wouldAcceptField(key: string, nclSchemaKeys: string[]): boolean {
+      const mapped = fieldMap[key] || key;
+      return validDbColumns.has(mapped) || nclSchemaKeys.includes(mapped);
+    }
+
+    // Known NCL column names (camelCase as they appear from Object.keys on drizzle table)
+    const nclSchemaKeys = [
+      "id", "projectId", "projectName", "costCategory", "counterpartyId", "counterpartyName",
+      "counterpartyType", "description", "amountExVat", "amountExVatLegacy", "invoiceNumber",
+      "invoiceDate", "invoiceDateFontColor", "invoiceDateConfirmed", "approvedDate", "paidDate",
+      "paidDateFontColor", "paidDateConfirmed", "poNumber", "cosRealised", "cashflowConfirmed",
+      "status", "sourceSheet", "sourceRow", "importRunId", "turnaroundDays", "patternRuleId",
+      "patternClassifiedAt", "patternInferredType", "noRevenueLinked", "budgetQty", "budgetRate",
+      "budgetTotal", "budgetCos", "revenueRecognitionAmount", "forecastPaymentDate",
+      "adminDateOverride", "adminDateOverrideReason", "adminDateOverrideBy", "adminDateOverrideAt",
+      "subProjectName", "cosStatusOverride", "cosStatusOverrideBy", "cosStatusOverrideAt",
+      "cosStatusOverrideReason", "createdAt", "updatedAt", "effectiveFrom", "effectiveTo",
+      "snapshotRunId", "idempotencyKey",
+    ];
+
+    // Case A: mapped PE field name → accepted via gate 1 (validDbColumns)
+    expect(wouldAcceptField("expenseCategory", nclSchemaKeys)).toBe(true);
+
+    // Case B: unmapped key that IS an NCL schema column → accepted via gate 2
+    expect(wouldAcceptField("approvedDate", nclSchemaKeys)).toBe(true);
+    expect(wouldAcceptField("cosRealised", nclSchemaKeys)).toBe(true);
+
+    // Case C: unmapped key that is NOT an NCL schema column → DROPPED silently
+    expect(wouldAcceptField("totallyBogusField", nclSchemaKeys)).toBe(false);
+    expect(wouldAcceptField("randomFrontendKey", nclSchemaKeys)).toBe(false);
+  });
+
+  it("returns undefined when all input fields are filtered out", () => {
+    // storage.ts lines 1320-1321: if mappedFields is empty, return undefined
+    const mappedFields: Record<string, any> = {};
+    // Simulate: only bogus fields provided, all get dropped
+    const result = Object.keys(mappedFields).length === 0 ? undefined : mappedFields;
+    expect(result).toBeUndefined();
   });
 });
 
