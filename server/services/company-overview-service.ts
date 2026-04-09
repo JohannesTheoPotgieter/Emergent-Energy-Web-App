@@ -41,6 +41,7 @@ import {
 } from "@shared/config/kpi-registry";
 import { evaluateRevenueArStatus, isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -134,14 +135,21 @@ export async function getCompanyOverviewData() {
   const activeProjectIds = new Set(activeProjects.map((p) => p.id));
 
   // ── Finance FYTD aggregation ───────────────────────────────────────
+  // Four distinct concepts (never blended):
+  //   1. Cash received — money received from clients (driven by payment date / in-bank)
+  //   2. Cash paid — money paid to suppliers (driven by payment date / out-of-bank)
+  //   3. COS realised — invoice captured under actuals (canonical invoice-only rule)
+  //   4. Revenue realised — COS-ratio allocation from COS-realised lines only
   const isInFy = (d: string | null | undefined) =>
     !!(d && /^\d{4}-\d{2}-\d{2}/.test(d) && d >= fyStart && d <= fyEnd);
 
   let totalRevenueFytd = 0;
-  let receivedRevenueFytd = 0;
+  let cashReceivedFytd = 0;
   let totalCostFytd = 0;
-  let paidCostFytd = 0;
+  let cashPaidFytd = 0;
+  let realisedCostFytd = 0;
 
+  // Revenue / cash received aggregation
   for (const row of revenueRows) {
     if (!activeProjectIds.has(row.projectId)) continue;
     const amount = toNum(row.amountExVat);
@@ -155,23 +163,72 @@ export async function getCompanyOverviewData() {
         paidDateConfirmed: (row as any).paidDateConfirmed,
         paidDateFontColor: (row as any).paidDateFontColor,
       })) {
-        receivedRevenueFytd += amount;
+        cashReceivedFytd += amount;
       }
     }
   }
+
+  // Cost / cash paid / COS realised aggregation
+  // Also build per-project totals for COS-ratio revenue allocation
+  const projectTotalCos = new Map<number, number>();
+  const projectTotalRev = new Map<number, number>();
+  const projectRealisedCos = new Map<number, number>();
 
   for (const row of costRows) {
     if (!activeProjectIds.has(row.projectId)) continue;
     const amount = toNum(row.amountExVat);
     const dateRef = (row as any).paidDate || (row as any).invoiceDate || (row as any).approvedDate;
+
+    // Project-level COS totals (all time) for ratio denominator
+    projectTotalCos.set(row.projectId, (projectTotalCos.get(row.projectId) || 0) + amount);
+
     if (isInFy(dateRef)) {
       totalCostFytd += amount;
+      // Cash paid = confirmed payment date
       if ((row as any).paidDate) {
-        paidCostFytd += amount;
+        cashPaidFytd += amount;
+      }
+      // COS realised = canonical invoice-only check
+      if (isCanonicalCosRealised({
+        status: null,
+        cosStatusOverride: (row as any).cosStatusOverride ?? null,
+        cosRealised: (row as any).cosRealised ?? null,
+        expenseInvoiceNumber: (row as any).invoiceNumber ?? null,
+        expenseInvoicedDate: (row as any).invoiceDate ?? null,
+        expensePoNumber: (row as any).poNumber ?? null,
+        paymentDate: (row as any).paidDate ?? null,
+        today,
+      })) {
+        realisedCostFytd += amount;
+        projectRealisedCos.set(row.projectId, (projectRealisedCos.get(row.projectId) || 0) + amount);
       }
     }
   }
 
+  // Build project-level revenue totals for COS-ratio allocation
+  for (const row of revenueRows) {
+    if (!activeProjectIds.has(row.projectId)) continue;
+    const amount = toNum(row.amountExVat);
+    projectTotalRev.set(row.projectId, (projectTotalRev.get(row.projectId) || 0) + amount);
+  }
+
+  // Revenue realised = COS-ratio allocation from COS-realised cost lines
+  let realisedRevenueFytd = 0;
+  for (const [projId, realisedCos] of projectRealisedCos) {
+    const totalCos = projectTotalCos.get(projId) || 0;
+    const totalRev = projectTotalRev.get(projId) || 0;
+    if (totalCos > 0) {
+      realisedRevenueFytd += (realisedCos / totalCos) * totalRev;
+    }
+  }
+
+  // Backward-compat aliases
+  const receivedRevenueFytd = cashReceivedFytd;
+  const paidCostFytd = cashPaidFytd;
+
+  // Realised GP uses realised revenue and realised COS (not cash concepts)
+  const realisedGrossMarginPct = computeMarginPct(realisedRevenueFytd, realisedCostFytd, { precision: 1, zeroRevenueValue: 0 }) ?? 0;
+  // Total-line GP (all revenue lines vs all cost lines in FY)
   const grossMarginPct = computeMarginPct(totalRevenueFytd, totalCostFytd, { precision: 1, zeroRevenueValue: 0 }) ?? 0;
 
   // ── Portfolio delivery stats ───────────────────────────────────────
@@ -499,10 +556,10 @@ export async function getCompanyOverviewData() {
   const targetMarginPct = 20; // Target margin placeholder
 
   const finKpis = new Map<string, { actual: number | null; target?: number | null }>([
-    ["fin_revenue_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue * 0.75 }], // FYTD pro-rata estimate
-    ["fin_cash_collected_vs_target", { actual: receivedRevenueFytd, target: totalPlannedRevenue * 0.7 }],
-    ["fin_cos_vs_target", { actual: paidCostFytd, target: totalPlannedCost * 0.75 }],
-    ["fin_gross_margin_vs_target", { actual: grossMarginPct, target: targetMarginPct }],
+    ["fin_revenue_vs_target", { actual: realisedRevenueFytd, target: totalPlannedRevenue * 0.75 }], // Revenue realised (COS-ratio)
+    ["fin_cash_collected_vs_target", { actual: cashReceivedFytd, target: totalPlannedRevenue * 0.7 }], // Cash received
+    ["fin_cos_vs_target", { actual: realisedCostFytd, target: totalPlannedCost * 0.75 }], // COS realised (invoice-based)
+    ["fin_gross_margin_vs_target", { actual: realisedGrossMarginPct, target: targetMarginPct }], // Realised GP%
     ["fin_overdue_debtors", { actual: overdueDebtorValue }],
   ]);
 
@@ -680,9 +737,10 @@ export async function getCompanyOverviewData() {
       companyHealthScore: companyScore.score,
       companyHealthRag: companyScore.rag,
       revenueVsTarget: {
-        actual: receivedRevenueFytd,
+        actual: realisedRevenueFytd,
+        cashReceived: cashReceivedFytd,
         target: totalPlannedRevenue,
-        pct: totalPlannedRevenue > 0 ? Math.round((receivedRevenueFytd / totalPlannedRevenue) * 100) : 0,
+        pct: totalPlannedRevenue > 0 ? Math.round((realisedRevenueFytd / totalPlannedRevenue) * 100) : 0,
         grossMarginPct: Math.round(grossMarginPct * 10) / 10,
       },
       portfolioHealth: {
@@ -711,12 +769,23 @@ export async function getCompanyOverviewData() {
       handoversDue: handoversDue.length,
     },
     financeSnapshot: {
-      revenueFytd: receivedRevenueFytd,
+      // Cash concepts
+      cashReceivedFytd,
+      cashPaidFytd,
+      // Realised concepts (invoice-based)
+      realisedRevenueFytd,
+      realisedCostFytd,
+      realisedGrossMarginPct: Math.round(realisedGrossMarginPct * 10) / 10,
+      // Total-line metrics
+      totalRevenueFytd,
+      totalCostFytd,
+      // Backward-compat aliases — these are CASH concepts, not realised
+      revenueFytd: cashReceivedFytd,
       revenueTarget: totalPlannedRevenue,
-      cosFytd: paidCostFytd,
+      cosFytd: cashPaidFytd,
       cosTarget: totalPlannedCost,
       grossMarginPct: Math.round(grossMarginPct * 10) / 10,
-      collectionRate: totalRevenueFytd > 0 ? Math.round((receivedRevenueFytd / totalRevenueFytd) * 100) : 0,
+      collectionRate: totalRevenueFytd > 0 ? Math.round((cashReceivedFytd / totalRevenueFytd) * 100) : 0,
       overdueDebtors: overdueDebtorValue,
       overdueDebtorCount: overdueDebtors.length,
     },
