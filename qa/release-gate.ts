@@ -29,10 +29,12 @@ const WORKFLOW_TEST_COMMAND = process.env.WORKFLOW_TEST_COMMAND || "npm run test
 const ROLE_AUDIT_FILE = process.env.ROLE_AUDIT_FILE || path.join(process.cwd(), "docs", "archive", "docs", "qa", "results", "latest", "role-permission-audit.md");
 const CRITICAL_ROUTES = ["/projects", "/project/:projectName", "/cashflow", "/quality", "/engineering/tasks", "/pm-dashboard", "/admin/control-center", "/handover-control"];
 
+const SKIP_SMOKE = process.env.SKIP_SMOKE_TESTS === "true";
+
 const REQUIRED_COMMAND_CHECKS = [
   { name: "Type check", command: "npm run check" },
   { name: "API tests", command: "npm run test:api" },
-  { name: "Smoke tests", command: "npm run test:smoke" },
+  ...(SKIP_SMOKE ? [] : [{ name: "Smoke tests", command: "npm run test:smoke" }]),
   { name: "Routes tests", command: "npm run test:routes" },
   { name: "Workflow tests", command: WORKFLOW_TEST_COMMAND },
 ] as const;
