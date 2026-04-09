@@ -18,10 +18,11 @@ app.get("/api/governance/quality", jwtAuth, requireAuth, async (req, res) => {
       // Commissioning reviews due (projects in S07 needing quality sign-off)
       db.execute(sql`
         SELECT
-          pi.id AS project_id, pi.project_name, pi.client_name, pi.pm,
+          pi.id AS project_id, pi.project_name, COALESCE(c.name, '') AS client_name, pi.pm,
           psi.readiness_pct,
           COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) AS days_in_stage
         FROM project_info pi
+        LEFT JOIN clients c ON c.id = pi.client_id
         JOIN project_execution_state pes ON pes.project_id = pi.id
         LEFT JOIN project_stage_instances psi ON psi.project_id = pi.id AND psi.stage_code = 'S07_COMMISSIONING'
         WHERE pes.is_active = true

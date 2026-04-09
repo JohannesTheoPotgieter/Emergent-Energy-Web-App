@@ -27,7 +27,57 @@ export function registerNotificationRoutes(app: Express) {
     }
   });
 
-  // Mark single notification as read
+  // Unread count — lightweight endpoint used by NotificationBell polling
+  app.get("/api/notifications/unread-count", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
+
+      const result = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(notifications)
+        .where(and(eq(notifications.recipientUserId, user.id), eq(notifications.isRead, false)));
+
+      res.json({ count: result[0]?.count ?? 0 });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    }
+  });
+
+  // Mark single notification as read (POST — matches frontend engPost calls)
+  app.post("/api/notifications/mark-read", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const id = parseInt(req.body?.notificationId as string);
+      if (isNaN(id)) return res.status(400).json({ error: "Invalid notification ID" });
+
+      await db.update(notifications)
+        .set({ isRead: true, readAt: new Date() })
+        .where(and(eq(notifications.id, id), eq(notifications.recipientUserId, user.id)));
+
+      res.json({ success: true });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    }
+  });
+
+  // Mark all notifications as read (POST — matches frontend engPost calls)
+  app.post("/api/notifications/mark-all-read", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
+
+      await db.update(notifications)
+        .set({ isRead: true, readAt: new Date() })
+        .where(and(eq(notifications.recipientUserId, user.id), eq(notifications.isRead, false)));
+
+      res.json({ success: true });
+    } catch (err: unknown) {
+      res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    }
+  });
+
+  // Legacy PATCH routes — kept for backward compatibility
   app.patch("/api/notifications/:id/read", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
@@ -44,7 +94,6 @@ export function registerNotificationRoutes(app: Express) {
     }
   });
 
-  // Mark all notifications as read
   app.patch("/api/notifications/read-all", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;

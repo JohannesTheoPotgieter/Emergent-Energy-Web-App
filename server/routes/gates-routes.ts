@@ -27,7 +27,7 @@ async function getProjectsWithStageData(filter?: {
     SELECT
       pi.id AS project_id,
       pi.project_name,
-      pi.client_name,
+      COALESCE(c.name, '') AS client_name,
       pi.pm,
       pi.pd,
       pi.contract_value,
@@ -48,6 +48,7 @@ async function getProjectsWithStageData(filter?: {
       ) AS days_in_stage,
       COALESCE(exc.open_exception_count, 0)::int AS open_exception_count
     FROM project_info pi
+    LEFT JOIN clients c ON c.id = pi.client_id
     LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
     LEFT JOIN users cm_user ON cm_user.id = pes.construction_manager_user_id
     LEFT JOIN project_stage_instances psi
@@ -144,10 +145,11 @@ app.get("/api/gates/pipeline", jwtAuth, requireAuth, requirePermission("stage_ga
           SELECT
             pi.id AS project_id,
             pi.project_name,
-            pi.client_name,
+            COALESCE(c.name, '') AS client_name,
             pi.pm,
             pi.pd
           FROM project_info pi
+          LEFT JOIN clients c ON c.id = pi.client_id
           ORDER BY pi.project_name ASC
         `);
         const fallbackProjects = ((fallback as any).rows ?? []).map((r: any) => ({
@@ -411,13 +413,14 @@ app.get("/api/gates/client-updates", jwtAuth, requireAuth, requirePermission("st
       SELECT
         pi.id AS project_id,
         pi.project_name,
-        pi.client_name,
+        COALESCE(c.name, '') AS client_name,
         pi.pm,
         pes.current_stage_code,
         pes.gate_status,
         wr.last_review_date,
         wr.review_count
       FROM project_info pi
+      LEFT JOIN clients c ON c.id = pi.client_id
       JOIN project_execution_state pes ON pes.project_id = pi.id
       LEFT JOIN (
         SELECT
@@ -456,7 +459,7 @@ app.get("/api/gates/handovers", jwtAuth, requireAuth, requirePermission("stage_g
       SELECT
         pi.id AS project_id,
         pi.project_name,
-        pi.client_name,
+        COALESCE(c.name, '') AS client_name,
         pi.pm,
         pes.construction_manager_user_id,
         pes.current_stage_code,
@@ -477,6 +480,7 @@ app.get("/api/gates/handovers", jwtAuth, requireAuth, requirePermission("stage_g
         COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) AS days_waiting,
         sseg.sseg_pending
       FROM project_info pi
+      LEFT JOIN clients c ON c.id = pi.client_id
       JOIN project_execution_state pes ON pes.project_id = pi.id
       LEFT JOIN project_stage_instances psi
         ON psi.project_id = pi.id AND psi.stage_code = pes.current_stage_code
