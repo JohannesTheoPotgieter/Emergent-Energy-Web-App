@@ -10,7 +10,9 @@
 -- This unblocks the rename below and makes work_items a direct base table.
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items') THEN
-    -- Drop orphaned triggers/functions first
+    -- Drop dependent views first
+    DROP VIEW IF EXISTS public.priority_derived_metrics;
+    -- Drop orphaned triggers/functions
     DROP TRIGGER IF EXISTS _work_items_view_update_trigger ON public.work_items;
     DROP TRIGGER IF EXISTS _work_items_view_insert_trigger ON public.work_items;
     DROP TRIGGER IF EXISTS _work_items_view_delete_trigger ON public.work_items;
