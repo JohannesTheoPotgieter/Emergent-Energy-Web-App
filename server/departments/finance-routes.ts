@@ -1,9 +1,11 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
+// Error breakdown: TS7006 implicit-any: 39, TS2345 query/param types: 33, other: 17
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, type Express, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, requireAdmin } from './shared-middleware';
 import { storage } from "../storage";
 import { db } from "../db";
+import { paramStr } from "../lib/req-params";
 import { requirePermission } from "../permission-middleware";
 import { requireTrackerPermission } from "../lib/finance-route-access";
 import { z } from "zod";
@@ -36,7 +38,6 @@ import {
   currentMonthKey as getCurrentMonthKey,
   parseExpenseAmount,
 } from "../lib/calculations/financeUtils";
-import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { recordOverride } from "../lib/audit/diff-engine";
 import { isWorkItemsEnabled, getWorkItemsAsOperationalTasks } from "../work-items-adapter";
 import { refreshProjectMetricsAsync } from "../services/dashboard-metrics";
@@ -46,8 +47,40 @@ import {
   getCosEffectiveDateAndSource,
   getOutflowAmountBreakdown,
 } from "../lib/expense-row-selector";
+import {
+  getCanonicalAllCurrentCostLines,
+  getCanonicalCostLineDiagnostics,
+  getCostLineRiskDiagnostics,
+  getCanonicalProjectCostLines,
+  getCanonicalProjectCostLinesByName,
+  resolveProjectIdByName,
+} from "../services/project-cost-line-read-service";
+import { getFeatureFlag } from "../lib/feature-flags";
 
 const FINANCIAL_APPROVER_ROLES = ["COO_ADMIN", "CEO_ADMIN", "PROGRAM_MANAGER", "PROGRAM_FINANCE_MANAGER", "CONSTRUCTION_MANAGER"];
+const CANONICAL_FINANCE_COSTLINE_READ_FLAG = "canonical_finance_costline_read_v1";
+
+async function isCanonicalFinanceCostlineReadEnabled(): Promise<boolean> {
+  return getFeatureFlag(CANONICAL_FINANCE_COSTLINE_READ_FLAG);
+}
+
+async function getHighRiskProjectCostReadRows(projectName: string, projectIdParam?: number | null): Promise<any[]> {
+  if (!(await isCanonicalFinanceCostlineReadEnabled())) {
+    return storage.getProgramExpensesByProject(projectName);
+  }
+
+  if (projectIdParam != null && Number.isFinite(projectIdParam)) {
+    return getCanonicalProjectCostLines(projectIdParam as number);
+  }
+  return getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows);
+}
+
+async function getHighRiskAllCostReadRows(): Promise<any[]> {
+  if (!(await isCanonicalFinanceCostlineReadEnabled())) {
+    return storage.getAllCostLinesForCashflow();
+  }
+  return getCanonicalAllCurrentCostLines();
+}
 
 function requireAdminOrFinancialEditor(req: Request, res: Response, next: NextFunction) {
   const role = req.user?.role;
@@ -114,33 +147,29 @@ function isDateConfirmed(confirmed: boolean | null | undefined, fontColor: strin
   return false;
 }
 
-// Delegates to shared utility in financeUtils.ts (aligned with classifyCosStatus).
-// Respects COS overrides and the cosRealised boolean from normalizedCostLines.
+// Delegates to shared canonical invoice-only rule in financeUtils.ts.
+// Invoice number is the hard check for COS realisation.
 function isCosRealised(exp: any): boolean {
   return isCosRealisedShared(exp);
 }
 
-// Unified realisation check: delegates to canonical isCanonicalCosRealised().
-// This ensures GP Tracker, COS Tracker, Company Overview, and PM Report all
-// agree on whether a cost line is realised.
+// Unified realisation check: returns true if cost is effectively realised for a given month.
+//
+// CHANGED: Committed-from-prior-month no longer silently promotes to realised.
+// Per business rules: "committed from prior month must NOT silently become realised
+// unless it matches the invoice rule." If the line has an invoice, isCosRealised()
+// will return true regardless. If it does not, it stays committed.
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  const today = `${currentMonthKey}-28`; // End-of-month approximation for canonical check
-  return isCanonicalCosRealised({
-    status: exp.status ?? exp.line_status ?? null,
-    cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
-    cosRealised: exp.cosRealised ?? null,
-    expenseInvoiceNumber: exp.expenseInvoiceNumber ?? exp.invoiceNumber ?? null,
-    expenseInvoicedDate: exp.expenseInvoicedDate ?? exp.invoiceDate ?? null,
-    expensePoNumber: exp.expensePoNumber ?? exp.poNumber ?? null,
-    paymentDate: exp.expensePaymentDate ?? exp.paymentDate ?? exp.paidDate ?? null,
-    today,
-  });
+  if (!isCosRealisedShared(exp)) return false;
+  // Realised lines are effective for current and past months only
+  return monthKey ? monthKey <= currentMonthKey : true;
 }
 
-// Returns true if a cost is still actively committed (current/future month only).
+// Returns true if a cost is still actively committed (has PO or invoice-in-progress but not yet realised).
 function isEffectivelyCommitted(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  if (isCosRealisedShared(exp)) return false;
   const cosStatus = classifyCosStatusFull(exp);
-  return cosStatus === 'Committed' && (monthKey == null || monthKey >= currentMonthKey);
+  return cosStatus === 'Committed';
 }
 
 function isCashflowConfirmed(exp: any): boolean {
@@ -519,7 +548,7 @@ async function loadProjectFinanceGovernanceContext(
       : Promise.resolve([] as any[]),
   ]);
 
-  const changeSetIds = changeRows.map((row) => row.id).filter((id): id is number => typeof id === "number");
+  const changeSetIds = changeRows.map((row: any) => row.id).filter((id: any): id is number => typeof id === "number");
   const changeFieldRows = changeSetIds.length
     ? await db.select().from(fieldChanges).where(inArray(fieldChanges.changeSetId, changeSetIds))
     : [];
@@ -528,8 +557,8 @@ async function loadProjectFinanceGovernanceContext(
     new Set(
       [
         ...extraUserIds,
-        ...changeRows.map((row) => row.actorUserId),
-        ...editRequestRows.map((row) => row.requestedByUserId),
+        ...changeRows.map((row: any) => row.actorUserId),
+        ...editRequestRows.map((row: any) => row.requestedByUserId),
       ].filter((id): id is number => typeof id === "number" && Number.isFinite(id))
     )
   );
@@ -545,13 +574,13 @@ async function loadProjectFinanceGovernanceContext(
     : [];
 
   const userNameById = new Map<number, string>(
-    userRows.map((row) => [row.id, row.name || `User ${row.id}`])
+    userRows.map((row: any) => [row.id, row.name || `User ${row.id}`])
   );
 
   const { byChangeSet, latestByEntity } = buildFieldChangesByChangeSet(changeRows, changeFieldRows);
-  const pendingApprovals = approvalRows.filter((row) => row.status === "pending");
-  const cashAffectingApprovals = pendingApprovals.filter((row) => isFinanceApprovalRecord(row));
-  const pendingEditRequests = editRequestRows.filter((row) => row.status === "pending");
+  const pendingApprovals = approvalRows.filter((row: any) => row.status === "pending");
+  const cashAffectingApprovals = pendingApprovals.filter((row: any) => isFinanceApprovalRecord(row));
+  const pendingEditRequests = editRequestRows.filter((row: any) => row.status === "pending");
 
   return {
     latestChangeByEntity: latestByEntity,
@@ -560,7 +589,7 @@ async function loadProjectFinanceGovernanceContext(
     approvals: {
       pendingCount: pendingApprovals.length,
       affectingCashCount: cashAffectingApprovals.length,
-      pending: cashAffectingApprovals.slice(0, 5).map((row) => ({
+      pending: cashAffectingApprovals.slice(0, 5).map((row: any) => ({
         id: row.id,
         title: row.title,
         type: row.type,
@@ -571,7 +600,7 @@ async function loadProjectFinanceGovernanceContext(
     },
     editRequests: {
       pendingCount: pendingEditRequests.length,
-      pending: pendingEditRequests.slice(0, 5).map((row) => ({
+      pending: pendingEditRequests.slice(0, 5).map((row: any) => ({
         id: row.id,
         editType: row.editType,
         editTarget: row.editTarget,
@@ -584,10 +613,10 @@ async function loadProjectFinanceGovernanceContext(
     },
     microsoft: {
       linkedCount: microsoftRows.length,
-      actionRequiredCount: microsoftRows.filter((row) => row.actionRequired).length,
-      unreadCount: microsoftRows.filter((row) => row.isRead === false).length,
-      linkedTaskCount: microsoftRows.filter((row) => row.linkedTaskId != null).length,
-      recent: microsoftRows.slice(0, 5).map((row) => ({
+      actionRequiredCount: microsoftRows.filter((row: any) => row.actionRequired).length,
+      unreadCount: microsoftRows.filter((row: any) => row.isRead === false).length,
+      linkedTaskCount: microsoftRows.filter((row: any) => row.linkedTaskId != null).length,
+      recent: microsoftRows.slice(0, 5).map((row: any) => ({
         id: row.id,
         type: row.type,
         subjectOrTitle: row.subjectOrTitle,
@@ -624,7 +653,7 @@ router.get("/api/program/cos", requireAuth, async (req, res) => {
     const atRiskDaysNum = parseInt(atRiskDays as string, 10) || 30;
 
     const [allExpenses, latestRefresh, cosOverrideMapCos] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      storage.getAllCostLinesForCashflow(),
       storage.getLatestRefresh(),
       Promise.resolve(new Map()),
     ]);
@@ -774,8 +803,8 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     const isFiltered = projectFilters !== null && projectFilters.size > 0;
 
     const [allExpenses, rawInflows, manualBalances, opexBudgets, opexWeeklyOverrides, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllCashflowWeeklyManual(),
       storage.getAllOpexBudgetMonthly(),
       storage.getAllOpexWeeklyManual(),
@@ -831,7 +860,7 @@ router.get("/api/cashflow-2026", requireAuth, requirePermission("cashflow", "vie
     for (const expense of itemExpenses) {
       if (projectFilters && !projectFilters.has(expense.projectName || "")) continue;
       const dateInfo = getExpenseEffectiveDateAndSource(expense);
-      if (dateInfo.source && diagnostics.dateSource[dateInfo.source] != null) diagnostics.dateSource[dateInfo.source] += 1;
+      if (dateInfo.source && (diagnostics.dateSource as any)[dateInfo.source] != null) (diagnostics.dateSource as any)[dateInfo.source] += 1;
       else diagnostics.dateSource.none += 1;
       const amountBreakdown = getOutflowAmountBreakdown(expense);
       diagnostics.amountSource[amountBreakdown.amountSource] += 1;
@@ -976,8 +1005,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
     const weekEnd = wsDate.toISOString().split('T')[0];
 
     const [allExpenses, rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
@@ -999,8 +1028,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
         const originalDate = e.expensePaymentDate || (e as any).computedForecastPaymentDate || (e as any).forecastPaymentDate || (e as any).expenseInvoicedDate || null;
         const effectiveDate = (e as any).adminDateOverride || originalDate;
         const amountBreakdown = getOutflowAmountBreakdown(e);
-        // adaptCostToExpense adds 900000 to normalizedCostLines IDs; reverse that offset
-        const realId = e.id >= 900000 ? e.id - 900000 : e.id;
+        // adaptCostToExpense uses negative IDs for normalizedCostLines rows; reverse to canonical
+        const realId = e.id < 0 ? -e.id : (e.id >= 900000 ? e.id - 900000 : e.id);
         return {
           expenseId: realId,
           projectName: e.projectName,
@@ -1036,8 +1065,8 @@ router.get("/api/cashflow-2026/detail", requireAuth, requirePermission("cashflow
           const pay = new Date(inf.paymentReceivedDate);
           daysToReceipt = Math.round((pay.getTime() - inv.getTime()) / (1000 * 60 * 60 * 24));
         }
-        // adaptRevenueToInflow adds 900000 to normalizedRevenueLines IDs; reverse that offset
-        const realInflowId = inf.id >= 900000 ? inf.id - 900000 : inf.id;
+        // adaptRevenueToInflow uses negative IDs for normalizedRevenueLines rows; reverse to canonical
+        const realInflowId = inf.id < 0 ? -inf.id : (inf.id >= 900000 ? inf.id - 900000 : inf.id);
         return {
           inflowId: realInflowId,
           projectName: inf.projectName,
@@ -1094,36 +1123,11 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
     let row: any;
     if (updated.length > 0) {
       row = updated[0];
-      // Also sync override to programExpense if a matching legacy row exists
-      if (row.projectName && row.sourceRow != null) {
-        await db.update(programExpense)
-          .set({
-            adminDateOverride: dateOverride || null,
-            adminDateOverrideReason: reason || null,
-            adminDateOverrideBy: userId || null,
-            adminDateOverrideAt: dateOverride ? now : null,
-          })
-          .where(and(
-            eq(programExpense.projectName, row.projectName),
-            eq(programExpense.rowNumber, row.sourceRow),
-            isNull(programExpense.effectiveTo),
-          ));
-      }
+      // PE sync removed — normalizedCostLines is the canonical source.
+      // program_expense is deprecated for writes; reads are being migrated.
     } else {
-      // Fallback: try updating programExpense directly (legacy rows not in normalizedCostLines)
-      const peUpdated = await db.update(programExpense)
-        .set({
-          adminDateOverride: dateOverride || null,
-          adminDateOverrideReason: reason || null,
-          adminDateOverrideBy: userId || null,
-          adminDateOverrideAt: dateOverride ? now : null,
-        })
-        .where(and(eq(programExpense.id, expenseId), isNull(programExpense.effectiveTo)))
-        .returning();
-      if (peUpdated.length === 0) {
-        return res.status(404).json({ error: "Expense line not found" });
-      }
-      row = peUpdated[0];
+      // No matching NCL row — this expense line is not in the canonical source
+      return res.status(404).json({ error: "Expense line not found in canonical cost lines" });
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
@@ -1131,13 +1135,13 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
       const existingFlag = await db.select().from(manualEditFlags)
         .where(and(
           eq(manualEditFlags.entityType, "program_expense"),
-          eq(manualEditFlags.entityId, String(expenseId)),
+          eq(manualEditFlags.entityId, Number(expenseId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
       if (existingFlag.length === 0) {
         await db.insert(manualEditFlags).values({
           entityType: "program_expense",
-          entityId: String(expenseId),
+          entityId: Number(expenseId),
           fieldName: "adminDateOverride",
           editedByUserId: userId,
           editedAt: now,
@@ -1154,7 +1158,7 @@ router.post("/api/cashflow-2026/expense-date-override", requireAuth, requirePerm
       await db.delete(manualEditFlags)
         .where(and(
           eq(manualEditFlags.entityType, "program_expense"),
-          eq(manualEditFlags.entityId, String(expenseId)),
+          eq(manualEditFlags.entityId, Number(expenseId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
     }
@@ -1214,35 +1218,11 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
     let row: any;
     if (updated.length > 0) {
       row = updated[0];
-      // Also sync override to programInflows if a matching legacy row exists
-      if (row.projectName && row.sourceRow != null) {
-        await db.update(programInflows)
-          .set({
-            adminDateOverride: dateOverride || null,
-            adminDateOverrideReason: reason || null,
-            adminDateOverrideBy: userId || null,
-            adminDateOverrideAt: dateOverride ? now : null,
-          })
-          .where(and(
-            eq(programInflows.projectName, row.projectName),
-            eq(programInflows.rowNumber, row.sourceRow),
-          ));
-      }
+      // PI sync removed — normalizedRevenueLines is the canonical source.
+      // program_inflows is deprecated for writes; reads are being migrated.
     } else {
-      // Fallback: try updating programInflows directly (legacy rows not in normalizedRevenueLines)
-      const piUpdated = await db.update(programInflows)
-        .set({
-          adminDateOverride: dateOverride || null,
-          adminDateOverrideReason: reason || null,
-          adminDateOverrideBy: userId || null,
-          adminDateOverrideAt: dateOverride ? now : null,
-        })
-        .where(eq(programInflows.id, inflowId))
-        .returning();
-      if (piUpdated.length === 0) {
-        return res.status(404).json({ error: "Inflow line not found" });
-      }
-      row = piUpdated[0];
+      // No matching NRL row — this inflow line is not in the canonical source
+      return res.status(404).json({ error: "Inflow line not found in canonical revenue lines" });
     }
 
     // Insert/update manualEditFlags for smart import conflict detection
@@ -1250,13 +1230,13 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
       const existingFlag = await db.select().from(manualEditFlags)
         .where(and(
           eq(manualEditFlags.entityType, "program_inflows"),
-          eq(manualEditFlags.entityId, String(inflowId)),
+          eq(manualEditFlags.entityId, Number(inflowId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
       if (existingFlag.length === 0) {
         await db.insert(manualEditFlags).values({
           entityType: "program_inflows",
-          entityId: String(inflowId),
+          entityId: Number(inflowId),
           fieldName: "adminDateOverride",
           editedByUserId: userId,
           editedAt: now,
@@ -1273,7 +1253,7 @@ router.post("/api/cashflow-2026/inflow-date-override", requireAuth, requirePermi
       await db.delete(manualEditFlags)
         .where(and(
           eq(manualEditFlags.entityType, "program_inflows"),
-          eq(manualEditFlags.entityId, String(inflowId)),
+          eq(manualEditFlags.entityId, Number(inflowId)),
           eq(manualEditFlags.fieldName, "adminDateOverride"),
         ));
     }
@@ -1506,19 +1486,10 @@ router.get("/api/rev-tracker", requireAuth, requirePermission("revenue_tracker",
 
 router.get("/api/cos-tracker", requireAuth, async (req, res) => {
   try {
-    // D-08 fix: Support ?activeOnly=true to filter by tracker-linked active projects
-    const activeOnlyParam = req.query.activeOnly === "true";
-    let activeProjectNames: Set<string> | null = null;
-    if (activeOnlyParam) {
-      const { getTrackerLinkedActiveProjects } = await import("../services/kpi-active-project-scope");
-      const activeProjects = await getTrackerLinkedActiveProjects();
-      activeProjectNames = new Set(activeProjects.map(p => p.projectName));
-    }
-
     const [allProgramExpenses, manualEntries, rawInflows, allTaskLinks, allOpTasks, allPlans, cosOverrideMap] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      getHighRiskAllCostReadRows(),
       storage.getTrackerMonthlyManual('COS'),
-      storage.getAllProgramInflows(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getAllMilestoneTaskLinks(),
       storage.getAllOperationalTasks(),
       storage.getAllProjectPlans(),
@@ -1527,7 +1498,10 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
-    const revByMonth = new Map<string, number>();
+    // Cash received from clients: inflows with invoice + payment received date.
+    // This is a CASH concept (money in bank), NOT revenue realised.
+    // Revenue realised is computed separately via COS-ratio allocation.
+    const cashReceivedByMonth = new Map<string, number>();
     for (const inflow of allInflows) {
       if (!inflow.milestoneAmount) continue;
       const amt = parseFloat(inflow.milestoneAmount as string);
@@ -1538,7 +1512,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         const dateMatch = inflow.paymentReceivedDate!.match(/^(\d{4})-(\d{2})/);
         if (dateMatch) {
           const mk = `${dateMatch[1]}-${dateMatch[2]}`;
-          revByMonth.set(mk, (revByMonth.get(mk) || 0) + amt);
+          cashReceivedByMonth.set(mk, (cashReceivedByMonth.get(mk) || 0) + amt);
         }
       }
     }
@@ -1554,8 +1528,6 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     for (const exp of allProgramExpenses) {
       if (exp.rowType !== 'item') continue;
-      // D-08 fix: Skip non-active projects when activeOnly filter is set
-      if (activeProjectNames && !activeProjectNames.has((exp as any).projectName ?? "")) continue;
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
 
@@ -1626,12 +1598,12 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const variance = totalCOS - budget;
       const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
-      const revRealised = revByMonth.get(monthKey) ?? 0;
+      const cashReceived = cashReceivedByMonth.get(monthKey) ?? 0;
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
       ytdCommitted += committedCOS;
       ytdBudget += budget;
-      ytdRevRealised += revRealised;
+      ytdRevRealised += cashReceived;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
       const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
@@ -1646,7 +1618,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         budget,
         variance,
         variancePct,
-        revRealised,
+        revRealised: cashReceived, // backward-compat alias — this is actually cash received, not revenue realised
+        cashReceived,
         ytdCOS,
         ytdRealised,
         ytdCommitted,
@@ -1654,7 +1627,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         ytdBudget,
         ytdVariance,
         ytdVariancePct,
-        ytdRevRealised,
+        ytdRevRealised, // backward-compat — actually YTD cash received
+        ytdCashReceived: ytdRevRealised,
         cosProjects: mapToSortedArray(bucket?.projects ?? new Map()),
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         committedProjects: mapToSortedArray(committedBucket?.projects ?? new Map()),
@@ -1681,7 +1655,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
-    const projectExpenses = await storage.getProgramExpensesByProject(projectName);
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
+    const projectExpenses = await getHighRiskProjectCostReadRows(projectName, projectIdParam);
 
     const cosByMonth = new Map<string, number>();
     const realisedByMonth = new Map<string, number>();
@@ -1716,6 +1691,7 @@ router.get("/api/cos-tracker/project/:projectName", requireAuth, async (req, res
       if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
       itemsByMonth.get(monthKey)!.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
         amount,
@@ -1810,13 +1786,14 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
     if (!match) return res.status(400).json({ error: "Invalid monthKey format" });
 
     const [allExpenses, cosOverrideMapMD] = await Promise.all([
-      storage.getAllProgramExpenses(),
+      getHighRiskAllCostReadRows(),
       Promise.resolve(new Map()),
     ]);
 
 
     interface LineItem {
       id: number;
+      canonicalLineKey: string | null;
       projectName: string;
       category: string | null;
       lineItem: string | null;
@@ -1832,6 +1809,9 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
       realisedMonth: string | null;
       cosState: string;
       paymentStatus: string;
+      hasOverride: boolean;
+      overrideStatus: string | null;
+      overrideReason: string | null;
     }
 
     const items: LineItem[] = [];
@@ -1893,6 +1873,7 @@ router.get("/api/cos-tracker/month-detail", requireAuth, async (req, res) => {
 
       items.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         projectName: pName,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
@@ -1944,18 +1925,17 @@ async function updateExpenseFieldsDualTable(
   expectedUpdatedAt?: string,
   editorUserId?: number | null,
 ): Promise<any> {
-  const isNormalized = id >= 900000;
+  // All expense IDs now route through normalized_cost_lines (canonical source).
+  // Negative IDs (from adaptCostToExpense) and legacy 900000-offset IDs are
+  // both handled by storage.updateProgramExpenseFields which reverses the offset.
+  // Positive PE-only IDs are no longer supported for writes — PE is deprecated for writes.
+  const isNormalized = id < 0 || id >= 900000;
   if (isNormalized) {
     return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
   }
-  const { programExpense: peTable } = await import("@shared/schema");
-  const legacyFields = {
-    ...fields,
-    lastEditedAt: new Date(),
-    ...(editorUserId ? { lastEditedBy: editorUserId } : {}),
-  };
-  const result = await db.update(peTable).set(legacyFields).where(eq(peTable.id, id)).returning();
-  return result[0] || null;
+  // Legacy PE-only row: log deprecation warning and attempt NCL lookup by ID
+  console.warn(`[deprecation] updateExpenseFieldsDualTable called with legacy PE id=${id}. PE writes are deprecated.`);
+  return storage.updateProgramExpenseFields(id, fields, expectedUpdatedAt);
 }
 
 router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, async (req, res) => {
@@ -1966,7 +1946,7 @@ router.patch("/api/cos-tracker/toggle-realised/:id", requireAuth, requireAdmin, 
     const { realised, expectedUpdatedAt } = req.body as { realised: boolean; expectedUpdatedAt?: string };
     if (typeof realised !== 'boolean') return res.status(400).json({ error: "realised (boolean) required" });
 
-    const allExpenses = await storage.getAllProgramExpenses();
+    const allExpenses = await storage.getAllCostLinesForCashflow();
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
 
@@ -2019,7 +1999,7 @@ router.patch("/api/cos-tracker/override-status/:id", requireAuth, requireAdmin, 
       return res.status(400).json({ error: "A reason is required when setting an override" });
     }
 
-    const allExpenses = await storage.getAllProgramExpenses();
+    const allExpenses = await storage.getAllCostLinesForCashflow();
     const expense = allExpenses.find(e => e.id === id);
     if (!expense) return res.status(404).json({ error: "Expense not found" });
 
@@ -2074,8 +2054,9 @@ router.patch("/api/cost-lines/:id/no-revenue-linked", requireAuth, requireAdmin,
 router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePermission("revenue_tracker", "view"), async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const [projectExpenses, revLines, manualEntries] = await Promise.all([
-      storage.getProgramExpensesByProject(projectName),
+      getHighRiskProjectCostReadRows(projectName, projectIdParam),
       storage.getProgramInflowsByProject(projectName),
       storage.getTrackerMonthlyManual('REV'),
     ]);
@@ -2127,6 +2108,7 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
       if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
       itemsByMonth.get(monthKey)!.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
         costAmount: amount,
@@ -2203,18 +2185,9 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
 
 router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   try {
-    // D-08 fix: Support ?activeOnly=true to filter by tracker-linked active projects
-    const activeOnlyParam = req.query.activeOnly === "true";
-    let activeProjectNames: Set<string> | null = null;
-    if (activeOnlyParam) {
-      const { getTrackerLinkedActiveProjects } = await import("../services/kpi-active-project-scope");
-      const activeProjects = await getTrackerLinkedActiveProjects();
-      activeProjectNames = new Set(activeProjects.map(p => p.projectName));
-    }
-
     const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getTrackerMonthlyManual('REV'),
       storage.getTrackerMonthlyManual('COS'),
       Promise.resolve(new Map()),
@@ -2241,8 +2214,6 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
     const cosByProject = new Map<string, number>();
     for (const exp of allExpenses) {
       if (exp.rowType !== 'item') continue;
-      // D-08 fix: Skip non-active projects when activeOnly filter is set
-      if (activeProjectNames && !activeProjectNames.has((exp as any).projectName ?? "")) continue;
       const amount = exp.expenseActualTotal ? parseFloat(exp.expenseActualTotal as string) : 0;
       if (isNaN(amount) || amount === 0) continue;
       const pName = (exp.projectName || "").replace(/_Tracker$/i, "");
@@ -2380,8 +2351,9 @@ router.get("/api/gp-tracker", requireAuth, async (req, res) => {
 router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res) => {
   try {
     const projectName = decodeURIComponent(String(req.params.projectName || ""));
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
     const [projectExpenses, revLines, cosOverrideMapProj] = await Promise.all([
-      storage.getProgramExpensesByProject(projectName),
+      getHighRiskProjectCostReadRows(projectName, projectIdParam),
       storage.getProgramInflowsByProject(projectName),
       Promise.resolve(new Map()),
     ]);
@@ -2439,6 +2411,7 @@ router.get("/api/gp-tracker/project/:projectName", requireAuth, async (req, res)
       if (!itemsByMonth.has(monthKey)) itemsByMonth.set(monthKey, []);
       itemsByMonth.get(monthKey)!.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
         costAmount: amount,
@@ -2527,8 +2500,8 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
     if (!keyMatch) return res.status(400).json({ error: "Invalid monthKey format" });
 
     const [allExpenses, allInflowsRaw, cosOverrideMapGPD] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       Promise.resolve(new Map()),
     ]);
 
@@ -2575,6 +2548,7 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
 
       items.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         projectName: pName,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
@@ -2617,8 +2591,8 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
 async function revenueTrackerHandler(req: Request, res: Response) {
   try {
     const [allExpenses, allInflowsRaw, manualEntries, cosOverrideMap] = await Promise.all([
-      storage.getAllProgramExpenses(),
-      storage.getAllProgramInflows(),
+      storage.getAllCostLinesForCashflow(),
+      storage.getAllRevenueLinesForCashflow(),
       storage.getTrackerMonthlyManual('REV'),
       Promise.resolve(new Map()),
     ]);
@@ -2766,7 +2740,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
     if (!monthKey) return res.status(400).json({ error: "monthKey required" });
 
     const [allExpenses, cosOverrideMapRMD] = await Promise.all([
-      project ? storage.getProgramExpensesByProject(project) : storage.getAllProgramExpenses(),
+      project ? getCanonicalProjectCostLinesByName(project).then((r) => r.rows) : getCanonicalAllCurrentCostLines(),
       Promise.resolve(new Map()),
     ]);
 
@@ -2824,6 +2798,7 @@ router.get("/api/revenue-tracker/month-detail", requireAuth, requirePermission("
 
       items.push({
         id: exp.id,
+        canonicalLineKey: (exp as any).canonicalLineKey || null,
         projectName: pName,
         category: exp.expenseCategory || null,
         lineItem: exp.expenseLineItem || null,
@@ -2852,11 +2827,17 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
   try {
     const { projectName, startDate, endDate, applyOverrides } = req.query;
     let expenses;
+    const canonicalEnabled = await isCanonicalFinanceCostlineReadEnabled();
 
-    if (projectName && typeof projectName === 'string') {
-      expenses = await storage.getProgramExpensesByProject(projectName);
+    if (canonicalEnabled && projectName && typeof projectName === 'string') {
+      const resolvedProjectId = await resolveProjectIdByName(projectName);
+      expenses = resolvedProjectId ? await getCanonicalProjectCostLines(resolvedProjectId) : [];
 
       // Override data now baked into base rows
+    } else if (canonicalEnabled) {
+      expenses = await getCanonicalAllCurrentCostLines();
+    } else if (projectName && typeof projectName === 'string') {
+      expenses = await storage.getProgramExpensesByProject(projectName);
     } else {
       expenses = await storage.getAllProgramExpenses();
     }
@@ -2876,13 +2857,81 @@ router.get("/api/program-expenses", requireAuth, async (req, res) => {
 
 router.get("/api/program-expenses/:projectName", requireAuth, async (req, res) => {
   try {
-    const { projectName } = req.params;
+    const projectName = paramStr(req.params.projectName);
+    const canonicalEnabled = await isCanonicalFinanceCostlineReadEnabled();
 
-    let expenses = await storage.getProgramExpensesByProject(projectName);
+    const expenses = canonicalEnabled
+      ? await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows)
+      : await storage.getProgramExpensesByProject(projectName);
 
     res.json(expenses);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch program expenses", message: "Failed to fetch program expenses" });
+  }
+});
+
+router.get("/api/finance/cost-lines/diagnostics", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
+    const scopedProjectId = Number.isFinite(projectIdParam) ? projectIdParam! : undefined;
+    const [canonicalDiagnostics, riskDiagnostics, canonicalReadEnabled] = await Promise.all([
+      getCanonicalCostLineDiagnostics(scopedProjectId),
+      getCostLineRiskDiagnostics(scopedProjectId),
+      isCanonicalFinanceCostlineReadEnabled(),
+    ]);
+    res.json({
+      featureFlag: {
+        key: CANONICAL_FINANCE_COSTLINE_READ_FLAG,
+        enabled: canonicalReadEnabled,
+      },
+      canonical: canonicalDiagnostics,
+      risks: riskDiagnostics,
+    });
+  } catch (error) {
+    console.error("Cost-line diagnostics error:", error);
+    res.status(500).json({ error: "Failed to fetch cost-line diagnostics" });
+  }
+});
+
+router.get("/api/finance/cost-lines/rollout-report", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const projectIds = String(req.query.projectIds || "")
+      .split(",")
+      .map((v) => parseInt(v.trim(), 10))
+      .filter((v) => Number.isFinite(v));
+
+    if (projectIds.length === 0) {
+      return res.status(400).json({ error: "projectIds query param is required (comma-separated integers)" });
+    }
+
+    const report = await Promise.all(projectIds.map(async (projectId) => {
+      const [canonicalRows, legacyRows] = await Promise.all([
+        getCanonicalProjectCostLines(projectId),
+        db.select().from(programExpense).where(and(eq(programExpense.projectId, projectId), isNull(programExpense.effectiveTo))),
+      ]);
+
+      const canonicalTotal = canonicalRows.reduce((sum: number, row: any) => sum + (parseFloat(String(row.expenseActualTotal || "0")) || 0), 0);
+      const legacyTotal = (legacyRows as any[]).reduce((sum: number, row: any) => sum + (parseFloat(String(row.expenseActualTotal || "0")) || 0), 0);
+
+      return {
+        projectId,
+        canonical: { rowCount: canonicalRows.length, totalExpenseActual: canonicalTotal },
+        legacy: { rowCount: legacyRows.length, totalExpenseActual: legacyTotal },
+        delta: {
+          rowCount: canonicalRows.length - legacyRows.length,
+          totalExpenseActual: canonicalTotal - legacyTotal,
+        },
+      };
+    }));
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      projectIds,
+      report,
+    });
+  } catch (error) {
+    console.error("Cost-line rollout report error:", error);
+    res.status(500).json({ error: "Failed to generate rollout report" });
   }
 });
 
@@ -2944,8 +2993,8 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
     // Override data now baked into base rows
 
     const expenses = projectName
-      ? await storage.getProgramExpensesByProject(projectName)
-      : await storage.getAllProgramExpenses();
+      ? await getCanonicalProjectCostLinesByName(projectName).then((r) => r.rows)
+      : await getCanonicalAllCurrentCostLines();
 
     const [rawInflows, allTaskLinks, allOpTasks, allPlanTasks] = await Promise.all([
       projectName ? storage.getProgramInflowsByProject(projectName) : storage.getAllProgramInflows(),
@@ -3094,7 +3143,7 @@ router.get("/api/cashflow", requireAuth, async (req, res) => {
 router.get("/api/cashflow/planning-overrides", requireAuth, async (req, res) => {
   try {
     const { projectName } = req.query;
-    let overrides;
+    let overrides: any[];
 
     // Override data now baked into base rows
     overrides = [];
@@ -3133,7 +3182,7 @@ router.post("/api/cashflow/planning-overrides", requireAuth, requireAdmin, async
       };
     });
 
-    const saved = await storage.upsertManyPlanningOverrides(overridesWithUser);
+    const saved = await (storage as any).upsertManyPlanningOverrides(overridesWithUser);
 
     try {
       for (const o of overrides) {
@@ -3169,7 +3218,7 @@ router.delete("/api/cashflow/planning-overrides/:projectName", requireAuth, requ
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deletePlanningOverridesByProject(projectName);
+    await storage.deleteProjectPlanOverridesByProject(projectName);
     res.json({ message: `Planning overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete planning overrides", message: "Failed to delete planning overrides" });
@@ -3279,27 +3328,19 @@ router.post("/api/revenue-tracking/overrides", requireAuth, requireAdminOrFinanc
           const paidDateConfirmed = isInBank;
           const paidDateFontColor = isInBank ? 'black' : 'red';
           const paidDate = isInBank ? (r.paymentReceivedDate || r.plannedPaymentDate || null) : null;
-          const revenueTrackingFields = {
-            paidDateConfirmed,
-            paidDateFontColor,
-            paidDate: paidDate,
-            inBankDate: isInBank ? (paidDate || null) : null,
-          };
-          const updated = await db.update(normalizedRevenueLines)
-            .set(revenueTrackingFields)
+          await db.update(normalizedRevenueLines)
+            .set({
+              paidDateConfirmed,
+              paidDateFontColor,
+              paidDate: paidDate,
+              inBankDate: isInBank ? (paidDate || null) : null,
+            })
             .where(
               and(
                 eq(normalizedRevenueLines.projectName, projectName),
                 eq(normalizedRevenueLines.sourceRow, rowNum),
               )
-            )
-            .returning();
-          // Phase 2 bridge write: sync revenue tracking fields to promoted revenue_lines
-          if (updated?.[0]) {
-            import("../bridge/bridge-writer").then(({ syncRevenueLineFieldUpdate }) =>
-              syncRevenueLineFieldUpdate(updated[0].id, revenueTrackingFields)
-            ).catch(() => {});
-          }
+            );
         }
       }
     } catch (syncErr: any) {
@@ -3360,7 +3401,7 @@ router.delete("/api/revenue-tracking/overrides/:projectName", requireAuth, requi
 
 router.get("/api/revenue-tab/:projectName", requireAuth, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
 
     let useCanonical = false;
     try { useCanonical = await isWorkItemsEnabled(); } catch (_e) { /* feature flag unavailable */ }
@@ -3894,7 +3935,7 @@ router.post("/api/revenue-tab/:projectName/costed", requireAuth, requireAdminOrF
 
 router.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const useCanonicalAlerts = await isWorkItemsEnabled();
     const [legacyTasks, canonicalAlertTasks, inflows, taskLinks] = await Promise.all([
       storage.getOperationalTasksByProject(projectName),
@@ -3933,7 +3974,7 @@ router.get("/api/revenue-tab/:projectName/task-alerts", requireAuth, requireAdmi
 
 router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const { milestoneRowNumber, taskId } = req.body;
     if (!milestoneRowNumber || !taskId) {
       return res.status(400).json({ error: "milestoneRowNumber and taskId are required" });
@@ -3996,7 +4037,7 @@ router.post("/api/revenue-tab/:projectName/link-task", requireAuth, requireAdmin
 
 router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const { milestoneRowNumber, dateOverride, reason } = req.body;
     if (!milestoneRowNumber || !dateOverride) {
       return res.status(400).json({ error: "milestoneRowNumber and dateOverride are required" });
@@ -4056,8 +4097,8 @@ router.post("/api/revenue-tab/:projectName/date-override", requireAuth, requireA
 
 router.delete("/api/revenue-tab/:projectName/link-task/:milestoneRowNumber", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
-    const milestoneRowNumber = parseInt(req.params.milestoneRowNumber);
+    const projectName = paramStr(req.params.projectName);
+    const milestoneRowNumber = parseInt(paramStr(req.params.milestoneRowNumber));
     const existingLinks = await storage.getMilestoneTaskLinks(projectName);
     const previousLink = existingLinks.find((link: any) => link.milestoneRowNumber === milestoneRowNumber);
     await storage.deleteMilestoneTaskLink(projectName, milestoneRowNumber);
@@ -4230,7 +4271,7 @@ router.delete("/api/expenditure/overrides/:projectName", requireAuth, requireAdm
 
 router.get("/api/expense-task-links/:projectName", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const links = await storage.getExpenseTaskLinks(req.params.projectName);
+    const links = await storage.getExpenseTaskLinks(paramStr(req.params.projectName));
     res.json(links);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch expense task links" });
@@ -4243,15 +4284,15 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
     if (!expenseId || taskId === undefined) {
       return res.status(400).json({ error: "expenseId and taskId are required" });
     }
-    const link = await storage.upsertExpenseTaskLink(req.params.projectName, expenseId, taskId, (req.user as any)?.id);
+    const link = await storage.upsertExpenseTaskLink(paramStr(req.params.projectName), expenseId, taskId, (req.user as any)?.id);
 
     try {
       await recordOverride({
         actorUserId: (req as any).user?.id,
         actorRole: (req as any).user?.role,
         entityType: "expense_task_link",
-        entityId: `${req.params.projectName}|expense${expenseId}`,
-        projectName: decodeURIComponent(req.params.projectName),
+        entityId: `${paramStr(req.params.projectName)}|expense${expenseId}`,
+        projectName: decodeURIComponent(paramStr(req.params.projectName)),
         action: "EXPENSE_TASK_LINK",
         overrideCategory: "DATA_CORRECTION",
         overrideComment: `Linked expense ${expenseId} to task ${taskId}`,
@@ -4271,16 +4312,16 @@ router.post("/api/expense-task-links/:projectName", requireAuth, requireAdminOrF
 
 router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
-    const expenseId = parseInt(req.params.expenseId);
-    await storage.deleteExpenseTaskLink(req.params.projectName, expenseId);
+    const expenseId = parseInt(paramStr(req.params.expenseId));
+    await storage.deleteExpenseTaskLink(paramStr(req.params.projectName), expenseId);
 
     try {
       await recordOverride({
         actorUserId: (req as any).user?.id,
         actorRole: (req as any).user?.role,
         entityType: "expense_task_link",
-        entityId: `${req.params.projectName}|expense${expenseId}`,
-        projectName: decodeURIComponent(req.params.projectName),
+        entityId: `${paramStr(req.params.projectName)}|expense${expenseId}`,
+        projectName: decodeURIComponent(paramStr(req.params.projectName)),
         action: "EXPENSE_TASK_UNLINK",
         overrideCategory: "DATA_CORRECTION",
         overrideComment: `Unlinked expense ${expenseId} from task`,
@@ -4300,8 +4341,8 @@ router.delete("/api/expense-task-links/:projectName/:expenseId", requireAuth, re
 router.post("/api/expense-task-links/:projectName/:expenseId/date-override", requireAuth, requireAdminOrFinancialEditor, async (req, res) => {
   try {
     const { dateOverride, reason } = req.body;
-    const expProjectName = req.params.projectName;
-    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseInt(req.params.expenseId), dateOverride, reason);
+    const expProjectName = paramStr(req.params.projectName);
+    await storage.updateExpenseTaskLinkDateOverride(expProjectName, parseInt(paramStr(req.params.expenseId)), dateOverride, reason);
 
     res.json({ success: true });
 
@@ -4322,7 +4363,7 @@ router.post("/api/expense-task-links/:projectName/:expenseId/date-override", req
 
 router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate } = req.body;
+    const { projectName, expenseCategory, expenseLineItem, expenseActualTotal, expensePoNumber, expenseInvoiceNumber, expenseInvoicedDate, expensePaymentDate, idempotencyKey } = req.body;
     if (!projectName || !expenseCategory) {
       return res.status(400).json({ error: "projectName and expenseCategory are required" });
     }
@@ -4340,7 +4381,8 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
       expenseInvoicedDate: expenseInvoicedDate || null,
       expensePaymentDate: expensePaymentDate || null,
       lineStatus: 'Planned',
-    });
+      idempotencyKey: idempotencyKey || undefined,
+    } as any);
 
     res.json(newExpense);
   } catch (error) {
@@ -4351,7 +4393,7 @@ router.post("/api/expenses/add-line", requireAuth, requireAdmin, async (req, res
 
 router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { projectName, categoryName } = req.body;
+    const { projectName, categoryName, idempotencyKey } = req.body;
     if (!projectName || !categoryName) {
       return res.status(400).json({ error: "projectName and categoryName are required" });
     }
@@ -4363,7 +4405,8 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
       rowType: 'category',
       expenseCategory: categoryName,
       expenseLineItem: categoryName,
-    });
+      idempotencyKey: idempotencyKey || undefined,
+    } as any);
 
     res.json(newCategory);
   } catch (error) {
@@ -4374,7 +4417,7 @@ router.post("/api/expenses/add-category", requireAuth, requireAdmin, async (req,
 
 router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { projectName, taskId, expenseCategory } = req.body;
+    const { projectName, taskId, expenseCategory, idempotencyKey } = req.body;
     if (!projectName || !taskId || !expenseCategory) {
       return res.status(400).json({ error: "projectName, taskId, and expenseCategory are required" });
     }
@@ -4401,7 +4444,8 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
       expenseLineItem: taskTitle,
       expensePaymentDate: taskEndDate,
       lineStatus: 'Planned',
-    });
+      idempotencyKey: idempotencyKey || undefined,
+    } as any);
     await storage.upsertExpenseTaskLink(projectName, newExpense.id, taskId, (req.user as any)?.id);
 
     res.json(newExpense);
@@ -4415,9 +4459,13 @@ router.post("/api/expenses/insert-task-as-line", requireAuth, requireAdmin, asyn
 
 router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, res) => {
   try {
-    const projectName = req.params.projectName;
-    const [expenses, taskLinks, opTasks, planTasks, projectRows, revSummary] = await Promise.all([
-      storage.getProgramExpensesByProject(projectName),
+    const projectName = paramStr(req.params.projectName);
+    const projectIdParam = req.query.projectId ? parseInt(String(req.query.projectId), 10) : null;
+    const [projectLookup, taskLinks, opTasks, planTasks, projectRows, revSummary] = await Promise.all([
+      getHighRiskProjectCostReadRows(projectName, projectIdParam).then((rows) => ({
+        projectId: Number.isFinite(projectIdParam) ? (projectIdParam as number) : null,
+        rows,
+      })),
       storage.getExpenseTaskLinks(projectName),
       storage.getOperationalTasksByProject(projectName),
       storage.getProjectPlansByProject(projectName),
@@ -4431,6 +4479,7 @@ router.get("/api/expenditure-breakdown/:projectName", requireAuth, async (req, r
         .limit(1),
       storage.getProjectRevenueSummary(projectName),
     ]);
+    const expenses = projectLookup.rows;
 
     const cosOverrideByExpenseId = new Map();
     const cosOverrideByRow = new Map();
@@ -4751,7 +4800,7 @@ router.get("/api/finance/revenue/overrides", requireAuth, async (req, res) => {
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    const overrides = await storage.getFinanceRevenueOverridesByProject(projectName);
+    const overrides = await (storage as any).getFinanceRevenueOverridesByProject(projectName);
     res.json(overrides);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch finance revenue overrides", message: "Failed to fetch finance revenue overrides" });
@@ -4772,7 +4821,7 @@ router.post("/api/finance/revenue/overrides", requireAuth, requireAdmin, require
     }
     const userId = req.user?.id;
     const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-    const saved = await storage.upsertManyFinanceRevenueOverrides(overridesWithUser);
+    const saved = await (storage as any).upsertManyFinanceRevenueOverrides(overridesWithUser);
 
     try {
       for (const o of overrides) {
@@ -4811,7 +4860,7 @@ router.delete("/api/finance/revenue/overrides/:projectName", requireAuth, requir
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deleteFinanceRevenueOverridesByProject(projectName);
+    await (storage as any).deleteFinanceRevenueOverridesByProject(projectName);
     res.json({ message: `Finance revenue overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete finance revenue overrides", message: "Failed to delete finance revenue overrides" });
@@ -4826,7 +4875,7 @@ router.get("/api/finance/cos/overrides", requireAuth, async (req, res) => {
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    const overrides = await storage.getFinanceCosOverridesByProject(projectName);
+    const overrides = await (storage as any).getFinanceCosOverridesByProject(projectName);
     res.json(overrides);
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch finance COS overrides", message: "Failed to fetch finance COS overrides" });
@@ -4847,7 +4896,7 @@ router.post("/api/finance/cos/overrides", requireAuth, requireAdmin, requirePerm
     }
     const userId = req.user?.id;
     const overridesWithUser = overrides.map((o: any) => ({ ...o, createdBy: userId }));
-    const saved = await storage.upsertManyFinanceCosOverrides(overridesWithUser);
+    const saved = await (storage as any).upsertManyFinanceCosOverrides(overridesWithUser);
 
     try {
       for (const o of overrides) {
@@ -4886,7 +4935,7 @@ router.delete("/api/finance/cos/overrides/:projectName", requireAuth, requireAdm
     if (!projectName || typeof projectName !== 'string') {
       return res.status(400).json({ error: "Project name required", message: "Project name is required" });
     }
-    await storage.deleteFinanceCosOverridesByProject(projectName);
+    await (storage as any).deleteFinanceCosOverridesByProject(projectName);
     res.json({ message: `Finance COS overrides deleted for project: ${projectName}` });
   } catch (error) {
     res.status(500).json({ error: "Failed to delete finance COS overrides", message: "Failed to delete finance COS overrides" });

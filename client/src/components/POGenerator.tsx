@@ -113,6 +113,7 @@ export function POGenerator({ projectName, projectManager }: POGeneratorProps) {
           siteContact,
           comments,
           projectManager,
+          idempotencyKey: crypto.randomUUID(),
         }),
       });
       if (!res.ok) {

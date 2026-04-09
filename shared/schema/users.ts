@@ -101,29 +101,31 @@ export const ADMIN_ROLES: CompanyRole[] = ['COO_ADMIN', 'CEO_ADMIN'];
 /** Every company role — use for entities all staff should access (home, feedback, my_work, etc.) */
 export const ALL_STAFF_ROLES: string[] = [...COMPANY_ROLES];
 
-/**
- * @deprecated Wave 1 consolidation: Use rolePermissions DB table for runtime checks.
- * These arrays are retained as the LOWEST PRIORITY fallback in ENTITY_PERMISSION_DEFAULTS.
- * New server code should use checkPermission middleware (server/middleware/check-permission.ts).
- * New client code should use the usePermission hook (client/src/hooks/use-permissions.ts).
- * DO NOT add new role arrays — configure roles via Admin > Roles & Permissions UI instead.
- */
+/** Finance-view roles — can see financial dashboards, cashflow, revenue, COS, GP */
 export const FINANCE_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'] as const;
-/** @deprecated See FINANCE_VIEW_ROLES deprecation note. */
+
+/** Finance-edit roles — can create/edit financial records */
 export const FINANCE_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CFO', 'PROGRAM_FINANCE_MANAGER', 'ACCOUNTANT'] as const;
-/** @deprecated See FINANCE_VIEW_ROLES deprecation note. */
+
+/** Engineering-view roles — can see engineering dashboards, tasks, stages */
 export const ENG_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'ENGINEERING_MANAGER', 'ENGINEER', 'QUALITY_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'CONSTRUCTION_MANAGER', 'SSEG_MANAGER'] as const;
-/** @deprecated See FINANCE_VIEW_ROLES deprecation note. */
+
+/** Engineering-edit roles — can create/edit engineering items */
 export const ENG_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'ENGINEERING_MANAGER', 'PROGRAM_MANAGER', 'ENGINEER', 'SSEG_MANAGER'] as const;
-/** @deprecated See FINANCE_VIEW_ROLES deprecation note. */
+
+/** Quality & HSE view roles — can see quality, HSE, compliance dashboards */
 export const QUALITY_HSE_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'HSE_MANAGER', 'SSEG_MANAGER'] as const;
-/** @deprecated See FINANCE_VIEW_ROLES deprecation note. */
+
+/** Quality & HSE edit roles — can create/edit quality/HSE items */
 export const QUALITY_HSE_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'QUALITY_MANAGER', 'CONSTRUCTION_MANAGER', 'HSE_MANAGER'] as const;
-/** @deprecated See FINANCE_VIEW_ROLES deprecation note. */
+
+/** Project delivery view roles — can see projects, construction, tasks, milestones */
 export const DELIVERY_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'CFO', 'PROGRAM_MANAGER', 'PROGRAM_FINANCE_MANAGER', 'CONSTRUCTION_MANAGER', 'QUALITY_MANAGER', 'ENGINEERING_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_MANAGER_SITE', 'PROJECT_DEVELOPER', 'ENGINEER', 'ACCOUNTANT', 'HSE_MANAGER', 'SSEG_MANAGER'] as const;
-/** @deprecated See FINANCE_VIEW_ROLES deprecation note. */
+
+/** Project development view roles — can see PD dashboard, tickets, pipeline */
 export const PD_VIEW_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'PROGRAM_MANAGER', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER', 'PROGRAM_FINANCE_MANAGER'] as const;
-/** @deprecated See FINANCE_VIEW_ROLES deprecation note. */
+
+/** Project development edit roles — can create/edit PD items */
 export const PD_EDIT_ROLES = ['COO_ADMIN', 'CEO_ADMIN', 'CCO', 'KEY_ACCOUNTS_MANAGER', 'PROJECT_DEVELOPER'] as const;
 
 export const roleCredentials = pgTable("role_credentials", {

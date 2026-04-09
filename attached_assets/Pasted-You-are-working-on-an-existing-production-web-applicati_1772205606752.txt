@@ -1,0 +1,241 @@
+You are working on an existing production web application for Emergent Energy (EE).
+
+CRITICAL RULES (NON-NEGOTIABLE)
+1) Do NOT break or refactor any existing working functionality.
+2) Do NOT rename existing routes, tables, or fields unless explicitly instructed.
+3) Reuse existing Microsoft integration/auth patterns already in the app (Outlook integration exists). If there is a Microsoft OAuth/Graph module already, extend it; do not create a parallel integration.
+4) Implement new features as isolated modules with feature flags, minimal database changes, and safe migrations.
+5) If anything is unclear, STOP and ask Johannes (COO) specific questions before building. Do not assume.
+
+CONFIRMED CONTEXT
+- SharePoint is the single source of truth for project documents.
+- Users may have OneDrive sync, but the app must browse/upload to SharePoint directly via Microsoft Graph.
+- Folder structure is maintained in SharePoint, not duplicated in the app.
+- Users must be able to map a Project to a SharePoint folder via the app UI.
+- Teams usage for V1 is agreed:
+  V1 Purpose: Teams → Evidence + Actions + Escalations (project-first)
+  V1 Includes:
+    a) Paste Teams message link to link a message/thread to a Project (and Portfolio rolls up via Project)
+    b) Project “Teams” tab shows linked items (metadata + preview + deep link back to Teams)
+    c) Convert linked Teams message to an existing Task (must use current task system; no duplicate task model)
+    d) COO/Program Manager rollups: “Hot Threads” & “Unanswered”
+  V1 Excludes:
+    - No full Teams clone UI
+    - No bulk ingest of all chats
+    - No AI summaries
+    - No meetings/transcription workflows
+
+PHASE 0 — REQUIRED QUESTIONS (ASK BEFORE CODING)
+Ask Johannes these questions and WAIT for answers. Do not proceed until answered.
+
+A) UI PLACEMENT (WHERE IT LIVES)
+1) Where should SharePoint “Documents” live?
+   - Option A: Project page tab (recommended)
+   - Option B: Project right sidebar widget
+   - Option C: Both (tab + widget)
+2) Where should Teams live?
+   - Option A: Project page tab (recommended)
+   - Option B: Right sidebar widget (My Tool)
+   - Option C: Both (tab + widget)
+3) Should Portfolio pages have their own “Documents” and “Teams” tabs (rollups from projects), or only show rollups in COO Lens?
+
+B) MICROSOFT AUTH / GRAPH SETUP (REUSE EXISTING)
+4) Confirm the existing Outlook integration uses Microsoft Graph OAuth (Entra App Registration). Provide:
+   - tenant type: single-tenant or multi-tenant
+   - where tokens are stored (table + field names)
+   - whether refresh tokens are stored and auto-refreshed server-side
+5) Provide the current Azure/Entra App Registration Graph permissions already granted (list or screenshot).
+
+C) PERMISSIONS / SECURITY
+6) Confirm access rule:
+   A user can view linked Teams/SharePoint content only if:
+   - they have access to the Project in EE app AND
+   - Microsoft Graph authorizes access (they have access in Teams/SharePoint)
+   Confirm whether COO override exists in the app (app-level), noting Graph will still enforce Microsoft permissions.
+
+D) SHAREPOINT ROOT + MAPPING
+7) Provide:
+   - SharePoint Site ID or Site URL to use
+   - Document Library name (drive) used for project docs (e.g. “Documents” or custom)
+8) Confirm mapping rule:
+   - Each Project has exactly ONE mapped SharePoint folder path (projectRootFolder).
+   - This mapping is set/changed via front-end by authorized roles (COO + Program Manager, optionally PM).
+   Confirm which roles can map/change.
+
+E) “HOT THREADS” RULES
+9) Define thresholds:
+   - “Unanswered” = no response for how long? (e.g. 48h)
+   - “Hot” = tagged finance/risk/blocked and no update for how long? (e.g. 24h/72h)
+   Confirm which tags to include in V1 (default list below).
+
+Default V1 tags (confirm/edit):
+- finance-payment
+- finance-invoice
+- decision
+- risk
+- blocked
+- snag
+- client
+- internal
+
+After Johannes answers, proceed.
+
+PHASE 1 — IMPLEMENTATION PLAN (DO NOT CODE UNTIL PHASE 0 ANSWERED)
+When approved, implement in small, testable increments with feature flags.
+
+FEATURE FLAGS
+- feature_ms_sharepoint_docs (default OFF)
+- feature_ms_teams (default OFF)
+
+MODULE 1: MICROSOFT GRAPH EXTENSION (REUSE EXISTING OUTLOOK INTEGRATION)
+- Locate existing Microsoft OAuth/Graph integration code and token storage.
+- Extend it to support SharePoint (Files/Sites/Drives) and Teams (Chats/Channel messages) scopes.
+- Add integration health checks: token validity, last refresh, last successful API call, error state.
+
+MODULE 2: SHAREPOINT DOCUMENTS INTEGRATION (PROJECT DOCUMENTS)
+Goal: Browse and upload files in the mapped SharePoint folder for a Project.
+Do NOT replicate folder structure in app; only store mapping + file metadata references as needed.
+
+Backend
+- Add a Project field or linked table for SharePoint mapping:
+  Preferred: project.sharepoint_root_folder (string) + optional fields:
+    - sharepoint_site_id
+    - sharepoint_drive_id (document library drive)
+    - sharepoint_item_id (folder item id)
+  If you cannot modify Project table safely, create new table ProjectSharePointMapping.
+
+- Build Graph API wrapper functions:
+  - Resolve site by URL -> siteId (if needed)
+  - Resolve drive (document library) -> driveId
+  - Resolve folder path -> itemId
+  - List children of folder (files/folders)
+  - Create folder
+  - Upload file (simple upload for small files; upload session for large files)
+  - Get share link / webUrl
+  - Download link (optional)
+  Ensure you store only IDs/paths/metadata, not file blobs.
+
+Frontend
+- Add “Documents” UI in the chosen location:
+  - Folder tree / breadcrumb navigation starting at project mapped folder
+  - List view with name, type, size, modified, modifiedBy
+  - Buttons: Upload, New Folder, Open in SharePoint, Copy link
+- Add “Map SharePoint Folder” UI:
+  - Role-gated (as per Phase 0 answer)
+  - Picker flow:
+    1) Select Site (if multiple)
+    2) Select Library (Drive)
+    3) Browse folders
+    4) Confirm folder mapping to Project
+  Must save mapping to DB.
+  Must validate user has access (Graph must return folder info successfully).
+
+- Optional “Deliverables register”:
+  If the app already has a deliverables object, add “Add to Deliverables” button.
+  Otherwise, do NOT create a new deliverables system in V1—only browsing/upload and mapping.
+
+MODULE 3: TEAMS INTEGRATION (PROJECT COMMS)
+Goal: Link a Teams message/thread to a Project by pasting a Teams message link.
+Store metadata + preview + deep link to Teams.
+Enable conversion to Task using existing task model.
+
+Backend
+- Create tables (or equivalent) with minimal footprint:
+  1) TeamsLinkedItem
+     - id
+     - project_id (required)
+     - portfolio_id (optional; derived, do not require client object)
+     - linked_by_user_id
+     - linked_at
+     - tags (array or join table)
+     - teams_item_type (chat_message, channel_message, thread)
+     - teams_team_id (nullable)
+     - teams_channel_id (nullable)
+     - teams_chat_id (nullable)
+     - teams_message_id
+     - teams_web_url (deep link)
+     - message_preview (short text)
+     - message_from_display
+     - message_created_at
+     - last_activity_at
+  2) TeamsLinkedItemTag (if your DB doesn’t support arrays)
+  3) TeamsLinkedItemAction (optional, if you want audit of conversions)
+
+- Build Graph API wrapper functions:
+  - Parse Teams message link (input from user)
+  - Resolve to message ID / chat/channel context via Graph
+  - Fetch message metadata + preview safely
+  - Validate access (Graph must succeed)
+  Note: Teams link formats vary; implement robust parsing and log failures with actionable errors.
+
+Frontend
+- Add “Teams” UI in chosen location:
+  - “Link Teams Message” button opens modal:
+    - paste link
+    - select tags (multi-select, defaults)
+    - confirm project (pre-filled)
+  - List linked items with:
+    - preview
+    - tags
+    - last activity
+    - open in Teams button
+
+Convert to Task (MUST REUSE EXISTING TASK SYSTEM)
+- Add action “Create Task from Message”:
+  - Must create a task in the existing task table/object.
+  - Populate:
+    - title = derived from message preview + tag (e.g. “Teams: payment follow-up”)
+    - description includes:
+      - message preview
+      - teams_web_url
+      - linked item id
+    - project_id set
+  - User selects owner, due date, priority, status using existing UI patterns.
+
+COO/Program Manager Rollups
+- Add to COO Lens (or equivalent dashboard):
+  - Hot Threads: tagged (finance-payment, finance-invoice, risk, blocked) and no activity for threshold
+  - Unanswered: last activity older than threshold and no linked task created (optional)
+- These rollups must respect permissions.
+
+MODULE 4: SECURITY / RBAC
+- Enforce that users can only:
+  - see SharePoint docs for projects they have access to in EE app AND Graph authorizes access
+  - see Teams linked items for projects they have access to in EE app AND Graph authorizes access
+- COO override:
+  - only at app layer; Graph still limits what COO can fetch.
+- Add audit logs for:
+  - mapping changes
+  - link/unlink Teams items
+  - uploads/creates (store metadata only)
+
+MODULE 5: TESTING (REQUIRED)
+Create a minimal test plan and implement tests where the app already has them:
+- Smoke test: existing dashboards/routes still work
+- SharePoint:
+  - mapping set
+  - browse folders
+  - upload file
+- Teams:
+  - link message by paste link
+  - list linked items
+  - create task from message
+- Permissions:
+  - user without project access cannot view
+  - mapping UI role-gated
+
+DELIVERY REQUIREMENTS
+- Keep migrations minimal and reversible.
+- Use feature flags OFF by default.
+- Provide an “Integration Settings” page (COO-only) showing:
+  - connection status
+  - required permissions (list)
+  - last successful sync/API call
+  - errors and logs
+
+STOP CONDITIONS
+- If Outlook integration isn’t Graph OAuth, stop and ask Johannes how to proceed.
+- If Graph permissions are missing, output the exact permissions needed and wait.
+
+Now start by asking Johannes the Phase 0 questions ONLY.
+Do not code yet.

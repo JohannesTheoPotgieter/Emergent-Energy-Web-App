@@ -3,10 +3,22 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
-import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, isNull, and } from "drizzle-orm";
 import { opportunities } from "@shared/schema/projects";
+import { z, ZodError } from "zod";
+
+const opportunityCreateSchema = z.object({
+  name: z.string().min(1).optional(),
+  clientId: z.number().int().optional(),
+  stage: z.string().optional(),
+  contractType: z.string().optional(),
+  estimatedValue: z.union([z.string(), z.number()]).optional(),
+  estimatedKwp: z.union([z.string(), z.number()]).optional(),
+  expectedCloseDate: z.string().optional(),
+  notes: z.string().optional(),
+  fundingType: z.string().optional(),
+});
 
 const router = Router();
 
@@ -46,27 +58,50 @@ router.get("/api/opportunities/:id", requireAuth, async (req: Request, res: Resp
   }
 });
 
-router.post("/api/opportunities", requireAuth, requirePermission("pd_dashboard", "create"), async (req: Request, res: Response) => {
+router.post("/api/opportunities", requireAuth, async (req: Request, res: Response) => {
   try {
-    const [row] = await db.insert(opportunities).values(req.body).returning();
+    const parsed = opportunityCreateSchema.parse(req.body);
+    const [row] = await db.insert(opportunities).values(parsed).returning();
     res.status(201).json(row);
   } catch (err) {
+    if (err instanceof ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: err.errors });
+    }
     console.error("[Opportunities] Failed to create:", err);
     res.status(500).json({ error: "Failed to create opportunity" });
   }
 });
 
-router.patch("/api/opportunities/:id", requireAuth, requirePermission("pd_dashboard", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/opportunities/:id", requireAuth, async (req: Request, res: Response) => {
   try {
+    const parsed = opportunityCreateSchema.partial().parse(req.body);
     const [row] = await db
       .update(opportunities)
-      .set({ ...req.body, updatedAt: new Date() })
+      .set({ ...parsed, updatedAt: new Date() })
       .where(eq(opportunities.id, Number(req.params.id)))
       .returning();
     res.json(row);
   } catch (err) {
+    if (err instanceof ZodError) {
+      return res.status(400).json({ error: "Validation failed", details: err.errors });
+    }
     console.error("[Opportunities] Failed to update:", err);
     res.status(500).json({ error: "Failed to update opportunity" });
+  }
+});
+
+router.delete("/api/opportunities/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(opportunities)
+      .set({ deletedAt: new Date() })
+      .where(eq(opportunities.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Opportunity not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[Opportunities] Failed to delete:", err);
+    res.status(500).json({ error: "Failed to delete opportunity" });
   }
 });
 

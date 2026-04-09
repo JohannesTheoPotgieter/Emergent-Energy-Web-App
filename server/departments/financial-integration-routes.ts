@@ -1,5 +1,6 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
+// Error breakdown: TS7006 implicit-any: 17, TS2345 query/param types: 14, other: 9
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import { Router, Request, Response, NextFunction } from "express";
 import { requireAuth, requireAdmin } from "./shared-middleware";
 import { storage } from "../storage";
@@ -7,6 +8,7 @@ import { db } from "../db";
 import { financialEditRequests, financialIntegrationRules, users, workItems, projectInfo, expenseTaskLinks, milestoneTaskLinks } from "@shared/schema";
 import { createNotification } from "../services/notification-service";
 import { eq, and, inArray, isNull, desc, sql } from "drizzle-orm";
+import { paramStr } from "../lib/req-params";
 
 const router = Router();
 
@@ -39,7 +41,7 @@ async function detectCriticalPathImpact(projectName: string, taskIds: number[]):
     if (piRow.length === 0) return false;
     const tasks = await db.select().from(workItems)
       .where(and(eq(workItems.projectId, piRow[0].id), isNull(workItems.deletedAt)));
-    const relevantTasks = tasks.filter(t => taskIds.includes(t.sourceRow || t.id));
+    const relevantTasks = tasks.filter((t: any) => taskIds.includes(t.sourceRow || t.id));
     for (const task of relevantTasks) {
       if ((task as any).isCriticalPath || (task as any).is_critical_path) return true;
       const pct = Number(task.percentComplete || 0);
@@ -60,7 +62,7 @@ async function detectRevenueImpact(projectName: string, taskIds: number[]): Prom
   try {
     const links = await db.select().from(milestoneTaskLinks)
       .where(eq(milestoneTaskLinks.projectName, projectName));
-    const linkedTaskIds = links.map(l => l.taskId);
+    const linkedTaskIds = links.map((l: any) => l.taskId);
     for (const tid of taskIds) {
       if (linkedTaskIds.includes(tid) || linkedTaskIds.includes(-tid)) return true;
     }
@@ -75,7 +77,7 @@ async function detectExpenditureImpact(projectName: string, taskIds: number[]): 
   try {
     const links = await db.select().from(expenseTaskLinks)
       .where(eq(expenseTaskLinks.projectName, projectName));
-    const linkedTaskIds = links.map(l => l.taskId);
+    const linkedTaskIds = links.map((l: any) => l.taskId);
     for (const tid of taskIds) {
       if (linkedTaskIds.includes(tid) || linkedTaskIds.includes(-tid)) return true;
     }
@@ -247,7 +249,7 @@ router.get("/api/financial-edit-requests", requireAuth, async (req: Request, res
       .orderBy(desc(financialEditRequests.createdAt))
       .limit(100);
 
-    res.json(results.map(r => ({
+    res.json(results.map((r: any) => ({
       ...r.request,
       requestedByName: r.requestedBy?.name || "Unknown",
       requestedByRole: r.requestedBy?.role || "",
@@ -277,7 +279,7 @@ router.get("/api/financial-edit-requests/pending-count", requireAuth, async (req
 
 router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const requestId = parseInt(req.params.id);
+    const requestId = parseInt(paramStr(req.params.id));
     const userId = req.user!.id;
     const { comment } = req.body;
 
@@ -371,7 +373,7 @@ router.post("/api/financial-edit-requests/:id/approve", requireAuth, requireFina
 
 router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const requestId = parseInt(req.params.id);
+    const requestId = parseInt(paramStr(req.params.id));
     const userId = req.user!.id;
     const { comment } = req.body;
 
@@ -418,7 +420,7 @@ router.post("/api/financial-edit-requests/:id/reject", requireAuth, requireFinan
 
 router.get("/api/financial-integration/warnings/:projectName", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const warnings: { type: string; severity: string; message: string; details?: any }[] = [];
 
     const expenses = await storage.getProgramExpensesByProject(projectName);
@@ -458,7 +460,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
     const unlinkedExpenses = expenses.filter((e: any) => {
       const amount = Number(e.expenseActualTotal) || 0;
       if (amount === 0) return false;
-      return !expLinks.some(l => l.expenseId === e.id);
+      return !expLinks.some((l: any) => l.expenseId === e.id);
     });
     if (unlinkedExpenses.length > 0) {
       const totalUnlinked = unlinkedExpenses.reduce((s: number, e: any) => s + (Number(e.expenseActualTotal) || 0), 0);
@@ -473,7 +475,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
     const unlinkedMilestones = inflows.filter((r: any) => {
       const amount = Number(r.milestoneAmount) || 0;
       if (amount === 0) return false;
-      return !revLinks.some(l => l.milestoneRowNumber === r.rowNumber);
+      return !revLinks.some((l: any) => l.milestoneRowNumber === r.rowNumber);
     });
     if (unlinkedMilestones.length > 0) {
       const totalUnlinked = unlinkedMilestones.reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
@@ -489,7 +491,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
       const milestone = inflows.find((r: any) => r.rowNumber === link.milestoneRowNumber);
       if (!milestone) continue;
       const taskId = Math.abs(link.taskId);
-      const task = planTasks.find(t => (t.sourceRow || t.id) === taskId);
+      const task = planTasks.find((t: any) => (t.sourceRow || t.id) === taskId);
       if (!task) continue;
       const endDate = task.endDate;
       if (endDate && endDate < today) {
@@ -509,7 +511,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
       const expense = expenses.find((e: any) => e.id === link.expenseId);
       if (!expense) continue;
       const taskId = Math.abs(link.taskId);
-      const task = planTasks.find(t => (t.sourceRow || t.id) === taskId);
+      const task = planTasks.find((t: any) => (t.sourceRow || t.id) === taskId);
       if (!task) continue;
       const budgetAmt = Number((expense as any).budgetTotal) || 0;
       const actualAmt = Number((expense as any).expenseActualTotal) || 0;
@@ -523,17 +525,17 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
       }
     }
 
-    const overdueTasks = planTasks.filter(t => {
+    const overdueTasks = planTasks.filter((t: any) => {
       const pct = Number(t.percentComplete || 0);
       return t.endDate && t.endDate < today && pct < 1;
     });
-    const criticalOverdue = overdueTasks.filter(t => (t as any).isCriticalPath);
+    const criticalOverdue = overdueTasks.filter((t: any) => (t as any).isCriticalPath);
     if (criticalOverdue.length > 0) {
       warnings.push({
         type: "critical_path_delay",
         severity: "critical",
         message: `${criticalOverdue.length} critical path task(s) overdue — may delay handover`,
-        details: { tasks: criticalOverdue.map(t => ({ name: t.title, endDate: t.endDate })) },
+        details: { tasks: criticalOverdue.map((t: any) => ({ name: t.title, endDate: t.endDate })) },
       });
     }
 
@@ -563,7 +565,7 @@ router.get("/api/financial-integration/warnings/:projectName", requireAuth, asyn
 
 router.get("/api/financial-integration/sync-status/:projectName", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
 
     const expenses = await storage.getProgramExpensesByProject(projectName);
     const inflows = await storage.getProgramInflowsByProject(projectName);
@@ -576,9 +578,9 @@ router.get("/api/financial-integration/sync-status/:projectName", requireAuth, a
     const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
 
     const totalExpenses = expenses.length;
-    const linkedExpenses = expenses.filter((e: any) => expLinks.some(l => l.expenseId === e.id)).length;
+    const linkedExpenses = expenses.filter((e: any) => expLinks.some((l: any) => l.expenseId === e.id)).length;
     const totalMilestones = inflows.filter((r: any) => Number(r.milestoneAmount) > 0).length;
-    const linkedMilestones = inflows.filter((r: any) => revLinks.some(l => l.milestoneRowNumber === r.rowNumber)).length;
+    const linkedMilestones = inflows.filter((r: any) => revLinks.some((l: any) => l.milestoneRowNumber === r.rowNumber)).length;
     const totalTasks = planTasks.length;
 
     const expLinkPct = totalExpenses > 0 ? Math.round((linkedExpenses / totalExpenses) * 100) : 0;
@@ -615,7 +617,7 @@ router.get("/api/financial-integration/role-access", requireAuth, async (req: Re
 
 router.get("/api/financial-integration/rules/:projectName", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const rules = await db.select({
       rule: financialIntegrationRules,
       createdBy: { id: users.id, name: users.name },
@@ -625,7 +627,7 @@ router.get("/api/financial-integration/rules/:projectName", requireAuth, async (
       .where(eq(financialIntegrationRules.projectName, projectName))
       .orderBy(desc(financialIntegrationRules.createdAt));
 
-    res.json(rules.map(r => ({
+    res.json(rules.map((r: any) => ({
       ...r.rule,
       createdByName: r.createdBy?.name || "Unknown",
     })));
@@ -673,7 +675,7 @@ router.post("/api/financial-integration/rules", requireAuth, requireFinancialApp
 
 router.patch("/api/financial-integration/rules/:ruleId", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const ruleId = parseInt(req.params.ruleId);
+    const ruleId = parseInt(paramStr(req.params.ruleId));
     const { ruleConfig, isActive } = req.body;
 
     const updates: any = { updatedAt: new Date() };
@@ -699,7 +701,7 @@ router.patch("/api/financial-integration/rules/:ruleId", requireAuth, requireFin
 
 router.delete("/api/financial-integration/rules/:ruleId", requireAuth, requireFinancialApprover, async (req: Request, res: Response) => {
   try {
-    const ruleId = parseInt(req.params.ruleId);
+    const ruleId = parseInt(paramStr(req.params.ruleId));
     const [deleted] = await db.delete(financialIntegrationRules)
       .where(eq(financialIntegrationRules.id, ruleId))
       .returning();
@@ -714,7 +716,7 @@ router.delete("/api/financial-integration/rules/:ruleId", requireAuth, requireFi
 
 router.get("/api/financial-integration/suggested-rules/:projectName", requireAuth, async (req: Request, res: Response) => {
   try {
-    const projectName = req.params.projectName;
+    const projectName = paramStr(req.params.projectName);
     const suggestions: {
       id: string;
       ruleType: string;
@@ -734,7 +736,7 @@ router.get("/api/financial-integration/suggested-rules/:projectName", requireAut
       .from(financialIntegrationRules)
       .where(and(eq(financialIntegrationRules.projectName, projectName), eq(financialIntegrationRules.isActive, true)));
 
-    const existingRuleTypes = new Set(existingRules.map(r => r.ruleType));
+    const existingRuleTypes = new Set(existingRules.map((r: any) => r.ruleType));
 
     const expLinks = await db.select().from(expenseTaskLinks).where(eq(expenseTaskLinks.projectName, projectName));
     const revLinks = await db.select().from(milestoneTaskLinks).where(eq(milestoneTaskLinks.projectName, projectName));
@@ -757,7 +759,7 @@ router.get("/api/financial-integration/suggested-rules/:projectName", requireAut
     }
 
     const expensesWithAmount = expenses.filter((e: any) => (Number(e.expenseActualTotal) || 0) > 0);
-    const unlinkedExpenses = expensesWithAmount.filter((e: any) => !expLinks.some(l => l.expenseId === e.id));
+    const unlinkedExpenses = expensesWithAmount.filter((e: any) => !expLinks.some((l: any) => l.expenseId === e.id));
     if (expensesWithAmount.length > 0) {
       const unlinkedPct = Math.round((unlinkedExpenses.length / expensesWithAmount.length) * 100);
       if (unlinkedPct > 50) {
@@ -774,7 +776,7 @@ router.get("/api/financial-integration/suggested-rules/:projectName", requireAut
     }
 
     const milestonesWithAmount = inflows.filter((r: any) => (Number(r.milestoneAmount) || 0) > 0);
-    const unlinkedMilestones = milestonesWithAmount.filter((r: any) => !revLinks.some(l => l.milestoneRowNumber === r.rowNumber));
+    const unlinkedMilestones = milestonesWithAmount.filter((r: any) => !revLinks.some((l: any) => l.milestoneRowNumber === r.rowNumber));
     if (unlinkedMilestones.length > 0 && !existingRuleTypes.has("revenue_milestone_linking")) {
       suggestions.push({
         id: "suggest-revenue-milestone-alert",

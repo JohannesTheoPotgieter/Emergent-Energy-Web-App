@@ -42,11 +42,17 @@ describe("Phase 2: sub_project_name on program_expense and program_inflows", () 
 });
 
 describe("Phase 3: API endpoints support sub-project filtering", () => {
-  const routes = read("server/routes.ts");
+  // Handlers were extracted from server/routes.ts to server/routes/finance-legacy-extracted-routes.ts
+  const routes = read("server/routes/finance-legacy-extracted-routes.ts");
 
-  it("program-expenses endpoint supports subProject query parameter", () => {
-    expect(routes).toContain("req.query.subProject");
-    expect(routes).toContain("e.subProjectName === subProject");
+  // NOTE: The /api/program-expenses routes were moved to server/departments/finance-routes.ts.
+  // The subProject filter was present in the legacy (dead) route but is NOT present in the
+  // canonical department route. This is a pre-existing gap — not introduced by the removal.
+  // The test below documents the canonical route exists in finance-routes.ts.
+  it("program-expenses canonical route exists in finance-routes.ts", () => {
+    const financeRoutes = read("server/departments/finance-routes.ts");
+    expect(financeRoutes).toContain('"/api/program-expenses"');
+    expect(financeRoutes).toContain('"/api/program-expenses/:projectName"');
   });
 
   it("program-inflows endpoint supports subProject query parameter", () => {

@@ -1,5 +1,6 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
+// Error breakdown: TS7006 implicit-any: 30, TS2345 query/param types: 17, other: 3
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { clients, pdTickets, workItems, workItemAssignments, projectInfo, users, taskActivityLog, PD_REQUEST_TYPE_TASK_TEMPLATES, projectExecutionState, projectPdPmHandover, projectHandoverHistory, pdVisibilityConfig, workstreamVisibilityConfig } from "@shared/schema";
@@ -10,6 +11,7 @@ import { getEffectiveWorkstreamVisibility } from "./workstream-visibility-middle
 
 import { requireAuth } from "./auth-context";
 import { isPdRole, canCreatePdTicket, canViewAllTickets, ENGINEERING_REQUEST_TYPES } from "@shared/roles/pd-roles";
+import { paramStr } from "./lib/req-params";
 
 /**
  * Resolve the effective PD visibility config for a user.
@@ -124,7 +126,7 @@ async function filterTicketsByRole<T extends Record<string, any>>(
             sql`${workItems.deletedAt} IS NULL`,
           ),
         );
-      assignedIds = new Set(rows.map(r => r.pdTicketId).filter(Boolean) as number[]);
+      assignedIds = new Set(rows.map((r: any) => r.pdTicketId).filter(Boolean) as number[]);
     }
     return tickets.filter(
       r =>
@@ -182,13 +184,30 @@ export function registerPdRoutes(app: Express) {
         createdBy: user?.id || null,
       }).returning();
 
-      // Phase 2 bridge write: mirror to core.clients (always-on, best-effort)
-      const { syncClient } = await import("./bridge/bridge-writer");
-      const promotedMirror = await syncClient({
-        id: created.id, name: created.name, clientId,
-        createdBy: user?.id ?? null, updatedBy: user?.id ?? null,
-      });
-      res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
+      const dualWriteEnabled = await getFeatureFlag("promoted_core_clients_dual_write");
+      const promotedMirror = { attempted: false, success: false, error: null as string | null };
+      if (dualWriteEnabled) {
+        promotedMirror.attempted = true;
+        try {
+          await db.execute(sql`
+            INSERT INTO core.clients (id, legacy_id, client_code, name, created_by, updated_by, created_at, updated_at, source_table)
+            VALUES (${created.id}, ${created.id}, ${clientId}, ${created.name}, ${user?.id ?? null}, ${user?.id ?? null}, NOW(), NOW(), 'public.clients')
+            ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                client_code = EXCLUDED.client_code,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+          `);
+          promotedMirror.success = true;
+        } catch (mirrorError: any) {
+          promotedMirror.error = mirrorError?.message || "unknown_error";
+          console.error("[dual-write][pd-clients] promoted mirror write failed", mirrorError);
+        }
+      }
+
+      if (promotedMirror.attempted) {
+        res.setHeader("X-Promoted-Clients-Dual-Write", promotedMirror.success ? "mirrored" : "mirror_failed");
+      }
       res.status(201).json({ ...created, _promotedMirror: promotedMirror });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -203,7 +222,7 @@ export function registerPdRoutes(app: Express) {
         return res.status(403).json({ error: "Only authorized roles can edit clients" });
       }
 
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid client ID" });
 
       const { name } = req.body;
@@ -224,13 +243,6 @@ export function registerPdRoutes(app: Express) {
         updatedBy: user?.id || null,
         updatedAt: new Date(),
       }).where(eq(clients.id, id)).returning();
-
-      // Phase 2 bridge write: mirror update to core.clients
-      const { syncClient } = await import("./bridge/bridge-writer");
-      syncClient({
-        id: updated.id, name: updated.name, clientId: updated.clientId,
-        updatedBy: user?.id ?? null,
-      }).catch(() => {});
 
       res.json(updated);
     } catch (err: any) {
@@ -271,7 +283,7 @@ export function registerPdRoutes(app: Express) {
         .leftJoin(projectInfo, eq(pdTickets.projectId, projectInfo.id))
         .orderBy(desc(pdTickets.createdAt));
 
-      const ticketIds = rows.map(r => r.ticket.id);
+      const ticketIds = rows.map((r: any) => r.ticket.id);
       let taskCounts: Record<number, { total: number; completed: number }> = {};
       if (ticketIds.length > 0) {
         const taskCountRows = await db
@@ -290,7 +302,7 @@ export function registerPdRoutes(app: Express) {
         }
       }
 
-      const enriched = rows.map(r => ({
+      const enriched = rows.map((r: any) => ({
         ...r,
         clientName: r.clientName || r.ticket.clientNameSnapshot || null,
         projectName: r.projectName || r.ticket.projectSiteName || null,
@@ -307,7 +319,7 @@ export function registerPdRoutes(app: Express) {
 
   app.get("/api/pd/tickets/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
       const [ticket] = await db
@@ -344,7 +356,7 @@ export function registerPdRoutes(app: Express) {
         .where(and(eq(workItems.pdTicketId, id), sql`${workItems.deletedAt} IS NULL`))
         .orderBy(asc(workItems.sortOrder));
 
-      const taskIds = tasks.map(t => t.id);
+      const taskIds = tasks.map((t: any) => t.id);
       let recentActivity: any[] = [];
       if (taskIds.length > 0) {
         recentActivity = await db.select().from(taskActivityLog)
@@ -444,7 +456,7 @@ export function registerPdRoutes(app: Express) {
     try {
       const user = req.user as any;
       const role = user?.companyRole || user?.role || "";
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
       const [existing] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
@@ -482,7 +494,7 @@ export function registerPdRoutes(app: Express) {
 
   app.get("/api/pd/tickets/:id/task-templates", requireAuth, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
       const templates = PD_REQUEST_TYPE_TASK_TEMPLATES[ticket.requestType] || [];
@@ -500,7 +512,7 @@ export function registerPdRoutes(app: Express) {
         return res.status(403).json({ error: "Not authorized" });
       }
 
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
       if (!ticket) return res.status(404).json({ error: "Ticket not found" });
 
@@ -524,7 +536,7 @@ export function registerPdRoutes(app: Express) {
         return res.status(403).json({ error: "Not authorized" });
       }
 
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return res.status(400).json({ error: "Invalid ticket ID" });
 
       const [ticket] = await db.select().from(pdTickets).where(eq(pdTickets.id, id));
@@ -639,7 +651,7 @@ export function registerPdRoutes(app: Express) {
           handoverReadinessStatus: projectPdPmHandover.handoverReadinessStatus,
         })
         .from(projectPdPmHandover);
-      const handoverMap = new Map(handoverRows.map(h => [h.projectId, h]));
+      const handoverMap: Map<any, any> = new Map(handoverRows.map((h: any) => [h.projectId, h]));
 
       const taskCountRows = await db
         .select({
@@ -650,7 +662,7 @@ export function registerPdRoutes(app: Express) {
         .from(workItems)
         .where(sql`${workItems.pdTicketId} IS NOT NULL AND ${workItems.deletedAt} IS NULL`)
         .groupBy(workItems.pdTicketId);
-      const taskCountMap = new Map(taskCountRows.map(r => [r.pdTicketId!, { total: r.total, completed: r.completed }]));
+      const taskCountMap: Map<any, any> = new Map(taskCountRows.map((r: any) => [r.pdTicketId!, { total: r.total, completed: r.completed }]));
 
       const today = new Date().toISOString().split("T")[0];
       const oneWeekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
@@ -723,11 +735,11 @@ export function registerPdRoutes(app: Express) {
 
       // Handover status summary
       const handoverSummary = {
-        notStarted: handoverRows.filter(h => !h.status || h.status === "DRAFT").length,
-        draft: handoverRows.filter(h => h.status === "DRAFT").length,
-        submitted: handoverRows.filter(h => h.status === "SUBMITTED_FOR_PM_REVIEW").length,
-        accepted: handoverRows.filter(h => h.status === "ACCEPTED").length,
-        rejected: handoverRows.filter(h => h.status === "REJECTED").length,
+        notStarted: handoverRows.filter((h: any) => !h.status || h.status === "DRAFT").length,
+        draft: handoverRows.filter((h: any) => h.status === "DRAFT").length,
+        submitted: handoverRows.filter((h: any) => h.status === "SUBMITTED_FOR_PM_REVIEW").length,
+        accepted: handoverRows.filter((h: any) => h.status === "ACCEPTED").length,
+        rejected: handoverRows.filter((h: any) => h.status === "REJECTED").length,
       };
 
       // Pipeline value from financial estimates
@@ -752,7 +764,7 @@ export function registerPdRoutes(app: Express) {
 
   app.get("/api/pd/users", requireAuth, async (_req: Request, res: Response) => {
     try {
-      const allUsers = await db.select({ id: users.id, name: users.name, role: users.companyRole })
+      const allUsers = await db.select({ id: users.id, name: users.name, role: (users as any).companyRole })
         .from(users)
         .orderBy(asc(users.name));
       res.json(allUsers);
@@ -783,11 +795,11 @@ export function registerPdRoutes(app: Express) {
 
       // Get all tickets
       const allTickets = await db.select().from(pdTickets);
-      const fyTickets = allTickets.filter(t => t.createdAt >= fyStart && t.createdAt <= fyEnd);
+      const fyTickets = allTickets.filter((t: any) => t.createdAt >= fyStart && t.createdAt <= fyEnd);
 
       // Get all handovers
       const allHandovers = await db.select().from(projectPdPmHandover);
-      const fyHandovers = allHandovers.filter(h => h.createdAt >= fyStart && h.createdAt <= fyEnd);
+      const fyHandovers = allHandovers.filter((h: any) => h.createdAt >= fyStart && h.createdAt <= fyEnd);
 
       // Get handover history for rejection reasons
       const handoverHistory = await db.select().from(projectHandoverHistory)
@@ -795,12 +807,12 @@ export function registerPdRoutes(app: Express) {
 
       // Get users for workload
       const pdUsers = await db.select({ id: users.id, name: users.name }).from(users);
-      const userMap = new Map(pdUsers.map(u => [u.id, u.name]));
+      const userMap = new Map(pdUsers.map((u: any) => [u.id, u.name]));
 
       // --- Throughput Metrics ---
-      const thisMonthTickets = fyTickets.filter(t => t.createdAt.toISOString().slice(0, 7) === currentMonth);
-      const completedFy = fyTickets.filter(t => t.status === "Completed");
-      const completedThisMonth = completedFy.filter(t => t.updatedAt.toISOString().slice(0, 7) === currentMonth);
+      const thisMonthTickets = fyTickets.filter((t: any) => t.createdAt.toISOString().slice(0, 7) === currentMonth);
+      const completedFy = fyTickets.filter((t: any) => t.status === "Completed");
+      const completedThisMonth = completedFy.filter((t: any) => t.updatedAt.toISOString().slice(0, 7) === currentMonth);
 
       // Average cycle time by request type
       const cycleTimeByType: Record<string, { total: number; count: number }> = {};
@@ -815,16 +827,16 @@ export function registerPdRoutes(app: Express) {
       );
 
       // Average handover cycle time (draft → accepted)
-      const acceptedHandovers = allHandovers.filter(h => h.status === "ACCEPTED" && h.acceptedAt && h.createdAt);
+      const acceptedHandovers = allHandovers.filter((h: any) => h.status === "ACCEPTED" && h.acceptedAt && h.createdAt);
       const avgHandoverCycleTime = acceptedHandovers.length > 0
-        ? Math.round(acceptedHandovers.reduce((sum, h) => sum + Math.max(0, Math.floor((h.acceptedAt!.getTime() - h.createdAt.getTime()) / 86400000)), 0) / acceptedHandovers.length)
+        ? Math.round(acceptedHandovers.reduce((sum: any, h: any) => sum + Math.max(0, Math.floor((h.acceptedAt!.getTime() - h.createdAt.getTime()) / 86400000)), 0) / acceptedHandovers.length)
         : null;
 
       // Quarterly breakdown
-      const quarterlyData = quarters.map(q => {
-        const created = fyTickets.filter(t => t.createdAt >= q.start && t.createdAt <= q.end).length;
-        const completed = completedFy.filter(t => t.updatedAt >= q.start && t.updatedAt <= q.end).length;
-        const submitted = fyHandovers.filter(h => h.submittedAt && h.submittedAt >= q.start && h.submittedAt <= q.end).length;
+      const quarterlyData = quarters.map((q: any) => {
+        const created = fyTickets.filter((t: any) => t.createdAt >= q.start && t.createdAt <= q.end).length;
+        const completed = completedFy.filter((t: any) => t.updatedAt >= q.start && t.updatedAt <= q.end).length;
+        const submitted = fyHandovers.filter((h: any) => h.submittedAt && h.submittedAt >= q.start && h.submittedAt <= q.end).length;
         return { quarter: q.label, created, completed, submitted };
       });
 
@@ -839,25 +851,25 @@ export function registerPdRoutes(app: Express) {
       }
 
       const today = new Date().toISOString().split("T")[0];
-      const overdueCount = allTickets.filter(t => t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled").length;
+      const overdueCount = allTickets.filter((t: any) => t.dueDate && t.dueDate < today && t.status !== "Completed" && t.status !== "Cancelled").length;
 
       // Tickets per PD team member
       const ticketsPerMember: Record<string, number> = {};
-      for (const t of allTickets.filter(t => t.status !== "Completed" && t.status !== "Cancelled")) {
-        const name = t.projectDeveloperUserId ? (userMap.get(t.projectDeveloperUserId) || "Unassigned") : "Unassigned";
-        ticketsPerMember[name] = (ticketsPerMember[name] || 0) + 1;
+      for (const t of allTickets.filter((t: any) => t.status !== "Completed" && t.status !== "Cancelled")) {
+        const name = (t as any).projectDeveloperUserId ? (userMap.get((t as any).projectDeveloperUserId) || "Unassigned") : "Unassigned";
+        ticketsPerMember[name as string] = (ticketsPerMember[name as string] || 0) + 1;
       }
 
       // --- Handover Metrics ---
-      const submittedHandovers = allHandovers.filter(h => h.submittedAt);
-      const accepted = allHandovers.filter(h => h.status === "ACCEPTED").length;
-      const rejected = allHandovers.filter(h => h.status === "REJECTED").length;
+      const submittedHandovers = allHandovers.filter((h: any) => h.submittedAt);
+      const accepted = allHandovers.filter((h: any) => h.status === "ACCEPTED").length;
+      const rejected = allHandovers.filter((h: any) => h.status === "REJECTED").length;
       const rejectionRate = (accepted + rejected) > 0 ? Math.round((rejected / (accepted + rejected)) * 100) : 0;
 
       // Average time from submission to decision
-      const decidedHandovers = allHandovers.filter(h => h.submittedAt && (h.acceptedAt || h.rejectedAt));
+      const decidedHandovers = allHandovers.filter((h: any) => h.submittedAt && (h.acceptedAt || h.rejectedAt));
       const avgDecisionTime = decidedHandovers.length > 0
-        ? Math.round(decidedHandovers.reduce((sum, h) => {
+        ? Math.round(decidedHandovers.reduce((sum: any, h: any) => {
             const decisionDate = h.acceptedAt || h.rejectedAt!;
             return sum + Math.max(0, Math.floor((decisionDate.getTime() - h.submittedAt!.getTime()) / 86400000));
           }, 0) / decidedHandovers.length)
@@ -865,7 +877,7 @@ export function registerPdRoutes(app: Express) {
 
       // Top rejection reasons
       const rejectionReasons: Record<string, number> = {};
-      const rejectedHistory = handoverHistory.filter(h => h.action === "PD_PM_HANDOVER_REJECTED");
+      const rejectedHistory = handoverHistory.filter((h: any) => h.action === "PD_PM_HANDOVER_REJECTED");
       for (const h of rejectedHistory) {
         const details = h.details as any;
         const reason = details?.reason || "No reason specified";
@@ -875,7 +887,7 @@ export function registerPdRoutes(app: Express) {
 
       // --- Cross-functional demand ---
       const engineeringTypes = new Set(["Feasibility Study", "Design Review", "IFC Planning", "Grid Application", "Battery Assessment", "Site Assessment", "Full EPC"]);
-      const engineeringTickets = allTickets.filter(t => engineeringTypes.has(t.requestType) && t.status !== "Cancelled").length;
+      const engineeringTickets = allTickets.filter((t: any) => engineeringTypes.has(t.requestType) && t.status !== "Cancelled").length;
 
       res.json({
         fy,

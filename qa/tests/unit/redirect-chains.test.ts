@@ -1,87 +1,86 @@
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-
-function read(relPath: string) {
-  return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
-}
+import {
+  PAGE_REGISTRY,
+  LEGACY_REDIRECTS,
+} from "@/config/page-registry";
 
 describe("redirect chain elimination", () => {
-  const registrySource = read("client/src/config/page-registry.ts");
-  const appSource = read("client/src/App.tsx");
-
-  // ── Multi-hop chains collapsed ──
-
-  it("/dashboard redirects directly to /gates (not /execution-board)", () => {
-    // Find the LEGACY_REDIRECTS entry for /dashboard
-    expect(registrySource).toContain('{ path: "/dashboard", redirectTo: "/gates" }');
-    expect(registrySource).not.toContain('{ path: "/dashboard", redirectTo: "/execution-board" }');
-  });
-
-  it("/pm-dashboard is a live page (not a redirect)", () => {
-    // pm-dashboard is now a live page with its own component, not a redirect
-    expect(registrySource).toContain('id: "pmDashboard", path: "/pm-dashboard"');
-    expect(registrySource).toContain('routeComponentKey: "PMDashboard"');
-  });
-
-  it("PM role fallback resolves home path via ROLE_LANDING_PAGE", () => {
-    expect(appSource).toContain('ROLE_LANDING_PAGE[effectiveRole] || "/"');
-  });
-
-  it("collapse comments document the original chain", () => {
-    expect(registrySource).toContain("Legacy: /dashboard → /execution-board → /gates. Collapsed to direct.");
-  });
-
-  // ── No remaining multi-hop chains ──
+  // ── No multi-hop chains ──
 
   it("no LEGACY_REDIRECTS target is itself a redirect source", () => {
-    // Extract all redirect targets
-    const legacyRedirects = registrySource
-      .split("LEGACY_REDIRECTS")[1]
-      ?.split("];")[0] || "";
+    const sources = new Set(LEGACY_REDIRECTS.map((r) => r.path));
 
-    const targetMatches = legacyRedirects.matchAll(/redirectTo:\s*"([^"]+)"/g);
-    const targets = [...targetMatches].map(m => m[1]);
-
-    const sourceMatches = legacyRedirects.matchAll(/path:\s*"([^"]+)"/g);
-    const sources = new Set([...sourceMatches].map(m => m[1]));
-
-    for (const target of targets) {
-      const cleanTarget = target.split("?")[0];
-      if (sources.has(cleanTarget)) {
-        throw new Error(`Multi-hop chain: ${cleanTarget} is both a redirect target and source`);
-      }
+    for (const redirect of LEGACY_REDIRECTS) {
+      const cleanTarget = redirect.redirectTo.split("?")[0];
+      expect(
+        sources.has(cleanTarget),
+        `Multi-hop chain: ${redirect.path} → ${redirect.redirectTo}, but ${cleanTarget} is also a redirect source`,
+      ).toBe(false);
     }
   });
 
-  // ── PageRegistryEntry type field ──
+  it("no LEGACY_REDIRECTS target points to a PAGE_REGISTRY alias", () => {
+    const aliasTargets = new Set(
+      PAGE_REGISTRY.filter((p) => p.type === "alias").map((p) => p.path),
+    );
 
-  it("PageRegistryEntry interface includes type: alias | page", () => {
-    expect(registrySource).toContain('type?: "page" | "alias"');
-  });
-
-  it("all PAGE_REGISTRY entries with redirectTo are marked type: alias", () => {
-    // Extract PAGE_REGISTRY block
-    const registryBlock = registrySource.split("export const PAGE_REGISTRY")[1] || "";
-    // Find entries with redirectTo
-    const lines = registryBlock.split("\n").filter(l => l.includes("redirectTo:"));
-    for (const line of lines) {
-      expect(line).toContain('type: "alias"');
+    for (const redirect of LEGACY_REDIRECTS) {
+      const cleanTarget = redirect.redirectTo.split("?")[0];
+      expect(
+        aliasTargets.has(cleanTarget),
+        `Chain via alias: ${redirect.path} → ${cleanTarget}, which is a PAGE_REGISTRY alias`,
+      ).toBe(false);
     }
   });
 
-  // ── Redirect chain checker script ──
+  // ── All redirect targets resolve to real routes ──
 
-  it("check-redirect-chains script exists", () => {
-    const script = read("scripts/check-redirect-chains.ts");
-    expect(script).toContain("LEGACY_REDIRECTS");
-    expect(script).toContain("PAGE_REGISTRY");
-    expect(script).toContain("multi-hop");
+  it("every LEGACY_REDIRECTS target resolves to a real PAGE_REGISTRY route or root", () => {
+    const registryPaths = new Set(PAGE_REGISTRY.map((p) => p.path));
+    // "/" is handled directly in App.tsx as HomePage
+    registryPaths.add("/");
+
+    for (const redirect of LEGACY_REDIRECTS) {
+      const cleanTarget = redirect.redirectTo.split("?")[0];
+      expect(
+        registryPaths.has(cleanTarget),
+        `Dangling redirect: ${redirect.path} → ${redirect.redirectTo} (${cleanTarget} not in PAGE_REGISTRY)`,
+      ).toBe(true);
+    }
   });
 
-  it("package.json has check:redirects script", () => {
-    const pkg = read("package.json");
-    expect(pkg).toContain('"check:redirects"');
-    expect(pkg).toContain("check-redirect-chains.ts");
+  it("every PAGE_REGISTRY alias redirectTo resolves to a real page or root", () => {
+    const realPages = new Set(
+      PAGE_REGISTRY.filter((p) => p.routeComponentKey && !p.redirectTo).map((p) => p.path),
+    );
+    realPages.add("/");
+
+    const aliases = PAGE_REGISTRY.filter((p) => p.type === "alias" && p.redirectTo);
+    for (const alias of aliases) {
+      const cleanTarget = alias.redirectTo!.split("?")[0];
+      expect(
+        realPages.has(cleanTarget),
+        `Dangling alias: ${alias.path} → ${alias.redirectTo} (${cleanTarget} is not a real page)`,
+      ).toBe(true);
+    }
+  });
+
+  // ── Specific known redirects ──
+
+  it("/dashboard redirects to /gates (not /execution-board)", () => {
+    const entry = LEGACY_REDIRECTS.find((r) => r.path === "/dashboard");
+    expect(entry).toBeDefined();
+    expect(entry!.redirectTo).toBe("/gates");
+  });
+
+  // ── Structural invariants ──
+
+  it("all LEGACY_REDIRECTS entries have valid path and redirectTo fields", () => {
+    for (const redirect of LEGACY_REDIRECTS) {
+      expect(redirect.path).toBeTruthy();
+      expect(redirect.path.startsWith("/")).toBe(true);
+      expect(redirect.redirectTo).toBeTruthy();
+      expect(redirect.redirectTo.startsWith("/")).toBe(true);
+    }
   });
 });

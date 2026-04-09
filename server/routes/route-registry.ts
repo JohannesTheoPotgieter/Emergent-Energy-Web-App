@@ -15,8 +15,47 @@ export async function registerExtractedRoutes(app: Express) {
   const { registerMytoolRoutes } = await import("./mytool-routes");
   registerMytoolRoutes(app);
 
-  // Future phases will add more domain modules here:
-  // Phase 2: const { registerAdminExtractedRoutes } = await import("./admin-extracted-routes");
-  // Phase 3: const { registerOutlookRoutes } = await import("./outlook-routes");
-  // etc.
+  // Phase 2: MS Integration routes (23 handlers, extracted from routes.ts)
+  const { registerMsIntegrationRoutes } = await import("./ms-integration-extracted-routes");
+  await registerMsIntegrationRoutes(app);
+
+  // Phase 3a: Support routes (29 handlers + error handler, extracted from routes.ts)
+  const { registerSupportExtractedRoutes } = await import("./support-extracted-routes");
+  await registerSupportExtractedRoutes(app);
+
+  // Phase 3b: Clients routes (2 handlers, extracted from routes.ts)
+  const { registerClientsExtractedRoutes } = await import("./clients-extracted-routes");
+  registerClientsExtractedRoutes(app);
+
+  // Phase 4a: Work Items routes (7 handlers, extracted from routes.ts)
+  const { registerWorkItemsExtractedRoutes } = await import("./work-items-extracted-routes");
+  registerWorkItemsExtractedRoutes(app);
+
+  // Phase 4b: Planning routes (7 handlers, extracted from routes.ts)
+  const { registerPlanningExtractedRoutes } = await import("./planning-extracted-routes");
+  registerPlanningExtractedRoutes(app);
+
+  // Phase 4c: Project Info routes (12 handlers, extracted from routes.ts)
+  const { registerProjectInfoExtractedRoutes } = await import("./project-info-extracted-routes");
+  registerProjectInfoExtractedRoutes(app);
+
+  // Phase 5: Misc read routes (2 handlers, extracted from routes.ts)
+  const { registerMiscExtractedRoutes } = await import("./misc-extracted-routes");
+  registerMiscExtractedRoutes(app);
+
+  // Phase 7: Home / Reporting routes (5 handlers, extracted from routes.ts)
+  const { registerHomeExtractedRoutes } = await import("./home-extracted-routes");
+  registerHomeExtractedRoutes(app);
+
+  // Phase 8: Overview route (1 handler, extracted from routes.ts)
+  const { registerOverviewExtractedRoutes } = await import("./overview-extracted-routes");
+  registerOverviewExtractedRoutes(app);
+
+  // Phase 9a: Finance / COS routes (22 handlers, extracted from routes.ts)
+  const { registerFinanceLegacyExtractedRoutes } = await import("./finance-legacy-extracted-routes");
+  registerFinanceLegacyExtractedRoutes(app);
+
+  // Phase 9b: Imports / Upload / Admin routes (21 handlers, extracted from routes.ts)
+  const { registerImportsAdminExtractedRoutes } = await import("./imports-admin-extracted-routes");
+  await registerImportsAdminExtractedRoutes(app);
 }

@@ -1,7 +1,6 @@
 import { and, inArray, isNull, sql } from "drizzle-orm";
 import { normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
 import { db, getDbMode } from "../db";
-import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 
 function toNumber(value: unknown): number {
@@ -18,6 +17,8 @@ export interface CanonicalProjectFinanceRow {
   totalCost: number;
   paidCost: number;
   outstandingCost: number;
+  /** COS realised — invoice-only hard rule. Separate from paidCost (cash concept). */
+  realisedCost: number;
 }
 
 export interface CanonicalProjectTaskRow {
@@ -56,6 +57,7 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       totalCost: 0,
       paidCost: 0,
       outstandingCost: 0,
+      realisedCost: 0,
     });
   }
 
@@ -65,21 +67,12 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectId, projectIds), isNull(normalizedCostLines.effectiveTo))),
     ]);
 
-    const today = new Date().toISOString().slice(0, 10);
-
     for (const row of revenueRows) {
       const current = byProject.get(row.projectId);
       if (!current) continue;
       const amount = toNumber(row.amountExVat);
       current.totalRevenue += amount;
-      // F-01 fix: Use canonical isRevenueSettled() instead of simple field presence
-      if (isRevenueSettled({
-        status: (row as any).status,
-        paidDate: (row as any).paidDate,
-        inBankDate: (row as any).inBankDate,
-        paidDateConfirmed: (row as any).paidDateConfirmed,
-        paidDateFontColor: (row as any).paidDateFontColor,
-      })) {
+      if (row.paidDate || row.inBankDate) {
         current.receivedRevenue += amount;
       } else {
         current.outstandingRevenue += amount;
@@ -91,72 +84,71 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       if (!current) continue;
       const amount = toNumber(row.amountExVat);
       current.totalCost += amount;
-      // F-02 fix: Use canonical isCanonicalCosRealised() instead of simple paidDate check
-      if (isCanonicalCosRealised({
-        status: (row as any).status,
-        cosStatusOverride: (row as any).cosStatusOverride ?? null,
-        cosRealised: (row as any).cosRealised ?? null,
-        expenseInvoiceNumber: (row as any).invoiceNumber ?? null,
-        expenseInvoicedDate: (row as any).invoiceDate ?? null,
-        expensePoNumber: (row as any).poNumber ?? null,
-        paymentDate: (row as any).paidDate ?? null,
-        today,
-      })) {
+      if (row.paidDate) {
         current.paidCost += amount;
       } else {
         current.outstandingCost += amount;
+      }
+      // COS realised via canonical check (invoice-only hard rule + overrides)
+      if (isCanonicalCosRealised({
+        status: null,
+        cosStatusOverride: (row as any).cosStatusOverride ?? null,
+        cosRealised: (row as any).cosRealised ?? null,
+        expenseInvoiceNumber: row.invoiceNumber ?? null,
+        expenseInvoicedDate: (row as any).invoiceDate ?? null,
+        expensePoNumber: (row as any).poNumber ?? null,
+        paymentDate: (row as any).paidDate ?? null,
+        today: new Date().toISOString().slice(0, 10),
+      })) {
+        current.realisedCost += amount;
       }
     }
 
     return byProject;
   }
 
-  // F-01/F-02 fix: Use in-memory evaluation with canonical functions for PostgreSQL too,
-  // so revenue settlement and COS realisation logic is consistent across all code paths.
-  const today = new Date().toISOString().slice(0, 10);
+  const revenueRows = await db.execute(sql`
+    SELECT
+      project_id,
+      COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_revenue,
+      COALESCE(SUM(CASE WHEN paid_date IS NOT NULL OR in_bank_date IS NOT NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS received_revenue,
+      COALESCE(SUM(CASE WHEN paid_date IS NULL AND in_bank_date IS NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS outstanding_revenue
+    FROM normalized_revenue_lines
+    WHERE project_id = ANY(${sql`ARRAY[${sql.join(projectIds.map((id) => sql`${id}`), sql`,`)}]::int[]`})
+      AND effective_to IS NULL
+    GROUP BY project_id
+  `);
 
-  const [pgRevenueRows, pgCostRows] = await Promise.all([
-    db.select().from(normalizedRevenueLines).where(and(inArray(normalizedRevenueLines.projectId, projectIds), isNull(normalizedRevenueLines.effectiveTo))),
-    db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectId, projectIds), isNull(normalizedCostLines.effectiveTo))),
-  ]);
+  const costRows = await db.execute(sql`
+    SELECT
+      project_id,
+      COALESCE(SUM(CAST(amount_ex_vat AS NUMERIC)), 0) AS total_cost,
+      COALESCE(SUM(CASE WHEN paid_date IS NOT NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS paid_cost,
+      COALESCE(SUM(CASE WHEN paid_date IS NULL THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS outstanding_cost,
+      COALESCE(SUM(CASE WHEN invoice_number IS NOT NULL AND TRIM(invoice_number) <> '' THEN CAST(amount_ex_vat AS NUMERIC) ELSE 0 END), 0) AS realised_cost
+    FROM normalized_cost_lines
+    WHERE project_id = ANY(${sql`ARRAY[${sql.join(projectIds.map((id) => sql`${id}`), sql`,`)}]::int[]`})
+      AND effective_to IS NULL
+    GROUP BY project_id
+  `);
 
-  for (const row of pgRevenueRows) {
-    const current = byProject.get(row.projectId);
+  for (const row of revenueRows.rows as any[]) {
+    const projectId = Number(row.project_id);
+    const current = byProject.get(projectId);
     if (!current) continue;
-    const amount = toNumber(row.amountExVat);
-    current.totalRevenue += amount;
-    if (isRevenueSettled({
-      status: (row as any).status,
-      paidDate: (row as any).paidDate,
-      inBankDate: (row as any).inBankDate,
-      paidDateConfirmed: (row as any).paidDateConfirmed,
-      paidDateFontColor: (row as any).paidDateFontColor,
-    })) {
-      current.receivedRevenue += amount;
-    } else {
-      current.outstandingRevenue += amount;
-    }
+    current.totalRevenue = toNumber(row.total_revenue);
+    current.receivedRevenue = toNumber(row.received_revenue);
+    current.outstandingRevenue = toNumber(row.outstanding_revenue);
   }
 
-  for (const row of pgCostRows) {
-    const current = byProject.get(row.projectId);
+  for (const row of costRows.rows as any[]) {
+    const projectId = Number(row.project_id);
+    const current = byProject.get(projectId);
     if (!current) continue;
-    const amount = toNumber(row.amountExVat);
-    current.totalCost += amount;
-    if (isCanonicalCosRealised({
-      status: (row as any).status,
-      cosStatusOverride: (row as any).cosStatusOverride ?? null,
-      cosRealised: (row as any).cosRealised ?? null,
-      expenseInvoiceNumber: (row as any).invoiceNumber ?? null,
-      expenseInvoicedDate: (row as any).invoiceDate ?? null,
-      expensePoNumber: (row as any).poNumber ?? null,
-      paymentDate: (row as any).paidDate ?? null,
-      today,
-    })) {
-      current.paidCost += amount;
-    } else {
-      current.outstandingCost += amount;
-    }
+    current.totalCost = toNumber(row.total_cost);
+    current.paidCost = toNumber(row.paid_cost);
+    current.outstandingCost = toNumber(row.outstanding_cost);
+    current.realisedCost = toNumber(row.realised_cost);
   }
 
   return byProject;

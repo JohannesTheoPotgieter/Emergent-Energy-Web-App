@@ -1,0 +1,331 @@
+You are working inside the Emergent Energy Web App codebase.
+
+Your job is to take the application to a production-ready state by:
+1. completing full functionality across all existing views, subviews, tabs, modals, drawers, buttons, tables, cards, forms, KPIs, workflows, and navigation paths
+2. fixing broken, empty, inconsistent, missing, or partially wired functionality
+3. improving UX, visual quality, flow, clarity, and consistency
+4. preserving and building on the existing app, data, imports, and new database structure
+5. not breaking current working functionality, not losing data, and not changing the operational source of truth logic
+
+This is not a greenfield rebuild.
+This is a controlled production hardening and functional completion exercise.
+
+==================================================
+CORE NON-NEGOTIABLE RULES
+==================================================
+
+1. DO NOT BREAK EXISTING WORKING FUNCTIONALITY
+- Do not remove working routes, tables, actions, forms, KPIs, or workflows.
+- Do not rename fields, routes, API contracts, or database structures unless absolutely necessary.
+- If a rename or refactor is required, implement a backward-compatible compatibility layer.
+- Preserve current data and current behavior where already correct.
+
+2. SOURCE OF TRUTH RULE
+- The app must work from:
+  a) the imported / front-end maintained data
+  b) the new database structure
+- Treat this imported operational data + maintained DB structure as the source of truth.
+- Do not introduce shadow logic, parallel truth tables, or duplicate derived logic in random components.
+- UI must read from stable selectors/adapters/services, not from scattered business logic inside views.
+- Any derived KPI or summary must trace back clearly to the source tables / imported maintained data and the new DB structure.
+
+3. NON-DESTRUCTIVE IMPLEMENTATION
+- No destructive migrations.
+- No deletion of existing production data.
+- No breaking changes to existing records.
+- If schema evolution is needed, create additive migrations only.
+- If legacy fields are still used, preserve them until safely migrated and mapped.
+
+4. NO FAKE COMPLETION
+- Do not leave dead buttons, placeholder clicks, fake success states, empty stubs, unhandled loaders, or mock-only code in production paths.
+- Every visible action must either work fully or be intentionally hidden based on role/config.
+- Every page must have proper loading, empty, success, warning, and error states.
+
+5. ROLE AND ASSIGNMENT DISCIPLINE
+- All assignable work items across the app must support proper assignment.
+- Assignment must support:
+  a) internal users
+  b) external counterparties
+- Assignment must use database IDs, not free-text names.
+- The app must clearly distinguish assignee type (internal user vs counterparty) and persist this correctly.
+- Ensure all assignment dropdowns / pickers populate correctly everywhere in the application.
+
+6. KPI INTEGRITY
+- All KPI cards, summaries, and dashboards must reconcile with the underlying operational data.
+- KPI logic must align with the revenue trackers, COS trackers, and maintained imported data.
+- No KPI may show values that do not reconcile to its source logic.
+- If old legacy KPI boards exist, restore the useful business-critical KPI parity where relevant, but calculate from the current maintained data / new DB structure.
+
+7. AUDITABILITY
+- Important actions must be traceable.
+- Action logs should show meaningful source detail, not only generic status changes.
+- Users must be able to understand what changed, from what, to what, by whom, and when where relevant.
+
+8. PRODUCTION READINESS
+- Improve performance, clarity, consistency, error handling, and visual polish.
+- Ensure production-safe navigation, data fetch logic, and resilient UI behavior.
+- Fix broken routes, null crashes, unhandled promises, invalid state transitions, and empty screens.
+- No silent failures.
+
+==================================================
+WORK METHOD: DO THIS IN ORDER
+==================================================
+
+PHASE 1 — FULL APP AUDIT FIRST
+Before making major changes, inspect and map the full application.
+
+Create a complete inventory of:
+- all routes
+- all screens
+- all subviews
+- all tabs
+- all drawers/modals
+- all tables
+- all forms
+- all visible buttons/actions
+- all KPI cards and summaries
+- all permission-sensitive areas
+- all assignment controls
+- all related API calls
+- all data stores/hooks/selectors/services
+- all relevant database tables/views
+- all import pipelines / source adapters
+- all broken or inconsistent flows
+
+Then identify for every screen:
+- what it is supposed to do
+- what data it reads
+- what data it writes
+- what actions exist
+- what is currently broken
+- what is partially implemented
+- what is visually weak or confusing
+- what has inconsistent UX compared to the rest of the app
+
+Do not guess. Inspect the actual codebase and actual structures first.
+
+PHASE 2 — DATA FLOW AND ARCHITECTURE HARDENING
+After the audit:
+- centralize data access patterns where needed
+- ensure views use stable service/selector layers
+- preserve imported maintained data and new DB structure as source-of-truth inputs
+- remove duplicate UI-side calculation logic where it risks drift
+- ensure IDs and relationships are used consistently
+- enforce relational integrity between projects, tasks, approvals, users, counterparties, procurement items, finance items, quality items, and engineering records
+- ensure no screen depends on brittle text matching when an ID-based relation should be used
+
+PHASE 3 — FUNCTIONAL COMPLETION OF ALL MODULES
+Complete all missing functionality across the application.
+
+For every route/module/view/subview:
+- ensure page loads correctly
+- ensure all expected real data is shown
+- ensure filters/search/sort/pagination work where applicable
+- ensure buttons and actions work
+- ensure forms save correctly
+- ensure edit flows work
+- ensure detail pages open correctly
+- ensure create / read / update behavior works
+- ensure role visibility works
+- ensure errors are handled
+- ensure empty states are useful
+- ensure navigation in and out of the view makes sense
+- ensure the user can complete the real task the screen exists for
+
+Minimum areas to verify and complete include, but are not limited to:
+- Home / Dashboard
+- My Work
+- My Tasks
+- My Approvals
+- Project List
+- Project Detail
+- Execution / GP / KPI screens
+- Engineering views and task detail flows
+- Procurement Hub
+- Quality views and quality items
+- Financial views including revenue/COS-related summaries
+- User / role / permissions-related views
+- Counterparty-related views
+- Admin / configuration areas
+- Approval flows
+- Any page linked from the main navigation or role-specific quick actions
+- Any legacy-parity screens that are still operationally important
+
+PHASE 4 — FIX KNOWN OPERATIONAL ISSUES
+Explicitly address these known issues if they exist in the codebase and align them to the correct source-of-truth logic:
+
+- broken home page link / broken landing flow
+- “My Work” or related work views showing no tasks when data exists
+- action/history tabs showing only generic status changes instead of meaningful source details
+- unclear or useless pages with no defined operational purpose
+- missing KPI parity from the old execution board where still business-critical
+- project list not loading correctly
+- “latest update” missing, not editable, or not visible/frozen where operationally needed
+- pages that load nothing and provide no working create/start/execute action
+- My Approvals needing to sit correctly under My Tasks or equivalent operational flow
+- engineering task detail errors
+- users and counterparties not populating in assignment fields across the app
+- quality items not loading
+- GP/KPI screen metrics not aligning to revenue and COS trackers
+- procurement hub not working
+- procurement functionality split across admin and procurement areas instead of being coherently available
+- inability to assign counterparties correctly on expenditure/inflow line items
+- COO access gaps where full visibility/control is expected
+
+If any of these are already fixed, verify and preserve them.
+If they are not fixed, implement the fix properly and non-destructively.
+
+PHASE 5 — UX / FRONT-END FLOW REVIEW AND UPGRADE
+Perform a real UX and flow review, then improve the application visually and behaviorally without turning it into a toy.
+
+Goals:
+- cleaner
+- clearer
+- faster to scan
+- easier to act from
+- consistent
+- modern
+- production-credible
+- operationally useful first, pretty second
+
+Upgrade areas:
+1. Navigation and screen hierarchy
+- make route structure understandable
+- remove dead ends
+- improve breadcrumbs/page titles/page purpose
+- ensure key workflows are discoverable
+
+2. Home screen
+- simplify it
+- make it useful first thing in the morning
+- show company priorities clearly
+- show role-relevant quick actions
+- restore Emergent Energy branding/logo where appropriate
+- reduce clutter and noise
+
+3. Visual system consistency
+- consistent spacing
+- consistent card styles
+- consistent typography scale
+- consistent button hierarchy
+- consistent icon use
+- consistent table layout rules
+- consistent status/tag styling
+- consistent form layout and field labeling
+
+4. Table and detail usability
+- sticky headers where needed
+- frozen critical columns where operationally important
+- strong scanning hierarchy
+- inline edit only where safe and useful
+- easy access to details without losing context
+- no overloaded dense mess
+
+5. KPI design
+- clear labels
+- clear definitions/tooltips where useful
+- source-aligned values
+- consistent layout
+- support operational decision-making, not decoration
+
+6. State handling
+- proper skeleton/loading states
+- meaningful empty states
+- clear error states
+- retry behavior where appropriate
+- no blank screens
+
+7. Form UX
+- validation
+- proper save/cancel behavior
+- dirty-state handling where relevant
+- default values where sensible
+- safe editing patterns
+
+8. Responsive behavior
+- desktop-first for operational use
+- ensure key screens do not collapse into unusable layouts
+- maintain readability and actionability
+
+Do not add visual fluff that slows the app down or hides the work.
+
+PHASE 6 — TESTING AND REGRESSION CONTROL
+After implementation, run a serious verification pass.
+
+At minimum verify:
+- all routes load
+- all main navigation items work
+- all subviews/tabs open
+- all visible buttons have working outcomes
+- all data tables load from real data paths
+- all detail views open correctly
+- all edit forms save correctly
+- all assignments work with internal users and counterparties by ID
+- all KPI calculations reconcile to source data
+- all broken/empty screens are resolved
+- role-based access works
+- COO full access works
+- no obvious console/runtime errors
+- no broken links
+- no infinite loaders
+- no uncaught null/undefined UI crashes
+
+Where possible:
+- add or update automated tests for critical flows
+- add smoke tests for route loading and core module flows
+- preserve or improve type safety
+- remove dead code only if clearly unused and safe to remove
+
+==================================================
+EXPECTED OUTPUT FROM YOU
+==================================================
+
+Do not just dump code.
+Work like a disciplined senior engineer.
+
+Provide output in this structure:
+1. Audit summary
+2. App inventory summary by module/view
+3. Data source and architecture findings
+4. Confirmed issues found
+5. Fix plan grouped by module
+6. UX/flow improvements proposed
+7. Implemented changes grouped by module
+8. Any migrations or compatibility layers added
+9. Test results / verification evidence
+10. Remaining risks / technical debt / follow-up items
+
+==================================================
+DEFINITION OF DONE
+==================================================
+
+This work is only done when:
+- every existing route and operational screen is reviewed
+- broken, empty, dead, or misleading UI is fixed or intentionally removed with justification
+- all visible actions and buttons work
+- imported maintained data + new DB structure remain the source of truth
+- no working production functionality is broken
+- role/assignment logic is reliable
+- KPI logic reconciles with the operational source data
+- UX is materially cleaner and more usable
+- the app feels coherent, stable, and production-ready
+- the code is maintainable and not a patchwork of hacks
+
+==================================================
+IMPORTANT IMPLEMENTATION MINDSET
+==================================================
+
+Do not be shallow.
+Do not paper over missing functionality with styling.
+Do not “fix” data issues by hardcoding.
+Do not create duplicate truths.
+Do not simplify by removing operationally important capability.
+Do not make assumptions where the repo can be inspected.
+
+Inspect first.
+Trace the data.
+Complete the functionality.
+Upgrade the UX.
+Preserve the integrity of the app.
+
+Now begin with the full audit and inventory, then execute the implementation in a controlled way.

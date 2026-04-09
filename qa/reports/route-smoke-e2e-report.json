@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-04-07T10:51:16.329Z",
+  "totals": {
+    "checks": 0,
+    "pass": 0,
+    "fail": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "routesCovered": 0,
+    "rolesCovered": 0
+  },
+  "missingRoutes": [
+    "/",
+    "/projects",
+    "/project/:projectName",
+    "/engineering",
+    "/engineering/tasks",
+    "/quality",
+    "/pm-dashboard",
+    "/pd",
+    "/collaboration",
+    "/my-work",
+    "/portfolios",
+    "/handover-control",
+    "/admin",
+    "/admin/control-center",
+    "/admin/settings",
+    "/admin/roles"
+  ],
+  "suspiciousIncompleteViews": [],
+  "results": []
+}

@@ -1,0 +1,223 @@
+You are extending the Emergent Energy web app.
+
+ABSOLUTE RULES (NON-NEGOTIABLE)
+1) DO NOT MAKE ASSUMPTIONS.
+   - If any required input is unclear (existing table/field names, current import pipeline structure, what “upcoming” means in EE, what “linked dates” should display), ask Johannes (COO/Admin) BEFORE finalizing that part.
+   - If needed, create an “Admin Questions” queue in the UI to capture unanswered questions.
+
+2) DO NOT BREAK EXISTING FUNCTIONALITY.
+   - Additive only. Do not refactor or remove any existing smart import, boards, ClickUp links, or current UI flows.
+   - If integration requires changes, use feature flags and keep legacy behavior intact.
+
+TASK A: Add invoice-number-only counterparty/type inference into the CURRENT smart import
+CONTEXT
+- In Expenditure Breakdown imports, we want to classify each line as:
+  - counterparty_type: INSTALLER or SUPPLIER (or OTHER)
+- We want to do this using invoice_number ONLY as the signal when possible.
+- Because invoice numbers may not always be unique or pattern-rich, implement confidence scoring and require user confirmation when uncertain.
+- When user confirms, the system should “learn” the pattern so next time it auto-classifies.
+
+DATA MODEL ADDITIONS (create or extend)
+1) InvoicePatternRule (pattern dictionary)
+- id
+- pattern_type (PREFIX | REGEX | TOKEN_SHAPE)
+- pattern_value (string)        // e.g. "NRG-", or regex "^NRG[-/].+"
+- normalized_example (string)   // one example stored
+- counterparty_id (nullable)    // optional if we can pin it to a specific vendor
+- inferred_type (INSTALLER | SUPPLIER | OTHER)
+- confidence_weight (int default 50)
+- created_by, created_at
+- last_confirmed_at
+- times_matched (int)
+- times_confirmed (int)
+- is_active (boolean default true)
+
+2) InvoicePatternMatch (audit)
+- id
+- import_run_id
+- project_id
+- invoice_number_raw
+- invoice_number_norm
+- matched_rule_id (nullable)
+- inferred_type
+- inferred_counterparty_id (nullable)
+- confidence_score (0-100)
+- outcome (AUTO_APPLIED | USER_CONFIRMED | USER_OVERRIDDEN | UNRESOLVED)
+- created_at
+
+3) Counterparty (existing or create if not present)
+- id
+- name_canonical
+- type_default (INSTALLER | SUPPLIER | OTHER)
+- is_core (boolean)
+- aliases_json
+- last_seen_at
+
+INVOICE NUMBER NORMALIZATION
+Create a deterministic normalization function:
+- trim
+- uppercase
+- collapse whitespace
+- replace multiple separators with single (e.g. "--" -> "-")
+- keep digits/letters and common separators (- / _)
+Store both raw and normalized.
+
+PATTERN GENERATION + MATCHING LOGIC
+For every expenditure line with invoice_number:
+1) Normalize invoice number.
+2) Compute quick “token shape” features:
+   - prefix letters before first digit
+   - presence of year token (20xx or yy)
+   - separator style (- / _ / none)
+   - length buckets
+   - pattern signature e.g. "AAA-YYYY-NNNN"
+3) Attempt to match against InvoicePatternRule in this order:
+   a) Exact PREFIX matches
+   b) REGEX matches
+   c) TOKEN_SHAPE matches
+4) Compute confidence_score:
+   - base from rule.confidence_weight
+   - boost if rule.times_confirmed high
+   - reduce if rule has many user overrides
+   - if multiple conflicting matches, reduce and mark as uncertain
+
+DECISION RULES
+- If confidence_score >= 85: auto-apply inferred_type (and inferred counterparty if rule specifies it)
+- If 50 <= confidence_score < 85: require user confirmation in Import Review UI (“We think this is INSTALLER. Confirm?”)
+- If < 50: mark as UNRESOLVED and require user to select type (and optionally counterparty)
+
+LEARNING LOOP (MANDATORY)
+When a user confirms or overrides:
+- If user confirms inferred_type: increment times_confirmed; set last_confirmed_at
+- If user overrides:
+  - log override
+  - reduce confidence_weight OR increment an overrides counter
+- If no rule existed:
+  - create a new rule using best available pattern:
+    - if invoice has stable prefix letters+separator, create PREFIX rule
+    - else create TOKEN_SHAPE rule
+  - store the example
+- Always store InvoicePatternMatch with outcome and confidence.
+
+IMPORT REVIEW UI INTEGRATION (ADD TO EXISTING SMART IMPORT REVIEW)
+Extend the expenditure review step with an “Invoice Pattern Classification” panel:
+- Show each line with:
+  - invoice_number
+  - inferred_type + confidence
+  - inferred counterparty (if any)
+  - action: Confirm / Override
+- Override flow requires:
+  - select type (INSTALLER/SUPPLIER/OTHER)
+  - select counterparty (optional, if known) OR “Unknown”
+  - mandatory override reason comment (align with app-wide override logging)
+- Add “Apply to all similar invoices” checkbox:
+  - if checked, create/update rule immediately and re-evaluate remaining lines in the review session.
+
+ADMIN MANAGEMENT UI
+Add an Admin page: “Invoice Pattern Dictionary”
+- list rules, search, enable/disable, edit inferred_type/counterparty, adjust confidence_weight
+- show stats: times_matched, times_confirmed
+- show examples and last_seen_at
+
+IMPORTANT: DO NOT REQUIRE VENDOR NAME
+This feature must work even when vendor name is missing. If vendor name exists in other columns, do not rely on it (it can be used only as optional extra evidence if Johannes approves).
+
+QUESTIONS FOR ADMIN (ASK, DO NOT GUESS)
+If unclear in current system:
+- Where expenditure lines are stored / imported today
+- Current Import Review UI structure and where to inject this panel
+- Allowed types naming (INSTALLER vs SUBCONTRACTOR vs CONTRACTOR) — confirm exact enum labels
+Create entries in Admin Questions if unknown.
+
+TASK B: Build a Subcontractor Dashboard under Project Management
+GOAL
+Create a dashboard view that aggregates subcontractor/installer/supplier accounts, with:
+- biggest account (top spend)
+- amount of usages (count of invoices or cost lines)
+- current linked dates (last invoice date, last paid date, avg turnaround)
+- upcoming (expected payments / planned costs due soon)
+
+NAV / PERMISSIONS
+- Location: Project Management -> “Subcontractor Dashboard”
+- Visible to: PM team + Admin (confirm exact role keys)
+- Editable items (like core list tagging) should be Admin-only.
+
+DATA SOURCES
+Primary source: normalized expenditure/cost lines from the smart import (CostLine).
+If Invoice table exists, use it; otherwise compute from CostLine rows.
+Do not break existing reporting.
+
+METRICS (DEFINE AND IMPLEMENT)
+Per Counterparty (Installer/Supplier):
+- total_spend_ex_vat (sum of amount_ex_vat)
+- invoice_count (count distinct invoice_number if present; else count rows)
+- project_count (distinct projects)
+- last_invoice_date (max invoice_date)
+- last_paid_date (max paid_date)
+- avg_payment_turnaround_days (avg of (paid_date - invoice_date) where both exist)
+- open_amount (sum where status != PAID and amount exists)
+- upcoming_amount_30d (sum where expected_payment_date within next 30 days OR where planned date exists within 30 days)
+- upcoming_items (list of top N upcoming lines with project, amount, due date, status)
+
+If “expected_payment_date” does not exist currently, ask Johannes which date should drive “upcoming”:
+- planned date? invoice date? due date? payment forecast date?
+Do not guess.
+
+DASHBOARD UI REQUIREMENTS (ULTRA-USER-FRIENDLY)
+- Top summary cards:
+  - Biggest account (by total_spend)
+  - Total subcontractors
+  - Total open amount
+  - Upcoming 30d amount
+- Table with sortable columns:
+  - Counterparty
+  - Type (Installer/Supplier)
+  - Total spend
+  - Invoice/usage count
+  - Projects count
+  - Last invoice date
+  - Last paid date
+  - Avg turnaround (days)
+  - Open amount
+  - Upcoming 30d amount
+- Clicking a counterparty opens a detail drawer/page:
+  - trend of spend by month (optional; only if easy)
+  - list of invoices/cost lines (filterable)
+  - upcoming items list
+  - per-project breakdown
+- Filters:
+  - date range
+  - type (installer/supplier)
+  - project
+  - status (open/paid)
+  - “core only” toggle (if Counterparty.is_core exists)
+
+LINKED DATES DISPLAY
+In the detail view, show:
+- “Last activity” date (max of invoice_date/paid_date)
+- “Oldest open item” date (min invoice_date where not paid)
+- “Next due” (min expected date in upcoming)
+If any field missing, display “—” and log a data completeness warning (do not crash).
+
+UPCOMING LOGIC
+Implement upcoming as a configurable rule:
+- default upcoming window: 30 days
+- use expected_payment_date if exists, else use a fallback date that Johannes approves
+Provide Admin setting to select which date field drives upcoming.
+
+TESTS / CHECKLIST
+A) Invoice classification:
+1) Known prefix pattern auto-classifies at >=85 confidence
+2) Unknown pattern triggers confirm
+3) User confirms -> rule created -> next import auto-classifies
+4) User overrides -> logged and confidence adjusted
+5) No invoice number -> mark UNRESOLVED and prompt user in review (or leave OTHER with warning)
+
+B) Dashboard:
+1) Loads without errors when some dates are missing
+2) Aggregations correct on a sample dataset
+3) Filters work
+4) Does not impact existing PM screens and performance acceptable (use indexed queries)
+
+DELIVERABLE
+Implement both Task A and Task B end-to-end, additive-only, with admin tools, audit logs, and tests/checklist. If anything is unclear, ask Johannes via Admin Questions and pause only the unclear portion (do not block everything else).

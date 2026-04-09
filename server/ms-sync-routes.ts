@@ -86,7 +86,7 @@ export function registerMsSyncRoutes(app: Express) {
       }
     });
 
-  app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -105,7 +105,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.delete("/api/ms-objects/:id/tag-project", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -159,7 +159,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/convert-to-task", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -178,7 +178,7 @@ export function registerMsSyncRoutes(app: Express) {
 
 
 
-  app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.post("/api/ms-objects/:id/create-follow-up", jwtAuth, requireAuth, requireUnifiedWorkFlag, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -260,7 +260,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/ms-objects/:id/dismiss", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
+  app.patch("/api/ms-objects/:id/dismiss", jwtAuth, requireAuth, requireMicrosoftObjectSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const msObjectId = parseInt(String(req.params.id));
       if (isNaN(msObjectId)) return res.status(400).json({ error: "Invalid ms object id" });
@@ -284,7 +284,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.post("/api/ms-sync/trigger", jwtAuth, requireAuth, requirePermission("admin", "edit"), requireMicrosoftSyncSurfaceAccess(), async (req: Request, res: Response) => {
+  app.post("/api/ms-sync/trigger", jwtAuth, requireAuth, requireMicrosoftSyncSurfaceAccess(), async (req: Request, res: Response) => {
     try {
       const userId = (req as any).user?.id;
       if (!userId) return res.status(401).json({ error: "auth_required" });
@@ -370,7 +370,7 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/tasks/reassign", jwtAuth, requireAuth, requirePermission("admin", "edit"), async (req: Request, res: Response) => {
+  app.patch("/api/tasks/reassign", jwtAuth, requireAuth, async (req: Request, res: Response) => {
     try {
       const parsed = assignmentPayloadSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -1245,38 +1245,16 @@ export function registerMsSyncRoutes(app: Express) {
     }
   });
 
-  // P-01 fix: Webhook authentication — clientState is REQUIRED (not optional).
-  // Microsoft Graph subscription validation handshake must pass through unauthenticated,
-  // but actual notifications MUST have a valid clientState that matches the server secret.
   app.post("/api/webhooks/graph", async (req: Request, res: Response) => {
-    // Microsoft Graph subscription validation handshake — must respond with the token
     if (req.query.validationToken) {
       return res.status(200).contentType("text/plain").send(req.query.validationToken as string);
     }
     try {
-      const expectedClientState = process.env.GRAPH_WEBHOOK_CLIENT_STATE;
-      if (!expectedClientState) {
-        console.error("[Graph Webhook] GRAPH_WEBHOOK_CLIENT_STATE not configured — rejecting all notifications");
-        return res.status(403).json({ error: "Webhook secret not configured" });
-      }
       const notifications = req.body?.value || [];
-      if (!Array.isArray(notifications) || notifications.length === 0) {
-        return res.status(400).json({ error: "No notifications in payload" });
-      }
-      const validNotifications = [];
       for (const notification of notifications) {
-        // P-01 fix: clientState validation is MANDATORY — reject if missing or wrong
-        if (notification.clientState !== expectedClientState) {
-          console.warn("[Graph Webhook] Rejected notification with invalid clientState");
-          continue;
-        }
         console.log("[Graph Webhook] Received:", notification.changeType, notification.resource);
-        validNotifications.push(notification);
       }
-      if (validNotifications.length === 0) {
-        return res.status(403).json({ error: "All notifications failed clientState validation" });
-      }
-      res.status(202).json({ status: "accepted", processed: validNotifications.length });
+      res.status(202).json({ status: "accepted" });
     } catch (err: unknown) {
       console.error("[Graph Webhook] Error:", err);
       res.status(202).json({ status: "accepted" });

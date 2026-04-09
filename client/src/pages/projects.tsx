@@ -44,7 +44,9 @@ import {
   Plus,
   Circle,
   FileSpreadsheet as SpreadsheetIcon,
+  ChevronsUpDown,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Link, useLocation } from "wouter";
 import { apiRequest, invalidateDashboardQueries } from "@/lib/queryClient";
 import LatestUpdateEditor from "@/components/LatestUpdateEditor";
@@ -1313,7 +1315,8 @@ export default function ProjectsSummary() {
     return params.get("project") || "";
   });
   const [pmFilter, setPmFilter] = useState("all");
-  const [phaseFilter, setPhaseFilter] = useState("all");
+  const [excludedPhases, setExcludedPhases] = useState<Set<string>>(new Set());
+  const [phaseSearchTerm, setPhaseSearchTerm] = useState("");
   const [ragFilter, setRagFilter] = useState("all");
   const [sortKey, setSortKey] = useState<SortKey>("phase");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -1504,8 +1507,8 @@ export default function ProjectsSummary() {
     if (pmFilter !== "all") {
       result = result.filter((p) => p.pm === pmFilter);
     }
-    if (phaseFilter !== "all") {
-      result = result.filter((p) => p.phase === phaseFilter);
+    if (excludedPhases.size > 0) {
+      result = result.filter((p) => !p.phase || !excludedPhases.has(p.phase));
     }
     if (ragFilter !== "all") {
       result = result.filter((p) => p.rag_status === ragFilter);
@@ -1515,7 +1518,7 @@ export default function ProjectsSummary() {
       result = result.filter((p) => p.project_info_id != null && idSet.has(p.project_info_id));
     }
     return result;
-  }, [currentProjects, searchTerm, pmFilter, phaseFilter, ragFilter, priorityFilter, priorityProjectIds, quickFilter, currentUserName, urlStageFilter]);
+  }, [currentProjects, searchTerm, pmFilter, excludedPhases, ragFilter, priorityFilter, priorityProjectIds, quickFilter, currentUserName, urlStageFilter]);
 
   const sorted = useMemo(() => {
     const arr = [...filtered];
@@ -2240,7 +2243,7 @@ export default function ProjectsSummary() {
         icon={<BarChart3 className="h-5 w-5" />}
         eyebrow="Projects"
         title="Project List"
-        description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || phaseFilter !== "all" || searchTerm) ? " (filtered)" : ""}`}
+        description={`${sorted.length} of ${currentProjects.length} ${viewTab === "active" ? "active" : "archived"} projects${(pmFilter !== "all" || excludedPhases.size > 0 || searchTerm) ? " (filtered)" : ""}`}
         actions={
           <div className="flex items-center gap-2">
             {canAccessEntityAction("project_create", "create") && (
@@ -2410,17 +2413,77 @@ export default function ProjectsSummary() {
           ]}
         />
 
-        <SearchableSelect
-          value={phaseFilter}
-          onValueChange={setPhaseFilter}
-          placeholder="All Phases"
-          triggerClassName="h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border"
-          data-testid="select-phase-filter"
-          options={[
-            { value: "all", label: "All Phases" },
-            ...uniquePhases.map((ph) => ({ value: ph, label: getPhaseLabel(ph) })),
-          ]}
-        />
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="outline"
+              role="combobox"
+              className={cn(
+                "h-9 w-[calc(50%-0.25rem)] sm:w-40 text-sm border-border justify-between font-normal",
+                excludedPhases.size > 0 ? "text-foreground" : "text-muted-foreground"
+              )}
+              data-testid="select-phase-filter"
+            >
+              <span className="truncate">
+                {excludedPhases.size === 0
+                  ? "All Phases"
+                  : excludedPhases.size === uniquePhases.length
+                    ? "No Phases"
+                    : `${uniquePhases.length - excludedPhases.size} Phases`}
+              </span>
+              <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-56 p-0" align="start">
+            <div className="p-2 border-b">
+              <input
+                type="text"
+                placeholder="Search..."
+                value={phaseSearchTerm}
+                onChange={(e) => setPhaseSearchTerm(e.target.value)}
+                className="w-full text-sm px-2 py-1 border rounded outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+            <div className="p-1 max-h-60 overflow-y-auto">
+              {(!phaseSearchTerm || "all phases".includes(phaseSearchTerm.toLowerCase())) && (
+                <button
+                  className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-slate-100 text-left"
+                  onClick={() => setExcludedPhases(new Set())}
+                  data-testid="phase-filter-all"
+                >
+                  <Check className={cn("h-4 w-4", excludedPhases.size === 0 ? "opacity-100 text-emerald-600" : "opacity-0")} />
+                  All Phases
+                </button>
+              )}
+              {uniquePhases
+                .filter((ph) => !phaseSearchTerm || getPhaseLabel(ph).toLowerCase().includes(phaseSearchTerm.toLowerCase()))
+                .map((ph) => {
+                  const isIncluded = !excludedPhases.has(ph);
+                  return (
+                    <button
+                      key={ph}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 text-sm rounded hover:bg-slate-100 text-left"
+                      data-testid={`phase-filter-${ph}`}
+                      onClick={() => {
+                        setExcludedPhases(prev => {
+                          const next = new Set(prev);
+                          if (isIncluded) {
+                            next.add(ph);
+                          } else {
+                            next.delete(ph);
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <Check className={cn("h-4 w-4", isIncluded ? "opacity-100 text-emerald-600" : "opacity-0")} />
+                      {getPhaseLabel(ph)}
+                    </button>
+                  );
+                })}
+            </div>
+          </PopoverContent>
+        </Popover>
 
         <SearchableSelect
           value={ragFilter}
@@ -2555,11 +2618,11 @@ export default function ProjectsSummary() {
           </Button>
         )}
 
-        {(searchTerm || pmFilter !== "all" || phaseFilter !== "all" || priorityFilter !== "all") && (
+        {(searchTerm || pmFilter !== "all" || excludedPhases.size > 0 || priorityFilter !== "all") && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => { setSearchTerm(""); setPmFilter("all"); setPhaseFilter("all"); setRagFilter("all"); setPriorityFilter("all"); }}
+            onClick={() => { setSearchTerm(""); setPmFilter("all"); setExcludedPhases(new Set()); setRagFilter("all"); setPriorityFilter("all"); }}
             className="h-9 text-xs text-muted-foreground hover:text-foreground"
           >
             <X className="w-3 h-3 mr-1" />

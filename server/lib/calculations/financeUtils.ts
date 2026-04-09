@@ -9,7 +9,7 @@
  */
 
 import { classifyCosStatus, type CosStatus } from './stateClassifier';
-import { isCanonicalCosRealised } from '../finance/cos-realisation';
+import { isCanonicalCosRealised, getCosRealisationWarnings, type CosLineInput } from '../finance/cos-realisation';
 
 // ─── Static fallback COS budget (FY2025-2026) ───
 // Used when no manual budget override has been entered for a month.
@@ -83,8 +83,13 @@ export function classifyCosStatusFull(exp: {
 }
 
 // ─── COS realisation check ───
-// Delegates to the canonical isCanonicalCosRealised() from cos-realisation.ts.
-// This ensures all tracker endpoints agree with Company Overview and Dashboard.
+// Determines whether a cost line item should be treated as "realised" for tracker
+// purposes. Delegates to the canonical isCanonicalCosRealised() which uses the
+// invoice-only hard rule: if a supplier invoice number is captured, COS is realised.
+//
+// NOTE: classifyCosStatusFull() is a DISPLAY label (Planned/Committed/COS Realised)
+// based on data quality (invoice + date + confirmed). The realisation CHECK is
+// separate and less strict — invoice number alone is sufficient per business rules.
 export function isCosRealised(exp: {
   expenseInvoiceNumber?: string | null;
   expenseInvoicedDate?: string | null;
@@ -92,21 +97,17 @@ export function isCosRealised(exp: {
   invoiceDateConfirmed?: boolean | null;
   invoiceDateFontColor?: string | null;
   _cosOverrideStatus?: string | null;
-  status?: string | null;
-  cosStatusOverride?: string | null;
   cosRealised?: boolean | null;
-  paymentDate?: string | null;
-  paidDate?: string | null;
-  expensePaymentDate?: string | null;
+  cosStatusOverride?: string | null;
 }): boolean {
   return isCanonicalCosRealised({
-    status: (exp as any).status ?? null,
-    cosStatusOverride: (exp as any)._cosOverrideStatus ?? (exp as any).cosStatusOverride ?? null,
-    cosRealised: (exp as any).cosRealised ?? null,
+    status: null, // status labels do NOT independently determine realisation
+    cosStatusOverride: exp._cosOverrideStatus ?? exp.cosStatusOverride ?? null,
+    cosRealised: exp.cosRealised ?? null,
     expenseInvoiceNumber: exp.expenseInvoiceNumber ?? null,
     expenseInvoicedDate: exp.expenseInvoicedDate ?? null,
     expensePoNumber: exp.expensePoNumber ?? null,
-    paymentDate: (exp as any).expensePaymentDate ?? (exp as any).paymentDate ?? (exp as any).paidDate ?? null,
+    paymentDate: null,
     today: new Date().toISOString().slice(0, 10),
   });
 }

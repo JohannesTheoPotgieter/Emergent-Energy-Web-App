@@ -102,7 +102,6 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
 
       const sheet = workbook.getWorksheet("Expenditure Breakdown")!;
       const data = worksheetToArray(sheet);
-      let projectUpdated = false;
 
       let headerRowIdx = -1;
       for (let i = 0; i < Math.min(data.length, 20); i++) {
@@ -187,15 +186,7 @@ export async function backfillInvoiceDateConfirmed(): Promise<{ updated: number;
             params
           );
           totalUpdated++;
-          projectUpdated = true;
         }
-      }
-      // Phase 2 bridge write: re-sync all cost lines for this project to promoted schema
-      if (projectUpdated) {
-        try {
-          const { batchSyncFinanceByProject } = await import("./bridge/batch-bridge-sync");
-          await batchSyncFinanceByProject(null, projectName);
-        } catch { /* bridge sync is best-effort */ }
       }
     } catch (err: unknown) {
       errors.push(`Error processing ${fileName}: ${(err instanceof Error ? err.message : String(err))}`);

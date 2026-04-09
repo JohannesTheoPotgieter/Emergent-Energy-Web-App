@@ -1,0 +1,271 @@
+You are working inside an existing production web application for Emergent Energy.
+
+CRITICAL PRIORITY:
+Do NOT break any existing functionality.
+Do NOT delete or alter existing tables in a destructive way during the migration phases.
+Do NOT change existing APIs in a way that causes current UI components to fail.
+Do NOT drop legacy data until the final approval step.
+
+This system is currently working in production.
+We are performing a staged, backward-compatible evolution of the database structure.
+
+============================================================
+BUSINESS STRUCTURE GOAL
+============================================================
+
+We want the data model to reflect the operational truth of the company:
+
+Client
+  → has many Projects
+     → Projects have Work (PD, ENG, QUALITY, PM, FINANCE)
+        → Work drives dashboards, gantt, assignments, reporting
+
+Smart Import must map Excel tracker fields into the canonical structure so that:
+- Imported PM plan tasks look identical to UI-created tasks in the frontend.
+- The frontend renders from one consistent schema.
+- There are no parallel task systems.
+
+============================================================
+LOCKED BUSINESS RULES
+============================================================
+
+1. Client is the primary parent entity.
+2. A Project belongs to one Client.
+3. A Project may be moved between Clients ONLY by Admin/COO role.
+4. Multiple assignees are required.
+5. One accountable owner must exist per work item.
+6. Smart Import creates PM planning tasks.
+7. Other workstreams (PD, Engineering, Quality) are created via UI.
+8. ZERO DATA LOSS.
+9. ZERO BREAKAGE of current functionality until explicitly approved.
+
+============================================================
+IMPLEMENTATION STRATEGY (MANDATORY STAGED APPROACH)
+============================================================
+
+PHASE 0 – DISCOVERY (DO NOT SKIP)
+
+1. Scan the codebase and database schema.
+2. List all task-like tables currently used by:
+   - PM / Project Plan
+   - Engineering
+   - Quality
+   - PD Tickets
+   - MyTool / Personal Tasks
+3. Identify:
+   - Which tables are read by which UI screens.
+   - Which APIs serve those tables.
+   - Which tables Smart Import writes into.
+4. Identify canonical project key currently used in imports and joins.
+5. DO NOT MODIFY ANYTHING until this mapping is documented.
+
+Return the discovery summary before implementing structural changes.
+
+============================================================
+PHASE 1 – SAFE ADDITIVE SCHEMA (NON-DESTRUCTIVE)
+============================================================
+
+Add new canonical tables WITHOUT removing or destructively altering old ones.
+
+1. Ensure `clients` table exists and is primary parent.
+2. Ensure `projects` has `client_id` foreign key.
+   - Backfill missing client_id values.
+   - Add index.
+   - DO NOT remove existing columns.
+
+3. Create new canonical `work_items` table:
+
+   id (PK)
+   client_id (nullable)
+   project_id (nullable)
+   workstream ENUM: PD, ENG, QUALITY, PM, FINANCE, PERSONAL, GOVERNANCE
+   type
+   source ENUM: SMART_IMPORT, UI, INTEGRATION, SYSTEM
+   title
+   description
+   status
+   priority
+   start_date
+   end_date
+   duration
+   percent_complete
+   wbs_code
+   outline_number
+   parent_id
+   owner_user_id
+   is_shared (default false)
+   external_ref (stable key for idempotent imports)
+   legacy_table
+   legacy_id
+   created_by
+   created_at
+   updated_at
+   deleted_at
+
+4. Create supporting tables:
+
+   work_item_assignments
+     - work_item_id
+     - user_id
+     - role (OWNER, ASSIGNEE, REVIEWER)
+     - allocation_pct
+     - created_at
+
+   work_item_dependencies
+     - predecessor_id
+     - successor_id
+     - dep_type (FS, SS, FF, SF)
+     - lag_days
+
+   work_item_comments
+   work_item_attachments
+   work_item_status_history
+
+5. Create `project_client_history`:
+   - project_id
+   - old_client_id
+   - new_client_id
+   - moved_by_user_id
+   - moved_at
+   - reason
+
+Admin-only enforcement must be done at API/service layer.
+
+============================================================
+PHASE 2 – SMART IMPORT CANONICAL ALIGNMENT (NO UI BREAKAGE)
+============================================================
+
+CRITICAL REQUIREMENT:
+Smart Import must continue working exactly as it currently does.
+
+Extend it safely so that Smart Import ALSO writes to canonical tables.
+
+IMPLEMENT:
+
+1. Create `import_field_mappings` table:
+   - import_profile
+   - sheet_name
+   - excel_column_header
+   - target_table
+   - target_field
+   - transform
+   - required
+   - default_value
+   - active
+
+2. Smart Import pipeline:
+
+   Step 1 – Stage Excel data (existing logic preserved).
+   Step 2 – Normalize data types (dates, %s, numbers, text).
+   Step 3 – Validate required fields (do not guess silently).
+   Step 4 – Upsert into canonical tables:
+       - work_items (workstream = PM, source = SMART_IMPORT)
+       - work_item_assignments (multi-assignee)
+       - work_item_dependencies
+   Step 5 – Maintain legacy table writes temporarily for compatibility.
+
+3. Re-import must be idempotent:
+   - Use stable external_ref per task row (e.g., project_id + sheet + row_uid or WBS code).
+   - Ensure reruns update, not duplicate.
+
+4. Any ambiguity goes to `import_issues` and is visible in UI for resolution.
+
+============================================================
+PHASE 3 – COMPATIBILITY LAYER (PREVENT BREAKAGE)
+============================================================
+
+Until all UI modules are migrated:
+
+- Legacy task tables must remain intact.
+- If needed, create SQL VIEWS or adapter services that mimic legacy data shapes while reading from work_items.
+- Do not delete legacy tables in this release.
+
+Feature-flag the new canonical read layer.
+
+============================================================
+PHASE 4 – CONTROLLED UI CUTOVER (FEATURE FLAG + ROLLBACK)
+============================================================
+
+Only after verification:
+
+1. Update Project Plan / Gantt to read/write work_items.
+2. Update Engineering module to read/write work_items.
+3. Update Quality module to read/write work_items.
+4. Keep a toggle to revert instantly to legacy source if any regression occurs.
+
+No hard switch without fallback.
+
+============================================================
+VERIFICATION & SAFETY CHECKS (MANDATORY)
+============================================================
+
+Before enabling canonical mode and before any deletions:
+
+1. Compare task counts per project (legacy vs work_items).
+2. Compare milestone dates and key schedule fields.
+3. Compare assignment counts (including multi-assignee).
+4. Verify Smart Import produces identical frontend output for Project Plan.
+5. Verify dashboards show identical results (or explicitly documented improvements).
+6. Verify permissions unchanged.
+7. Verify no orphaned records.
+
+Create an automated verification report + test suite.
+
+============================================================
+PHASE 5 – FINAL CLEANUP (ONLY AFTER USER APPROVAL)
+============================================================
+
+This phase must NOT run automatically.
+
+Implement a controlled “Cleanup Mode” that runs ONLY when:
+- All verification checks pass,
+- Backups are confirmed,
+- AND the user (COO/admin) explicitly approves inside the app (or via a CLI confirmation step).
+
+Phase 5 steps:
+
+1. Take a full database backup/snapshot and store a restore point.
+2. Run a final verification one more time.
+3. Freeze writes briefly (maintenance mode) OR ensure dual-write is disabled cleanly.
+4. Drop or archive legacy tables ONLY if:
+   - No code paths reference them,
+   - All modules read from canonical tables,
+   - Compatibility views/adapters are removed safely,
+   - Verification report confirms parity.
+
+Preferred approach:
+- Archive tables first (rename to *_legacy_archive with restricted access), then drop after a safe period.
+
+5. Remove legacy code paths and dead endpoints.
+6. Remove feature flags if canonical mode is permanently enabled.
+7. Produce a final migration report of:
+   - tables archived/dropped,
+   - counts,
+   - confirmation that rollback requires restoring snapshot.
+
+ABSOLUTE SAFETY:
+If ANY check fails, Phase 5 must abort and leave legacy tables untouched.
+
+============================================================
+ABSOLUTE PROHIBITIONS (UNTIL PHASE 5 APPROVAL)
+============================================================
+
+- No DROP TABLE.
+- No destructive ALTER TABLE.
+- No renaming columns used by frontend.
+- No breaking existing API contracts.
+- No removing Smart Import logic.
+- No deleting legacy data.
+- No forced migration without rollback.
+
+============================================================
+DELIVERABLES
+============================================================
+
+1. Discovery summary and dependency map (tables → APIs → UI screens).
+2. Additive schema migrations.
+3. Smart Import extension using import_field_mappings + idempotent external_ref.
+4. Compatibility layer (views/adapters).
+5. Feature flag cutover + instant rollback.
+6. Automated verification report + tests.
+7. Phase 5 Cleanup Mode gated by explicit COO approval + backup.

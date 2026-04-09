@@ -1,5 +1,59 @@
 -- Auto-generated full schema alignment SQL
 -- Adds all missing columns to existing tables
+
+-- ═══════════════════════════════════════════════════════════
+-- LEGACY TABLE CLEANUP: Fix renamed tables from prior migration
+-- Renames _work_items_legacy → work_items, _deliverables_legacy → deliverables
+-- Only runs if the legacy table exists and the target does NOT exist.
+-- ═══════════════════════════════════════════════════════════
+-- Drop work_items VIEW if it exists (retired by 20260409 migration).
+-- This unblocks the rename below and makes work_items a direct base table.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items') THEN
+    -- Drop dependent views first
+    DROP VIEW IF EXISTS public.priority_derived_metrics;
+    -- Drop orphaned triggers/functions
+    DROP TRIGGER IF EXISTS _work_items_view_update_trigger ON public.work_items;
+    DROP TRIGGER IF EXISTS _work_items_view_insert_trigger ON public.work_items;
+    DROP TRIGGER IF EXISTS _work_items_view_delete_trigger ON public.work_items;
+    DROP FUNCTION IF EXISTS public._work_items_view_update() CASCADE;
+    DROP FUNCTION IF EXISTS public._work_items_view_insert() CASCADE;
+    DROP FUNCTION IF EXISTS public._work_items_view_delete() CASCADE;
+    DROP VIEW public.work_items;
+    RAISE NOTICE 'Dropped VIEW public.work_items and associated triggers';
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_work_items_legacy')
+     AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items')
+  THEN
+    ALTER TABLE _work_items_legacy RENAME TO work_items;
+    RAISE NOTICE 'Renamed _work_items_legacy → work_items';
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_deliverables_legacy')
+     AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables')
+     AND NOT EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='deliverables')
+  THEN
+    ALTER TABLE _deliverables_legacy RENAME TO deliverables;
+    RAISE NOTICE 'Renamed _deliverables_legacy → deliverables';
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_approvals_legacy')
+     AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='approvals')
+  THEN
+    ALTER TABLE _approvals_legacy RENAME TO approvals;
+    RAISE NOTICE 'Renamed _approvals_legacy → approvals';
+  END IF;
+END $$;
+
+-- ═══════════════════════════════════════════════════════════
+
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='app_settings') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='app_settings' AND column_name='key') THEN
     ALTER TABLE "app_settings" ADD COLUMN "key" TEXT;
@@ -826,67 +880,67 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverable_versions') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverable_versions' AND column_name='created_at') THEN
     ALTER TABLE "deliverable_versions" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='project_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='project_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "project_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='project_name') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='project_name') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "project_name" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='deliverable_type') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='deliverable_type') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "deliverable_type" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='title') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='title') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "title" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='description') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='description') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "description" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='phase') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='phase') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "phase" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='owner_user_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='owner_user_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "owner_user_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='reviewer_user_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='reviewer_user_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "reviewer_user_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='qc_reviewer_user_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='qc_reviewer_user_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "qc_reviewer_user_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='status') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='status') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "status" TEXT DEFAULT 'TO DO';
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='current_version') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='current_version') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "current_version" INTEGER DEFAULT 1;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='sharepoint_folder_site_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='sharepoint_folder_site_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "sharepoint_folder_site_id" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='sharepoint_folder_drive_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='sharepoint_folder_drive_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "sharepoint_folder_drive_id" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='sharepoint_folder_item_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='sharepoint_folder_item_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "sharepoint_folder_item_id" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='linked_plan_item_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='linked_plan_item_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "linked_plan_item_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='linked_quality_item_instance_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='linked_quality_item_instance_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "linked_quality_item_instance_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='created_at') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='created_at') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='updated_at') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='updated_at') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='scheduled_date') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='scheduled_date') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "scheduled_date" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='scheduled_start_time') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='scheduled_start_time') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "scheduled_start_time" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='scheduled_end_time') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='deliverables') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='deliverables' AND column_name='scheduled_end_time') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables') THEN
     ALTER TABLE "deliverables" ADD COLUMN "scheduled_end_time" TEXT;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='derived_portfolio_kpis') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='derived_portfolio_kpis' AND column_name='snapshot_key') THEN
@@ -3508,6 +3562,9 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='snapshot_run_id') THEN
     ALTER TABLE "normalized_cost_lines" ADD COLUMN "snapshot_run_id" INTEGER;
   END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_cost_lines') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_cost_lines' AND column_name='idempotency_key') THEN
+    ALTER TABLE "normalized_cost_lines" ADD COLUMN "idempotency_key" TEXT;
+  END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='normalized_execution_phases') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_execution_phases' AND column_name='project_id') THEN
     ALTER TABLE "normalized_execution_phases" ADD COLUMN "project_id" INTEGER;
   END IF;
@@ -4605,6 +4662,12 @@ DO $$ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='row_number') THEN
     ALTER TABLE "program_inflows" ADD COLUMN "row_number" INTEGER;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='milestone_no') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "milestone_no" TEXT;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='normalized_revenue_lines' AND column_name='milestone_percent') THEN
+    ALTER TABLE "normalized_revenue_lines" ADD COLUMN "milestone_percent" NUMERIC(6,4);
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='program_inflows') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='program_inflows' AND column_name='milestone_no') THEN
     ALTER TABLE "program_inflows" ADD COLUMN "milestone_no" TEXT;
@@ -7241,196 +7304,196 @@ DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_item_tags') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_item_tags' AND column_name='created_at') THEN
     ALTER TABLE "work_item_tags" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='client_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='client_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "client_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='project_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='project_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "project_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='workstream') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='workstream') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "workstream" work_item_workstream;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='type') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='type') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "type" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='source') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='source') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "source" work_item_source DEFAULT 'UI';
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='title') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='title') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "title" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='description') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='description') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "description" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='status') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='status') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "status" TEXT DEFAULT 'Not Started';
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='priority') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='priority') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "priority" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='start_date') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='start_date') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "start_date" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='end_date') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='end_date') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "end_date" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='duration') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='duration') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "duration" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='percent_complete') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='percent_complete') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "percent_complete" REAL DEFAULT 0;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='expected_pct_complete') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='expected_pct_complete') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "expected_pct_complete" REAL;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='wbs_code') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='wbs_code') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "wbs_code" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='outline_number') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='outline_number') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "outline_number" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='indent_level') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='indent_level') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "indent_level" INTEGER DEFAULT 0;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='parent_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='parent_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "parent_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='is_milestone') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='is_milestone') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "is_milestone" BOOLEAN DEFAULT false;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='phase') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='phase') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "phase" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='owner_user_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='owner_user_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "owner_user_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='owner_name') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='owner_name') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "owner_name" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='is_shared') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='is_shared') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "is_shared" BOOLEAN DEFAULT false;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='external_ref') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='external_ref') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "external_ref" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='legacy_table') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='legacy_table') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "legacy_table" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='legacy_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='legacy_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "legacy_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='source_row') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='source_row') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "source_row" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='source_sheet') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='source_sheet') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "source_sheet" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='import_run_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='import_run_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "import_run_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='created_by') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='created_by') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "created_by" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='created_at') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='created_at') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "created_at" TIMESTAMP;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='updated_at') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='updated_at') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "updated_at" TIMESTAMP;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='deleted_at') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='deleted_at') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "deleted_at" TIMESTAMP;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='scheduled_date') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='scheduled_date') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "scheduled_date" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='scheduled_start_time') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='scheduled_start_time') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "scheduled_start_time" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='scheduled_end_time') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='scheduled_end_time') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "scheduled_end_time" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='baseline_start') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='baseline_start') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "baseline_start" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='baseline_end') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='baseline_end') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "baseline_end" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='baseline_duration') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='baseline_duration') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "baseline_duration" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='task_mode') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='task_mode') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "task_mode" TEXT DEFAULT 'auto';
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='actual_start') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='actual_start') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "actual_start" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='actual_end') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='actual_end') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "actual_end" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='actual_duration') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='actual_duration') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "actual_duration" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='sort_order') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='sort_order') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "sort_order" INTEGER DEFAULT 0;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='estimate_minutes') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='estimate_minutes') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "estimate_minutes" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='task_category') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='task_category') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "task_category" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='is_recurring') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='is_recurring') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "is_recurring" BOOLEAN DEFAULT false;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_frequency') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_frequency') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "recurrence_frequency" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_interval') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_interval') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "recurrence_interval" INTEGER DEFAULT 1;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_days_of_week') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_days_of_week') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "recurrence_days_of_week" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_end_date') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_end_date') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "recurrence_end_date" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_parent_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='recurrence_parent_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "recurrence_parent_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='sub_project_name') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='sub_project_name') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "sub_project_name" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='hold_reason') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='hold_reason') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "hold_reason" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='blocked_type') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='blocked_type') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "blocked_type" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='approval_required') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='approval_required') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "approval_required" BOOLEAN DEFAULT false;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='linked_plan_item_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='linked_plan_item_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "linked_plan_item_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='linked_deliverable_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='linked_deliverable_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "linked_deliverable_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='linked_quality_item_instance_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='linked_quality_item_instance_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "linked_quality_item_instance_id" INTEGER;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='completed_at') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='completed_at') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "completed_at" TIMESTAMP;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='tracking_rag') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='tracking_rag') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "tracking_rag" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='task_type_tag') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='task_type_tag') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "task_type_tag" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='blocker_reason') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='blocker_reason') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "blocker_reason" TEXT;
   END IF;
-  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='pd_ticket_id') THEN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='work_items') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='work_items' AND column_name='pd_ticket_id') AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items') THEN
     ALTER TABLE "work_items" ADD COLUMN "pd_ticket_id" INTEGER;
   END IF;
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='working_plan_dependency_override') AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='working_plan_dependency_override' AND column_name='scenario_id') THEN

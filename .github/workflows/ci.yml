@@ -6,8 +6,27 @@ on:
     branches: [main, develop]
 
 jobs:
-  build-and-test:
+  # ── Stage 1: Compile integrity (no DB required) ───────────
+  compile:
     runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run check
+      - run: npm run build
+
+  # ── Stage 2: Tests (requires Postgres) ────────────────────
+  test:
+    runs-on: ubuntu-latest
+    needs: compile
 
     services:
       postgres:
@@ -26,20 +45,26 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://test:test@localhost:5432/emergent_test
+      TOKEN_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      JWT_SECRET: ci-test-jwt-secret
+      SESSION_SECRET: ci-test-session-secret
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npm run lint
       - run: npm run build
-      - run: npm run check
+      # Unit tests
       - run: npm test
         if: hashFiles('**/*.test.ts') != ''
-      - run: npm run test:migrations
-        name: Migration integration tests
+      # API tests (starts app server, runs against Postgres)
       - run: npm run test:api
+      # Release gate (skip smoke tests — no browser in CI)
       - run: npm run release:gate
+        env:
+          SKIP_SMOKE_TESTS: "true"

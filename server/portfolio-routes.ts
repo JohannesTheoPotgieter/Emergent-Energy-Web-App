@@ -1,5 +1,6 @@
-// TODO: remove @ts-nocheck — large file needs systematic type fixes
-// @ts-nocheck
+// Error breakdown: TS7006 implicit-any: 43, TS2345 query/param types: 22, other: 7
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, sql, and, inArray, desc, isNull } from "drizzle-orm";
@@ -9,6 +10,7 @@ import {
   qcChecklist, qcItemInstance, normalizedCostLines, normalizedRevenueLines,
   projectExecutionState,
 } from "@shared/schema";
+import { paramStr } from "./lib/req-params";
 import { logAuditFromReq } from "./audit-logger";
 import { getAllPMWorkItemsAsProjectPlan } from "./work-items-adapter";
 import { computeProjectCompletion, summarizeEngineeringStatuses, summarizeQualityStatuses, summarizeSchedule, calculateGrossMarginPercent } from "./services/kpi-service";
@@ -133,11 +135,11 @@ export function registerPortfolioRoutes(app: Express) {
           : legacyProjectsQuery(),
       ]);
 
-      const ownerIds = allPortfolios.map(p => p.ownerUserId).filter(Boolean) as number[];
+      const ownerIds = allPortfolios.map((p: any) => p.ownerUserId).filter(Boolean) as number[];
       const allUsers = ownerIds.length > 0 ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ownerIds)) : [];
-      const userMap = new Map(allUsers.map(u => [u.id, u.name]));
+      const userMap = new Map(allUsers.map((u: any) => [u.id, u.name]));
 
-      const projectMap = new Map(allProjects.map(p => [p.id, p]));
+      const projectMap = new Map(allProjects.map((p: any) => [p.id, p]));
       const portfolioProjects = new Map<number, typeof allProjects>();
 
       for (const a of assignments) {
@@ -148,15 +150,15 @@ export function registerPortfolioRoutes(app: Express) {
         }
       }
 
-      const result = allPortfolios.map(p => {
+      const result = allPortfolios.map((p: any) => {
         const projs = portfolioProjects.get(p.id) || [];
         return {
           ...p,
           ownerUserId: p.ownerUserId ?? null,
           ownerName: p.ownerUserId ? userMap.get(p.ownerUserId) || null : null,
           projectCount: projs.length,
-          totalKwp: projs.reduce((sum, pr) => sum + (parseFloat(String(pr.sizeKwp || "0")) || 0), 0),
-          projects: projs.map(pr => ({ id: pr.id, projectName: pr.projectName, phase: pr.phase, sizeKwp: pr.sizeKwp, pm: pr.pm })),
+          totalKwp: projs.reduce((sum: any, pr: any) => sum + (parseFloat(String(pr.sizeKwp || "0")) || 0), 0),
+          projects: projs.map((pr: any) => ({ id: pr.id, projectName: pr.projectName, phase: pr.phase, sizeKwp: pr.sizeKwp, pm: pr.pm })),
         };
       });
 
@@ -202,12 +204,12 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.get("/api/portfolios/:id", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [portfolio] = await db.select().from(portfolios).where(eq(portfolios.id, id));
       if (!portfolio) return res.status(404).json({ error: "Portfolio not found" });
 
       const assignments = await db.select().from(projectPortfolioAssignments).where(eq(projectPortfolioAssignments.portfolioId, id));
-      const projectIds = assignments.map(a => a.projectId);
+      const projectIds = assignments.map((a: any) => a.projectId);
 
       let projects: any[] = [];
       if (projectIds.length > 0) {
@@ -217,7 +219,7 @@ export function registerPortfolioRoutes(app: Express) {
       const rolloutPlans = await db.select().from(portfolioRolloutPlans).where(eq(portfolioRolloutPlans.portfolioId, id));
       let phases: any[] = [];
       if (rolloutPlans.length > 0) {
-        const planIds = rolloutPlans.map(rp => rp.id);
+        const planIds = rolloutPlans.map((rp: any) => rp.id);
         phases = await db.select().from(portfolioRolloutPhases).where(inArray(portfolioRolloutPhases.rolloutPlanId, planIds));
       }
 
@@ -232,7 +234,7 @@ export function registerPortfolioRoutes(app: Express) {
         ownerName,
         projects,
         assignments,
-        rolloutPlans: rolloutPlans.map(rp => ({
+        rolloutPlans: rolloutPlans.map((rp: any) => ({
           ...rp,
           phases: phases.filter(ph => ph.rolloutPlanId === rp.id).sort((a, b) => a.sortOrder - b.sortOrder),
         })),
@@ -269,7 +271,7 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.put("/api/portfolios/:id", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const userId = ((req as any).user as any)?.id;
       const { name, clientName, status, description, ownerUserId } = req.body;
 
@@ -293,7 +295,7 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.delete("/api/portfolios/:id", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [deleted] = await db.update(portfolios).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(portfolios.id, id)).returning();
       logAuditFromReq(req, { entityType: "portfolio", entityId: String(id), action: "delete", changesJson: { description: "Portfolio soft-deleted" } });
       res.json({ success: true, record: deleted });
@@ -305,7 +307,7 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.post("/api/portfolios/:id/assign-project", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const portfolioId = parseInt(req.params.id);
+      const portfolioId = parseInt(paramStr(req.params.id));
       const userId = ((req as any).user as any)?.id;
       const { projectId } = req.body;
       if (!projectId) return res.status(400).json({ error: "projectId is required" });
@@ -337,7 +339,7 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.post("/api/portfolios/:id/move-project", jwtAuth, requireAuth, requireCooRole, async (req, res) => {
     try {
-      const targetPortfolioId = parseInt(req.params.id);
+      const targetPortfolioId = parseInt(paramStr(req.params.id));
       const userId = ((req as any).user as any)?.id;
       const { projectId } = req.body;
       if (!projectId) return res.status(400).json({ error: "projectId is required" });
@@ -368,8 +370,8 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.delete("/api/portfolios/:id/remove-project/:projectId", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const portfolioId = parseInt(req.params.id);
-      const projectId = parseInt(req.params.projectId);
+      const portfolioId = parseInt(paramStr(req.params.id));
+      const projectId = parseInt(paramStr(req.params.projectId));
       await db.delete(projectPortfolioAssignments).where(
         and(eq(projectPortfolioAssignments.portfolioId, portfolioId), eq(projectPortfolioAssignments.projectId, projectId))
       );
@@ -383,9 +385,9 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.get("/api/portfolios/:id/rollups", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const portfolioId = parseInt(req.params.id);
+      const portfolioId = parseInt(paramStr(req.params.id));
       const assignments = await db.select().from(projectPortfolioAssignments).where(eq(projectPortfolioAssignments.portfolioId, portfolioId));
-      const projectIds = assignments.map(a => a.projectId);
+      const projectIds = assignments.map((a: any) => a.projectId);
 
       if (projectIds.length === 0) {
         return res.json({
@@ -398,13 +400,13 @@ export function registerPortfolioRoutes(app: Express) {
       }
 
       const projects = await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds));
-      const projectNames = projects.map(p => p.projectName);
+      const projectNames = projects.map((p: any) => p.projectName);
 
       const { adaptCostToExpense, adaptRevenueToInflow } = await import("./lib/data-merge");
       const rawCosts = await db.select().from(normalizedCostLines).where(and(inArray(normalizedCostLines.projectName, projectNames), isNull(normalizedCostLines.effectiveTo)));
       const rawRev = await db.select().from(normalizedRevenueLines).where(and(inArray(normalizedRevenueLines.projectName, projectNames), isNull(normalizedRevenueLines.effectiveTo)));
-      const rawExpenses = rawCosts.map(c => adaptCostToExpense(c, c.projectName));
-      const rawInflows = rawRev.map(r => adaptRevenueToInflow(r, r.projectName));
+      const rawExpenses = rawCosts.map((c: any) => adaptCostToExpense(c, c.projectName));
+      const rawInflows = rawRev.map((r: any) => adaptRevenueToInflow(r, r.projectName));
       const allWorkItems = await getAllPMWorkItemsAsProjectPlan();
       const allPlans = allWorkItems.filter((wi: any) => projectNames.includes(wi.projectName));
 
@@ -420,22 +422,22 @@ export function registerPortfolioRoutes(app: Express) {
         completionByProject.set(pn, computeProjectCompletion(projPlans));
       }
 
-      const projectInfoMap = new Map(projects.map(p => [p.projectName, p]));
+      const projectInfoMap = new Map(projects.map((p: any) => [p.projectName, p]));
 
       const perProjectFinance = new Map<string, { plannedRev: number; actualRev: number; plannedExp: number; actualExp: number; gp: number }>();
       for (const pn of projectNames) {
-        const projInflows = rawInflows.filter(r => r.projectName === pn);
-        const projExpenses = rawExpenses.filter(e => e.projectName === pn);
-        let costedRev = projInflows.reduce((s, r) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
+        const projInflows = rawInflows.filter((r: any) => r.projectName === pn);
+        const projExpenses = rawExpenses.filter((e: any) => e.projectName === pn);
+        let costedRev = projInflows.reduce((s: any, r: any) => s + (parseFloat(String(r.revenueAmount || "0")) || 0), 0);
         if (costedRev === 0) {
-          const pInfo = projectInfoMap.get(pn);
+          const pInfo = projectInfoMap.get(pn) as any;
           if (pInfo?.contractValue) costedRev = parseFloat(String(pInfo.contractValue)) || 0;
         }
-        const actualRev = projInflows.reduce((s, r) => s + (parseFloat(String(r.milestoneAmount || "0")) || 0), 0);
-        const costedExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
-        let actualExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.expenseActualTotal || "0")) || 0), 0);
+        const actualRev = projInflows.reduce((s: any, r: any) => s + (parseFloat(String(r.milestoneAmount || "0")) || 0), 0);
+        const costedExp = projExpenses.reduce((s: any, e: any) => s + (parseFloat(String(e.budgetTotal || "0")) || 0), 0);
+        let actualExp = projExpenses.reduce((s: any, e: any) => s + (parseFloat(String(e.expenseActualTotal || "0")) || 0), 0);
         if (actualExp === 0) {
-          actualExp = projExpenses.reduce((s, e) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
+          actualExp = projExpenses.reduce((s: any, e: any) => s + (parseFloat(String(e.actualCosTotal || "0")) || 0), 0);
         }
         perProjectFinance.set(pn, { plannedRev: costedRev, actualRev, plannedExp: costedExp, actualExp, gp: actualRev - actualExp });
       }
@@ -458,7 +460,7 @@ export function registerPortfolioRoutes(app: Express) {
         grossMarginPct: calculateGrossMarginPercent(totalActualRev, totalActualExp),
       };
 
-      const scheduleItems = projectNames.map(pn => completionByProject.get(pn) || { actualPct: 0, expectedPct: 0, delta: 0 });
+      const scheduleItems = projectNames.map((pn: any) => completionByProject.get(pn) || { actualPct: 0, expectedPct: 0, delta: 0 });
       const scheduleSummary = summarizeSchedule(scheduleItems);
       const schedule = {
         avgActualPct: scheduleSummary.avgActualPct,
@@ -472,10 +474,10 @@ export function registerPortfolioRoutes(app: Express) {
       let qualityData = { totalItems: 0, approvedItems: 0, pendingItems: 0, failedItems: 0 };
       try {
         const checklists = await db.select().from(qcChecklist).where(inArray(qcChecklist.projectName, projectNames));
-        const checklistIds = checklists.map(c => c.id);
+        const checklistIds = checklists.map((c: any) => c.id);
         if (checklistIds.length > 0) {
           const items = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds));
-          const summary = summarizeQualityStatuses(items.map((i) => ({ status: i.status })));
+          const summary = summarizeQualityStatuses(items.map((i: any) => ({ status: i.status })));
           qualityData = {
             totalItems: summary.total,
             approvedItems: summary.approved,
@@ -487,12 +489,12 @@ export function registerPortfolioRoutes(app: Express) {
 
       let engData = { totalStages: 0, completedStages: 0, inProgressStages: 0 };
       try {
-        const stagesResult = await db.execute(sql`SELECT status FROM project_eng_stages WHERE project_id IN (${sql.join(projectIds.map(id => sql`${id}`), sql`, `)})`);
+        const stagesResult = await db.execute(sql`SELECT status FROM project_eng_stages WHERE project_id IN (${sql.join(projectIds.map((id: any) => sql`${id}`), sql`, `)})`);
         const summary = summarizeEngineeringStatuses((stagesResult.rows || []) as Array<{ status: unknown }>);
         engData = { totalStages: summary.total, completedStages: summary.complete, inProgressStages: summary.inProgress };
       } catch (e) {}
 
-      const projectDetails = projects.map(p => {
+      const projectDetails = projects.map((p: any) => {
         const comp = completionByProject.get(p.projectName) || { actualPct: 0, expectedPct: 0, delta: 0 };
         const rawFin = perProjectFinance.get(p.projectName);
         return {
@@ -524,7 +526,7 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.get("/api/portfolios/:id/available-projects", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const portfolioId = parseInt(req.params.id);
+      const portfolioId = parseInt(paramStr(req.params.id));
       const allProjects = await db.select({
         id: projectInfo.id,
         projectName: projectInfo.projectName,
@@ -536,12 +538,12 @@ export function registerPortfolioRoutes(app: Express) {
         .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id));
 
       const allAssignments = await db.select().from(projectPortfolioAssignments);
-      const assignmentMap = new Map(allAssignments.map(a => [a.projectId, a.portfolioId]));
+      const assignmentMap = new Map(allAssignments.map((a: any) => [a.projectId, a.portfolioId]));
 
       const allPortfolios = await db.select({ id: portfolios.id, name: portfolios.name }).from(portfolios);
-      const portfolioMap = new Map(allPortfolios.map(p => [p.id, p.name]));
+      const portfolioMap = new Map(allPortfolios.map((p: any) => [p.id, p.name]));
 
-      const result = allProjects.map(p => ({
+      const result = allProjects.map((p: any) => ({
         ...p,
         assignedPortfolioId: assignmentMap.get(p.id) || null,
         assignedPortfolioName: assignmentMap.has(p.id) ? portfolioMap.get(assignmentMap.get(p.id)!) || null : null,
@@ -556,7 +558,7 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.post("/api/portfolios/:id/rollout-plans", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const portfolioId = parseInt(req.params.id);
+      const portfolioId = parseInt(paramStr(req.params.id));
       const userId = ((req as any).user as any)?.id;
       const { name, notes, phases } = req.body;
       if (!name?.trim()) return res.status(400).json({ error: "Plan name is required" });
@@ -593,7 +595,7 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.put("/api/portfolios/:portfolioId/rollout-plans/:planId", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const planId = parseInt(req.params.planId);
+      const planId = parseInt(paramStr(req.params.planId));
       const userId = ((req as any).user as any)?.id;
       const { name, notes, phases } = req.body;
 
@@ -628,7 +630,7 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.delete("/api/portfolios/:portfolioId/rollout-plans/:planId", jwtAuth, requireAuth, requireManageRole, async (req, res) => {
     try {
-      const planId = parseInt(req.params.planId);
+      const planId = parseInt(paramStr(req.params.planId));
       const [deleted] = await db.update(portfolioRolloutPlans).set({ deletedAt: new Date(), deletedBy: req.user?.id }).where(eq(portfolioRolloutPlans.id, planId)).returning();
       logAuditFromReq(req, { entityType: "portfolio_rollout", entityId: String(planId), action: "delete", changesJson: { description: "Rollout plan soft-deleted" } });
       res.json({ success: true, record: deleted });
@@ -646,11 +648,11 @@ export function registerPortfolioRoutes(app: Express) {
       const assignments = await db.select().from(projectPortfolioAssignments);
       const allProjects = await db.select().from(projectInfo);
 
-      const ownerIds = allPortfolios.map(p => p.ownerUserId).filter(Boolean) as number[];
+      const ownerIds = allPortfolios.map((p: any) => p.ownerUserId).filter(Boolean) as number[];
       const allUsers = ownerIds.length > 0 ? await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, ownerIds)) : [];
-      const userMap = new Map(allUsers.map(u => [u.id, u.name]));
+      const userMap = new Map(allUsers.map((u: any) => [u.id, u.name]));
 
-      const projectMap = new Map(allProjects.map(p => [p.id, p]));
+      const projectMap = new Map(allProjects.map((p: any) => [p.id, p]));
 
       const { adaptCostToExpense, adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
       const [allCosts, allRev, piNames] = await Promise.all([
@@ -658,9 +660,9 @@ export function registerPortfolioRoutes(app: Express) {
         db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
         db.select({ projectName: projectInfo.projectName }).from(projectInfo),
       ]);
-      const resolve = createNameResolver(piNames.map(p => p.projectName));
-      const allExpenses = allCosts.map(c => adaptCostToExpense(c, resolve(c.projectName)));
-      const allInflows = allRev.map(r => adaptRevenueToInflow(r, resolve(r.projectName)));
+      const resolve = createNameResolver(piNames.map((p: any) => p.projectName));
+      const allExpenses = allCosts.map((c: any) => adaptCostToExpense(c, resolve(c.projectName)));
+      const allInflows = allRev.map((r: any) => adaptRevenueToInflow(r, resolve(r.projectName)));
       const allPlanTasks = await getAllPMWorkItemsAsProjectPlan();
 
       const expenseByProject = new Map<string, any[]>();
@@ -692,17 +694,17 @@ export function registerPortfolioRoutes(app: Express) {
       } catch (e) {}
       try {
         const allChecklists = await db.select().from(qcChecklist);
-        const checklistIds = allChecklists.map(c => c.id);
+        const checklistIds = allChecklists.map((c: any) => c.id);
         if (checklistIds.length > 0) {
           const items = await db.select().from(qcItemInstance).where(inArray(qcItemInstance.checklistId, checklistIds));
-          const checklistProjectMap = new Map(allChecklists.map(c => [c.id, c.projectName]));
-          qualityRows = items.map(item => ({ ...item, projectName: checklistProjectMap.get(item.checklistId) || "" }));
+          const checklistProjectMap = new Map(allChecklists.map((c: any) => [c.id, c.projectName]));
+          qualityRows = items.map((item: any) => ({ ...item, projectName: checklistProjectMap.get(item.checklistId) || "" }));
         }
       } catch (e) {}
 
-      const result = allPortfolios.map(portfolio => {
-        const portfolioAssignments = assignments.filter(a => a.portfolioId === portfolio.id);
-        const portfolioProjects = portfolioAssignments.map(a => projectMap.get(a.projectId)).filter(Boolean) as any[];
+      const result = allPortfolios.map((portfolio: any) => {
+        const portfolioAssignments = assignments.filter((a: any) => a.portfolioId === portfolio.id);
+        const portfolioProjects = portfolioAssignments.map((a: any) => projectMap.get(a.projectId)).filter(Boolean) as any[];
         const portfolioProjectIds = portfolioProjects.map(p => p.id);
         const portfolioProjectNames = portfolioProjects.map(p => p.projectName);
 
@@ -792,7 +794,7 @@ export function registerPortfolioRoutes(app: Express) {
         };
       });
 
-      const unassignedCount = allProjects.filter(p => !assignments.some(a => a.projectId === p.id)).length;
+      const unassignedCount = allProjects.filter((p: any) => !assignments.some((a: any) => a.projectId === p.id)).length;
 
       res.json({ portfolios: result, unassignedProjectCount: unassignedCount, totalPortfolios: allPortfolios.length });
     } catch (err: any) {
@@ -803,14 +805,14 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.get("/api/portfolios/:id/timeline", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const portfolioId = parseInt(req.params.id);
+      const portfolioId = parseInt(paramStr(req.params.id));
       const assignments = await db.select().from(projectPortfolioAssignments).where(eq(projectPortfolioAssignments.portfolioId, portfolioId));
-      const projectIds = assignments.map(a => a.projectId);
+      const projectIds = assignments.map((a: any) => a.projectId);
 
       if (projectIds.length === 0) return res.json([]);
 
       const projects = await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds));
-      const projectNames = projects.map(p => p.projectName);
+      const projectNames = projects.map((p: any) => p.projectName);
 
       const allWiPlans = await getAllPMWorkItemsAsProjectPlan();
       const plans = allWiPlans.filter((wi: any) => projectNames.includes(wi.projectName));
@@ -885,14 +887,14 @@ export function registerPortfolioRoutes(app: Express) {
 
   app.get("/api/portfolios/:id/key-dates", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const portfolioId = parseInt(req.params.id);
+      const portfolioId = parseInt(paramStr(req.params.id));
       const assignments = await db.select().from(projectPortfolioAssignments).where(eq(projectPortfolioAssignments.portfolioId, portfolioId));
-      const projectIds = assignments.map(a => a.projectId);
+      const projectIds = assignments.map((a: any) => a.projectId);
 
       if (projectIds.length === 0) return res.json([]);
 
       const projects = await db.select().from(projectInfo).where(inArray(projectInfo.id, projectIds));
-      const projectNames = projects.map(p => p.projectName);
+      const projectNames = projects.map((p: any) => p.projectName);
 
       const allWiForKeyDates = await getAllPMWorkItemsAsProjectPlan();
       const plansForKeyDates = allWiForKeyDates.filter((wi: any) => projectNames.includes(wi.projectName));
@@ -912,7 +914,7 @@ export function registerPortfolioRoutes(app: Express) {
         { keyDateName: "Client Handover", patterns: ['handover to client'], dateField: 'actualEnd' as const, sortOrder: 6 },
       ];
 
-      const result = projects.map(proj => {
+      const result = projects.map((proj: any) => {
         const projPlans = plansByProject.get(proj.projectName) || [];
 
         const comp = computeProjectCompletion(projPlans);
@@ -982,7 +984,7 @@ export function registerPortfolioRoutes(app: Express) {
         };
       });
 
-      result.sort((a, b) => (a.projectStart || 'z').localeCompare(b.projectStart || 'z'));
+      result.sort((a: any, b: any) => (a.projectStart || 'z').localeCompare(b.projectStart || 'z'));
       res.json(result);
     } catch (err: any) {
       console.error("[Portfolio] Key dates error:", err);

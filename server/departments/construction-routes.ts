@@ -37,7 +37,7 @@ router.get("/api/construction/activities", requireAuth, async (req: Request, res
   }
 });
 
-router.post("/api/construction/activities", requireAuth, requirePermission("projects", "create"), async (req: Request, res: Response) => {
+router.post("/api/construction/activities", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(siteActivities).values(req.body).returning();
     res.status(201).json(row);
@@ -47,7 +47,7 @@ router.post("/api/construction/activities", requireAuth, requirePermission("proj
   }
 });
 
-router.patch("/api/construction/activities/:id", requireAuth, requirePermission("projects", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/construction/activities/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(siteActivities)
@@ -58,6 +58,21 @@ router.patch("/api/construction/activities/:id", requireAuth, requirePermission(
   } catch (err) {
     console.error("[Construction] Failed to update site activity:", err);
     res.status(500).json({ error: "Failed to update site activity" });
+  }
+});
+
+router.delete("/api/construction/activities/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(siteActivities)
+      .set({ deletedAt: new Date() })
+      .where(eq(siteActivities.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Site activity not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[Construction] Failed to delete site activity:", err);
+    res.status(500).json({ error: "Failed to delete site activity" });
   }
 });
 
@@ -82,7 +97,7 @@ router.get("/api/construction/snags", requireAuth, async (req: Request, res: Res
   }
 });
 
-router.post("/api/construction/snags", requireAuth, requirePermission("quality", "create"), async (req: Request, res: Response) => {
+router.post("/api/construction/snags", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(snags).values(req.body).returning();
     res.status(201).json(row);
@@ -92,7 +107,7 @@ router.post("/api/construction/snags", requireAuth, requirePermission("quality",
   }
 });
 
-router.patch("/api/construction/snags/:id", requireAuth, requirePermission("quality", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/construction/snags/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(snags)
@@ -103,6 +118,21 @@ router.patch("/api/construction/snags/:id", requireAuth, requirePermission("qual
   } catch (err) {
     console.error("[Construction] Failed to update snag:", err);
     res.status(500).json({ error: "Failed to update snag" });
+  }
+});
+
+router.delete("/api/construction/snags/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(snags)
+      .set({ deletedAt: new Date() })
+      .where(eq(snags.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Snag not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[Construction] Failed to delete snag:", err);
+    res.status(500).json({ error: "Failed to delete snag" });
   }
 });
 
@@ -127,7 +157,7 @@ router.get("/api/construction/inspections", requireAuth, async (req: Request, re
   }
 });
 
-router.post("/api/construction/inspections", requireAuth, requirePermission("quality", "create"), async (req: Request, res: Response) => {
+router.post("/api/construction/inspections", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(siteInspections).values(req.body).returning();
     res.status(201).json(row);
@@ -137,7 +167,7 @@ router.post("/api/construction/inspections", requireAuth, requirePermission("qua
   }
 });
 
-router.patch("/api/construction/inspections/:id", requireAuth, requirePermission("quality", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/construction/inspections/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(siteInspections)
@@ -148,6 +178,21 @@ router.patch("/api/construction/inspections/:id", requireAuth, requirePermission
   } catch (err) {
     console.error("[Construction] Failed to update inspection:", err);
     res.status(500).json({ error: "Failed to update inspection" });
+  }
+});
+
+router.delete("/api/construction/inspections/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(siteInspections)
+      .set({ deletedAt: new Date() })
+      .where(eq(siteInspections.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Inspection not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[Construction] Failed to delete inspection:", err);
+    res.status(500).json({ error: "Failed to delete inspection" });
   }
 });
 
@@ -172,7 +217,7 @@ router.get("/api/construction/contractors", requireAuth, async (req: Request, re
   }
 });
 
-router.post("/api/construction/contractors", requireAuth, requirePermission("subcontractors", "create"), async (req: Request, res: Response) => {
+router.post("/api/construction/contractors", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(contractorAssignments).values(req.body).returning();
     res.status(201).json(row);
@@ -182,7 +227,7 @@ router.post("/api/construction/contractors", requireAuth, requirePermission("sub
   }
 });
 
-router.patch("/api/construction/contractors/:id", requireAuth, requirePermission("subcontractors", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/construction/contractors/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(contractorAssignments)

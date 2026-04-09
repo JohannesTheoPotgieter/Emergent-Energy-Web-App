@@ -15,8 +15,8 @@ export async function registerCoreRoutes(app: Express) {
   registerLifecycleRoutes(app);
   const { registerGatesRoutes } = await import("./gates-routes");
   registerGatesRoutes(app);
-  const { registerApprovalsRoutes } = await import("./approvals-routes");
-  registerApprovalsRoutes(app);
+  const { registerLifecycleApprovalsRoutes } = await import("./lifecycle-approvals-routes");
+  registerLifecycleApprovalsRoutes(app);
   const { registerGovernanceViewsRoutes } = await import("./governance-views-routes");
   registerGovernanceViewsRoutes(app);
   const { registerPerformanceRoutes } = await import("./performance-routes");
@@ -59,77 +59,5 @@ export async function registerCoreRoutes(app: Express) {
     registerCompanyOverviewRoutes(app);
   } catch (err: unknown) {
     console.error("[Startup:Routes] Failed to register Company Overview routes:", (err instanceof Error ? err.message : String(err)));
-  }
-
-  // Wave 1: Parties registry (reads from core.parties)
-  try {
-    const { registerPartiesRoutes } = await import("./parties.routes");
-    registerPartiesRoutes(app);
-  } catch (err: unknown) {
-    console.error("[Startup:Routes] Failed to register Parties routes:", (err instanceof Error ? err.message : String(err)));
-  }
-
-  // Wave 1: Home summary dashboard
-  try {
-    const { registerHomeSummaryRoutes } = await import("./home-summary.routes");
-    registerHomeSummaryRoutes(app);
-  } catch (err: unknown) {
-    console.error("[Startup:Routes] Failed to register Home Summary routes:", (err instanceof Error ? err.message : String(err)));
-  }
-
-  // Wave 1: Admin migration status
-  try {
-    const { registerMigrationStatusRoutes } = await import("./migration-status.routes");
-    registerMigrationStatusRoutes(app);
-  } catch (err: unknown) {
-    console.error("[Startup:Routes] Failed to register Migration Status routes:", (err instanceof Error ? err.message : String(err)));
-  }
-
-  // Wave 2: Work items v2 (promoted schema)
-  try {
-    const { registerWorkItemsV2Routes } = await import("./work-items-v2.routes");
-    registerWorkItemsV2Routes(app);
-  } catch (err: unknown) {
-    console.error("[Startup:Routes] Failed to register Work Items V2 routes:", (err instanceof Error ? err.message : String(err)));
-  }
-
-  // Wave 3: Governed processes (formal workflows)
-  try {
-    const { registerGovernedProcessRoutes } = await import("./governed-processes.routes");
-    registerGovernedProcessRoutes(app);
-  } catch (err: unknown) {
-    console.error("[Startup:Routes] Failed to register Governed Process routes:", (err instanceof Error ? err.message : String(err)));
-  }
-
-  // Wave 4: Deliverables v2 (promoted schema)
-  try {
-    const { registerDeliverablesV2Routes } = await import("./deliverables-v2.routes");
-    registerDeliverablesV2Routes(app);
-  } catch (err: unknown) {
-    console.error("[Startup:Routes] Failed to register Deliverables V2 routes:", (err instanceof Error ? err.message : String(err)));
-  }
-
-  // Wave 4: Approvals v2 (promoted schema)
-  try {
-    const { registerApprovalsV2Routes } = await import("./approvals-v2.routes");
-    registerApprovalsV2Routes(app);
-  } catch (err: unknown) {
-    console.error("[Startup:Routes] Failed to register Approvals V2 routes:", (err instanceof Error ? err.message : String(err)));
-  }
-
-  // Wave 5: Finance records v2 (promoted schema)
-  try {
-    const { registerFinanceRecordsV2Routes } = await import("./finance-records-v2.routes");
-    registerFinanceRecordsV2Routes(app);
-  } catch (err: unknown) {
-    console.error("[Startup:Routes] Failed to register Finance Records V2 routes:", (err instanceof Error ? err.message : String(err)));
-  }
-
-  // Wave 6: Phase history + gate compatibility endpoints
-  try {
-    const { registerPhaseHistoryRoutes } = await import("./phase-history.routes");
-    registerPhaseHistoryRoutes(app);
-  } catch (err: unknown) {
-    console.error("[Startup:Routes] Failed to register Phase History routes:", (err instanceof Error ? err.message : String(err)));
   }
 }

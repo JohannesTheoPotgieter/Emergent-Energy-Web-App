@@ -1,0 +1,82 @@
+{
+  "generated_at": "2026-04-07T10:51:19.958Z",
+  "status": "fail",
+  "checks": [
+    {
+      "name": "Type check",
+      "command": "npm run check",
+      "required": true,
+      "category": "proof",
+      "status": "fail",
+      "details": "Type check failed with non-zero exit code."
+    },
+    {
+      "name": "API tests",
+      "command": "npm run test:api",
+      "required": true,
+      "category": "proof",
+      "status": "fail",
+      "details": "API tests failed with non-zero exit code."
+    },
+    {
+      "name": "Smoke tests",
+      "command": "npm run test:smoke",
+      "required": true,
+      "category": "proof",
+      "status": "fail",
+      "details": "Smoke tests failed with non-zero exit code."
+    },
+    {
+      "name": "Routes tests",
+      "command": "npm run test:routes",
+      "required": true,
+      "category": "proof",
+      "status": "fail",
+      "details": "Routes tests failed with non-zero exit code."
+    },
+    {
+      "name": "Workflow tests",
+      "command": "npm run test:workflows",
+      "required": true,
+      "category": "proof",
+      "status": "fail",
+      "details": "Workflow tests failed with non-zero exit code."
+    },
+    {
+      "name": "Reconciliation status",
+      "required": true,
+      "category": "proof",
+      "status": "fail",
+      "details": "Missing or invalid reconciliation evidence: /home/user/Emergent-Energy-Web-App/qa/reports/reconciliation-status.json"
+    },
+    {
+      "name": "Critical defects",
+      "required": false,
+      "category": "optional",
+      "status": "pass",
+      "details": "No open critical/high defects in FINAL_DEFECT_REGISTER.md."
+    },
+    {
+      "name": "Critical route role validation",
+      "required": true,
+      "category": "proof",
+      "status": "fail",
+      "details": "Missing passing role validation for critical routes: /projects, /project/:projectName, /cashflow, /quality, /engineering/tasks, /pm-dashboard, /admin/control-center, /handover-control."
+    }
+  ],
+  "enforced_proofs": {
+    "commands": [
+      "npm run check",
+      "npm run test:api",
+      "npm run test:smoke",
+      "npm run test:routes",
+      "npm run test:workflows"
+    ],
+    "reconciliation_file": "/home/user/Emergent-Energy-Web-App/qa/reports/reconciliation-status.json",
+    "role_audit_file": "/home/user/Emergent-Energy-Web-App/docs/archive/docs/qa/results/latest/role-permission-audit.md",
+    "critical_defect_file": "/home/user/Emergent-Energy-Web-App/docs/archive/FINAL_DEFECT_REGISTER.md",
+    "critical_defect_file_required": false,
+    "required_checks_fail_on_warning": true
+  },
+  "manual_signoff_required": false
+}

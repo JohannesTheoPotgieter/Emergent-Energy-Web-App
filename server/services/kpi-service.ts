@@ -1,4 +1,5 @@
 import { toCanonicalEngineeringStageStatus, toCanonicalQualityStatus } from "@shared/status-logic";
+import { computeMarginPct } from "../lib/finance/margin";
 
 export interface ProjectCompletion {
   actualPct: number;
@@ -102,6 +103,5 @@ export function summarizeQualityStatuses(rows: Array<{ status: unknown }>) {
 }
 
 export function calculateGrossMarginPercent(actualRevenue: number, actualExpenses: number): number {
-  if (actualRevenue <= 0) return 0;
-  return Math.round((((actualRevenue - actualExpenses) / actualRevenue) * 100) * 100) / 100;
+  return computeMarginPct(actualRevenue, actualExpenses, { precision: 2, zeroRevenueValue: 0 }) ?? 0;
 }

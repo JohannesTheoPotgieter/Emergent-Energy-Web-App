@@ -1,0 +1,81 @@
+10:39:14 AM [express] GET /api/lifecycle-board/execution-dashboard 200 in 389ms
+[NotificationScheduler] Initial check complete — 0 notifications sent
+COS tracker error: error: column "idempotency_key" does not exist
+    at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:104:19)
+    at async Promise.all (index 0)
+    at async DatabaseStorage.getAllCostLinesForCashflow (/home/runner/workspace/server/storage.ts:1164:33)
+    at async Promise.all (index 0)
+    at async <anonymous> (/home/runner/workspace/server/departments/finance-routes.ts:1453:113) {
+  length: 116,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '994',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3727',
+  routine: 'errorMissingColumn'
+}
+10:39:55 AM [express] GET /api/cos-tracker 500 in 157ms
+COS tracker error: error: column "idempotency_key" does not exist
+    at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:104:19)
+    at async Promise.all (index 0)
+    at async DatabaseStorage.getAllCostLinesForCashflow (/home/runner/workspace/server/storage.ts:1164:33)
+    at async Promise.all (index 0)
+    at async <anonymous> (/home/runner/workspace/server/departments/finance-routes.ts:1453:113) {
+  length: 116,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '994',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3727',
+  routine: 'errorMissingColumn'
+}
+10:39:56 AM [express] GET /api/cos-tracker 500 in 103ms
+COS tracker error: error: column "idempotency_key" does not exist
+    at /home/runner/workspace/node_modules/pg-pool/index.js:45:11
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    at async <anonymous> (/home/runner/workspace/node_modules/src/node-postgres/session.ts:104:19)
+    at async Promise.all (index 0)
+    at async DatabaseStorage.getAllCostLinesForCashflow (/home/runner/workspace/server/storage.ts:1164:33)
+    at async Promise.all (index 0)
+    at async <anonymous> (/home/runner/workspace/server/departments/finance-routes.ts:1453:113) {
+  length: 116,
+  severity: 'ERROR',
+  code: '42703',
+  detail: undefined,
+  hint: undefined,
+  position: '994',
+  internalPosition: undefined,
+  internalQuery: undefined,
+  where: undefined,
+  schema: undefined,
+  table: undefined,
+  column: undefined,
+  dataType: undefined,
+  constraint: undefined,
+  file: 'parse_relation.c',
+  line: '3727',
+  

@@ -322,7 +322,6 @@ describe("Legacy role and route preservation", () => {
     const paths = LEGACY_REDIRECTS.map(r => r.path);
     expect(paths).toContain("/dashboard");
     expect(paths).toContain("/my-tool");
-    // /execution-board is now a live page in PAGE_REGISTRY, not a legacy redirect
     expect(paths).toContain("/command-center");
   });
 
@@ -353,7 +352,7 @@ describe("Route stability", () => {
     "/gates", "/gates/blocked", "/gates/ready", "/gates/exceptions",
     "/admin/control-center", "/admin/roles", "/admin/smart-import",
     "/my-work", "/my-work/tasks", "/my-work/calendar",
-    "/hse", "/construction", "/handover", "/procurement",
+    "/hse", "/handover", "/procurement",
     "/execution-board", "/portfolios", "/weekly-reviews",
     "/reports/center", "/reports/programme",
   ];

@@ -27,6 +27,7 @@ export const FEATURE_FLAG_KEYS = [
   "migration_bridge_finance_read_v1",
   "migration_bridge_deliverables_read_v1",
   "migration_bridge_party_read_v1",
+  "canonical_finance_costline_read_v1",
   "migration_bridge_approvals_dual_write_v1",
   "migration_bridge_project_dual_write_v1",
   "task_management_hub",
@@ -46,9 +47,6 @@ export const FEATURE_FLAG_KEYS = [
 
   // Handover V2: structured multi-tab PD→PM handover with readiness gating and dual sign-off
   "pd_pm_handover_v2",
-
-  // Wave 1: 9-department navigation shell (Migration Control Pack)
-  "department_shell",
 ] as const;
 
 export type RolloutFeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -226,6 +224,12 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     defaultValue: false,
   },
   {
+    key: "canonical_finance_costline_read_v1",
+    label: "Canonical finance cost-line read v1",
+    description: "Controls high-risk finance project endpoints reading canonical normalized cost lines instead of legacy program_expense reads.",
+    defaultValue: false,
+  },
+  {
     key: "migration_bridge_approvals_dual_write_v1",
     label: "Migration bridge approvals dual-write v1",
     description: "Reserved kill-switch for future mirrored approval writes; remains disabled in Phase 1A.",
@@ -316,12 +320,6 @@ export const ROLLOUT_FEATURE_FLAGS: FeatureFlagDefinition[] = [
     label: "PD→PM Handover V2",
     description: "Enables the enhanced multi-tab PD→PM handover form with readiness gating, dual sign-off, lessons learnt, and COO health scoring.",
     defaultValue: false,
-  },
-  {
-    key: "department_shell",
-    label: "9-Department Navigation Shell",
-    description: "Switches navigation from 11-section model to 9-department model (Migration Control Pack Wave 1). HSE folds into PM, Reports distributed per department, Parties added.",
-    defaultValue: true,
   },
 ];
 
