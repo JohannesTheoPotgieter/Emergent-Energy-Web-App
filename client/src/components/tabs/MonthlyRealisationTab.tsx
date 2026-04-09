@@ -326,7 +326,7 @@ export function MonthlyRealisationTab({ projectName, projectId }: MonthlyRealisa
 
   const kpiCards = [
     { id: "ytd-cos", label: "YTD COS (Planned)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "" },
-    { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border" },
+    { id: "ytd-realised", label: "YTD COS Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border" },
     { id: "ytd-unrealised", label: "YTD Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200" },
     { id: "ytd-costed", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "" },
     {
@@ -358,7 +358,7 @@ export function MonthlyRealisationTab({ projectName, projectId }: MonthlyRealisa
           <div>
             <p className="font-semibold text-amber-900 text-sm">COS Realisation Guide</p>
             <p className="text-sm text-amber-700/90 mt-0.5 leading-relaxed">
-              Planned = all line items (invoice captured or not). Committed = invoice captured, but the invoice date is not yet confirmed in black font. Realised = invoice captured + invoice date confirmed in <strong className="text-foreground">black font colour</strong>. <strong className="text-red-600">Red font</strong> = not yet paid. Click any month cell to see individual line items.
+              Planned = no PO or invoice. Committed = PO or invoice captured, but not yet fully confirmed. Realised = supplier invoice number captured under actuals (invoice is the only hard check for COS realisation). <strong className="text-foreground">Black font</strong> = invoice date confirmed. <strong className="text-red-600">Red font</strong> = date not yet confirmed. Click any month cell to see individual line items.
             </p>
           </div>
         </CardContent>

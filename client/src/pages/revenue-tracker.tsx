@@ -540,9 +540,9 @@ export default function RevenueTrackerPage() {
     : 0;
 
   const kpiCards = [
-    { id: "ytd-revenue", label: "YTD Revenue", value: formatRand(lastMonth?.ytdRevenue ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground font-black", borderColor: "", tooltip: "Year-to-date total revenue from milestone payments. Includes both received and pending payments." },
-    { id: "ytd-realised", label: "YTD Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingUp, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "Revenue where milestone payment has been received and confirmed. This is actual cash collected." },
-    { id: "ytd-unrealised", label: "YTD Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "Revenue from milestones that have been invoiced or are planned but payment is not yet received." },
+    { id: "ytd-revenue", label: "YTD Revenue", value: formatRand(lastMonth?.ytdRevenue ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground font-black", borderColor: "", tooltip: "Year-to-date revenue allocated from all cost lines via COS-ratio method. Includes both realised and unrealised." },
+    { id: "ytd-realised", label: "YTD Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingUp, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "Revenue allocated from COS-realised cost lines (supplier invoice captured). This is recognition-based, not cash received." },
+    { id: "ytd-unrealised", label: "YTD Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "Revenue allocated from cost lines not yet COS-realised (no supplier invoice captured). Still at risk of change." },
     {
       id: "ytd-variance", label: "YTD Variance", value: formatRand(ytdVar),
       icon: TrendingUp,
@@ -559,7 +559,7 @@ export default function RevenueTrackerPage() {
       iconColor: realisedPct >= 0.5 ? "text-green-600" : "text-amber-600",
       valueColor: realisedPct >= 0.5 ? "text-green-600" : "text-amber-600",
       borderColor: realisedPct >= 0.5 ? "border-green-200" : "border-amber-200",
-      tooltip: "Percentage of total revenue that has been realised (received). Green if >= 50%, Amber if below.",
+      tooltip: "Percentage of total revenue allocated from COS-realised cost lines. Green if >= 50%, Amber if below.",
     },
   ];
 
@@ -587,7 +587,7 @@ export default function RevenueTrackerPage() {
             <div>
               <p className="font-semibold text-emerald-900 text-sm">Revenue Realisation Tracker</p>
               <p className="text-sm text-emerald-700/90 mt-0.5 leading-relaxed">
-                Revenue is "Realised" when the milestone payment has been received. <strong className="text-emerald-800">Green</strong> = received/confirmed. <strong className="text-amber-600">Amber</strong> = pending/unrealised. Data sourced from milestone inflows and payment records.
+                Revenue is "Realised" when the underlying cost line has a supplier invoice captured (COS-realised). Revenue is allocated via the COS-ratio method: each cost line's share of project revenue equals its share of project COS. <strong className="text-emerald-800">Green</strong> = COS-realised. <strong className="text-amber-600">Amber</strong> = not yet realised. This is a recognition concept, not cash received.
               </p>
             </div>
           </CardContent>
