@@ -147,25 +147,29 @@ function isDateConfirmed(confirmed: boolean | null | undefined, fontColor: strin
   return false;
 }
 
-// Delegates to shared utility in financeUtils.ts (aligned with classifyCosStatus).
-// Respects COS overrides and the cosRealised boolean from normalizedCostLines.
+// Delegates to shared canonical invoice-only rule in financeUtils.ts.
+// Invoice number is the hard check for COS realisation.
 function isCosRealised(exp: any): boolean {
   return isCosRealisedShared(exp);
 }
 
 // Unified realisation check: returns true if cost is effectively realised for a given month.
-// Past-month committed costs are treated as realised (the cost has been incurred).
+//
+// CHANGED: Committed-from-prior-month no longer silently promotes to realised.
+// Per business rules: "committed from prior month must NOT silently become realised
+// unless it matches the invoice rule." If the line has an invoice, isCosRealised()
+// will return true regardless. If it does not, it stays committed.
 function isEffectivelyRealised(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  const cosStatus = classifyCosStatusFull(exp);
-  if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
-  if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
-  return false;
+  if (!isCosRealisedShared(exp)) return false;
+  // Realised lines are effective for current and past months only
+  return monthKey ? monthKey <= currentMonthKey : true;
 }
 
-// Returns true if a cost is still actively committed (current/future month only).
+// Returns true if a cost is still actively committed (has PO or invoice-in-progress but not yet realised).
 function isEffectivelyCommitted(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
+  if (isCosRealisedShared(exp)) return false;
   const cosStatus = classifyCosStatusFull(exp);
-  return cosStatus === 'Committed' && (monthKey == null || monthKey >= currentMonthKey);
+  return cosStatus === 'Committed';
 }
 
 function isCashflowConfirmed(exp: any): boolean {
@@ -1494,7 +1498,10 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
 
     const allInflows = resolveInflowEffectiveDates(rawInflows, allTaskLinks, allOpTasks, allPlans);
 
-    const revByMonth = new Map<string, number>();
+    // Cash received from clients: inflows with invoice + payment received date.
+    // This is a CASH concept (money in bank), NOT revenue realised.
+    // Revenue realised is computed separately via COS-ratio allocation.
+    const cashReceivedByMonth = new Map<string, number>();
     for (const inflow of allInflows) {
       if (!inflow.milestoneAmount) continue;
       const amt = parseFloat(inflow.milestoneAmount as string);
@@ -1505,7 +1512,7 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         const dateMatch = inflow.paymentReceivedDate!.match(/^(\d{4})-(\d{2})/);
         if (dateMatch) {
           const mk = `${dateMatch[1]}-${dateMatch[2]}`;
-          revByMonth.set(mk, (revByMonth.get(mk) || 0) + amt);
+          cashReceivedByMonth.set(mk, (cashReceivedByMonth.get(mk) || 0) + amt);
         }
       }
     }
@@ -1591,12 +1598,12 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
       const variance = totalCOS - budget;
       const variancePct = budget !== 0 ? (variance / budget) * 100 : 0;
 
-      const revRealised = revByMonth.get(monthKey) ?? 0;
+      const cashReceived = cashReceivedByMonth.get(monthKey) ?? 0;
       ytdCOS += totalCOS;
       ytdRealised += realisedCOS;
       ytdCommitted += committedCOS;
       ytdBudget += budget;
-      ytdRevRealised += revRealised;
+      ytdRevRealised += cashReceived;
       const ytdUnrealised = ytdCOS - ytdRealised;
       const ytdVariance = ytdCOS - ytdBudget;
       const ytdVariancePct = ytdBudget !== 0 ? (ytdVariance / ytdBudget) * 100 : 0;
@@ -1611,7 +1618,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         budget,
         variance,
         variancePct,
-        revRealised,
+        revRealised: cashReceived, // backward-compat alias — this is actually cash received, not revenue realised
+        cashReceived,
         ytdCOS,
         ytdRealised,
         ytdCommitted,
@@ -1619,7 +1627,8 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         ytdBudget,
         ytdVariance,
         ytdVariancePct,
-        ytdRevRealised,
+        ytdRevRealised, // backward-compat — actually YTD cash received
+        ytdCashReceived: ytdRevRealised,
         cosProjects: mapToSortedArray(bucket?.projects ?? new Map()),
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
         committedProjects: mapToSortedArray(committedBucket?.projects ?? new Map()),

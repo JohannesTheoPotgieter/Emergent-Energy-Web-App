@@ -11,7 +11,7 @@ import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
-import { classifyCosStatusFull } from "../lib/calculations/financeUtils";
+import { classifyCosStatusFull, isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
 
@@ -353,14 +353,17 @@ export function registerDashboardRoutes(app: Express) {
         if (dateKey && dateKey.slice(0, 7) === currentMonthKey) {
           cosPlannedMonth += amt;
           const cosOverrideStatus = cosOverrideByKey.get(`${c.projectName}::${c.sourceRow}`);
-          const isRealised = classifyCosStatusFull({
+          // Use canonical invoice-only check for COS realisation
+          const isRealised = isCosRealisedShared({
             expenseInvoiceNumber: c.invoiceNumber,
             expenseInvoicedDate: c.invoiceDate,
             expensePoNumber: c.poNumber,
             invoiceDateConfirmed: c.invoiceDateConfirmed,
             invoiceDateFontColor: c.invoiceDateFontColor,
             _cosOverrideStatus: cosOverrideStatus ?? null,
-          }) === 'COS Realised';
+            cosStatusOverride: (c as any).cosStatusOverride ?? null,
+            cosRealised: (c as any).cosRealised ?? null,
+          });
           if (isRealised) cosRealisedMonth += amt;
         }
       }

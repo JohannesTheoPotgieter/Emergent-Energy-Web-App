@@ -69,6 +69,7 @@ import {
 import { eq, and, sql, desc, isNull, gte } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { extractMonthKey, normalizeProjectName, isCosRealised, classifyCosStatusFull, currentMonthKey } from "../lib/calculations/financeUtils";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 
 const router = Router();
@@ -161,10 +162,14 @@ function enrichWithOverrides(expenses: any[], cosOverrideMap: Map<string, string
  * COS-ratio revenue allocation — matches Revenue Tracker logic exactly.
  * Builds per-project revenue and COS totals, then distributes revenue
  * to months proportionally based on when COS is invoiced.
+ *
+ * IMPORTANT: Only COS-realised lines drive revenue allocation.
+ * Per business rules: "Revenue realised is directly linked to COS realised.
+ * Only COS-realised lines should drive revenue realised."
  */
 function buildCosRatioRevenue(
   allInflows: { projectName: string; milestoneAmount: any }[],
-  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any; expenseInvoiceNumber?: any; expensePoNumber?: any; invoiceDateConfirmed?: any; invoiceDateFontColor?: any; _cosOverrideStatus?: any; _cosRealisedFlag?: any }[],
+  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any; expenseInvoiceNumber?: any; expensePoNumber?: any; invoiceDateConfirmed?: any; invoiceDateFontColor?: any; _cosOverrideStatus?: any; _cosRealisedFlag?: any; cosStatusOverride?: any; cosRealised?: any }[],
   monthKeys: string[],
 ): Record<string, number> {
   // 1. Total revenue per project (from all inflows, regardless of date)
@@ -177,6 +182,7 @@ function buildCosRatioRevenue(
   }
 
   // 2. Total COS per project (from all item expenses, regardless of date)
+  //    This is the denominator for COS-ratio allocation.
   const cosByProject = new Map<string, number>();
   for (const exp of allExpenses) {
     if (exp.rowType !== "item" && exp.rowType != null) continue;
@@ -186,12 +192,17 @@ function buildCosRatioRevenue(
     cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
   }
 
-  // 3. Allocate revenue to months via COS-ratio (revenue recognized when COS invoiced)
+  // 3. Allocate revenue to months via COS-ratio — ONLY from COS-realised lines.
+  //    Revenue is recognized when COS is realised (invoice captured).
   const revByMonth: Record<string, number> = {};
   for (const exp of allExpenses) {
     if (exp.rowType !== "item" && exp.rowType != null) continue;
     const amount = safeNum(exp.expenseActualTotal);
     if (amount === 0) continue;
+
+    // Only COS-realised lines drive revenue allocation
+    if (!isCosRealised(exp)) continue;
+
     const mk = extractMonthKey(getCosEffectiveDateAndSource(exp).date);
     if (!mk || !monthKeys.includes(mk)) continue;
 
@@ -768,8 +779,12 @@ router.get(
       }
 
       // ── Actual Revenue & Actual Expense per project (realised COS within FYE window) ──
-      // COS is "realised" when: invoice number + invoice date + invoice date confirmed (black font)
-      // Revenue is allocated proportionally using COS-ratio: (realisedCOS / totalCOS) × totalRevenue
+      // COS is "realised" when a supplier invoice number is captured (canonical invoice-only rule).
+      // Revenue is allocated proportionally using COS-ratio: (realisedCOS / totalCOS) × totalRevenue.
+      //
+      // CHANGED: Committed-from-prior-month no longer silently promotes to realised.
+      // Per business rules: "committed from prior month must NOT silently become realised
+      // unless it matches the invoice rule."
       const curMk = currentMonthKey();
       const actualRevByProject = new Map<string, number>();
       const actualExpByProject = new Map<string, number>();
@@ -777,16 +792,14 @@ router.get(
         if (exp.rowType !== "item" && exp.rowType != null) continue;
         const amt = safeNum(exp.expenseActualTotal);
         if (amt === 0) continue;
-        if (!exp.expenseInvoicedDate) continue;
+
+        // Use canonical invoice-only realisation check
+        if (!isCosRealised(exp)) continue;
+
         const mk = extractMonthKey(getCosEffectiveDateAndSource(exp).date);
         if (!mk || mk < fyeStart || mk > effectiveEnd) continue;
-        // Only future months are excluded; realised check handles confirmation
+        // Only future months are excluded
         if (mk > curMk) continue;
-
-        // Check if this expense line is effectively realised (invoice confirmed or past-month committed)
-        const cosStatus = classifyCosStatusFull(exp);
-        const effectivelyRealised = cosStatus === 'COS Realised' || (cosStatus === 'Committed' && mk < curMk);
-        if (!effectivelyRealised) continue;
 
         const pn = normalizeProjectName(exp.projectName);
 

@@ -21,6 +21,7 @@ import { cacheGet, cacheSet, cacheDelete, cacheClear } from "../lib/cache";
 import { enqueueJob, registerWorker, QUEUE_NAMES } from "../lib/job-queue";
 import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { computeMarginPct } from "../lib/finance/margin";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 
 const REFRESH_COOLDOWN_MS = 5 * 60 * 1000; // Skip projects refreshed within 5 minutes
 const CONCURRENCY_LIMIT = 5; // Max parallel project refreshes
@@ -80,14 +81,28 @@ export async function refreshProjectMetrics(projectId: number): Promise<void> {
 
   let totalCost = 0,
     paidCost = 0,
-    outstandingCost = 0;
+    outstandingCost = 0,
+    realisedCost = 0;
   for (const row of costRows) {
     const amt = toNum(row.amountExVat);
     totalCost += amt;
     if (row.paidDate) {
-      paidCost += amt;
+      paidCost += amt; // Cash paid concept
     } else {
       outstandingCost += amt;
+    }
+    // COS realised = canonical invoice-only check (separate from cash paid)
+    if (isCanonicalCosRealised({
+      status: null,
+      cosStatusOverride: (row as any).cosStatusOverride ?? null,
+      cosRealised: (row as any).cosRealised ?? null,
+      expenseInvoiceNumber: (row as any).invoiceNumber ?? null,
+      expenseInvoicedDate: (row as any).invoiceDate ?? null,
+      expensePoNumber: (row as any).poNumber ?? null,
+      paymentDate: (row as any).paidDate ?? null,
+      today: new Date().toISOString().slice(0, 10),
+    })) {
+      realisedCost += amt;
     }
   }
 
