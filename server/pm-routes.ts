@@ -108,8 +108,8 @@ export function registerPmRoutes(app: Express) {
 
       const enrichedProjects = projects.map((p) => {
         const fin = financialsByProject.get(p.id) || {
-          totalCost: 0, paidCost: 0, outstandingCost: 0,
-        };
+          totalCost: 0, paidCost: 0, outstandingCost: 0, realisedCost: 0,
+        } as { totalCost: number; paidCost: number; outstandingCost: number; realisedCost: number };
         const tasks = tasksByProject.get(p.id) || {
           total: 0, inProgress: 0, completed: 0, onHold: 0, needsApproval: 0, overdue: 0, active: 0,
         };
@@ -139,7 +139,8 @@ export function registerPmRoutes(app: Express) {
             totalBudget: fin.totalCost,
             totalActual: fin.paidCost,
             spendPercent: fin.totalCost > 0 ? Math.round((fin.paidCost / fin.totalCost) * 100) : 0,
-            cosRealised: fin.paidCost,
+            cosRealised: fin.realisedCost, // Invoice-based COS realisation (not cash paid)
+            cashPaid: fin.paidCost, // Cash paid concept (separate from COS realised)
             cosCommitted: fin.outstandingCost,
             cosPlanned,
           },
