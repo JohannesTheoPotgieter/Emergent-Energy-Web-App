@@ -16,7 +16,42 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { PAGE_REGISTRY, LEGACY_REDIRECTS, ROLE_LANDING_PAGE } from "@/config/page-registry";
 import { useScrollRestoration } from "@/hooks/use-scroll-restoration";
 import { LensProvider } from "@/hooks/use-lens-context";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, ComponentType } from "react";
+
+/**
+ * Retry wrapper for dynamic imports — handles ChunkLoadError on deployment
+ * race conditions or CDN failures. Retries up to 3 times with cache-busting
+ * query parameter before giving up.
+ */
+function lazyWithRetry(importFn: () => Promise<{ default: ComponentType<any> }>, retries = 3): ReturnType<typeof lazy> {
+  return lazy(() =>
+    importFn().catch((error: Error) => {
+      // Detect ChunkLoadError (stale deployment, CDN cache miss)
+      const isChunkError = error.name === "ChunkLoadError" ||
+        error.message?.includes("Failed to fetch dynamically imported module") ||
+        error.message?.includes("Loading chunk") ||
+        error.message?.includes("Loading CSS chunk");
+
+      if (isChunkError && retries > 0) {
+        return new Promise<{ default: ComponentType<any> }>((resolve) =>
+          setTimeout(resolve, 1000)
+        ).then(() => lazyWithRetry(importFn, retries - 1) as unknown as Promise<{ default: ComponentType<any> }>);
+      }
+
+      // After retries exhausted for chunk errors, force a full page reload
+      // so the browser fetches fresh HTML with updated chunk hashes.
+      if (isChunkError) {
+        const reloadKey = `chunk-reload-${window.location.pathname}`;
+        if (!sessionStorage.getItem(reloadKey)) {
+          sessionStorage.setItem(reloadKey, "1");
+          window.location.reload();
+        }
+      }
+
+      throw error;
+    })
+  );
+}
 
 // Eagerly loaded pages (critical path — login, home, not-found)
 import LoginPage from "@/pages/login";
