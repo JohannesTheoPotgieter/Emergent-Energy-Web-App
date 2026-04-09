@@ -51,7 +51,7 @@ interface MonthData {
   budget: number;
   variance: number;
   variancePct: number;
-  revRealised: number;
+  cashReceived: number;
   ytdCOS: number;
   ytdRealised: number;
   ytdCommitted: number;
@@ -59,7 +59,7 @@ interface MonthData {
   ytdBudget: number;
   ytdVariance: number;
   ytdVariancePct: number;
-  ytdRevRealised: number;
+  ytdCashReceived: number;
   cosProjects: ProjectBreakdown[];
   realisedProjects: ProjectBreakdown[];
   committedProjects: ProjectBreakdown[];
@@ -247,7 +247,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-slate-50 to-slate-100/50 border border-border/60 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Realised (Paid)</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">COS Realised (Invoice Captured)</p>
                   <p className="font-mono font-black text-foreground text-lg mt-0.5" data-testid="text-realised-total">{formatRand(data?.realisedTotal ?? 0)}</p>
                 </div>
                 <Badge variant="secondary" className="bg-slate-200/60 text-foreground text-xs font-semibold">{data?.realisedCount ?? 0}</Badge>
@@ -257,7 +257,7 @@ function MonthDetailDrawer({ monthKey, monthLabel, onClose, defaultFilter = "all
             <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-red-50 to-red-100/50 border border-red-200/60 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-red-600 uppercase tracking-wider">Unrealised (Not Paid)</p>
+                  <p className="text-xs font-medium text-red-600 uppercase tracking-wider">Unrealised (No Invoice)</p>
                   <p className="font-mono font-bold text-red-700 text-lg mt-0.5" data-testid="text-unrealised-total">{formatRand(data?.unrealisedTotal ?? 0)}</p>
                 </div>
                 <Badge variant="secondary" className="bg-red-200/60 text-red-600 text-xs font-semibold">{data?.unrealisedCount ?? 0}</Badge>
@@ -652,9 +652,9 @@ export default function CosTracker() {
   if (isError) return <div className="p-4 md:p-6"><PageError title="Unable to load COS Tracker" message={error instanceof Error ? error.message : "Failed to fetch data"} onRetry={() => refetch()} /></div>;
 
   const kpiCards = [
-    { id: "ytd-total-cos", label: "YTD COS (Planned)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date planned COS from all line items (invoice captured or not). Realised is the paid subset; unrealised is the remaining planned balance." },
-    { id: "ytd-realised", label: "YTD Realised (Paid)", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "COS where the invoice has been raised AND paid. These are confirmed, actual costs." },
-    { id: "ytd-unrealised", label: "YTD Unrealised (Not Paid)", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "COS that is planned or committed but not yet paid. These are forecast costs still at risk of change." },
+    { id: "ytd-total-cos", label: "YTD COS (Total)", value: formatRand(lastMonth?.ytdCOS ?? 0), icon: DollarSign, iconBg: "bg-muted", iconColor: "text-muted-foreground", valueColor: "text-foreground", borderColor: "", tooltip: "Year-to-date total COS from all line items (invoice captured or not). Realised is the subset with supplier invoices captured; unrealised is the remaining balance." },
+    { id: "ytd-realised", label: "YTD COS Realised", value: formatRand(lastMonth?.ytdRealised ?? 0), icon: TrendingDown, iconBg: "bg-muted", iconColor: "text-foreground", valueColor: "text-foreground font-black", borderColor: "border-border", tooltip: "COS where a supplier invoice has been captured under actuals. Invoice number is the only hard check for COS realisation." },
+    { id: "ytd-unrealised", label: "YTD COS Unrealised", value: formatRand(lastMonth?.ytdUnrealised ?? 0), icon: Activity, iconBg: "bg-red-100", iconColor: "text-red-600", valueColor: "text-red-600", borderColor: "border-red-200", tooltip: "COS that is planned or committed but does not yet have a supplier invoice captured. These are forecast costs still at risk of change." },
     { id: "ytd-budget", label: "YTD Costed", value: formatRand(lastMonth?.ytdBudget ?? 0), icon: Target, iconBg: "bg-purple-100", iconColor: "text-purple-600", valueColor: "text-purple-700", borderColor: "", tooltip: "The manually entered costed budget for COS. Editable in the grid below. Used to calculate variance." },
     {
       id: "ytd-variance", label: "YTD Variance", value: formatRand(lastMonth?.ytdVariance ?? 0),
@@ -700,7 +700,7 @@ export default function CosTracker() {
             <div>
               <p className="font-semibold text-amber-900 text-sm">COS Realisation Tracker</p>
               <p className="text-sm text-amber-700/90 mt-0.5 leading-relaxed">
-                Planned = all line items (invoice captured or not). Committed = invoice captured, but the invoice date is not yet confirmed in black font. Realised = invoice captured + invoice date shown in <strong className="text-foreground">black font colour</strong> (paid). <strong className="text-red-600">Red font</strong> = not paid. Data sourced from Finance - COS sheets and Expenditure Breakdown.
+                Planned = no PO or invoice. Committed = PO or invoice captured, but not yet fully confirmed. Realised = supplier invoice number captured under actuals (invoice is the only hard check for COS realisation). <strong className="text-foreground">Black font</strong> = invoice date confirmed. <strong className="text-red-600">Red font</strong> = date not yet confirmed. Data sourced from Finance - COS sheets and Expenditure Breakdown.
               </p>
             </div>
           </CardContent>

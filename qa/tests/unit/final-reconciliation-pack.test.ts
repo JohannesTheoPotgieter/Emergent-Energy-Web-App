@@ -43,10 +43,13 @@ describe("A. TRUTH MAP: Expenditure actuals", () => {
     }
   });
 
-  it("tracker endpoints use getAllCostLinesForCashflow (COS, GP, Revenue, Cashflow)", () => {
+  it("tracker endpoints use canonical cost line reads (high-risk helper or direct)", () => {
     const routes = read("server/departments/finance-routes.ts");
-    const canonicalCalls = (routes.match(/storage\.getAllCostLinesForCashflow\(\)/g) || []).length;
-    expect(canonicalCalls).toBeGreaterThanOrEqual(8);
+    // COS/GP/Revenue trackers use getHighRiskAllCostReadRows() which delegates
+    // to canonical reads; cashflow and admin actions use storage.getAllCostLinesForCashflow().
+    const directCalls = (routes.match(/storage\.getAllCostLinesForCashflow\(\)/g) || []).length;
+    const helperCalls = (routes.match(/getHighRiskAllCostReadRows\(\)/g) || []).length;
+    expect(directCalls + helperCalls).toBeGreaterThanOrEqual(8);
   });
 
   it("write path: createCostLine in finance-line-write-service.ts", () => {
@@ -394,13 +397,13 @@ describe("E. GO/NO-GO: Core finance screens have single source of truth", () => 
     expect(routes).toContain(".from(normalizedCostLines)");
   });
 
-  it("GP Tracker: reads NCL + NRL only", () => {
+  it("GP Tracker: reads NCL via high-risk helper + NRL only", () => {
     const routes = read("server/departments/finance-routes.ts");
     const block = routes.substring(
       routes.indexOf('"/api/gp-tracker"'),
       routes.indexOf('"/api/gp-tracker/project/')
     );
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
+    expect(block).toContain("getHighRiskAllCostReadRows()");
     expect(block).toContain("storage.getAllRevenueLinesForCashflow()");
   });
 
