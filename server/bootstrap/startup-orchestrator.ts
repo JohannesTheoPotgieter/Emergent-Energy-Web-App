@@ -294,29 +294,9 @@ async function runAdditiveSchemaAlignments() {
     );
   `);
 
-  // Handle legacy renamed tables — if _work_items_legacy exists but work_items doesn't
-  // exist as either a TABLE or a VIEW, reassign sequence ownership.
-  // In production, work_items/deliverables are VIEWS so these blocks should NOT run.
-  await safeExec("legacy work_items sequence fix", `
-    DO $$ BEGIN
-      IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_work_items_legacy')
-         AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items')
-         AND NOT EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items')
-      THEN
-        IF EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname='public' AND sequencename='work_items_id_seq') THEN
-          ALTER SEQUENCE work_items_id_seq OWNED BY NONE;
-          ALTER TABLE _work_items_legacy ALTER COLUMN id SET DEFAULT nextval('_work_items_legacy_id_seq'::regclass);
-          BEGIN
-            CREATE SEQUENCE _work_items_legacy_id_seq;
-            PERFORM setval('_work_items_legacy_id_seq', (SELECT COALESCE(MAX(id),0) FROM _work_items_legacy));
-            ALTER TABLE _work_items_legacy ALTER COLUMN id SET DEFAULT nextval('_work_items_legacy_id_seq'::regclass);
-          EXCEPTION WHEN duplicate_table THEN NULL;
-          END;
-          DROP SEQUENCE IF EXISTS work_items_id_seq;
-        END IF;
-      END IF;
-    END $$;
-  `);
+  // NOTE: Legacy work_items sequence/view/trigger blocks removed by
+  // migration 20260409_retire_work_items_view.sql — work_items is now
+  // always a canonical base table.
 
   await safeExec("legacy deliverables sequence fix", `
     DO $$ BEGIN
@@ -340,289 +320,15 @@ async function runAdditiveSchemaAlignments() {
     END $$;
   `);
 
-  await safeExec("legacy work_items index fix", `
-    DO $$ BEGIN
-      IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_work_items_legacy')
-         AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items')
-         AND NOT EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items')
-      THEN
-        ALTER INDEX IF EXISTS work_items_pkey RENAME TO _work_items_legacy_pkey;
-        ALTER INDEX IF EXISTS idx_work_items_deleted RENAME TO _idx_work_items_legacy_deleted;
-        ALTER INDEX IF EXISTS idx_work_items_external_ref RENAME TO _idx_work_items_legacy_external_ref;
-        ALTER INDEX IF EXISTS idx_work_items_owner RENAME TO _idx_work_items_legacy_owner;
-        ALTER INDEX IF EXISTS idx_work_items_project_id RENAME TO _idx_work_items_legacy_project_id;
-        ALTER INDEX IF EXISTS idx_work_items_workstream RENAME TO _idx_work_items_legacy_workstream;
-        ALTER INDEX IF EXISTS work_items_external_ref_key RENAME TO _work_items_legacy_external_ref_key;
-      END IF;
-    END $$;
-  `);
 
-  await safeExec("work_items view insert trigger fix", `
-    DO $$ BEGIN
-      IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items')
-         AND EXISTS (SELECT 1 FROM pg_proc WHERE proname='_work_items_view_insert') THEN
-        CREATE OR REPLACE FUNCTION public._work_items_view_insert()
-        RETURNS trigger LANGUAGE plpgsql AS $fn$
-        DECLARE
-          resolved_id INTEGER;
-        BEGIN
-          resolved_id := COALESCE(NEW.id, nextval('work_items_id_seq'));
-          INSERT INTO core.work_items (
-            id, client_id, project_id, workstream, type, source, title, description,
-            status, priority, start_date, end_date, duration, percent_complete,
-            wbs_code, outline_number, parent_id, parent_work_item_id,
-            owner_user_id, is_shared, external_ref, legacy_table, legacy_id,
-            created_by, created_at, updated_at, deleted_at,
-            scheduled_date, scheduled_start_time, scheduled_end_time,
-            expected_pct_complete, indent_level, is_milestone, phase,
-            owner_name, source_row, source_sheet, import_run_id,
-            baseline_start, baseline_end, baseline_duration, task_mode,
-            actual_start, actual_end, actual_duration, sort_order,
-            estimate_minutes, task_category, is_recurring, recurrence_frequency,
-            recurrence_interval, recurrence_days_of_week, recurrence_end_date,
-            recurrence_parent_id, sub_project_name, hold_reason, blocked_type,
-            approval_required, linked_plan_item_id, linked_deliverable_id,
-            linked_quality_item_instance_id, completed_at, tracking_rag,
-            task_type_tag, blocker_reason, pd_ticket_id, planned_hours,
-            actual_hours, bucket, pinned_today, pinned_week,
-            source_email_id, source_email_subject, next_step,
-            definition_of_done, completion_note, source_table
-          ) VALUES (
-            resolved_id, NEW.client_id, NEW.project_id, NEW.workstream, NEW.type, NEW.source, NEW.title, NEW.description,
-            NEW.status, NEW.priority, NEW.start_date, NEW.end_date, NEW.duration, NEW.percent_complete,
-            NEW.wbs_code, NEW.outline_number, NEW.parent_id, NEW.parent_id,
-            NEW.owner_user_id, COALESCE(NEW.is_shared, false), NEW.external_ref, NEW.legacy_table, NEW.legacy_id,
-            NEW.created_by, COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW()), NEW.deleted_at,
-            NEW.scheduled_date, NEW.scheduled_start_time, NEW.scheduled_end_time,
-            NEW.expected_pct_complete, NEW.indent_level, COALESCE(NEW.is_milestone, false), NEW.phase,
-            NEW.owner_name, NEW.source_row, NEW.source_sheet, NEW.import_run_id,
-            NEW.baseline_start, NEW.baseline_end, NEW.baseline_duration, NEW.task_mode,
-            NEW.actual_start, NEW.actual_end, NEW.actual_duration, COALESCE(NEW.sort_order, 0),
-            NEW.estimate_minutes, NEW.task_category, COALESCE(NEW.is_recurring, false), NEW.recurrence_frequency,
-            NEW.recurrence_interval, NEW.recurrence_days_of_week, NEW.recurrence_end_date,
-            NEW.recurrence_parent_id, NEW.sub_project_name, NEW.hold_reason, NEW.blocked_type,
-            COALESCE(NEW.approval_required, false), NEW.linked_plan_item_id, NEW.linked_deliverable_id,
-            NEW.linked_quality_item_instance_id, NEW.completed_at, NEW.tracking_rag,
-            NEW.task_type_tag, NEW.blocker_reason, NEW.pd_ticket_id, NEW.planned_hours,
-            NEW.actual_hours, NEW.bucket, COALESCE(NEW.pinned_today, false), COALESCE(NEW.pinned_week, false),
-            NEW.source_email_id, NEW.source_email_subject, NEW.next_step,
-            NEW.definition_of_done, NEW.completion_note, 'public.work_items'
-          )
-          ON CONFLICT (id) DO UPDATE SET
-            status = EXCLUDED.status, title = EXCLUDED.title, description = EXCLUDED.description,
-            priority = EXCLUDED.priority, owner_user_id = EXCLUDED.owner_user_id,
-            updated_at = NOW(), deleted_at = EXCLUDED.deleted_at;
-          NEW.id := resolved_id;
-          IF NEW.external_ref IS NOT NULL THEN
-            DELETE FROM public._work_items_legacy
-            WHERE external_ref = NEW.external_ref AND id != resolved_id;
-          END IF;
-          INSERT INTO public._work_items_legacy (
-            id, client_id, project_id, workstream, type, source, title, description,
-            status, priority, start_date, end_date, duration, percent_complete,
-            wbs_code, outline_number, parent_id,
-            owner_user_id, is_shared, external_ref, legacy_table, legacy_id,
-            created_by, created_at, updated_at, deleted_at,
-            scheduled_date, scheduled_start_time, scheduled_end_time,
-            expected_pct_complete, indent_level, is_milestone, phase,
-            owner_name, source_row, source_sheet, import_run_id,
-            baseline_start, baseline_end, baseline_duration, task_mode,
-            actual_start, actual_end, actual_duration, sort_order,
-            estimate_minutes, task_category, is_recurring, recurrence_frequency,
-            recurrence_interval, recurrence_days_of_week, recurrence_end_date,
-            recurrence_parent_id, sub_project_name, hold_reason, blocked_type,
-            approval_required, linked_plan_item_id, linked_deliverable_id,
-            linked_quality_item_instance_id, completed_at, tracking_rag,
-            task_type_tag, blocker_reason, pd_ticket_id, planned_hours,
-            actual_hours, bucket, pinned_today, pinned_week,
-            source_email_id, source_email_subject, next_step,
-            definition_of_done, completion_note
-          ) VALUES (
-            NEW.id, NEW.client_id, NEW.project_id,
-            NEW.workstream::work_item_workstream, NEW.type, NEW.source::work_item_source,
-            NEW.title, NEW.description,
-            NEW.status, NEW.priority, NEW.start_date, NEW.end_date, NEW.duration, NEW.percent_complete,
-            NEW.wbs_code, NEW.outline_number, NEW.parent_id,
-            NEW.owner_user_id, COALESCE(NEW.is_shared, false), NEW.external_ref, NEW.legacy_table, NEW.legacy_id,
-            NEW.created_by, COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW()), NEW.deleted_at,
-            NEW.scheduled_date, NEW.scheduled_start_time, NEW.scheduled_end_time,
-            NEW.expected_pct_complete, NEW.indent_level, COALESCE(NEW.is_milestone, false), NEW.phase,
-            NEW.owner_name, NEW.source_row, NEW.source_sheet, NEW.import_run_id,
-            NEW.baseline_start, NEW.baseline_end, NEW.baseline_duration, NEW.task_mode,
-            NEW.actual_start, NEW.actual_end, NEW.actual_duration, COALESCE(NEW.sort_order, 0),
-            NEW.estimate_minutes, NEW.task_category, COALESCE(NEW.is_recurring, false), NEW.recurrence_frequency,
-            NEW.recurrence_interval, NEW.recurrence_days_of_week, NEW.recurrence_end_date,
-            NEW.recurrence_parent_id, NEW.sub_project_name, NEW.hold_reason, NEW.blocked_type,
-            COALESCE(NEW.approval_required, false), NEW.linked_plan_item_id, NEW.linked_deliverable_id,
-            NEW.linked_quality_item_instance_id, NEW.completed_at, NEW.tracking_rag,
-            NEW.task_type_tag, NEW.blocker_reason, NEW.pd_ticket_id, NEW.planned_hours,
-            NEW.actual_hours, NEW.bucket, COALESCE(NEW.pinned_today, false), COALESCE(NEW.pinned_week, false),
-            NEW.source_email_id, NEW.source_email_subject, NEW.next_step,
-            NEW.definition_of_done, NEW.completion_note
-          )
-          ON CONFLICT (id) DO UPDATE SET
-            status = EXCLUDED.status, title = EXCLUDED.title, updated_at = EXCLUDED.updated_at;
-          RETURN NEW;
-        END;
-        $fn$;
-        RAISE NOTICE '[DB] Updated _work_items_view_insert trigger to auto-generate IDs';
-      END IF;
-    END $$;
-  `);
-
-  await safeExec("work_items view update trigger", `
-    DO $$ BEGIN
-      IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items')
-         AND EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='core' AND tablename='work_items') THEN
-        CREATE OR REPLACE FUNCTION public._work_items_view_update()
-        RETURNS trigger LANGUAGE plpgsql AS $fn$
-        BEGIN
-          UPDATE core.work_items SET
-            client_id = NEW.client_id,
-            project_id = NEW.project_id,
-            workstream = NEW.workstream,
-            type = NEW.type,
-            source = NEW.source,
-            title = NEW.title,
-            description = NEW.description,
-            status = NEW.status,
-            priority = NEW.priority,
-            start_date = NEW.start_date,
-            end_date = NEW.end_date,
-            duration = NEW.duration,
-            percent_complete = NEW.percent_complete,
-            wbs_code = NEW.wbs_code,
-            outline_number = NEW.outline_number,
-            parent_id = NEW.parent_id,
-            owner_user_id = NEW.owner_user_id,
-            is_shared = COALESCE(NEW.is_shared, OLD.is_shared),
-            external_ref = NEW.external_ref,
-            legacy_table = NEW.legacy_table,
-            legacy_id = NEW.legacy_id,
-            updated_at = COALESCE(NEW.updated_at, NOW()),
-            deleted_at = NEW.deleted_at,
-            scheduled_date = NEW.scheduled_date,
-            scheduled_start_time = NEW.scheduled_start_time,
-            scheduled_end_time = NEW.scheduled_end_time,
-            expected_pct_complete = NEW.expected_pct_complete,
-            indent_level = NEW.indent_level,
-            is_milestone = COALESCE(NEW.is_milestone, OLD.is_milestone),
-            phase = NEW.phase,
-            owner_name = NEW.owner_name,
-            source_row = NEW.source_row,
-            source_sheet = NEW.source_sheet,
-            import_run_id = NEW.import_run_id,
-            baseline_start = NEW.baseline_start,
-            baseline_end = NEW.baseline_end,
-            baseline_duration = NEW.baseline_duration,
-            task_mode = NEW.task_mode,
-            actual_start = NEW.actual_start,
-            actual_end = NEW.actual_end,
-            actual_duration = NEW.actual_duration,
-            sort_order = COALESCE(NEW.sort_order, OLD.sort_order),
-            estimate_minutes = NEW.estimate_minutes,
-            task_category = NEW.task_category,
-            is_recurring = COALESCE(NEW.is_recurring, OLD.is_recurring),
-            recurrence_frequency = NEW.recurrence_frequency,
-            recurrence_interval = NEW.recurrence_interval,
-            recurrence_days_of_week = NEW.recurrence_days_of_week,
-            recurrence_end_date = NEW.recurrence_end_date,
-            recurrence_parent_id = NEW.recurrence_parent_id,
-            sub_project_name = NEW.sub_project_name,
-            hold_reason = NEW.hold_reason,
-            blocked_type = NEW.blocked_type,
-            approval_required = COALESCE(NEW.approval_required, OLD.approval_required),
-            linked_plan_item_id = NEW.linked_plan_item_id,
-            linked_deliverable_id = NEW.linked_deliverable_id,
-            linked_quality_item_instance_id = NEW.linked_quality_item_instance_id,
-            completed_at = NEW.completed_at,
-            tracking_rag = NEW.tracking_rag,
-            task_type_tag = NEW.task_type_tag,
-            blocker_reason = NEW.blocker_reason,
-            pd_ticket_id = NEW.pd_ticket_id,
-            planned_hours = NEW.planned_hours,
-            actual_hours = NEW.actual_hours,
-            bucket = NEW.bucket,
-            pinned_today = COALESCE(NEW.pinned_today, OLD.pinned_today),
-            pinned_week = COALESCE(NEW.pinned_week, OLD.pinned_week),
-            source_email_id = NEW.source_email_id,
-            source_email_subject = NEW.source_email_subject,
-            next_step = NEW.next_step,
-            definition_of_done = NEW.definition_of_done,
-            completion_note = NEW.completion_note
-          WHERE id = OLD.id;
-
-          UPDATE public._work_items_legacy SET
-            status = NEW.status,
-            title = NEW.title,
-            description = NEW.description,
-            priority = NEW.priority,
-            percent_complete = NEW.percent_complete,
-            start_date = NEW.start_date,
-            end_date = NEW.end_date,
-            duration = NEW.duration,
-            owner_user_id = NEW.owner_user_id,
-            owner_name = NEW.owner_name,
-            phase = NEW.phase,
-            actual_start = NEW.actual_start,
-            actual_end = NEW.actual_end,
-            actual_duration = NEW.actual_duration,
-            import_run_id = NEW.import_run_id,
-            updated_at = COALESCE(NEW.updated_at, NOW()),
-            deleted_at = NEW.deleted_at
-          WHERE id = OLD.id;
-
-          RETURN NEW;
-        END;
-        $fn$;
-
-        DROP TRIGGER IF EXISTS _work_items_view_update_trigger ON public.work_items;
-        CREATE TRIGGER _work_items_view_update_trigger
-          INSTEAD OF UPDATE ON public.work_items
-          FOR EACH ROW EXECUTE FUNCTION public._work_items_view_update();
-
-        RAISE NOTICE '[DB] Created _work_items_view_update trigger on work_items view';
-      END IF;
-    END $$;
-  `);
-
-  await safeExec("sync work_items_id_seq to max(id)", `
-    DO $$
-    DECLARE max_id BIGINT;
-    DECLARE seq_exists BOOLEAN;
-    DECLARE core_exists BOOLEAN;
-    BEGIN
-      SELECT EXISTS (
-        SELECT 1 FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE c.relkind = 'S' AND c.relname = 'work_items_id_seq'
-      ) INTO seq_exists;
-
-      SELECT EXISTS (
-        SELECT 1 FROM pg_tables WHERE schemaname = 'core' AND tablename = 'work_items'
-      ) INTO core_exists;
-
-      IF seq_exists AND core_exists THEN
-        SELECT COALESCE(MAX(id), 0) INTO max_id FROM core.work_items;
-        IF max_id > 0 THEN
-          PERFORM setval('work_items_id_seq', max_id, true);
-          RAISE NOTICE '[DB] Synced work_items_id_seq to %', max_id;
-        END IF;
-      ELSIF seq_exists THEN
-        SELECT COALESCE(MAX(id), 0) INTO max_id FROM public.work_items;
-        IF max_id > 0 THEN
-          PERFORM setval('work_items_id_seq', max_id, true);
-          RAISE NOTICE '[DB] Synced work_items_id_seq (from public.work_items) to %', max_id;
-        END IF;
-      END IF;
-    END $$;
-  `);
-
+  // [REMOVED] work_items view insert trigger fix — retired by 20260409_retire_work_items_view.sql
+  // [REMOVED] work_items view update trigger — retired by 20260409_retire_work_items_view.sql
+  // [REMOVED] sync work_items_id_seq — handled by migration and full-schema-alignment.sql
   const wiExists = await db.execute(sql.raw(
-    "SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items' UNION ALL SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"
+    "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"
   ));
   if (wiExists.rows.length > 0) {
-    console.log("[DB] work_items already exists (table or view) — skipping creation");
+    console.log("[DB] work_items base table exists — skipping creation");
   } else {
     await safeExec("work_items table", `
       CREATE TABLE IF NOT EXISTS work_items (
@@ -1084,29 +790,25 @@ async function runAdditiveSchemaAlignments() {
     );
   `);
 
-  const wiTableForTags = await db.execute(sql.raw("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"));
-  if (wiTableForTags.rows.length > 0) {
-    await safeExec("work_item_tags table", `
-      CREATE TABLE IF NOT EXISTS work_item_tags (
-        id SERIAL PRIMARY KEY,
-        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
-        tag_id INTEGER NOT NULL REFERENCES task_tags(id) ON DELETE CASCADE,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        CONSTRAINT work_item_tags_unique UNIQUE (work_item_id, tag_id)
-      );
-      CREATE TABLE IF NOT EXISTS task_time_entries (
-        id SERIAL PRIMARY KEY,
-        work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        duration_minutes INTEGER NOT NULL,
-        description TEXT,
-        date TEXT NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `);
-  } else {
-    console.log("[DB] work_items is not a BASE TABLE — skipping work_item_tags/task_time_entries creation");
-  }
+  // work_items is always a base table now (view retired by 20260409 migration)
+  await safeExec("work_item_tags table", `
+    CREATE TABLE IF NOT EXISTS work_item_tags (
+      id SERIAL PRIMARY KEY,
+      work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+      tag_id INTEGER NOT NULL REFERENCES task_tags(id) ON DELETE CASCADE,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      CONSTRAINT work_item_tags_unique UNIQUE (work_item_id, tag_id)
+    );
+    CREATE TABLE IF NOT EXISTS task_time_entries (
+      id SERIAL PRIMARY KEY,
+      work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      duration_minutes INTEGER NOT NULL,
+      description TEXT,
+      date TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
 
   // ── Permission system ──
   await safeExec("permission system", `
@@ -1141,33 +843,28 @@ async function runAdditiveSchemaAlignments() {
     CREATE INDEX IF NOT EXISTS idx_pal_target_role ON permission_audit_log(target_role);
   `);
 
-  // ── work_items columns (skip if work_items is a VIEW in production) ──
-  const wiTableResult = await db.execute(sql.raw("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"));
-  if (wiTableResult.rows.length > 0) {
-    await safeExec("work_items columns", `
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_category TEXT;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT false;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_frequency TEXT;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_interval INTEGER DEFAULT 1;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_days_of_week TEXT;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_end_date TEXT;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_parent_id INTEGER;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS hold_reason TEXT;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocked_type TEXT;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS approval_required BOOLEAN NOT NULL DEFAULT false;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_plan_item_id INTEGER;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_deliverable_id INTEGER;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_quality_item_instance_id INTEGER;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS tracking_rag TEXT;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_type_tag TEXT;
-      ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocker_reason TEXT;
-    `);
-  } else {
-    console.log("[DB] work_items is not a BASE TABLE — skipping column additions");
-  }
+  // ── work_items columns (work_items is always a base table now) ──
+  await safeExec("work_items columns", `
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_category TEXT;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS is_recurring BOOLEAN DEFAULT false;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_frequency TEXT;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_interval INTEGER DEFAULT 1;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_days_of_week TEXT;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_end_date TEXT;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS recurrence_parent_id INTEGER;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS hold_reason TEXT;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocked_type TEXT;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS approval_required BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_plan_item_id INTEGER;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_deliverable_id INTEGER;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS linked_quality_item_instance_id INTEGER;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS completed_at TIMESTAMP;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS tracking_rag TEXT;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_type_tag TEXT;
+    ALTER TABLE work_items ADD COLUMN IF NOT EXISTS blocker_reason TEXT;
+  `);
 
   // ── program_expense / inflows / revenue columns ──
   await safeExec("financial table columns", `

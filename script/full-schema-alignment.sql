@@ -6,10 +6,25 @@
 -- Renames _work_items_legacy → work_items, _deliverables_legacy → deliverables
 -- Only runs if the legacy table exists and the target does NOT exist.
 -- ═══════════════════════════════════════════════════════════
+-- Drop work_items VIEW if it exists (retired by 20260409 migration).
+-- This unblocks the rename below and makes work_items a direct base table.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items') THEN
+    -- Drop orphaned triggers/functions first
+    DROP TRIGGER IF EXISTS _work_items_view_update_trigger ON public.work_items;
+    DROP TRIGGER IF EXISTS _work_items_view_insert_trigger ON public.work_items;
+    DROP TRIGGER IF EXISTS _work_items_view_delete_trigger ON public.work_items;
+    DROP FUNCTION IF EXISTS public._work_items_view_update() CASCADE;
+    DROP FUNCTION IF EXISTS public._work_items_view_insert() CASCADE;
+    DROP FUNCTION IF EXISTS public._work_items_view_delete() CASCADE;
+    DROP VIEW public.work_items;
+    RAISE NOTICE 'Dropped VIEW public.work_items and associated triggers';
+  END IF;
+END $$;
+
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_work_items_legacy')
      AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items')
-     AND NOT EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='work_items')
   THEN
     ALTER TABLE _work_items_legacy RENAME TO work_items;
     RAISE NOTICE 'Renamed _work_items_legacy → work_items';
