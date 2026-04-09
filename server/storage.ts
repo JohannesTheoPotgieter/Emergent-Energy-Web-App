@@ -11,12 +11,13 @@ import { FinanceInflowsRepository } from "./repositories/finance-inflows-reposit
 import { FinanceExpenseEngineRepository } from "./repositories/finance-expense-engine-repository";
 import { ProjectInfoRepository } from "./repositories/project-info-repository";
 import { ProjectInfoReadRepository } from "./repositories/project-info-read-repository";
+import { ProjectStateRepository } from "./repositories/project-state-repository";
 import { shouldUseLegacyProjectInfoReadFallback, listLegacyCompatibleProjectInfo } from "./lib/project-info-fallback";
 import { softCloseByProjectName } from "./lib/temporal-helpers";
-import { eq, desc, and, or, gte, lte, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, isNull, sql, inArray, not, ilike } from "drizzle-orm";
 import {
   users, uploadMetadata, refreshLogs,
-  projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, projectPlan,
+  projectInfo, normalizedCostLines, normalizedRevenueLines, workItems, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   workingPlanScenario, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
@@ -431,6 +432,7 @@ export class DatabaseStorage implements IStorage {
   private readonly financeExpenseEngineRepository: FinanceExpenseEngineRepository;
   private readonly projectInfoRepository: ProjectInfoRepository;
   private readonly projectInfoReadRepository: ProjectInfoReadRepository;
+  private readonly projectStateRepository: ProjectStateRepository;
 
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -450,6 +452,7 @@ export class DatabaseStorage implements IStorage {
     this.financeExpenseEngineRepository = new FinanceExpenseEngineRepository(this.dbInstance);
     this.projectInfoRepository = new ProjectInfoRepository(this.dbInstance);
     this.projectInfoReadRepository = new ProjectInfoReadRepository(this.dbInstance);
+    this.projectStateRepository = new ProjectStateRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -839,45 +842,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markProjectsActive(activeNames: string[]): Promise<void> {
-    if (activeNames.length === 0) return;
-
-    // Touch updated_at on project_info for active projects (identity-table timestamp only).
-    // NOTE: is_active was dropped from project_info in migration 20260337.
-    // The Drizzle schema no longer includes isActive on projectInfo, so the
-    // previous Drizzle writes of isActive were silently ignored (op 1) or
-    // produced invalid SQL (op 2).  Removed in this remediation —
-    // project_execution_state is the sole source of truth.
-    await this.dbInstance
-      .update(projectInfo)
-      .set({ updatedAt: new Date() })
-      .where(inArray(projectInfo.projectName, activeNames));
-
-    // Canonical state writes: project_execution_state owns active/archived.
-    // is_active is maintained alongside deleted_at during the 30-day
-    // observation window (deprecated 2026-03-31).
-    await this.dbInstance.execute(sql`
-      UPDATE project_execution_state SET deleted_at = NULL, is_active = true, updated_at = NOW()
-      WHERE project_id IN (SELECT id FROM project_info WHERE project_name = ANY(${activeNames}))
-    `);
-    await this.dbInstance.execute(sql`
-      UPDATE project_execution_state SET deleted_at = NOW(), is_active = false, updated_at = NOW()
-      WHERE project_id IN (SELECT id FROM project_info WHERE project_name != ALL(${activeNames}))
-        AND deleted_at IS NULL
-    `);
+    return this.projectStateRepository.markProjectsActive(activeNames);
   }
 
   async getProjectCounts(): Promise<{ active: number; historical: number; total: number }> {
-    const [activeResult] = await this.dbInstance
-      .select({ count: count() })
-      .from(projectInfo)
-      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-      .where(isNull(projectExecutionState.deletedAt));
-    const [totalResult] = await this.dbInstance
-      .select({ count: count() })
-      .from(projectInfo);
-    const active = activeResult?.count || 0;
-    const total = totalResult?.count || 0;
-    return { active, historical: total - active, total };
+    return this.projectStateRepository.getProjectCounts();
   }
 
   // Short-TTL cache for getAllProgramExpenses to reduce repeated full-table
