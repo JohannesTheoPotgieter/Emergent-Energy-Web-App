@@ -171,12 +171,13 @@ app.get("/api/reports/operational", jwtAuth, requireAuth, requirePermission("per
       // Commissioning queue
       db.execute(sql`
         SELECT
-          pi.project_name, pi.client_name, pi.pm,
+          pi.project_name, COALESCE(c.name, '') AS client_name, pi.pm,
           psi.stage_status, psi.readiness_pct,
           psi.target_exit_date AS planned_date,
           COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) AS days_in_stage
         FROM project_stage_instances psi
         JOIN project_info pi ON pi.id = psi.project_id
+        LEFT JOIN clients c ON c.id = pi.client_id
         WHERE psi.stage_code = 'S07_COMMISSIONING'
           AND psi.stage_status NOT IN ('NOT_STARTED', 'PROGRESSED')
         ORDER BY psi.target_exit_date ASC NULLS LAST
@@ -185,11 +186,12 @@ app.get("/api/reports/operational", jwtAuth, requireAuth, requirePermission("per
       // Handover queue (O&M + Client)
       db.execute(sql`
         SELECT
-          pi.project_name, pi.client_name, pi.pm,
+          pi.project_name, COALESCE(c.name, '') AS client_name, pi.pm,
           psi.stage_code, psi.stage_status, psi.readiness_pct,
           COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) AS days_in_stage
         FROM project_stage_instances psi
         JOIN project_info pi ON pi.id = psi.project_id
+        LEFT JOIN clients c ON c.id = pi.client_id
         WHERE psi.stage_code IN ('S08_OM_HANDOVER', 'S09_CLIENT_HANDOVER')
           AND psi.stage_status NOT IN ('NOT_STARTED', 'PROGRESSED')
         ORDER BY psi.stage_code, days_in_stage DESC
