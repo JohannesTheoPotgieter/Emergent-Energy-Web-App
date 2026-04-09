@@ -65,7 +65,7 @@ Preferred communication style: Simple, everyday language.
 - **Session management:** Express session; uses in-memory store for SQLite mode, persistent store for PostgreSQL mode
 - **Error handling:** Centralized API error class (`server/lib/api-error.ts`); all errors return JSON `{ error, message }`
 - **Startup orchestration:** `server/bootstrap/startup-orchestrator.ts` runs all additive migrations with `IF NOT EXISTS` guards; controlled by feature flags (`ENABLE_STARTUP_SCHEMA_REPAIR`, `ENABLE_STARTUP_DATA_SEED`, etc.)
-- **work_items view triggers:** In production, `work_items` is a VIEW over `core.work_items`. INSTEAD OF triggers handle INSERT (`_work_items_view_insert`) and UPDATE (`_work_items_view_update`), routing changes to both `core.work_items` and `_work_items_legacy`. Trigger creation is guarded by `core.work_items` table existence check.
+- **work_items:** `public.work_items` is a canonical base table (the writable-view architecture over `core.work_items` was retired by migration `20260409_retire_work_items_view.sql`). All CRUD goes directly to the base table via Drizzle ORM.
 
 ### Database Strategy — Dual-Mode (PostgreSQL + SQLite)
 
