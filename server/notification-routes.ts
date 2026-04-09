@@ -34,11 +34,11 @@ export function registerNotificationRoutes(app: Express) {
       if (!user?.id) return res.status(401).json({ error: "Not authenticated" });
 
       const result = await db
-        .select({ count: sql<number>`count(*)::int` })
+        .select({ count: sql<number>`count(*)` })
         .from(notifications)
         .where(and(eq(notifications.recipientUserId, user.id), eq(notifications.isRead, false)));
 
-      res.json({ count: result[0]?.count ?? 0 });
+      res.json({ count: Number(result[0]?.count ?? 0) });
     } catch (err: unknown) {
       res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
     }

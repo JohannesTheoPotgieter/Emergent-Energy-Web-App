@@ -113,7 +113,7 @@ async function tryRefreshToken(account: typeof msAccounts.$inferSelect): Promise
   try {
     JSON.parse(serializedCache);
   } catch {
-    console.error(`[MS Token] Token cache for user ${account.userId} is not valid JSON — marking for re-auth. Cache starts with: ${serializedCache.substring(0, 50)}...`);
+    console.error(`[MS Token] Token cache for user ${account.userId} is not valid JSON (length=${serializedCache.length}) — marking for re-auth.`);
     // Clear the corrupted cache so the user is prompted to re-authenticate
     await db
       .update(msAccounts)
