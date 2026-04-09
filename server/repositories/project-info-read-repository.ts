@@ -1,5 +1,5 @@
 import { eq, desc } from "drizzle-orm";
-import { projectInfo, projectExecutionState } from "@shared/schema";
+import { projectInfo, projectExecutionState, type ProjectInfo } from "@shared/schema";
 import { db } from "../db";
 import {
   shouldUseLegacyProjectInfoReadFallback,
@@ -44,6 +44,32 @@ export class ProjectInfoReadRepository {
     } catch (error) {
       if (shouldUseLegacyProjectInfoReadFallback(error)) {
         return listLegacyCompatibleProjectInfo(this.dbInstance);
+      }
+      throw error;
+    }
+  }
+
+  async getByName(projectName: string): Promise<ProjectInfo | undefined> {
+    try {
+      const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
+      return info;
+    } catch (error) {
+      if (shouldUseLegacyProjectInfoReadFallback(error)) {
+        const [info] = await listLegacyCompatibleProjectInfo(this.dbInstance, { projectName });
+        return info;
+      }
+      throw error;
+    }
+  }
+
+  async getById(id: number): Promise<ProjectInfo | undefined> {
+    try {
+      const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.id, id));
+      return info;
+    } catch (error) {
+      if (shouldUseLegacyProjectInfoReadFallback(error)) {
+        const [info] = await listLegacyCompatibleProjectInfo(this.dbInstance, { id });
+        return info;
       }
       throw error;
     }
