@@ -1,6 +1,7 @@
 import { and, inArray, isNull, sql } from "drizzle-orm";
 import { normalizedCostLines, normalizedRevenueLines, workItems } from "@shared/schema";
 import { db, getDbMode } from "../db";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 
 function toNumber(value: unknown): number {
   if (value === null || value === undefined || value === "") return 0;
@@ -88,8 +89,17 @@ export async function getCanonicalFinanceByProjectIds(projectIds: number[]): Pro
       } else {
         current.outstandingCost += amount;
       }
-      // COS realised = invoice number present (canonical invoice-only rule)
-      if (row.invoiceNumber && String(row.invoiceNumber).trim()) {
+      // COS realised via canonical check (invoice-only hard rule + overrides)
+      if (isCanonicalCosRealised({
+        status: null,
+        cosStatusOverride: (row as any).cosStatusOverride ?? null,
+        cosRealised: (row as any).cosRealised ?? null,
+        expenseInvoiceNumber: row.invoiceNumber ?? null,
+        expenseInvoicedDate: (row as any).invoiceDate ?? null,
+        expensePoNumber: (row as any).poNumber ?? null,
+        paymentDate: (row as any).paidDate ?? null,
+        today: new Date().toISOString().slice(0, 10),
+      })) {
         current.realisedCost += amount;
       }
     }
