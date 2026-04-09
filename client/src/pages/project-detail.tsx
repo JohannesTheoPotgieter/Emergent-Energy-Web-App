@@ -1350,8 +1350,14 @@ export default function ProjectDetailPage() {
 
   const isCosRealised = (e: any): boolean => {
     const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
-    const hasInvDate = !!(e.expenseInvoicedDate && String(e.expenseInvoicedDate).trim());
-    return hasInvoice && hasInvDate;
+    const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
+    const hasCommittedSignal = status === "COMMITTED" || override === "COMMITTED" || hasPO || hasInvoice;
+    if (!hasCommittedSignal) return false;
+
+    const invDate = e.expenseInvoicedDate || e.paymentDate || e.expensePaymentDate || "";
+    const dateStr = String(invDate).trim().slice(0, 7);
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    return dateStr.length === 7 && dateStr < currentMonth;
   };
 
   // COS realisation
