@@ -7,12 +7,13 @@ import { MytoolStateRepository } from "./repositories/mytool-state-repository";
 import { ProjectSupportRepository } from "./repositories/project-support-repository";
 import { FinanceSupportRepository } from "./repositories/finance-support-repository";
 import { FinanceTemporalRepository } from "./repositories/finance-temporal-repository";
+import { FinanceInflowsRepository } from "./repositories/finance-inflows-repository";
 import { softCloseByProjectName } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
   users, uploadMetadata, refreshLogs,
-  projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, programInflows, projectPlan,
+  projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, programExpense, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   workingPlanScenario, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
@@ -423,6 +424,7 @@ export class DatabaseStorage implements IStorage {
   private readonly projectSupportRepository: ProjectSupportRepository;
   private readonly financeSupportRepository: FinanceSupportRepository;
   private readonly financeTemporalRepository: FinanceTemporalRepository;
+  private readonly financeInflowsRepository: FinanceInflowsRepository;
 
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -438,6 +440,7 @@ export class DatabaseStorage implements IStorage {
     this.projectSupportRepository = new ProjectSupportRepository(this.dbInstance);
     this.financeSupportRepository = new FinanceSupportRepository(this.dbInstance);
     this.financeTemporalRepository = new FinanceTemporalRepository(this.dbInstance);
+    this.financeInflowsRepository = new FinanceInflowsRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -1350,88 +1353,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateProgramInflowFields(id: number, fields: Record<string, any>): Promise<any | undefined> {
-    const fieldMap: Record<string, string> = {
-      milestoneInvoiceNumber: 'invoiceNumber',
-      invoiceRaisedDate: 'invoiceDate',
-      paymentReceivedDate: 'paidDate',
-      plannedPaymentDate: 'expectedPaymentDate',
-      milestoneAmount: 'amountExVat',
-      milestoneName: 'milestoneName',
-      milestoneNotes: 'description',
-      invoiceDateFontColor: 'invoiceDateFontColor',
-      invoiceDateConfirmed: 'invoiceDateConfirmed',
-      paidDateFontColor: 'paidDateFontColor',
-      paidDateConfirmed: 'paidDateConfirmed',
-      inBankDate: 'inBankDate',
-    };
-    const mappedFields: Record<string, any> = {};
-    for (const [key, value] of Object.entries(fields)) {
-      const mapped = fieldMap[key] || key;
-      mappedFields[mapped] = value;
-    }
-    if (Object.keys(mappedFields).length === 0) return undefined;
-    const canonicalId = id < 0 ? -id : (id >= 900000 ? id - 900000 : id);
-    const result = await this.dbInstance
-      .update(normalizedRevenueLines)
-      .set(mappedFields)
-      .where(eq(normalizedRevenueLines.id, canonicalId))
-      .returning();
-    if (!result[0]) return undefined;
-    const { adaptRevenueToInflow } = await import("./lib/data-merge");
-    return adaptRevenueToInflow(result[0], result[0].projectName);
+    return this.financeInflowsRepository.updateProgramInflowFields(id, fields);
   }
 
   async getAllProgramInflows(): Promise<any[]> {
-    const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
-    const [revLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
-      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
-    ]);
-    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    return revLines.map((r: any) => adaptRevenueToInflow(r, resolve(r.projectName)));
+    return this.financeInflowsRepository.getAllProgramInflows();
   }
 
   async getAllRevenueLinesForCashflow(): Promise<any[]> {
-    // Canonical read: normalized_revenue_lines only, no promoted fallback complexity.
-    // Aligns cashflow inflow reads with the canonical source.
-    const { adaptRevenueToInflow, createNameResolver } = await import("./lib/data-merge");
-    const [revLines, piRows] = await Promise.all([
-      this.dbInstance.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
-      this.dbInstance.select({ projectName: projectInfo.projectName }).from(projectInfo),
-    ]);
-    const resolve = createNameResolver(piRows.map((r: any) => r.projectName));
-    return revLines.map((r: any) => adaptRevenueToInflow(r, resolve(r.projectName)));
+    return this.financeInflowsRepository.getAllRevenueLinesForCashflow();
   }
 
   async getProgramInflowsByProject(projectName: string): Promise<any[]> {
-    const { adaptRevenueToInflow } = await import("./lib/data-merge");
-    const revLines = await this.dbInstance.select().from(normalizedRevenueLines)
-      .where(and(eq(normalizedRevenueLines.projectName, projectName), isNull(normalizedRevenueLines.effectiveTo)));
-    return revLines.map((r: any) => adaptRevenueToInflow(r, projectName));
+    return this.financeInflowsRepository.getProgramInflowsByProject(projectName);
   }
 
   async createManyProgramInflows(inflowList: InsertProgramInflows[]): Promise<ProgramInflows[]> {
-    if (inflowList.length === 0) return [];
-    const mapped = inflowList.map((i: any) => ({
-      projectName: i.projectName,
-      milestoneName: i.milestoneName || null,
-      description: i.milestoneName || null,
-      amountExVat: i.milestoneAmount?.toString() || null,
-      invoiceNumber: i.milestoneInvoiceNumber || null,
-      invoiceDate: i.invoiceRaisedDate || null,
-      expectedPaymentDate: i.plannedPaymentDate || null,
-      paidDate: i.paymentReceivedDate || null,
-      sourceRow: i.rowNumber || null,
-      importRunId: 0,
-    }));
-    const results = await this.dbInstance.insert(normalizedRevenueLines).values(mapped).returning();
-    const { adaptRevenueToInflow } = await import("./lib/data-merge");
-    return results.map((r: any) => adaptRevenueToInflow(r, r.projectName)) as any;
+    return this.financeInflowsRepository.createManyProgramInflows(inflowList);
   }
 
   async deleteProgramInflowsByProject(projectName: string): Promise<void> {
-    // Temporal: soft-close instead of hard delete (Prompt 10)
-    await softCloseByProjectName(this.dbInstance, "normalized_revenue_lines", projectName);
+    return this.financeInflowsRepository.deleteProgramInflowsByProject(projectName);
   }
 
   // Project Plan — reads from work_items (PM workstream, SMART_IMPORT source)
