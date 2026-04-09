@@ -15,6 +15,9 @@ A migration script has been prepared at:
 A rollback script exists at:
 `migrations/20260409_retire_work_items_view_rollback.sql`
 
+**Note:** The migration handles the dependent `priority_derived_metrics` view
+(drops it in Step 0, recreates it in Step 10 after the rename).
+
 ## CRITICAL RULES
 
 1. **Do NOT modify any migration SQL files.** Run them as-is.

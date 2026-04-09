@@ -18,6 +18,12 @@
 -- Rollback: see 20260409_retire_work_items_view_rollback.sql
 
 -- =====================================================================
+-- STEP 0: Save and drop dependent views that reference work_items
+-- (priority_derived_metrics references work_items via subqueries)
+-- =====================================================================
+DROP VIEW IF EXISTS public.priority_derived_metrics;
+
+-- =====================================================================
 -- STEP 1: Drop INSTEAD OF triggers on the work_items view
 -- =====================================================================
 DROP TRIGGER IF EXISTS _work_items_view_update_trigger ON public.work_items;
@@ -292,7 +298,49 @@ CREATE INDEX IF NOT EXISTS work_items_end_date_idx ON work_items(end_date);
 CREATE INDEX IF NOT EXISTS work_items_parent_id_idx ON work_items(parent_id);
 
 -- =====================================================================
--- STEP 10: Verify final state
+-- STEP 10: Recreate priority_derived_metrics view (dropped in Step 0)
+-- Now references the base table work_items instead of the old view.
+-- Wrapped in exception handler in case dependent tables don't exist.
+-- =====================================================================
+DO $$ BEGIN
+  CREATE OR REPLACE VIEW priority_derived_metrics AS
+  SELECT
+    cp.id AS priority_id,
+    COUNT(DISTINCT pp.project_id) AS project_count,
+    COUNT(DISTINCT CASE
+      WHEN LOWER(pes.rag_status) IN ('red') THEN pp.project_id
+    END) AS at_risk_project_count,
+    CASE
+      WHEN bool_or(LOWER(pes.rag_status) = 'red') THEN 'critical'
+      WHEN bool_or(LOWER(pes.rag_status) IN ('amber', 'orange')) THEN 'at_risk'
+      WHEN COUNT(DISTINCT pp.project_id) = 0 THEN NULL
+      ELSE 'healthy'
+    END AS derived_health,
+    COALESCE(SUM(CAST(dpk.total_planned_revenue AS NUMERIC)), 0) AS total_revenue,
+    COALESCE(SUM(CAST(dpk.total_planned_expenses AS NUMERIC)), 0) AS total_cos,
+    COALESCE(SUM(CAST(dpk.total_planned_revenue AS NUMERIC)), 0)
+      - COALESCE(SUM(CAST(dpk.total_planned_expenses AS NUMERIC)), 0) AS total_gp,
+    COALESCE(AVG(CAST(dpk.avg_actual_pct_complete AS NUMERIC)), 0) AS avg_progress,
+    (SELECT COUNT(*) FROM work_items wi
+     WHERE wi.project_id IN (SELECT project_id FROM priority_projects WHERE priority_id = cp.id)
+     AND (LOWER(wi.status) LIKE '%block%')
+     AND wi.deleted_at IS NULL) AS blocker_count,
+    (SELECT COUNT(*) FROM work_items wi
+     WHERE wi.project_id IN (SELECT project_id FROM priority_projects WHERE priority_id = cp.id)
+     AND LOWER(wi.status) NOT IN ('complete', 'completed', 'done', 'cancelled', 'canceled', 'qc approved')
+     AND wi.deleted_at IS NULL) AS open_task_count
+  FROM mytool_company_priorities cp
+  LEFT JOIN priority_projects pp ON cp.id = pp.priority_id
+  LEFT JOIN project_execution_state pes ON pp.project_id = pes.project_id
+  LEFT JOIN derived_project_kpis dpk ON pp.project_id = dpk.project_id
+  GROUP BY cp.id;
+  RAISE NOTICE '[migration] ✓ Recreated priority_derived_metrics view';
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE '[migration] priority_derived_metrics recreation skipped: %', SQLERRM;
+END $$;
+
+-- =====================================================================
+-- STEP 11: Verify final state
 -- =====================================================================
 DO $$
 DECLARE
