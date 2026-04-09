@@ -7,8 +7,8 @@
  *
  * Used by:
  *   - ProjectInfoReadRepository.getAll()
- *   - DatabaseStorage.getProjectInfo()
- *   - DatabaseStorage.getProjectInfoById()
+ *   - ProjectInfoReadRepository.getByName()
+ *   - ProjectInfoReadRepository.getById()
  *   - DatabaseStorage.getAllProjects()
  */
 
