@@ -1,15 +1,25 @@
 /**
  * COS Realisation Consistency Tests
  *
- * Validates that:
- * 1. The canonical isCanonicalCosRealised() function works correctly for all inputs
- * 2. finance-policy.ts re-exports isCosRealised as the single entry point
- * 3. The policy module is importable and structurally sound
+ * Validates the canonical business rules:
+ *   1. Admin override takes absolute precedence
+ *   2. Invoice number is the ONLY hard check — if a supplier invoice is captured, COS is realised
+ *   3. PO is NOT the gate for realisation
+ *   4. Invoice without PO is a red flag but does NOT block realisation
+ *   5. Status labels alone do NOT determine realisation
+ *   6. "Committed from prior month" does NOT silently become realised without an invoice
+ *   7. cosRealised boolean flag is respected as backward-compatible signal
+ *   8. getCosRealisationWarnings() flags risk conditions
+ *
+ * Also validates:
+ *   - finance-policy.ts re-exports isCosRealised as the single entry point
+ *   - The policy module is importable and structurally sound
  */
 
 import { describe, expect, it } from "vitest";
 import {
   isCanonicalCosRealised,
+  getCosRealisationWarnings,
   type CosLineInput,
 } from "../../../server/lib/finance/cos-realisation";
 import {
@@ -36,65 +46,149 @@ function makeLine(overrides: Partial<CosLineInput> = {}): CosLineInput {
 }
 
 // ---------------------------------------------------------------------------
-// A. CANONICAL FUNCTION — unit tests for isCanonicalCosRealised
+// A. CANONICAL FUNCTION — invoice-only hard rule
 // ---------------------------------------------------------------------------
 
-describe("isCanonicalCosRealised — status-based realisation", () => {
-  it("returns false for PLANNED status", () => {
-    expect(isCanonicalCosRealised(makeLine({ status: "PLANNED" }))).toBe(false);
+describe("isCanonicalCosRealised — invoice is the ONLY hard check", () => {
+  it("returns true when invoice number is present", () => {
+    expect(isCanonicalCosRealised(makeLine({ expenseInvoiceNumber: "INV-001" }))).toBe(true);
   });
 
-  it("returns true for COS REALISED status", () => {
-    expect(isCanonicalCosRealised(makeLine({ status: "COS REALISED" }))).toBe(true);
-  });
-
-  it("returns true for REALISED status", () => {
-    expect(isCanonicalCosRealised(makeLine({ status: "REALISED" }))).toBe(true);
-  });
-
-  it("returns true for INVOICED status", () => {
-    expect(isCanonicalCosRealised(makeLine({ status: "INVOICED" }))).toBe(true);
-  });
-
-  it("returns true for PAID status", () => {
-    expect(isCanonicalCosRealised(makeLine({ status: "PAID" }))).toBe(true);
-  });
-
-  it("returns false for COMMITTED status without invoice date", () => {
-    expect(isCanonicalCosRealised(makeLine({ status: "COMMITTED" }))).toBe(false);
-  });
-
-  it("returns false for null/empty status", () => {
-    expect(isCanonicalCosRealised(makeLine({ status: null }))).toBe(false);
-    expect(isCanonicalCosRealised(makeLine({ status: "" }))).toBe(false);
-  });
-});
-
-describe("isCanonicalCosRealised — cosStatusOverride", () => {
-  it("override COS REALISED forces true regardless of status", () => {
+  it("returns true when invoice number is present (no PO)", () => {
     expect(isCanonicalCosRealised(makeLine({
-      status: "PLANNED",
-      cosStatusOverride: "COS REALISED",
+      expenseInvoiceNumber: "INV-001",
+      expensePoNumber: null,
     }))).toBe(true);
   });
 
-  it("override REALISED forces true regardless of status", () => {
+  it("returns true when invoice number + PO are both present", () => {
     expect(isCanonicalCosRealised(makeLine({
-      status: "PLANNED",
+      expenseInvoiceNumber: "INV-001",
+      expensePoNumber: "PO-001",
+    }))).toBe(true);
+  });
+
+  it("returns true when invoice number present but no invoice date", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: null,
+    }))).toBe(true);
+  });
+
+  it("returns false when no invoice number, even with PO", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      expensePoNumber: "PO-001",
+    }))).toBe(false);
+  });
+
+  it("returns false for empty/whitespace invoice number", () => {
+    expect(isCanonicalCosRealised(makeLine({ expenseInvoiceNumber: "" }))).toBe(false);
+    expect(isCanonicalCosRealised(makeLine({ expenseInvoiceNumber: "  " }))).toBe(false);
+  });
+
+  it("returns false when all fields are null", () => {
+    expect(isCanonicalCosRealised(makeLine())).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// B. STATUS LABELS DO NOT DETERMINE REALISATION
+// ---------------------------------------------------------------------------
+
+describe("isCanonicalCosRealised — status labels do NOT determine realisation", () => {
+  it("status INVOICED without invoice number does NOT realise", () => {
+    expect(isCanonicalCosRealised(makeLine({ status: "INVOICED" }))).toBe(false);
+  });
+
+  it("status PAID without invoice number does NOT realise", () => {
+    expect(isCanonicalCosRealised(makeLine({ status: "PAID" }))).toBe(false);
+  });
+
+  it("status COS REALISED without invoice number does NOT realise", () => {
+    expect(isCanonicalCosRealised(makeLine({ status: "COS REALISED" }))).toBe(false);
+  });
+
+  it("status REALISED without invoice number does NOT realise", () => {
+    expect(isCanonicalCosRealised(makeLine({ status: "REALISED" }))).toBe(false);
+  });
+
+  it("status PLANNED without invoice number does NOT realise", () => {
+    expect(isCanonicalCosRealised(makeLine({ status: "PLANNED" }))).toBe(false);
+  });
+
+  it("status COMMITTED without invoice number does NOT realise", () => {
+    expect(isCanonicalCosRealised(makeLine({ status: "COMMITTED" }))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C. COMMITTED FROM PRIOR MONTH — does NOT silently promote
+// ---------------------------------------------------------------------------
+
+describe("isCanonicalCosRealised — committed from prior month", () => {
+  it("committed with past-month invoice date but NO invoice number is NOT realised", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      status: "COMMITTED",
+      expenseInvoicedDate: "2026-03-15",
+      today: "2026-04-07",
+    }))).toBe(false);
+  });
+
+  it("committed with past-month invoice date AND invoice number IS realised (via invoice rule)", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      status: "COMMITTED",
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-03-15",
+      today: "2026-04-07",
+    }))).toBe(true);
+  });
+
+  it("committed with same-month invoice date AND invoice number IS realised (via invoice rule)", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      status: "COMMITTED",
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-04-01",
+      today: "2026-04-07",
+    }))).toBe(true);
+  });
+
+  it("committed with no invoice is NOT realised regardless of month", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      status: "COMMITTED",
+      expenseInvoicedDate: null,
+      today: "2026-04-07",
+    }))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// D. ADMIN OVERRIDE — takes absolute precedence
+// ---------------------------------------------------------------------------
+
+describe("isCanonicalCosRealised — cosStatusOverride", () => {
+  it("override COS REALISED forces true regardless of invoice", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      cosStatusOverride: "COS REALISED",
+      expenseInvoiceNumber: null,
+    }))).toBe(true);
+  });
+
+  it("override REALISED forces true regardless of invoice", () => {
+    expect(isCanonicalCosRealised(makeLine({
       cosStatusOverride: "REALISED",
     }))).toBe(true);
   });
 
-  it("override PLANNED forces false even when status is INVOICED", () => {
+  it("override PLANNED forces false even when invoice is present", () => {
     expect(isCanonicalCosRealised(makeLine({
-      status: "INVOICED",
+      expenseInvoiceNumber: "INV-001",
       cosStatusOverride: "PLANNED",
     }))).toBe(false);
   });
 
-  it("override COMMITTED forces false even when status is PAID", () => {
+  it("override COMMITTED forces false even when invoice is present", () => {
     expect(isCanonicalCosRealised(makeLine({
-      status: "PAID",
+      expenseInvoiceNumber: "INV-001",
       cosStatusOverride: "COMMITTED",
     }))).toBe(false);
   });
@@ -108,18 +202,22 @@ describe("isCanonicalCosRealised — cosStatusOverride", () => {
 
   it("null or empty override is ignored", () => {
     expect(isCanonicalCosRealised(makeLine({
-      status: "INVOICED",
+      expenseInvoiceNumber: "INV-001",
       cosStatusOverride: null,
     }))).toBe(true);
     expect(isCanonicalCosRealised(makeLine({
-      status: "INVOICED",
+      expenseInvoiceNumber: "INV-001",
       cosStatusOverride: "",
     }))).toBe(true);
   });
 });
 
+// ---------------------------------------------------------------------------
+// E. LEGACY cosRealised BOOLEAN — backward-compatible signal
+// ---------------------------------------------------------------------------
+
 describe("isCanonicalCosRealised — cosRealised boolean flag", () => {
-  it("cosRealised true causes realisation when status is not otherwise realised", () => {
+  it("cosRealised true causes realisation (backward compat)", () => {
     expect(isCanonicalCosRealised(makeLine({ cosRealised: true }))).toBe(true);
   });
 
@@ -130,76 +228,64 @@ describe("isCanonicalCosRealised — cosRealised boolean flag", () => {
   it("cosRealised null does not force realisation", () => {
     expect(isCanonicalCosRealised(makeLine({ cosRealised: null }))).toBe(false);
   });
+
+  it("cosRealised true is overridden by PLANNED override", () => {
+    expect(isCanonicalCosRealised(makeLine({
+      cosRealised: true,
+      cosStatusOverride: "PLANNED",
+    }))).toBe(false);
+  });
 });
 
-describe("isCanonicalCosRealised — COMMITTED with past-month invoice", () => {
-  it("committed with past-month invoice IS realised", () => {
-    expect(isCanonicalCosRealised(makeLine({
-      status: "COMMITTED",
-      expenseInvoicedDate: "2026-03-15",
-      today: "2026-04-07",
-    }))).toBe(true);
+// ---------------------------------------------------------------------------
+// F. DIAGNOSTIC WARNINGS
+// ---------------------------------------------------------------------------
+
+describe("getCosRealisationWarnings — flags risk conditions", () => {
+  it("returns INVOICE_WITHOUT_PO when invoice present but no PO", () => {
+    const warnings = getCosRealisationWarnings(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expensePoNumber: null,
+    }));
+    expect(warnings).toContain("INVOICE_WITHOUT_PO");
   });
 
-  it("committed with same-month invoice is NOT realised", () => {
-    expect(isCanonicalCosRealised(makeLine({
-      status: "COMMITTED",
-      expenseInvoicedDate: "2026-04-01",
-      today: "2026-04-07",
-    }))).toBe(false);
-  });
-
-  it("committed with future-month invoice is NOT realised", () => {
-    expect(isCanonicalCosRealised(makeLine({
-      status: "COMMITTED",
-      expenseInvoicedDate: "2026-05-01",
-      today: "2026-04-07",
-    }))).toBe(false);
-  });
-
-  it("committed with no invoice date is NOT realised", () => {
-    expect(isCanonicalCosRealised(makeLine({
-      status: "COMMITTED",
+  it("returns INVOICE_WITHOUT_DATE when invoice present but no date", () => {
+    const warnings = getCosRealisationWarnings(makeLine({
+      expenseInvoiceNumber: "INV-001",
       expenseInvoicedDate: null,
-      today: "2026-04-07",
-    }))).toBe(false);
+    }));
+    expect(warnings).toContain("INVOICE_WITHOUT_DATE");
+  });
+
+  it("returns empty array when all invoice data is complete", () => {
+    const warnings = getCosRealisationWarnings(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-03-15",
+      expensePoNumber: "PO-001",
+    }));
+    expect(warnings).toEqual([]);
+  });
+
+  it("returns empty array for non-realised lines", () => {
+    const warnings = getCosRealisationWarnings(makeLine());
+    expect(warnings).toEqual([]);
+  });
+
+  it("returns both warnings when invoice has no PO and no date", () => {
+    const warnings = getCosRealisationWarnings(makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expensePoNumber: null,
+      expenseInvoicedDate: null,
+    }));
+    expect(warnings).toContain("INVOICE_WITHOUT_PO");
+    expect(warnings).toContain("INVOICE_WITHOUT_DATE");
+    expect(warnings).toHaveLength(2);
   });
 });
 
 // ---------------------------------------------------------------------------
-// B. TODAY PARAMETER — month-level comparison, day-of-month does not matter
-// ---------------------------------------------------------------------------
-
-describe("today parameter — day-of-month is irrelevant (month-level comparison)", () => {
-  const committed = (today: string) => makeLine({
-    status: "COMMITTED",
-    expenseInvoiceNumber: "INV-001",
-    expenseInvoicedDate: "2026-03-15",
-    expensePoNumber: "PO-001",
-    today,
-  });
-
-  it("any day in April 2026 treats March invoice as past-month (realised)", () => {
-    for (const day of ["01", "07", "15", "28", "30"]) {
-      expect(isCanonicalCosRealised(committed(`2026-04-${day}`))).toBe(true);
-    }
-  });
-
-  it("any day in March 2026 treats March invoice as same-month (not realised)", () => {
-    for (const day of ["01", "07", "15", "28", "31"]) {
-      expect(isCanonicalCosRealised(committed(`2026-03-${day}`))).toBe(false);
-    }
-  });
-
-  it("actual date and month-end produce the same result", () => {
-    const withActual = isCanonicalCosRealised(committed("2026-04-07"));
-    const withMonthEnd = isCanonicalCosRealised(committed("2026-04-28"));
-    expect(withActual).toBe(withMonthEnd);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// C. FINANCE POLICY — isCosRealised wrapper and re-exports
+// G. FINANCE POLICY — isCosRealised wrapper and re-exports
 // ---------------------------------------------------------------------------
 
 describe("finance-policy.ts — isCosRealised wrapper", () => {
@@ -212,7 +298,7 @@ describe("finance-policy.ts — isCosRealised wrapper", () => {
     expect(policyReExport).toBe(isCanonicalCosRealised);
   });
 
-  it("isCosRealised returns the same result as isCanonicalCosRealised", () => {
+  it("isCosRealised returns the same result as isCanonicalCosRealised for all key scenarios", () => {
     const cases: Array<{ line: Parameters<typeof isCosRealised>[0]; today: string; expected: boolean }> = [
       {
         line: { status: "PLANNED", cosStatusOverride: null, expenseInvoicedDate: null },
@@ -220,24 +306,29 @@ describe("finance-policy.ts — isCosRealised wrapper", () => {
         expected: false,
       },
       {
-        line: { status: "COS REALISED", cosStatusOverride: null, expenseInvoicedDate: null },
+        line: { status: null, cosStatusOverride: null, expenseInvoicedDate: null, expenseInvoiceNumber: "INV-001" },
         today: "2026-04-07",
         expected: true,
       },
       {
         line: { status: "INVOICED", cosStatusOverride: null, expenseInvoicedDate: null },
         today: "2026-04-07",
-        expected: true,
+        expected: false, // status alone does NOT realise
+      },
+      {
+        line: { status: "PAID", cosStatusOverride: null, expenseInvoicedDate: null },
+        today: "2026-04-07",
+        expected: false, // status alone does NOT realise
       },
       {
         line: { status: "COMMITTED", cosStatusOverride: null, expenseInvoicedDate: "2026-03-10" },
         today: "2026-04-07",
-        expected: true,
+        expected: false, // committed from prior without invoice number does NOT realise
       },
       {
-        line: { status: "COMMITTED", cosStatusOverride: null, expenseInvoicedDate: "2026-04-01" },
+        line: { status: "COMMITTED", cosStatusOverride: null, expenseInvoicedDate: "2026-03-10", expenseInvoiceNumber: "INV-002" },
         today: "2026-04-07",
-        expected: false,
+        expected: true, // has invoice number → realised
       },
       {
         line: { status: "INVOICED", cosStatusOverride: "PLANNED", expenseInvoicedDate: null },
@@ -252,7 +343,7 @@ describe("finance-policy.ts — isCosRealised wrapper", () => {
       {
         line: { status: null, cosStatusOverride: null, cosRealised: true, expenseInvoicedDate: null },
         today: "2026-04-07",
-        expected: true,
+        expected: true, // backward-compat boolean
       },
     ];
 
@@ -274,14 +365,25 @@ describe("finance-policy.ts — isCosRealised wrapper", () => {
   });
 
   it("isCosRealised accepts minimal line shape (optional fields omitted)", () => {
-    // The wrapper makes most fields optional — verify it does not throw
+    // PAID status alone no longer realises — needs invoice
     const result = isCosRealised(
       { status: "PAID", cosStatusOverride: null, expenseInvoicedDate: null },
       "2026-04-07",
     );
-    expect(result).toBe(true);
+    expect(result).toBe(false);
+
+    // With invoice → realised
+    const resultWithInvoice = isCosRealised(
+      { status: "PAID", cosStatusOverride: null, expenseInvoicedDate: null, expenseInvoiceNumber: "INV-001" },
+      "2026-04-07",
+    );
+    expect(resultWithInvoice).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// H. MODULE STRUCTURE
+// ---------------------------------------------------------------------------
 
 describe("finance-policy.ts — module structure", () => {
   it("exports the required policy functions", async () => {
@@ -293,5 +395,48 @@ describe("finance-policy.ts — module structure", () => {
     expect(policy).toHaveProperty("requireTransaction");
     expect(policy).toHaveProperty("hasFinanceModelChanges");
     expect(policy).toHaveProperty("FINANCE_MODEL_PATHS");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// I. FOUR CONCEPT SEPARATION — cash vs realised must never be blended
+// ---------------------------------------------------------------------------
+
+describe("Four concept separation — cash received/paid vs COS/revenue realised", () => {
+  it("a line with invoice but no payment is COS-realised but NOT cash-paid", () => {
+    const line = makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-03-15",
+      paymentDate: null,
+    });
+    expect(isCanonicalCosRealised(line)).toBe(true);
+    // Cash paid would check paymentDate — which is null
+    expect(line.paymentDate).toBeNull();
+  });
+
+  it("a line with payment but no invoice is cash-paid but NOT COS-realised", () => {
+    const line = makeLine({
+      expenseInvoiceNumber: null,
+      paymentDate: "2026-03-20",
+    });
+    expect(isCanonicalCosRealised(line)).toBe(false);
+    // Cash paid would check paymentDate — which exists
+    expect(line.paymentDate).not.toBeNull();
+  });
+
+  it("a line with both invoice and payment is both COS-realised AND cash-paid", () => {
+    const line = makeLine({
+      expenseInvoiceNumber: "INV-001",
+      expenseInvoicedDate: "2026-03-15",
+      paymentDate: "2026-03-20",
+    });
+    expect(isCanonicalCosRealised(line)).toBe(true);
+    expect(line.paymentDate).not.toBeNull();
+  });
+
+  it("a line with neither invoice nor payment is neither realised nor paid", () => {
+    const line = makeLine();
+    expect(isCanonicalCosRealised(line)).toBe(false);
+    expect(line.paymentDate).toBeNull();
   });
 });

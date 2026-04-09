@@ -5,15 +5,24 @@
  * finance route extraction.
  */
 
-import { classifyCosStatusFull } from "./calculations/financeUtils";
+import { isCosRealised } from "./calculations/financeUtils";
 import { isDateConfirmedCheck } from "./cashflow-helpers";
 
-/** Unified realisation check: past-month committed costs are treated as realised. */
+/**
+ * Unified realisation check for period reporting.
+ *
+ * Uses the canonical invoice-only rule (via isCosRealised) and restricts
+ * to current or past months for period bucketing.
+ *
+ * CHANGED: Committed-from-prior-month no longer silently promotes to realised.
+ * Per business rules, "committed from prior month must NOT silently become
+ * realised unless it matches the invoice rule." If the line has an invoice,
+ * isCosRealised() will return true regardless of committed/prior status.
+ */
 export function isEffectivelyRealisedLocal(exp: any, monthKey: string | null, currentMonthKey: string): boolean {
-  const cosStatus = classifyCosStatusFull(exp);
-  if (cosStatus === 'COS Realised' && (monthKey ? monthKey <= currentMonthKey : true)) return true;
-  if (cosStatus === 'Committed' && monthKey != null && monthKey < currentMonthKey) return true;
-  return false;
+  if (!isCosRealised(exp)) return false;
+  // Realised lines are effective for current and past months only
+  return monthKey ? monthKey <= currentMonthKey : true;
 }
 
 export function isCashflowConfirmedCheck(exp: any): boolean {
