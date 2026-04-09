@@ -2,25 +2,28 @@
  * Baseline harness for getAllProjectInfo + fallback chain.
  *
  * PURPOSE: Lock down the behavioral invariants of:
- *   - getAllProjectInfo()            (storage.ts ~842-872)
- *   - shouldUseLegacyProjectInfoReadFallback()  (storage.ts ~874-920)
- *   - listLegacyCompatibleProjectInfo()         (storage.ts ~922-1035)
+ *   - getAllProjectInfo()            (project-info-read-repository.ts)
+ *   - shouldUseLegacyProjectInfoReadFallback()  (lib/project-info-fallback.ts)
+ *   - listLegacyCompatibleProjectInfo()         (lib/project-info-fallback.ts)
  *
  * These tests are source-structural: they read the implementation and
  * assert that critical contracts have not drifted.  They do NOT require
  * a running database or mocks.
  *
- * When the methods are later extracted to a repository, these tests
- * serve as the "before" snapshot.  The extraction PR must demonstrate
- * that all assertions still pass against the new location.
+ * After extraction, these tests verify the invariants hold in the new locations.
  */
 
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+const REPO_PATH = path.join(process.cwd(), "server/repositories/project-info-read-repository.ts");
+const FALLBACK_PATH = path.join(process.cwd(), "server/lib/project-info-fallback.ts");
 const STORAGE_PATH = path.join(process.cwd(), "server/storage.ts");
-const source = fs.readFileSync(STORAGE_PATH, "utf8");
+
+const repoSource = fs.readFileSync(REPO_PATH, "utf8");
+const fallbackSource = fs.readFileSync(FALLBACK_PATH, "utf8");
+const storageSource = fs.readFileSync(STORAGE_PATH, "utf8");
 
 // ────────────────────────────────────────────────────────
 // SECTION 1 — getAllProjectInfo merge behavior
@@ -28,35 +31,31 @@ const source = fs.readFileSync(STORAGE_PATH, "utf8");
 
 describe("getAllProjectInfo — canonical path merge behavior", () => {
   it("performs LEFT JOIN between projectInfo and projectExecutionState", () => {
-    expect(source).toContain(
+    expect(repoSource).toContain(
       ".leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))"
     );
   });
 
   it("orders by projectInfo.updatedAt DESC", () => {
-    // The canonical query must order by updatedAt descending
-    expect(source).toContain(".orderBy(desc(projectInfo.updatedAt))");
+    expect(repoSource).toContain(".orderBy(desc(projectInfo.updatedAt))");
   });
 
   it("filters null/undefined values from execution state before merging", () => {
-    // The null-filter loop must exist — this prevents exec state nulls
-    // from overwriting real project_info values
-    expect(source).toContain("if (value !== null && value !== undefined)");
-    expect(source).toContain("nonNullExecState[key] = value");
+    expect(repoSource).toContain("if (value !== null && value !== undefined)");
+    expect(repoSource).toContain("nonNullExecState[key] = value");
   });
 
   it("preserves project_info.id over execution state id", () => {
-    expect(source).toContain("id: r.project_info.id,");
+    expect(repoSource).toContain("id: r.project_info.id,");
   });
 
   it("preserves project_info.updatedAt over execution state updatedAt", () => {
-    expect(source).toContain("updatedAt: r.project_info.updatedAt,");
+    expect(repoSource).toContain("updatedAt: r.project_info.updatedAt,");
   });
 
   it("spreads project_info first, then non-null exec state", () => {
-    // The merge order is: base project_info → non-null exec fields → id/updatedAt override
-    expect(source).toContain("...r.project_info,");
-    expect(source).toContain("...nonNullExecState,");
+    expect(repoSource).toContain("...r.project_info,");
+    expect(repoSource).toContain("...nonNullExecState,");
   });
 });
 
@@ -66,19 +65,17 @@ describe("getAllProjectInfo — canonical path merge behavior", () => {
 
 describe("getAllProjectInfo — fallback trigger", () => {
   it("catches errors and checks shouldUseLegacyProjectInfoReadFallback", () => {
-    expect(source).toContain("this.shouldUseLegacyProjectInfoReadFallback(error)");
+    expect(repoSource).toContain("shouldUseLegacyProjectInfoReadFallback(error)");
   });
 
   it("delegates to listLegacyCompatibleProjectInfo on fallback", () => {
-    // When fallback is triggered in getAllProjectInfo, it calls without filters
-    expect(source).toContain("return this.listLegacyCompatibleProjectInfo();");
+    expect(repoSource).toContain("return listLegacyCompatibleProjectInfo(this.dbInstance);");
   });
 
   it("re-throws non-fallback errors", () => {
-    // Non-matching errors must propagate — the throw must exist after the if-block
-    const getAllBlock = source.slice(
-      source.indexOf("async getAllProjectInfo()"),
-      source.indexOf("async getAllProjectInfo()") + 1200
+    const getAllBlock = repoSource.slice(
+      repoSource.indexOf("async getAll()"),
+      repoSource.indexOf("async getAll()") + 1200
     );
     expect(getAllBlock).toContain("throw error;");
   });
@@ -89,8 +86,8 @@ describe("getAllProjectInfo — fallback trigger", () => {
 // ────────────────────────────────────────────────────────
 
 describe("shouldUseLegacyProjectInfoReadFallback — error detection", () => {
-  // Extract the column list from source to snapshot it
-  const colListMatch = source.match(
+  // Extract the column list from fallback source to snapshot it
+  const colListMatch = fallbackSource.match(
     /const missingColumnNames\s*=\s*\[([\s\S]*?)\];/
   );
   const colBlock = colListMatch?.[1] ?? "";
@@ -133,26 +130,26 @@ describe("shouldUseLegacyProjectInfoReadFallback — error detection", () => {
   });
 
   it("handles SQLite missing-table error", () => {
-    expect(source).toContain('message.includes("no such table")');
+    expect(fallbackSource).toContain('message.includes("no such table")');
   });
 
   it("handles SQLite missing-column error with allowlist check", () => {
-    expect(source).toContain('message.includes("no such column")');
-    expect(source).toContain("missingColumnNames.some((col) => message.includes(col))");
+    expect(fallbackSource).toContain('message.includes("no such column")');
+    expect(fallbackSource).toContain("missingColumnNames.some((col) => message.includes(col))");
   });
 
   it("handles PostgreSQL undefined_table (42P01)", () => {
-    expect(source).toContain('code === "42P01"');
+    expect(fallbackSource).toContain('code === "42P01"');
   });
 
   it("handles PostgreSQL undefined_column (42703) with allowlist check", () => {
-    expect(source).toContain('code === "42703"');
+    expect(fallbackSource).toContain('code === "42703"');
   });
 
   it("returns false for unrecognized errors", () => {
-    const fnBlock = source.slice(
-      source.indexOf("shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean"),
-      source.indexOf("shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean") + 1600
+    const fnBlock = fallbackSource.slice(
+      fallbackSource.indexOf("shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean"),
+      fallbackSource.indexOf("shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean") + 1600
     );
     // Must have a terminal `return false` for safety
     expect(fnBlock).toContain("return false;");
@@ -164,11 +161,10 @@ describe("shouldUseLegacyProjectInfoReadFallback — error detection", () => {
 // ────────────────────────────────────────────────────────
 
 describe("listLegacyCompatibleProjectInfo — 3-tier fallback structure", () => {
-  // Isolate the function body
-  const fnStart = source.indexOf(
-    "private async listLegacyCompatibleProjectInfo"
+  const fnStart = fallbackSource.indexOf(
+    "export async function listLegacyCompatibleProjectInfo"
   );
-  const fnBody = source.slice(fnStart, fnStart + 3500);
+  const fnBody = fallbackSource.slice(fnStart, fnStart + 3500);
 
   it("Tier 1: tries LEFT JOIN with projectExecutionState for phase", () => {
     expect(fnBody).toContain("phase: projectExecutionState.phase");
@@ -183,12 +179,10 @@ describe("listLegacyCompatibleProjectInfo — 3-tier fallback structure", () => 
   });
 
   it("Tier 3: falls back to projectInfo-only select without phase", () => {
-    // The last-resort query selects from projectInfo only
     expect(fnBody).toContain("phase: null");
   });
 
   it("all tiers select the same core fields from projectInfo", () => {
-    // Each tier must read these identity/core fields
     const coreFields = [
       "projectInfo.id",
       "projectInfo.projectName",
@@ -199,7 +193,6 @@ describe("listLegacyCompatibleProjectInfo — 3-tier fallback structure", () => 
       "projectInfo.updatedAt",
     ];
     for (const field of coreFields) {
-      // Must appear at least twice: Tier 1 and Tier 3 both use Drizzle selects
       const count = (fnBody.match(new RegExp(field.replace(".", "\\."), "g")) || []).length;
       expect(count, `${field} must appear in at least 2 tiers`).toBeGreaterThanOrEqual(2);
     }
@@ -211,12 +204,10 @@ describe("listLegacyCompatibleProjectInfo — 3-tier fallback structure", () => 
 // ────────────────────────────────────────────────────────
 
 describe("listLegacyCompatibleProjectInfo — hardcoded default snapshot", () => {
-  // Extract the final mapping block that injects defaults
-  const mappingStart = source.indexOf("return rows.map((row) => ({");
-  const mappingEnd = source.indexOf("})) as ProjectInfo[];");
-  const mappingBlock = source.slice(mappingStart, mappingEnd + 25);
+  const mappingStart = fallbackSource.indexOf("return rows.map((row) => ({");
+  const mappingEnd = fallbackSource.indexOf("})) as ProjectInfo[];");
+  const mappingBlock = fallbackSource.slice(mappingStart, mappingEnd + 25);
 
-  // --- Null defaults: these fields must be set to null ---
   const expectedNullFields = [
     "phaseUpdatedAt",
     "phaseUpdatedByUserId",
@@ -255,7 +246,6 @@ describe("listLegacyCompatibleProjectInfo — hardcoded default snapshot", () =>
     });
   }
 
-  // --- Non-null defaults: specific hardcoded values ---
   it("injects isActive: true", () => {
     expect(mappingBlock).toContain("isActive: true");
   });
@@ -294,37 +284,52 @@ describe("listLegacyCompatibleProjectInfo — hardcoded default snapshot", () =>
 });
 
 // ────────────────────────────────────────────────────────
-// SECTION 6 — Shared fallback helper usage (cross-method coupling)
+// SECTION 6 — Shared fallback helper usage (cross-module coupling)
 // ────────────────────────────────────────────────────────
 
 describe("fallback helper shared usage", () => {
-  it("shouldUseLegacyProjectInfoReadFallback is private", () => {
-    expect(source).toContain(
-      "private shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean"
+  it("shouldUseLegacyProjectInfoReadFallback is an exported function in fallback lib", () => {
+    expect(fallbackSource).toContain(
+      "export function shouldUseLegacyProjectInfoReadFallback(error: unknown): boolean"
     );
   });
 
-  it("listLegacyCompatibleProjectInfo is private", () => {
-    expect(source).toContain(
-      "private async listLegacyCompatibleProjectInfo(filters?"
+  it("listLegacyCompatibleProjectInfo is an exported async function in fallback lib", () => {
+    expect(fallbackSource).toContain(
+      "export async function listLegacyCompatibleProjectInfo("
     );
   });
 
-  // Count all call sites of the fallback helpers to track coupling
-  const fallbackCheckCalls = (
-    source.match(/this\.shouldUseLegacyProjectInfoReadFallback\(/g) || []
+  // Count all call sites across storage.ts and the repository
+  const storageFallbackCalls = (
+    storageSource.match(/shouldUseLegacyProjectInfoReadFallback\(/g) || []
   ).length;
-  const legacyCompatCalls = (
-    source.match(/this\.listLegacyCompatibleProjectInfo\(/g) || []
+  const repoFallbackCalls = (
+    repoSource.match(/shouldUseLegacyProjectInfoReadFallback\(/g) || []
   ).length;
 
-  it("shouldUseLegacyProjectInfoReadFallback is called from exactly 4 methods", () => {
-    // getAllProjectInfo, getProjectInfo, getProjectInfoById, getAllProjects
-    expect(fallbackCheckCalls).toBe(4);
+  const storageLegacyCalls = (
+    storageSource.match(/listLegacyCompatibleProjectInfo\(/g) || []
+  ).length;
+  const repoLegacyCalls = (
+    repoSource.match(/listLegacyCompatibleProjectInfo\(/g) || []
+  ).length;
+
+  it("shouldUseLegacyProjectInfoReadFallback is called from exactly 4 locations total", () => {
+    // 3 in storage.ts (getProjectInfo, getProjectInfoById, getAllProjects)
+    // 1 in repository (getAll)
+    expect(storageFallbackCalls).toBe(3);
+    expect(repoFallbackCalls).toBe(1);
   });
 
-  it("listLegacyCompatibleProjectInfo is called from exactly 4 methods", () => {
-    // same 4 callers
-    expect(legacyCompatCalls).toBe(4);
+  it("listLegacyCompatibleProjectInfo is called from exactly 4 locations total", () => {
+    // 3 in storage.ts (same 3 methods)
+    // 1 in repository (getAll)
+    expect(storageLegacyCalls).toBe(3);
+    expect(repoLegacyCalls).toBe(1);
+  });
+
+  it("storage.ts delegates getAllProjectInfo to the repository", () => {
+    expect(storageSource).toContain("this.projectInfoReadRepository.getAll()");
   });
 });
