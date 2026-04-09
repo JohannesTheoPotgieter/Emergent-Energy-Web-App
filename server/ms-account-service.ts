@@ -1,8 +1,7 @@
 import { db } from "./db";
 import { msAccounts } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { encryptToken, decryptToken } from "./lib/token-encryption";
-import { isEncryptedPayload, decrypt } from "./utils/encryption";
 
 const CONFIGURED_TENANT_ID = process.env.AZURE_TENANT_ID || "";
 
@@ -86,10 +85,7 @@ export async function getSsoTokenForUser(userId: number): Promise<string | null>
   const account = await getMsAccountForUser(userId);
   if (!account?.ssoAccessToken) return null;
 
-  const accessToken = isEncryptedPayload(account.ssoAccessToken)
-    ? decrypt(account.ssoAccessToken)
-    : account.ssoAccessToken;
-
+  // Check if token is expired or about to expire (within 60s)
   if (account.ssoTokenExpiresAt && account.ssoTokenExpiresAt.getTime() < Date.now() + 60_000) {
     const refreshed = await tryRefreshToken(account);
     if (refreshed) return refreshed;
@@ -108,6 +104,21 @@ async function tryRefreshToken(account: typeof msAccounts.$inferSelect): Promise
   const serializedCache = decryptToken(encryptedCache);
   if (!serializedCache) {
     console.error(`[MS Token] Failed to decrypt token cache for user ${account.userId}`);
+    return null;
+  }
+
+  // Validate that the decrypted cache is valid JSON before passing to MSAL.
+  // Legacy unencrypted or corrupted values will fail here instead of causing
+  // cryptic "Expected ',' or ']' after array element" errors in MSAL deserialize.
+  try {
+    JSON.parse(serializedCache);
+  } catch {
+    console.error(`[MS Token] Token cache for user ${account.userId} is not valid JSON (length=${serializedCache.length}) — marking for re-auth.`);
+    // Clear the corrupted cache so the user is prompted to re-authenticate
+    await db
+      .update(msAccounts)
+      .set({ refreshTokenEncrypted: null })
+      .where(eq(msAccounts.id, account.id));
     return null;
   }
 
