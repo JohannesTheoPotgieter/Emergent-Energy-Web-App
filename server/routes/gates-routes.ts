@@ -141,21 +141,21 @@ app.get("/api/gates/pipeline", jwtAuth, requireAuth, requirePermission("stage_ga
       try {
         // Fallback for partially-migrated environments:
         // keep Gate Tracker useful rather than silently empty.
+        // Intentionally omits clients JOIN — client_id/clients table
+        // may not exist in partially-migrated schemas.
         const fallback = await db.execute(sql`
           SELECT
             pi.id AS project_id,
             pi.project_name,
-            COALESCE(c.name, '') AS client_name,
             pi.pm,
             pi.pd
           FROM project_info pi
-          LEFT JOIN clients c ON c.id = pi.client_id
           ORDER BY pi.project_name ASC
         `);
         const fallbackProjects = ((fallback as any).rows ?? []).map((r: any) => ({
           projectId: r.project_id,
           projectName: r.project_name,
-          clientName: r.client_name,
+          clientName: null,
           pm: r.pm,
           pd: r.pd,
           constructionManager: null,
