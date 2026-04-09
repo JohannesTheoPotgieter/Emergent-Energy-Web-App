@@ -5,6 +5,7 @@ import { WorkManagementRepository } from "./repositories/work-management-reposit
 import { SupportTicketsRepository } from "./repositories/support-tickets-repository";
 import { MytoolStateRepository } from "./repositories/mytool-state-repository";
 import { ProjectSupportRepository } from "./repositories/project-support-repository";
+import { FinanceSupportRepository } from "./repositories/finance-support-repository";
 import { softCloseByProjectName, addTemporalColumns } from "./lib/temporal-helpers";
 import { getExpenseBusinessKey, selectWinningExpenseRows } from "./lib/expense-row-selector";
 import { eq, desc, and, or, gte, lte, isNotNull, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
@@ -15,7 +16,6 @@ import {
   workingPlanScenario, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
   projectRevenueSummary,
-  cashflowWeeklyManual, cashflowBalanceHistory, opexBudgetMonthly, trackerMonthlyManual,
   taskComments, taskChecklists, taskChecklistItems, taskAttachments, taskActivityLog, writebackMappings, writebackAuditLog,
   type User, type InsertUser,
   type Project, type InsertProject,
@@ -42,9 +42,7 @@ import {
   type CashflowWeeklyManual, type InsertCashflowWeeklyManual,
   type CashflowBalanceHistory, type InsertCashflowBalanceHistory,
   type OpexBudgetMonthly, type InsertOpexBudgetMonthly,
-  opexWeeklyManual,
   type OpexWeeklyManual, type InsertOpexWeeklyManual,
-  availablePaymentOverrides, availablePaymentHistory,
   type AvailablePaymentOverride, type InsertAvailablePaymentOverride,
   type AvailablePaymentHistory, type InsertAvailablePaymentHistory,
   type TrackerMonthlyManual, type InsertTrackerMonthlyManual,
@@ -423,6 +421,7 @@ export class DatabaseStorage implements IStorage {
   private readonly supportTicketsRepository: SupportTicketsRepository;
   private readonly mytoolStateRepository: MytoolStateRepository;
   private readonly projectSupportRepository: ProjectSupportRepository;
+  private readonly financeSupportRepository: FinanceSupportRepository;
 
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -436,6 +435,7 @@ export class DatabaseStorage implements IStorage {
     this.supportTicketsRepository = new SupportTicketsRepository(this.dbInstance);
     this.mytoolStateRepository = new MytoolStateRepository(this.dbInstance);
     this.projectSupportRepository = new ProjectSupportRepository(this.dbInstance);
+    this.financeSupportRepository = new FinanceSupportRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -2026,141 +2026,79 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllCashflowWeeklyManual(): Promise<CashflowWeeklyManual[]> {
-    return this.dbInstance.select().from(cashflowWeeklyManual);
+    return this.financeSupportRepository.getAllCashflowWeeklyManual();
   }
 
   async upsertCashflowWeeklyManual(weekStartDate: string, openingBalance: string): Promise<CashflowWeeklyManual> {
-    const existing = await this.dbInstance.select().from(cashflowWeeklyManual).where(eq(cashflowWeeklyManual.weekStartDate, weekStartDate));
-    if (existing[0]) {
-      const updated = await this.dbInstance.update(cashflowWeeklyManual)
-        .set({ openingBalance, updatedAt: new Date() })
-        .where(eq(cashflowWeeklyManual.id, existing[0].id))
-        .returning();
-      return updated[0];
-    }
-    const inserted = await this.dbInstance.insert(cashflowWeeklyManual).values({ weekStartDate, openingBalance }).returning();
-    return inserted[0];
+    return this.financeSupportRepository.upsertCashflowWeeklyManual(weekStartDate, openingBalance);
   }
 
   async deleteCashflowWeeklyManual(weekStartDate: string): Promise<void> {
-    await this.dbInstance.delete(cashflowWeeklyManual)
-      .where(eq(cashflowWeeklyManual.weekStartDate, weekStartDate));
+    return this.financeSupportRepository.deleteCashflowWeeklyManual(weekStartDate);
   }
 
   async deleteAllCashflowWeeklyManualAfter(weekStartDate: string): Promise<string[]> {
-    const toDelete = await this.dbInstance.select({ weekStartDate: cashflowWeeklyManual.weekStartDate })
-      .from(cashflowWeeklyManual)
-      .where(gte(cashflowWeeklyManual.weekStartDate, weekStartDate));
-    const weeks = toDelete.map((r: { weekStartDate: string }) => r.weekStartDate);
-    if (weeks.length > 0) {
-      await this.dbInstance.delete(cashflowWeeklyManual)
-        .where(gte(cashflowWeeklyManual.weekStartDate, weekStartDate));
-    }
-    return weeks;
+    return this.financeSupportRepository.deleteAllCashflowWeeklyManualAfter(weekStartDate);
   }
 
   async getBalanceHistory(weekStartDate: string): Promise<CashflowBalanceHistory[]> {
-    return this.dbInstance.select().from(cashflowBalanceHistory)
-      .where(eq(cashflowBalanceHistory.weekStartDate, weekStartDate))
-      .orderBy(desc(cashflowBalanceHistory.changedAt));
+    return this.financeSupportRepository.getBalanceHistory(weekStartDate);
   }
 
   async getAllBalanceHistory(): Promise<CashflowBalanceHistory[]> {
-    return this.dbInstance.select().from(cashflowBalanceHistory)
-      .orderBy(desc(cashflowBalanceHistory.changedAt));
+    return this.financeSupportRepository.getAllBalanceHistory();
   }
 
   async addBalanceHistory(entry: InsertCashflowBalanceHistory): Promise<CashflowBalanceHistory> {
-    const inserted = await this.dbInstance.insert(cashflowBalanceHistory).values(entry).returning();
-    return inserted[0];
+    return this.financeSupportRepository.addBalanceHistory(entry);
   }
 
   async getAllOpexBudgetMonthly(): Promise<OpexBudgetMonthly[]> {
-    return this.dbInstance.select().from(opexBudgetMonthly);
+    return this.financeSupportRepository.getAllOpexBudgetMonthly();
   }
 
   async upsertOpexBudgetMonthly(monthKey: string, amount: string): Promise<OpexBudgetMonthly> {
-    const existing = await this.dbInstance.select().from(opexBudgetMonthly).where(eq(opexBudgetMonthly.monthKey, monthKey));
-    if (existing[0]) {
-      const updated = await this.dbInstance.update(opexBudgetMonthly)
-        .set({ amount, updatedAt: new Date() })
-        .where(eq(opexBudgetMonthly.id, existing[0].id))
-        .returning();
-      return updated[0];
-    }
-    const inserted = await this.dbInstance.insert(opexBudgetMonthly).values({ monthKey, amount }).returning();
-    return inserted[0];
+    return this.financeSupportRepository.upsertOpexBudgetMonthly(monthKey, amount);
   }
 
   async getAllOpexWeeklyManual(): Promise<OpexWeeklyManual[]> {
-    return this.dbInstance.select().from(opexWeeklyManual);
+    return this.financeSupportRepository.getAllOpexWeeklyManual();
   }
 
   async upsertOpexWeeklyManual(weekStartDate: string, opexAmount: string): Promise<OpexWeeklyManual> {
-    const existing = await this.dbInstance.select().from(opexWeeklyManual).where(eq(opexWeeklyManual.weekStartDate, weekStartDate));
-    if (existing[0]) {
-      const updated = await this.dbInstance.update(opexWeeklyManual)
-        .set({ opexAmount, updatedAt: new Date() })
-        .where(eq(opexWeeklyManual.id, existing[0].id))
-        .returning();
-      return updated[0];
-    }
-    const inserted = await this.dbInstance.insert(opexWeeklyManual).values({ weekStartDate, opexAmount }).returning();
-    return inserted[0];
+    return this.financeSupportRepository.upsertOpexWeeklyManual(weekStartDate, opexAmount);
   }
 
   async deleteOpexWeeklyManual(weekStartDate: string): Promise<void> {
-    await this.dbInstance.delete(opexWeeklyManual).where(eq(opexWeeklyManual.weekStartDate, weekStartDate));
+    return this.financeSupportRepository.deleteOpexWeeklyManual(weekStartDate);
   }
 
   async getAllAvailablePaymentOverrides(): Promise<AvailablePaymentOverride[]> {
-    return this.dbInstance.select().from(availablePaymentOverrides);
+    return this.financeSupportRepository.getAllAvailablePaymentOverrides();
   }
 
   async upsertAvailablePaymentOverride(weekStartDate: string, overrideValue: string, reason: string | null, updatedBy: string | null): Promise<AvailablePaymentOverride> {
-    const existing = await this.dbInstance.select().from(availablePaymentOverrides).where(eq(availablePaymentOverrides.weekStartDate, weekStartDate));
-    if (existing[0]) {
-      const updated = await this.dbInstance.update(availablePaymentOverrides)
-        .set({ overrideValue, reason, updatedBy, updatedAt: new Date() })
-        .where(eq(availablePaymentOverrides.id, existing[0].id))
-        .returning();
-      return updated[0];
-    }
-    const inserted = await this.dbInstance.insert(availablePaymentOverrides).values({ weekStartDate, overrideValue, reason, updatedBy }).returning();
-    return inserted[0];
+    return this.financeSupportRepository.upsertAvailablePaymentOverride(weekStartDate, overrideValue, reason, updatedBy);
   }
 
   async deleteAvailablePaymentOverride(weekStartDate: string): Promise<void> {
-    await this.dbInstance.delete(availablePaymentOverrides).where(eq(availablePaymentOverrides.weekStartDate, weekStartDate));
+    return this.financeSupportRepository.deleteAvailablePaymentOverride(weekStartDate);
   }
 
   async getAvailablePaymentHistory(weekStartDate: string): Promise<AvailablePaymentHistory[]> {
-    return this.dbInstance.select().from(availablePaymentHistory)
-      .where(eq(availablePaymentHistory.weekStartDate, weekStartDate))
-      .orderBy(desc(availablePaymentHistory.changedAt));
+    return this.financeSupportRepository.getAvailablePaymentHistory(weekStartDate);
   }
 
   async addAvailablePaymentHistory(entry: InsertAvailablePaymentHistory): Promise<AvailablePaymentHistory> {
-    const inserted = await this.dbInstance.insert(availablePaymentHistory).values(entry).returning();
-    return inserted[0];
+    return this.financeSupportRepository.addAvailablePaymentHistory(entry);
   }
 
   async getTrackerMonthlyManual(trackerType: string): Promise<TrackerMonthlyManual[]> {
-    return this.dbInstance.select().from(trackerMonthlyManual).where(eq(trackerMonthlyManual.trackerType, trackerType));
+    return this.financeSupportRepository.getTrackerMonthlyManual(trackerType);
   }
 
   async upsertTrackerMonthlyManual(data: InsertTrackerMonthlyManual): Promise<TrackerMonthlyManual> {
-    const existing = await this.dbInstance.select().from(trackerMonthlyManual)
-      .where(and(eq(trackerMonthlyManual.trackerType, (data as any).trackerType), eq(trackerMonthlyManual.monthKey, (data as any).monthKey)));
-    if (existing[0]) {
-      const updated = await this.dbInstance.update(trackerMonthlyManual)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(trackerMonthlyManual.id, existing[0].id))
-        .returning();
-      return updated[0];
-    }
-    const inserted = await this.dbInstance.insert(trackerMonthlyManual).values(data).returning();
-    return inserted[0];
+    return this.financeSupportRepository.upsertTrackerMonthlyManual(data);
   }
 
   // Operational and work-management domains (repository extracted)
