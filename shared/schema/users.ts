@@ -1,4 +1,4 @@
-import { pgTable, text, integer, timestamp, serial, boolean, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, pgSchema, text, integer, timestamp, serial, boolean, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -48,6 +48,29 @@ export const errorLogs = pgTable("error_logs", {
 export const insertErrorLogSchema = createInsertSchema(errorLogs).omit({ id: true, createdAt: true } as any);
 export type InsertErrorLog = z.infer<typeof insertErrorLogSchema>;
 export type ErrorLog = typeof errorLogs.$inferSelect;
+
+// ===================== CORE SCHEMA: DEPARTMENTS + ROLE DEFINITIONS (Phase A.1) =====================
+
+const coreSchema = pgSchema("core");
+
+export const departments = coreSchema.table("departments", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type Department = typeof departments.$inferSelect;
+export type InsertDepartment = typeof departments.$inferInsert;
+
+export const roleDefinitions = coreSchema.table("role_definitions", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  departmentId: integer("department_id").notNull().references(() => departments.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export type RoleDefinition = typeof roleDefinitions.$inferSelect;
+export type InsertRoleDefinition = typeof roleDefinitions.$inferInsert;
 
 // ===================== COMPANY ROLES (Part A) =====================
 
