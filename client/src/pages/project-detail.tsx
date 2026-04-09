@@ -1236,6 +1236,7 @@ export default function ProjectDetailPage() {
     }
     return null;
   }, [revTabMilestones]);
+  const chipDestinations = useMemo(() => buildProjectSummaryChipDestinations(projectName), [projectName]);
 
   if (!projectName) {
     return (
@@ -1293,7 +1294,6 @@ export default function ProjectDetailPage() {
   const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
   const canInitiateFinancialReview = ['PROJECT_MANAGER_SITE', 'PROGRAM_MANAGER', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
   const ragStatus = v2Detail?.executionState?.ragStatus ?? projectInfo?.rag_status ?? null;
-  const chipDestinations = useMemo(() => buildProjectSummaryChipDestinations(projectName), [projectName]);
 
   // ─── KPI computation: V2 detail → healthSummary → client-side fallback ───
   const v2ContractValue = v2Detail?.financeSummary?.contractValue;
