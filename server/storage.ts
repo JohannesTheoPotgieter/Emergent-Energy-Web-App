@@ -11,12 +11,13 @@ import { FinanceInflowsRepository } from "./repositories/finance-inflows-reposit
 import { FinanceExpenseEngineRepository } from "./repositories/finance-expense-engine-repository";
 import { ProjectInfoRepository } from "./repositories/project-info-repository";
 import { ProjectInfoReadRepository } from "./repositories/project-info-read-repository";
+import { ProjectStateRepository } from "./repositories/project-state-repository";
 import { shouldUseLegacyProjectInfoReadFallback, listLegacyCompatibleProjectInfo } from "./lib/project-info-fallback";
 import { softCloseByProjectName } from "./lib/temporal-helpers";
-import { eq, desc, and, or, gte, lte, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
+import { eq, desc, and, or, gte, lte, isNull, sql, inArray, not, ilike } from "drizzle-orm";
 import {
   users, uploadMetadata, refreshLogs,
-  projectInfo, projectExecutionState, normalizedCostLines, normalizedRevenueLines, workItems, projectPlan,
+  projectInfo, normalizedCostLines, normalizedRevenueLines, workItems, projectPlan,
   cashflowPoints, financeRevenueMonthly, financeCosMonthly,
   workingPlanScenario, projectPlanDependency,
   workingPlanDependencyOverride, scheduleChangeNotice,
@@ -431,6 +432,7 @@ export class DatabaseStorage implements IStorage {
   private readonly financeExpenseEngineRepository: FinanceExpenseEngineRepository;
   private readonly projectInfoRepository: ProjectInfoRepository;
   private readonly projectInfoReadRepository: ProjectInfoReadRepository;
+  private readonly projectStateRepository: ProjectStateRepository;
 
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -450,6 +452,7 @@ export class DatabaseStorage implements IStorage {
     this.financeExpenseEngineRepository = new FinanceExpenseEngineRepository(this.dbInstance);
     this.projectInfoRepository = new ProjectInfoRepository(this.dbInstance);
     this.projectInfoReadRepository = new ProjectInfoReadRepository(this.dbInstance);
+    this.projectStateRepository = new ProjectStateRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -839,41 +842,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async markProjectsActive(activeNames: string[]): Promise<void> {
-    if (activeNames.length === 0) return;
-    await this.dbInstance
-      .update(projectInfo)
-      .set({ isActive: true, updatedAt: new Date() })
-      .where(inArray(projectInfo.projectName, activeNames));
-    await this.dbInstance
-      .update(projectInfo)
-      .set({ isActive: false })
-      .where(not(inArray(projectInfo.projectName, activeNames)));
-
-    // Dual-write: sync soft-delete to project_execution_state
-    // isActive kept in sync during 30-day observation window (deprecated 2026-03-31)
-    await this.dbInstance.execute(sql`
-      UPDATE project_execution_state SET deleted_at = NULL, is_active = true, updated_at = NOW()
-      WHERE project_id IN (SELECT id FROM project_info WHERE project_name = ANY(${activeNames}))
-    `);
-    await this.dbInstance.execute(sql`
-      UPDATE project_execution_state SET deleted_at = NOW(), is_active = false, updated_at = NOW()
-      WHERE project_id IN (SELECT id FROM project_info WHERE project_name != ALL(${activeNames}))
-        AND deleted_at IS NULL
-    `);
+    return this.projectStateRepository.markProjectsActive(activeNames);
   }
 
   async getProjectCounts(): Promise<{ active: number; historical: number; total: number }> {
-    const [activeResult] = await this.dbInstance
-      .select({ count: count() })
-      .from(projectInfo)
-      .leftJoin(projectExecutionState, eq(projectExecutionState.projectId, projectInfo.id))
-      .where(isNull(projectExecutionState.deletedAt));
-    const [totalResult] = await this.dbInstance
-      .select({ count: count() })
-      .from(projectInfo);
-    const active = activeResult?.count || 0;
-    const total = totalResult?.count || 0;
-    return { active, historical: total - active, total };
+    return this.projectStateRepository.getProjectCounts();
   }
 
   // Short-TTL cache for getAllProgramExpenses to reduce repeated full-table
