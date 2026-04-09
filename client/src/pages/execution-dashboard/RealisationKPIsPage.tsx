@@ -147,7 +147,7 @@ export default function RealisationKPIsPage() {
       </div>
 
       {/* COS REALISATION */}
-      <SectionHeader title="COS Realisation" subtitle="Invoice captured + invoice date confirmed = realised in that month" color="emerald" />
+      <SectionHeader title="COS Realisation" subtitle="Supplier invoice number captured = COS realised. Invoice date determines the month." color="emerald" />
 
       {period === "weekly" && (
         <PeriodComparisonRow

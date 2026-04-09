@@ -1618,7 +1618,6 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         budget,
         variance,
         variancePct,
-        revRealised: cashReceived, // backward-compat alias — this is actually cash received, not revenue realised
         cashReceived,
         ytdCOS,
         ytdRealised,
@@ -1627,7 +1626,6 @@ router.get("/api/cos-tracker", requireAuth, async (req, res) => {
         ytdBudget,
         ytdVariance,
         ytdVariancePct,
-        ytdRevRealised, // backward-compat — actually YTD cash received
         ytdCashReceived: ytdRevRealised,
         cosProjects: mapToSortedArray(bucket?.projects ?? new Map()),
         realisedProjects: mapToSortedArray(realisedBucket?.projects ?? new Map()),
@@ -2186,7 +2184,7 @@ router.get("/api/revenue-tracker/project/:projectName", requireAuth, requirePerm
 router.get("/api/gp-tracker", requireAuth, async (req, res) => {
   try {
     const [allExpenses, allInflowsRaw, revManualEntries, cosManualEntries, cosOverrideMap] = await Promise.all([
-      storage.getAllCostLinesForCashflow(),
+      getHighRiskAllCostReadRows(),
       storage.getAllRevenueLinesForCashflow(),
       storage.getTrackerMonthlyManual('REV'),
       storage.getTrackerMonthlyManual('COS'),
@@ -2500,7 +2498,7 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
     if (!keyMatch) return res.status(400).json({ error: "Invalid monthKey format" });
 
     const [allExpenses, allInflowsRaw, cosOverrideMapGPD] = await Promise.all([
-      storage.getAllCostLinesForCashflow(),
+      getHighRiskAllCostReadRows(),
       storage.getAllRevenueLinesForCashflow(),
       Promise.resolve(new Map()),
     ]);
@@ -2591,7 +2589,7 @@ router.get("/api/gp-tracker/month-detail", requireAuth, async (req, res) => {
 async function revenueTrackerHandler(req: Request, res: Response) {
   try {
     const [allExpenses, allInflowsRaw, manualEntries, cosOverrideMap] = await Promise.all([
-      storage.getAllCostLinesForCashflow(),
+      getHighRiskAllCostReadRows(),
       storage.getAllRevenueLinesForCashflow(),
       storage.getTrackerMonthlyManual('REV'),
       Promise.resolve(new Map()),

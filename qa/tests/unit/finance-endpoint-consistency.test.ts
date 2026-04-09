@@ -57,37 +57,37 @@ describe("COS Tracker endpoints use lineage-aware high-risk source helper", () =
   });
 });
 
-describe("GP Tracker endpoints use canonical source", () => {
+describe("GP Tracker endpoints use canonical source via high-risk helper", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("GP tracker main uses canonical reads for both cost and revenue", () => {
+  it("GP tracker main uses high-risk helper for cost lines and canonical for revenue", () => {
     const block = routes.substring(
       routes.indexOf('"/api/gp-tracker"'),
       routes.indexOf('"/api/gp-tracker/project/')
     );
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
+    expect(block).toContain("getHighRiskAllCostReadRows()");
     expect(block).toContain("storage.getAllRevenueLinesForCashflow()");
     expect(block).not.toContain("storage.getAllProgramExpenses()");
     expect(block).not.toContain("storage.getAllProgramInflows()");
   });
 
-  it("GP tracker month-detail uses canonical reads", () => {
+  it("GP tracker month-detail uses high-risk helper for cost lines", () => {
     const startIdx = routes.indexOf('"/api/gp-tracker/month-detail"');
     const block = routes.substring(startIdx, startIdx + 2000);
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
+    expect(block).toContain("getHighRiskAllCostReadRows()");
     expect(block).toContain("storage.getAllRevenueLinesForCashflow()");
   });
 });
 
-describe("Revenue Tracker endpoints use canonical source", () => {
+describe("Revenue Tracker endpoints use canonical source via high-risk helper", () => {
   const routes = read("server/departments/finance-routes.ts");
 
-  it("Revenue tracker main handler uses canonical reads", () => {
+  it("Revenue tracker main handler uses high-risk helper for cost lines", () => {
     const block = routes.substring(
       routes.indexOf("async function revenueTrackerHandler"),
       routes.indexOf("async function revenueTrackerHandler") + 1000
     );
-    expect(block).toContain("storage.getAllCostLinesForCashflow()");
+    expect(block).toContain("getHighRiskAllCostReadRows()");
     expect(block).toContain("storage.getAllRevenueLinesForCashflow()");
   });
 
