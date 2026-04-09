@@ -9,6 +9,7 @@ import { FinanceSupportRepository } from "./repositories/finance-support-reposit
 import { FinanceTemporalRepository } from "./repositories/finance-temporal-repository";
 import { FinanceInflowsRepository } from "./repositories/finance-inflows-repository";
 import { FinanceExpenseEngineRepository } from "./repositories/finance-expense-engine-repository";
+import { ProjectInfoRepository } from "./repositories/project-info-repository";
 import { softCloseByProjectName } from "./lib/temporal-helpers";
 import { eq, desc, and, or, gte, lte, isNull, sql, inArray, count, not, ilike } from "drizzle-orm";
 import {
@@ -426,6 +427,7 @@ export class DatabaseStorage implements IStorage {
   private readonly financeTemporalRepository: FinanceTemporalRepository;
   private readonly financeInflowsRepository: FinanceInflowsRepository;
   private readonly financeExpenseEngineRepository: FinanceExpenseEngineRepository;
+  private readonly projectInfoRepository: ProjectInfoRepository;
 
   // Getter that always returns the current db (handles dynamic switching)
   private get dbInstance(): typeof db {
@@ -443,6 +445,7 @@ export class DatabaseStorage implements IStorage {
     this.financeTemporalRepository = new FinanceTemporalRepository(this.dbInstance);
     this.financeInflowsRepository = new FinanceInflowsRepository(this.dbInstance);
     this.financeExpenseEngineRepository = new FinanceExpenseEngineRepository(this.dbInstance);
+    this.projectInfoRepository = new ProjectInfoRepository(this.dbInstance);
   }
   
   // Transaction support
@@ -833,15 +836,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined> {
-    const [updated] = await this.dbInstance
-      .update(projectInfo)
-      .set({ ...fields, updatedAt: new Date() })
-      .where(eq(projectInfo.id, id))
-      .returning();
-    if (updated) {
-      await syncProjectSplitTables(id, fields, this.dbInstance);
-    }
-    return updated;
+    return this.projectInfoRepository.updateById(id, fields);
   }
 
   async getAllProjectInfo(): Promise<any[]> {
