@@ -1251,32 +1251,7 @@ export function registerDashboardRoutes(app: Express) {
   });
 
   // ==================== DASHBOARD DATA ROUTES ====================
-
-  app.get("/api/dashboard", requireAuth, async (req, res) => {
-    try {
-      const [projects, expenses, revenues, tasks, latestRefresh] = await Promise.all([
-        storage.getAllProjects(),
-        storage.getAllExpenses(),
-        storage.getAllRevenues(),
-        storage.getAllTasks(),
-        storage.getLatestRefresh()
-      ]);
-
-      const budgets = await storage.getAllBudgets();
-
-      res.json({
-        projects,
-        expenses,
-        revenues,
-        tasks,
-        budgets,
-        lastRefresh: latestRefresh?.refreshedAt?.toISOString() || null
-      });
-    } catch (error) {
-      console.error("Dashboard fetch error:", error);
-      res.status(500).json({ error: "Failed to fetch dashboard data", message: "Failed to fetch dashboard data" });
-    }
-  });
+  // GET /api/dashboard — retired: department project-routes handler wins by registration order
 
   app.get("/api/dashboard/import-health", requireAuth, async (_req, res) => {
     try {

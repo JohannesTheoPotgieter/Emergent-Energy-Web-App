@@ -111,16 +111,5 @@ export function registerMiscExtractedRoutes(app: Express): void {
     }
   });
 
-  // ==================== PROJECTS LISTING ====================
-
-  app.get("/api/projects", requireAuth, async (req, res) => {
-    try {
-      const projects = await storage.getAllProjects();
-      // Strip internal fields before responding
-      const shaped = projects.map(({ sourceFile, ...rest }: any) => rest);
-      res.json(shaped);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch projects", message: "Failed to fetch projects" });
-    }
-  });
+  // GET /api/projects — retired: department project-routes handler wins by registration order
 }
