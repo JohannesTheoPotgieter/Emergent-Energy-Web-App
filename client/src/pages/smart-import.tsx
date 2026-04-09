@@ -16,6 +16,13 @@ import {
   Pencil, History, Zap, SkipForward,
 } from "lucide-react";
 import { useLocation } from "wouter";
+import { SmartImportV2Flow } from "@/components/smart-import";
+
+function safeStr(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
 
 export function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem("auth_token");
@@ -150,9 +157,10 @@ export function UploadStep({
   const addFiles = (fileList: FileList | File[]) => {
     const newFiles: FileUploadResult[] = [];
     const arr = Array.from(fileList);
+    let skippedCount = 0;
     for (const f of arr) {
       const ext = f.name.split(".").pop()?.toLowerCase();
-      if (ext !== "xlsx" && ext !== "xlsm") continue;
+      if (ext !== "xlsx" && ext !== "xlsm") { skippedCount++; continue; }
       if (files.some(existing => existing.file.name === f.name && existing.file.size === f.size)) continue;
       newFiles.push({ file: f, status: "pending" });
     }
@@ -162,6 +170,12 @@ export function UploadStep({
     }
     setFiles(prev => [...prev, ...newFiles]);
     setError(null);
+    if (skippedCount > 0) {
+      toast({
+        title: `${skippedCount} file${skippedCount > 1 ? "s" : ""} skipped`,
+        description: `Only .xlsx and .xlsm files are supported. ${newFiles.length} valid file${newFiles.length !== 1 ? "s" : ""} added.`,
+      });
+    }
   };
 
   const removeFile = (idx: number) => {
@@ -171,6 +185,55 @@ export function UploadStep({
   const clearAll = () => {
     setFiles([]);
     setError(null);
+  };
+
+  const retryFile = async (idx: number) => {
+    const entry = files[idx];
+    if (!entry || entry.status === "success" || entry.status === "uploading") return;
+    const updatedFiles = [...files];
+    updatedFiles[idx] = { ...entry, status: "uploading", error: undefined };
+    setFiles(updatedFiles);
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", entry.file);
+      const res = await fetch("/api/smart-import/upload", {
+        method: "POST",
+        headers: getAuthHeaders(),
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || `Upload failed (${res.status})`);
+      }
+      const data = await res.json();
+      updatedFiles[idx] = {
+        ...entry,
+        status: "success",
+        runId: data.runId,
+        preview: data.preview,
+        sectionsFound: data.preview?.detection?.sections?.length || 0,
+        error: undefined,
+      };
+      setFiles([...updatedFiles]);
+      toast({ title: "Upload Complete", description: `${entry.file.name} analyzed successfully` });
+
+      // If this was the only file, proceed to next step
+      const allSuccessful = updatedFiles.filter(f => f.status === "success");
+      if (updatedFiles.length === 1 && allSuccessful.length === 1) {
+        onUploaded(allSuccessful[0].runId!, allSuccessful[0].preview);
+      }
+    } catch (err: any) {
+      updatedFiles[idx] = { ...entry, status: "error", error: err.message || "Upload failed" };
+      setFiles([...updatedFiles]);
+      toast({
+        title: "Retry Failed",
+        description: err.message || "Upload failed. See details below.",
+        variant: "destructive",
+      });
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleUpload = async () => {
@@ -231,11 +294,21 @@ export function UploadStep({
     } else if (successful.length === 1) {
       toast({ title: "Upload Complete", description: "File analyzed successfully" });
       onUploaded(successful[0].runId!, successful[0].preview);
+    } else if (failed.length > 0) {
+      toast({
+        title: "Upload Failed",
+        description: "See the error details below. Fix the issue and retry.",
+        variant: "destructive",
+      });
     }
   };
 
   const singleMode = files.length <= 1;
   const hasSuccessful = files.some(f => f.status === "success");
+  const failedFiles = files.filter(f => f.status === "error");
+  const pendingFiles = files.filter(f => f.status === "pending");
+  const hasFailures = failedFiles.length > 0;
+  const hasRetryable = hasFailures || pendingFiles.length > 0;
 
   return (
     <Card className="bg-card rounded-xl shadow-sm" data-testid="upload-step">
@@ -371,6 +444,19 @@ export function UploadStep({
                   {entry.status === "uploading" && (
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
                   )}
+                  {entry.status === "error" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6 text-[10px] px-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                      disabled={uploading}
+                      onClick={() => retryFile(idx)}
+                      data-testid={`btn-retry-file-${idx}`}
+                    >
+                      <ArrowRight className="w-3 h-3 mr-0.5" />
+                      Retry
+                    </Button>
+                  )}
                   {(entry.status === "pending" || entry.status === "error") && (
                     <Button
                       variant="ghost"
@@ -389,7 +475,7 @@ export function UploadStep({
                       <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
                       <div className="space-y-1">
                         <p className="font-medium text-red-700">Why it failed</p>
-                        <p className="text-red-600">{entry.error}</p>
+                        <p className="text-red-600">{safeStr(entry.error)}</p>
                       </div>
                     </div>
                     <div className="border-t border-red-200 pt-1.5 mt-1.5">
@@ -469,14 +555,34 @@ export function UploadStep({
         {error && (
           <div className="flex items-center gap-2 text-red-600 text-sm" data-testid="text-upload-error">
             <AlertCircle className="w-4 h-4" />
-            {error}
+            {safeStr(error)}
+          </div>
+        )}
+
+        {/* Retry all failed banner */}
+        {hasFailures && !uploading && (
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2" data-testid="retry-failed-banner">
+            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+            <span className="text-xs text-red-700 flex-1">
+              {failedFiles.length} file{failedFiles.length > 1 ? "s" : ""} failed to upload. Fix the issues or retry.
+            </span>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-red-600 hover:bg-red-700 text-white"
+              disabled={uploading}
+              onClick={handleUpload}
+              data-testid="btn-retry-all-failed"
+            >
+              <ArrowRight className="w-3.5 h-3.5 mr-1" />
+              Retry All Failed ({failedFiles.length})
+            </Button>
           </div>
         )}
 
         <div className="flex gap-2">
           <Button
             className="flex-1"
-            disabled={files.length === 0 || uploading}
+            disabled={files.length === 0 || uploading || (!hasRetryable && hasSuccessful)}
             onClick={handleUpload}
             data-testid="btn-upload"
           >
@@ -484,6 +590,11 @@ export function UploadStep({
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 {files.length > 1 ? `Processing ${batchProgress.current}/${batchProgress.total}...` : "Uploading & Analyzing..."}
+              </>
+            ) : hasFailures && !pendingFiles.length ? (
+              <>
+                <ArrowRight className="w-4 h-4 mr-2" />
+                Retry Failed Upload{failedFiles.length > 1 ? "s" : ""} ({failedFiles.length})
               </>
             ) : (
               <>
@@ -1588,7 +1699,7 @@ export function IssuesStep({
                           </Badge>
                         )}
                         <p className="text-xs font-medium" data-testid={`text-issue-msg-${issue.id}`}>
-                          {issue.message}
+                          {safeStr(issue.message)}
                         </p>
                       </div>
                       {issue.autoResolved && (
@@ -2021,7 +2132,7 @@ export function IssuesStep({
               {unresolvedBlockers.map((b: any) => (
                 <li key={b.id} className="text-xs text-red-700 flex items-center gap-1.5" data-testid={`admin-blocker-${b.id}`}>
                   <X className="w-3 h-3" />
-                  {b.message}
+                  {safeStr(b.message)}
                 </li>
               ))}
             </ul>
@@ -2807,7 +2918,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-red-600 mt-0.5 shrink-0" />
               <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium text-red-800">{previouslyDeletedWarning.message}</p>
+                <p className="text-sm font-medium text-red-800">{safeStr(previouslyDeletedWarning.message)}</p>
                 <p className="text-xs text-red-600">This project was previously deleted from the system. Proceeding will create a brand new project with this name and import all the data from this file.</p>
                 <div className="flex gap-2 mt-3">
                   <Button
@@ -2841,7 +2952,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div className="flex-1 space-y-3">
-                <p className="text-sm font-medium text-amber-800">{manualEditsWarning.message}</p>
+                <p className="text-sm font-medium text-amber-800">{safeStr(manualEditsWarning.message)}</p>
                 <p className="text-xs text-amber-600">Choose how to handle your existing manual changes below.</p>
 
                 {manualEditsWarning.conflicts && manualEditsWarning.conflicts.length > 0 && (
@@ -3010,7 +3121,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium text-amber-800">{recencyWarning.message}</p>
+                <p className="text-sm font-medium text-amber-800">{safeStr(recencyWarning.message)}</p>
                 <p className="text-xs text-amber-600">
                   {recencyWarning.error === "import_equal_date"
                     ? "The uploaded file has the same date as the existing data. You may proceed if the file contains corrections."
@@ -3048,7 +3159,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div className="space-y-1">
-                <p className="text-sm font-medium text-amber-800">{planEditConflict.message}</p>
+                <p className="text-sm font-medium text-amber-800">{safeStr(planEditConflict.message)}</p>
                 <p className="text-xs text-amber-600">{planEditConflict.unresolvedCount} unresolved plan edit(s) must be reviewed before this import can be committed.</p>
               </div>
             </div>
@@ -3087,7 +3198,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
               <div className="space-y-1">
-                <p className="text-sm font-medium text-amber-800">{duplicateProjectWarning.message}</p>
+                <p className="text-sm font-medium text-amber-800">{safeStr(duplicateProjectWarning.message)}</p>
                 <p className="text-xs text-amber-600">
                   {duplicateProjectWarning.matchCandidates?.some((m: any) => m.matchReason === "same_project_different_phase")
                     ? "This file appears to be a different phase of an existing project. Please confirm which project to map to."
@@ -3126,7 +3237,7 @@ export function PreviewCommitStep({
             <div className="flex items-start gap-3">
               <XCircle className="w-5 h-5 text-red-600 mt-0.5" />
               <div className="space-y-1">
-                <p className="text-sm font-medium text-red-800">{blockerWarning.message}</p>
+                <p className="text-sm font-medium text-red-800">{safeStr(blockerWarning.message)}</p>
                 <p className="text-xs text-red-600">Fix these rows in the Issues step, then retry the commit.</p>
               </div>
             </div>
@@ -3138,9 +3249,9 @@ export function PreviewCommitStep({
                     {blocker.rowReference != null ? <Badge variant="outline">Row {blocker.rowReference}</Badge> : null}
                     {blocker.field ? <Badge variant="outline">{blocker.field}</Badge> : null}
                   </div>
-                  <p className="mt-2 font-medium text-slate-900">{blocker.message}</p>
-                  {blocker.reason ? <p className="mt-1">Reason: {blocker.reason}</p> : null}
-                  {blocker.expected ? <p className="mt-1">Expected: {blocker.expected}</p> : null}
+                  <p className="mt-2 font-medium text-slate-900">{safeStr(blocker.message)}</p>
+                  {blocker.reason ? <p className="mt-1">Reason: {safeStr(blocker.reason)}</p> : null}
+                  {blocker.expected ? <p className="mt-1">Expected: {safeStr(blocker.expected)}</p> : null}
                 </div>
               ))}
             </div>
@@ -3262,8 +3373,60 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
 
   useEffect(() => { loadPendingRuns(); }, [loadPendingRuns]);
 
+  const [allowingRun, setAllowingRun] = useState<number | null>(null);
+  const [allowingAllRuns, setAllowingAllRuns] = useState(false);
+
   const committableRuns = pendingRuns.filter(r => r.blockerCount === 0);
   const blockedRuns = pendingRuns.filter(r => r.blockerCount > 0);
+  const runsWithIssues = pendingRuns.filter(r => r.totalIssues > r.resolvedIssues);
+
+  // Allow All issues on a single run (inline quick-action)
+  const handleAllowRun = async (runId: number) => {
+    setAllowingRun(runId);
+    try {
+      const res = await fetch(`/api/smart-import/${runId}/allow-all`, {
+        method: "POST",
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        toast({ title: "All Issues Allowed", description: `${data.allowed} issue(s) resolved — file is ready to commit` });
+        await loadPendingRuns();
+      } else {
+        const err = await res.json().catch(() => ({ error: "Failed" }));
+        toast({ title: "Error", description: err.error || "Failed to allow all", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Network error", variant: "destructive" });
+    } finally {
+      setAllowingRun(null);
+    }
+  };
+
+  // Allow All issues across ALL pending runs
+  const handleAllowAllRuns = async () => {
+    if (runsWithIssues.length === 0) return;
+    setAllowingAllRuns(true);
+    try {
+      let totalAllowed = 0;
+      for (const run of runsWithIssues) {
+        const res = await fetch(`/api/smart-import/${run.id}/allow-all`, {
+          method: "POST",
+          headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          totalAllowed += data.allowed;
+        }
+      }
+      toast({ title: "All Files Allowed", description: `${totalAllowed} issue(s) resolved across ${runsWithIssues.length} files — all ready to commit` });
+      await loadPendingRuns();
+    } catch {
+      toast({ title: "Error", description: "Failed to allow all", variant: "destructive" });
+    } finally {
+      setAllowingAllRuns(false);
+    }
+  };
 
   const handleIgnoreAllBlockers = async () => {
     if (blockedRuns.length === 0) return;
@@ -3455,7 +3618,7 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                       </span>
                     )}
                     {(r.status === "skipped" || r.status === "failed") && r.error && (
-                      <span className="text-xs text-red-500 max-w-[200px] truncate">{r.error}</span>
+                      <span className="text-xs text-red-500 max-w-[200px] truncate">{safeStr(r.error)}</span>
                     )}
                   </div>
                 ))}
@@ -3549,15 +3712,31 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
                     </Badge>
                   )}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs h-7 px-2"
-                  onClick={() => onSwitchToWizard(run.id)}
-                  data-testid={`btn-review-${run.id}`}
-                >
-                  Review
-                </Button>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {/* Quick-action: Allow All for this file */}
+                  {(run.blockerCount > 0 || run.warningCount > 0) && run.resolvedIssues < run.totalIssues && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-[10px] h-6 px-2 border-blue-300 text-blue-700 hover:bg-blue-50"
+                      disabled={allowingRun === run.id || committing}
+                      onClick={() => handleAllowRun(run.id)}
+                      data-testid={`btn-allow-${run.id}`}
+                    >
+                      {allowingRun === run.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3 mr-0.5" />}
+                      Allow All
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7 px-2"
+                    onClick={() => onSwitchToWizard(run.id)}
+                    data-testid={`btn-review-${run.id}`}
+                  >
+                    Review
+                  </Button>
+                </div>
               </div>
             ))}
           </div>
@@ -3598,6 +3777,35 @@ export function BulkCommitPanel({ onBack, onSwitchToWizard }: {
           )}
         </Button>
       </div>
+
+      {/* Allow All Files — one-click resolve everything */}
+      {runsWithIssues.length > 0 && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3" data-testid="allow-all-files-notice">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-blue-800">
+                  Allow All Files — import everything as-is
+                </p>
+                <p className="text-[10px] text-blue-600 mt-0.5">
+                  Resolves all errors and warnings across {runsWithIssues.length} file{runsWithIssues.length > 1 ? "s" : ""} so all can be committed. Use "Review" for fine-grained control.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-blue-600 hover:bg-blue-700 text-white flex-shrink-0"
+              disabled={allowingAllRuns || committing}
+              onClick={handleAllowAllRuns}
+              data-testid="btn-allow-all-files"
+            >
+              {allowingAllRuns ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : <CheckCircle2 className="w-3 h-3 mr-1" />}
+              Allow All ({runsWithIssues.length} files)
+            </Button>
+          </div>
+        </div>
+      )}
 
       {blockedRuns.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg p-3" data-testid="blocked-runs-notice">
@@ -3847,6 +4055,7 @@ export function SmartImportGovernancePanel({
 }
 
 export default function SmartImportPage() {
+  const [useV2, setUseV2] = useState(true);
   const [step, setStep] = useState(1);
   const [runId, setRunId] = useState<number | null>(null);
   const [preview, setPreview] = useState<any>(null);
@@ -3855,6 +4064,9 @@ export default function SmartImportPage() {
   const [runLoadError, setRunLoadError] = useState<string | null>(null);
   const [bulkMode, setBulkMode] = useState(false);
   const [cameFromBulk, setCameFromBulk] = useState(false);
+  /** When v2 is active and user clicks Review on a bulk run, open it in v2 flow */
+  const [v2ReviewRunId, setV2ReviewRunId] = useState<number | null>(null);
+  const [v2ActiveRunId, setV2ActiveRunId] = useState<number | null>(null);
   const pendingRunsQuery = useQuery<PendingRun[], Error>({
     queryKey: ["smart-import-pending-governance"],
     queryFn: async () => {
@@ -3934,13 +4146,21 @@ export default function SmartImportPage() {
   };
 
   const handleSwitchToWizard = (wizardRunId: number) => {
-    setBulkMode(false);
-    setCameFromBulk(true);
-    setRunId(wizardRunId);
-    setStep(2);
-    setIssues([]);
-    setRunLoadError(null);
-    loadRunData(wizardRunId);
+    if (useV2) {
+      // V2: open the run in the plain-language v2 flow
+      setBulkMode(false);
+      setV2ReviewRunId(wizardRunId);
+      setCameFromBulk(true);
+    } else {
+      // V1: open in the advanced wizard
+      setBulkMode(false);
+      setCameFromBulk(true);
+      setRunId(wizardRunId);
+      setStep(2);
+      setIssues([]);
+      setRunLoadError(null);
+      loadRunData(wizardRunId);
+    }
   };
 
   return (
@@ -3973,10 +4193,54 @@ export default function SmartImportPage() {
         retryRecentRuns={() => { void recentRunsQuery.refetch(); }}
       />
 
-      {!bulkMode && <StepIndicator currentStep={step} onStepClick={(s) => { if (s < step) setStep(s); }} />}
+      {/* V2 / V1 toggle — available for admin power users */}
+      <div className="flex items-center justify-end gap-2 text-xs text-muted-foreground" data-testid="v2-mode-toggle">
+        <button
+          className={`px-2 py-1 rounded ${useV2 ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-slate-100"}`}
+          onClick={() => {
+            if (!useV2 && runId) {
+              setV2ReviewRunId(runId);
+            }
+            setUseV2(true);
+          }}
+        >
+          Simple view
+        </button>
+        <button
+          className={`px-2 py-1 rounded ${!useV2 ? "bg-blue-100 text-blue-700 font-medium" : "hover:bg-slate-100"}`}
+          onClick={() => {
+            const activeId = v2ActiveRunId;
+            if (useV2 && activeId) {
+              setRunId(activeId);
+              setStep(2);
+              loadRunData(activeId);
+            }
+            setUseV2(false);
+          }}
+        >
+          Advanced view
+        </button>
+      </div>
 
-      {/* Contextual status line */}
-      {!bulkMode && step > 1 && preview && !loadingRun && (
+      {/* ── V2 flow (plain-language) ── */}
+      {useV2 && !bulkMode && (
+        <SmartImportV2Flow
+          onBulkMode={() => setBulkMode(true)}
+          initialRunId={v2ReviewRunId}
+          onRunIdChange={setV2ActiveRunId}
+          onBack={cameFromBulk ? () => {
+            setV2ReviewRunId(null);
+            setCameFromBulk(false);
+            setBulkMode(true);
+          } : undefined}
+        />
+      )}
+
+      {/* ── V1 flow (advanced/legacy) ── */}
+      {!useV2 && !bulkMode && <StepIndicator currentStep={step} onStepClick={(s) => { if (s < step) setStep(s); }} />}
+
+      {/* Contextual status line (v1 only) */}
+      {!useV2 && !bulkMode && step > 1 && preview && !loadingRun && (
         <div className="flex items-center gap-2 -mt-4 mb-2 text-xs text-muted-foreground" data-testid="step-context">
           <Info className="w-3.5 h-3.5 shrink-0" />
           {step === 2 && (
@@ -4009,14 +4273,14 @@ export default function SmartImportPage() {
         </div>
       )}
 
-      {loadingRun && step > 1 && !bulkMode && (
+      {!useV2 && loadingRun && step > 1 && !bulkMode && (
         <div className="flex items-center justify-center py-4">
           <Loader2 className="w-5 h-5 animate-spin text-blue-500 mr-2" />
           <span className="text-sm text-muted-foreground">Loading import data...</span>
         </div>
       )}
 
-      {runLoadError && !loadingRun && !bulkMode && (
+      {!useV2 && runLoadError && !loadingRun && !bulkMode && (
         <AdminQueryState
           isLoading={false}
           error={runLoadError}
@@ -4031,7 +4295,7 @@ export default function SmartImportPage() {
           onBack={() => { setBulkMode(false); setStep(1); }}
           onSwitchToWizard={handleSwitchToWizard}
         />
-      ) : (
+      ) : !useV2 ? (
         <>
           {cameFromBulk && step >= 2 && (
             <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2" data-testid="back-to-bulk-banner">
@@ -4096,7 +4360,7 @@ export default function SmartImportPage() {
             />
           )}
         </>
-      )}
+      ) : null}
     </div>
     </AdminPageShell>
   );

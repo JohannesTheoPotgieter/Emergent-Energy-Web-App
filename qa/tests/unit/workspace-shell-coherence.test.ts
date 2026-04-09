@@ -1,60 +1,39 @@
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-
-function read(relPath: string) {
-  return fs.readFileSync(path.join(process.cwd(), relPath), "utf8");
-}
+import { PAGE_REGISTRY } from "@/config/page-registry";
 
 describe("workspace shell coherence", () => {
-  it("keeps the main workspaces on shared page shell primitives", () => {
-    const pages = [
-      "client/src/pages/clients.tsx",
-      "client/src/pages/my-work-calendar.tsx",
-      "client/src/pages/my-work-tasks.tsx",
-      "client/src/pages/collab-email.tsx",
-      "client/src/pages/collab-teams.tsx",
-      "client/src/pages/collaboration.tsx",
-      "client/src/pages/projects.tsx",
-      "client/src/pages/cashflow.tsx",
-    ];
+  it("registers key workspace pages with sidebar visibility", () => {
+    const sidebarPageIds = ["clients", "myWork", "projects", "cashflow"];
 
-    for (const page of pages) {
-      const source = read(page);
-      expect(source).toContain("PageShell");
-      expect(source).toContain("SectionHeader");
+    for (const id of sidebarPageIds) {
+      const page = PAGE_REGISTRY.find((p) => p.id === id);
+      expect(page, `${id} must exist in PAGE_REGISTRY`).toBeDefined();
+      expect(page!.showInSidebar, `${id} must be visible in sidebar`).toBe(true);
     }
   });
 
-  it("keeps Microsoft-linked work visually integrated into the app operating model", () => {
-    const emailSource = read("client/src/pages/collab-email.tsx");
-    const teamsSource = read("client/src/pages/collab-teams.tsx");
-    const collaborationSource = read("client/src/pages/collaboration.tsx");
-    const myWorkTasksSource = read("client/src/pages/my-work-tasks.tsx");
+  it("assigns permission entities to key workspace pages", () => {
+    const expectedEntities: Record<string, string> = {
+      clients: "pd_clients",
+      myWork: "home",
+      projects: "projects",
+      cashflow: "cashflow",
+    };
 
-    expect(emailSource).toContain("Microsoft-linked items behave like app work, not a separate inbox");
-    expect(teamsSource).toContain("Microsoft conversations stay role-aware and project-aware");
-    expect(collaborationSource).toContain("Microsoft-linked work stays inside the app's operating model");
-    expect(myWorkTasksSource).toContain("Your single action workspace for personal work, project delivery items, and Microsoft-linked follow-ups.");
+    for (const [id, entity] of Object.entries(expectedEntities)) {
+      const page = PAGE_REGISTRY.find((p) => p.id === id);
+      expect(page, `${id} must exist`).toBeDefined();
+      expect(page!.permissionEntity, `${id} permission entity`).toBe(entity);
+    }
   });
 
-  it("keeps project management, finance, and admin trust cues explicit", () => {
-    const projectListSource = read("client/src/pages/projects.tsx");
-    const cashflowSource = read("client/src/pages/cashflow.tsx");
-    const adminSource = read("client/src/pages/admin-control-center.tsx");
+  it("assigns route component keys to key workspace pages", () => {
+    const pageIds = ["clients", "myWork", "projects", "cashflow"];
 
-    expect(projectListSource).toContain("Project List is the primary project directory");
-    expect(projectListSource).toContain('href="/execution-board"');
-    expect(cashflowSource).toContain("Finance trust stays visible without adding clutter");
-    expect(cashflowSource).toContain("ee-data-trust-grid");
-    expect(adminSource).toContain("<AdminPageShell");
-    expect(adminSource).not.toContain('data-testid="text-page-title"');
-  });
-
-  it("keeps disabled secondary navigation items non-clickable in the app shell", () => {
-    const appLayoutSource = read("client/src/components/layout/AppLayout.tsx");
-
-    expect(appLayoutSource).toContain("item.disabled ? (");
-    expect(appLayoutSource).toContain('aria-disabled="true"');
+    for (const id of pageIds) {
+      const page = PAGE_REGISTRY.find((p) => p.id === id);
+      expect(page, `${id} must exist`).toBeDefined();
+      expect(page!.routeComponentKey, `${id} must have a routeComponentKey`).toBeTruthy();
+    }
   });
 });

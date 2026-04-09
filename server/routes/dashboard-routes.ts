@@ -1,7 +1,7 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
+import { format } from "date-fns";
 import { toCanonicalEngineeringStageStatus } from "@shared/status-logic";
+import { computeMarginPct } from "../lib/finance/margin";
 import { storage } from "../storage";
 import { db } from "../db";
 import { eq, and, or, sql, isNull, asc, desc, inArray } from "drizzle-orm";
@@ -10,9 +10,10 @@ import { logAuditFromReq } from "../audit-logger";
 import { requireAuth } from "../auth-context";
 import { requireAdmin } from "../middleware/requireAdmin";
 import { getAllPMWorkItemsAsProjectPlan } from "../work-items-adapter";
-import { classifyCosStatus } from "../lib/calculations/stateClassifier";
+import { isDateBlack } from "../lib/calculations/stateClassifier";
+import { classifyCosStatusFull, isCosRealised as isCosRealisedShared } from "../lib/calculations/financeUtils";
+import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { evaluateRevenueArStatus } from "../lib/finance/revenue-ar-status";
-import { getTrackerLinkedActiveProjectIdSet } from "../services/kpi-active-project-scope";
 
 async function getMergedExpensesAndInflows(expenses: any[], inflows: any[]) {
   return { expenses, inflows };
@@ -144,7 +145,7 @@ export function registerDashboardRoutes(app: Express) {
       const fyEnd = `${fyStartYear + 1}-08-31`;
       const today = now.toISOString().slice(0, 10);
 
-      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows, revOverrides, cosOverrides, trackerLinkedActiveProjectIds] = await Promise.all([
+      const [allProjectInfo, revenueRows, costRows, importRuns, engRows, approvalsRows, canonicalPlanTasks, qualityResult, usersResult, cashflowPointRows, financeRevenueRows, financeCosRows, revOverrides, cosOverrides] = await Promise.all([
         storage.getAllProjectInfo(),
         db.select().from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo)),
         db.select().from(normalizedCostLines).where(isNull(normalizedCostLines.effectiveTo)),
@@ -158,15 +159,15 @@ export function registerDashboardRoutes(app: Express) {
         db.select().from(cashflowPoints).where(isNull(cashflowPoints.effectiveTo)),
         db.select().from(financeRevenueMonthly).where(isNull(financeRevenueMonthly.effectiveTo)),
         db.select().from(financeCosMonthly).where(isNull(financeCosMonthly.effectiveTo)),
-        Promise.resolve([]),
-        Promise.resolve([]),
-        getTrackerLinkedActiveProjectIdSet(),
+        Promise.resolve([] as Array<{ projectName: string; rowNumber: string; overrideValue: string }>),
+        Promise.resolve([] as Array<{ projectName: string; rowNumber: string; overrideStatus: string }>),
       ]);
 
       const userNameById = new Map<number, string>((usersResult.rows as any[]).map((u: any) => [Number(u.id), u.name || `User ${u.id}`]));
       const hasText = (v: any) => typeof v === 'string' && v.trim().length > 0;
       const toNum = (v: any) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
-      const isBlack = (v: any) => { const s = String(v || '').toLowerCase(); return s.includes('000000') || s.includes('black'); };
+      // Use canonical isDateBlack from stateClassifier for consistent settled/planned logic
+      const isBlack = (fontColor: any, confirmed?: boolean | null) => isDateBlack(confirmed ?? null, fontColor);
       const isInFy = (d: string | null | undefined) => !!(d && /^\d{4}-\d{2}-\d{2}/.test(d) && d >= fyStart && d <= fyEnd);
       const taskIntersectsFy = (t: any) => {
         const s = t.actual_start_date || t.start_date;
@@ -187,7 +188,7 @@ export function registerDashboardRoutes(app: Express) {
       }
 
       // RLS: scope project data to user's accessible projects
-      const { resolveProjectScope } = await import("./services/project-access-service");
+      const { resolveProjectScope } = await import("../services/project-access-service");
       const dashUser = (req as any).user;
       const dashScope = await resolveProjectScope(
         dashUser?.id || 0,
@@ -321,9 +322,14 @@ export function registerDashboardRoutes(app: Express) {
         const row = ensureRow(proj); row.__hasFyItem = true;
         const amt = toNum(r.amountExVat);
         row.plannedRevenueFy += amt;
-        const baseReceived = hasText(r.invoiceNumber) && hasText(r.paidDate) && isBlack(r.paidDateFontColor);
         const overrideInBank = inBankOverrideSet.has(`${r.projectName}::${r.sourceRow}`);
-        const received = baseReceived || overrideInBank;
+        const received = overrideInBank || isRevenueSettled({
+          paidDate: r.paidDate,
+          paidDateConfirmed: r.paidDateConfirmed,
+          paidDateFontColor: r.paidDateFontColor,
+          inBankDate: r.inBankDate,
+          manualInBank: overrideInBank ? 1 : null,
+        });
         if (received) row.receivedInflowFy += amt;
         if (!received && dateKey && dateKey < today) row._inflowRisk += amt;
       }
@@ -340,20 +346,24 @@ export function registerDashboardRoutes(app: Express) {
         const row = ensureRow(proj); row.__hasFyItem = true;
         const amt = toNum(c.amountExVat);
         row.plannedExpenditureFy += amt;
-        const paid = hasText(c.invoiceNumber) && hasText(c.paidDate) && isBlack(c.paidDateFontColor);
+        const paid = hasText(c.invoiceNumber) && hasText(c.paidDate) && isBlack(c.paidDateFontColor, c.paidDateConfirmed);
         if (paid) row.paidExpenditureFy += amt;
         if (!paid && dateKey && dateKey < today) row._outflowRisk += amt;
 
         if (dateKey && dateKey.slice(0, 7) === currentMonthKey) {
           cosPlannedMonth += amt;
           const cosOverrideStatus = cosOverrideByKey.get(`${c.projectName}::${c.sourceRow}`);
-          const isRealised = cosOverrideStatus === 'COS Realised' || (!cosOverrideStatus && classifyCosStatus({
+          // Use canonical invoice-only check for COS realisation
+          const isRealised = isCosRealisedShared({
             expenseInvoiceNumber: c.invoiceNumber,
             expenseInvoicedDate: c.invoiceDate,
             expensePoNumber: c.poNumber,
             invoiceDateConfirmed: c.invoiceDateConfirmed,
             invoiceDateFontColor: c.invoiceDateFontColor,
-          }) === 'COS Realised');
+            _cosOverrideStatus: cosOverrideStatus ?? null,
+            cosStatusOverride: (c as any).cosStatusOverride ?? null,
+            cosRealised: (c as any).cosRealised ?? null,
+          });
           if (isRealised) cosRealisedMonth += amt;
         }
       }
@@ -382,7 +392,7 @@ export function registerDashboardRoutes(app: Express) {
       let projects = Array.from(rowsByProject.values()).filter((row: any) => {
         const info = projectById.get(row.projectId);
         if (!info) return false;
-        const isActive = trackerLinkedActiveProjectIds.has(row.projectId);
+        const isActive = info.archivedStatus === 'ACTIVE' && info.isActive !== false;
         const hasImport = committedProjectIds.has(row.projectId) || committedProjectNames.has((row.projectName || '').toLowerCase());
         return isActive && hasImport && !!row.__hasFyItem;
       });
@@ -398,7 +408,7 @@ export function registerDashboardRoutes(app: Express) {
         }
         row.openInflowFy = row.plannedRevenueFy - row.receivedInflowFy;
         row.openExpenditureFy = row.plannedExpenditureFy - row.paidExpenditureFy;
-        row.grossMarginPctFy = row.plannedRevenueFy > 0 ? Number((((row.plannedRevenueFy - row.plannedExpenditureFy) / row.plannedRevenueFy) * 100).toFixed(1)) : null;
+        row.grossMarginPctFy = computeMarginPct(row.plannedRevenueFy, row.plannedExpenditureFy, { precision: 1 });
         row.engineeringStatus = row._engOpen >= 5 ? 'Blocked' : row._engOpen > 0 ? 'At Risk' : 'On Track';
         row.qualityStatus = row._qualityOpen >= 5 ? 'Blocked' : row._qualityOpen > 0 ? 'At Risk' : 'On Track';
         const latest = latestImportByProject.get(row.projectId);
@@ -575,7 +585,7 @@ export function registerDashboardRoutes(app: Express) {
                 forecastExpenditure: 0,
               }));
               bucket.plannedRevenue += toNum(row.amountExVat);
-              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor)) {
+              if (isRevenueSettled({ paidDate: row.paidDate, paidDateConfirmed: row.paidDateConfirmed, paidDateFontColor: row.paidDateFontColor, inBankDate: row.inBankDate })) {
                 bucket.actualCashflow += toNum(row.amountExVat);
               }
             }
@@ -595,7 +605,7 @@ export function registerDashboardRoutes(app: Express) {
                 forecastExpenditure: 0,
               }));
               bucket.plannedExpenditure += toNum(row.amountExVat);
-              if (hasText(row.invoiceNumber) && hasText(row.paidDate) && isBlack(row.paidDateFontColor)) {
+              if (isRevenueSettled({ paidDate: row.paidDate, paidDateConfirmed: (row as any).paidDateConfirmed, paidDateFontColor: row.paidDateFontColor, inBankDate: (row as any).inBankDate })) {
                 bucket.actualCashflow -= toNum(row.amountExVat);
               }
             }
@@ -935,7 +945,7 @@ export function registerDashboardRoutes(app: Express) {
           paidExpenditureFy: sum('paidExpenditureFy'),
           openExpenditureFy: sum('openExpenditureFy'),
           grossProfitFy: sum('plannedRevenueFy') - sum('plannedExpenditureFy'),
-          grossMarginPctFy: sum('plannedRevenueFy') > 0 ? Number((((sum('plannedRevenueFy') - sum('plannedExpenditureFy')) / sum('plannedRevenueFy')) * 100).toFixed(1)) : null,
+          grossMarginPctFy: computeMarginPct(sum('plannedRevenueFy'), sum('plannedExpenditureFy'), { precision: 1 }),
           openEngineeringBlockers: sum('_engOpen'),
           openQualityWarnings: sum('_qualityOpen'),
           pendingApprovals: sum('_approvalsPending'),
@@ -975,10 +985,10 @@ export function registerDashboardRoutes(app: Express) {
         storage.getAllProgramExpenses(),
         storage.getAllProgramInflows(),
         storage.getAllProjectPlans(),
-        Promise.resolve([]),
+        Promise.resolve([] as any[]),
         storage.getAllMilestoneTaskLinks(),
         storage.getAllOperationalTasks(),
-        Promise.resolve([]),
+        Promise.resolve([] as Array<{ overrideValue: string; projectName: string; rowNumber: string }>),
       ]);
       const allExpenses = legacyExpenses;
       const allPlans = legacyRawPlans;

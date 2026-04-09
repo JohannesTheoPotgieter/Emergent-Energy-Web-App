@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
 import type { Express, Request, Response, NextFunction } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
@@ -14,6 +12,7 @@ import { normalizeStatus, normalizePriority } from "../lib/canonical-task-engine
 import { isWorkItemsEnabled, getAllWorkItemsForPlanTab } from "../work-items-adapter";
 import { softDeleteCanonicalWorkItemByLegacyTaskId } from "../canonical-boundaries";
 import { runCascadesAfterUpdate, validateParentCompletion } from "../services/task-cascade-service";
+import { queryStr, queryInt, paramStr, paramInt } from "../lib/req-parse";
 
 // SA working days helpers (duplicated from routes.ts for self-containment)
 function formatDateKey(y: number, m: number, d: number): string {
@@ -133,7 +132,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.get("/api/planning-tasks/:projectName", requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(paramStr(req, "projectName"));
 
       const useCanonical = await isWorkItemsEnabled();
 
@@ -589,7 +588,7 @@ export function registerPlanningTasksRoutes(app: Express) {
             const role = roleMap.get(wiId);
             t.assignmentRole = role || null;
           }
-        } catch {}
+        } catch (e) { console.warn("[planning-tasks-routes] non-critical error:", e instanceof Error ? e.message : e); }
       }
 
       res.json({ tasks: result, unlinkedOperationalCount });
@@ -601,7 +600,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.get("/api/planning-tasks/:projectName/summary-rollup", requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(paramStr(req, "projectName"));
       const allTasks = await db.select().from(workItems).where(
         and(
           eq(workItems.workstream, "PM"),
@@ -670,9 +669,9 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.patch("/api/planning-tasks/:taskId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const taskId = parseInt(req.params.taskId);
-      if (!Number.isFinite(taskId)) {
-        return res.status(400).json({ error: `Invalid task ID: ${req.params.taskId}` });
+      const taskId = paramInt(req, "taskId");
+      if (taskId == null) {
+        return res.status(400).json({ error: `Invalid task ID: ${paramStr(req, "taskId")}` });
       }
       const user = req.user as any;
       const { projectName, ...updates } = req.body;
@@ -724,6 +723,7 @@ export function registerPlanningTasksRoutes(app: Express) {
         ).limit(1);
       }
       const isWorkItemTask = workItemResult.length > 0;
+      const wi = workItemResult[0] as any;
 
       if (isProjectPlanTask) {
         const scenario = await storage.getOrCreateActiveScenario(projectName);
@@ -835,7 +835,6 @@ export function registerPlanningTasksRoutes(app: Express) {
 
         res.json({ success: true, taskId });
       } else if (isWorkItemTask) {
-        const wi = workItemResult[0];
         const taskName = updates.title || wi.title || "Unknown task";
         const wiUpdateFields: any = {};
         const notifFields: { field: string; old: string | null; new_: string | null }[] = [];
@@ -1039,7 +1038,7 @@ export function registerPlanningTasksRoutes(app: Express) {
       let workItem: any;
       let task: any;
 
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         [workItem] = await tx.insert(workItems).values({
           projectId,
           workstream: "PM",
@@ -1206,7 +1205,8 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.delete("/api/planning-tasks/:taskId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const taskId = parseInt(req.params.taskId);
+      const taskId = paramInt(req, "taskId");
+      if (taskId == null) return sendError(res, badRequest("Invalid task ID"));
       const user = req.user as any;
       const { projectName } = req.body;
       if (!projectName) return sendError(res, badRequest("projectName is required"));
@@ -1266,7 +1266,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.get("/api/key-date-mappings/:projectName", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const mappings = await storage.getKeyDateMappings(decodeURIComponent(req.params.projectName));
+      const mappings = await storage.getKeyDateMappings(decodeURIComponent(paramStr(req, "projectName")));
       res.json(mappings);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1285,10 +1285,10 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.patch("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const id = paramInt(req, "id");
+      if (id == null) return res.status(400).json({ error: "Invalid ID" });
       const updated = await storage.updateKeyDateMapping(id, req.body);
-      logAuditFromReq(req, { entityType: "key_date_mapping", entityId: req.params.id, action: "update", changesJson: req.body });
+      logAuditFromReq(req, { entityType: "key_date_mapping", entityId: paramStr(req, "id"), action: "update", changesJson: req.body });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1297,10 +1297,10 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.delete("/api/key-date-mappings/:id", requireAuth, requireAdmin, async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
-      if (isNaN(id)) return res.status(400).json({ error: "Invalid ID" });
+      const id = paramInt(req, "id");
+      if (id == null) return res.status(400).json({ error: "Invalid ID" });
       await storage.deleteKeyDateMapping(id);
-      logAuditFromReq(req, { entityType: "key_date_mapping", entityId: req.params.id, action: "delete" });
+      logAuditFromReq(req, { entityType: "key_date_mapping", entityId: paramStr(req, "id"), action: "delete" });
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1401,8 +1401,8 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.get("/api/key-dates/by-id/:projectId", requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.projectId, 10);
-      if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
+      const projectId = paramInt(req, "projectId");
+      if (projectId == null) return res.status(400).json({ error: "Invalid project ID" });
       const [piRow] = await db.select({ projectName: projectInfo.projectName }).from(projectInfo).where(eq(projectInfo.id, projectId)).limit(1);
       const pName = piRow?.projectName || "";
       res.json(await resolveKeyDates(projectId, pName));
@@ -1413,7 +1413,7 @@ export function registerPlanningTasksRoutes(app: Express) {
 
   app.get("/api/key-dates/:projectName", requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectName = decodeURIComponent(req.params.projectName);
+      const projectName = decodeURIComponent(paramStr(req, "projectName"));
       const [piRow] = await db.select({ id: projectInfo.id }).from(projectInfo).where(eq(projectInfo.projectName, projectName)).limit(1);
       const projectId = piRow?.id || null;
       res.json(await resolveKeyDates(projectId, projectName));

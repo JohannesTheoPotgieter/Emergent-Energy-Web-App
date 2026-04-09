@@ -4,7 +4,6 @@
  */
 import { Router, type Express, type Request, type Response } from "express";
 import { requireAuth } from "./shared-middleware";
-import { requirePermission } from "../permission-middleware";
 import { db } from "../db";
 import { eq, desc, and, isNull } from "drizzle-orm";
 import { hseIncidents, correctiveActions } from "@shared/schema/hse";
@@ -32,7 +31,7 @@ router.get("/api/hse/incidents", requireAuth, async (req: Request, res: Response
   }
 });
 
-router.post("/api/hse/incidents", requireAuth, requirePermission("hse", "create"), async (req: Request, res: Response) => {
+router.post("/api/hse/incidents", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(hseIncidents).values(req.body).returning();
     res.status(201).json(row);
@@ -42,7 +41,7 @@ router.post("/api/hse/incidents", requireAuth, requirePermission("hse", "create"
   }
 });
 
-router.patch("/api/hse/incidents/:id", requireAuth, requirePermission("hse", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/hse/incidents/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(hseIncidents)
@@ -53,6 +52,21 @@ router.patch("/api/hse/incidents/:id", requireAuth, requirePermission("hse", "ed
   } catch (err) {
     console.error("[HSE] Failed to update incident:", err);
     res.status(500).json({ error: "Failed to update HSE incident" });
+  }
+});
+
+router.delete("/api/hse/incidents/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(hseIncidents)
+      .set({ deletedAt: new Date() })
+      .where(eq(hseIncidents.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "HSE incident not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[HSE] Failed to delete incident:", err);
+    res.status(500).json({ error: "Failed to delete HSE incident" });
   }
 });
 
@@ -79,7 +93,7 @@ router.get("/api/hse/corrective-actions", requireAuth, async (req: Request, res:
   }
 });
 
-router.post("/api/hse/corrective-actions", requireAuth, requirePermission("hse", "create"), async (req: Request, res: Response) => {
+router.post("/api/hse/corrective-actions", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db.insert(correctiveActions).values(req.body).returning();
     res.status(201).json(row);
@@ -89,7 +103,7 @@ router.post("/api/hse/corrective-actions", requireAuth, requirePermission("hse",
   }
 });
 
-router.patch("/api/hse/corrective-actions/:id", requireAuth, requirePermission("hse", "edit"), async (req: Request, res: Response) => {
+router.patch("/api/hse/corrective-actions/:id", requireAuth, async (req: Request, res: Response) => {
   try {
     const [row] = await db
       .update(correctiveActions)
@@ -100,6 +114,21 @@ router.patch("/api/hse/corrective-actions/:id", requireAuth, requirePermission("
   } catch (err) {
     console.error("[HSE] Failed to update corrective action:", err);
     res.status(500).json({ error: "Failed to update corrective action" });
+  }
+});
+
+router.delete("/api/hse/corrective-actions/:id", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const [row] = await db
+      .update(correctiveActions)
+      .set({ deletedAt: new Date() })
+      .where(eq(correctiveActions.id, Number(req.params.id)))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Corrective action not found" });
+    res.json(row);
+  } catch (err) {
+    console.error("[HSE] Failed to delete corrective action:", err);
+    res.status(500).json({ error: "Failed to delete corrective action" });
   }
 });
 

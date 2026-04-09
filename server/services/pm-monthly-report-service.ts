@@ -29,7 +29,6 @@ import {
 } from "@shared/schema";
 import { desc } from "drizzle-orm";
 import { isDateBlack } from "../lib/calculations/stateClassifier";
-import { isRevenueSettled } from "../lib/finance/revenue-ar-status";
 import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 
 const COMPLETED_STATUSES = ["COMPLETE", "COMPLETED", "DONE"];
@@ -219,15 +218,7 @@ export async function generatePmReportData(month: string) {
   const revenueSummary = activeProjects.map(p => {
     const lines = revByProject.get(p.id) || [];
     const totalInvoiced = lines.filter((r: any) => r.invoiceDate).reduce((s: any, r: any) => s + toNum(r.amountExVat), 0);
-    const totalReceived = lines.filter((r: any) => isRevenueSettled({
-      status: r.status,
-      manualInBank: r.manualInBank,
-      inBankDate: r.inBankDate,
-      paymentReceivedDate: r.paymentReceivedDate,
-      paidDate: r.paidDate,
-      paidDateConfirmed: r.paidDateConfirmed,
-      paidDateFontColor: r.paidDateFontColor,
-    })).reduce((s: any, r: any) => s + toNum(r.amountExVat), 0);
+    const totalReceived = lines.filter((r: any) => r.paidDate || r.inBankDate).reduce((s: any, r: any) => s + toNum(r.amountExVat), 0);
     const invoicedThisMonth = lines.filter((r: any) => isDateStrInMonth(r.invoiceDate, monthStartStr, monthEndStr)).reduce((s: any, r: any) => s + toNum(r.amountExVat), 0);
     const receivedThisMonth = lines.filter((r: any) => isDateStrInMonth(r.paidDate, monthStartStr, monthEndStr)).reduce((s: any, r: any) => s + toNum(r.amountExVat), 0);
     return {
@@ -253,19 +244,30 @@ export async function generatePmReportData(month: string) {
     const lines = costByProject.get(p.id) || [];
     const budgetTotal = lines.reduce((s: any, c: any) => s + toNum(c.budgetTotal), 0);
     const actualCost = lines.reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
-    const today = new Date().toISOString().slice(0, 10);
+    // COS realised: canonical invoice-only rule
     const cosRealised = lines.filter((c: any) => isCanonicalCosRealised({
-      status: c.status,
-      cosStatusOverride: c.cosStatusOverride ?? c._cosOverrideStatus ?? null,
+      status: null,
+      cosStatusOverride: c.cosStatusOverride ?? null,
       cosRealised: c.cosRealised ?? null,
-      expenseInvoiceNumber: c.invoiceNumber ?? c.expenseInvoiceNumber ?? null,
-      expenseInvoicedDate: c.invoiceDate ?? c.expenseInvoicedDate ?? null,
-      expensePoNumber: c.poNumber ?? c.expensePoNumber ?? null,
-      paymentDate: c.paidDate ?? c.paymentDate ?? null,
-      today,
+      expenseInvoiceNumber: c.invoiceNumber ?? null,
+      expenseInvoicedDate: c.invoiceDate ?? null,
+      expensePoNumber: c.poNumber ?? null,
+      paymentDate: c.paidDate ?? null,
+      today: monthEndStr,
     })).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
+    // Cash paid: confirmed payment date
     const paid = lines.filter((c: any) => c.paidDateConfirmed).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
-    const committed = lines.filter((c: any) => c.poNumber && !(c.invoiceNumber && c.invoiceDate && isDateBlack(c.invoiceDateConfirmed, c.invoiceDateFontColor))).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
+    // Committed: has PO or invoice-in-progress but not yet realised per canonical check
+    const committed = lines.filter((c: any) => (c.poNumber || c.invoiceNumber) && !isCanonicalCosRealised({
+      status: null,
+      cosStatusOverride: c.cosStatusOverride ?? null,
+      cosRealised: c.cosRealised ?? null,
+      expenseInvoiceNumber: c.invoiceNumber ?? null,
+      expenseInvoicedDate: c.invoiceDate ?? null,
+      expensePoNumber: c.poNumber ?? null,
+      paymentDate: c.paidDate ?? null,
+      today: monthEndStr,
+    })).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
     const costsThisMonth = lines.filter((c: any) => isDateStrInMonth(c.invoiceDate, monthStartStr, monthEndStr)).reduce((s: any, c: any) => s + toNum(c.amountExVat), 0);
     return {
       projectId: p.id,

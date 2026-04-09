@@ -10,6 +10,11 @@ import { requirePermission, hasImportPermission } from "./permission-middleware"
 import { jwtAuth, requireAuth } from "./auth-context";
 import { requireAdmin } from "./middleware/requireAdmin";
 import { runSmartImportPreview } from "./lib/import/index";
+import { runImportPlanner, type PlannerResult } from "./lib/import/planner";
+import { writePlanIncremental, writeRevenueIncremental, writeExpenditureIncremental, type IncrementalCommitResult } from "./lib/import/commit-executor";
+import { matchRows, generateBusinessKey, type SectionType, type MatchedRow } from "./lib/import/row-matcher";
+import { runConflictEngine, type RowMergeResult } from "./lib/import/conflict-engine";
+import { loadCurrentPlanRows, loadCurrentRevenueRows, loadCurrentCostRows, loadBaselineNormalization, detectImportMode } from "./lib/import/baseline";
 import {
   smartImportRuns,
   importIssues,
@@ -44,7 +49,6 @@ import { syncProjectSplitTables, syncProjectSplitTablesAfterInsert } from "./lib
 import { softCloseByProjectId, softCloseByProjectName, softCloseByImportRunId, addTemporalColumns } from "./lib/temporal-helpers";
 import { recordImportChange, recordSystemEvent } from "./lib/audit/diff-engine";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
-import { bridgeCatch } from "./bridge/bridge-writer";
 import { eq, desc, and, or, sql, inArray, isNull } from "drizzle-orm";
 
 function normalizeForComparison(name: string): string {
@@ -702,6 +706,7 @@ router.patch("/api/smart-import/:runId/assign-project", requireAuth, requirePerm
 });
 
 // GET /api/smart-import/:runId
+// Optional query param: ?includePlan=true to include v2 planner output
 router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Response) => {
   try {
     const runId = parseInt(req.params.runId as string);
@@ -712,10 +717,23 @@ router.get("/api/smart-import/:runId", requireAuth, async (req: Request, res: Re
 
     const issues = await db.select().from(importIssues).where(eq(importIssues.importRunId, runId));
 
+    let planning: PlannerResult | null = null;
+    if (req.query.includePlan === "true") {
+      const summary = run.summaryJson as any;
+      if (summary?.normalization) {
+        try {
+          planning = await runImportPlanner(run.projectId, summary.normalization);
+        } catch (planErr: unknown) {
+          console.warn("[SmartImport] Planner failed (non-blocking):", (planErr instanceof Error ? planErr.message : String(planErr)));
+        }
+      }
+    }
+
     res.json({
       run,
       issues,
       preview: run.summaryJson,
+      planning,
     });
   } catch (err: unknown) {
     console.error("[smart-import] GET run error:", err);
@@ -839,6 +857,40 @@ router.get("/api/smart-import/:runId/diff", requireAuth, async (req: Request, re
     res.json({ diff });
   } catch (err: unknown) {
     console.error("[smart-import] GET diff error:", err);
+    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+  }
+});
+
+// GET /api/smart-import/:runId/plan — Smart Import v2 planner output
+// Returns structured diff with row-level classifications:
+//   NEW / CHANGED / UNCHANGED / MISSING_FROM_UPLOAD / CONFLICT_PLACEHOLDER
+router.get("/api/smart-import/:runId/plan", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const runId = parseInt(req.params.runId as string);
+    if (isNaN(runId)) return res.status(400).json({ error: "Invalid runId" });
+    console.log(`[smart-import] GET plan start: runId=${runId}`);
+    const t0 = Date.now();
+
+    const [run] = await db.select().from(smartImportRuns).where(eq(smartImportRuns.id, runId));
+    if (!run) return res.status(404).json({ error: "Import run not found" });
+
+    const summary = run.summaryJson as any;
+    if (!summary?.normalization) {
+      return res.status(400).json({ error: "No normalization data found in this import run" });
+    }
+
+    const timeoutMs = 30000;
+    const plannerPromise = runImportPlanner(run.projectId, summary.normalization);
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`Planner timed out after ${timeoutMs}ms`)), timeoutMs)
+    );
+
+    const planning = await Promise.race([plannerPromise, timeoutPromise]);
+    console.log(`[smart-import] GET plan done: runId=${runId} in ${Date.now() - t0}ms`);
+
+    res.json({ planning });
+  } catch (err: unknown) {
+    console.error("[smart-import] GET plan error:", err);
     res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
   }
 });
@@ -1348,8 +1400,63 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       }
     }
 
+    // ── Smart Import v2: 3-way conflict check ──
+    // Run the planner to detect true conflicts (both app and file diverged from baseline).
+    // Unresolved conflicts block commit.
+    const v2ConflictResolutions = req.body?.v2ConflictResolutions as Record<string, "keep_app" | "accept_file"> | undefined;
+    const skipV2ConflictCheck = req.body?.skipV2ConflictCheck === true;
+    const preserveManualEditsEarly = req.body?.preserveManualEdits === true;
+
+    if (!skipV2ConflictCheck && !preserveManualEditsEarly && run.projectId) {
+      const summary = run.summaryJson as any;
+      if (summary?.normalization) {
+        try {
+          const plannerResult = await runImportPlanner(run.projectId, summary.normalization);
+          if (plannerResult.conflicts?.hasBlockingConflicts) {
+            const unresolvedConflicts = plannerResult.conflicts.allRows
+              .filter(r => r.conflictStatus === "HAS_CONFLICTS")
+              .map(r => ({
+                rowKey: r.rowKey,
+                displayLabel: r.displayLabel,
+                section: r.section,
+                canonicalSource: r.canonicalSource,
+                fields: r.fields.filter(f => f.requiresDecision).map(f => ({
+                  fieldName: f.fieldName,
+                  baselineValue: f.baselineValue,
+                  currentAppValue: f.currentAppValue,
+                  uploadedValue: f.uploadedValue,
+                  mergeCase: f.mergeCase,
+                })),
+              }));
+
+            // Check if all conflicts have been resolved by the client
+            const allResolved = v2ConflictResolutions
+              ? unresolvedConflicts.every(r =>
+                  r.fields.every(f => v2ConflictResolutions[`${r.rowKey}::${f.fieldName}`])
+                )
+              : false;
+
+            if (!allResolved) {
+              return res.status(409).json({
+                error: "v2_conflicts_detected",
+                message: `This import has ${unresolvedConflicts.length} row(s) where both the app and file changed differently from the last import. Please resolve each conflict.`,
+                conflicts: unresolvedConflicts,
+                planning: {
+                  importMode: plannerResult.importMode,
+                  warnings: plannerResult.warnings,
+                },
+                hint: "Resolve conflicts via v2ConflictResolutions: { 'rowKey::fieldName': 'keep_app' | 'accept_file' }",
+              });
+            }
+          }
+        } catch (planErr: unknown) {
+          console.warn("[SmartImport] v2 conflict check failed (falling through to v1):", (planErr instanceof Error ? planErr.message : String(planErr)));
+        }
+      }
+    }
+
     const acknowledgeManualEdits = req.body?.acknowledgeManualEdits === true;
-    const preserveManualEdits = req.body?.preserveManualEdits === true;
+    const preserveManualEdits = preserveManualEditsEarly;
     const conflictResolutions = req.body?.conflictResolutions as Record<string, "keep" | "import"> | undefined;
 
     const hasConflictResolutions = conflictResolutions && Object.keys(conflictResolutions).length > 0;
@@ -1411,12 +1518,11 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         for (const existing of manuallyModifiedRows) {
           const matchingImport = importCostLines.find((imp: any) => imp.sourceRow === existing.sourceRow);
 
-          // COS Realized: requires BOTH invoice number AND black font invoice date
-          // Non-black font = not confirmed = NOT realized
+          // COS Realised: invoice number is the ONLY hard check (canonical rule).
+          // If a supplier invoice is captured, COS is realised.
           if (existing.cosRealised) {
             const importHasInvoice = matchingImport?.invoiceNumber && matchingImport.invoiceNumber.trim();
-            const importDateConfirmed = matchingImport?.invoiceDateConfirmed === true;
-            const importCos = importHasInvoice && importDateConfirmed;
+            const importCos = !!importHasInvoice;
             const flagInfo = editFlagMap.get(`${existing.id}::invoiceDateConfirmed`);
             conflicts.push({
               sourceRow: existing.sourceRow || 0,
@@ -1624,10 +1730,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         };
         const [newProject] = await db.insert(projectInfo).values(newProjectFields as any).returning();
         await syncProjectSplitTablesAfterInsert(newProject.id, newProjectFields);
-        // Phase 2 bridge write: mirror new project to core.projects
-        import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
-          syncProjectInsert(newProject as any)
-        ).catch(bridgeCatch);
         projectId = newProject.id;
         await db.update(smartImportRuns).set({ projectId }).where(eq(smartImportRuns.id, runId));
       }
@@ -1654,10 +1756,185 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
     const counts = { planTasks: 0, revenueLines: 0, costLines: 0, executionPhases: 0, counterparties: 0 };
     const skippedOverrideFields: Array<{ row: number; field: string; importValue: string; manualValue: string }> = [];
     const overwriteWarnings: string[] = [];
+    let v2Result: IncrementalCommitResult | null = null;
 
     let preservedManualEditsCount = 0;
 
     await db.transaction(async (tx: any) => {
+      // ── Atomic commit guard ──
+      // Claim this run for commit by atomically transitioning from a committable
+      // status. If another request already committed (or the status is no longer
+      // committable), the UPDATE matches 0 rows and we abort.
+      // This prevents the race condition where two concurrent requests both read
+      // status=PREVIEW outside the transaction and both proceed to commit.
+      const claimResult = await tx.execute(sql`
+        UPDATE smart_import_runs
+        SET status = 'AWAITING_REVIEW'
+        WHERE id = ${runId}
+          AND status IN ('PREVIEW', 'AWAITING_REVIEW')
+        RETURNING id
+      `);
+      const claimed = (claimResult.rows ?? claimResult);
+      if (!claimed || claimed.length === 0) {
+        throw Object.assign(new Error("Import run is no longer committable (already committed, rolled back, or superseded)"), { status: 409 });
+      }
+
+      // ── Smart Import v2: Incremental commit path ──
+      // If v2 is active and projectId is known, use the planner+conflict engine
+      // to perform targeted writes instead of section-wide replace.
+      const useV2 = !skipV2ConflictCheck && projectId;
+
+      if (useV2) {
+        const commitTimestamp = new Date();
+        const baselineInfo = await detectImportMode(projectId);
+
+        // Load current state for matching
+        const [planRows, revenueRows, costRows, baselineNorm] = await Promise.all([
+          loadCurrentPlanRows(projectId),
+          loadCurrentRevenueRows(projectId),
+          loadCurrentCostRows(projectId),
+          baselineInfo.importMode === "INCREMENTAL" ? loadBaselineNormalization(projectId) : Promise.resolve(null),
+        ]);
+
+        // Run row matching per section
+        const matchedPlan = norm.planTasks?.length > 0 || planRows.length > 0
+          ? matchRows("PLAN" as SectionType, projectId, norm.planTasks || [], planRows as any) : [];
+        const matchedRevenue = norm.revenueLines?.length > 0 || revenueRows.length > 0
+          ? matchRows("REVENUE" as SectionType, projectId, norm.revenueLines || [], revenueRows as any) : [];
+        const matchedCost = norm.costLines?.length > 0 || costRows.length > 0
+          ? matchRows("EXPENDITURE" as SectionType, projectId, norm.costLines || [], costRows as any) : [];
+
+        // Run 3-way conflict engine for incremental imports
+        let conflictMergeResults = new Map<string, RowMergeResult>();
+        if (baselineInfo.importMode === "INCREMENTAL") {
+          const conflictResult = runConflictEngine(
+            { PLAN: matchedPlan, REVENUE: matchedRevenue, EXPENDITURE: matchedCost },
+            baselineNorm,
+            projectId,
+            generateBusinessKey,
+          );
+          for (const row of conflictResult.allRows) {
+            conflictMergeResults.set(row.rowKey, row);
+          }
+        }
+
+        const v2Decisions = v2ConflictResolutions || {};
+
+        // Write PLAN incrementally
+        let planResult = null;
+        if (matchedPlan.length > 0) {
+          planResult = await writePlanIncremental({
+            tx, projectId, projectName, runId, userId,
+            matchedRows: matchedPlan,
+            mergeResults: conflictMergeResults,
+            conflictDecisions: v2Decisions,
+            workItemsTable: workItems,
+            workItemDependenciesTable: workItemDependencies,
+            workItemAssignmentsTable: workItemAssignments,
+          });
+          counts.planTasks = planResult.counts.inserted + planResult.counts.updated;
+        }
+
+        // Write REVENUE incrementally
+        let revenueResult = null;
+        if (matchedRevenue.length > 0) {
+          revenueResult = await writeRevenueIncremental({
+            tx, projectId, projectName, runId, userId,
+            matchedRows: matchedRevenue,
+            mergeResults: conflictMergeResults,
+            conflictDecisions: v2Decisions,
+            commitTimestamp,
+          });
+          counts.revenueLines = revenueResult.counts.inserted + revenueResult.counts.updated;
+        }
+
+        // Write EXPENDITURE incrementally
+        let costResult = null;
+        if (matchedCost.length > 0) {
+          costResult = await writeExpenditureIncremental({
+            tx, projectId, projectName, runId, userId,
+            matchedRows: matchedCost,
+            mergeResults: conflictMergeResults,
+            conflictDecisions: v2Decisions,
+            commitTimestamp,
+          });
+          counts.costLines = costResult.counts.inserted + costResult.counts.updated;
+        }
+
+        v2Result = {
+          sections: {
+            PLAN: planResult,
+            REVENUE: revenueResult,
+            EXPENDITURE: costResult,
+          },
+          totalInserted: (planResult?.counts.inserted || 0) + (revenueResult?.counts.inserted || 0) + (costResult?.counts.inserted || 0),
+          totalUpdated: (planResult?.counts.updated || 0) + (revenueResult?.counts.updated || 0) + (costResult?.counts.updated || 0),
+          totalUnchanged: (planResult?.counts.unchanged || 0) + (revenueResult?.counts.unchanged || 0) + (costResult?.counts.unchanged || 0),
+          totalMissing: (planResult?.counts.missing || 0) + (revenueResult?.counts.missing || 0) + (costResult?.counts.missing || 0),
+        };
+
+        // Handle execution phases (simple re-insert — no temporal matching)
+        if (norm.executionPhases && norm.executionPhases.length > 0) {
+          await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectId, projectId));
+          const phaseValues = norm.executionPhases.map((p: any) => ({
+            projectId,
+            projectName,
+            phaseName: p.phaseName,
+            phaseDate: p.phaseDate,
+            source: "EXCEL_IMPORT" as const,
+            importRunId: runId,
+          }));
+          await tx.insert(normalizedExecutionPhases).values(phaseValues);
+          counts.executionPhases = phaseValues.length;
+        }
+
+        // Update project info from detected metadata (same as v1)
+        const detectedInfo = summary.detection?.projectInfo;
+        if (detectedInfo && projectId) {
+          const VALID_PHASES = ["dlp", "financial close", "planning", "construction", "qa", "handover", "commercial close out", "compliance handover", "hold"];
+          const [existingProject] = await tx.select({ pm: projectInfo.pm, pd: projectInfo.pd }).from(projectInfo).where(eq(projectInfo.id, projectId));
+          const updates: Record<string, any> = {};
+          if (detectedInfo.sizeKwp) updates.sizeKwp = String(detectedInfo.sizeKwp);
+          if (detectedInfo.pd && (!existingProject?.pd || !existingProject.pd.trim())) updates.pd = String(detectedInfo.pd);
+          if (detectedInfo.pm && (!existingProject?.pm || !existingProject.pm.trim())) updates.pm = String(detectedInfo.pm);
+          if (detectedInfo.contractValue) updates.contractValue = String(detectedInfo.contractValue);
+          const rawPhase = detectedInfo.phase ? String(detectedInfo.phase).trim() : null;
+          if (rawPhase && VALID_PHASES.includes(rawPhase.toLowerCase())) {
+            updates.phase = rawPhase;
+            updates.executionPhase = rawPhase;
+            updates.phaseUpdatedAt = new Date();
+          }
+          if (Object.keys(updates).length > 0) {
+            updates.updatedAt = new Date();
+            await tx.update(projectInfo).set(updates).where(eq(projectInfo.id, projectId));
+            await syncProjectSplitTables(projectId, updates, tx);
+          }
+        }
+
+        // Finalize: mark as committed
+        const totalAttempted = (norm.planTasks?.length || 0) + (norm.revenueLines?.length || 0) + (norm.costLines?.length || 0) + (norm.executionPhases?.length || 0);
+        const totalSucceeded = (counts.planTasks || 0) + (counts.revenueLines || 0) + (counts.costLines || 0) + (counts.executionPhases || 0);
+        const totalFailed = totalAttempted - totalSucceeded;
+        const detectedSections: string[] = [];
+        if (norm.planTasks?.length > 0) detectedSections.push("PLAN");
+        if (norm.revenueLines?.length > 0) detectedSections.push("REVENUE");
+        if (norm.costLines?.length > 0) detectedSections.push("EXPENDITURE");
+
+        await tx.update(smartImportRuns).set({
+          status: "COMMITTED",
+          committedAt: new Date(),
+          committedBy: userId,
+          recordsAttempted: totalAttempted,
+          recordsSucceeded: totalSucceeded,
+          recordsFailed: totalFailed,
+          importType: detectedSections.join(","),
+        }).where(eq(smartImportRuns.id, runId));
+      }
+      // ── End v2 incremental commit path ──
+
+      // ── v1 fallback path (runs when v2 is disabled) ──
+      if (!useV2) {
+
       const existingTaskOwners = new Map<string, string>();
       {
         const existingWiTasks = projectId
@@ -1783,11 +2060,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         await softCloseByProjectName(tx, "normalized_cost_lines", projectName);
         await tx.delete(normalizedExecutionPhases).where(eq(normalizedExecutionPhases.projectName, projectName));
       }
-      // Phase 2 bridge write: soft-close promoted finance lines to match legacy
-      import("./bridge/bridge-writer").then(({ softClosePromotedCostLines, softClosePromotedRevenueLines }) => {
-        softClosePromotedCostLines(projectId ?? null, projectName ?? null).catch(bridgeCatch);
-        softClosePromotedRevenueLines(projectId ?? null, projectName ?? null).catch(bridgeCatch);
-      }).catch(bridgeCatch);
       const commitTimestamp = new Date();
       const scenarioIds = await tx
         .select({ id: workingPlanScenario.id })
@@ -1974,6 +2246,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
               projectName,
               description: merged.description,
               milestoneName: merged.milestoneName,
+              milestoneNo: merged.milestoneNo || null,
+              milestonePercent: merged.milestonePercent || null,
               amountExVat: merged.amountExVat,
               vat: merged.vat,
               invoiceNumber: merged.invoiceNumber,
@@ -2542,6 +2816,8 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           importType: detectedSections.join(","),
         })
         .where(eq(smartImportRuns.id, runId));
+
+      } // end if (!useV2) — v1 fallback path
     });
 
     // Record audit ChangeSet for the import commit
@@ -2567,26 +2843,6 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       });
     } catch (auditErr: any) {
       console.warn("[smart-import] Audit logging failed (non-blocking):", auditErr.message);
-    }
-
-    // Post-migration: sync imported PO/invoice lines to finance.finance_records
-    try {
-      if (projectId && (counts.costLines > 0 || counts.revenueLines > 0)) {
-        // Look up project_instance_id from legacy project_id
-        const piResult = await db.execute(sql`
-          SELECT id FROM core.project_instances WHERE legacy_project_id = ${projectId} LIMIT 1
-        `);
-        const projectInstanceId = (piResult.rows[0] as { id: number } | undefined)?.id ?? null;
-        if (projectInstanceId) {
-          const { syncImportedLinesToFinanceRecords } = await import("./services/smart-import-finance-bridge");
-          const syncResult = await syncImportedLinesToFinanceRecords(projectInstanceId);
-          if (syncResult.created > 0) {
-            console.log(`[smart-import] Synced ${syncResult.created} lines to finance_records (${syncResult.skipped} skipped)`);
-          }
-        }
-      }
-    } catch (bridgeErr: any) {
-      console.warn("[smart-import] Finance records bridge failed (non-blocking):", bridgeErr.message);
     }
 
     // Step 4.5: Log conflict resolution decisions and manage protected fields
@@ -2633,6 +2889,32 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         }
       } catch (resLogErr: any) {
         console.warn("[smart-import] Conflict resolution logging failed (non-blocking):", resLogErr.message);
+      }
+    }
+
+    // Step 4.6: Log v2 3-way conflict resolution decisions
+    if (v2ConflictResolutions && Object.keys(v2ConflictResolutions).length > 0) {
+      try {
+        for (const [key, decision] of Object.entries(v2ConflictResolutions)) {
+          const sepIdx = key.lastIndexOf("::");
+          if (sepIdx < 0) continue;
+          const rowKey = key.substring(0, sepIdx);
+          const fieldName = key.substring(sepIdx + 2);
+
+          await db.insert(conflictResolutionLog).values({
+            importRunId: runId,
+            entityType: "v2_3way_merge",
+            entityId: rowKey,
+            fieldName,
+            manualValue: decision === "keep_app" ? "preserved" : null,
+            importValue: decision === "accept_file" ? "applied" : null,
+            decision: decision === "keep_app" ? "KEEP_MANUAL" : "OVERWRITE_WITH_IMPORT",
+            decidedByUserId: userId,
+            decidedByName: (req as any).user?.name || null,
+          });
+        }
+      } catch (v2ResLogErr: any) {
+        console.warn("[smart-import] v2 conflict resolution logging failed (non-blocking):", v2ResLogErr.message);
       }
     }
 
@@ -2686,28 +2968,46 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
       runId,
       summary: importSummary,
       counts,
+      // V2 incremental commit details (null when v1 fallback was used)
+      // v2Result is mutated inside the transaction callback; capture to
+      // a fresh const so TypeScript can narrow the type correctly.
+      v2: (() => {
+        const r = v2Result as IncrementalCommitResult | null;
+        return r ? {
+          totalInserted: r.totalInserted,
+          totalUpdated: r.totalUpdated,
+          totalUnchanged: r.totalUnchanged,
+          totalMissing: r.totalMissing,
+        } : undefined;
+      })(),
       preservedOverrides: skippedOverrideFields.length > 0 ? skippedOverrideFields : undefined,
       preservedManualEdits: preservedManualEditsCount > 0 ? preservedManualEditsCount : undefined,
       overwriteWarnings: overwriteWarnings.length > 0 ? overwriteWarnings : undefined,
     });
 
-    // Prompt 12: Refresh materialized dashboard metrics after import commit
+    // Refresh materialized dashboard metrics after import commit (both v1 and v2)
     if (projectId) refreshProjectMetricsAsync(projectId);
-
-    // Phase 2 bridge write: batch-sync cost/revenue lines to promoted schema (post-commit, non-blocking)
-    if ((counts.costLines || 0) + (counts.revenueLines || 0) > 0) {
-      import("./bridge/batch-bridge-sync").then(({ batchSyncFinanceByProject }) =>
-        batchSyncFinanceByProject(projectId ?? null, projectName ?? null)
-      ).catch(bridgeCatch);
-    }
   } catch (err: unknown) {
+    const pgCause = (err as any)?.cause;
     console.error("[smart-import] POST commit error:", err);
+    if (pgCause) {
+      console.error("[smart-import] PostgreSQL cause:", {
+        message: pgCause?.message,
+        detail: pgCause?.detail,
+        code: pgCause?.code,
+        constraint: pgCause?.constraint,
+        table: pgCause?.table,
+        column: pgCause?.column,
+        schema: pgCause?.schema,
+      });
+    }
 
     // Log failed import attempt
     try {
       const userId = (req as any).user?.id || null;
       const runId = parseInt(req.params.runId as string);
       if (!isNaN(runId)) {
+        const causeMsg = pgCause ? ` | PG: ${pgCause.message || ''} [${pgCause.code || ''}] constraint=${pgCause.constraint || ''} detail=${pgCause.detail || ''}` : '';
         const [failedRun] = await db.select({ fileName: smartImportRuns.sourceFileName, projectName: smartImportRuns.projectName })
           .from(smartImportRuns).where(eq(smartImportRuns.id, runId)).limit(1);
         await db.insert(importLogs).values({
@@ -2717,12 +3017,14 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
           importedByName: (req as any).user?.name || null,
           projectName: failedRun?.projectName || null,
           status: "FAILED",
-          errorMessage: (err instanceof Error ? err.message : String(err)),
+          errorMessage: ((err instanceof Error ? err.message : String(err)) + causeMsg).substring(0, 2000),
         });
       }
     } catch (_) { /* non-blocking */ }
 
-    res.status(500).json({ error: (err instanceof Error ? err.message : String(err)) });
+    const statusCode = (err as any)?.status === 409 ? 409 : 500;
+    const causeInfo = pgCause ? { pgCode: pgCause.code, pgConstraint: pgCause.constraint, pgDetail: pgCause.detail, pgMessage: pgCause.message } : undefined;
+    res.status(statusCode).json({ error: (err instanceof Error ? err.message : String(err)), cause: causeInfo });
   }
 });
 
@@ -3045,7 +3347,7 @@ router.post("/api/smart-import/bulk-commit", requireAuth, requirePermission("sma
         if (req.headers.authorization) commitHeaders["Authorization"] = req.headers.authorization as string;
         if (req.headers.cookie) commitHeaders["Cookie"] = req.headers.cookie;
 
-        const commitRes = await fetch(`http://127.0.0.1:${process.env.PORT || 5000}/api/smart-import/${run.id}/commit`, {
+        const commitRes = await fetch(`http://0.0.0.0:${process.env.PORT || 5000}/api/smart-import/${run.id}/commit`, {
           method: "POST",
           headers: commitHeaders,
           body: JSON.stringify({ acknowledgeManualEdits: true, forceCommit: true, acknowledgeEqualDate: true, forceRecreate: true }),
@@ -3301,60 +3603,61 @@ export function registerSmartImportRoutes(app: Express) {
 
   // Ensure program_expense and program_inflows have all required columns.
   // These are additive ALTER TABLE statements (safe to re-run).
-  // Production: blocked — schema must come from versioned migrations.
   schemaReadyPromise = (async () => {
     try {
       const { getDbMode } = await import("./db");
       if (getDbMode() === "sqlite") return;
-      if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
       const { sql: rawSql } = await import("drizzle-orm");
-      await db.execute(rawSql.raw(`
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_qty NUMERIC(12,4);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_rate_unit NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_total NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_cos_total NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_qty NUMERIC(12,4);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_rate_unit NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_actual_total NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_po_number TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoice_number TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoiced_date TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_confirmed BOOLEAN DEFAULT FALSE;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_font_color TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_payment_date TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_confirmed BOOLEAN DEFAULT FALSE;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_font_color TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS revenue_amount NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS actual_cos_total NUMERIC(15,2);
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS line_status TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_line_hash TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_state TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_forecast_payment_date TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS supplier_name TEXT;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
-        ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name TEXT;
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT';
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER;
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER;
-        ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE work_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE work_item_assignments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE invoice_pattern_matches ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE normalized_execution_phases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE project_revenue_summary ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-        ALTER TABLE project_plan ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();
-      `));
+      const schemaStatements = [
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS sub_project_name TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_qty NUMERIC(12,4)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_rate_unit NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_total NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS budget_cos_total NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS forecast_payment_date TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_qty NUMERIC(12,4)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_rate_unit NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_actual_total NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_po_number TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoice_number TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_invoiced_date TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_confirmed BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS invoice_date_font_color TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_payment_date TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_confirmed BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS payment_date_font_color TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS revenue_amount NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS actual_cos_total NUMERIC(15,2)`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS line_status TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS expense_line_hash TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_state TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS computed_forecast_payment_date TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS supplier_name TEXT`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS is_manual BOOLEAN DEFAULT FALSE`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT'`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS project_id INTEGER`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS import_run_id INTEGER`,
+        `ALTER TABLE program_expense ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS sub_project_name TEXT`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS data_source TEXT DEFAULT 'SMART_IMPORT'`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS project_id INTEGER`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS import_run_id INTEGER`,
+        `ALTER TABLE program_inflows ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE work_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE work_item_assignments ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE normalized_revenue_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE normalized_cost_lines ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE invoice_pattern_matches ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE normalized_execution_phases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE project_revenue_summary ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+        `ALTER TABLE project_plan ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()`,
+      ];
+      for (const statement of schemaStatements) {
+        await db.execute(rawSql.raw(statement));
+      }
       console.log("[SmartImport] Ensured program_expense/program_inflows columns exist");
     } catch (e: any) {
-      console.warn("[SmartImport] Column check skipped:", e?.message?.slice(0, 80));
+      console.warn("[SmartImport] Column check skipped:", e?.message ?? String(e));
     }
   })();
 }

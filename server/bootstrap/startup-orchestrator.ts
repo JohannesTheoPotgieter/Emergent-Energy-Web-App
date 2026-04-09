@@ -21,12 +21,6 @@ async function runDrizzleSchemaSync(log: (message: string, source?: string) => v
   if (mode !== "postgres") return;
   if (!process.env.DATABASE_URL) return;
 
-  // Defense-in-depth: never run in production even if called directly
-  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") {
-    log("runDrizzleSchemaSync blocked in production/staging — use versioned migrations", "Startup:Schema");
-    return;
-  }
-
   // Wait for PostgreSQL to be fully ready before running schema sync
   const ready = await waitForDbReady();
   if (!ready) {
@@ -136,27 +130,6 @@ function extractAlterStatements(sqlContent: string): string[] {
   return statements;
 }
 
-/**
- * Check if the promoted schema from versioned migrations (PR523+) is present.
- * If core.projects exists, the versioned migrations are the schema authority
- * and the legacy startup schema sync should be skipped.
- */
-async function isPromotedSchemaPresent(): Promise<boolean> {
-  const mode = getDbMode();
-  if (mode !== "postgres") return false;
-  try {
-    const result = await db.execute(sql.raw(`
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'core' AND table_name = 'projects'
-      LIMIT 1
-    `));
-    const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
-    return rows.length > 0;
-  } catch {
-    return false;
-  }
-}
-
 async function waitForDbReady(maxRetries = 5, baseDelayMs = 1000): Promise<boolean> {
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -181,12 +154,6 @@ async function runAdditiveSchemaAlignments() {
     return;
   }
 
-  // Defense-in-depth: never run in production even if called directly
-  if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") {
-    console.log("[Schema] Additive alignments blocked in production/staging — use versioned migrations");
-    return;
-  }
-
   const ready = await waitForDbReady();
   if (!ready) {
     console.error("[Schema] Database not accepting connections after retries — skipping additive alignments");
@@ -201,6 +168,7 @@ async function runAdditiveSchemaAlignments() {
         return;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
+        const pgCause = (err as any)?.cause;
         const isTransient = /connection|ECONNREFUSED|not yet accepting|timeout/i.test(msg);
         if (isTransient && attempt < 2) {
           console.warn(`[Schema] ${label} transient error, retrying in 2s: ${msg}`);
@@ -208,6 +176,7 @@ async function runAdditiveSchemaAlignments() {
           continue;
         }
         console.error(`[Schema] ${label} error:`, msg);
+        if (pgCause) console.error(`[Schema] ${label} PG cause:`, pgCause.message || pgCause);
       }
     }
   }
@@ -325,31 +294,68 @@ async function runAdditiveSchemaAlignments() {
     );
   `);
 
-  await safeExec("work_items table", `
-    CREATE TABLE IF NOT EXISTS work_items (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER REFERENCES project_info(id),
-      title TEXT NOT NULL,
-      description TEXT,
-      type TEXT,
-      status TEXT NOT NULL DEFAULT 'NOT_STARTED',
-      priority TEXT NOT NULL DEFAULT 'MEDIUM',
-      workstream TEXT,
-      source TEXT,
-      wbs_code TEXT,
-      start_date TEXT,
-      end_date TEXT,
-      duration INTEGER,
-      actual_start TEXT,
-      actual_end TEXT,
-      actual_duration INTEGER,
-      percent_complete INTEGER DEFAULT 0,
-      owner_user_id INTEGER REFERENCES users(id),
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      deleted_at TIMESTAMP
-    );
+  // NOTE: Legacy work_items sequence/view/trigger blocks removed by
+  // migration 20260409_retire_work_items_view.sql — work_items is now
+  // always a canonical base table.
+
+  await safeExec("legacy deliverables sequence fix", `
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='_deliverables_legacy')
+         AND NOT EXISTS (SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables')
+         AND NOT EXISTS (SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='deliverables')
+      THEN
+        IF EXISTS (SELECT 1 FROM pg_sequences WHERE schemaname='public' AND sequencename='deliverables_id_seq') THEN
+          ALTER SEQUENCE deliverables_id_seq OWNED BY NONE;
+          BEGIN
+            CREATE SEQUENCE _deliverables_legacy_id_seq;
+            PERFORM setval('_deliverables_legacy_id_seq', (SELECT COALESCE(MAX(id),0) FROM _deliverables_legacy));
+            ALTER TABLE _deliverables_legacy ALTER COLUMN id SET DEFAULT nextval('_deliverables_legacy_id_seq'::regclass);
+          EXCEPTION WHEN duplicate_table THEN NULL;
+          END;
+          DROP SEQUENCE IF EXISTS deliverables_id_seq;
+        END IF;
+        ALTER INDEX IF EXISTS deliverables_pkey RENAME TO _deliverables_legacy_pkey;
+        ALTER INDEX IF EXISTS idx_deliverables_project_status RENAME TO _idx_deliverables_legacy_project_status;
+      END IF;
+    END $$;
   `);
+
+
+  // [REMOVED] work_items view insert trigger fix — retired by 20260409_retire_work_items_view.sql
+  // [REMOVED] work_items view update trigger — retired by 20260409_retire_work_items_view.sql
+  // [REMOVED] sync work_items_id_seq — handled by migration and full-schema-alignment.sql
+  const wiExists = await db.execute(sql.raw(
+    "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"
+  ));
+  if (wiExists.rows.length > 0) {
+    console.log("[DB] work_items base table exists — skipping creation");
+  } else {
+    await safeExec("work_items table", `
+      CREATE TABLE IF NOT EXISTS work_items (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER REFERENCES project_info(id),
+        title TEXT NOT NULL,
+        description TEXT,
+        type TEXT,
+        status TEXT NOT NULL DEFAULT 'NOT_STARTED',
+        priority TEXT NOT NULL DEFAULT 'MEDIUM',
+        workstream TEXT,
+        source TEXT,
+        wbs_code TEXT,
+        start_date TEXT,
+        end_date TEXT,
+        duration INTEGER,
+        actual_start TEXT,
+        actual_end TEXT,
+        actual_duration INTEGER,
+        percent_complete INTEGER DEFAULT 0,
+        owner_user_id INTEGER REFERENCES users(id),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        deleted_at TIMESTAMP
+      );
+    `);
+  }
 
   // ── Financial tables ──
   await safeExec("program_expense table", `
@@ -537,7 +543,6 @@ async function runAdditiveSchemaAlignments() {
   await safeExec("dashboard_project_metrics columns", `
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS total_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS paid_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
-    ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS realised_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS outstanding_cost DECIMAL(15,2) NOT NULL DEFAULT 0;
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS margin_pct DECIMAL(8,4);
     ALTER TABLE dashboard_project_metrics ADD COLUMN IF NOT EXISTS task_count INTEGER NOT NULL DEFAULT 0;
@@ -783,6 +788,10 @@ async function runAdditiveSchemaAlignments() {
       created_by INTEGER REFERENCES users(id),
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+  `);
+
+  // work_items is always a base table now (view retired by 20260409 migration)
+  await safeExec("work_item_tags table", `
     CREATE TABLE IF NOT EXISTS work_item_tags (
       id SERIAL PRIMARY KEY,
       work_item_id INTEGER NOT NULL REFERENCES work_items(id) ON DELETE CASCADE,
@@ -834,7 +843,7 @@ async function runAdditiveSchemaAlignments() {
     CREATE INDEX IF NOT EXISTS idx_pal_target_role ON permission_audit_log(target_role);
   `);
 
-  // ── work_items columns ──
+  // ── work_items columns (work_items is always a base table now) ──
   await safeExec("work_items columns", `
     ALTER TABLE work_items ADD COLUMN IF NOT EXISTS estimate_minutes INTEGER;
     ALTER TABLE work_items ADD COLUMN IF NOT EXISTS task_category TEXT;
@@ -986,10 +995,17 @@ async function runAdditiveSchemaAlignments() {
     ALTER TABLE writeback_mappings ADD COLUMN IF NOT EXISTS project_id INTEGER;
   `);
 
-  // ── engineering task columns ──
-  await safeExec("engineering task columns", `
-    ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS work_item_id INTEGER REFERENCES work_items(id);
-  `);
+  // ── engineering task columns (skip FK to work_items if it's a VIEW) ──
+  const wiTableForEng = await db.execute(sql.raw("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='work_items'"));
+  if (wiTableForEng.rows.length > 0) {
+    await safeExec("engineering task columns", `
+      ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS work_item_id INTEGER REFERENCES work_items(id);
+    `);
+  } else {
+    await safeExec("engineering task columns (no FK)", `
+      ALTER TABLE project_eng_tasks ADD COLUMN IF NOT EXISTS work_item_id INTEGER;
+    `);
+  }
 
   // ── Drop FK constraints on task supporting tables (legacy operational_tasks cleanup) ──
   await safeExec("task FK cleanup", `
@@ -1161,33 +1177,40 @@ async function runAdditiveSchemaAlignments() {
   `);
 
   // ── Deliverables table (required by execution dashboard / platform summary) ──
-  await safeExec("deliverables table", `
-    CREATE TABLE IF NOT EXISTS deliverables (
-      id SERIAL PRIMARY KEY,
-      project_id INTEGER NOT NULL REFERENCES project_info(id),
-      project_name TEXT NOT NULL,
-      deliverable_type TEXT NOT NULL,
-      title TEXT NOT NULL,
-      description TEXT,
-      phase TEXT,
-      owner_user_id INTEGER REFERENCES users(id),
-      reviewer_user_id INTEGER REFERENCES users(id),
-      qc_reviewer_user_id INTEGER REFERENCES users(id),
-      status TEXT NOT NULL DEFAULT 'TO DO',
-      current_version INTEGER NOT NULL DEFAULT 1,
-      sharepoint_folder_site_id TEXT,
-      sharepoint_folder_drive_id TEXT,
-      sharepoint_folder_item_id TEXT,
-      linked_plan_item_id INTEGER,
-      linked_quality_item_instance_id INTEGER,
-      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
-      scheduled_date TEXT,
-      scheduled_start_time TEXT,
-      scheduled_end_time TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_deliverables_project_status ON deliverables(project_id, status);
-  `);
+  const delExists = await db.execute(sql.raw(
+    "SELECT 1 FROM pg_views WHERE schemaname='public' AND viewname='deliverables' UNION ALL SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='deliverables'"
+  ));
+  if (delExists.rows.length > 0) {
+    console.log("[DB] deliverables already exists (table or view) — skipping creation");
+  } else {
+    await safeExec("deliverables table", `
+      CREATE TABLE IF NOT EXISTS deliverables (
+        id SERIAL PRIMARY KEY,
+        project_id INTEGER NOT NULL REFERENCES project_info(id),
+        project_name TEXT NOT NULL,
+        deliverable_type TEXT NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT,
+        phase TEXT,
+        owner_user_id INTEGER REFERENCES users(id),
+        reviewer_user_id INTEGER REFERENCES users(id),
+        qc_reviewer_user_id INTEGER REFERENCES users(id),
+        status TEXT NOT NULL DEFAULT 'TO DO',
+        current_version INTEGER NOT NULL DEFAULT 1,
+        sharepoint_folder_site_id TEXT,
+        sharepoint_folder_drive_id TEXT,
+        sharepoint_folder_item_id TEXT,
+        linked_plan_item_id INTEGER,
+        linked_quality_item_instance_id INTEGER,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        scheduled_date TEXT,
+        scheduled_start_time TEXT,
+        scheduled_end_time TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_deliverables_project_status ON deliverables(project_id, status);
+    `);
+  }
 
   // ── Audit events table ──
   await safeExec("audit_events table", `
@@ -2323,59 +2346,8 @@ export async function runStartupOrchestrator(options: {
     log,
   } = options;
 
-  // ── Schema Authority Gate ──────────────────────────────────────────────
-  // Versioned migrations (migrations/*.sql) are the SINGLE schema authority.
-  // Runtime DDL (runDrizzleSchemaSync, runAdditiveSchemaAlignments) is a
-  // LEGACY SAFETY NET for local-dev first-boot only.
-  //
-  // Production/staging: DDL is ALWAYS blocked. Migrations must be run
-  // before the app starts (CI/CD pipeline or manual db:push).
-  //
-  // Development: DDL runs only when the promoted schema is absent AND the
-  // ENABLE_STARTUP_SCHEMA_REPAIR flag is set. Once migrations have been
-  // applied (core.projects exists), DDL is skipped even in dev.
-  //
-  // See docs/schema-authority.md for the canonical model.
-  // ──────────────────────────────────────────────────────────────────────
-  const isProduction = process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging";
-  const schemaGuardActive = await isPromotedSchemaPresent();
-
-  if (isProduction) {
-    // HARD BLOCK: production never runs startup DDL. Period.
-    log("Production environment — startup schema DDL blocked (versioned migrations are the sole authority)", "Startup:Schema");
-    if (!schemaGuardActive) {
-      log("WARNING: promoted schema (core.projects) not found in production — run versioned migrations before starting the app", "Startup:Schema");
-    }
-  } else if (schemaGuardActive) {
-    log("Promoted schema detected (core.projects exists) — skipping legacy schema sync to avoid dual authority", "Startup:Schema");
-  } else {
-    // Development-only: legacy safety net for first-boot environments
-    log("Development mode, no promoted schema — running legacy schema sync (first-boot safety net)", "Startup:Schema");
-    await runDrizzleSchemaSync(log);
-    await runAdditiveSchemaAlignments();
-  }
-
-  // Start automated reconciliation scheduler (Phase 2 health monitoring)
-  if (schemaGuardActive) {
-    try {
-      const { startReconciliationScheduler } = await import("../bridge/reconciliation-runner");
-      startReconciliationScheduler(15 * 60 * 1000, (result) => {
-        console.warn(`[startup] Reconciliation FAIL detected: ${result.summary}`);
-      });
-      log("Reconciliation scheduler started (15-minute interval)", "Startup:Reconciliation");
-    } catch {
-      // Module may not be available — non-critical
-    }
-
-    // Start bridge retry queue scheduler (processes failed bridge writes every 60s)
-    try {
-      const { startBridgeRetryScheduler } = await import("../bridge/bridge-writer");
-      startBridgeRetryScheduler(60_000);
-      log("Bridge retry scheduler started (60-second interval)", "Startup:BridgeRetry");
-    } catch {
-      // Module may not be available — non-critical
-    }
-  }
+  await runDrizzleSchemaSync(log);
+  await runAdditiveSchemaAlignments();
 
   await runStartupMaintenanceOrchestrator({ runtimeMaintenanceEnabled, startupSchemaRepairEnabled, log });
   report.maintenance.push(runtimeMaintenanceEnabled && startupSchemaRepairEnabled ? "completed" : "skipped");

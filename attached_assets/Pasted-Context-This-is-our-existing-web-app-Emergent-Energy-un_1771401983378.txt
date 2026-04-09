@@ -1,0 +1,100 @@
+Context
+- This is our existing web app (Emergent Energy) under the QM (Quality Manager) functionality.
+- Do NOT remove or break any existing functionality, routes, permissions, data, or UI patterns.
+- Only extend/fix what is described below.
+- No placeholder code. No fake buttons. Everything must be wired end-to-end and persist after refresh.
+
+Problem 1: “Response type: text/number” fields are not editable
+- In multiple QM Risk Assessment checklists (Install / Pre-admin / Handover / Planning & Design), we have questions with Yes / No / N/A toggles.
+- Some questions have conditional follow-up inputs (currently shown as “Response type: text” or “Response type: number” in the UI).
+- Users can’t type into those fields at all. We need those follow-up inputs to be fully editable and saved.
+
+Required behaviour (all checklists, everywhere this pattern exists)
+1) For any question with a conditional follow-up:
+   - If the logic is “If NO, explain delay cause”:
+     - Only show the text input when the user selects “No”.
+     - Hide it (and clear stored value, unless we decide to keep history) when user changes away from “No”.
+     - Make it REQUIRED when “No” is selected.
+   - If the logic is “If YES, enter number (%) impact”:
+     - Only show the number input when “Yes” is selected.
+     - Make it REQUIRED when “Yes” is selected.
+     - Validate numeric range:
+       - Allow decimals
+       - Min 0
+       - Max 100 (percentage)
+2) Inputs must be usable on desktop + mobile:
+   - Not disabled, not read-only, not blocked by overlays/z-index.
+   - Cursor focus works, typing works, copy/paste works.
+3) Persist the follow-up responses:
+   - Save immediately (or on explicit “Save” if that’s already the app pattern), but it MUST persist after refresh.
+   - When re-opening the checklist, the saved follow-up text/number must render correctly.
+4) Audit + traceability (lightweight):
+   - Store “updated_by” and “updated_at” per follow-up response (match existing audit pattern in the app).
+5) Permissions:
+   - Only QM-role (and any existing admin roles) can edit.
+   - Others can view read-only.
+
+Implementation notes (do this properly)
+- Find the existing QM Risk Assessment component(s) and data model used for these checklist questions.
+- Add support for question types:
+  - boolean choice: Yes/No/N/A
+  - optional conditional follow-up response (string or number) with rules driven by config on the question
+- Do NOT hardcode for one checklist. Make it generic so any question can define:
+  - followUp:
+    - triggerAnswer: "NO" or "YES"
+    - type: "text" | "number"
+    - required: true/false
+    - label (e.g. “If no, what is the delay caused?” / “Steps to be taken if roof can be damaged” / “If yes, by how much is it impacted (%)?”)
+    - validation rules (number min/max/step)
+- UI control:
+  - For text: use textarea (better than single-line). Auto-grow if possible.
+  - For number: numeric input with decimals (step 0.1 or 0.01).
+- Ensure the “Response type: …” line is not just a label — it must be the real input field.
+
+Problem 2: Engineering pack timeline needs proper duration tracking + allowed working days flag
+Current state
+- There is an “Engineering pack timeline” item currently acting like a Pass/Fail control.
+- We need it to track duration (working days) AND flag if it exceeds an allowed threshold.
+- The existing Pass/Fail control must remain (it’s a different purpose).
+
+Required behaviour
+1) Keep Pass/Fail as-is (do not repurpose it).
+2) Add a timeline tracker specifically for the engineering pack:
+   - Fields:
+     - start_date (date the pack was started / requested)
+     - end_date (date the pack was completed / issued)
+     - allowed_working_days (number)
+   - Calculated:
+     - actual_working_days = business days between start_date and end_date (exclude weekends)
+   - Flagging:
+     - If actual_working_days > allowed_working_days:
+       - Show a visible “Overdue” / red status indicator on that timeline row/section
+     - If within allowed days:
+       - Show normal/green
+     - If dates missing:
+       - Show “Not started” / “In progress” status (based on which date exists)
+3) The allowed_working_days must be editable (so we can set the SLA per project/type).
+4) Persist everything and show it in “Details” view the same way other QM fields work.
+
+Edge cases (handle these, don’t ignore them)
+- If end_date < start_date, block save and show a clear validation message.
+- If allowed_working_days is empty or 0, treat as “no SLA set” and don’t flag overdue (but still calculate actual days once both dates exist).
+- Business day calculation:
+  - Exclude Saturday + Sunday.
+  - No public holiday logic for now unless there is already a company holiday calendar in the app.
+
+Acceptance tests (must pass)
+- Selecting “No” on any “delay caused” question shows an editable text field, saves, reloads, still there.
+- Switching from “No” to “Yes” hides the field and handles the stored value according to the app’s existing data rules (prefer clearing to avoid stale reasons).
+- Selecting “Yes” on a “% impact” question shows a number field, validates 0–100, saves and reloads.
+- Engineering pack timeline:
+  - Enter start_date, end_date, allowed_working_days → actual_working_days calculates correctly (weekends excluded)
+  - Overdue flag shows when actual > allowed
+  - Data persists after refresh
+- No regressions in existing QM checklists or role-based access.
+
+Deliverables
+- Updated QM UI with working follow-up inputs and engineering pack duration tracking.
+- Backend/model updates + migrations (if needed) done safely with backwards compatibility.
+- Minimal but real validation + error messages (no silent failures).
+- Keep the UI clean and consistent with the current app style.

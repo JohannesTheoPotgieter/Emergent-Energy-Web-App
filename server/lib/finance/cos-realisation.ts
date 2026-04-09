@@ -1,71 +1,85 @@
-function hasText(value: unknown): boolean {
-  return typeof value === "string" && value.trim().length > 0;
-}
-
-function toIsoDate(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim().slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : null;
-}
-
-function toMonth(dateStr: string): string {
-  return dateStr.slice(0, 7);
-}
-
-function monthBeforeCurrent(monthKey: string, currentMonthKey: string): boolean {
-  return monthKey < currentMonthKey;
-}
-
-export type CosLineInput = {
-  status?: string | null;
-  cosStatusOverride?: string | null;
-  cosRealised?: boolean | null;
-  expenseInvoiceNumber?: string | null;
-  expenseInvoicedDate?: string | null;
-  expensePoNumber?: string | null;
-  paymentDate?: string | null;
+export interface CosLineInput {
+  status: string | null;
+  cosStatusOverride: string | null;
+  cosRealised: boolean | null;
+  expenseInvoiceNumber: string | null;
+  expenseInvoicedDate: string | null;
+  expensePoNumber: string | null;
+  paymentDate: string | null;
   today: string;
-};
+}
 
 /**
- * Canonical COS realised logic:
- * - Explicit realised status/override is realised.
- * - Committed past-month COS counts as realised.
- * - Otherwise committed/planned remain unrealised.
+ * Admin override sets for manual COS status control.
+ * These are the ONLY values that can force realisation or block it via override.
+ */
+export const OVERRIDE_REALISED = new Set(["COS REALISED", "REALISED"]);
+export const OVERRIDE_NOT_REALISED = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
+
+/**
+ * Canonical COS Realisation Check — SINGLE SOURCE OF TRUTH
+ *
+ * Business rules (do not reinterpret):
+ *   1. Admin override takes absolute precedence.
+ *   2. Invoice number is the ONLY hard check.
+ *      If a supplier invoice is captured under actuals, COS is realised.
+ *   3. PO is NOT the gate for realisation.
+ *   4. Invoice without PO is a red flag but does NOT block realisation.
+ *   5. Status labels alone do NOT determine realisation.
+ *   6. "Committed from prior month" does NOT silently become realised
+ *      unless it has an invoice (rule 2 handles that case already).
+ *   7. cosRealised boolean flag is respected as backward-compatible signal
+ *      for legacy rows that were correctly marked during import.
+ *
+ * The `today` parameter is accepted for interface stability but is no longer
+ * used in the core check — the invoice-only rule does not depend on date
+ * comparison. Month bucketing for period reporting is a separate concern
+ * handled by getCosEffectiveDateAndSource().
  */
 export function isCanonicalCosRealised(input: CosLineInput): boolean {
-  const status = String(input.status ?? "").trim().toUpperCase();
-  const override = String(input.cosStatusOverride ?? "").trim().toUpperCase();
-  const today = toIsoDate(input.today) ?? new Date().toISOString().slice(0, 10);
-  const currentMonth = toMonth(today);
+  // 1. Admin override takes absolute precedence
+  const override = (input.cosStatusOverride ?? "").toUpperCase().trim();
+  if (OVERRIDE_REALISED.has(override)) return true;
+  if (OVERRIDE_NOT_REALISED.has(override)) return false;
 
-  if (override === "COS REALISED" || override === "REALISED") return true;
-  // F-04 fix: When an explicit override is set, it takes precedence over status-based checks.
-  // "INVOICED" and "PAID" overrides are treated as realised (matching status-based logic).
-  // "COMMITTED" falls through to the committed-past-month check below.
-  // "PLANNED" and "APPROVED" are explicitly not yet realised.
-  if (override === "INVOICED" || override === "PAID") return true;
-  if (override === "PLANNED" || override === "APPROVED") return false;
-  // "COMMITTED" override falls through to committed-past-month logic below
+  // 2. Invoice number is the ONLY hard check for COS realisation.
+  //    If a supplier invoice is captured, the cost is realised.
+  //    Status labels (INVOICED, PAID, etc.) do NOT independently gate this.
+  const hasInvoice = !!(input.expenseInvoiceNumber && input.expenseInvoiceNumber.trim());
+  if (hasInvoice) return true;
 
-  if (status === "COS REALISED" || status === "REALISED" || status === "INVOICED" || status === "PAID") {
-    return true;
-  }
-
+  // 3. Legacy cosRealised boolean — backward-compatible signal for rows
+  //    that were marked during import. Respected but should be migrated
+  //    to invoice-based tracking over time.
   if (input.cosRealised === true) return true;
 
-  // ADV-09 fix: also check override === "COMMITTED" so that a COMMITTED override
-  // with a past-month date correctly resolves to realised even without PO/invoice number.
-  const hasCommittedSignal =
-    status === "COMMITTED" ||
-    override === "COMMITTED" ||
-    hasText(input.expensePoNumber) ||
-    hasText(input.expenseInvoiceNumber);
+  // 4. Not realised — no invoice, no override, no legacy flag
+  return false;
+}
 
-  if (!hasCommittedSignal) return false;
+/**
+ * Diagnostic: flags risk conditions on a COS line.
+ * Call after isCanonicalCosRealised() returns true to surface data-quality warnings.
+ *
+ * Possible warnings:
+ *   - INVOICE_WITHOUT_PO: Invoice captured but no PO on file (red flag per business rules)
+ *   - INVOICE_WITHOUT_DATE: Invoice number present but no invoice date — realised for
+ *     totals but cannot be month-bucketed (the open edge case)
+ */
+export function getCosRealisationWarnings(input: CosLineInput): string[] {
+  const warnings: string[] = [];
+  if (!isCanonicalCosRealised(input)) return warnings;
 
-  const committedDate = toIsoDate(input.expenseInvoicedDate) ?? toIsoDate(input.paymentDate);
-  if (!committedDate) return false;
+  const hasInvoice = !!(input.expenseInvoiceNumber && input.expenseInvoiceNumber.trim());
+  const hasInvoiceDate = !!(input.expenseInvoicedDate && input.expenseInvoicedDate.trim());
+  const hasPo = !!(input.expensePoNumber && input.expensePoNumber.trim());
 
-  return monthBeforeCurrent(toMonth(committedDate), currentMonth);
+  if (hasInvoice && !hasPo) {
+    warnings.push("INVOICE_WITHOUT_PO");
+  }
+  if (hasInvoice && !hasInvoiceDate) {
+    warnings.push("INVOICE_WITHOUT_DATE");
+  }
+
+  return warnings;
 }

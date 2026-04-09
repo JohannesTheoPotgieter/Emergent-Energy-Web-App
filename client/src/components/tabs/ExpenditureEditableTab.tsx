@@ -164,6 +164,7 @@ interface CategoryGroup {
 
 interface ExpenditureEditableTabProps {
   projectName: string;
+  projectId?: number | null;
   highlightId?: number | null;
   initialFilter?: string;
 }
@@ -289,7 +290,7 @@ const OverrideDot = ({ originalValue, audit }: { originalValue: string; audit?: 
   </TooltipProvider>
 );
 
-export function ExpenditureEditableTab({ projectName, highlightId, initialFilter }: ExpenditureEditableTabProps) {
+export function ExpenditureEditableTab({ projectName, projectId, highlightId, initialFilter }: ExpenditureEditableTabProps) {
   const { isAdmin } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -379,7 +380,10 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
   }>({
     queryKey: breakdownKey,
     queryFn: async () => {
-      const res = await authFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`);
+      const params = new URLSearchParams();
+      if (projectId) params.set("projectId", String(projectId));
+      const qs = params.toString();
+      const res = await authFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}${qs ? `?${qs}` : ""}`);
       if (!res.ok) throw new Error("Failed to fetch");
       return res.json();
     },
@@ -549,7 +553,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
       const res = await authFetch("/api/expenses/add-line", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, ...data }),
+        body: JSON.stringify({ projectName, ...data, idempotencyKey: crypto.randomUUID() }),
       });
       if (!res.ok) throw new Error("Failed to add line");
       return res.json();
@@ -568,7 +572,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
       const res = await authFetch("/api/expenses/add-category", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, categoryName }),
+        body: JSON.stringify({ projectName, categoryName, idempotencyKey: crypto.randomUUID() }),
       });
       if (!res.ok) throw new Error("Failed to add category");
       return res.json();
@@ -586,7 +590,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
       const res = await authFetch("/api/expenses/insert-task-as-line", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectName, taskId, expenseCategory }),
+        body: JSON.stringify({ projectName, taskId, expenseCategory, idempotencyKey: crypto.randomUUID() }),
       });
       if (!res.ok) throw new Error("Failed to insert task");
       return res.json();
@@ -637,7 +641,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
 
   const noRevLinkedMutation = useMutation({
     mutationFn: async ({ id, noRevenueLinked }: { id: number; noRevenueLinked: boolean }) => {
-      const canonicalId = id >= 900000 ? id - 900000 : id;
+      const canonicalId = id < 0 ? -id : (id >= 900000 ? id - 900000 : id);
       const res = await authFetch(`/api/cost-lines/${canonicalId}/no-revenue-linked`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1612,7 +1616,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
                         <TableCell />
                       </TableRow>
                       {!isCollapsed && group.items.map((exp, rowIdx) => (
-                        <TableRow key={exp.id}
+                        <TableRow key={exp.canonicalLineKey || exp.id}
                           data-row-id={exp.id}
                           data-testid={`row-expense-${exp.id}`}
                           className={`border-b border-border hover:bg-blue-50/30 transition-colors
@@ -1678,7 +1682,7 @@ export function ExpenditureEditableTab({ projectName, highlightId, initialFilter
                 <Button onClick={handleSave} disabled={saveMutation.isPending || overrideComment.length < 3} size="sm"
                   className="h-8 text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
                   data-testid="button-save-edits">
-                  <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Submitting..." : "Submit for Approval"}
+                  <Save className="h-3.5 w-3.5 mr-1" /> {saveMutation.isPending ? "Saving..." : isAdmin ? "Save Changes" : "Submit for Approval"}
                 </Button>
               </PermissionGate>
             </div>

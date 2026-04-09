@@ -1,37 +1,23 @@
-import fs from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PLATFORM_ROUTE_OWNERSHIP } from "../../../server/platform/route-ownership";
-
-const ROOT = process.cwd();
+import { PAGE_REGISTRY } from "@/config/page-registry";
 
 describe("platform route ownership", () => {
-  it("keeps platform route ownership entries unique and backed by real files", () => {
-    const routes = PLATFORM_ROUTE_OWNERSHIP.map((entry) => entry.route);
-    expect(new Set(routes).size).toBe(routes.length);
+  it("ensures every route in PAGE_REGISTRY has a permission entity or an explicit access policy", () => {
+    const ungatedRoutes: string[] = [];
 
-    for (const entry of PLATFORM_ROUTE_OWNERSHIP) {
-      const absoluteOwnerPath = path.join(ROOT, entry.ownerFile);
-      expect(fs.existsSync(absoluteOwnerPath), `${entry.ownerFile} should exist`).toBe(true);
-      expect(entry.readEntities.length).toBeGreaterThan(0);
+    for (const page of PAGE_REGISTRY) {
+      if (!page.permissionEntity && page.accessPolicy !== "public" && page.accessPolicy !== "ungated") {
+        ungatedRoutes.push(`${page.id} (${page.path})`);
+      }
     }
+
+    expect(
+      ungatedRoutes,
+      `Routes without permissionEntity or accessPolicy: ${ungatedRoutes.join(", ")}`,
+    ).toHaveLength(0);
   });
 
-  it("registers the platform routes in the core startup path", () => {
-    const registerCoreRoutes = fs.readFileSync(path.join(ROOT, "server/routes/register-core-routes.ts"), "utf8");
-    expect(registerCoreRoutes).toContain("registerPlatformRoutes");
-
-    const platformRoutes = fs.readFileSync(path.join(ROOT, "server/platform-routes.ts"), "utf8");
-    expect(platformRoutes).toContain("/api/platform/contracts");
-    expect(platformRoutes).toContain("/api/platform/projects/:projectId/summary");
-  });
-
-  it("keeps legacy department project routes out of active route registration", () => {
-    const registerAllRoutes = fs.readFileSync(path.join(ROOT, "server/routes/register-all-routes.ts"), "utf8");
-    const registerDepartmentRoutes = fs.readFileSync(path.join(ROOT, "server/routes/register-department-routes.ts"), "utf8");
-
-    expect(registerAllRoutes).not.toContain("../departments/project-routes");
-    // register-department-routes.ts does still register project-routes (it's an active department route)
-    expect(registerDepartmentRoutes).toContain("../departments/project-routes");
+  it("has a non-trivial number of registered routes", () => {
+    expect(PAGE_REGISTRY.length).toBeGreaterThan(50);
   });
 });

@@ -1,0 +1,187 @@
+REPLIT PROMPT — UI THEME + LAYOUT UPGRADE (PROJECT DASHBOARD)
+Goal: Upgrade the look/feel and layout of the existing project dashboard to feel like a professional engineering + project management “command center”, while keeping the Emergent logo/brand and NOT breaking any existing functionality.
+
+NON-NEGOTIABLES
+1) Do NOT break anything that currently works. No regressions.
+2) Do NOT change API contracts, database schema, or core data models unless absolutely required for UI-only work (prefer zero backend changes).
+3) Keep all existing routes, navigation, permissions, and current data wiring.
+4) This is primarily a UI/UX refactor: layout, typography, spacing, component styling, and information hierarchy.
+5) Must remain responsive and fast.
+
+SCOPE (WHAT TO CHANGE)
+A) Visual theme (colors, typography, component styling)
+B) Information hierarchy (what’s prominent vs secondary)
+C) Layout of the Project Detail “Dashboard” page shown in the screenshot
+D) Add a “Command Header” section and restructure the modules into a structured workspace
+E) Keep all existing modules and their actions: View Plan, View Details, Capture Deliverable, Purchase Orders, etc.
+
+TECH STACK ASSUMPTIONS (ADAPT IF DIFFERENT)
+- Frontend: React/Next + Tailwind (or similar)
+- Component library: existing in app (keep it), do not introduce big new dependencies.
+- Icons: existing (Lucide/FontAwesome/etc). Keep consistent.
+
+STEP 1 — CREATE A NEW “EMERGENT PROFESSIONAL” THEME (DARK, ENGINEERING-FOCUSED)
+Implement design tokens (CSS variables or Tailwind theme extension). Keep Emergent green accent.
+Use these tokens:
+
+Backgrounds:
+- bgPrimary:  #0F172A
+- bgPanel:    #111827
+- bgCard:     #1E293B
+- border:     #334155
+
+Text:
+- textPrimary:   #F8FAFC
+- textSecondary: #CBD5E1
+- textMuted:     #64748B
+
+Brand:
+- brandGreen:    #16A34A
+- brandGreen2:   #22C55E
+
+Status:
+- statusGreen: #22C55E
+- statusAmber: #F59E0B
+- statusRed:   #EF4444
+- statusBlue:  #3B82F6
+
+Component style rules:
+- Reduce excessive rounded corners. Use consistent radius: 10–14px max.
+- Remove “busy” card look. Prefer subtle borders + soft shadows.
+- Use thin separators. Avoid thick colored outlines.
+- Use spacing and typography for hierarchy, not boxes everywhere.
+- Buttons: primary uses brandGreen, secondary uses neutral outline.
+
+Typography:
+- Use “Inter” (or your existing font) with clear scale.
+- Project name = big + bold.
+- Secondary metadata smaller and muted.
+- Numbers (contract value, revenue, COS, margin) large enough to scan.
+
+STEP 2 — RESTRUCTURE PROJECT PAGE INTO “COMMAND CENTER” LAYOUT
+Replace current “equal cards” feel with a structured operations layout.
+
+New layout sections:
+
+1) TOP COMMAND HEADER (new)
+Place at top of project page under the global nav, above modules.
+Must include:
+- Project Name (H1)
+- Current Stage/Execution label (e.g. “Financial Close”)
+- Key people (PD + PM) with linked user names (existing behavior)
+- System size (kWp) and completion %
+- RAG overall health (user-settable; keep existing or implement field if already present in UI — if not present, add UI control that writes to existing project health field if available; do NOT create new tables)
+- Next Milestone (name + date)
+- Financial snapshot: Contract Value, Revenue Realised %, COS Realised %, Margin Delta %
+- Action buttons: Capture Deliverable, Purchase Orders (same existing actions)
+
+Presentation rules:
+- The header should feel like “mission control”. Clean, compact, readable.
+- Use a 12-column grid.
+- Left: title + metadata; Right: actions + KPIs.
+- KPIs should be small “stat blocks” with labels and strong numbers.
+
+2) MAIN WORKSPACE (replaces current card grid)
+Use a two-column workspace grid:
+Top row (two columns):
+- Left: Project Plan (Schedule / milestones) — keep existing component, restyle.
+- Right: Engineering — keep existing component, restyle.
+
+Second row (two columns):
+- Left: Quality — keep existing component, restyle.
+- Right: Project Development — keep existing component, restyle.
+
+Bottom row:
+- Financial Integration — full width row, restyled.
+
+Each module should have:
+- A clear title + small subtitle (muted).
+- A “View” action top-right (existing links).
+- Body with current content unchanged, only restyled + spacing improved.
+
+STEP 3 — UPGRADE MODULE VISUALS (WITHOUT CHANGING LOGIC)
+For each module (Project Plan / Engineering / Quality / PD / Financial Integration):
+- Replace thick colored top borders with subtle accent indicator (small left bar or icon + small accent line).
+- Use consistent header row layout inside each module.
+- Improve spacing, align numbers, remove unnecessary dividers.
+- Make empty states look intentional (icon + short line, not “0/0” looking broken).
+
+Engineering module specifically:
+- Keep stage checks & tasks logic.
+- Visually emphasize “Stages” list / stage progress.
+- Empty state: “No stages yet” should look like a designed empty state with an action to add or link templates IF such action exists; otherwise just a clean empty.
+
+Project Plan module:
+- Make milestones and progress more scannable.
+- Keep the underlying task progress and stats unchanged.
+
+Quality module:
+- Gate progress should be visually clean.
+- “Quality Action Required” should be prominent but not screaming.
+
+Project Development module:
+- Make “No PD tickets” look intentional.
+- If PD is linked to deliverables, keep behavior.
+
+Financial Integration row:
+- Style as a “system integration strip” with a right arrow.
+- Keep existing navigation.
+
+STEP 4 — SIDEBAR + TOP BAR SMALL CLEANUPS (IF SAFE)
+Only if it’s purely CSS:
+- Slightly reduce sidebar visual weight.
+- Improve active nav styling (subtle highlight, not big blocks).
+- Ensure logo remains visible and brand-correct.
+- Keep all nav items and routes.
+
+STEP 5 — IMPLEMENT “OVERALL HEALTH RAG” AS A USER-SETTABLE CONTROL (ONLY IF NOT ALREADY)
+Requirement: “RAG status should be on overall health and be able to be set by user.”
+- If a project field already exists (e.g. project.healthRag or project.statusRag), use it.
+- If not sure, search existing code for RAG usage.
+- Implement a compact dropdown in the Command Header:
+  - Green / Amber / Red / Unknown
+- Permissions:
+  - Only roles allowed to set it: COO, CCO, CEO (as per earlier requirement).
+- Save should persist using existing project update endpoint.
+- Do NOT create new DB tables for this.
+
+STEP 6 — QUALITY GATES: DO NOT CHANGE BUSINESS LOGIC
+- All counts and progress values must remain exactly as they are today.
+- Only presentation changes.
+
+TESTING + ACCEPTANCE CRITERIA (MUST DO)
+1) All existing buttons still work:
+   - Capture Deliverable
+   - Purchase Orders
+   - View Plan
+   - View Details / View All
+   - Any module row click behavior
+2) No console errors introduced.
+3) No API changes needed for this UI refactor.
+4) Page remains responsive (laptop + tablet width).
+5) Lighthouse/perf not worse than before (avoid heavy new libs).
+
+DELIVERABLES
+1) Updated Project Detail page with Command Header + new workspace layout.
+2) Theme tokens applied consistently (not partial).
+3) Updated module styling.
+4) RAG control (if not already existing) with role permissions.
+5) Before/after screenshots in the PR notes.
+
+IMPLEMENTATION NOTES
+- Prefer refactor by extracting a “ProjectCommandHeader” component.
+- Use existing components for stats, pills, progress bars where possible.
+- Keep current data props unchanged: only reorganize and restyle.
+
+FINAL CHECK
+After implementation, run through this manual test script:
+- Open a project with full data and one with empty data.
+- Verify PD + PM displays, and links still work.
+- Change RAG (if implemented) and refresh — it persists.
+- Open Project Plan view.
+- Open Engineering view.
+- Open Purchase Orders.
+- Capture a deliverable.
+- Ensure no layout overflow, no clipped text, no broken alignment.
+
+Now implement the above in the existing codebase with minimal disruption.

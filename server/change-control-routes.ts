@@ -124,24 +124,6 @@ export function registerChangeControlRoutes(app: Express): void {
         idempotencyKey: `change-created:${result[0].id}`,
       });
 
-      // Phase 2 bridge write: mirror to finance.finance_records
-      const { syncChangeRequest, bridgeCatch } = await import("./bridge/bridge-writer");
-      syncChangeRequest({
-        id: result[0].id,
-        projectId: result[0].projectId,
-        title: result[0].title,
-        changeType: result[0].changeType,
-        status: result[0].status,
-        costImpact: result[0].costImpact,
-        revenueImpact: result[0].revenueImpact ?? null,
-        cosImpact: result[0].cosImpact ?? null,
-        marginImpact: result[0].marginImpact ?? null,
-        cause: result[0].cause ?? null,
-        clientLinked: result[0].clientLinked ?? null,
-        impactSummary: result[0].impactSummary ?? null,
-        evidenceLink: result[0].evidenceLink ?? null,
-      }).catch(bridgeCatch);
-
       res.status(201).json(result[0]);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -230,25 +212,6 @@ export function registerChangeControlRoutes(app: Express): void {
           idempotencyKey: `change-status:${id}:${old.status}:${updates.status}`,
         });
       }
-
-      // Phase 2 bridge write: mirror update to finance.finance_records
-      const { syncChangeRequest, bridgeCatch } = await import("./bridge/bridge-writer");
-      syncChangeRequest({
-        id: result[0].id,
-        projectId: result[0].projectId,
-        title: result[0].title,
-        changeType: result[0].changeType,
-        status: result[0].status,
-        costImpact: result[0].costImpact,
-        revenueImpact: result[0].revenueImpact ?? null,
-        cosImpact: result[0].cosImpact ?? null,
-        marginImpact: result[0].marginImpact ?? null,
-        cause: result[0].cause ?? null,
-        clientLinked: result[0].clientLinked ?? null,
-        impactSummary: result[0].impactSummary ?? null,
-        evidenceLink: result[0].evidenceLink ?? null,
-      }).catch(bridgeCatch);
-
       res.json(result[0]);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -280,10 +243,6 @@ export function registerChangeControlRoutes(app: Express): void {
         action: "soft_delete",
         changesJson: { title: existing[0].title, status: existing[0].status, deleteReason },
       });
-
-      // Phase 2 bridge write: mark finance_record as cancelled
-      const { softDeleteChangeRequestFinanceRecord, bridgeCatch: bridgeCatch2 } = await import("./bridge/bridge-writer");
-      softDeleteChangeRequestFinanceRecord(id, user?.id ?? null, deleteReason).catch(bridgeCatch2);
 
       res.json({ success: true, deleted });
     } catch (err: unknown) {

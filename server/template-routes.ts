@@ -1,5 +1,6 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
+// Error breakdown: TS7006 implicit-any: 21, TS2345 query/param types: 13, other: 0
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import type { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc, sql, ilike, isNull } from "drizzle-orm";
@@ -18,6 +19,7 @@ import {
 } from "@shared/schema";
 import { syncProjectSplitTablesAfterInsert } from "./lib/project-info-sync";
 import { requirePermission } from "./permission-middleware";
+import { paramStr } from "./lib/req-params";
 import { generateEngStagesForProject } from "./eng-stage-routes";
 import { createHash } from "crypto";
 
@@ -107,8 +109,8 @@ async function buildPreview(
     .from(deliverables)
     .where(eq(deliverables.projectName, cleanName));
 
-  const existingTaskKeys = new Set(existingTasks.map(t => `${t.title}__${t.phase || ""}`));
-  const existingDelKeys = new Set(existingDeliverables.map(d => d.deliverableType));
+  const existingTaskKeys = new Set(existingTasks.map((t: any) => `${t.title}__${t.phase || ""}`));
+  const existingDelKeys = new Set(existingDeliverables.map((d: any) => d.deliverableType));
 
   const toCreate: any[] = [];
   const toSkip: any[] = [];
@@ -305,7 +307,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/phase-templates/:id", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [tmpl] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, id));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -336,7 +338,7 @@ export function registerTemplateRoutes(app: Express) {
         name,
         version: nextVersion,
         isActive: false,
-        createdByUserId: user.id,
+        createdByUserId: user!.id,
       }).returning();
 
       res.json(created);
@@ -347,7 +349,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.patch("/api/phase-templates/:id/activate", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [tmpl] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, id));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -368,7 +370,7 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/phase-templates/:id/clone", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const sourceId = parseInt(req.params.id);
+      const sourceId = parseInt(paramStr(req.params.id));
       const { targetPhase } = req.body;
 
       const [source] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, sourceId));
@@ -387,7 +389,7 @@ export function registerTemplateRoutes(app: Express) {
         name: `${source.name} (Clone)`,
         version: nextVersion,
         isActive: false,
-        createdByUserId: user.id,
+        createdByUserId: user!.id,
       }).returning();
 
       const sourceItems = await db.select().from(phaseTemplateItem)
@@ -440,7 +442,7 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/phase-templates/:id/items", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const templateId = parseInt(req.params.id);
+      const templateId = parseInt(paramStr(req.params.id));
       const [tmpl] = await db.select().from(phaseTemplate).where(eq(phaseTemplate.id, templateId));
       if (!tmpl) return res.status(404).json({ error: "Template not found" });
 
@@ -482,7 +484,7 @@ export function registerTemplateRoutes(app: Express) {
 
       await db.insert(phaseTemplateItemHistory).values({
         templateItemId: created.id,
-        changedByUserId: user.id,
+        changedByUserId: user!.id,
         changeJson: { action: "created", item: created },
       });
 
@@ -495,7 +497,7 @@ export function registerTemplateRoutes(app: Express) {
   app.patch("/api/phase-template-items/:itemId", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const itemId = parseInt(req.params.itemId);
+      const itemId = parseInt(paramStr(req.params.itemId));
       const [existing] = await db.select().from(phaseTemplateItem).where(eq(phaseTemplateItem.id, itemId));
       if (!existing) return res.status(404).json({ error: "Item not found" });
 
@@ -517,7 +519,7 @@ export function registerTemplateRoutes(app: Express) {
 
       await db.insert(phaseTemplateItemHistory).values({
         templateItemId: itemId,
-        changedByUserId: user.id,
+        changedByUserId: user!.id,
         changeJson: { action: "updated", changes: updates, before: existing },
       });
 
@@ -531,7 +533,7 @@ export function registerTemplateRoutes(app: Express) {
   app.delete("/api/phase-template-items/:itemId", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const itemId = parseInt(req.params.itemId);
+      const itemId = parseInt(paramStr(req.params.itemId));
 
       await db.update(phaseTemplateItem)
         .set({ isDeleted: true })
@@ -539,7 +541,7 @@ export function registerTemplateRoutes(app: Express) {
 
       await db.insert(phaseTemplateItemHistory).values({
         templateItemId: itemId,
-        changedByUserId: user.id,
+        changedByUserId: user!.id,
         changeJson: { action: "soft_deleted" },
       });
 
@@ -553,7 +555,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/phase-templates/:id/preview", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const templateId = parseInt(req.params.id);
+      const templateId = parseInt(paramStr(req.params.id));
       const items = await db.select().from(phaseTemplateItem)
         .where(and(eq(phaseTemplateItem.templateId, templateId), eq(phaseTemplateItem.isDeleted, false)))
         .orderBy(asc(phaseTemplateItem.sortOrder));
@@ -581,7 +583,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/phase-preview", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       const { toPhase } = req.body;
       if (!toPhase || !PROJECT_PHASES.includes(toPhase as any)) {
         return res.status(400).json({ error: "Valid toPhase required" });
@@ -619,7 +621,7 @@ export function registerTemplateRoutes(app: Express) {
   app.post("/api/projects/:projectId/apply-template", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       const { phase } = req.body;
 
       if (!phase || !PROJECT_PHASES.includes(phase as any)) {
@@ -633,7 +635,7 @@ export function registerTemplateRoutes(app: Express) {
         return res.json({ applied: false, message: "No active template for this phase" });
       }
 
-      const result = await applyTemplate(projectId, phase, activeTemplate.id, activeTemplate.version, user.id);
+      const result = await applyTemplate(projectId, phase, activeTemplate.id, activeTemplate.version, user!.id);
       res.json({ applied: true, result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -644,7 +646,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/phase-template-items/:itemId/history", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const itemId = parseInt(req.params.itemId);
+      const itemId = parseInt(paramStr(req.params.itemId));
       const history = await db.select({
         id: phaseTemplateItemHistory.id,
         changedAt: phaseTemplateItemHistory.changedAt,
@@ -665,7 +667,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/template-applications", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       const apps = await db.select({
         id: phaseTemplateApplication.id,
         phase: phaseTemplateApplication.phase,
@@ -701,7 +703,7 @@ export function registerTemplateRoutes(app: Express) {
       const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
       const needle = normalise(name);
 
-      const matches = allProjects.filter(p => {
+      const matches = allProjects.filter((p: any) => {
         const hay = normalise(p.projectName);
         if (hay === needle) return true;
         if (hay.includes(needle) || needle.includes(hay)) return true;
@@ -718,7 +720,7 @@ export function registerTemplateRoutes(app: Express) {
         for (const t of a) if (b.has(t)) shared++;
         const ratio = shared / Math.max(a.size, b.size);
         return ratio > 0.4;
-      }).slice(0, 5).map(p => ({ id: p.id, projectName: p.projectName }));
+      }).slice(0, 5).map((p: any) => ({ id: p.id, projectName: p.projectName }));
 
       res.json({ matches });
     } catch (err: any) {
@@ -754,22 +756,18 @@ export function registerTemplateRoutes(app: Express) {
         clientId: resolvedClient.client?.id ?? null,
         phase,
         phaseUpdatedAt: new Date(),
-        phaseUpdatedByUserId: user.id,
+        phaseUpdatedByUserId: user!.id,
         phaseNotes: `Project created at ${PROJECT_PHASE_LABELS[phase as ProjectPhase] || phase}`,
         pd: null,
       };
       const [created] = await db.insert(projectInfo).values(createProjectFields).returning();
       await syncProjectSplitTablesAfterInsert(created.id, createProjectFields);
-      // Phase 2 bridge write: mirror new project to core.projects
-      import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
-        syncProjectInsert(created as any)
-      ).catch(() => {});
 
       await db.insert(projectPhaseHistory).values({
         projectId: created.id,
         fromPhase: null,
         toPhase: phase,
-        changedByUserId: user.id,
+        changedByUserId: user!.id,
         reason: "Project created",
       });
 
@@ -778,7 +776,7 @@ export function registerTemplateRoutes(app: Express) {
         .where(and(eq(phaseTemplate.phase, phase), eq(phaseTemplate.isActive, true)));
 
       if (activeTemplate) {
-        applyResult = await applyTemplate(created.id, phase, activeTemplate.id, activeTemplate.version, user.id);
+        applyResult = await applyTemplate(created.id, phase, activeTemplate.id, activeTemplate.version, user!.id);
       }
 
       let engStagesResult = null;
@@ -786,7 +784,7 @@ export function registerTemplateRoutes(app: Express) {
       const stageNames = PHASE_TO_ENG_STAGES[phaseLabel];
       if (stageNames && stageNames.length > 0) {
         try {
-          engStagesResult = await generateEngStagesForProject(created.id, user.id, stageNames);
+          engStagesResult = await generateEngStagesForProject(created.id, user!.id, stageNames);
         } catch (engErr: any) {
           console.error("Engineering stage generation failed for new project:", engErr.message);
         }
@@ -845,8 +843,8 @@ export function registerTemplateRoutes(app: Express) {
           .from(qcWarning)
           .where(and(eq(qcWarning.projectName, cleanName), eq(qcWarning.status, "open")));
 
-        const highWarnings = openWarnings.filter(w => w.severity === "High" || w.severity === "HIGH").length;
-        const medWarnings = openWarnings.filter(w => w.severity === "Medium" || w.severity === "MED").length;
+        const highWarnings = openWarnings.filter((w: any) => w.severity === "High" || w.severity === "HIGH").length;
+        const medWarnings = openWarnings.filter((w: any) => w.severity === "Medium" || w.severity === "MED").length;
 
         const tasks = await db.select({
           id: workItems.id,
@@ -856,8 +854,8 @@ export function registerTemplateRoutes(app: Express) {
           .where(eq(workItems.projectId, p.id));
 
         const totalTasks = tasks.length;
-        const completeTasks = tasks.filter(t => t.status === "COMPLETE").length;
-        const pendingApprovals = tasks.filter(t =>
+        const completeTasks = tasks.filter((t: any) => t.status === "COMPLETE").length;
+        const pendingApprovals = tasks.filter((t: any) =>
           t.status === "NEEDS APPROVAL" || t.status === "PROVIDE FEEDBACK"
         ).length;
 
@@ -895,7 +893,7 @@ export function registerTemplateRoutes(app: Express) {
 
   app.get("/api/exec/portfolio/:projectId", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
       if (!project) return res.status(404).json({ error: "Project not found" });
 
@@ -940,7 +938,7 @@ export function registerTemplateRoutes(app: Express) {
         .from(workItems)
         .where(eq(workItems.projectId, projectId));
 
-      const pendingApprovals = tasks.filter(t =>
+      const pendingApprovals = tasks.filter((t: any) =>
         t.status === "NEEDS APPROVAL" || t.status === "PROVIDE FEEDBACK"
       );
 
@@ -956,9 +954,9 @@ export function registerTemplateRoutes(app: Express) {
         pendingApprovals,
         taskSummary: {
           total: tasks.length,
-          complete: tasks.filter(t => t.status === "COMPLETE").length,
-          inProgress: tasks.filter(t => t.status === "IN PROGRESS").length,
-          todo: tasks.filter(t => t.status === "TO DO").length,
+          complete: tasks.filter((t: any) => t.status === "COMPLETE").length,
+          inProgress: tasks.filter((t: any) => t.status === "IN PROGRESS").length,
+          todo: tasks.filter((t: any) => t.status === "TO DO").length,
         },
       });
     } catch (err: any) {

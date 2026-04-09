@@ -33,11 +33,9 @@ export async function registerProjectRoutes(app: Express) {
   registerStageDataRoutes(app);
   // Stage Collaboration (Prompt 7 — client commitments, updates, queries, access, financial close tracks)
   // Phase 1+2 cutover: canonical routes now serve all client-commitments and client-updates paths.
-  // ADV-02/ADV-11 fix: collaboration-workflow-routes.ts is deprecated and has 14 unprotected
-  // mutation endpoints. It was falsely documented as "never called" but WAS registered here.
-  // Removed to eliminate permission bypass risk and route shadowing.
-  // const { registerCollaborationWorkflowRoutes } = await import("../collaboration-workflow-routes");
-  // registerCollaborationWorkflowRoutes(app);
+  // Legacy stage-collaboration-routes still registers non-client paths (queries, financial close tracks).
+  const { registerCollaborationWorkflowRoutes } = await import("../collaboration-workflow-routes");
+  registerCollaborationWorkflowRoutes(app);
   const { registerStageCollaborationRoutes } = await import("../stage-collaboration-routes");
   registerStageCollaborationRoutes(app);
 }

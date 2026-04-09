@@ -3,7 +3,7 @@
  * into new entity tables created by the architecture migration.
  */
 import { Router, type Express, type Request, type Response } from "express";
-import { requireAuth, requireAdmin } from "./shared-middleware";
+import { requireAuth } from "./shared-middleware";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -61,7 +61,7 @@ router.get("/api/admin/backfill/status", requireAuth, async (_req: Request, res:
  * Creates site records from distinct project locations.
  * Non-destructive: only creates sites that don't already exist.
  */
-router.post("/api/admin/backfill/sites-from-projects", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+router.post("/api/admin/backfill/sites-from-projects", requireAuth, async (_req: Request, res: Response) => {
   try {
     // Extract distinct client+location combinations from projects that have clients
     const result = await db.execute(sql`
@@ -117,7 +117,7 @@ router.post("/api/admin/backfill/sites-from-projects", requireAuth, requireAdmin
  * Creates opportunity records from PD tickets that have handover data.
  * Non-destructive: only creates opportunities that don't already exist.
  */
-router.post("/api/admin/backfill/opportunities-from-pd-tickets", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+router.post("/api/admin/backfill/opportunities-from-pd-tickets", requireAuth, async (_req: Request, res: Response) => {
   try {
     const result = await db.execute(sql`
       INSERT INTO opportunities (client_id, stage, notes, status, created_at, updated_at)

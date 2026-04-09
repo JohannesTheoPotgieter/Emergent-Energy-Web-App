@@ -69,6 +69,7 @@ import {
 import { eq, and, sql, desc, isNull, gte } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { extractMonthKey, normalizeProjectName, isCosRealised, classifyCosStatusFull, currentMonthKey } from "../lib/calculations/financeUtils";
+import { isCanonicalCosRealised } from "../lib/finance/cos-realisation";
 import { getCosEffectiveDateAndSource } from "../lib/expense-row-selector";
 
 const router = Router();
@@ -161,10 +162,14 @@ function enrichWithOverrides(expenses: any[], cosOverrideMap: Map<string, string
  * COS-ratio revenue allocation — matches Revenue Tracker logic exactly.
  * Builds per-project revenue and COS totals, then distributes revenue
  * to months proportionally based on when COS is invoiced.
+ *
+ * IMPORTANT: Only COS-realised lines drive revenue allocation.
+ * Per business rules: "Revenue realised is directly linked to COS realised.
+ * Only COS-realised lines should drive revenue realised."
  */
 function buildCosRatioRevenue(
   allInflows: { projectName: string; milestoneAmount: any }[],
-  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any; expenseInvoiceNumber?: any; expensePoNumber?: any; invoiceDateConfirmed?: any; invoiceDateFontColor?: any; _cosOverrideStatus?: any; _cosRealisedFlag?: any }[],
+  allExpenses: { projectName: string; rowType: any; expenseActualTotal: any; expenseInvoicedDate: any; expenseInvoiceNumber?: any; expensePoNumber?: any; invoiceDateConfirmed?: any; invoiceDateFontColor?: any; _cosOverrideStatus?: any; _cosRealisedFlag?: any; cosStatusOverride?: any; cosRealised?: any }[],
   monthKeys: string[],
 ): Record<string, number> {
   // 1. Total revenue per project (from all inflows, regardless of date)
@@ -177,6 +182,7 @@ function buildCosRatioRevenue(
   }
 
   // 2. Total COS per project (from all item expenses, regardless of date)
+  //    This is the denominator for COS-ratio allocation.
   const cosByProject = new Map<string, number>();
   for (const exp of allExpenses) {
     if (exp.rowType !== "item" && exp.rowType != null) continue;
@@ -186,12 +192,17 @@ function buildCosRatioRevenue(
     cosByProject.set(pName, (cosByProject.get(pName) || 0) + amount);
   }
 
-  // 3. Allocate revenue to months via COS-ratio (revenue recognized when COS invoiced)
+  // 3. Allocate revenue to months via COS-ratio — ONLY from COS-realised lines.
+  //    Revenue is recognized when COS is realised (invoice captured).
   const revByMonth: Record<string, number> = {};
   for (const exp of allExpenses) {
     if (exp.rowType !== "item" && exp.rowType != null) continue;
     const amount = safeNum(exp.expenseActualTotal);
     if (amount === 0) continue;
+
+    // Only COS-realised lines drive revenue allocation
+    if (!isCosRealised(exp)) continue;
+
     const mk = extractMonthKey(getCosEffectiveDateAndSource(exp).date);
     if (!mk || !monthKeys.includes(mk)) continue;
 
@@ -329,19 +340,19 @@ router.get(
       try {
         const budgetYears = await db.selectDistinct({ fye: fyeBudgets.fye }).from(fyeBudgets);
         for (const r of budgetYears) { const y = parseInt(String(r.fye), 10); if (!isNaN(y)) yearSet.add(y); }
-      } catch {}
+      } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
       try {
         const pipelineYears = await db.selectDistinct({ fye: forecastPipeline.fyeYear }).from(forecastPipeline);
         for (const r of pipelineYears) { if (r.fye) yearSet.add(r.fye); }
-      } catch {}
+      } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
       try {
         const kpiYears = await db.selectDistinct({ fye: fyeKpiCounters.fyeYear }).from(fyeKpiCounters);
         for (const r of kpiYears) { if (r.fye) yearSet.add(r.fye); }
-      } catch {}
+      } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
       try {
         const snapYears = await db.selectDistinct({ fye: fyeReportSnapshots.fyeYear }).from(fyeReportSnapshots);
         for (const r of snapYears) { if (r.fye) yearSet.add(r.fye); }
-      } catch {}
+      } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
       const years = [...yearSet].sort((a, b) => b - a); // Descending
       res.json({ years, currentFye: current });
@@ -768,8 +779,12 @@ router.get(
       }
 
       // ── Actual Revenue & Actual Expense per project (realised COS within FYE window) ──
-      // COS is "realised" when: invoice number + invoice date + invoice date confirmed (black font)
-      // Revenue is allocated proportionally using COS-ratio: (realisedCOS / totalCOS) × totalRevenue
+      // COS is "realised" when a supplier invoice number is captured (canonical invoice-only rule).
+      // Revenue is allocated proportionally using COS-ratio: (realisedCOS / totalCOS) × totalRevenue.
+      //
+      // CHANGED: Committed-from-prior-month no longer silently promotes to realised.
+      // Per business rules: "committed from prior month must NOT silently become realised
+      // unless it matches the invoice rule."
       const curMk = currentMonthKey();
       const actualRevByProject = new Map<string, number>();
       const actualExpByProject = new Map<string, number>();
@@ -777,16 +792,14 @@ router.get(
         if (exp.rowType !== "item" && exp.rowType != null) continue;
         const amt = safeNum(exp.expenseActualTotal);
         if (amt === 0) continue;
-        if (!exp.expenseInvoicedDate) continue;
+
+        // Use canonical invoice-only realisation check
+        if (!isCosRealised(exp)) continue;
+
         const mk = extractMonthKey(getCosEffectiveDateAndSource(exp).date);
         if (!mk || mk < fyeStart || mk > effectiveEnd) continue;
-        // Only future months are excluded; realised check handles confirmation
+        // Only future months are excluded
         if (mk > curMk) continue;
-
-        // Check if this expense line is effectively realised (invoice confirmed or past-month committed)
-        const cosStatus = classifyCosStatusFull(exp);
-        const effectivelyRealised = cosStatus === 'COS Realised' || (cosStatus === 'Committed' && mk < curMk);
-        if (!effectivelyRealised) continue;
 
         const pn = normalizeProjectName(exp.projectName);
 
@@ -1301,7 +1314,7 @@ async function collectSnapshotData(fye: number) {
       if (b.budgetType === "revenue") budgetRevByMonth[b.monthKey] = (budgetRevByMonth[b.monthKey] || 0) + amt;
       else if (b.budgetType === "cos") budgetCosByMonth[b.monthKey] = (budgetCosByMonth[b.monthKey] || 0) + amt;
     }
-  } catch {}
+  } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
   // Actual Revenue + COS via COS-ratio allocation (matches Revenue Tracker)
   const [allInflows, allExpenses, snapCosOverrides] = await Promise.all([
@@ -1393,20 +1406,20 @@ async function collectSnapshotData(fye: number) {
   let pipelineRows: any[] = [];
   try {
     pipelineRows = await db.select({ id: forecastPipeline.id, projectName: forecastPipeline.projectName, projectDeveloper: forecastPipeline.projectDeveloper, location: forecastPipeline.location, sizeKwp: forecastPipeline.sizeKwp, dealProbabilityPct: forecastPipeline.dealProbabilityPct, forecastSignatureDate: forecastPipeline.forecastSignatureDate, solarRevenue: forecastPipeline.solarRevenue, bessRevenue: forecastPipeline.bessRevenue, forecastGpPct: forecastPipeline.forecastGpPct }).from(forecastPipeline).where(and(eq(forecastPipeline.status, "active"), eq(forecastPipeline.fyeYear, fye)));
-  } catch {}
+  } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
   // Lost deals
   let lostDealRows: any[] = [];
   try {
     lostDealRows = await db.select({ id: lostDeals.id, dealName: lostDeals.dealName, dealValue: lostDeals.dealValue, businessDeveloper: lostDeals.businessDeveloper, lostReason: lostDeals.lostReason, lostDate: lostDeals.lostDate }).from(lostDeals).where(eq(lostDeals.fyeYear, fye));
-  } catch {}
+  } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
   // KPIs
   let kpi = { broughtIn: 0, signed: 0, total: 0 };
   try {
     const [counter] = await db.select({ broughtIn: fyeKpiCounters.broughtIn, signed: fyeKpiCounters.signed }).from(fyeKpiCounters).where(eq(fyeKpiCounters.fyeYear, fye));
     if (counter) kpi = { broughtIn: counter.broughtIn, signed: counter.signed, total: counter.broughtIn + counter.signed };
-  } catch {}
+  } catch (e) { console.warn("[fye-revenue-tracking-routes] non-critical error:", e instanceof Error ? e.message : e); }
 
   return {
     dashboard: { months: dashboardMonths, monthKeys },

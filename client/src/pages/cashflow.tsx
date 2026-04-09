@@ -729,8 +729,8 @@ export default function CashflowPage() {
       setEditingBalance(null);
       toast({ title: "Opening Balance Saved", description: "All forward weeks recalculated" });
     },
-    onError: () => {
-      toast({ title: "Save Failed", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Save Failed", description: err.message || "Failed to save opening balance", variant: "destructive" });
     },
   });
 
@@ -744,8 +744,8 @@ export default function CashflowPage() {
       invalidateDashboardQueries(queryClient);
       toast({ title: "Override Cleared", description: "Balance now uses cascaded value" });
     },
-    onError: () => {
-      toast({ title: "Clear Failed", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Clear Failed", description: err.message || "Failed to clear override", variant: "destructive" });
     },
   });
 
@@ -759,8 +759,8 @@ export default function CashflowPage() {
       setEditingOpex(null);
       toast({ title: "OPEX Saved", description: "Weekly OPEX updated and values recalculated" });
     },
-    onError: () => {
-      toast({ title: "Save Failed", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Save Failed", description: err.message || "Failed to save OPEX", variant: "destructive" });
     },
   });
 
@@ -773,8 +773,8 @@ export default function CashflowPage() {
       invalidateDashboardQueries(queryClient);
       toast({ title: "OPEX Override Cleared", description: "Using monthly costed split value" });
     },
-    onError: () => {
-      toast({ title: "Clear Failed", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Clear Failed", description: err.message || "Failed to clear OPEX override", variant: "destructive" });
     },
   });
 
@@ -804,8 +804,8 @@ export default function CashflowPage() {
       setAvailPayReason("");
       toast({ title: "Available Payment Updated", description: "Override saved with reason" });
     },
-    onError: () => {
-      toast({ title: "Save Failed", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Save Failed", description: err.message || "Failed to save available payment", variant: "destructive" });
     },
   });
 
@@ -819,8 +819,8 @@ export default function CashflowPage() {
       invalidateDashboardQueries(queryClient);
       toast({ title: "Override Cleared", description: "Using computed available payment" });
     },
-    onError: () => {
-      toast({ title: "Clear Failed", variant: "destructive" });
+    onError: (err: Error) => {
+      toast({ title: "Clear Failed", description: err.message || "Failed to clear payment override", variant: "destructive" });
     },
   });
 

@@ -29,7 +29,7 @@ export function registerKpiTraceabilityRoutes(app: Express) {
             COALESCE(SUM(CAST(budget_total AS NUMERIC)), 0) as total_budget_cos,
             COALESCE(SUM(CAST(actual_cos_total AS NUMERIC)), 0) as total_actual_cos
           FROM program_expense
-          WHERE row_type = 'item' OR row_type IS NULL
+          WHERE (row_type = 'item' OR row_type IS NULL) AND effective_to IS NULL
         `).then(rows0),
         db.execute(sql`
           SELECT 

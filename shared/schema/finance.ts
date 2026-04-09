@@ -453,6 +453,8 @@ export const normalizedRevenueLines = pgTable("normalized_revenue_lines", {
   projectName: text("project_name").notNull(),
   description: text("description"),
   milestoneName: text("milestone_name"),
+  milestoneNo: text("milestone_no"),
+  milestonePercent: decimal("milestone_percent", { precision: 6, scale: 4 }),
   amountExVat: decimal("amount_ex_vat", { precision: 15, scale: 2 }),
   vat: decimal("vat", { precision: 15, scale: 2 }),
   /** Legacy TEXT column preserved for 30-day rollback window. Remove after cleanup PR. */
@@ -542,6 +544,10 @@ export const normalizedCostLines = pgTable("normalized_cost_lines", {
   effectiveFrom: timestamp("effective_from").notNull().defaultNow(),
   effectiveTo: timestamp("effective_to"),
   snapshotRunId: integer("snapshot_run_id").references(() => smartImportRuns.id, { onDelete: "set null" }),
+  // Client-generated idempotency key for manual expense creation.
+  // Prevents duplicate rows from double-clicks, browser resends, and network retries.
+  // NULL for imported rows (no dedup needed — imports use soft-close + re-insert).
+  idempotencyKey: text("idempotency_key"),
 });
 export const insertNormalizedCostLineSchema = createInsertSchema(normalizedCostLines).omit({ id: true, createdAt: true, updatedAt: true, effectiveFrom: true, effectiveTo: true, amountExVatLegacy: true } as any);
 export type InsertNormalizedCostLine = z.infer<typeof insertNormalizedCostLineSchema>;
@@ -1065,6 +1071,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   sentAt: timestamp("sent_at"),
   pdfData: text("pdf_data"),  // BYTEA in DB, handled as Buffer in routes
+  // Client-generated idempotency key to prevent duplicate POs from
+  // double-clicks, browser resends, and network retries.
+  idempotencyKey: text("idempotency_key"),
 }, (table) => ({
   projectIdx: index("idx_po_project").on(table.projectName),
   statusIdx: index("idx_po_status").on(table.status),

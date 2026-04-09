@@ -1,5 +1,6 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
+// Error breakdown: TS7006 implicit-any: 38, TS2345 query/param types: 16, other: 4
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { eq, and, desc, asc, sql, inArray, isNull, lt, gt, or, ne } from "drizzle-orm";
@@ -35,6 +36,7 @@ import { requireAdmin } from "./middleware/requireAdmin";
 import { getAssignmentsForEntity, getAssignmentsForEntities, listAssignableDirectory } from "./services/assignment-service";
 import { buildMyWorkSourceLinks } from "./lib/my-work-source-links";
 import { runCascadesAfterUpdate, validateParentCompletion } from "./services/task-cascade-service";
+import { paramStr } from "./lib/req-params";
 
 const approvalUploadsDir = path.join(process.cwd(), "uploads", "approvals");
 if (!fs.existsSync(approvalUploadsDir)) fs.mkdirSync(approvalUploadsDir, { recursive: true });
@@ -310,7 +312,7 @@ async function enrichEngineeringTasks(tasks: any[], req: Request): Promise<any[]
         ...(typeof t.ownerUserId === "number" ? [t.ownerUserId] : []),
       ]),
     );
-    const idResolved = resolvedAssigneeIds.map((uid: number) => userMap.get(uid)).filter(Boolean);
+    const idResolved = resolvedAssigneeIds.map((uid: number) => userMap.get(uid)).filter((u): u is NonNullable<typeof u> => Boolean(u));
     const mergedAssignees = mergeResolvedWithTextNames(idResolved, t.assignees, userMap);
     const projectDeliverables = typeof t.projectId === "number" ? (deliverablesByProject.get(t.projectId) || []) : [];
     const rawMicrosoftItems = typeof t.projectId === "number" ? (microsoftByProject.get(t.projectId) || []) : [];
@@ -448,7 +450,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(projectTeamMembers)
       .leftJoin(users, eq(projectTeamMembers.userId, users.id))
-      .where(eq(projectTeamMembers.projectName, req.params.projectName));
+      .where(eq(projectTeamMembers.projectName, paramStr(req.params.projectName)));
       res.json(members);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -470,10 +472,10 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/project-team/:id", requireAuth, requireAdminOrEpm, async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       await db.delete(projectTeamMembers).where(eq(projectTeamMembers.id, id));
-      logAuditFromReq(req, { entityType: "project_team", entityId: req.params.id, action: "delete", changesJson: { description: "Team member removed" } });
+      logAuditFromReq(req, { entityType: "project_team", entityId: paramStr(req.params.id), action: "delete", changesJson: { description: "Team member removed" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -585,17 +587,54 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
     try {
-      const data = req.body;
+      const data = req.body || {};
+      const rawProjectId = data?.projectId;
+      const parsedProjectId = Number(rawProjectId);
+      const requestedProjectId = Number.isInteger(parsedProjectId) && parsedProjectId > 0 ? parsedProjectId : null;
       if (!TASK_STATUSES.includes(data.status)) {
         data.status = "TO DO";
       }
 
-      // Resolve projectName to projectId if projectId is not provided
-      let resolvedProjectId = data.projectId || null;
-      if (!resolvedProjectId && data.projectName) {
+      // Primary path: projectId from client. Fallback: projectName for backwards compatibility.
+      let resolvedProjectId: number | null = requestedProjectId;
+      if (resolvedProjectId) {
+        const [projectById] = await db.select({ id: projectInfo.id }).from(projectInfo)
+          .where(eq(projectInfo.id, resolvedProjectId)).limit(1);
+        if (!projectById) {
+          console.warn("[Engineering] task create validation failed: invalid projectId", { projectId: data.projectId, userId: getUser(req).id });
+          return sendError(res, badRequest("Selected project could not be resolved. Please re-select the project."));
+        }
+      } else if (typeof data.projectName === "string" && data.projectName.trim()) {
+        const projectName = data.projectName.trim();
         const [project] = await db.select({ id: projectInfo.id }).from(projectInfo)
-          .where(eq(projectInfo.projectName, data.projectName)).limit(1);
+          .where(or(
+            eq(projectInfo.projectName, projectName),
+            sql`REPLACE(REGEXP_REPLACE(${projectInfo.projectName}, '_Tracker.*$', ''), '_', ' ') = ${projectName}`,
+          ))
+          .limit(1);
         if (project) resolvedProjectId = project.id;
+      }
+
+      if (!resolvedProjectId) {
+        console.warn("[Engineering] task create validation failed: unresolved project selection", {
+          projectId: data.projectId ?? null,
+          projectName: data.projectName ?? null,
+          userId: getUser(req).id,
+        });
+        return sendError(res, badRequest("Selected project could not be resolved. Please re-select the project."));
+      }
+
+      if (data.ownerUserId !== undefined && data.ownerUserId !== null && data.ownerUserId !== "") {
+        const ownerUserId = Number(data.ownerUserId);
+        if (!Number.isInteger(ownerUserId) || ownerUserId <= 0) {
+          return sendError(res, badRequest("Selected assignee is invalid. Please re-select the assignee."));
+        }
+        const [ownerExists] = await db.select({ id: users.id }).from(users).where(eq(users.id, ownerUserId)).limit(1);
+        if (!ownerExists) {
+          console.warn("[Engineering] task create validation failed: invalid ownerUserId", { ownerUserId, userId: getUser(req).id });
+          return sendError(res, badRequest("Selected assignee is invalid. Please re-select the assignee."));
+        }
+        data.ownerUserId = ownerUserId;
       }
 
       if (data.assignees?.length > 0) {
@@ -631,9 +670,7 @@ export function registerEngineeringRoutes(app: Express) {
         });
       }
 
-      const mappedItems = await listEngineeringWorkItems({ projectId: task.projectId || undefined });
-      const mapped = mappedItems.find((row) => row.workItemId === task.id);
-      const createdPayload = mapped ? mapped : {
+      let createdPayload: any = {
         id: task.id,
         workItemId: task.id,
         title: task.title,
@@ -647,6 +684,13 @@ export function registerEngineeringRoutes(app: Express) {
         assigneeUserIds: task.ownerUserId ? [task.ownerUserId] : [],
         projectId: task.projectId,
       };
+      try {
+        const mappedItems = await listEngineeringWorkItems({ projectId: task.projectId || undefined });
+        const mapped = mappedItems.find((row) => row.workItemId === task.id);
+        if (mapped) createdPayload = mapped;
+      } catch (mapErr: any) {
+        console.warn("[Engineering] task create post-map failed; returning fallback payload", { taskId: task.id, error: mapErr?.message || String(mapErr) });
+      }
 
       res.json(createdPayload);
     } catch (err: any) {
@@ -657,7 +701,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
       if (!existing) return sendError(res, notFound("Task"));
 
@@ -765,7 +809,7 @@ export function registerEngineeringRoutes(app: Express) {
   });
 
   app.post("/api/eng/tasks/:id/send-for-approval", requireAuth, approvalUpload.single("file"), async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id = parseInt(paramStr(req.params.id));
     const user = getUser(req);
     const note = req.body.note || "";
     const file = req.file;
@@ -1019,7 +1063,7 @@ export function registerEngineeringRoutes(app: Express) {
   });
 
   app.post("/api/eng/tasks/:id/send-deliverable", requireAuth, approvalUpload.single("file"), async (req, res) => {
-    const id = parseInt(req.params.id);
+    const id = parseInt(paramStr(req.params.id));
     const user = getUser(req);
 
     try {
@@ -1266,7 +1310,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/tasks/:id/deliverables", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const deliverables = await db.select({
         id: taskDeliverables.id,
         taskId: taskDeliverables.workItemId,
@@ -1286,15 +1330,15 @@ export function registerEngineeringRoutes(app: Express) {
         .where(eq(taskDeliverables.workItemId, id))
         .orderBy(desc(taskDeliverables.createdAt));
 
-      const recipientIds = [...new Set(deliverables.map(d => d.recipientUserId))];
+      const recipientIds = [...new Set(deliverables.map((d: any) => d.recipientUserId))];
       let recipientMap: Record<number, string> = {};
       if (recipientIds.length > 0) {
         const recipients = await db.select({ id: users.id, name: users.name }).from(users)
           .where(sql`${users.id} IN ${recipientIds}`);
-        recipientMap = Object.fromEntries(recipients.map(r => [r.id, r.name]));
+        recipientMap = Object.fromEntries(recipients.map((r: any) => [r.id, r.name]));
       }
 
-      res.json(deliverables.map(d => ({
+      res.json(deliverables.map((d: any) => ({
         ...d,
         recipientName: recipientMap[d.recipientUserId] || `User #${d.recipientUserId}`,
       })));
@@ -1306,7 +1350,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/eng/deliverables/:id/acknowledge", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
       if (!deliverable) return sendError(res, notFound("Deliverable"));
 
@@ -1349,7 +1393,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/deliverables/:id/download", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [deliverable] = await db.select().from(taskDeliverables).where(eq(taskDeliverables.id, id));
       if (!deliverable) return sendError(res, notFound("Deliverable"));
 
@@ -1366,7 +1410,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/eng/tasks/:id", requireAuth, requirePermission('eng_tasks', 'delete'), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [existing] = await db.select().from(workItems).where(and(eq(workItems.id, id), eq(workItems.workstream, "ENG"), isNull(workItems.deletedAt)));
       if (!existing) return sendError(res, notFound("Task"));
 
@@ -1411,7 +1455,7 @@ export function registerEngineeringRoutes(app: Express) {
 
       // All validations passed — apply updates atomically
       const updatedTaskIds: number[] = [];
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         for (const taskId of taskIds) {
           const adapterUpdates: any = {};
           if (updates.status) adapterUpdates.status = updates.status;
@@ -1461,7 +1505,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks/:id/link", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const { linkedPlanItemId, linkedDeliverableId, linkedQualityItemInstanceId } = req.body;
 
       const updated = await updateEngineeringWorkItem(id, {
@@ -1492,7 +1536,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskWatchers)
       .leftJoin(users, eq(taskWatchers.userId, users.id))
-      .where(eq(taskWatchers.workItemId, parseInt(req.params.id)));
+      .where(eq(taskWatchers.workItemId, parseInt(paramStr(req.params.id))));
       res.json(watchers);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -1502,7 +1546,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks/:id/watchers", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const taskId = parseInt(req.params.id);
+      const taskId = parseInt(paramStr(req.params.id));
       const userId = parseInt(req.body.userId);
       if (isNaN(taskId) || isNaN(userId)) {
         return sendError(res, badRequest("Valid taskId and userId are required"));
@@ -1541,8 +1585,8 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/eng/tasks/:taskId/watchers/:userId", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const taskId = parseInt(req.params.taskId);
-      const userId = parseInt(req.params.userId);
+      const taskId = parseInt(paramStr(req.params.taskId));
+      const userId = parseInt(paramStr(req.params.userId));
       if (isNaN(taskId) || isNaN(userId)) {
         return sendError(res, badRequest("Valid taskId and userId are required"));
       }
@@ -1572,7 +1616,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/tasks/:id", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const task = await getEngineeringWorkItemById(id);
       if (!task) return sendError(res, notFound("Task"));
       const [enriched] = await enrichEngineeringTasks([task], req);
@@ -1595,7 +1639,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskComments)
       .leftJoin(users, eq(taskComments.authorId, users.id))
-      .where(eq(taskComments.workItemId, parseInt(req.params.id)))
+      .where(eq(taskComments.workItemId, parseInt(paramStr(req.params.id))))
       .orderBy(asc(taskComments.createdAt));
       res.json(comments);
     } catch (err: any) {
@@ -1606,7 +1650,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks/:id/comments", requireAuth, requirePermission("eng_tasks", "edit"), async (req, res) => {
     try {
-      const taskId = parseInt(req.params.id);
+      const taskId = parseInt(paramStr(req.params.id));
       const { body } = req.body;
       if (!body || !body.trim()) {
         return sendError(res, badRequest("Comment body is required"));
@@ -1655,7 +1699,7 @@ export function registerEngineeringRoutes(app: Express) {
       })
       .from(taskActivityLog)
       .leftJoin(users, eq(taskActivityLog.actorId, users.id))
-      .where(eq(taskActivityLog.workItemId, parseInt(req.params.id)))
+      .where(eq(taskActivityLog.workItemId, parseInt(paramStr(req.params.id))))
       .orderBy(desc(taskActivityLog.createdAt));
       res.json(activity);
     } catch (err: any) {
@@ -1666,7 +1710,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const parentId = parseInt(req.params.id);
+      const parentId = parseInt(paramStr(req.params.id));
       const allItems = await listEngineeringWorkItems({});
       const subtasks = allItems.filter((item) => item.parentTaskId === parentId);
       res.json(subtasks);
@@ -1678,7 +1722,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/tasks/:id/subtasks", requireAuth, requirePermission("eng_tasks", "create"), async (req, res) => {
     try {
-      const parentId = parseInt(req.params.id);
+      const parentId = parseInt(paramStr(req.params.id));
       const parent = await getEngineeringWorkItemById(parentId);
       if (!parent) return sendError(res, notFound("Parent task"));
 
@@ -1735,8 +1779,8 @@ export function registerEngineeringRoutes(app: Express) {
       const result = conditions.length > 0
         ? await db.select().from(deliverables).where(and(...conditions)).orderBy(desc(deliverables.updatedAt))
         : await db.select().from(deliverables).orderBy(desc(deliverables.updatedAt));
-      const assignmentMap = await getAssignmentsForEntities("deliverable", result.map((d) => d.id));
-      res.json(result.map((deliverable) => ({
+      const assignmentMap = await getAssignmentsForEntities("deliverable", result.map((d: any) => d.id));
+      res.json(result.map((deliverable: any) => ({
         ...deliverable,
         assignments: assignmentMap.get(deliverable.id) || [],
         primaryAssignment: (assignmentMap.get(deliverable.id) || [])[0] || null,
@@ -1749,7 +1793,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "view"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [del] = await db.select().from(deliverables).where(eq(deliverables.id, id));
       if (!del) return sendError(res, notFound("Deliverable"));
 
@@ -1818,7 +1862,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/deliverables/:id", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
       if (!existing) return sendError(res, notFound("Deliverable"));
 
@@ -1867,7 +1911,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/deliverables/:id/feedback", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const { feedbackText } = req.body;
 
       const [updated] = await db.update(deliverables)
@@ -1899,7 +1943,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/deliverables/:id/revise", requireAuth, requirePermission("deliverables", "edit"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       const { changeReason, impactJson } = req.body;
 
       const [existing] = await db.select().from(deliverables).where(eq(deliverables.id, id));
@@ -1941,10 +1985,10 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const [file] = await db.insert(deliverableFiles).values({
         ...req.body,
-        deliverableId: parseInt(req.params.id),
+        deliverableId: parseInt(paramStr(req.params.id)),
         uploadedByUserId: getUser(req).id,
       }).returning();
-      logAuditFromReq(req, { entityType: "deliverable", entityId: req.params.id, action: "update", changesJson: { description: "File attached to deliverable", fileName: file.fileName } });
+      logAuditFromReq(req, { entityType: "deliverable", entityId: paramStr(req.params.id), action: "update", changesJson: { description: "File attached to deliverable", fileName: file.fileName } });
       res.json(file);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -1954,13 +1998,13 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/deliverables/files/:fileId/approve", requireAuth, requireAuthority("deliverables", "approve"), async (req, res) => {
     try {
-      const fileId = parseInt(req.params.fileId);
+      const fileId = parseInt(paramStr(req.params.fileId));
       if (isNaN(fileId)) return sendError(res, badRequest("Invalid file ID"));
       const [file] = await db.update(deliverableFiles)
         .set({ isApproved: true })
         .where(eq(deliverableFiles.id, fileId))
         .returning();
-      logAuditFromReq(req, { entityType: "deliverable", entityId: req.params.fileId, action: "approve", changesJson: { description: "Deliverable file approved" } });
+      logAuditFromReq(req, { entityType: "deliverable", entityId: paramStr(req.params.fileId), action: "approve", changesJson: { description: "Deliverable file approved" } });
       res.json(file);
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -1974,8 +2018,8 @@ export function registerEngineeringRoutes(app: Express) {
     try {
       const result = await db.select().from(spFilePointers)
         .where(and(
-          eq(spFilePointers.entityType, req.params.entityType),
-          eq(spFilePointers.entityId, parseInt(req.params.entityId))
+          eq(spFilePointers.entityType, paramStr(req.params.entityType)),
+          eq(spFilePointers.entityId, parseInt(paramStr(req.params.entityId)))
         ))
         .orderBy(desc(spFilePointers.uploadedAt));
       res.json(result);
@@ -2008,10 +2052,10 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.delete("/api/eng/file-pointers/:id", requireAuth, requirePermission("engineering", "delete"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       await db.delete(spFilePointers).where(eq(spFilePointers.id, id));
-      logAuditFromReq(req, { entityType: "file_pointer", entityId: req.params.id, action: "delete", changesJson: { description: "File pointer deleted" } });
+      logAuditFromReq(req, { entityType: "file_pointer", entityId: paramStr(req.params.id), action: "delete", changesJson: { description: "File pointer deleted" } });
       res.json({ success: true });
     } catch (err: any) {
       console.error("[Engineering] Error:", err);
@@ -2134,7 +2178,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.patch("/api/eng/warnings/:id", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       if (isNaN(id)) return sendError(res, badRequest("Invalid ID"));
       const updates = { ...req.body, updatedAt: new Date() };
       const [updated] = await db.update(qcWarning).set(updates).where(eq(qcWarning.id, id)).returning();
@@ -2158,7 +2202,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/eng/warnings/:id/acknowledge", requireAuth, requirePermission("engineering", "edit"), async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(paramStr(req.params.id));
       await db.insert(qcWarningEvent).values({
         warningId: id,
         eventType: "acknowledged",
@@ -2702,8 +2746,8 @@ export function registerEngineeringRoutes(app: Express) {
         limit: pageLimit,
         offset: pageOffset,
         filters: {
-          actionTypes: allActions.map(a => a.actionType),
-          projectNames: allProjects.map(p => p.projectName).filter(Boolean),
+          actionTypes: allActions.map((a: any) => a.actionType),
+          projectNames: allProjects.map((p: any) => p.projectName).filter(Boolean),
           actors: allActors,
         },
       });
@@ -2798,7 +2842,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.post("/api/projects/:projectId/mark-cp-signed", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       const user = getUser(req);
       const { evidenceType, emailSubject, emailDate, fileId } = req.body;
 
@@ -2911,7 +2955,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/cp-status", jwtAuth, requireAuth, async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       const [project] = await db.select({
         cpSigned: projectExecutionState.cpSigned,
         cpSignedDate: projectExecutionState.cpSignedDate,
@@ -2951,7 +2995,7 @@ export function registerEngineeringRoutes(app: Express) {
         return sendError(res, forbidden("Only admins can change project phases"));
       }
 
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const { toPhase, reason, overrideSequence } = req.body;
@@ -2981,7 +3025,7 @@ export function registerEngineeringRoutes(app: Express) {
       let templateApplied = false;
       let templateResult: any = null;
 
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         const phaseFields = {
           phase: toPhase,
           phaseUpdatedAt: new Date(),
@@ -3085,7 +3129,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/phase-history", jwtAuth, requireAuth, requirePermission("lifecycle", "view"), async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -3117,7 +3161,7 @@ export function registerEngineeringRoutes(app: Express) {
 
   app.get("/api/projects/:projectId/eng-tasks", jwtAuth, requireAuth, requirePermission("eng_tasks", "view"), async (req, res) => {
     try {
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -3140,7 +3184,7 @@ export function registerEngineeringRoutes(app: Express) {
   app.post("/api/projects/:projectId/generate-eng-tasks", jwtAuth, requireAuth, requireAdmin, async (req, res) => {
     try {
       const user = getUser(req);
-      const projectId = parseInt(req.params.projectId);
+      const projectId = parseInt(paramStr(req.params.projectId));
       if (isNaN(projectId)) return sendError(res, badRequest("Invalid project ID"));
 
       const [project] = await db.select().from(projectInfo).where(eq(projectInfo.id, projectId));
@@ -3355,11 +3399,11 @@ export function registerEngineeringRoutes(app: Express) {
         .orderBy(desc(taskDeliverables.createdAt))
         .limit(20);
 
-      const myPendingTaskDeliverables = pendingTaskDeliverables.filter(d =>
+      const myPendingTaskDeliverables = pendingTaskDeliverables.filter((d: any) =>
         d.recipientUserId === userId
       );
 
-      const myEngApprovals = engApprovals.filter(a => {
+      const myEngApprovals = engApprovals.filter((a: any) => {
         if (a.approverRole === "QA_REVIEW" || a.approverRole === "Quality Manager") {
           return userRole === "QUALITY_MANAGER" || userRole === "quality_manager";
         }
@@ -3377,7 +3421,7 @@ export function registerEngineeringRoutes(app: Express) {
       const myDeliverables = deliverableItems;
 
       const pendingApprovals = [
-        ...myEngApprovals.map(a => ({
+        ...myEngApprovals.map((a: any) => ({
           id: `eng-${a.id}`,
           type: "engineering" as const,
           title: `${a.stageName} — ${a.approverRole}`,
@@ -3385,7 +3429,7 @@ export function registerEngineeringRoutes(app: Express) {
           projectId: a.projectId,
           createdAt: a.createdAt,
         })),
-        ...myQcItems.map(q => ({
+        ...myQcItems.map((q: any) => ({
           id: `qc-${q.id}`,
           type: "quality" as const,
           title: q.itemName,
@@ -3393,7 +3437,7 @@ export function registerEngineeringRoutes(app: Express) {
           projectId: q.projectId,
           createdAt: q.lastUpdatedAt,
         })),
-        ...myDeliverables.map(d => ({
+        ...myDeliverables.map((d: any) => ({
           id: `del-${d.id}`,
           type: "deliverable" as const,
           title: `${d.title} (${d.deliverableType || 'Document'})`,
@@ -3401,7 +3445,7 @@ export function registerEngineeringRoutes(app: Express) {
           projectId: d.projectId,
           createdAt: d.updatedAt,
         })),
-        ...myPendingTaskDeliverables.map(d => ({
+        ...myPendingTaskDeliverables.map((d: any) => ({
           id: `td-${d.id}`,
           type: "task_deliverable" as const,
           title: `${d.originalName} — from ${d.senderName || 'Unknown'}`,
@@ -3413,7 +3457,7 @@ export function registerEngineeringRoutes(app: Express) {
         })),
       ];
 
-      const overdueTasks = myTasks.filter(t =>
+      const overdueTasks = myTasks.filter((t: any) =>
         t.dueDate && t.dueDate !== '' && new Date(t.dueDate) < new Date()
       );
 

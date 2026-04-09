@@ -53,52 +53,42 @@ async function readVaultSecret(client: any, vaultName: string): Promise<string |
 }
 
 export async function preloadRuntimeSecrets(): Promise<void> {
-  const VAULT_TIMEOUT_MS = 30_000;
-
-  const doLoad = async () => {
-    const client = await getVaultClient();
-    if (!client) {
-      if (strictRuntime) {
-        const requiredSecrets = SECRET_RESOLUTIONS.filter((s) => s.requiredInStrictRuntime);
-        const allPresent = requiredSecrets.every((s) => !!process.env[s.envName]);
-        if (allPresent) {
-          console.log("[Secrets] KEY_VAULT_URI not set, but all required secrets found in environment. Skipping vault.");
-          return;
-        }
-        throw new Error("[Secrets] KEY_VAULT_URI must be configured in staging/production, or set all required secrets as environment variables.");
+  const client = await getVaultClient();
+  if (!client) {
+    if (strictRuntime) {
+      const requiredSecrets = SECRET_RESOLUTIONS.filter((s) => s.requiredInStrictRuntime);
+      const allPresent = requiredSecrets.every((s) => !!process.env[s.envName]);
+      if (allPresent) {
+        console.log("[Secrets] KEY_VAULT_URI not set, but all required secrets found in environment. Skipping vault.");
+        return;
       }
-      return;
+      throw new Error("[Secrets] KEY_VAULT_URI must be configured in staging/production, or set all required secrets as environment variables.");
     }
+    return;
+  }
 
-    for (const secret of SECRET_RESOLUTIONS) {
-      if (process.env[secret.envName]) continue;
+  for (const secret of SECRET_RESOLUTIONS) {
+    if (process.env[secret.envName]) continue;
 
-      try {
-        const value = await readVaultSecret(client, secret.vaultName);
-        if (value) {
-          process.env[secret.envName] = value;
-        }
-      } catch (err) {
-        const e = err as Error;
-        throw new Error(`[Secrets] Failed to retrieve required runtime secrets (name=${secret.vaultName}): ${e.message}`);
+    try {
+      const value = await readVaultSecret(client, secret.vaultName);
+      if (value) {
+        process.env[secret.envName] = value;
       }
+    } catch (err) {
+      const e = err as Error;
+      throw new Error(`[Secrets] Failed to retrieve required runtime secrets (name=${secret.vaultName}): ${e.message}`);
     }
+  }
 
-    const missingRequiredSecrets = SECRET_RESOLUTIONS.filter(
-      (secret) => secret.requiredInStrictRuntime && !process.env[secret.envName],
-    );
-
-    if (strictRuntime && missingRequiredSecrets.length > 0) {
-      const missingNames = missingRequiredSecrets.map((secret) => secret.envName).join(", ");
-      throw new Error(`[Secrets] Missing required runtime secrets: ${missingNames}.`);
-    }
-  };
-
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`[Secrets] Vault operation timed out after ${VAULT_TIMEOUT_MS / 1000}s`)), VAULT_TIMEOUT_MS)
+  const missingRequiredSecrets = SECRET_RESOLUTIONS.filter(
+    (secret) => secret.requiredInStrictRuntime && !process.env[secret.envName],
   );
 
-  await Promise.race([doLoad(), timeout]);
+  if (strictRuntime && missingRequiredSecrets.length > 0) {
+    const missingNames = missingRequiredSecrets.map((secret) => secret.envName).join(", ");
+    throw new Error(`[Secrets] Missing required runtime secrets: ${missingNames}.`);
+  }
 }
 
 export function getSecretFromEnv(name: SecretName): string | undefined {

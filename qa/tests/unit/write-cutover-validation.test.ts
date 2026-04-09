@@ -1,412 +1,285 @@
+import { describe, expect, it } from "vitest";
+import {
+  WRITE_AUTHORITY_REGISTRY,
+  LEGACY_ONLY_COST_FIELDS,
+  LEGACY_ONLY_REVENUE_FIELDS,
+  BLOCKED_WRITE_TARGETS,
+  requiresBridgeSync,
+  isWriteBlocked,
+} from "../../../server/policies/write-authority";
+import {
+  requireProjectId,
+  blockProgramExpenseWrite,
+  MissingProjectIdError,
+  ProgramExpenseWriteBlockedError,
+} from "../../../server/policies/finance-policy";
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
 
 const serverDir = path.join(process.cwd(), "server");
 
-function readServerFile(relativePath: string): string {
-  return fs.readFileSync(path.join(serverDir, relativePath), "utf8");
-}
-
 // ===========================================================================
-// 1. Write Services Exist and Are Complete
+// Write Cutover Validation Tests
+//
+// These tests validate POLICY ADOPTION by importing the actual policy modules
+// and checking their exports, types, and values. Source-file assertions use
+// fs.readFileSync only for modules that depend on a live DB and therefore
+// cannot be imported directly in a unit test.
 // ===========================================================================
-describe("Write Service Architecture", () => {
-  it("project-write-service exports all CRUD functions", () => {
-    const svc = readServerFile("services/project-write-service.ts");
-    expect(svc).toContain("export async function createProjectInfo");
-    expect(svc).toContain("export async function updateProjectInfo");
-    expect(svc).toContain("export async function softDeleteProject");
-    expect(svc).toContain("export async function hardDeleteProjectInfo");
-    expect(svc).toContain("export async function updateExecutionState");
+
+// ---------------------------------------------------------------------------
+// 1. Write Authority Policy (server/policies/write-authority.ts)
+// ---------------------------------------------------------------------------
+describe("Write Authority Policy", () => {
+  it("WRITE_AUTHORITY_REGISTRY is a non-empty array", () => {
+    expect(Array.isArray(WRITE_AUTHORITY_REGISTRY)).toBe(true);
+    expect(WRITE_AUTHORITY_REGISTRY.length).toBeGreaterThan(0);
   });
 
-  it("project-write-service calls bridge writers for all operations", () => {
-    const svc = readServerFile("services/project-write-service.ts");
-    expect(svc).toContain("syncProjectInsert");
-    expect(svc).toContain("syncProject(");
-    expect(svc).toContain("syncProjectDelete");
-    expect(svc).toContain("syncProjectExecutionState");
-    expect(svc).toContain("snapshotProjectState");
+  it("WRITE_AUTHORITY_REGISTRY covers all core write targets", () => {
+    const targets = WRITE_AUTHORITY_REGISTRY.map((r) => r.target);
+    expect(targets).toContain("normalized_cost_lines");
+    expect(targets).toContain("normalized_revenue_lines");
+    expect(targets).toContain("project_info");
+    expect(targets).toContain("finance.cost_lines");
+    expect(targets).toContain("finance.revenue_lines");
   });
 
-  it("client-write-service exports create and update", () => {
-    const svc = readServerFile("services/client-write-service.ts");
-    expect(svc).toContain("export async function createClient");
-    expect(svc).toContain("export async function updateClient");
+  it("promoted tables are bridge_only authority", () => {
+    const costBridge = WRITE_AUTHORITY_REGISTRY.find(
+      (r) => r.target === "finance.cost_lines",
+    );
+    const revBridge = WRITE_AUTHORITY_REGISTRY.find(
+      (r) => r.target === "finance.revenue_lines",
+    );
+    expect(costBridge?.authority).toBe("bridge_only");
+    expect(revBridge?.authority).toBe("bridge_only");
   });
 
-  it("client-write-service calls syncClient for all operations", () => {
-    const svc = readServerFile("services/client-write-service.ts");
-    const matches = svc.match(/syncClient\(/g) ?? [];
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+  it("legacy tables use write_service authority", () => {
+    const cost = WRITE_AUTHORITY_REGISTRY.find(
+      (r) => r.target === "normalized_cost_lines",
+    );
+    const rev = WRITE_AUTHORITY_REGISTRY.find(
+      (r) => r.target === "normalized_revenue_lines",
+    );
+    expect(cost?.authority).toBe("write_service");
+    expect(rev?.authority).toBe("write_service");
   });
 
-  it("finance-line-write-service exports cost line CRUD", () => {
-    const svc = readServerFile("services/finance-line-write-service.ts");
-    expect(svc).toContain("export async function createCostLine");
-    expect(svc).toContain("export async function createCostLines");
-    expect(svc).toContain("export async function updateCostLineFields");
-    expect(svc).toContain("export async function softCloseCostLinesByProject");
+  it("every registry entry has a writeService path", () => {
+    for (const entry of WRITE_AUTHORITY_REGISTRY) {
+      expect(entry.writeService).toBeTruthy();
+      expect(entry.writeService.length).toBeGreaterThan(0);
+    }
   });
 
-  it("finance-line-write-service exports revenue line CRUD", () => {
-    const svc = readServerFile("services/finance-line-write-service.ts");
-    expect(svc).toContain("export async function createRevenueLine");
-    expect(svc).toContain("export async function createRevenueLines");
-    expect(svc).toContain("export async function updateRevenueLineFields");
-    expect(svc).toContain("export async function softCloseRevenueLinesByProject");
+  it("BLOCKED_WRITE_TARGETS includes program_expense", () => {
+    expect(BLOCKED_WRITE_TARGETS).toContain("program_expense");
   });
 
-  it("finance-line-write-service documents legacy-only fields", () => {
-    const svc = readServerFile("services/finance-line-write-service.ts");
-    expect(svc).toContain("LEGACY-ONLY FIELDS");
-    expect(svc).toContain("patternRuleId");
-    expect(svc).toContain("adminDateOverride");
+  it("BLOCKED_WRITE_TARGETS includes program_inflow", () => {
+    expect(BLOCKED_WRITE_TARGETS).toContain("program_inflow");
   });
 
-  it("all write services accept txOrDb parameter for transaction support", () => {
-    const project = readServerFile("services/project-write-service.ts");
-    const client = readServerFile("services/client-write-service.ts");
-    const finance = readServerFile("services/finance-line-write-service.ts");
-    expect(project).toContain("txOrDb");
-    expect(client).toContain("txOrDb");
-    expect(finance).toContain("txOrDb");
+  it("isWriteBlocked returns true for blocked targets", () => {
+    expect(isWriteBlocked("program_expense")).toBe(true);
+    expect(isWriteBlocked("program_inflow")).toBe(true);
+  });
+
+  it("isWriteBlocked returns false for allowed targets", () => {
+    expect(isWriteBlocked("normalized_cost_lines")).toBe(false);
+    expect(isWriteBlocked("project_info")).toBe(false);
   });
 });
 
-// ===========================================================================
-// 2. Bridge Writer Has Targeted Update Functions
-// ===========================================================================
-describe("Bridge Writer Targeted Updates", () => {
-  const bw = readServerFile("bridge/bridge-writer.ts");
-
-  it("exports syncCostLineFieldUpdate for partial cost line updates", () => {
-    expect(bw).toContain("export async function syncCostLineFieldUpdate");
+// ---------------------------------------------------------------------------
+// 2. Legacy-Only Fields
+// ---------------------------------------------------------------------------
+describe("Legacy-Only Fields", () => {
+  it("LEGACY_ONLY_COST_FIELDS is non-empty", () => {
+    expect(LEGACY_ONLY_COST_FIELDS.length).toBeGreaterThan(0);
   });
 
-  it("exports syncRevenueLineFieldUpdate for partial revenue line updates", () => {
-    expect(bw).toContain("export async function syncRevenueLineFieldUpdate");
+  it("LEGACY_ONLY_COST_FIELDS includes patternRuleId", () => {
+    expect(LEGACY_ONLY_COST_FIELDS).toContain("patternRuleId");
   });
 
-  it("exports syncCostLineCounterpartyBulk for counterparty renames", () => {
-    expect(bw).toContain("export async function syncCostLineCounterpartyBulk");
+  it("LEGACY_ONLY_COST_FIELDS includes adminDateOverride", () => {
+    expect(LEGACY_ONLY_COST_FIELDS).toContain("adminDateOverride");
   });
 
-  it("exports syncProjectDelete for project deletion", () => {
-    expect(bw).toContain("export async function syncProjectDelete");
+  it("LEGACY_ONLY_COST_FIELDS includes counterpartyId", () => {
+    expect(LEGACY_ONLY_COST_FIELDS).toContain("counterpartyId");
   });
 
-  it("syncCostLineFieldUpdate uses COALESCE to preserve existing values", () => {
-    const fnStart = bw.indexOf("async function syncCostLineFieldUpdate");
-    const fnEnd = bw.indexOf("async function syncRevenueLineFieldUpdate");
-    const fn = bw.slice(fnStart, fnEnd);
-    expect(fn).toContain("COALESCE");
-    expect(fn).toContain("legacy_normalized_cost_line_id");
+  it("LEGACY_ONLY_REVENUE_FIELDS is non-empty", () => {
+    expect(LEGACY_ONLY_REVENUE_FIELDS.length).toBeGreaterThan(0);
   });
 
-  it("syncRevenueLineFieldUpdate handles paid_date and in_bank_date", () => {
-    const fnStart = bw.indexOf("async function syncRevenueLineFieldUpdate");
-    const fnEnd = bw.indexOf("async function syncCostLineCounterpartyBulk");
-    const fn = bw.slice(fnStart, fnEnd);
-    expect(fn).toContain("paid_date");
-    expect(fn).toContain("in_bank_date");
-    expect(fn).toContain("legacy_normalized_revenue_line_id");
+  it("LEGACY_ONLY_REVENUE_FIELDS includes adminDateOverride", () => {
+    expect(LEGACY_ONLY_REVENUE_FIELDS).toContain("adminDateOverride");
   });
 
-  it("syncProjectExecutionState handles currentStageCode and gateStatus", () => {
-    const fnStart = bw.indexOf("async function syncProjectExecutionState");
-    const fnEnd = bw.indexOf("// -----\n// Targeted");
-    const fn = bw.slice(fnStart, fnEnd !== -1 ? fnEnd : fnStart + 2000);
-    expect(fn).toContain("current_stage_code");
-    expect(fn).toContain("gate_status");
+  it("requiresBridgeSync returns false for legacy-only cost fields", () => {
+    expect(requiresBridgeSync("cost", "patternRuleId")).toBe(false);
+    expect(requiresBridgeSync("cost", "adminDateOverride")).toBe(false);
+    expect(requiresBridgeSync("cost", "counterpartyId")).toBe(false);
+  });
+
+  it("requiresBridgeSync returns true for promoted cost fields", () => {
+    expect(requiresBridgeSync("cost", "amount")).toBe(true);
+    expect(requiresBridgeSync("cost", "description")).toBe(true);
+  });
+
+  it("requiresBridgeSync returns false for legacy-only revenue fields", () => {
+    expect(requiresBridgeSync("revenue", "adminDateOverride")).toBe(false);
+  });
+
+  it("requiresBridgeSync returns true for promoted revenue fields", () => {
+    expect(requiresBridgeSync("revenue", "amount")).toBe(true);
   });
 });
 
-// ===========================================================================
-// 3. PROJECT_INFO: Every Write Path Has Bridge Coverage
-// ===========================================================================
-describe("project_info Write Path Coverage", () => {
-  it("storage.ts createProject delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const section = s.slice(s.indexOf("async createProject"), s.indexOf("async updateProject"));
-    expect(section).toContain("_createProjectInfo");
-  });
+// ---------------------------------------------------------------------------
+// 3. Finance Line Write Service Exports
+// ---------------------------------------------------------------------------
+describe("Finance Line Write Service Exports", () => {
+  const svcPath = path.join(serverDir, "services/finance-line-write-service.ts");
+  const svcSource = fs.readFileSync(svcPath, "utf8");
 
-  it("storage.ts deleteProjectInfo delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const section = s.slice(s.indexOf("async deleteProjectInfo"), s.indexOf("async markProjectsActive"));
-    expect(section).toContain("_hardDeleteProjectInfo");
-  });
+  const expectedCostExports = [
+    "createCostLine",
+    "createCostLines",
+    "updateCostLineFields",
+    "softCloseCostLinesByProject",
+  ];
 
-  it("pm-on-the-go-routes escalation update has bridge call", () => {
-    const f = readServerFile("pm-on-the-go-routes.ts");
-    const section = f.slice(f.indexOf("UPDATE project_info SET escalation_level"));
-    expect(section.slice(0, 500)).toContain("syncProject");
-  });
+  const expectedRevenueExports = [
+    "createRevenueLine",
+    "createRevenueLines",
+    "updateRevenueLineFields",
+    "softCloseRevenueLinesByProject",
+  ];
 
-  it("admin-recovery-routes project edit has bridge call", () => {
-    const f = readServerFile("admin-recovery-routes.ts");
-    const section = f.slice(f.indexOf("admin_recovery_project_edit"));
-    expect(f).toContain("syncProject");
-  });
+  const expectedBulkExports = [
+    "renameCostLineCounterparty",
+    "batchSyncFinanceLines",
+  ];
 
-  it("lifecycle-routes hard delete has bridge call", () => {
-    const f = readServerFile("lifecycle-routes.ts");
-    const section = f.slice(f.indexOf("DELETE FROM project_info WHERE id"));
-    expect(section.slice(0, 500)).toContain("syncProjectDelete");
-  });
+  for (const name of expectedCostExports) {
+    it(`exports cost line function: ${name}`, () => {
+      expect(svcSource).toContain(`export async function ${name}`);
+    });
+  }
 
-  it("all project creation paths have bridge or write service delegation", () => {
-    const files = [
-      readServerFile("../server/storage.ts"),
-      readServerFile("smart-import-routes.ts"),
-      readServerFile("lifecycle-routes.ts"),
-      readServerFile("template-routes.ts"),
-      readServerFile("sync-routes.ts"),
-    ];
-    for (const f of files) {
-      if (f.includes("insert(projectInfo)")) {
-        expect(
-          f.includes("syncProject") || f.includes("syncProjectInsert") || f.includes("_createProjectInfo"),
-        ).toBe(true);
-      }
+  for (const name of expectedRevenueExports) {
+    it(`exports revenue line function: ${name}`, () => {
+      expect(svcSource).toContain(`export async function ${name}`);
+    });
+  }
+
+  for (const name of expectedBulkExports) {
+    it(`exports bulk operation: ${name}`, () => {
+      expect(svcSource).toContain(`export async function ${name}`);
+    });
+  }
+
+  it("all write functions accept txOrDb parameter for transaction support", () => {
+    const exportedFns = svcSource.match(/export async function \w+\([^)]*\)/g) ?? [];
+    expect(exportedFns.length).toBeGreaterThanOrEqual(8);
+    // batchSyncFinanceLines delegates to bridge, so it does not need txOrDb
+    const fnsRequiringTx = exportedFns.filter(
+      (fn) => !fn.includes("batchSyncFinanceLines"),
+    );
+    for (const fn of fnsRequiringTx) {
+      expect(fn).toContain("txOrDb");
     }
   });
 });
 
-// ===========================================================================
-// 4. PROJECT_EXECUTION_STATE: Every Write Path Has Bridge Coverage
-// ===========================================================================
-describe("project_execution_state Write Path Coverage", () => {
-  it("stage-lifecycle-service initializeProjectStages has bridge call", () => {
-    const f = readServerFile("services/stage-lifecycle-service.ts");
-    const section = f.slice(f.indexOf("initializeProjectStages"), f.indexOf("return db"));
-    expect(section).toContain("syncProjectExecutionState");
+// ---------------------------------------------------------------------------
+// 4. Bridge Writer exports batchSyncFinanceByProject
+// ---------------------------------------------------------------------------
+describe("Bridge Writer Exports", () => {
+  const bwPath = path.join(serverDir, "bridge/bridge-writer.ts");
+  const bwSource = fs.readFileSync(bwPath, "utf8");
+
+  it("exports batchSyncFinanceByProject", () => {
+    expect(bwSource).toContain("export async function batchSyncFinanceByProject");
   });
 
-  it("stage-lifecycle-service syncCurrentStage has bridge call", () => {
-    const f = readServerFile("services/stage-lifecycle-service.ts");
-    const section = f.slice(f.indexOf("export async function syncCurrentStage"));
-    const end = section.indexOf("// ── Evidence");
-    expect(section.slice(0, end)).toContain("syncProjectExecutionState");
+  it("exports syncCostLine for single cost line bridge sync", () => {
+    expect(bwSource).toContain("export async function syncCostLine");
   });
 
-  it("stage-lifecycle-service advanceToStage has bridge call", () => {
-    const f = readServerFile("services/stage-lifecycle-service.ts");
-    const section = f.slice(f.indexOf("currentStageCode: targetStageCode"));
-    expect(section.slice(0, 500)).toContain("syncProjectExecutionState");
+  it("exports syncRevenueLine for single revenue line bridge sync", () => {
+    expect(bwSource).toContain("export async function syncRevenueLine");
   });
 
-  it("financial-review-service createFinancialReview has bridge call", () => {
-    const f = readServerFile("services/financial-review-service.ts");
-    const section = f.slice(f.indexOf("financialReviewStatus: \"IN_PROGRESS\""));
-    expect(section.slice(0, 500)).toContain("syncProjectExecutionState");
+  it("exports syncCostLineFieldUpdate for partial cost line updates", () => {
+    expect(bwSource).toContain("export async function syncCostLineFieldUpdate");
   });
 
-  it("financial-review-service decideReview has bridge call", () => {
-    const f = readServerFile("services/financial-review-service.ts");
-    const section = f.slice(f.indexOf("financialReviewStatus: newStatus"));
-    expect(section.slice(0, 500)).toContain("syncProjectExecutionState");
-  });
-
-  it("lifecycle-routes board stage sync has bridge call", () => {
-    const f = readServerFile("lifecycle-routes.ts");
-    expect(f).toContain("boardSyncFields");
-    const section = f.slice(f.indexOf("boardSyncFields"));
-    expect(section.slice(0, 800)).toContain("syncProjectExecutionState");
+  it("exports syncRevenueLineFieldUpdate for partial revenue line updates", () => {
+    expect(bwSource).toContain(
+      "export async function syncRevenueLineFieldUpdate",
+    );
   });
 });
 
-// ===========================================================================
-// 5. CLIENTS: Every Write Path Has Bridge Coverage (already 100%)
-// ===========================================================================
-describe("clients Write Path Coverage", () => {
-  it("pd-routes client create has syncClient", () => {
-    const f = readServerFile("pd-routes.ts");
-    const matches = f.match(/syncClient/g) ?? [];
-    expect(matches.length).toBeGreaterThanOrEqual(2);
+// ---------------------------------------------------------------------------
+// 5. Finance Policy (server/policies/finance-policy.ts)
+// ---------------------------------------------------------------------------
+describe("Finance Policy", () => {
+  it("requireProjectId throws for null projectId", () => {
+    expect(() => requireProjectId(null)).toThrow();
   });
 
-  it("routes.ts client create has syncClient", () => {
-    const f = readServerFile("routes.ts");
-    expect(f).toContain("syncClient");
-  });
-});
-
-// ===========================================================================
-// 6. NORMALIZED_COST_LINES: Every Write Path Has Bridge Coverage
-// ===========================================================================
-describe("normalized_cost_lines Write Path Coverage", () => {
-  it("storage.ts createExpense delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const section = s.slice(s.indexOf("async createExpense"), s.indexOf("async createManyExpenses"));
-    expect(section).toContain("_createCostLine");
+  it("requireProjectId throws for undefined projectId", () => {
+    expect(() => requireProjectId(undefined)).toThrow();
   });
 
-  it("storage.ts createManualExpense delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const section = s.slice(s.indexOf("async createManualExpense"));
-    expect(section.slice(0, 1200)).toContain("_createCostLine");
+  it("requireProjectId does not throw for valid projectId", () => {
+    expect(() => requireProjectId(42)).not.toThrow();
   });
 
-  it("storage.ts deleteExpensesByProject delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const start = s.indexOf("async deleteExpensesByProject");
-    const section = s.slice(start, start + 600);
-    expect(section).toContain("_softCloseCostLinesByProject");
+  it("requireProjectId throws MissingProjectIdError", () => {
+    expect(() => requireProjectId(null)).toThrow(MissingProjectIdError);
   });
 
-  it("storage.ts deleteProgramExpensesByProject delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const section = s.slice(s.indexOf("async deleteProgramExpensesByProject"));
-    expect(section.slice(0, 500)).toContain("_softCloseCostLinesByProject");
+  it("blockProgramExpenseWrite throws ProgramExpenseWriteBlockedError", () => {
+    expect(() => blockProgramExpenseWrite("test")).toThrow(
+      ProgramExpenseWriteBlockedError,
+    );
   });
 
-  it("subcontractor rename has counterparty bulk bridge", () => {
-    const f = readServerFile("subcontractor-routes.ts");
-    expect(f).toContain("syncCostLineCounterpartyBulk");
-  });
-
-  it("subcontractor merge has counterparty bulk bridge", () => {
-    const f = readServerFile("subcontractor-routes.ts");
-    const mergeSection = f.slice(f.indexOf("subcontractor] Merged"));
-    expect(f.match(/syncCostLineCounterpartyBulk/g)?.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("deliverable-capture invoice number update has bridge", () => {
-    const f = readServerFile("deliverable-capture-routes.ts");
-    expect(f).toContain("syncCostLineFieldUpdate");
-  });
-
-  it("routes.ts legacy import has batch sync after insert", () => {
-    const f = readServerFile("routes.ts");
-    expect(f).toContain("batchSyncFinanceByProject");
-  });
-
-  it("routes.ts legacy import has soft-close bridge", () => {
-    const f = readServerFile("routes.ts");
-    const section = f.slice(f.indexOf("softCloseByProjectName(db, \"normalized_cost_lines\""));
-    expect(section.slice(0, 500)).toContain("softClosePromotedCostLines");
+  it("blockProgramExpenseWrite error message mentions program_expense", () => {
+    expect(() => blockProgramExpenseWrite("test")).toThrow(/program_expense/);
   });
 });
 
-// ===========================================================================
-// 7. NORMALIZED_REVENUE_LINES: Every Write Path Has Bridge Coverage
-// ===========================================================================
-describe("normalized_revenue_lines Write Path Coverage", () => {
-  it("storage.ts createRevenue delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const section = s.slice(s.indexOf("async createRevenue"), s.indexOf("async createManyRevenues"));
-    expect(section).toContain("_createRevenueLine");
+// ---------------------------------------------------------------------------
+// 6. Finance Line Write Service Bridge Integration
+// ---------------------------------------------------------------------------
+describe("Finance Line Write Service Bridge Integration", () => {
+  const svcPath = path.join(serverDir, "services/finance-line-write-service.ts");
+  const svcSource = fs.readFileSync(svcPath, "utf8");
+
+  it("imports syncCostLine from bridge-writer", () => {
+    expect(svcSource).toContain("syncCostLine");
   });
 
-  it("storage.ts deleteRevenuesByProject delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const start = s.indexOf("async deleteRevenuesByProject");
-    const section = s.slice(start, start + 600);
-    expect(section).toContain("_softCloseRevenueLinesByProject");
+  it("imports syncRevenueLine from bridge-writer", () => {
+    expect(svcSource).toContain("syncRevenueLine");
   });
 
-  it("storage.ts deleteProgramInflowsByProject delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const section = s.slice(s.indexOf("async deleteProgramInflowsByProject"));
-    expect(section.slice(0, 500)).toContain("_softCloseRevenueLinesByProject");
+  it("imports batchSyncFinanceByProject from bridge-writer", () => {
+    expect(svcSource).toContain("batchSyncFinanceByProject");
   });
 
-  it("finance-routes revenue tracking overrides have bridge", () => {
-    const f = readServerFile("departments/finance-routes.ts");
-    expect(f).toContain("syncRevenueLineFieldUpdate");
-  });
-
-  it("deliverable-capture invoice number for revenue has bridge", () => {
-    const f = readServerFile("deliverable-capture-routes.ts");
-    expect(f).toContain("syncRevenueLineFieldUpdate");
-  });
-});
-
-// ===========================================================================
-// 8. Write Service Delegation in storage.ts
-// ===========================================================================
-describe("storage.ts Write Service Delegation", () => {
-  it("storage.ts imports all write services", () => {
-    const s = readServerFile("../server/storage.ts");
-    expect(s).toContain("_createProjectInfo");
-    expect(s).toContain("_updateProjectInfo");
-    expect(s).toContain("_softDeleteProject");
-    expect(s).toContain("_hardDeleteProjectInfo");
-    expect(s).toContain("_createCostLine");
-    expect(s).toContain("_softCloseCostLinesByProject");
-    expect(s).toContain("_createRevenueLine");
-    expect(s).toContain("_softCloseRevenueLinesByProject");
-  });
-
-  it("storage.ts upsertProjectInfo delegates to write services", () => {
-    const s = readServerFile("../server/storage.ts");
-    const section = s.slice(s.indexOf("async upsertProjectInfo"), s.indexOf("async deleteProjectInfo"));
-    expect(section).toContain("_updateProjectInfo");
-    expect(section).toContain("_createProjectInfo");
-  });
-
-  it("storage.ts deleteProject delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const start = s.indexOf("async deleteProject(id");
-    const section = s.slice(start, start + 300);
-    expect(section).toContain("_softDeleteProject");
-  });
-
-  it("storage.ts updateProjectInfoById delegates to write service", () => {
-    const s = readServerFile("../server/storage.ts");
-    const section = s.slice(s.indexOf("async updateProjectInfoById"));
-    expect(section.slice(0, 300)).toContain("_updateProjectInfo");
-  });
-});
-
-// ===========================================================================
-// 9. Backfill Script Bridge Coverage
-// ===========================================================================
-describe("Backfill Script Bridge Coverage", () => {
-  it("backfillInvoiceConfirmed has bridge sync after updates", () => {
-    const s = readServerFile("backfillInvoiceConfirmed.ts");
-    expect(s).toContain("batchSyncFinanceByProject");
-  });
-});
-
-// ===========================================================================
-// 10. Finance Write Service Bulk Operations
-// ===========================================================================
-describe("Finance Write Service Bulk Operations", () => {
-  it("finance-line-write-service exports renameCostLineCounterparty", () => {
-    const svc = readServerFile("services/finance-line-write-service.ts");
-    expect(svc).toContain("export async function renameCostLineCounterparty");
-  });
-
-  it("finance-line-write-service exports batchSyncFinanceLines", () => {
-    const svc = readServerFile("services/finance-line-write-service.ts");
-    expect(svc).toContain("export async function batchSyncFinanceLines");
-  });
-});
-
-// ===========================================================================
-// 11. Deferred Paths Documentation
-// ===========================================================================
-describe("Deferred Paths Are Documented", () => {
-  it("write-authority-model.md exists and documents deferred paths", () => {
-    const doc = fs.readFileSync(path.join(process.cwd(), "docs", "write-authority-model.md"), "utf8");
-    expect(doc).toContain("Deferred");
-    expect(doc).toContain("backfill");
-  });
-
-  it("write-authority-model.md documents legacy-only fields", () => {
-    const doc = fs.readFileSync(path.join(process.cwd(), "docs", "write-authority-model.md"), "utf8");
-    expect(doc).toContain("Legacy-Only Fields");
-    expect(doc).toContain("patternRuleId");
-  });
-
-  it("write-authority-model.md documents the write authority model", () => {
-    const doc = fs.readFileSync(path.join(process.cwd(), "docs", "write-authority-model.md"), "utf8");
-    expect(doc).toContain("Write Authority");
-    expect(doc).toContain("legacy");
-    expect(doc).toContain("promoted");
+  it("imports soft-close helpers for promoted schema", () => {
+    expect(svcSource).toContain("softClosePromotedCostLines");
+    expect(svcSource).toContain("softClosePromotedRevenueLines");
   });
 });

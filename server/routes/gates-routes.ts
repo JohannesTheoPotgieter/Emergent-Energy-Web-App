@@ -13,7 +13,9 @@
 import type { Express } from "express";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { jwtAuth, requireAuth } from "../auth-context";
+import { jwtAuth, requireAuth, getEffectiveUser } from "../auth-context";
+import { requirePermission } from "../permission-middleware";
+import { logAuditFromReq } from "../audit-logger";
 
 // ── Shared query builder ────────────────────────────────────
 
@@ -25,7 +27,7 @@ async function getProjectsWithStageData(filter?: {
     SELECT
       pi.id AS project_id,
       pi.project_name,
-      pi.client_name,
+      COALESCE(c.name, '') AS client_name,
       pi.pm,
       pi.pd,
       pi.contract_value,
@@ -46,6 +48,7 @@ async function getProjectsWithStageData(filter?: {
       ) AS days_in_stage,
       COALESCE(exc.open_exception_count, 0)::int AS open_exception_count
     FROM project_info pi
+    LEFT JOIN clients c ON c.id = pi.client_id
     LEFT JOIN project_execution_state pes ON pes.project_id = pi.id
     LEFT JOIN users cm_user ON cm_user.id = pes.construction_manager_user_id
     LEFT JOIN project_stage_instances psi
@@ -101,7 +104,7 @@ export function registerGatesRoutes(app: Express) {
 
 // ── Pipeline (all active projects) ──────────────────────────
 
-app.get("/api/gates/pipeline", jwtAuth, requireAuth, async (_req, res) => {
+app.get("/api/gates/pipeline", jwtAuth, requireAuth, requirePermission("stage_gate", "view"), async (_req, res) => {
   try {
     const projects = await getProjectsWithStageData();
 
@@ -138,11 +141,12 @@ app.get("/api/gates/pipeline", jwtAuth, requireAuth, async (_req, res) => {
       try {
         // Fallback for partially-migrated environments:
         // keep Gate Tracker useful rather than silently empty.
+        // Intentionally omits clients JOIN — client_id/clients table
+        // may not exist in partially-migrated schemas.
         const fallback = await db.execute(sql`
           SELECT
             pi.id AS project_id,
             pi.project_name,
-            pi.client_name,
             pi.pm,
             pi.pd
           FROM project_info pi
@@ -151,7 +155,7 @@ app.get("/api/gates/pipeline", jwtAuth, requireAuth, async (_req, res) => {
         const fallbackProjects = ((fallback as any).rows ?? []).map((r: any) => ({
           projectId: r.project_id,
           projectName: r.project_name,
-          clientName: r.client_name,
+          clientName: null,
           pm: r.pm,
           pd: r.pd,
           constructionManager: null,
@@ -208,7 +212,7 @@ app.get("/api/gates/pipeline", jwtAuth, requireAuth, async (_req, res) => {
 
 // ── Blocked ─────────────────────────────────────────────────
 
-app.get("/api/gates/blocked", jwtAuth, requireAuth, async (_req, res) => {
+app.get("/api/gates/blocked", jwtAuth, requireAuth, requirePermission("stage_gate", "view"), async (_req, res) => {
   try {
     const projects = await getProjectsWithStageData({
       gateStatuses: ["BLOCKED"],
@@ -225,7 +229,7 @@ app.get("/api/gates/blocked", jwtAuth, requireAuth, async (_req, res) => {
 
 // ── Ready ───────────────────────────────────────────────────
 
-app.get("/api/gates/ready", jwtAuth, requireAuth, async (_req, res) => {
+app.get("/api/gates/ready", jwtAuth, requireAuth, requirePermission("stage_gate", "view"), async (_req, res) => {
   try {
     const projects = await getProjectsWithStageData({
       gateStatuses: ["READY_FOR_REVIEW", "APPROVED"],
@@ -242,7 +246,7 @@ app.get("/api/gates/ready", jwtAuth, requireAuth, async (_req, res) => {
 
 // ── Exceptions (enhanced for Prompt 6) ─────────────────────
 
-app.get("/api/gates/exceptions", jwtAuth, requireAuth, async (req, res) => {
+app.get("/api/gates/exceptions", jwtAuth, requireAuth, requirePermission("stage_gate", "view"), async (req, res) => {
   try {
     const view = (req.query.view as string) || "all";
     const userId = (req as any).user?.id;
@@ -308,7 +312,7 @@ app.get("/api/gates/exceptions", jwtAuth, requireAuth, async (req, res) => {
 
 // ── Exception counts by view ───────────────────────────────
 
-app.get("/api/gates/exceptions/counts", jwtAuth, requireAuth, async (req, res) => {
+app.get("/api/gates/exceptions/counts", jwtAuth, requireAuth, requirePermission("stage_gate", "view"), async (req, res) => {
   try {
     const userId = (req as any).user?.id || 0;
     const result = await db.execute(sql`
@@ -335,7 +339,7 @@ app.get("/api/gates/exceptions/counts", jwtAuth, requireAuth, async (req, res) =
 
 // ── Exception actions ──────────────────────────────────────
 
-app.patch("/api/gates/exceptions/:id/action", jwtAuth, requireAuth, async (req, res) => {
+app.patch("/api/gates/exceptions/:id/action", jwtAuth, requireAuth, requirePermission("stage_exceptions", "edit"), async (req, res) => {
   try {
     const exceptionId = Number(req.params.id);
     const { action, conditionsText, comment } = req.body;
@@ -383,6 +387,13 @@ app.patch("/api/gates/exceptions/:id/action", jwtAuth, requireAuth, async (req, 
       WHERE id = ${exceptionId}
     `);
 
+    logAuditFromReq(req, {
+      entityType: "stage_exception",
+      entityId: String(exceptionId),
+      action: `exception_${action}`,
+      changesJson: { action, newStatus, conditionsText: conditionsText || null, comment: comment || null },
+    });
+
     res.json({ success: true, newStatus });
   } catch (err: any) {
     if (err.code === "42P01" || err.code === "42703") {
@@ -395,20 +406,21 @@ app.patch("/api/gates/exceptions/:id/action", jwtAuth, requireAuth, async (req, 
 
 // ── Client Updates ──────────────────────────────────────────
 
-app.get("/api/gates/client-updates", jwtAuth, requireAuth, async (_req, res) => {
+app.get("/api/gates/client-updates", jwtAuth, requireAuth, requirePermission("stage_gate", "view"), async (_req, res) => {
   try {
     // Show projects in active execution stages (S04-S09) with their last weekly review status
     const result = await db.execute(sql`
       SELECT
         pi.id AS project_id,
         pi.project_name,
-        pi.client_name,
+        COALESCE(c.name, '') AS client_name,
         pi.pm,
         pes.current_stage_code,
         pes.gate_status,
         wr.last_review_date,
         wr.review_count
       FROM project_info pi
+      LEFT JOIN clients c ON c.id = pi.client_id
       JOIN project_execution_state pes ON pes.project_id = pi.id
       LEFT JOIN (
         SELECT
@@ -439,7 +451,7 @@ app.get("/api/gates/client-updates", jwtAuth, requireAuth, async (_req, res) => 
 
 // ── Handovers (enhanced for Prompt 6) ──────────────────────
 
-app.get("/api/gates/handovers", jwtAuth, requireAuth, async (req, res) => {
+app.get("/api/gates/handovers", jwtAuth, requireAuth, requirePermission("stage_gate", "view"), async (req, res) => {
   try {
     const view = (req.query.view as string) || "all";
 
@@ -447,7 +459,7 @@ app.get("/api/gates/handovers", jwtAuth, requireAuth, async (req, res) => {
       SELECT
         pi.id AS project_id,
         pi.project_name,
-        pi.client_name,
+        COALESCE(c.name, '') AS client_name,
         pi.pm,
         pes.construction_manager_user_id,
         pes.current_stage_code,
@@ -468,6 +480,7 @@ app.get("/api/gates/handovers", jwtAuth, requireAuth, async (req, res) => {
         COALESCE(EXTRACT(DAY FROM NOW() - psi.started_at)::int, 0) AS days_waiting,
         sseg.sseg_pending
       FROM project_info pi
+      LEFT JOIN clients c ON c.id = pi.client_id
       JOIN project_execution_state pes ON pes.project_id = pi.id
       LEFT JOIN project_stage_instances psi
         ON psi.project_id = pi.id AND psi.stage_code = pes.current_stage_code

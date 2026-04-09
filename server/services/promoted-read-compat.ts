@@ -597,65 +597,44 @@ export async function listProjectInfoFromPromotedCoreCompat() {
       SELECT
         p.id,
         p.project_name AS "projectName",
-        p.size_kwp AS "sizeKwp",
-        p.pd,
-        p.pm,
-        p.contract_value AS "contractValue",
+        NULL::DECIMAL AS "sizeKwp",
+        NULL::TEXT AS pd,
+        NULL::TEXT AS pm,
+        NULL::DECIMAL AS "contractValue",
         p.phase,
-        p.phase_updated_at AS "phaseUpdatedAt",
-        p.phase_updated_by_user_id AS "phaseUpdatedByUserId",
-        p.phase_notes AS "phaseNotes",
-        p.pd_handover_date AS "pdHandoverDate",
-        p.construction_start_date AS "constructionStartDate",
-        p.commissioning_date AS "commissioningDate",
-        p.om_handover_date AS "omHandoverDate",
-        p.client_handover_date AS "clientHandoverDate",
-        p.escalation_level AS "escalationLevel",
-        p.construction_start_actual AS "constructionStartActual",
-        p.pd_handover_actual AS "pdHandoverActual",
-        p.commissioning_actual AS "commissioningActual",
-        p.client_handover_actual AS "clientHandoverActual",
+        NULL::TIMESTAMP AS "phaseUpdatedAt",
+        NULL::INTEGER AS "phaseUpdatedByUserId",
+        NULL::TEXT AS "phaseNotes",
+        NULL::TEXT AS "pdHandoverDate",
+        NULL::TEXT AS "constructionStartDate",
+        NULL::TEXT AS "commissioningDate",
+        NULL::TEXT AS "omHandoverDate",
+        NULL::TEXT AS "clientHandoverDate",
+        NULL::TEXT AS "escalationLevel",
+        NULL::TEXT AS "constructionStartActual",
+        NULL::TEXT AS "pdHandoverActual",
+        NULL::TEXT AS "commissioningActual",
+        NULL::TEXT AS "clientHandoverActual",
         p.rag_status AS "ragStatus",
         p.rag_comment AS "ragComment",
-        p.rag_updated_at AS "ragUpdatedAt",
-        p.rag_updated_by_user_id AS "ragUpdatedByUserId",
-        COALESCE(p.is_active, true) AS "isActive",
-        COALESCE(p.execution_enabled, false) AS "executionEnabled",
+        NULL::TIMESTAMP AS "ragUpdatedAt",
+        NULL::INTEGER AS "ragUpdatedByUserId",
+        TRUE AS "isActive",
+        FALSE AS "executionEnabled",
         p.execution_gate_status AS "executionGateStatus",
         p.execution_gate_reason AS "executionGateReason",
-        p.signed_status AS "signedStatus",
-        p.signed_date AS "signedDate",
-        p.signed_document_link AS "signedDocumentLink",
-        p.execution_phase AS "executionPhase",
-        p.excel_tracker_link AS "excelTrackerLink",
-        p.canonical_project_id AS "canonicalProjectId",
+        'NONE'::TEXT AS "signedStatus",
+        NULL::TEXT AS "signedDate",
+        NULL::TEXT AS "signedDocumentLink",
+        NULL::TEXT AS "executionPhase",
+        NULL::TEXT AS "excelTrackerLink",
+        NULL::INTEGER AS "canonicalProjectId",
         p.client_id AS "clientId",
-        COALESCE(p.archived_status, 'ACTIVE') AS "archivedStatus",
-        p.pm_user_id AS "pmUserId",
-        p.pd_user_id AS "pdUserId",
-        p.updated_at AS "updatedAt",
-        p.current_stage_code AS "currentStageCode",
-        p.gate_status AS "gateStatus",
-        p.gate_readiness_pct AS "gateReadinessPct",
-        p.cp_signed AS "cpSigned",
-        p.cp_signed_date AS "cpSignedDate",
-        p.cp_signed_by_user_id AS "cpSignedByUserId",
-        p.cp_evidence_type AS "cpEvidenceType",
-        p.cp_evidence_ref AS "cpEvidenceRef",
-        p.pm_task_pack_created AS "pmTaskPackCreated",
-        p.eng_post_cp_task_pack_created AS "engPostCpTaskPackCreated",
-        p.site_id AS "siteId",
-        p.opportunity_id AS "opportunityId",
-        p.delivery_model AS "deliveryModel",
-        p.project_code AS "projectCode",
-        p.site_establishment_date AS "siteEstablishmentDate",
-        p.site_establishment_actual AS "siteEstablishmentActual",
-        p.financial_review_status AS "financialReviewStatus",
-        p.financial_review_id AS "financialReviewId",
-        p.waiting_on_department AS "waitingOnDepartment",
-        p.deleted_at AS "deletedAt"
+        'ACTIVE'::TEXT AS "archivedStatus",
+        NULL::INTEGER AS "pmUserId",
+        NULL::INTEGER AS "pdUserId",
+        p.updated_at AS "updatedAt"
       FROM core.projects p
-      WHERE p.deleted_at IS NULL
       ORDER BY p.project_name ASC
     `).then((r: any) => r.rows ?? r);
 
@@ -1323,131 +1302,4 @@ export async function buildPhase1AReconciliationReport(): Promise<Phase1AReconci
     generatedAt: new Date().toISOString(),
     checks,
   };
-}
-
-// ============================================================================
-// Full-spine promoted read adapters (Phase 2+)
-// ============================================================================
-
-/**
- * Read cost lines from finance.cost_lines (promoted spine).
- * Returns data shaped like the legacy programExpense / normalizedCostLines API.
- */
-export async function listCostLinesFromPromotedCompat(projectName?: string) {
-  try {
-    const rows = await db.execute(sql`
-      SELECT
-        cl.id,
-        cl.legacy_normalized_cost_line_id AS "legacyNormalizedCostLineId",
-        cl.legacy_program_expense_id AS "legacyProgramExpenseId",
-        cl.project_id AS "projectId",
-        cl.project_name_snapshot AS "projectName",
-        cl.cost_category AS "costCategory",
-        cl.counterparty_name AS "counterpartyName",
-        cl.counterparty_id AS "counterpartyId",
-        cl.counterparty_type AS "counterpartyType",
-        cl.description,
-        cl.amount_ex_vat AS "amountExVat",
-        cl.invoice_number AS "invoiceNumber",
-        cl.invoice_date AS "invoiceDate",
-        cl.approved_date AS "approvedDate",
-        cl.paid_date AS "paidDate",
-        cl.po_number AS "poNumber",
-        cl.status,
-        cl.cost_line_status AS "costLineStatus",
-        cl.source_sheet AS "sourceSheet",
-        cl.source_row AS "sourceRow",
-        cl.invoice_date_typed AS "invoiceDateTyped",
-        cl.approved_date_typed AS "approvedDateTyped",
-        cl.paid_date_typed AS "paidDateTyped",
-        cl.fiscal_period_id AS "fiscalPeriodId",
-        cl.is_opening_balance AS "isOpeningBalance",
-        cl.invoice_date_font_color AS "invoiceDateFontColor",
-        cl.invoice_date_confirmed AS "invoiceDateConfirmed",
-        cl.paid_date_font_color AS "paidDateFontColor",
-        cl.paid_date_confirmed AS "paidDateConfirmed",
-        cl.cos_realised AS "cosRealised",
-        cl.cashflow_confirmed AS "cashflowConfirmed",
-        cl.no_revenue_linked AS "noRevenueLinked",
-        cl.sub_project_name AS "subProjectName",
-        cl.budget_qty AS "budgetQty",
-        cl.budget_rate AS "budgetRate",
-        cl.budget_total AS "budgetTotal",
-        cl.budget_cos AS "budgetCos",
-        cl.revenue_recognition_amount AS "revenueRecognitionAmount",
-        cl.forecast_payment_date AS "forecastPaymentDate",
-        cl.cos_status_override AS "cosStatusOverride",
-        cl.cos_status_override_by AS "cosStatusOverrideBy",
-        cl.cos_status_override_at AS "cosStatusOverrideAt",
-        cl.cos_status_override_reason AS "cosStatusOverrideReason",
-        cl.import_run_id AS "importRunId",
-        cl.last_synced_at AS "lastSyncedAt",
-        cl.created_at AS "createdAt",
-        cl.updated_at AS "updatedAt"
-      FROM finance.cost_lines cl
-      WHERE cl.effective_to IS NULL AND cl.deleted_at IS NULL
-        ${projectName ? sql`AND cl.project_name_snapshot = ${projectName}` : sql``}
-      ORDER BY cl.id
-    `).then((r: any) => r.rows ?? r);
-    return rows;
-  } catch (error: any) {
-    if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] finance.cost_lines missing, falling back to legacy");
-      return null; // Caller should use legacy fallback
-    }
-    throw error;
-  }
-}
-
-/**
- * Read revenue lines from finance.revenue_lines (promoted spine).
- */
-export async function listRevenueLinesFromPromotedCompat(projectName?: string) {
-  try {
-    const rows = await db.execute(sql`
-      SELECT
-        rl.id,
-        rl.legacy_normalized_revenue_line_id AS "legacyNormalizedRevenueLineId",
-        rl.legacy_program_inflow_id AS "legacyProgramInflowId",
-        rl.project_id AS "projectId",
-        rl.project_name_snapshot AS "projectName",
-        rl.milestone_name AS "milestoneName",
-        rl.description,
-        rl.amount_ex_vat AS "amountExVat",
-        rl.vat,
-        rl.invoice_number AS "invoiceNumber",
-        rl.invoice_date AS "invoiceDate",
-        rl.expected_payment_date AS "expectedPaymentDate",
-        rl.paid_date AS "paidDate",
-        rl.in_bank_date AS "inBankDate",
-        rl.status,
-        rl.source_sheet AS "sourceSheet",
-        rl.source_row AS "sourceRow",
-        rl.invoice_date_typed AS "invoiceDateTyped",
-        rl.expected_payment_date_typed AS "expectedPaymentDateTyped",
-        rl.paid_date_typed AS "paidDateTyped",
-        rl.fiscal_period_id AS "fiscalPeriodId",
-        rl.is_opening_balance AS "isOpeningBalance",
-        rl.invoice_date_font_color AS "invoiceDateFontColor",
-        rl.invoice_date_confirmed AS "invoiceDateConfirmed",
-        rl.paid_date_font_color AS "paidDateFontColor",
-        rl.paid_date_confirmed AS "paidDateConfirmed",
-        rl.sub_project_name AS "subProjectName",
-        rl.import_run_id AS "importRunId",
-        rl.last_synced_at AS "lastSyncedAt",
-        rl.created_at AS "createdAt",
-        rl.updated_at AS "updatedAt"
-      FROM finance.revenue_lines rl
-      WHERE rl.effective_to IS NULL AND rl.deleted_at IS NULL
-        ${projectName ? sql`AND rl.project_name_snapshot = ${projectName}` : sql``}
-      ORDER BY rl.id
-    `).then((r: any) => r.rows ?? r);
-    return rows;
-  } catch (error: any) {
-    if (isMissingCoreSchemaError(error)) {
-      console.warn("[promoted-read-compat] finance.revenue_lines missing, falling back to legacy");
-      return null;
-    }
-    throw error;
-  }
 }

@@ -1,52 +1,71 @@
-# Soft Delete Migration
+# Soft-Delete Migration: isActive → deletedAt
 
-Migration from `is_active` boolean columns to `deleted_at` timestamp columns for soft delete support.
+## Status
 
-## Tables with isActive
+All 17 tables already have `deletedAt` columns. The remaining work is:
+1. Backfill `deletedAt = NOW()` where `isActive = false`
+2. Update queries from `isActive = true` → `deletedAt IS NULL`
+3. Mark `isActive` deprecated (30-day observation → drop)
 
-The following 17 tables currently use `is_active` boolean columns:
+## Migration Order
 
-1. `project_execution_state` — **This PR** (primary migration target)
-2. `project_info` — Uses `deleted_at` (already migrated)
-3. `counterparties` — Supplier/vendor soft delete
-4. `users` — User deactivation
-5. `qc_template` — Quality checklist template soft delete
-6. `qc_checklist` — Quality checklist instance soft delete
-7. `procurement_items` — Procurement item soft delete
-8. `work_items` — Task soft delete
-9. `deliverables` — Deliverable soft delete
-10. `approvals` — Approval record soft delete
-11. `standup_schedules` — Standup schedule soft delete
-12. `payment_requests` — Payment request soft delete
-13. `change_requests` — Change request soft delete
-14. `subcontractors` — Subcontractor soft delete
-15. `handover_packs` — Handover pack soft delete
-16. `sites` — Site soft delete
-17. `opportunities` — Opportunity soft delete
+One table per PR. Priority order based on query frequency and risk:
 
-## Migration Strategy
+| # | Table | Schema File | isActive Filters | SELECT Refs | Has deletedAt | Status |
+|---|-------|------------|-----------------|-------------|---------------|--------|
+| 1 | project_execution_state | projects.ts:161 | 9 | 6 | Yes | **This PR** |
+| 2 | project_info | projects.ts (via joins) | Many | Many | Yes | Pending |
+| 3 | counterparties | finance.ts:399 | Few | Few | Yes | Pending |
+| 4 | users | users.ts:11 | Few | Few | Yes | Pending |
+| 5 | working_plan_scenario | finance.ts:231 | Few | Few | Yes | Pending |
+| 6 | invoice_pattern_rules | finance.ts:563 | Few | Few | Yes | Pending |
+| 7 | qc_template | quality.ts:15 | Few | Few | Yes | Pending |
+| 8 | eng_stage_templates | engineering.ts:127 | Few | Few | Yes | Pending |
+| 9 | sp_files | imports.ts:47 | Few | Few | Yes | Pending |
+| 10 | intake_task_templates | imports.ts:368 | Few | Few | Yes | Pending |
+| 11 | counterparty_contacts | finance.ts:432 | Few | Few | Yes | Pending |
+| 12 | financial_integration_rules | finance.ts:803 | Few | Few | Yes | Pending |
+| 13 | standup_schedules | collaboration.ts:780 | Few | Few | Yes | Pending |
+| 14 | event_subscriptions | collaboration.ts:842 | Few | Few | Yes | Pending |
+| 15 | phase_template | projects.ts:609 | Few | Few | Yes | Pending |
+| 16 | stage_gate_definitions | projects.ts:734 | Few | Few | Yes | Pending |
+| 17 | stage_gate_overrides | projects.ts:767 | Few | Few | Yes | Pending |
 
-### Phase 1: project_execution_state (**This PR**)
+## PR 1: project_execution_state
 
-- Add `deleted_at` timestamp column
-- Migrate all queries from `WHERE is_active = true` to `WHERE deleted_at IS NULL`
-- Mark `is_active` as @deprecated in schema
-- Keep dual-write during transition
+### Affected Queries (isActive filters)
 
-### Phase 2: Remaining Tables
+| File | Line | Usage | Migration |
+|------|------|-------|-----------|
+| server/api/v2/repositories/project-v2-repository.ts | 7 | `eq(projectExecutionState.isActive, true)` | → `isNull(projectExecutionState.deletedAt)` |
+| server/api/v2/repositories/project-v2-repository.ts | 352-353 | `eq(projectExecutionState.isActive, true)` | → `isNull(projectExecutionState.deletedAt)` |
+| server/services/project-access-service.ts | 74, 94 | `eq(projectExecutionState.isActive, true)` | → `isNull(projectExecutionState.deletedAt)` |
+| server/services/exception-dashboard-service.ts | 123 | `eq(projectExecutionState.isActive, true)` | → `isNull(projectExecutionState.deletedAt)` |
+| server/storage.ts | 1055 | `eq(projectExecutionState.isActive, true)` | → `isNull(projectExecutionState.deletedAt)` |
+| server/storage.ts | 1041 | `SET is_active = true` | → `SET deleted_at = NULL` |
+| server/storage.ts | 1045 | `SET is_active = false` | → `SET deleted_at = NOW()` |
+| server/template-routes.ts | 699, 833 | `eq(projectExecutionState.isActive, true)` | → `isNull(projectExecutionState.deletedAt)` |
+| server/routes.ts | 1786 | `isActive IS NOT FALSE` | → `deleted_at IS NULL` |
 
-- Apply same pattern to remaining 16 tables
-- Each table migrated in its own PR for isolation
-- Rollback SQL provided for each migration
+### SELECT-only references (read isActive field, no filtering)
 
-## Query Migration Pattern
+These SELECT fields that just read `isActive` for the response payload are left
+temporarily — they'll return the deprecated column value during the observation window.
 
-Before:
-```sql
-SELECT * FROM project_execution_state WHERE is_active = true
-```
+| File | Line | Usage |
+|------|------|-------|
+| server/portfolio-routes.ts | 56, 513 | SELECT isActive |
+| server/lifecycle-routes.ts | 289 | SELECT isActive |
+| server/template-routes.ts | 830 | SELECT isActive |
+| server/pm-routes.ts | 54 | SELECT isActive |
+| server/departments/fye-revenue-tracking-routes.ts | 627, 1259 | SELECT isActive |
+| server/services/project-lifecycle-workspace-service.ts | 610 | SELECT isActive |
 
-After:
-```sql
-SELECT * FROM project_execution_state WHERE deleted_at IS NULL
-```
+## Rules
+
+- `isActive = true` is replaced by `deletedAt IS NULL`
+- `isActive = false` is replaced by `deletedAt IS NOT NULL`
+- `SET is_active = true` becomes `SET deleted_at = NULL`
+- `SET is_active = false` becomes `SET deleted_at = NOW()`
+- `isActive` column stays in schema for 30 days (marked @deprecated)
+- Drop `isActive` in separate cleanup PR after zero query dependencies confirmed

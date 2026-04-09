@@ -1,5 +1,3 @@
-// TODO: remove @ts-nocheck — complex ExcelJS typing needs careful attention
-// @ts-nocheck
 import ExcelJS from "exceljs";
 import { SECTION_ANCHORS, getSynonymsForSection } from "./synonyms";
 import { normalizeHeader, getCellRawValue, worksheetToArray, parseDate, parseNumber } from "./utils";
@@ -151,7 +149,7 @@ function findHeaderRow(
   data: any[][],
   sectionKey: string,
   maxScanRows: number = 30
-): { rowIndex: number; headers: { colIndex: number; rawHeader: string; normalizedHeader: string }[] } | null {
+): { rowIndex: number; headers: { colIndex: number; rawHeader: string; normalizedHeader: string }[]; budgetHeaders?: { colIndex: number; rawHeader: string; normalizedHeader: string }[] } | null {
   const anchor = SECTION_ANCHORS[sectionKey];
   if (!anchor) return null;
 

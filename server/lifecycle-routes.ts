@@ -1,5 +1,6 @@
-// TODO: remove @ts-nocheck
-// @ts-nocheck
+// Error breakdown: TS7006 implicit-any: 10, TS2345 query/param types: 8, other: 0
+// Fix guide: use queryStr/queryInt from server/lib/req-parse for query params,
+// add explicit ': any' to .map/.filter callback params on db result rows.
 import { Express, Request, Response, NextFunction } from "express";
 import { db, getDbMode } from "./db";
 import { eq, sql, inArray, desc, and, isNull } from "drizzle-orm";
@@ -14,11 +15,14 @@ import { createStageGateOverride, evaluateStageGate } from "./services/lifecycle
 import { buildProjectLifecycleWorkspace } from "./services/project-lifecycle-workspace-service";
 import { refreshProjectMetricsAsync } from "./services/dashboard-metrics";
 import { initializeProjectStages } from "./services/stage-lifecycle-service";
-import { evaluateRevenueArStatus, isRevenueSettled } from "./lib/finance/revenue-ar-status";
+import { evaluateRevenueArStatus } from "./lib/finance/revenue-ar-status";
 import { projectStageInstances, STAGE_CODES } from "@shared/schema";
 import { resolveStageFromPhase, isFullyCompletedPhase, stagesBefore } from "../shared/utils/phase-to-stage-map";
 import { jwtAuth, requireAuth } from "./auth-context";
 import { bridgeCatch } from "./bridge/bridge-writer";
+import { computeMarginPct } from "./lib/finance/margin";
+import { isCanonicalCosRealised, OVERRIDE_REALISED, OVERRIDE_NOT_REALISED } from "./lib/finance/cos-realisation";
+import { paramStr } from "./lib/req-params";
 
 const EXEC_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
 const STAGE_GATE_OVERRIDE_ROLES = ["COO_ADMIN", "CEO_ADMIN", "CCO", "CFO", "PROGRAM_MANAGER", "ENGINEERING_MANAGER"];
@@ -194,9 +198,6 @@ function buildOverdueFinanceLedger(params: {
   let arMissingDueDate = 0;
   const apSeen = new Set<string>();
   const arSeen = new Set<string>();
-  const COS_REALISED_OVERRIDES_OD = new Set(["COS REALISED", "REALISED"]);
-  const COS_NOT_REALISED_OVERRIDES_OD = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
-
   for (const row of costLines) {
     const rowProjectNorm = normalizeName(row.projectName || "");
     const isActiveProject = (row.projectId && activeProjectIds.has(row.projectId)) || (!!row.projectName && activeProjectNames.has(rowProjectNorm));
@@ -209,16 +210,17 @@ function buildOverdueFinanceLedger(params: {
     const keyDate = dueDate || invoiceDate;
     if (!isDateInRange(keyDate, fyStart, fyEnd)) continue;
 
-    // Canonical COS settled logic (matching project-header-kpi-service isCosRealisedLine)
-    const cosOverrideOd = String(row.cosStatusOverride ?? "").trim().toUpperCase();
-    let settled: boolean;
-    if (COS_REALISED_OVERRIDES_OD.has(cosOverrideOd)) {
-      settled = true;
-    } else if (COS_NOT_REALISED_OVERRIDES_OD.has(cosOverrideOd)) {
-      settled = false;
-    } else {
-      settled = row.cosRealised === true;
-    }
+    // Use canonical COS realisation check (invoice-only hard rule)
+    const settled = isCanonicalCosRealised({
+      status: null,
+      cosStatusOverride: row.cosStatusOverride ?? null,
+      cosRealised: row.cosRealised ?? null,
+      expenseInvoiceNumber: row.invoiceNumber ?? null,
+      expenseInvoicedDate: row.invoiceDate ?? null,
+      expensePoNumber: (row as any).poNumber ?? null,
+      paymentDate: row.paidDate ?? null,
+      today,
+    });
     if (settled) continue;
     if (!dueDate) {
       apMissingDueDate += 1;
@@ -316,8 +318,6 @@ export function registerLifecycleRoutes(app: Express) {
       console.log("[Lifecycle] Postgres-only additive migrations skipped for SQLite");
       return;
     }
-    // Production: schema must come from versioned migrations, not runtime DDL
-    if (process.env.NODE_ENV === "production" || process.env.NODE_ENV === "staging") return;
 
     try {
       await db.execute(sql.raw(`
@@ -349,7 +349,7 @@ export function registerLifecycleRoutes(app: Express) {
       if (!RAG_ROLES.includes(role)) {
         return res.status(403).json({ error: "forbidden", message: "Only COO, CEO, or CCO can update RAG status" });
       }
-      const projectId = parseInt(req.params.id);
+      const projectId = parseInt(paramStr(req.params.id));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const { rag, comment } = req.body;
@@ -366,7 +366,7 @@ export function registerLifecycleRoutes(app: Express) {
       const userId = ((req as any).user as any)?.id;
       const fromRag = project.ragStatus || null;
 
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         const ragFields = {
           ragStatus: rag,
           ragComment: comment.trim(),
@@ -385,7 +385,7 @@ export function registerLifecycleRoutes(app: Express) {
         });
       });
 
-      logAuditFromReq(req, "project.rag_update", { projectId, fromRag, toRag: rag, comment: comment.trim() });
+      logAuditFromReq(req, { entityType: "project", action: "rag_update", entityId: String(projectId), changesJson: { projectId, fromRag, toRag: rag, comment: comment.trim() } });
 
       res.json({ success: true });
     } catch (err: any) {
@@ -396,7 +396,7 @@ export function registerLifecycleRoutes(app: Express) {
 
   app.get("/api/lifecycle-board/projects/:id/rag-history", requireAuth, async (req: Request, res: Response) => {
     try {
-      const projectId = parseInt(req.params.id);
+      const projectId = parseInt(paramStr(req.params.id));
       if (isNaN(projectId)) return res.status(400).json({ error: "Invalid project ID" });
 
       const history = await db.select({
@@ -410,14 +410,14 @@ export function registerLifecycleRoutes(app: Express) {
         .where(eq(projectRagAudit.projectId, projectId))
         .orderBy(desc(projectRagAudit.changedAt));
 
-      const userIds = [...new Set(history.map(h => h.changedByUserId).filter(Boolean))];
+      const userIds = [...new Set(history.map((h: any) => h.changedByUserId).filter(Boolean))];
       const userMap = new Map<number, string>();
       if (userIds.length > 0) {
-        const userRows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds));
+        const userRows = await db.select({ id: users.id, name: users.name }).from(users).where(inArray(users.id, userIds as number[]));
         for (const u of userRows) userMap.set(u.id, u.name);
       }
 
-      res.json(history.map(h => ({
+      res.json(history.map((h: any) => ({
         ...h,
         changedByName: userMap.get(h.changedByUserId) || "Unknown",
       })));
@@ -507,11 +507,6 @@ export function registerLifecycleRoutes(app: Express) {
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
         paidDateConfirmed: normalizedRevenueLines.paidDateConfirmed,
-        // F-01 fix: Include fields needed for canonical isRevenueSettled()
-        status: normalizedRevenueLines.status,
-        paidDate: normalizedRevenueLines.paidDate,
-        inBankDate: normalizedRevenueLines.inBankDate,
-        paidDateFontColor: normalizedRevenueLines.paidDateFontColor,
       }).from(normalizedRevenueLines).where(isNull(normalizedRevenueLines.effectiveTo));
 
       const allCostLines = await db.select({
@@ -531,20 +526,12 @@ export function registerLifecycleRoutes(app: Express) {
       const finByNorm = new Map<string, ReturnType<typeof emptyFin>>();
       for (const r of allRevLines) {
         const amt = parseFloat(r.amountExVat || "0") || 0;
-        // F-01 fix: Use canonical isRevenueSettled() instead of just paidDateConfirmed
-        const settled = isRevenueSettled({
-          status: r.status,
-          paidDate: r.paidDate,
-          inBankDate: r.inBankDate,
-          paidDateConfirmed: r.paidDateConfirmed,
-          paidDateFontColor: r.paidDateFontColor,
-        });
         if (r.projectId) {
           if (!finByProjectId.has(r.projectId)) finByProjectId.set(r.projectId, emptyFin());
           const entry = finByProjectId.get(r.projectId)!;
           entry.totalRevenue += amt;
           if (r.invoiceNumber) entry.invoicedRevenue += amt;
-          if (settled) entry.receivedRevenue += amt;
+          if (r.paidDateConfirmed) entry.receivedRevenue += amt;
           continue;
         }
         const name = r.projectName;
@@ -554,7 +541,7 @@ export function registerLifecycleRoutes(app: Express) {
         const entry = finByNorm.get(norm)!;
         entry.totalRevenue += amt;
         if (r.invoiceNumber) entry.invoicedRevenue += amt;
-        if (settled) entry.receivedRevenue += amt;
+        if (r.paidDateConfirmed) entry.receivedRevenue += amt;
       }
       for (const c of allCostLines) {
         const amt = parseFloat(c.amountExVat || "0") || 0;
@@ -727,7 +714,7 @@ export function registerLifecycleRoutes(app: Express) {
         console.warn("[lifecycle-board] PD pct query error:", e.message);
       }
 
-      const ragUserIds = allProjects.map(p => (p as any).ragUpdatedByUserId).filter(Boolean);
+      const ragUserIds = allProjects.map((p: any) => (p as any).ragUpdatedByUserId).filter(Boolean);
       const ragUserMap = new Map<number, string>();
       if (ragUserIds.length > 0) {
         try {
@@ -936,7 +923,7 @@ export function registerLifecycleRoutes(app: Express) {
       const revenueLines = await db.select(selectDefinedFields({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
-        client: normalizedRevenueLines.counterpartyName,
+        client: sql<string | null>`NULL`.as("client"),
 
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
@@ -1005,10 +992,9 @@ export function registerLifecycleRoutes(app: Express) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
         const dateKey = pickFirstPopulatedDate(row as any, ["expectedPaymentDate", "invoiceDate", "paidDate", "inBankDate"]);
         if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
-        // Canonical "received" logic (matching project-header-kpi-service isRevenueRealised):
-        // status ∈ [PAID, IN_BANK, REALISED] OR paidDate exists OR inBankDate exists
-        const revenueStatus = String(row.status ?? "").trim().toUpperCase();
-        const received = ["PAID", "IN_BANK", "REALISED"].includes(revenueStatus) || !!row.paidDate || !!row.inBankDate;
+        const paidDateIsPast = !!row.paidDate && row.paidDate <= today;
+        const paidConfirmed = paidDateIsPast && (row.paidDateConfirmed === true || row.paidDateFontColor === 'black');
+        const received = paidConfirmed || !!row.inBankDate;
 
         const addTo = (entry: ReturnType<typeof emptyFin>) => {
           entry.plannedRevenue += amount;
@@ -1026,22 +1012,22 @@ export function registerLifecycleRoutes(app: Express) {
         }
       }
 
-      const COS_REALISED_OVERRIDES = new Set(["COS REALISED", "REALISED"]);
-      const COS_NOT_REALISED_OVERRIDES = new Set(["PLANNED", "COMMITTED", "INVOICED", "APPROVED", "PAID"]);
+      const COS_REALISED_OVERRIDES = OVERRIDE_REALISED;
+      const COS_NOT_REALISED_OVERRIDES = OVERRIDE_NOT_REALISED;
       for (const row of costLines) {
         const amount = parseFloat(row.amountExVat || "0") || 0;
         const dateKey = pickFirstPopulatedDate(row as any, ["approvedDate", "invoiceDate", "paidDate"]);
         if (!isDateInRange(dateKey, fy.start, fy.end)) continue;
-        // Canonical "paid/realised" logic (matching project-header-kpi-service isCosRealisedLine):
-        // cosStatusOverride takes priority, then fallback to cosRealised boolean
+        const costPaidDateIsPast = !!row.paidDate && row.paidDate <= today;
+        const costPaidConfirmed = costPaidDateIsPast && (row.paidDateConfirmed === true || row.paidDateFontColor === 'black');
         const cosOverride = String(row.cosStatusOverride ?? "").trim().toUpperCase();
         let paid: boolean;
         if (COS_REALISED_OVERRIDES.has(cosOverride)) {
-          paid = true;
+          paid = costPaidDateIsPast;
         } else if (COS_NOT_REALISED_OVERRIDES.has(cosOverride)) {
           paid = false;
         } else {
-          paid = row.cosRealised === true;
+          paid = costPaidConfirmed;
         }
 
         const addTo = (entry: ReturnType<typeof emptyFin>) => {
@@ -1134,17 +1120,17 @@ export function registerLifecycleRoutes(app: Express) {
         const paidExpenditureFy = fin.paidExpenditure;
         const openExpenditureFy = plannedExpenditureFy - paidExpenditureFy;
         const grossProfitFy = plannedRevenueFy - plannedExpenditureFy;
-        const grossMarginPctFy = plannedRevenueFy > 0 ? Number((((plannedRevenueFy - plannedExpenditureFy) / plannedRevenueFy) * 100).toFixed(1)) : null;
+        const grossMarginPctFy = computeMarginPct(plannedRevenueFy, plannedExpenditureFy, { precision: 1 });
 
         const projectEng = engTasks.filter((t) => (t.projectId && t.projectId === project.id) || (!t.projectId && normalizeName(t.projectName || "") === norm));
         const openEng = projectEng.filter((t) => !["done", "completed", "qc approved", "cancelled", "canceled"].includes((t.status || "").toLowerCase()));
         const engBlockers = openEng.filter((t) => Boolean(t.blockerReason) || ["high", "urgent", "highest", "critical"].includes((t.priority || "").toLowerCase()) || ((t.status || "").toLowerCase().includes("block")));
 
-        const projectQuality = qualityRows.filter((q) => normalizeName(q.projectName || "") === norm);
-        const openQuality = projectQuality.filter((q) => (q.status || "open").toLowerCase() !== "closed");
-        const criticalQuality = openQuality.filter((q) => ["high", "critical"].includes((q.severity || "").toLowerCase()));
+        const projectQuality = qualityRows.filter((q: any) => normalizeName(q.projectName || "") === norm);
+        const openQuality = projectQuality.filter((q: any) => (q.status || "open").toLowerCase() !== "closed");
+        const criticalQuality = openQuality.filter((q: any) => ["high", "critical"].includes((q.severity || "").toLowerCase()));
 
-        const projectApprovals = approvalRows.filter((a) => a.projectId === project.id && a.status === "pending");
+        const projectApprovals = approvalRows.filter((a: any) => a.projectId === project.id && a.status === "pending");
 
         const latestImport = latestImportByProjectId.get(project.id) || latestImportByNorm.get(norm) || null;
         const staleDays = latestImport ? Math.floor((todayDt.getTime() - latestImport.getTime()) / (1000 * 60 * 60 * 24)) : null;
@@ -1226,7 +1212,7 @@ export function registerLifecycleRoutes(app: Express) {
           paidExpenditureFy: paidExpenditure,
           openExpenditureFy: plannedExpenditure - paidExpenditure,
           grossProfitFy: plannedRevenue - plannedExpenditure,
-          grossMarginPctFy: plannedRevenue > 0 ? Number((((plannedRevenue - plannedExpenditure) / plannedRevenue) * 100).toFixed(1)) : null,
+          grossMarginPctFy: computeMarginPct(plannedRevenue, plannedExpenditure, { precision: 1 }),
           overdueInflowFy: overdueLedger.ar.totalAmount,
           overdueOutflowFy: overdueLedger.ap.totalAmount,
           openEngineeringBlockers: projectRows.reduce((s, p) => s + p.engineeringBlockerCount, 0),
@@ -1300,7 +1286,7 @@ export function registerLifecycleRoutes(app: Express) {
       const revenueLines = await db.select({
         projectId: normalizedRevenueLines.projectId,
         projectName: normalizedRevenueLines.projectName,
-        client: normalizedRevenueLines.counterpartyName,
+        client: sql<string | null>`NULL`.as("client"),
 
         amountExVat: normalizedRevenueLines.amountExVat,
         invoiceNumber: normalizedRevenueLines.invoiceNumber,
@@ -1548,10 +1534,6 @@ export function registerLifecycleRoutes(app: Express) {
       };
       const [created] = await db.insert(projectInfo).values(promoteInsertFields).returning();
       await syncProjectSplitTablesAfterInsert(created.id, promoteInsertFields);
-      // Phase 2 bridge write: mirror new project to core.projects
-      import("./bridge/bridge-writer").then(({ syncProjectInsert }) =>
-        syncProjectInsert(created as any)
-      ).catch(bridgeCatch);
 
       const targetPhase = phase || "First Assessment";
       const stageNames = PHASE_TO_ENG_STAGES[targetPhase];
@@ -1570,8 +1552,8 @@ export function registerLifecycleRoutes(app: Express) {
       await createProjectEvent({
         projectId: created.id,
         eventType: "project.created",
-        actorUserId: actor.actorUserId,
-        actorRole: actor.actorRole,
+        actorUserId: actorFromReq(req).actorUserId,
+        actorRole: actorFromReq(req).actorRole,
         sourceEntityType: "project_info",
         sourceEntityId: String(created.id),
         summary: `Project created in engineering lifecycle (${targetPhase})`,
@@ -1686,7 +1668,7 @@ export function registerLifecycleRoutes(app: Express) {
         entityType: "lifecycle",
         entityId: String(id),
         action: "override",
-        projectName: null,
+        projectName: undefined,
         changesJson: {
           description: "Stage gate override granted",
           gateName,
@@ -1788,19 +1770,14 @@ export function registerLifecycleRoutes(app: Express) {
         }
 
         // Update execution state with the mapped stage code
-        const boardSyncFields = {
-          currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
-          gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
-          gateReadinessPct: isCompleted ? 100 : 0,
-          updatedAt: new Date(),
-        };
         await db.update(projectExecutionState)
-          .set(boardSyncFields)
+          .set({
+            currentStageCode: isCompleted ? "S10_POST_HANDOVER_REVIEW" : mappedStage,
+            gateStatus: isCompleted ? "PROGRESSED" : "IN_PROGRESS",
+            gateReadinessPct: isCompleted ? 100 : 0,
+            updatedAt: new Date(),
+          })
           .where(eq(projectExecutionState.projectId, id));
-        // Phase 2 bridge write: sync execution state to core.projects
-        import("./bridge/bridge-writer").then(({ syncProjectExecutionState }) =>
-          syncProjectExecutionState(id, boardSyncFields)
-        ).catch(bridgeCatch);
       } catch (stageErr: any) {
         console.warn("[lifecycle-board] Stage lifecycle sync error (non-fatal):", stageErr.message);
       }
@@ -2169,7 +2146,7 @@ export function registerLifecycleRoutes(app: Express) {
         changesJson: { description: `Project hard-deleted by ${deletedBy}`, projectId, projectName: pName },
       });
 
-      await db.transaction(async (tx) => {
+      await db.transaction(async (tx: any) => {
         const pId = projectId;
         const pN = pName;
         // Safe delete helper — uses SAVEPOINTs so a failed statement
@@ -2233,10 +2210,6 @@ export function registerLifecycleRoutes(app: Express) {
         await safeDel(sql`DELETE FROM work_items WHERE workstream = 'PM' AND source = 'SMART_IMPORT' AND (project_id = ${pId} OR external_ref LIKE ${pN + '::PLAN::%'})`);
         await safeDel(sql`DELETE FROM normalized_revenue_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
         await safeDel(sql`DELETE FROM normalized_cost_lines WHERE project_id = ${pId} OR project_name = ${pN}`);
-        // Phase 2 bridge write: cascade delete promoted finance lines
-        import("./bridge/bridge-writer").then(({ cascadeDeletePromotedFinanceLines }) =>
-          cascadeDeletePromotedFinanceLines(pId, pN)
-        ).catch(bridgeCatch);
         await safeDel(sql`DELETE FROM normalized_execution_phases WHERE project_id = ${pId} OR project_name = ${pN}`);
         await safeDel(sql`DELETE FROM pm_site_visits WHERE project_id = ${pId}`);
         await safeDel(sql`DELETE FROM pm_on_the_go_actions WHERE project_id = ${pId}`);
@@ -2282,10 +2255,6 @@ export function registerLifecycleRoutes(app: Express) {
 
         await tx.execute(sql`DELETE FROM project_info WHERE id = ${pId}`);
       });
-      // Phase 2 bridge write: mark promoted project as deleted
-      import("./bridge/bridge-writer").then(({ syncProjectDelete }) =>
-        syncProjectDelete(pId)
-      ).catch(bridgeCatch);
 
       console.log(`[lifecycle-board] Project ${projectId} (${pName}) HARD DELETED by ${deletedBy} — all related data removed`);
 

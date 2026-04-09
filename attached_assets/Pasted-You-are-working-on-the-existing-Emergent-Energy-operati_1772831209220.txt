@@ -1,0 +1,539 @@
+You are working on the existing Emergent Energy operational web application.
+
+This is a SECURITY, OWNERSHIP, IMPORT ROBUSTNESS, AND RELEASE HARDENING PASS.
+
+Do NOT build new business modules.
+Do NOT redesign the platform.
+Do NOT break existing working functionality.
+Do NOT duplicate logic.
+Do NOT make assumptions silently.
+
+Your job is to harden the application so it moves from:
+
+ready enough for controlled internal use
+
+to:
+
+properly hardened for operational trust in the following key areas:
+
+backend permission enforcement
+
+ownership-scoped access logic
+
+Smart Import integrity
+
+final release confidence through end-to-end QA
+
+The standard is not “UI hides the button.”
+The standard is “the backend enforces the rule.”
+
+The standard is not “routing logic mostly sorts things correctly.”
+The standard is “ownership and project scope are respected consistently.”
+
+The standard is not “imports usually work.”
+The standard is “imports do not quietly poison the project spine.”
+
+Work like a senior systems engineer, backend architect, security reviewer, and QA lead.
+
+==================================================
+PRIMARY OBJECTIVE
+
+Harden the application so the following classifications materially improve:
+
+Internal usability — keep stable
+
+Operational UX — keep stable
+
+Admin governance — strengthen
+
+Core workflow stability — keep stable
+
+Security / backend permission maturity — improve significantly
+
+Project-level permission maturity — improve materially
+
+Import robustness — improve materially
+
+Do this without breaking current engineering, quality, finance, project management, reporting, admin, or My Work flows.
+
+==================================================
+CURRENT KNOWN LIMITATIONS TO FIX
+
+The application is currently limited in these ways:
+
+Entity permissions are mostly enforced at the UI layer and not comprehensively at the backend for non-admin routes
+
+Ownership / row-level scoping is mostly handled by application logic and sorting/routing, not hard permission enforcement
+
+Smart Import can create duplicate projects with timestamp prefixes and requires manual cleanup
+
+The system is ready for controlled internal use, but not yet hardened enough to be considered fully trustworthy in security/governance terms
+
+Your job is to close these gaps as far as possible in a controlled way.
+
+==================================================
+DO NOT DO
+
+do not create a new auth system
+
+do not replace the current role/permission architecture entirely
+
+do not invent a second permission engine
+
+do not break current role-based navigation or admin tools
+
+do not remove existing productivity improvements
+
+do not create cosmetic-only fixes
+
+do not silently weaken user access that the business depends on without surfacing it clearly
+
+==================================================
+WORKSTREAM 1 — BACKEND ENTITY PERMISSION ENFORCEMENT
+
+Review the current permission model and enforce critical entity permissions at the backend for mutating routes.
+
+Current truth:
+
+Navigation access is enforced
+
+Admin-only routes are strongly enforced
+
+Many entity permissions are still mostly UI-level
+
+You must improve this.
+
+Requirements:
+
+A. Identify critical non-admin write routes across at least:
+
+tasks
+
+projects
+
+engineering
+
+quality
+
+finance override/edit flows
+
+approvals
+
+procurement-related paths if present
+
+PM On The Go write paths if present
+
+My Work task update paths
+
+assignment / reassignment paths
+
+B. Add backend permission checks to mutating routes where missing
+At minimum enforce:
+
+edit
+
+approve
+
+delete
+
+override
+
+assignment changes where appropriate
+
+C. Reuse the current permission framework where possible
+Do not create a separate permission model.
+Use existing role_permissions / entity permission structure and middleware patterns.
+
+D. Fail correctly
+If user lacks permission:
+
+return 403
+
+provide safe machine-readable error
+
+do not allow partial mutation
+
+E. Audit permission-sensitive actions
+Important changes should remain logged with acting user attribution.
+
+F. Document what is now truly enforced at backend level
+Be specific.
+Do not claim universal enforcement if only critical routes were hardened.
+
+==================================================
+WORKSTREAM 2 — OWNERSHIP / PROJECT-SCOPED ACCESS HARDENING
+
+Improve project-level and ownership-scoped behavior so access and visibility are less dependent on soft UI logic alone.
+
+Do not overbuild a full enterprise row-level security platform if it is too large for this pass.
+Instead, materially improve the highest-value areas.
+
+Requirements:
+
+A. Define practical scope rules for key roles where applicable
+Examples:
+
+Project Manager: owned projects and linked tasks
+
+Program Manager: broader program oversight
+
+Engineer: assigned engineering work and relevant project-linked tasks
+
+Quality Manager: relevant quality items
+
+Finance roles: financial entities as permitted
+
+Admin / COO: full oversight
+
+B. Apply ownership scoping on key data-fetching endpoints where safe
+At minimum review and harden endpoints powering:
+
+My Work / My Tasks
+
+project lists
+
+project detail if scope-sensitive
+
+task lists / boards
+
+approval queues
+
+execution views where ownership matters
+
+C. Separate:
+
+full oversight roles
+
+operational ownership roles
+
+assigned-work roles
+
+D. Do not break required business visibility
+Where full hard scoping would break current operational needs, apply the safest pragmatic version and document the remaining gap clearly.
+
+E. Make unassigned items still visible to management exception views
+Do not hide operational problems.
+
+F. Document exactly what ownership scoping is now enforced vs still handled by application logic
+
+==================================================
+WORKSTREAM 3 — SMART IMPORT ROBUSTNESS AND DUPLICATE PREVENTION
+
+Fix the Smart Import duplicate-project problem and harden import integrity.
+
+Current known issue:
+
+imports can create duplicate projects with timestamp prefixes
+
+manual cleanup is required
+
+this threatens project spine integrity
+
+Requirements:
+
+A. Identify root cause of duplicate project creation
+Trace exact logic path creating timestamp-prefixed duplicates.
+
+B. Fix duplicate prevention at source
+Prevent duplicate project creation where incoming data refers to an existing project/client/site that should map to an existing project record.
+
+C. Improve matching logic safely
+Use existing project spine and stable identifiers where available.
+Do not guess recklessly.
+Use the strongest available matching keys and fallback rules.
+
+D. Add validation and conflict handling
+If import cannot confidently match:
+
+surface a conflict
+
+require explicit user/admin resolution where appropriate
+
+do not silently create dirty duplicates
+
+E. Improve import diagnostics
+For project-creation or project-mapping issues, surface:
+
+what row/file caused it
+
+what matching rule failed
+
+what action user/admin should take
+
+F. Protect downstream integrity
+Ensure normalized cost/revenue/task imports do not link to wrong or duplicate project records.
+
+G. Audit important import actions
+Maintain or improve audit coverage for:
+
+upload
+
+mapping
+
+commit
+
+rollback
+
+retry
+
+conflict resolution if added
+
+H. Add focused regression tests for imports
+Especially:
+
+existing project match
+
+near-duplicate input
+
+missing key
+
+ambiguous match
+
+conflict resolution path
+
+no duplicate creation on rerun
+
+==================================================
+WORKSTREAM 4 — ADMIN GOVERNANCE HARDENING
+
+Improve admin/operator confidence around the above changes.
+
+Requirements:
+
+A. Make it visible what is backend-enforced vs UI-enforced
+The system must be more honest and clearer for admin.
+
+B. Improve admin visibility into:
+
+permission enforcement coverage
+
+import conflicts / duplicates / mapping issues
+
+ownership-scope limitations still remaining
+
+recent access-denied events if practical
+
+recent import exceptions if practical
+
+C. Do not create a giant new module
+Extend existing admin control center, activity log, or documentation where sensible.
+
+D. Keep admin control practical
+The admin should be able to understand where the platform is now strong and where it still has controlled limitations.
+
+==================================================
+WORKSTREAM 5 — FINAL HARDENING QA AND REGRESSION
+
+After all changes, run a full hardening QA pass.
+
+Do not skim.
+Do not only test happy paths.
+Do not mark ready based on green UI.
+
+Test at minimum:
+
+A. Backend permission enforcement
+
+allowed user succeeds
+
+disallowed user gets 403
+
+no partial writes
+
+audit still works where applicable
+
+B. Ownership-scoped access
+
+PM sees owned project/task scope correctly
+
+Program Manager sees broader oversight
+
+Engineer sees relevant work
+
+unassigned work still visible to management exception views
+
+no inappropriate data leaks on hardened endpoints
+
+C. Smart Import
+
+import existing project without duplicate creation
+
+rerun import without duplicate creation
+
+ambiguous match handling
+
+invalid/missing project key handling
+
+conflict/error messaging
+
+downstream records link correctly
+
+D. Regression
+
+authentication
+
+navigation
+
+My Work
+
+project list/detail
+
+engineering
+
+quality
+
+finance/reporting
+
+admin tools
+
+audit log
+
+command center
+
+roles & permissions page
+
+recovery center
+
+any touched write flow
+
+E. Known limitations review
+At the end, explicitly classify what remains:
+
+fully hardened
+
+partially hardened
+
+still deferred
+
+==================================================
+IMPLEMENTATION APPROACH
+
+Work in this order:
+
+Map current critical write routes and current permission coverage
+
+Harden backend checks on priority routes
+
+Map current ownership-sensitive read routes
+
+Apply pragmatic ownership scoping on high-value endpoints
+
+Trace Smart Import duplicate root cause
+
+Implement duplicate prevention and conflict handling
+
+Improve admin visibility / transparency where needed
+
+Run full regression and hardening QA
+
+Produce honest documentation and release recommendation
+
+Do not skip mapping and traceability before changes.
+
+==================================================
+REQUIRED DELIVERABLES
+
+Create or update the following files:
+
+BACKEND_PERMISSION_ENFORCEMENT_PLAN.md
+
+critical routes reviewed
+
+what was previously only UI-enforced
+
+what is now backend-enforced
+
+any routes intentionally deferred
+
+OWNERSHIP_SCOPE_HARDENING.md
+
+scope rules by role
+
+endpoints hardened
+
+what is enforced in backend
+
+what still relies on application logic
+
+known limitations
+
+SMART_IMPORT_DUPLICATE_PREVENTION.md
+
+root cause
+
+fix approach
+
+matching logic
+
+conflict handling behavior
+
+test scenarios
+
+ADMIN_GOVERNANCE_HARDENING.md
+
+how admin visibility was improved
+
+what governance signals are now visible
+
+what still remains limited
+
+HARDENING_QA_MATRIX.md
+
+all hardening tests executed
+
+expected vs actual
+
+pass/fail
+
+defect references
+
+regression results
+
+HARDENING_DEFECT_REGISTER.md
+
+defects found in this session
+
+severity
+
+operational impact
+
+status
+
+workaround if any
+
+HARDENING_RELEASE_RECOMMENDATION.md
+Include:
+
+Ready / not ready for controlled internal use
+
+security/backend permission maturity status
+
+ownership/project-scope maturity status
+
+import robustness status
+
+known open limitations
+
+recommended next actions
+
+==================================================
+SUCCESS CRITERIA
+
+This pass is complete only when:
+
+critical entity write permissions are materially enforced at backend level
+
+ownership/project-scope behavior is materially stronger on key operational endpoints
+
+Smart Import duplicate-project root cause is fixed or safely blocked with conflict handling
+
+admin governance visibility is improved
+
+regression confirms no major workflows are broken
+
+final recommendation is honest and evidence-based
+
+Do not optimize for saying “done.”
+Optimize for moving the platform from “usable” to “trustworthy enough.”
+
+Work like true engineers.

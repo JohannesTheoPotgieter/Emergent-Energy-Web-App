@@ -50,7 +50,6 @@ import { useProjectsSummary } from "@/hooks/use-projects-summary";
 import { useAuth } from "@/hooks/use-auth";
 import DataSourceDebug from "@/components/DataSourceDebug";
 import { ProjectCommandHeader } from "@/components/ProjectCommandHeader";
-import { ProjectWorkspaceHeader } from "@/components/project/ProjectWorkspaceHeader";
 import { CriticalControlPanel } from "@/components/stage-lifecycle/CriticalControlPanel";
 import { StageTimeline } from "@/components/stage-lifecycle/StageTimeline";
 import { useProjectStages } from "@/hooks/use-stage-lifecycle";
@@ -1013,7 +1012,6 @@ export default function ProjectDetailPage() {
   // Stage lifecycle data for CriticalControlPanel and Lifecycle tab
   const { data: stageData } = useProjectStages(projectInfoId);
 
-
   // ─── V2 Consolidated project query ─────────────────────────────
   const { data: v2Detail } = useProjectDetail(projectInfoId);
   const v2Perms: ProjectPermissions | null = v2Detail?.permissions ?? null;
@@ -1121,9 +1119,12 @@ export default function ProjectDetailPage() {
   });
 
   const { data: expenditureTrustData } = useQuery<any>({
-    queryKey: ["expenditure-breakdown", projectName],
+    queryKey: ["expenditure-breakdown", projectName, projectInfoId],
     queryFn: async () => {
-      const res = await engFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}`);
+      const params = new URLSearchParams();
+      if (projectInfoId) params.set("projectId", String(projectInfoId));
+      const qs = params.toString();
+      const res = await engFetch(`/api/expenditure-breakdown/${encodeURIComponent(projectName)}${qs ? `?${qs}` : ""}`);
       if (!res.ok) return null;
       return res.json();
     },
@@ -1221,6 +1222,22 @@ export default function ProjectDetailPage() {
   // Revenue milestones (from revenue-tab endpoint — provides milestone-level detail not in V2)
   const revTabMilestones: any[] = revenueTrustData?.milestones || [];
 
+  const nextMilestone = useMemo<NextMilestoneSummary | null>(() => {
+    const milestones = revTabMilestones;
+    const unpaid = milestones
+      .filter((m: any) => m.status !== 'inBank' && m.date)
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    if (unpaid.length > 0) {
+      const m = unpaid[0];
+      return { name: m.milestoneName || "Revenue Milestone", date: m.date, allPaid: false };
+    }
+    if (milestones.length > 0) {
+      return { name: "All Paid", date: null, allPaid: true };
+    }
+    return null;
+  }, [revTabMilestones]);
+  const chipDestinations = useMemo(() => buildProjectSummaryChipDestinations(projectName), [projectName]);
+
   if (!projectName) {
     return (
       <div className="space-y-6">
@@ -1277,9 +1294,8 @@ export default function ProjectDetailPage() {
   const canSetRag = ['admin', 'COO_ADMIN', 'CEO_ADMIN', 'CCO'].includes(user?.role || '');
   const canInitiateFinancialReview = ['PROJECT_MANAGER_SITE', 'PROGRAM_MANAGER', 'COO_ADMIN', 'CEO_ADMIN'].includes(user?.role || '');
   const ragStatus = v2Detail?.executionState?.ragStatus ?? projectInfo?.rag_status ?? null;
-  const chipDestinations = useMemo(() => buildProjectSummaryChipDestinations(projectName), [projectName]);
 
-  // ─── KPI computation: V2 detail → healthSummary ───
+  // ─── KPI computation: V2 detail → healthSummary → client-side fallback ───
   const v2ContractValue = v2Detail?.financeSummary?.contractValue;
   const totalRevenueActual = (revenueData as any[]).reduce((s: number, r: any) => s + (Number(r.milestoneAmount) || 0), 0);
   const contractValue = v2ContractValue ?? healthSummary?.revenue.contractValue ?? projectInfo?.contract_value ?? totalRevenueActual ?? 0;
@@ -1332,18 +1348,7 @@ export default function ProjectDetailPage() {
     return paymentDateConfirmed;
   };
 
-  // COS realisation — prefer server-computed canonical value; fallback mirrors
-  // isCanonicalCosRealised() from server/lib/finance/cos-realisation.ts.
   const isCosRealised = (e: any): boolean => {
-    const status = String(e.status ?? e.line_status ?? "").trim().toUpperCase();
-    const override = String(e.cosStatusOverride ?? e._cosOverrideStatus ?? "").trim().toUpperCase();
-
-    if (override === "COS REALISED" || override === "REALISED" || override === "INVOICED" || override === "PAID") return true;
-    if (override === "PLANNED" || override === "APPROVED") return false;
-
-    if (status === "COS REALISED" || status === "REALISED" || status === "INVOICED" || status === "PAID") return true;
-    if (e.cosRealised === true) return true;
-
     const hasInvoice = !!(e.expenseInvoiceNumber && String(e.expenseInvoiceNumber).trim());
     const hasPO = !!(e.expensePoNumber && String(e.expensePoNumber).trim());
     const hasCommittedSignal = status === "COMMITTED" || override === "COMMITTED" || hasPO || hasInvoice;
@@ -1363,7 +1368,6 @@ export default function ProjectDetailPage() {
   const cosDenominator = totalExpenses > 0 ? totalExpenses : budgetTotal;
   const cosRealisedPct = healthSummary?.cos.realisedPct ?? (cosDenominator > 0 ? (totalRealisedCos / cosDenominator) * 100 : 0);
   const marginDelta = revenueRealisedPct - cosRealisedPct;
-  const hasCanonicalHeaderKpis = Boolean(headerKpis);
 
   const overallRag: "green" | "amber" | "red" = (healthSummary?.overall.rag as any) ?? computeOverallRag(scheduleRag, costRag, qualityRag);
   const commercialPendingCount = Math.max(revTabMilestones.filter((m: any) => m.status !== 'inBank').length, 0);
@@ -1428,10 +1432,6 @@ export default function ProjectDetailPage() {
 
   return (
     <PageShell className="p-3 md:p-4">
-      {projectInfoId && (
-        <ProjectWorkspaceHeader projectId={projectInfoId} />
-      )}
-
       {/* Cockpit dual-mode: executive summary → execution drill-down */}
       <div data-testid="cockpit-command-header">
       <div data-testid="cockpit-mode-toggle" className="hidden" />
@@ -1447,15 +1447,15 @@ export default function ProjectDetailPage() {
         sizeKwp={sizeKwp}
         completion={completion}
         completionNum={completionNum}
-        contractValue={headerKpis?.contractValue ?? 0}
-        revenueRealisedPct={headerKpis?.inflowsRealisedPct ?? 0}
-        cosRealisedPct={headerKpis?.cosRealisedPct ?? 0}
-        marginDelta={headerKpis?.marginDeltaPct ?? 0}
-        scheduleRag={scheduleRag as "green" | "amber" | "red"}
-        costRag={costRag as "green" | "amber" | "red"}
-        qualityRag={qualityRag as "green" | "amber" | "red"}
+        contractValue={headerKpis?.contractValue ?? contractValue}
+        revenueRealisedPct={headerKpis?.inflowsRealisedPct ?? revenueRealisedPct}
+        cosRealisedPct={headerKpis?.cosRealisedPct ?? cosRealisedPct}
+        marginDelta={headerKpis?.marginDeltaPct ?? marginDelta}
+        scheduleRag={overallRag as "green" | "amber" | "red"}
+        costRag={overallRag as "green" | "amber" | "red"}
+        qualityRag={overallRag as "green" | "amber" | "red"}
         ragStatus={ragStatus}
-        nextMilestone={headerKpis?.nextMilestone ?? null}
+        nextMilestone={headerKpis?.nextMilestone ?? nextMilestone}
         projectInfoId={projectInfoId ?? null}
         isAdmin={isAdmin}
         canSetRag={canSetRag}
@@ -1463,11 +1463,6 @@ export default function ProjectDetailPage() {
         pmAssignableUsers={pmAssignableUsers || []}
       />
       </div>{/* /cockpit-command-header */}
-      {!hasCanonicalHeaderKpis && (
-        <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-testid="project-header-kpi-stale">
-          Canonical header KPI data is currently unavailable. Values are withheld until server KPIs refresh.
-        </div>
-      )}
 
       {/* Stage Lifecycle — Critical Control Panel */}
       {projectInfoId && (
@@ -1726,7 +1721,7 @@ export default function ProjectDetailPage() {
           )}
 
           {activeSubTab === "revenue" && canViewSubTab.revenue && <RevenueTrackingTab projectName={projectName} highlightId={highlightType === 'revenue' ? highlightId : null} />}
-          {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
+          {activeSubTab === "cost-lines" && canViewSubTab.expenditure && <ExpenditureEditableTab projectName={projectName} projectId={projectInfoId ?? null} highlightId={highlightType === 'expense' ? highlightId : null} initialFilter={costFilter || undefined} />}
           {activeSubTab === "cashflow" && canViewSubTab.cashflow && <CashflowTab projectName={projectName} canOverrideFinance={v2Perms?.canOverrideFinance ?? false} />}
           {activeSubTab === "procurement" && projectInfoId && <ProjectProcurementTab projectId={projectInfoId} projectName={projectName} initialFilter={procurementFilter || undefined} />}
           {activeSubTab === "subcontractors" && canViewSubTab.subcontractors && <ProjectSubcontractorsTab projectName={projectName} />}

@@ -3648,6 +3648,7 @@ export default function EngineeringTasksPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newTask, setNewTask] = useState({
+    projectId: null as number | null,
     projectName: "",
     title: "",
     description: "",
@@ -3657,6 +3658,8 @@ export default function EngineeringTasksPage() {
     primaryWorkstream: "",
     dueDate: "",
     assignees: [] as string[],
+    ownerUserId: null as number | null,
+    ownerDisplayName: "",
   });
 
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -3743,17 +3746,40 @@ export default function EngineeringTasksPage() {
 
   const createMutation = useMutation({
     mutationFn: (task: typeof newTask) => {
-      const assigneeName = task.assignees?.[0];
-      const matchedUser = assigneeName ? pageTeamMembers.find(m => m.name === assigneeName) : null;
       return engFetch("/api/eng/tasks", {
         method: "POST",
-        body: JSON.stringify({ ...task, ownerUserId: matchedUser?.id || null }),
+        body: JSON.stringify({
+          projectId: task.projectId,
+          projectName: task.projectName,
+          title: task.title,
+          description: task.description,
+          status: task.status,
+          priority: task.priority,
+          phase: task.phase,
+          primaryWorkstream: task.primaryWorkstream,
+          dueDate: task.dueDate,
+          ownerUserId: task.ownerUserId,
+          assignees: task.assignees,
+        }),
       });
     },
     onSuccess: () => {
       invalidateAllTaskCaches(queryClient);
       setCreateOpen(false);
-      setNewTask({ projectName: "", title: "", description: "", status: "TO DO", priority: "Medium", phase: "", primaryWorkstream: "", dueDate: "", assignees: [] });
+      setNewTask({
+        projectId: null,
+        projectName: "",
+        title: "",
+        description: "",
+        status: "TO DO",
+        priority: "Medium",
+        phase: "",
+        primaryWorkstream: "",
+        dueDate: "",
+        assignees: [],
+        ownerUserId: null,
+        ownerDisplayName: "",
+      });
       toast({ title: "Task created" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -4262,14 +4288,14 @@ export default function EngineeringTasksPage() {
                             {allProjects.map((proj) => (
                               <CommandItem
                                 key={proj.id}
-                                value={proj.project_name}
+                                value={`${proj.id}-${proj.project_name}`}
                                 onSelect={() => {
-                                  setNewTask(p => ({ ...p, projectName: proj.project_name }));
+                                  setNewTask(p => ({ ...p, projectId: proj.id, projectName: proj.project_name }));
                                   setProjectPickerOpen(false);
                                 }}
                                 data-testid={`option-project-${proj.id}`}
                               >
-                                <Check className={`mr-2 h-4 w-4 ${newTask.projectName === proj.project_name ? "opacity-100" : "opacity-0"}`} />
+                                <Check className={`mr-2 h-4 w-4 ${newTask.projectId === proj.id ? "opacity-100" : "opacity-0"}`} />
                                 {proj.project_name}
                               </CommandItem>
                             ))}
@@ -4307,12 +4333,23 @@ export default function EngineeringTasksPage() {
                   <div className="space-y-2">
                     <Label>Assign To</Label>
                     <SearchableSelect
-                      value={newTask.assignees[0] || "none"}
-                      onValueChange={v => setNewTask(p => ({ ...p, assignees: v === "none" ? [] : [v] }))}
+                      value={newTask.ownerUserId ? String(newTask.ownerUserId) : "none"}
+                      onValueChange={v => {
+                        if (v === "none") {
+                          setNewTask(p => ({ ...p, assignees: [], ownerUserId: null, ownerDisplayName: "" }));
+                          return;
+                        }
+                        const matchedMember = pageTeamMembers.find((m: any) => String(m.id) === v);
+                        const displayName = matchedMember?.fullName || matchedMember?.name || "";
+                        setNewTask(p => ({ ...p, assignees: displayName ? [displayName] : [], ownerUserId: Number(v), ownerDisplayName: displayName }));
+                      }}
                       placeholder="Select assignee"
                       options={[
                         { value: "none", label: "Unassigned" },
-                        ...pageTeamMembers.map(m => ({ value: m.name, label: m.name })),
+                        ...pageTeamMembers.map((m: any) => {
+                          const label = m.fullName || m.name;
+                          return { value: String(m.id), label };
+                        }),
                       ]}
                       data-testid="select-task-assignee"
                     />
@@ -4321,7 +4358,7 @@ export default function EngineeringTasksPage() {
                 <Button
                   className="w-full bg-orange-600 hover:bg-orange-700"
                   data-testid="button-submit-task"
-                  disabled={!newTask.projectName || !newTask.title || createMutation.isPending}
+                  disabled={!newTask.projectId || !newTask.title || createMutation.isPending}
                   onClick={() => createMutation.mutate(newTask)}
                 >
                   {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}

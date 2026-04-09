@@ -46,9 +46,6 @@ export const LEGACY_REDIRECTS: Array<{ path: string; redirectTo: string }> = [
   { path: "/project-lifecycle", redirectTo: "/lifecycle-board" },
   { path: "/command-center", redirectTo: "/my-work" },
   { path: "/sseg", redirectTo: "/handover?tab=sseg" },
-  // Post-migration — department shell navigation redirects
-  { path: "/finance/home", redirectTo: "/finance/records" },
-  { path: "/governance", redirectTo: "/governance/processes" },
 ];
 
 export const PAGE_REGISTRY: PageRegistryEntry[] = [
@@ -70,7 +67,7 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "gpTracker", path: "/gp-tracker", label: "GP Tracker", iconKey: "Activity", navGroup: "FINANCE", permissionEntity: "gp_tracker", showInSidebar: true, routeComponentKey: "GpTrackerPage" },
   { id: "priorities", path: "/priorities", label: "Priorities", iconKey: "Flag", navGroup: "PRIORITIES", permissionEntity: "company_priorities", showInSidebar: true, routeComponentKey: "PrioritiesPage" },
   { id: "priorityDetail", path: "/priorities/:id", label: "Priority Detail", permissionEntity: "company_priorities", routeComponentKey: "PriorityDetailPage" },
-  { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", type: "alias", permissionEntity: "company_priorities", redirectTo: "/priorities" },
+  { id: "companyPriorities", path: "/company-priorities", label: "Company Priorities", type: "alias", permissionEntity: "company_priorities", routeComponentKey: "MyToolPrioritiesPage", redirectTo: "/priorities" },
   { id: "adminMyTool", path: "/admin/my-tool-settings", label: "My Work Settings", permissionEntity: "admin", routeComponentKey: "MyWorkAdminSettingsPage" },
   { id: "sharepointIntake", path: "/admin/sharepoint-intake", label: "SharePoint Intake", iconKey: "Cloud", navGroup: "SYSTEM", permissionEntity: "admin", showInSidebar: false, routeComponentKey: "SharePointIntakePage" },
   { id: "quality", path: "/quality", label: "Quality", iconKey: "ShieldCheck", navGroup: "QUALITY", permissionEntity: "quality", showInSidebar: true, routeComponentKey: "QmDashboardPage", roleLandingEligibility: ["QUALITY_MANAGER"] },
@@ -89,14 +86,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   { id: "smartImport", path: "/admin/smart-import", label: "Smart Import", iconKey: "FileSpreadsheet", navGroup: "SYSTEM", permissionEntity: "smart_import", showInSidebar: false, routeComponentKey: "SmartImportPage" },
   { id: "invoicePatterns", path: "/invoice-patterns", label: "Invoice Patterns", iconKey: "FileSpreadsheet", navGroup: "FINANCE", permissionEntity: "invoice_patterns", showInSidebar: true, routeComponentKey: "InvoicePatternsPage" },
   { id: "counterparties", path: "/counterparties", label: "Counterparties", iconKey: "Building2", navGroup: "FINANCE", permissionEntity: "counterparties", showInSidebar: true, routeComponentKey: "CounterpartiesPage" },
-  { id: "partiesRegistry", path: "/parties", label: "Parties Registry", iconKey: "Users", navGroup: "PARTIES", permissionEntity: "counterparties", showInSidebar: true, routeComponentKey: "PartiesRegistryPage" },
-  { id: "adminMigrationControl", path: "/admin/migration-control", label: "Migration Control", iconKey: "Shield", navGroup: "ADMIN", permissionEntity: "admin", showInSidebar: true, routeComponentKey: "AdminMigrationControlPage" },
-  { id: "pmWorkboard", path: "/pm/workboard/:projectId", label: "PM Workboard", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "work_items", routeComponentKey: "PmWorkboardPage" },
-  { id: "governedProcesses", path: "/governance/processes", label: "Governed Processes", iconKey: "ShieldCheck", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "GovernedProcessesPage" },
-  { id: "engineeringDeliverablesV2", path: "/engineering/deliverables-v2/:projectId", label: "Engineering Deliverables", navGroup: "ENGINEERING", permissionEntity: "deliverables", routeComponentKey: "EngineeringDeliverablesV2Page" },
-  { id: "approvalsBoardV2", path: "/governance/approvals", label: "Approvals Board", iconKey: "ShieldCheck", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "approvals", showInSidebar: true, routeComponentKey: "ApprovalsBoardV2Page" },
-  { id: "financeWorkspace", path: "/finance/workspace/:projectId", label: "Finance Workspace", navGroup: "FINANCE", permissionEntity: "financials", routeComponentKey: "FinanceWorkspacePage" },
-  { id: "financeRecords", path: "/finance/records", label: "Finance Records", iconKey: "DollarSign", navGroup: "FINANCE", permissionEntity: "financials", showInSidebar: true, routeComponentKey: "FinanceRecordsPage" },
   { id: "subcontractor", path: "/subcontractor-dashboard", label: "Subcontractors", iconKey: "Users", navGroup: "FINANCE", permissionEntity: "subcontractors", showInSidebar: true, routeComponentKey: "SubcontractorDashboardPage" },
   { id: "adminActivity", path: "/admin/activity-log", label: "Activity Log", iconKey: "Activity", navGroup: "SYSTEM", permissionEntity: "activity_log", showInSidebar: false, routeComponentKey: "SystemActivityLogPage" },
   { id: "weeklyReviews", path: "/weekly-reviews", label: "Weekly Reviews", iconKey: "CalendarCheck", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "weekly_review_wizard", showInSidebar: true, routeComponentKey: "WeeklyReviewsPage" },
@@ -167,8 +156,6 @@ export const PAGE_REGISTRY: PageRegistryEntry[] = [
   // New entity pages (Phase B)
   { id: "sites", path: "/sites", label: "Sites", iconKey: "MapPin", navGroup: "PROJECTS", permissionEntity: "projects", showInSidebar: true, routeComponentKey: "SitesPage" },
   { id: "opportunities", path: "/opportunities", label: "Opportunities", iconKey: "Sun", navGroup: "PROJECT_DEVELOPMENT", permissionEntity: "pd_dashboard", showInSidebar: true, routeComponentKey: "OpportunitiesPage" },
-  // New module pages (Phase C)
-  { id: "constructionDashboard", path: "/construction", label: "Construction", iconKey: "HardHat", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, routeComponentKey: "ExecutionBoardPage" },
   { id: "procurementDashboard", path: "/procurement", label: "Procurement", type: "alias", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "execution_board", showInSidebar: false, redirectTo: "/execution-board" },
   // EPC Workflow Phase 1
   { id: "poApprovalBoard", path: "/po-approval-board", label: "PO Approvals", iconKey: "FileText", navGroup: "PROJECT_MANAGEMENT", permissionEntity: "procurement", showInSidebar: true, routeComponentKey: "POApprovalBoardPage" },

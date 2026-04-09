@@ -1,0 +1,24 @@
+
+> rest-express@1.0.0 dev
+> node script/with-node-env.cjs development tsx server/index.ts
+
+[DB] No DATABASE_URL found, using SQLite for reliability
+[DB] No DATABASE_URL found, using SQLite for reliability
+[DB] Using SQLite file: C:\Users\johan\OneDrive\Documents\Codex\Emergent-Energy-Web-App\data\app.sqlite
+[DB] Startup schema repair disabled - running additive SQLite compatibility bootstrap
+[DB] Ensuring SQLite schema exists...
+[DB] ✓ SQLite schema verified
+[DB] SQLite schema verified
+7:08:07 AM [express] Using in-memory session store (dbMode=sqlite)
+7:08:10 AM [Startup:Routes] All route groups registered
+[Milestones] Notification checker started (6h interval)
+[MS Sync] Periodic sync started (every 15 minutes)
+[2m07:08:11[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m Re-optimizing dependencies because lockfile has changed
+7:08:11 AM [Startup] [Startup] dbMode=sqlite
+7:08:11 AM [Startup] [Startup] flags={"startupMaintenanceEnabled":false,"startupSchemaRepairEnabled":false,"startupDataSeedEnabled":false,"startupBackfillEnabled":false,"startupSessionResetEnabled":false,"startupSyncEnabled":true,"runtimeMaintenanceEnabled":false,"runtimeMutationsActive":false}
+7:08:11 AM [Startup] [Startup] maintenance=skipped
+7:08:11 AM [Startup] [Startup] backfills=skipped
+7:08:11 AM [Startup] [Startup] seeds=skipped
+7:08:11 AM [Startup] [Startup] routes=registered
+7:08:11 AM [Startup] [Startup] runtime=import-scheduler, milestone-checker, periodic-sync
+7:08:11 AM [Startup] serving on port 5051

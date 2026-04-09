@@ -123,12 +123,7 @@ export type InsertProjectInfo = z.infer<typeof insertProjectInfoSchema>;
 export type ProjectInfo = typeof projectInfo.$inferSelect;
 
 // ===================== PROJECT EXECUTION STATE =====================
-// COMPATIBILITY LAYER — Wave 6: Authority transferred to core.project_instances
-// via view-swap INSTEAD OF triggers (20260404_view_swap_project_execution_state.sql).
-// Phase is authoritative in core.project_instances.current_phase_definition_id.
-// Key dates will migrate to core.project_instances in a future sprint.
-// Exit condition: All legacy consumers migrated to promoted schema reads.
-// DO NOT add new fields here — add them to core.project_instances instead.
+// Split from project_info — contains all execution/lifecycle/status columns
 
 export const projectExecutionState = pgTable("project_execution_state", {
   id: serial("id").primaryKey(),
@@ -986,41 +981,6 @@ export const derivedProjectKpis = pgTable("derived_project_kpis", {
 });
 export type DerivedProjectKpi = typeof derivedProjectKpis.$inferSelect;
 
-// ===================== DERIVED PORTFOLIO KPIs =====================
-
-export const derivedPortfolioKpis = pgTable("derived_portfolio_kpis", {
-  id: serial("id").primaryKey(),
-  snapshotKey: text("snapshot_key").notNull().unique().default('current'),
-  totalProgramBudget: decimal("total_program_budget", { precision: 15, scale: 2 }),
-  actualSpendPaid: decimal("actual_spend_paid", { precision: 15, scale: 2 }),
-  revenueRealised: decimal("revenue_realised", { precision: 15, scale: 2 }),
-  activeProjectsCount: integer("active_projects_count").notNull().default(0),
-  activeCapacityMw: decimal("active_capacity_mw", { precision: 12, scale: 2 }),
-  onScheduleRate: decimal("on_schedule_rate", { precision: 8, scale: 4 }),
-  behindPlanCount: integer("behind_plan_count").notNull().default(0),
-  onHoldCount: integer("on_hold_count").notNull().default(0),
-  closedCount: integer("closed_count").notNull().default(0),
-  grossProfit: decimal("gross_profit", { precision: 15, scale: 2 }),
-  grossProfitPct: decimal("gross_profit_pct", { precision: 8, scale: 4 }),
-  revenueOutstanding: decimal("revenue_outstanding", { precision: 15, scale: 2 }),
-  expensesOutstanding: decimal("expenses_outstanding", { precision: 15, scale: 2 }),
-  phaseDistributionJson: jsonb("phase_distribution_json"),
-  computedAt: timestamp("computed_at").notNull().defaultNow(),
-});
-export type DerivedPortfolioKpi = typeof derivedPortfolioKpis.$inferSelect;
-
-// ===================== DERIVED RAG SUMMARY =====================
-
-export const derivedRagSummary = pgTable("derived_rag_summary", {
-  id: serial("id").primaryKey(),
-  ragStatus: text("rag_status").notNull(),
-  projectCount: integer("project_count").notNull().default(0),
-  totalKwp: decimal("total_kwp", { precision: 15, scale: 2 }),
-  totalContractValue: decimal("total_contract_value", { precision: 15, scale: 2 }),
-  computedAt: timestamp("computed_at").notNull().defaultNow(),
-});
-export type DerivedRagSummary = typeof derivedRagSummary.$inferSelect;
-
 // ===================== SCENARIOS =====================
 
 export const scenarios = pgTable("scenarios", {
@@ -1087,9 +1047,7 @@ export const dashboardProjectMetrics = pgTable("dashboard_project_metrics", {
   outstandingRevenue: decimal("outstanding_revenue", { precision: 15, scale: 2 }).notNull().default("0"),
   totalCost: decimal("total_cost", { precision: 15, scale: 2 }).notNull().default("0"),
   paidCost: decimal("paid_cost", { precision: 15, scale: 2 }).notNull().default("0"),
-  realisedCost: decimal("realised_cost", { precision: 15, scale: 2 }).notNull().default("0"),
   outstandingCost: decimal("outstanding_cost", { precision: 15, scale: 2 }).notNull().default("0"),
-  // Stored as percentage 0–100 (e.g., 25.50 means 25.50%)
   marginPct: decimal("margin_pct", { precision: 8, scale: 4 }),
   // Task aggregates
   taskCount: integer("task_count").notNull().default(0),

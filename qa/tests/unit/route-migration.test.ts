@@ -13,15 +13,15 @@ describe("routes.ts migration infrastructure", () => {
   const mytoolStub = read("server/routes/mytool-routes.ts");
   const migrationDoc = read("docs/route-migration-status.md");
 
-  // ── FROZEN header ──
+  // ── LEGACY ROUTE SHELL header (migration complete) ──
 
-  it("routes.ts has FROZEN deprecation header", () => {
-    expect(routesSource).toContain("DEPRECATION STATUS: FROZEN");
-    expect(routesSource).toContain("DO NOT ADD NEW ROUTES HERE");
+  it("routes.ts has LEGACY ROUTE SHELL header", () => {
+    expect(routesSource).toContain("LEGACY ROUTE SHELL");
+    expect(routesSource).toContain("All handlers have been extracted");
   });
 
-  it("routes.ts references migration tracking doc", () => {
-    expect(routesSource).toContain("docs/route-migration-status.md");
+  it("routes.ts documents that new routes belong in server/routes/ or server/departments/", () => {
+    expect(routesSource).toContain("New routes MUST go in server/routes/ or server/departments/");
   });
 
   // ── Route registry ──
@@ -46,7 +46,7 @@ describe("routes.ts migration infrastructure", () => {
 
   // ── Mytool extraction ──
 
-  it("mytool-routes.ts documents all 34 handler paths", () => {
+  it("mytool-routes.ts documents all handler paths", () => {
     expect(mytoolStub).toContain("/api/mytool/settings");
     expect(mytoolStub).toContain("/api/mytool/tasks");
     expect(mytoolStub).toContain("/api/mytool/timeblocks");
@@ -55,11 +55,14 @@ describe("routes.ts migration infrastructure", () => {
     expect(mytoolStub).toContain("/api/mytool/triage-rules");
     expect(mytoolStub).toContain("/api/mytool/triage-inbox");
     expect(mytoolStub).toContain("/api/mytool/unclassified-tasks");
-    expect(mytoolStub).toContain("34 total");
+    expect(mytoolStub).toContain("36 handlers");
   });
 
-  it("routes.ts mytool section has EXTRACTED marker", () => {
-    expect(routesSource).toContain("EXTRACTED to server/routes/mytool-routes.ts");
+  it("routes.ts delegates to extracted route registration functions", () => {
+    // Migration is complete — routes.ts is a thin shell that delegates
+    expect(routesSource).toContain("registerAuthRoutes");
+    expect(routesSource).toContain("registerDashboardRoutes");
+    expect(routesSource).toContain("registerWorkingPlanRoutes");
   });
 
   // ── Migration doc ──
@@ -96,10 +99,10 @@ describe("routes.ts migration infrastructure", () => {
     expect(pkg).toContain("check-routes-migration.ts");
   });
 
-  // ── routes.ts is not growing ──
+  // ── routes.ts is now a thin shell ──
 
-  it("routes.ts does not exceed frozen baseline", () => {
+  it("routes.ts is a thin shell (under 50 lines)", () => {
     const lineCount = routesSource.split("\n").length;
-    expect(lineCount).toBeLessThanOrEqual(9520);
+    expect(lineCount).toBeLessThanOrEqual(50);
   });
 });
