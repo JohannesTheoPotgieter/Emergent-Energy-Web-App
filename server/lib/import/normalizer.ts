@@ -933,7 +933,10 @@ function extractCostLines(
       }
     }
 
-    const cosRealised = !!(invoiceNumber && invoiceDate && (invoiceDateFontColor === 'black' || (invoiceDateConfirmed && invoiceDateFontColor !== 'red')));
+    // Canonical COS realisation: invoice number is the ONLY hard check.
+    // If a supplier invoice is captured, COS is realised.
+    // Invoice without date is still realised (flagged as data quality issue downstream).
+    const cosRealised = !!(invoiceNumber && invoiceNumber.trim());
     const cashflowConfirmed = !!(invoiceNumber && poNumber && paidDateConfirmed);
 
     // Extract sub-project name from category in multi-project trackers
