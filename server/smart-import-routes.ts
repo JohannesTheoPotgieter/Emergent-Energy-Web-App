@@ -1518,12 +1518,11 @@ router.post("/api/smart-import/:runId/commit", requireAuth, requirePermission("s
         for (const existing of manuallyModifiedRows) {
           const matchingImport = importCostLines.find((imp: any) => imp.sourceRow === existing.sourceRow);
 
-          // COS Realized: requires BOTH invoice number AND black font invoice date
-          // Non-black font = not confirmed = NOT realized
+          // COS Realised: invoice number is the ONLY hard check (canonical rule).
+          // If a supplier invoice is captured, COS is realised.
           if (existing.cosRealised) {
             const importHasInvoice = matchingImport?.invoiceNumber && matchingImport.invoiceNumber.trim();
-            const importDateConfirmed = matchingImport?.invoiceDateConfirmed === true;
-            const importCos = importHasInvoice && importDateConfirmed;
+            const importCos = !!importHasInvoice;
             const flagInfo = editFlagMap.get(`${existing.id}::invoiceDateConfirmed`);
             conflicts.push({
               sourceRow: existing.sourceRow || 0,

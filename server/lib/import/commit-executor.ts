@@ -506,7 +506,9 @@ export async function writeExpenditureIncremental(ctx: TemporalWriteContext): Pr
         paidDateFontColor: fileRow.paidDateFontColor ?? existing.paidDateFontColor,
         paidDateConfirmed: existing.paidDateConfirmed,
         poNumber: fieldUpdates.poNumber ?? existing.poNumber,
-        cosRealised: existing.cosRealised,
+        // Recalculate cosRealised from the resolved invoice number (canonical invoice-only rule).
+        // Do NOT carry forward the old value — if the invoice number changed, realisation must update.
+        cosRealised: !!((fieldUpdates.invoiceNumber ?? existing.invoiceNumber) && String(fieldUpdates.invoiceNumber ?? existing.invoiceNumber).trim()),
         cashflowConfirmed: existing.cashflowConfirmed,
         status: fieldUpdates.status ?? existing.status,
         sourceSheet: existing.sourceSheet || fileRow.sourceSheet,
