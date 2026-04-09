@@ -316,20 +316,28 @@ describe("fallback helper shared usage", () => {
   ).length;
 
   it("shouldUseLegacyProjectInfoReadFallback is called from exactly 4 locations total", () => {
-    // 3 in storage.ts (getProjectInfo, getProjectInfoById, getAllProjects)
-    // 1 in repository (getAll)
-    expect(storageFallbackCalls).toBe(3);
-    expect(repoFallbackCalls).toBe(1);
+    // 1 in storage.ts (getAllProjects)
+    // 3 in repository (getAll, getByName, getById)
+    expect(storageFallbackCalls).toBe(1);
+    expect(repoFallbackCalls).toBe(3);
   });
 
   it("listLegacyCompatibleProjectInfo is called from exactly 4 locations total", () => {
-    // 3 in storage.ts (same 3 methods)
-    // 1 in repository (getAll)
-    expect(storageLegacyCalls).toBe(3);
-    expect(repoLegacyCalls).toBe(1);
+    // 1 in storage.ts (getAllProjects)
+    // 3 in repository (getAll, getByName, getById)
+    expect(storageLegacyCalls).toBe(1);
+    expect(repoLegacyCalls).toBe(3);
   });
 
   it("storage.ts delegates getAllProjectInfo to the repository", () => {
     expect(storageSource).toContain("this.projectInfoReadRepository.getAll()");
+  });
+
+  it("storage.ts delegates getProjectInfo to the repository", () => {
+    expect(storageSource).toContain("this.projectInfoReadRepository.getByName(projectName)");
+  });
+
+  it("storage.ts delegates getProjectInfoById to the repository", () => {
+    expect(storageSource).toContain("this.projectInfoReadRepository.getById(id)");
   });
 });

@@ -814,29 +814,11 @@ export class DatabaseStorage implements IStorage {
 
   // Project Info (new)
   async getProjectInfo(projectName: string): Promise<ProjectInfo | undefined> {
-    try {
-      const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.projectName, projectName));
-      return info;
-    } catch (error) {
-      if (shouldUseLegacyProjectInfoReadFallback(error)) {
-        const [info] = await listLegacyCompatibleProjectInfo(this.dbInstance, { projectName });
-        return info;
-      }
-      throw error;
-    }
+    return this.projectInfoReadRepository.getByName(projectName);
   }
 
   async getProjectInfoById(id: number): Promise<ProjectInfo | undefined> {
-    try {
-      const [info] = await this.dbInstance.select().from(projectInfo).where(eq(projectInfo.id, id));
-      return info;
-    } catch (error) {
-      if (shouldUseLegacyProjectInfoReadFallback(error)) {
-        const [info] = await listLegacyCompatibleProjectInfo(this.dbInstance, { id });
-        return info;
-      }
-      throw error;
-    }
+    return this.projectInfoReadRepository.getById(id);
   }
 
   async updateProjectInfoById(id: number, fields: Partial<InsertProjectInfo>): Promise<ProjectInfo | undefined> {
@@ -849,20 +831,7 @@ export class DatabaseStorage implements IStorage {
 
   async upsertProjectInfo(info: InsertProjectInfo): Promise<ProjectInfo> {
     const existing = await this.getProjectInfo((info as any).projectName);
-    if (existing) {
-      const { executionEnabled, ...updateFields } = info as any;
-      const [updated] = await this.dbInstance
-        .update(projectInfo)
-        .set({ ...updateFields, updatedAt: new Date() })
-        .where(eq(projectInfo.projectName, (info as any).projectName))
-        .returning();
-      await syncProjectSplitTables(updated.id, updateFields, this.dbInstance);
-      return updated;
-    }
-    const insertFields = { ...info, executionEnabled: false, updatedAt: new Date() };
-    const [created] = await this.dbInstance.insert(projectInfo).values(insertFields).returning();
-    await syncProjectSplitTablesAfterInsert(created.id, insertFields as any, this.dbInstance);
-    return created;
+    return this.projectInfoRepository.upsert(info, existing);
   }
 
   async deleteProjectInfo(projectName: string): Promise<void> {
